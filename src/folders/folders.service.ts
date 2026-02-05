@@ -80,10 +80,10 @@ export class FoldersService {
         folders_modules: {
           include: {
             folders_sections: {
-              orderBy: { order: 'asc' },
+              orderBy: { folder_section_id: 'asc' },
             },
           },
-          orderBy: { order: 'asc' },
+          orderBy: { folder_module_id: 'asc' },
         },
       },
     });
@@ -102,18 +102,17 @@ export class FoldersService {
       minimum_points: folder.minimum_points,
       active: folder.active,
       modules: folder.folders_modules.map((module) => ({
-        module_id: module.module_id,
+        module_id: module.folder_module_id,
         name: module.name,
         description: module.description,
-        order: module.order,
         max_points: module.max_points,
+        minimum_points: module.minimum_points,
         sections: module.folders_sections.map((section) => ({
-          section_id: section.section_id,
+          section_id: section.folder_section_id,
           name: section.name,
           description: section.description,
-          order: section.order,
-          points: section.points,
-          required: section.required,
+          max_points: section.max_points,
+          minimum_points: section.minimum_points,
         })),
       })),
     };
@@ -154,9 +153,9 @@ export class FoldersService {
     // 3. Obtener instancia de club del usuario según el tipo de club
     const clubInstances = await this.getUserClubInstances(userId);
 
-    let clubAdvId = null;
-    let clubPathfId = null;
-    let clubMgId = null;
+    let clubAdvId: number | null = null;
+    let clubPathfId: number | null = null;
+    let clubMgId: number | null = null;
 
     if (folder.club_type === 1) {
       clubAdvId = clubInstances.adventurers;
@@ -181,7 +180,7 @@ export class FoldersService {
         club_adv_id: clubAdvId,
         club_pathf_id: clubPathfId,
         club_mg_id: clubMgId,
-        assigned_date: new Date(),
+        assignment_date: new Date(),
         status: 'IN_PROGRESS',
         total_points: 0,
         progress_percentage: 0,
@@ -197,11 +196,9 @@ export class FoldersService {
    */
   private async getUserClubInstances(userId: string) {
     const user = await this.prisma.users.findUnique({
-      where: { id: userId },
-      select: {
-        club_adv_id: true,
-        club_pathf_id: true,
-        club_mg_id: true,
+      where: { user_id: userId },
+      include: {
+        club_role_assignments: true,
       },
     });
 
@@ -209,10 +206,12 @@ export class FoldersService {
       throw new NotFoundException('User not found');
     }
 
+    // Extraer IDs de clubes desde role assignments
+    const clubAssignments = user.club_role_assignments;
     return {
-      adventurers: user.club_adv_id,
-      pathfinders: user.club_pathf_id,
-      masterGuilds: user.club_mg_id,
+      adventurers: clubAssignments.find(ca => ca.club_adv_id)?.club_adv_id ?? null,
+      pathfinders: clubAssignments.find(ca => ca.club_pathf_id)?.club_pathf_id ?? null,
+      masterGuilds: clubAssignments.find(ca => ca.club_mg_id)?.club_mg_id ?? null,
     };
   }
 
@@ -235,22 +234,22 @@ export class FoldersService {
           },
         },
       },
-      orderBy: { assigned_date: 'desc' },
+      orderBy: { assignment_date: 'desc' },
     });
 
     return assignments.map((assignment) => ({
-      assignment_id: assignment.assignment_id,
+      assignment_id: assignment.folder_assignment_id,
       folder_id: assignment.folder_id,
       folder: {
-        name: assignment.folders.name,
-        description: assignment.folders.description,
-        max_points: assignment.folders.max_points,
-        minimum_points: assignment.folders.minimum_points,
+        name: assignment.folders?.name,
+        description: assignment.folders?.description,
+        max_points: assignment.folders?.max_points,
+        minimum_points: assignment.folders?.minimum_points,
       },
       status: assignment.status,
       total_points: assignment.total_points,
       progress_percentage: assignment.progress_percentage,
-      assigned_date: assignment.assigned_date,
+      assigned_date: assignment.assignment_date,
       completion_date: assignment.completion_date,
       active: assignment.active,
     }));
@@ -273,10 +272,10 @@ export class FoldersService {
             folders_modules: {
               include: {
                 folders_sections: {
-                  orderBy: { order: 'asc' },
+                  orderBy: { folder_section_id: 'asc' },
                 },
               },
-              orderBy: { order: 'asc' },
+              orderBy: { folder_module_id: 'asc' },
             },
           },
         },
@@ -287,46 +286,46 @@ export class FoldersService {
       throw new NotFoundException('Folder assignment not found');
     }
 
-    // Obtener registros de módulos
+    // Obtener registros de módulos (por club, no por usuario)
     const moduleRecords = await this.prisma.folders_modules_records.findMany({
       where: {
-        user_id: userId,
-        module_id: {
-          in: assignment.folders.folders_modules.map((m) => m.module_id),
-        },
+        folder_id: folderId,
+        OR: [
+          { club_adv_id: assignment.club_adv_id },
+          { club_pathf_id: assignment.club_pathf_id },
+          { club_mg_id: assignment.club_mg_id },
+        ],
       },
     });
 
-    // Obtener registros de secciones
-    const sectionIds = assignment.folders.folders_modules.flatMap((m) =>
-      m.folders_sections.map((s) => s.section_id),
-    );
-
+    // Obtener registros de secciones (por club, no por usuario)
     const sectionRecords = await this.prisma.folders_section_records.findMany({
       where: {
-        user_id: userId,
-        section_id: { in: sectionIds },
+        folder_id: folderId,
+        OR: [
+          { club_adv_id: assignment.club_adv_id },
+          { club_pathf_id: assignment.club_pathf_id },
+          { club_mg_id: assignment.club_mg_id },
+        ],
       },
     });
 
     // Construir respuesta detallada
-    const modules = assignment.folders.folders_modules.map((module) => {
+    const modules = assignment.folders?.folders_modules.map((module) => {
       const moduleRecord = moduleRecords.find(
-        (mr) => mr.module_id === module.module_id,
+        (mr) => mr.module_id === module.folder_module_id,
       );
 
       const sections = module.folders_sections.map((section) => {
         const sectionRecord = sectionRecords.find(
-          (sr) => sr.section_id === section.section_id,
+          (sr) => sr.section_id === section.folder_section_id,
         );
 
         return {
-          section_id: section.section_id,
+          section_id: section.folder_section_id,
           name: section.name,
-          points: section.points,
+          max_points: section.max_points,
           earned_points: sectionRecord?.points ?? 0,
-          completed: sectionRecord?.completed ?? false,
-          completion_date: sectionRecord?.completion_date ?? null,
           evidences: sectionRecord?.evidences ?? null,
         };
       });
@@ -335,29 +334,29 @@ export class FoldersService {
         (sum, s) => sum + (s.earned_points ?? 0),
         0,
       );
+      const maxPoints = module.max_points ?? 0;
       const progressPercentage =
-        module.max_points > 0 ? (earnedPoints / module.max_points) * 100 : 0;
+        maxPoints > 0 ? (earnedPoints / maxPoints) * 100 : 0;
 
       return {
-        module_id: module.module_id,
+        module_id: module.folder_module_id,
         name: module.name,
         max_points: module.max_points,
         earned_points: earnedPoints,
         progress_percentage: Math.round(progressPercentage * 10) / 10,
-        completed: moduleRecord?.completed ?? false,
         sections,
       };
-    });
+    }) ?? [];
 
     return {
       folder_id: assignment.folder_id,
-      folder_name: assignment.folders.name,
+      folder_name: assignment.folders?.name,
       status: assignment.status,
       progress_percentage: assignment.progress_percentage,
       total_points: assignment.total_points,
-      max_points: assignment.folders.max_points,
-      minimum_points: assignment.folders.minimum_points,
-      assigned_date: assignment.assigned_date,
+      max_points: assignment.folders?.max_points,
+      minimum_points: assignment.folders?.minimum_points,
+      assigned_date: assignment.assignment_date,
       completion_date: assignment.completion_date,
       modules,
     };
@@ -393,7 +392,7 @@ export class FoldersService {
       // 2. Validar que la sección pertenece al módulo y carpeta
       const section = await tx.folders_sections.findFirst({
         where: {
-          section_id: sectionId,
+          folder_section_id: sectionId,
           module_id: moduleId,
           folders_modules: {
             folder_id: folderId,
@@ -408,57 +407,62 @@ export class FoldersService {
       }
 
       // 3. Validar que los puntos no excedan el máximo de la sección
-      if (dto.points > section.points) {
+      const sectionMaxPoints = section.max_points ?? 0;
+      if (dto.points > sectionMaxPoints) {
         throw new BadRequestException('Points exceed section maximum');
       }
 
-      // 4. Crear o actualizar registro de sección
-      const sectionRecord = await tx.folders_section_records.upsert({
+      // 4. Buscar o crear registro de sección (por club, no por usuario)
+      const existingRecord = await tx.folders_section_records.findFirst({
         where: {
-          user_id_section_id: {
-            user_id: userId,
-            section_id: sectionId,
-          },
-        },
-        create: {
-          user_id: userId,
+          folder_id: folderId,
           section_id: sectionId,
-          points: dto.points,
-          completed: dto.points === section.points,
-          completion_date:
-            dto.points === section.points ? new Date() : null,
-          evidences: dto.evidences,
-        },
-        update: {
-          points: dto.points,
-          completed: dto.points === section.points,
-          completion_date:
-            dto.points === section.points ? new Date() : null,
-          evidences: dto.evidences,
+          OR: [
+            { club_adv_id: assignment.club_adv_id },
+            { club_pathf_id: assignment.club_pathf_id },
+            { club_mg_id: assignment.club_mg_id },
+          ],
         },
       });
 
-      // 5. Verificar si el módulo está completo
+      let sectionRecord;
+      if (existingRecord) {
+        sectionRecord = await tx.folders_section_records.update({
+          where: { folder_section_record_id: existingRecord.folder_section_record_id },
+          data: {
+            points: dto.points,
+            evidences: dto.evidences,
+          },
+        });
+      } else {
+        sectionRecord = await tx.folders_section_records.create({
+          data: {
+            folder_id: folderId,
+            module_id: moduleId,
+            section_id: sectionId,
+            points: dto.points,
+            evidences: dto.evidences,
+            club_adv_id: assignment.club_adv_id,
+            club_pathf_id: assignment.club_pathf_id,
+            club_mg_id: assignment.club_mg_id,
+          },
+        });
+      }
+
+      // 5. Calcular puntos del módulo
       const allSectionsInModule = await tx.folders_sections.findMany({
         where: { module_id: moduleId },
       });
 
-      const completedSectionsCount = await tx.folders_section_records.count({
-        where: {
-          user_id: userId,
-          section_id: { in: allSectionsInModule.map((s) => s.section_id) },
-          completed: true,
-        },
-      });
-
-      const moduleCompleted =
-        completedSectionsCount === allSectionsInModule.length;
-
-      // 6. Calcular puntos del módulo
       const moduleSectionRecords = await tx.folders_section_records.findMany({
         where: {
-          user_id: userId,
-          section_id: { in: allSectionsInModule.map((s) => s.section_id) },
+          folder_id: folderId,
+          module_id: moduleId,
+          OR: [
+            { club_adv_id: assignment.club_adv_id },
+            { club_pathf_id: assignment.club_pathf_id },
+            { club_mg_id: assignment.club_mg_id },
+          ],
         },
       });
 
@@ -467,63 +471,65 @@ export class FoldersService {
         0,
       );
 
-      // 7. Actualizar registro del módulo
-      await tx.folders_modules_records.upsert({
+      // 6. Actualizar registro del módulo
+      const existingModuleRecord = await tx.folders_modules_records.findFirst({
         where: {
-          user_id_module_id: {
-            user_id: userId,
-            module_id: moduleId,
-          },
-        },
-        create: {
-          user_id: userId,
+          folder_id: folderId,
           module_id: moduleId,
-          points: modulePoints,
-          completed: moduleCompleted,
-          completion_date: moduleCompleted ? new Date() : null,
-        },
-        update: {
-          points: modulePoints,
-          completed: moduleCompleted,
-          completion_date: moduleCompleted ? new Date() : null,
+          OR: [
+            { club_adv_id: assignment.club_adv_id },
+            { club_pathf_id: assignment.club_pathf_id },
+            { club_mg_id: assignment.club_mg_id },
+          ],
         },
       });
 
-      // 8. Calcular puntos totales de la carpeta
-      const allModulesInFolder = await tx.folders_modules.findMany({
-        where: { folder_id: folderId },
-      });
-
-      const allFolderSections = await tx.folders_sections.findMany({
-        where: {
-          module_id: { in: allModulesInFolder.map((m) => m.module_id) },
-        },
-      });
-
-      const allFolderSectionRecords = await tx.folders_section_records.findMany(
-        {
-          where: {
-            user_id: userId,
-            section_id: { in: allFolderSections.map((s) => s.section_id) },
+      if (existingModuleRecord) {
+        await tx.folders_modules_records.update({
+          where: { folder_module_record_id: existingModuleRecord.folder_module_record_id },
+          data: { points: modulePoints },
+        });
+      } else {
+        await tx.folders_modules_records.create({
+          data: {
+            folder_id: folderId,
+            module_id: moduleId,
+            points: modulePoints,
+            club_adv_id: assignment.club_adv_id,
+            club_pathf_id: assignment.club_pathf_id,
+            club_mg_id: assignment.club_mg_id,
           },
+        });
+      }
+
+      // 7. Calcular puntos totales de la carpeta
+      const allFolderSectionRecords = await tx.folders_section_records.findMany({
+        where: {
+          folder_id: folderId,
+          OR: [
+            { club_adv_id: assignment.club_adv_id },
+            { club_pathf_id: assignment.club_pathf_id },
+            { club_mg_id: assignment.club_mg_id },
+          ],
         },
-      );
+      });
 
       const totalPoints = allFolderSectionRecords.reduce(
         (sum, record) => sum + (record.points ?? 0),
         0,
       );
 
-      const progressPercentage =
-        assignment.folders.max_points > 0
-          ? (totalPoints / assignment.folders.max_points) * 100
-          : 0;
+      const maxPoints = assignment.folders?.max_points ?? 0;
+      const minimumPoints = assignment.folders?.minimum_points ?? 0;
 
-      // 9. Actualizar estado de la carpeta
-      const folderCompleted = totalPoints >= assignment.folders.minimum_points;
+      const progressPercentage =
+        maxPoints > 0 ? (totalPoints / maxPoints) * 100 : 0;
+
+      // 8. Actualizar estado de la carpeta
+      const folderCompleted = totalPoints >= minimumPoints;
 
       await tx.folder_assignments.update({
-        where: { assignment_id: assignment.assignment_id },
+        where: { folder_assignment_id: assignment.folder_assignment_id },
         data: {
           total_points: totalPoints,
           progress_percentage: Math.round(progressPercentage * 10) / 10,
@@ -533,14 +539,11 @@ export class FoldersService {
       });
 
       return {
-        section_record_id: sectionRecord.section_record_id,
+        section_record_id: sectionRecord.folder_section_record_id,
         folder_id: folderId,
         module_id: moduleId,
         section_id: sectionId,
-        user_id: userId,
         points: sectionRecord.points,
-        completed: sectionRecord.completed,
-        completion_date: sectionRecord.completion_date,
         evidences: sectionRecord.evidences,
         folder_progress: {
           total_points: totalPoints,
@@ -568,7 +571,7 @@ export class FoldersService {
     }
 
     await this.prisma.folder_assignments.update({
-      where: { assignment_id: assignment.assignment_id },
+      where: { folder_assignment_id: assignment.folder_assignment_id },
       data: { active: false },
     });
 
