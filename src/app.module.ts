@@ -17,6 +17,11 @@ import { ClassesModule } from './classes/classes.module';
 import { HonorsModule } from './honors/honors.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { FinancesModule } from './finances/finances.module';
+import { CamporeesModule } from './camporees/camporees.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { CertificationsModule } from './certifications/certifications.module';
+import { FoldersModule } from './folders/folders.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -65,6 +70,11 @@ import { HealthController } from './health/health.controller';
     HonorsModule,
     ActivitiesModule,
     FinancesModule,
+    CamporeesModule,
+    NotificationsModule,
+    CertificationsModule,
+    FoldersModule,
+    InventoryModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
