@@ -35,16 +35,28 @@ export class ClassesController {
   @Get()
   @ApiOperation({
     summary: 'Listar clases',
-    description: 'Lista todas las clases activas con paginación, opcionalmente filtradas por tipo de club',
+    description:
+      'Lista todas las clases activas con paginación, opcionalmente filtradas por tipo de club',
   })
   @ApiQuery({
     name: 'clubTypeId',
     required: false,
     type: Number,
-    description: 'Filtrar por tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+    description:
+      'Filtrar por tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
   })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (1-indexed)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página (max 100)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Número de página (1-indexed)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Elementos por página (max 100)',
+  })
   @ApiResponse({ status: 200, description: 'Lista paginada de clases' })
   async findAll(
     @Query('clubTypeId', new ParseIntPipe({ optional: true }))

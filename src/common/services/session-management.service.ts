@@ -40,9 +40,10 @@ export class SessionManagementService {
     // Si excede el límite, eliminar la sesión más antigua
     if (sessions.length >= this.MAX_SESSIONS) {
       const oldestSession = sessions.sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       )[0];
-      
+
       await this.removeSession(userId, oldestSession.sessionId);
       removedSession = oldestSession.sessionId;
       this.logger.warn(
@@ -61,7 +62,11 @@ export class SessionManagementService {
     };
 
     const key = this.getSessionKey(userId, sessionId);
-    await this.cacheManager.set(key, JSON.stringify(session), this.SESSION_TTL * 1000);
+    await this.cacheManager.set(
+      key,
+      JSON.stringify(session),
+      this.SESSION_TTL * 1000,
+    );
 
     // Añadir a la lista de sesiones del usuario
     await this.addToUserSessionList(userId, sessionId);
@@ -81,7 +86,7 @@ export class SessionManagementService {
     for (const sessionId of sessionIds) {
       const key = this.getSessionKey(userId, sessionId);
       const sessionData = await this.cacheManager.get<string>(key);
-      
+
       if (sessionData) {
         sessions.push(JSON.parse(sessionData));
       }
@@ -93,14 +98,21 @@ export class SessionManagementService {
   /**
    * Actualizar última actividad de una sesión.
    */
-  async updateSessionActivity(userId: string, sessionId: string): Promise<void> {
+  async updateSessionActivity(
+    userId: string,
+    sessionId: string,
+  ): Promise<void> {
     const key = this.getSessionKey(userId, sessionId);
     const sessionData = await this.cacheManager.get<string>(key);
-    
+
     if (sessionData) {
       const session = JSON.parse(sessionData) as UserSession;
       session.lastActivity = new Date();
-      await this.cacheManager.set(key, JSON.stringify(session), this.SESSION_TTL * 1000);
+      await this.cacheManager.set(
+        key,
+        JSON.stringify(session),
+        this.SESSION_TTL * 1000,
+      );
     }
   }
 
@@ -128,7 +140,7 @@ export class SessionManagementService {
    */
   async removeAllSessions(userId: string): Promise<number> {
     const sessionIds = await this.getUserSessionIds(userId);
-    
+
     for (const sessionId of sessionIds) {
       const key = this.getSessionKey(userId, sessionId);
       await this.cacheManager.del(key);
@@ -137,7 +149,9 @@ export class SessionManagementService {
     // Limpiar lista de sesiones
     await this.cacheManager.del(this.getUserSessionListKey(userId));
 
-    this.logger.warn(`All ${sessionIds.length} sessions removed for user ${userId}`);
+    this.logger.warn(
+      `All ${sessionIds.length} sessions removed for user ${userId}`,
+    );
     return sessionIds.length;
   }
 
@@ -183,7 +197,11 @@ export class SessionManagementService {
     if (!sessionIds.includes(sessionId)) {
       sessionIds.push(sessionId);
       const key = this.getUserSessionListKey(userId);
-      await this.cacheManager.set(key, JSON.stringify(sessionIds), this.SESSION_TTL * 1000);
+      await this.cacheManager.set(
+        key,
+        JSON.stringify(sessionIds),
+        this.SESSION_TTL * 1000,
+      );
     }
   }
 
@@ -194,6 +212,10 @@ export class SessionManagementService {
     const sessionIds = await this.getUserSessionIds(userId);
     const filtered = sessionIds.filter((id) => id !== sessionId);
     const key = this.getUserSessionListKey(userId);
-    await this.cacheManager.set(key, JSON.stringify(filtered), this.SESSION_TTL * 1000);
+    await this.cacheManager.set(
+      key,
+      JSON.stringify(filtered),
+      this.SESSION_TTL * 1000,
+    );
   }
 }

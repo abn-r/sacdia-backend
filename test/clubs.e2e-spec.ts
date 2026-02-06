@@ -22,7 +22,9 @@ describe('Clubs E2E Tests', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
 
     prisma = app.get(PrismaService);
@@ -59,7 +61,7 @@ describe('Clubs E2E Tests', () => {
       jest.spyOn(prisma.clubs, 'create').mockResolvedValue(mockClub as any);
       // Spy on nested instance creation if necessary for service logic
       // Assuming service simple create:
-      
+
       return request(app.getHttpServer())
         .post('/api/v1/clubs')
         .send({

@@ -24,7 +24,8 @@ export class CompleteClubSelectionDto {
 
   @ApiProperty({
     example: 1,
-    description: 'ID de la instancia del club (club_adv_id, club_pathf_id, o club_mg_id)',
+    description:
+      'ID de la instancia del club (club_adv_id, club_pathf_id, o club_mg_id)',
   })
   @IsInt()
   club_instance_id: number;

@@ -16,7 +16,10 @@ export class UpdateUserDto {
   @IsIn(['M', 'F'])
   gender?: 'M' | 'F';
 
-  @ApiPropertyOptional({ example: '2000-01-15', description: 'Fecha de nacimiento (YYYY-MM-DD)' })
+  @ApiPropertyOptional({
+    example: '2000-01-15',
+    description: 'Fecha de nacimiento (YYYY-MM-DD)',
+  })
   @IsOptional()
   @IsDateString()
   birthday?: string;
@@ -35,10 +38,10 @@ export class UpdateUserDto {
   @ValidateIf((o) => o.baptism === true)
   baptism_date?: string;
 
-  @ApiPropertyOptional({ 
-    example: 'A_POSITIVE', 
+  @ApiPropertyOptional({
+    example: 'A_POSITIVE',
     enum: blood_type,
-    description: 'Tipo de sangre' 
+    description: 'Tipo de sangre',
   })
   @IsOptional()
   @IsEnum(blood_type)

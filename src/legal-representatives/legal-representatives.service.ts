@@ -126,10 +126,7 @@ export class LegalRepresentativesService {
     return { status: 'success', data: representative };
   }
 
-  async update(
-    userId: string,
-    updateDto: UpdateLegalRepresentativeDto,
-  ) {
+  async update(userId: string, updateDto: UpdateLegalRepresentativeDto) {
     // Verificar que existe
     const existing = await this.prisma.legal_representatives.findUnique({
       where: { user_id: userId },

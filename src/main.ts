@@ -4,40 +4,66 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import { json, urlencoded } from 'express';
+import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
+  // ==========================================
+  // SENTRY - Error Monitoring
+  // ==========================================
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+      profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+    });
+    console.log('✅ Sentry monitoring initialized');
+  }
+
   const app = await NestFactory.create(AppModule);
 
   // ==========================================
   // SEGURIDAD - Helmet (Security Headers)
   // ==========================================
   const isDevelopment = process.env.NODE_ENV !== 'production';
-  
+
   app.use(
     helmet({
       // Deshabilitar CSP en desarrollo para que Swagger UI funcione
-      contentSecurityPolicy: isDevelopment ? false : {
-        directives: {
-          defaultSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-          scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-          imgSrc: ["'self'", 'data:', 'https:'],
-          fontSrc: ["'self'", 'https://cdn.jsdelivr.net'],
-        },
-      },
+      contentSecurityPolicy: isDevelopment
+        ? false
+        : {
+            directives: {
+              defaultSrc: ["'self'"],
+              styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https://cdn.jsdelivr.net',
+              ],
+              scriptSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https://cdn.jsdelivr.net',
+              ],
+              imgSrc: ["'self'", 'data:', 'https:'],
+              fontSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+            },
+          },
       crossOriginEmbedderPolicy: false,
-      hsts: isDevelopment ? false : {
-        maxAge: 31536000,
-        includeSubDomains: true,
-      },
+      hsts: isDevelopment
+        ? false
+        : {
+            maxAge: 31536000,
+            includeSubDomains: true,
+          },
     }),
   );
-
 
   // ==========================================
   // PERFORMANCE - Compression
@@ -96,16 +122,23 @@ async function bootstrap() {
   // ==========================================
   // AUDITORÍA - Global Interceptors
   // ==========================================
-  app.useGlobalInterceptors(new AuditInterceptor());
+  app.useGlobalInterceptors(
+    new AuditInterceptor(),
+    new SentryInterceptor(), // Capturar errores en Sentry
+  );
 
   // ==========================================
-  // API Versioning (URI-based)
+  // API Prefix + Versioning (URI-based)
   // ==========================================
+  // Prefijo global: /api
+  app.setGlobalPrefix('api');
+
+  // Versionado URI: /api/v1, /api/v2, etc.
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: '1',
   });
-
+  // Resultado final: /api/v1/*
 
   // ==========================================
   // SWAGGER
@@ -148,6 +181,8 @@ Los endpoints de listado soportan: \`?page=1&limit=20\`
     .addTag('user-honors', 'Progreso de honores por usuario')
     .addTag('activities', 'Actividades de club')
     .addTag('finances', 'Control financiero')
+    .addTag('notifications', 'Push notifications vía Firebase FCM')
+    .addTag('fcm-tokens', 'Gestión de tokens FCM de dispositivos')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

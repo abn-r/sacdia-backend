@@ -29,9 +29,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 @Controller('certifications')
 export class CertificationsController {
-  constructor(
-    private readonly certificationsService: CertificationsService,
-  ) {}
+  constructor(private readonly certificationsService: CertificationsService) {}
 
   // ========================================
   // CERTIFICATIONS

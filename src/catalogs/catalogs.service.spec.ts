@@ -83,9 +83,7 @@ describe('CatalogsService', () => {
 
   describe('getCountries', () => {
     it('should return active countries', async () => {
-      const mockCountries = [
-        { country_id: 1, name: 'México', active: true },
-      ];
+      const mockCountries = [{ country_id: 1, name: 'México', active: true }];
 
       mockPrismaService.countries.findMany.mockResolvedValue(mockCountries);
 
@@ -160,12 +158,16 @@ describe('CatalogsService', () => {
         active: true,
       };
 
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockYear,
+      );
 
       const result = await service.getCurrentEcclesiasticalYear();
 
       expect(result).toEqual(mockYear);
-      expect(mockPrismaService.ecclesiastical_years.findFirst).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.ecclesiastical_years.findFirst,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             start_date: expect.any(Object),

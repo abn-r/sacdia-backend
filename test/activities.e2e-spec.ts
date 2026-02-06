@@ -22,7 +22,9 @@ describe('Activities E2E Tests', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
 
     prisma = app.get(PrismaService);
@@ -41,7 +43,7 @@ describe('Activities E2E Tests', () => {
         club_pathfinders: [],
         club_master_guild: [],
       } as any);
-      
+
       jest.spyOn(prisma.activities, 'findMany').mockResolvedValue([]);
       jest.spyOn(prisma.activities, 'count').mockResolvedValue(0);
 

@@ -43,7 +43,8 @@ export class FoldersController {
   @ApiQuery({
     name: 'club_type',
     required: false,
-    description: 'Filtrar por tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
+    description:
+      'Filtrar por tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
     example: 2,
   })
   @ApiQuery({
@@ -87,7 +88,10 @@ export class FoldersController {
     status: 200,
     description: 'Detalles del template con módulos y secciones',
   })
-  @ApiResponse({ status: 404, description: 'Template de carpeta no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Template de carpeta no encontrado',
+  })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const data = await this.foldersService.findOne(id);
     return {
@@ -121,7 +125,10 @@ export class FoldersController {
     status: 400,
     description: 'Usuario no pertenece a un club del tipo requerido',
   })
-  @ApiResponse({ status: 404, description: 'Template de carpeta no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Template de carpeta no encontrado',
+  })
   @ApiResponse({
     status: 409,
     description: 'Usuario ya tiene una asignación activa para esta carpeta',
@@ -195,7 +202,9 @@ export class FoldersController {
     };
   }
 
-  @Patch('users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId')
+  @Patch(
+    'users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId',
+  )
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
     description:
@@ -256,8 +265,7 @@ export class FoldersController {
   @Delete('users/:userId/folders/:folderId')
   @ApiOperation({
     summary: 'Abandonar una carpeta',
-    description:
-      'Desactiva la asignación de carpeta del usuario (soft delete)',
+    description: 'Desactiva la asignación de carpeta del usuario (soft delete)',
   })
   @ApiParam({
     name: 'userId',

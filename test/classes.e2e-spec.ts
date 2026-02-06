@@ -22,7 +22,9 @@ describe('Classes E2E Tests', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
 
     prisma = app.get(PrismaService);
@@ -48,25 +50,27 @@ describe('Classes E2E Tests', () => {
 
   describe('/api/v1/users/:userId/classes/enroll (POST)', () => {
     it('should enroll user in a class', async () => {
-        // Enrolling needs userId in param (Must be valid UUID)
-        const userId = '550e8400-e29b-41d4-a716-446655440000';
+      // Enrolling needs userId in param (Must be valid UUID)
+      const userId = '550e8400-e29b-41d4-a716-446655440000';
 
-        // Mock findFirst (check if enrolled) -> null
-        jest.spyOn(prisma.enrollments, 'findFirst').mockResolvedValue(null);
-        jest.spyOn(prisma.enrollments, 'create').mockResolvedValue({
-            enrollment_id: 1,
-            user_id: userId,
-            class_id: 1,
-            ecclesiastical_year_id: 2025,
-            enrollment_date: new Date(),
-        } as any);
+      // Mock findFirst (check if enrolled) -> null
+      jest.spyOn(prisma.enrollments, 'findFirst').mockResolvedValue(null);
+      jest.spyOn(prisma.enrollments, 'create').mockResolvedValue({
+        enrollment_id: 1,
+        user_id: userId,
+        class_id: 1,
+        ecclesiastical_year_id: 2025,
+        enrollment_date: new Date(),
+      } as any);
 
-      return request(app.getHttpServer())
-        .post(`/api/v1/users/${userId}/classes/enroll`)
-        // The DTO likely expects class_id and ecclesiastical_year_id
-        // Let's check DTO later if this fails, but guessing standard fields
-        .send({ class_id: 1, ecclesiastical_year_id: 2025 })
-        .expect(201);
+      return (
+        request(app.getHttpServer())
+          .post(`/api/v1/users/${userId}/classes/enroll`)
+          // The DTO likely expects class_id and ecclesiastical_year_id
+          // Let's check DTO later if this fails, but guessing standard fields
+          .send({ class_id: 1, ecclesiastical_year_id: 2025 })
+          .expect(201)
+      );
     });
   });
 });

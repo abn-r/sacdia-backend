@@ -18,7 +18,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const honors_service_1 = require("./honors.service");
 const dto_1 = require("./dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const guards_1 = require("../common/guards");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
 let HonorsController = class HonorsController {
     honorsService;
@@ -49,7 +49,12 @@ __decorate([
     }),
     (0, swagger_1.ApiQuery)({ name: 'categoryId', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'clubTypeId', required: false, type: Number }),
-    (0, swagger_1.ApiQuery)({ name: 'skillLevel', required: false, type: Number, description: '1=Básico, 2=Avanzado, 3=Máster' }),
+    (0, swagger_1.ApiQuery)({
+        name: 'skillLevel',
+        required: false,
+        type: Number,
+        description: '1=Básico, 2=Avanzado, 3=Máster',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista paginada de honores' }),
@@ -193,7 +198,7 @@ __decorate([
 exports.UserHonorsController = UserHonorsController = __decorate([
     (0, swagger_1.ApiTags)('user-honors'),
     (0, common_1.Controller)('users/:userId/honors'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.OwnerOrAdminGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [honors_service_1.HonorsService])
 ], UserHonorsController);

@@ -3,9 +3,9 @@ export declare class StartHonorDto {
 }
 export declare class UpdateUserHonorDto {
     validate?: boolean;
-    certificate?: string;
-    images?: string[];
-    document?: string;
+    certificate?: string | null;
+    images?: string[] | null;
+    document?: string | null;
     date?: string;
 }
 export declare class HonorFiltersDto {

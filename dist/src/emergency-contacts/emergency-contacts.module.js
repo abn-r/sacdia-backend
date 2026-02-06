@@ -16,7 +16,7 @@ exports.EmergencyContactsModule = EmergencyContactsModule;
 exports.EmergencyContactsModule = EmergencyContactsModule = __decorate([
     (0, common_1.Module)({
         providers: [emergency_contacts_service_1.EmergencyContactsService],
-        controllers: [emergency_contacts_controller_1.EmergencyContactsController]
+        controllers: [emergency_contacts_controller_1.EmergencyContactsController],
     })
 ], EmergencyContactsModule);
 //# sourceMappingURL=emergency-contacts.module.js.map

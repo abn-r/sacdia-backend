@@ -32,7 +32,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({
         example: 1,
-        description: 'ID del tipo de relación (actualmente Int, pendiente migración a UUID)'
+        description: 'ID del tipo de relación (actualmente Int, pendiente migración a UUID)',
     }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
@@ -44,7 +44,10 @@ __decorate([
     __metadata("design:type", String)
 ], CreateEmergencyContactDto.prototype, "phone", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: true, description: 'Si es el contacto principal' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        example: true,
+        description: 'Si es el contacto principal',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)

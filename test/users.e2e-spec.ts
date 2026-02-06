@@ -21,7 +21,7 @@ describe('Users E2E Tests', () => {
       storage: {
         from: jest.fn().mockReturnThis(),
         getPublicUrl: jest.fn().mockReturnValue({ data: { publicUrl: 'url' } }),
-      }
+      },
     },
   };
 
@@ -40,7 +40,9 @@ describe('Users E2E Tests', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
 
     prisma = app.get(PrismaService);
@@ -70,4 +72,3 @@ describe('Users E2E Tests', () => {
     });
   });
 });
-

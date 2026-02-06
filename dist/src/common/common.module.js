@@ -20,10 +20,23 @@ exports.CommonModule = CommonModule = __decorate([
     (0, common_1.Global)(),
     (0, common_1.Module)({
         imports: [
-            cache_manager_1.CacheModule.register({
-                ttl: 86400000,
-                max: 10000,
+            cache_manager_1.CacheModule.registerAsync({
                 isGlobal: true,
+                useFactory: async () => {
+                    if (process.env.REDIS_URL) {
+                        const { redisStore } = await import('cache-manager-redis-yet');
+                        return {
+                            store: await redisStore({
+                                url: process.env.REDIS_URL,
+                            }),
+                            ttl: 86400000,
+                        };
+                    }
+                    return {
+                        ttl: 86400000,
+                        max: 10000,
+                    };
+                },
             }),
         ],
         providers: [

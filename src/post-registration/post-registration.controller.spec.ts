@@ -16,11 +16,16 @@ describe('PostRegistrationController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PostRegistrationController],
       providers: [
-        { provide: PostRegistrationService, useValue: mockPostRegistrationService },
+        {
+          provide: PostRegistrationService,
+          useValue: mockPostRegistrationService,
+        },
       ],
     }).compile();
 
-    controller = module.get<PostRegistrationController>(PostRegistrationController);
+    controller = module.get<PostRegistrationController>(
+      PostRegistrationController,
+    );
   });
 
   it('should be defined', () => {

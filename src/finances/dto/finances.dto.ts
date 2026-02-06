@@ -28,7 +28,9 @@ export class CreateFinanceDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)' })
+  @ApiProperty({
+    description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+  })
   @IsInt()
   club_type_id: number;
 

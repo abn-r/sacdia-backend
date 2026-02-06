@@ -79,7 +79,11 @@ export class ClassesService {
   // ENROLLMENTS
   // ========================================
 
-  async enrollUser(userId: string, classId: number, ecclesiasticalYearId: number) {
+  async enrollUser(
+    userId: string,
+    classId: number,
+    ecclesiasticalYearId: number,
+  ) {
     // Check if already enrolled
     const existing = await this.prisma.enrollments.findFirst({
       where: {
@@ -111,7 +115,9 @@ export class ClassesService {
     return this.prisma.enrollments.findMany({
       where: {
         user_id: userId,
-        ...(ecclesiasticalYearId && { ecclesiastical_year_id: ecclesiasticalYearId }),
+        ...(ecclesiasticalYearId && {
+          ecclesiastical_year_id: ecclesiasticalYearId,
+        }),
       },
       include: {
         classes: {
@@ -154,8 +160,7 @@ export class ClassesService {
       totalSections += sectionsInModule;
 
       const completedInModule = sectionProgress.filter(
-        (sp) =>
-          sp.module_id === module.module_id && sp.score >= 70,
+        (sp) => sp.module_id === module.module_id && sp.score >= 70,
       ).length;
       completedSections += completedInModule;
 
@@ -219,7 +224,9 @@ export class ClassesService {
         where: { section_progress_id: existing.section_progress_id },
         data: {
           score,
-          evidences: evidences ? (evidences as Prisma.InputJsonValue) : undefined,
+          evidences: evidences
+            ? (evidences as Prisma.InputJsonValue)
+            : undefined,
           modified_at: new Date(),
         },
       });
@@ -232,7 +239,9 @@ export class ClassesService {
         module_id: moduleId,
         section_id: sectionId,
         score,
-        evidences: evidences ? (evidences as Prisma.InputJsonValue) : Prisma.JsonNull,
+        evidences: evidences
+          ? (evidences as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
         active: true,
       },
     });
