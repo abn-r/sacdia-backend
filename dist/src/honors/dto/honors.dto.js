@@ -33,7 +33,7 @@ class UpdateUserHonorDto {
     document;
     date;
     static _OPENAPI_METADATA_FACTORY() {
-        return { validate: { required: false, type: () => Boolean }, certificate: { required: false, type: () => String }, images: { required: false, type: () => [String] }, document: { required: false, type: () => String }, date: { required: false, type: () => String } };
+        return { validate: { required: false, type: () => Boolean }, certificate: { required: false, type: () => String, nullable: true }, images: { required: false, type: () => [String], nullable: true }, document: { required: false, type: () => String, nullable: true }, date: { required: false, type: () => String } };
     }
 }
 exports.UpdateUserHonorDto = UpdateUserHonorDto;
@@ -44,22 +44,30 @@ __decorate([
     __metadata("design:type", Boolean)
 ], UpdateUserHonorDto.prototype, "validate", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'URL del certificado' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'URL del certificado (pasar null o string vacío para limpiar)',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
+    __metadata("design:type", Object)
 ], UpdateUserHonorDto.prototype, "certificate", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'URLs de imágenes de evidencia' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'URLs de imágenes de evidencia (pasar null o array vacío para limpiar)',
+        type: [String],
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
-    __metadata("design:type", Array)
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Object)
 ], UpdateUserHonorDto.prototype, "images", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'URL del documento adicional' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'URL del documento adicional (pasar null o string vacío para limpiar)',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
+    __metadata("design:type", Object)
 ], UpdateUserHonorDto.prototype, "document", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'Fecha de completación' }),
@@ -72,7 +80,7 @@ class HonorFiltersDto {
     clubTypeId;
     skillLevel;
     static _OPENAPI_METADATA_FACTORY() {
-        return { categoryId: { required: false, type: () => Number }, clubTypeId: { required: false, type: () => Number }, skillLevel: { required: false, type: () => Number } };
+        return { categoryId: { required: false, type: () => Number }, clubTypeId: { required: false, type: () => Number }, skillLevel: { required: false, type: () => Number, minimum: 1, maximum: 3 } };
     }
 }
 exports.HonorFiltersDto = HonorFiltersDto;
@@ -89,9 +97,15 @@ __decorate([
     __metadata("design:type", Number)
 ], HonorFiltersDto.prototype, "clubTypeId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Filtrar por nivel de habilidad (1-3)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Filtrar por nivel de habilidad (1=Básico, 2=Avanzado, 3=Máster)',
+        minimum: 1,
+        maximum: 3,
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    (0, class_validator_1.Max)(3),
     __metadata("design:type", Number)
 ], HonorFiltersDto.prototype, "skillLevel", void 0);
 //# sourceMappingURL=honors.dto.js.map

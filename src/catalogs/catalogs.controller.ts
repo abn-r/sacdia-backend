@@ -1,10 +1,5 @@
 import { Controller, Get, Query, ParseIntPipe } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { CatalogsService } from './catalogs.service';
 
 @ApiTags('catalogs')
@@ -18,7 +13,8 @@ export class CatalogsController {
   @Get('club-types')
   @ApiOperation({
     summary: 'Obtener tipos de club',
-    description: 'Lista los tipos de club disponibles (Aventureros, Conquistadores, Guías Mayores)',
+    description:
+      'Lista los tipos de club disponibles (Aventureros, Conquistadores, Guías Mayores)',
   })
   @ApiResponse({ status: 200, description: 'Lista de tipos de club' })
   async getClubTypes() {
@@ -44,7 +40,8 @@ export class CatalogsController {
   @Get('unions')
   @ApiOperation({
     summary: 'Obtener uniones',
-    description: 'Lista uniones de la organización, opcionalmente filtradas por país',
+    description:
+      'Lista uniones de la organización, opcionalmente filtradas por país',
   })
   @ApiQuery({
     name: 'countryId',
@@ -132,7 +129,8 @@ export class CatalogsController {
   @Get('roles')
   @ApiOperation({
     summary: 'Obtener roles disponibles',
-    description: 'Lista roles del sistema, opcionalmente filtrados por categoría (GLOBAL o CLUB)',
+    description:
+      'Lista roles del sistema, opcionalmente filtrados por categoría (GLOBAL o CLUB)',
   })
   @ApiQuery({
     name: 'category',
@@ -162,7 +160,8 @@ export class CatalogsController {
   @Get('ecclesiastical-years/current')
   @ApiOperation({
     summary: 'Obtener año eclesiástico actual',
-    description: 'Retorna el año eclesiástico vigente basado en la fecha actual',
+    description:
+      'Retorna el año eclesiástico vigente basado en la fecha actual',
   })
   @ApiResponse({ status: 200, description: 'Año eclesiástico actual' })
   async getCurrentEcclesiasticalYear() {

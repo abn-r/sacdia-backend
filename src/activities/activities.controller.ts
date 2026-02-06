@@ -20,7 +20,11 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ActivitiesService } from './activities.service';
-import { CreateActivityDto, UpdateActivityDto, RecordAttendanceDto } from './dto';
+import {
+  CreateActivityDto,
+  UpdateActivityDto,
+  RecordAttendanceDto,
+} from './dto';
 import { JwtAuthGuard, ClubRolesGuard } from '../common/guards';
 import { ClubRoles } from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -50,9 +54,11 @@ export class ActivitiesController {
   @ApiResponse({ status: 200, description: 'Lista paginada de actividades' })
   async findByClub(
     @Param('clubId', ParseIntPipe) clubId: number,
-    @Query('clubTypeId', new ParseIntPipe({ optional: true })) clubTypeId?: number,
+    @Query('clubTypeId', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
     @Query('active') active?: string,
-    @Query('activityType', new ParseIntPipe({ optional: true })) activityType?: number,
+    @Query('activityType', new ParseIntPipe({ optional: true }))
+    activityType?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -64,7 +70,8 @@ export class ActivitiesController {
       clubId,
       {
         clubTypeId,
-        active: active === 'true' ? true : active === 'false' ? false : undefined,
+        active:
+          active === 'true' ? true : active === 'false' ? false : undefined,
         activityType,
       },
       pagination,
@@ -76,7 +83,8 @@ export class ActivitiesController {
   @ClubRoles('director', 'subdirector', 'secretary', 'counselor')
   @ApiOperation({
     summary: 'Crear actividad',
-    description: 'Crea una nueva actividad para el club (requiere rol de liderazgo)',
+    description:
+      'Crea una nueva actividad para el club (requiere rol de liderazgo)',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 201, description: 'Actividad creada' })

@@ -60,9 +60,7 @@ describe('ClubsService', () => {
 
   describe('findAll', () => {
     it('should return paginated clubs', async () => {
-      const mockClubs = [
-        { club_id: 1, name: 'Club Central', active: true },
-      ];
+      const mockClubs = [{ club_id: 1, name: 'Club Central', active: true }];
 
       mockPrismaService.clubs.findMany.mockResolvedValue(mockClubs);
       mockPrismaService.clubs.count.mockResolvedValue(1);

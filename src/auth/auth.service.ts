@@ -89,7 +89,10 @@ export class AuthService {
         };
       } catch (dbError) {
         // Rollback: Eliminar usuario de Supabase si falla BD
-        this.logger.error('Database error, rolling back Supabase user', dbError);
+        this.logger.error(
+          'Database error, rolling back Supabase user',
+          dbError,
+        );
         await this.supabase.admin.auth.admin.deleteUser(authUser.user.id);
         throw dbError;
       }
@@ -98,11 +101,10 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     // 1. Autenticar con Supabase
-    const { data, error } =
-      await this.supabase.admin.auth.signInWithPassword({
-        email: dto.email,
-        password: dto.password,
-      });
+    const { data, error } = await this.supabase.admin.auth.signInWithPassword({
+      email: dto.email,
+      password: dto.password,
+    });
 
     if (error) {
       this.logger.warn(`Login failed for ${dto.email}: ${error.message}`);
@@ -158,9 +160,7 @@ export class AuthService {
   }
 
   async logout(accessToken: string) {
-    const { error } = await this.supabase.admin.auth.admin.signOut(
-      accessToken,
-    );
+    const { error } = await this.supabase.admin.auth.admin.signOut(accessToken);
 
     if (error) {
       this.logger.error(`Logout error: ${error.message}`, error);

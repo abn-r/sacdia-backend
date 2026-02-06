@@ -114,9 +114,8 @@ export class UsersController {
   })
   async requiresLegalRepresentative(@Param('userId') userId: string) {
     const age = await this.usersService.calculateAge(userId);
-    const required = await this.usersService.requiresLegalRepresentative(
-      userId,
-    );
+    const required =
+      await this.usersService.requiresLegalRepresentative(userId);
 
     return {
       status: 'success',

@@ -22,7 +22,9 @@ export class CreateActivityDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)' })
+  @ApiProperty({
+    description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+  })
   @IsInt()
   club_type_id: number;
 
@@ -38,7 +40,10 @@ export class CreateActivityDto {
   @Max(180)
   long: number;
 
-  @ApiPropertyOptional({ description: 'Hora de la actividad (HH:mm)', default: '09:00' })
+  @ApiPropertyOptional({
+    description: 'Hora de la actividad (HH:mm)',
+    default: '09:00',
+  })
   @IsOptional()
   @IsString()
   activity_time?: string;
@@ -51,12 +56,18 @@ export class CreateActivityDto {
   @IsString()
   image: string;
 
-  @ApiPropertyOptional({ description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)', default: 0 })
+  @ApiPropertyOptional({
+    description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)',
+    default: 0,
+  })
   @IsOptional()
   @IsInt()
   platform?: number;
 
-  @ApiPropertyOptional({ description: 'Tipo de actividad (0=Regular, 1=Especial, 2=Camporee)', default: 0 })
+  @ApiPropertyOptional({
+    description: 'Tipo de actividad (0=Regular, 1=Especial, 2=Camporee)',
+    default: 0,
+  })
   @IsOptional()
   @IsInt()
   activity_type?: number;

@@ -74,7 +74,10 @@ __decorate([
             properties: {
                 factorId: { type: 'string' },
                 qrCode: { type: 'string', description: 'Base64 del QR code' },
-                secret: { type: 'string', description: 'Secret para configurar manualmente' },
+                secret: {
+                    type: 'string',
+                    description: 'Secret para configurar manualmente',
+                },
                 uri: { type: 'string', description: 'URI para apps de autenticación' },
             },
         },
@@ -153,7 +156,10 @@ __decorate([
         schema: {
             properties: {
                 mfaEnabled: { type: 'boolean' },
-                currentLevel: { type: 'string', description: 'aal1 = password, aal2 = password + MFA' },
+                currentLevel: {
+                    type: 'string',
+                    description: 'aal1 = password, aal2 = password + MFA',
+                },
                 factors: { type: 'array' },
             },
         },

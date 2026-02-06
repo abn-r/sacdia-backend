@@ -236,11 +236,14 @@ export class ClubsService {
       modified_at: new Date(),
     };
 
-    if (dto.souls_target !== undefined) updateData.souls_target = dto.souls_target;
+    if (dto.souls_target !== undefined)
+      updateData.souls_target = dto.souls_target;
     if (dto.fee !== undefined) updateData.fee = dto.fee;
     if (dto.active !== undefined) updateData.active = dto.active;
-    if (dto.meeting_day) updateData.meeting_day = dto.meeting_day as Prisma.InputJsonValue[];
-    if (dto.meeting_time) updateData.meeting_time = dto.meeting_time as Prisma.InputJsonValue[];
+    if (dto.meeting_day)
+      updateData.meeting_day = dto.meeting_day as Prisma.InputJsonValue[];
+    if (dto.meeting_time)
+      updateData.meeting_time = dto.meeting_time as Prisma.InputJsonValue[];
 
     switch (type) {
       case ClubInstanceType.ADVENTURERS:
@@ -329,7 +332,10 @@ export class ClubsService {
     });
   }
 
-  async updateRoleAssignment(assignmentId: string, dto: UpdateRoleAssignmentDto) {
+  async updateRoleAssignment(
+    assignmentId: string,
+    dto: UpdateRoleAssignmentDto,
+  ) {
     return this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: {

@@ -24,7 +24,9 @@ describe('EmergencyContactsController', () => {
       ],
     }).compile();
 
-    controller = module.get<EmergencyContactsController>(EmergencyContactsController);
+    controller = module.get<EmergencyContactsController>(
+      EmergencyContactsController,
+    );
   });
 
   it('should be defined', () => {

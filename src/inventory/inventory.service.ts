@@ -29,32 +29,37 @@ export class InventoryService {
 
     const items = await this.prisma.club_inventory.findMany({
       where: whereClause,
-      orderBy: [
-        { inventory_category_id: 'asc' },
-        { name: 'asc' },
-      ],
+      orderBy: [{ inventory_category_id: 'asc' }, { name: 'asc' }],
     });
 
     // Obtener categorías únicas
-    const categoryIds = [...new Set(items.map(i => i.inventory_category_id).filter(Boolean))];
+    const categoryIds = [
+      ...new Set(items.map((i) => i.inventory_category_id).filter(Boolean)),
+    ];
     const categories = await this.prisma.inventory_categories.findMany({
       where: { inventory_category_id: { in: categoryIds as number[] } },
     });
 
-    const categoryMap = new Map(categories.map(c => [c.inventory_category_id, c]));
+    const categoryMap = new Map(
+      categories.map((c) => [c.inventory_category_id, c]),
+    );
 
     return {
       data: items.map((item) => {
-        const category = item.inventory_category_id ? categoryMap.get(item.inventory_category_id) : null;
+        const category = item.inventory_category_id
+          ? categoryMap.get(item.inventory_category_id)
+          : null;
         return {
           inventory_id: item.club_inventory_id,
           name: item.name,
           description: item.description,
           inventory_category_id: item.inventory_category_id,
-          category: category ? {
-            category_id: category.inventory_category_id,
-            name: category.name,
-          } : null,
+          category: category
+            ? {
+                category_id: category.inventory_category_id,
+                name: category.name,
+              }
+            : null,
           amount: item.amount,
           club_adv_id: item.club_adv_id,
           club_pathf_id: item.club_pathf_id,
@@ -109,11 +114,17 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(`Inventory item with ID ${inventoryId} not found`);
+      throw new NotFoundException(
+        `Inventory item with ID ${inventoryId} not found`,
+      );
     }
 
     // Obtener categoría si existe
-    let category: { category_id: number; name: string; description: null } | null = null;
+    let category: {
+      category_id: number;
+      name: string;
+      description: null;
+    } | null = null;
     if (item.inventory_category_id) {
       const cat = await this.prisma.inventory_categories.findUnique({
         where: { inventory_category_id: item.inventory_category_id },
@@ -222,7 +233,9 @@ export class InventoryService {
     }
 
     if (!clubExists) {
-      throw new NotFoundException(`Club not found for instance type ${instanceType}`);
+      throw new NotFoundException(
+        `Club not found for instance type ${instanceType}`,
+      );
     }
   }
 
@@ -252,7 +265,9 @@ export class InventoryService {
     });
 
     if (!existingItem) {
-      throw new NotFoundException(`Inventory item with ID ${inventoryId} not found`);
+      throw new NotFoundException(
+        `Inventory item with ID ${inventoryId} not found`,
+      );
     }
 
     // Si se actualiza la categoría, validar que existe
@@ -318,7 +333,9 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(`Inventory item with ID ${inventoryId} not found`);
+      throw new NotFoundException(
+        `Inventory item with ID ${inventoryId} not found`,
+      );
     }
 
     await this.prisma.club_inventory.update({

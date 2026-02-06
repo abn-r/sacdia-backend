@@ -11,4 +11,3 @@ import { ClubRolesGuard } from '../common/guards';
   exports: [ClubsService],
 })
 export class ClubsModule {}
-

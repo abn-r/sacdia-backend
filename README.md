@@ -44,6 +44,119 @@ $ pnpm run start:dev
 $ pnpm run start:prod
 ```
 
+## Comandos Principales
+
+```bash
+# Desarrollo
+pnpm run start:dev
+
+# Build
+pnpm run build
+
+# Tests
+pnpm run test
+pnpm run test:e2e
+
+# Database
+npx prisma generate      # Regenerar cliente
+npx prisma migrate dev   # Aplicar migraciones
+npx prisma studio        # UI de base de datos
+npx prisma db seed       # Seed inicial
+
+# Load Testing
+pnpm run load-test       # Probar rendimiento
+```
+
+---
+
+## External Services
+
+### Upstash Redis
+
+Cache distribuido para:
+
+- Token blacklist (logout, revocación)
+- Session management (límites concurrentes)
+- MFA temporal codes
+
+**Setup**:
+
+1. Crear database en [upstash.com](https://upstash.com)
+2. Agregar `REDIS_URL` a `.env`
+3. El sistema usará Redis automáticamente (fallback a in-memory si no está configurado)
+
+### Firebase FCM (Push Notifications)
+
+**Setup**:
+
+1. Crear proyecto en [Firebase Console](https://console.firebase.google.com)
+2. Descargar service account JSON (Project Settings > Service Accounts)
+3. Agregar credenciales a `.env`:
+   ```env
+   FIREBASE_PROJECT_ID="..."
+   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+   FIREBASE_CLIENT_EMAIL="..."
+   ```
+
+**Endpoints**:
+
+- `POST /fcm-tokens` - Registrar token de dispositivo
+- `POST /notifications/send` - Enviar a usuario
+- `POST /notifications/broadcast` - Enviar a todos
+- `POST /notifications/club/:type/:id` - Enviar a club
+
+### Sentry (Error Monitoring)
+
+**Setup**:
+
+1. Crear proyecto en [sentry.io](https://sentry.io)
+2. Copiar DSN
+3. Agregar a `.env`:
+   ```env
+   SENTRY_DSN="https://...@....ingest.sentry.io/..."
+   ```
+
+Sentry capturará automáticamente todos los errores no manejados.
+
+---
+
+### OAuth Authentication (Google & Apple)
+
+**Setup**:
+
+OAuth ya está implementado en el backend. Solo necesitas configurar los providers en Supabase:
+
+#### Google OAuth
+
+1. Ir a [Google Cloud Console](https://console.cloud.google.com/)
+2. Crear OAuth 2.0 Client ID
+3. Agregar redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`
+4. Copiar Client ID y Secret a Supabase Dashboard → Authentication → Providers → Google
+
+#### Apple Sign In
+
+1. Ir a [Apple Developer](https://developer.apple.com/account/)
+2. Crear Service ID y configurar Sign in with Apple
+3. Generar private key (.p8 file)
+4. Agregar a Supabase: Service ID, Team ID, Key ID, Private Key
+
+**Endpoints**:
+
+- `POST /auth/oauth/google` - Iniciar flujo Google
+- `POST /auth/oauth/apple` - Iniciar flujo Apple
+- `GET /auth/oauth/callback` - Manejar callback (auto-crea usuarios)
+- `GET /auth/oauth/providers` - Ver providers conectados (auth required)
+- `DELETE /auth/oauth/:provider` - Desconectar provider (auth required)
+
+**Features**:
+
+- ✅ Auto-creación de usuarios en primera auth
+- ✅ Tracking de providers en BD (`google_connected`, `apple_connected`)
+- ✅ Flag `needsPostRegistration` para nuevos usuarios
+- ✅ Integración con Supabase Auth
+
+---
+
 ## Run tests
 
 ```bash
@@ -57,6 +170,42 @@ $ pnpm run test:e2e
 $ pnpm run test:cov
 ```
 
+## Performance Testing
+
+Use `autocannon` to load test your API endpoints and measure performance metrics:
+
+```bash
+# Test default health endpoint
+$ pnpm run load-test
+
+# Test specific endpoint
+$ pnpm run load-test /api/camporees
+
+# Test with custom URL
+$ URL=https://your-staging.com pnpm run load-test /api/users
+```
+
+### Key Metrics
+
+The load test reports the following metrics:
+
+- **Throughput**: Data transferred per second
+- **Req/sec**: Number of requests per second (average and max)
+- **Latency**: Response time at p50 (median), p99, and max
+- **Errors/Timeouts**: Failed requests
+
+### Performance Benchmarks
+
+- **Excellent**: >1000 req/s, <100ms p99 latency
+- **Good**: 500-1000 req/s, 100-500ms p99 latency
+- **Needs Optimization**: <100 req/s or >1000ms p99 latency
+
+### Monitoring Response Times
+
+All requests are automatically logged with duration metrics via `AuditInterceptor`. Check your logs for real-time performance insights.
+
+````
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
@@ -66,7 +215,7 @@ If you are looking for a cloud-based platform to deploy your NestJS application,
 ```bash
 $ pnpm install -g @nestjs/mau
 $ mau deploy
-```
+````
 
 With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
 

@@ -48,7 +48,9 @@ __decorate([
     __metadata("design:type", String)
 ], CreateActivityDto.prototype, "description", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+    }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "club_type_id", void 0);
@@ -67,7 +69,10 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "long", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Hora de la actividad (HH:mm)', default: '09:00' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Hora de la actividad (HH:mm)',
+        default: '09:00',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
@@ -83,13 +88,19 @@ __decorate([
     __metadata("design:type", String)
 ], CreateActivityDto.prototype, "image", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)', default: 0 }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)',
+        default: 0,
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "platform", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Tipo de actividad (0=Regular, 1=Especial, 2=Camporee)', default: 0 }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Tipo de actividad (0=Regular, 1=Especial, 2=Camporee)',
+        default: 0,
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)

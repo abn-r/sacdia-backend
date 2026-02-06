@@ -53,7 +53,9 @@ __decorate([
     __metadata("design:type", String)
 ], CreateFinanceDto.prototype, "description", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+    }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateFinanceDto.prototype, "club_type_id", void 0);

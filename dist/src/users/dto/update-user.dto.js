@@ -32,7 +32,10 @@ __decorate([
     __metadata("design:type", String)
 ], UpdateUserDto.prototype, "gender", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: '2000-01-15', description: 'Fecha de nacimiento (YYYY-MM-DD)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        example: '2000-01-15',
+        description: 'Fecha de nacimiento (YYYY-MM-DD)',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)
@@ -57,7 +60,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         example: 'A_POSITIVE',
         enum: client_1.blood_type,
-        description: 'Tipo de sangre'
+        description: 'Tipo de sangre',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsEnum)(client_1.blood_type),

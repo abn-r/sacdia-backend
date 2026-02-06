@@ -126,14 +126,15 @@ export class CertificationsService {
     }
 
     // 3. Verificar si ya está inscrito
-    const existingEnrollment =
-      await this.prisma.users_certifications.findFirst({
+    const existingEnrollment = await this.prisma.users_certifications.findFirst(
+      {
         where: {
           user_id: userId,
           certification_id: dto.certification_id,
           active: true,
         },
-      });
+      },
+    );
 
     if (existingEnrollment) {
       throw new ConflictException(
@@ -492,10 +493,11 @@ export class CertificationsService {
       }
 
       // 6. Verificar si la certificación está completa
-      const allModulesInCertification =
-        await tx.certification_modules.findMany({
+      const allModulesInCertification = await tx.certification_modules.findMany(
+        {
           where: { certification_id: certificationId },
-        });
+        },
+      );
 
       const completedModulesCount =
         await tx.certification_module_progress.count({

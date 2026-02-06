@@ -3,7 +3,8 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateSectionRecordDto {
   @ApiProperty({
-    description: 'Puntos obtenidos en la sección (máximo definido en el template)',
+    description:
+      'Puntos obtenidos en la sección (máximo definido en el template)',
     example: 10,
   })
   @IsInt()

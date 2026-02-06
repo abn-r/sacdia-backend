@@ -1,13 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  CreateFinanceDto,
-  UpdateFinanceDto,
-  FinanceFiltersDto,
-} from './dto';
+import { CreateFinanceDto, UpdateFinanceDto, FinanceFiltersDto } from './dto';
 import {
   PaginationDto,
   PaginatedResult,
@@ -152,7 +145,9 @@ export class FinancesService {
 
     return {
       club_id: clubId,
-      period: year ? `${year}${month ? `-${String(month).padStart(2, '0')}` : ''}` : 'all',
+      period: year
+        ? `${year}${month ? `-${String(month).padStart(2, '0')}` : ''}`
+        : 'all',
       total_income: totalIncome,
       total_expense: totalExpense,
       balance: totalIncome - totalExpense,
@@ -171,7 +166,9 @@ export class FinancesService {
     });
 
     if (!finance) {
-      throw new NotFoundException(`Finance record with ID ${financeId} not found`);
+      throw new NotFoundException(
+        `Finance record with ID ${financeId} not found`,
+      );
     }
 
     return finance;
@@ -210,8 +207,10 @@ export class FinancesService {
 
     if (dto.amount !== undefined) updateData.amount = dto.amount;
     if (dto.description !== undefined) updateData.description = dto.description;
-    if (dto.finance_category_id !== undefined) updateData.finance_category_id = dto.finance_category_id;
-    if (dto.finance_date !== undefined) updateData.finance_date = new Date(dto.finance_date);
+    if (dto.finance_category_id !== undefined)
+      updateData.finance_category_id = dto.finance_category_id;
+    if (dto.finance_date !== undefined)
+      updateData.finance_date = new Date(dto.finance_date);
 
     return this.prisma.finances.update({
       where: { finance_id: financeId },

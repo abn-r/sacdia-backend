@@ -42,7 +42,7 @@ let HonorsService = class HonorsService {
     }
     async findOne(honorId) {
         const honor = await this.prisma.honors.findUnique({
-            where: { honor_id: honorId },
+            where: { honor_id: honorId, active: true },
             include: {
                 honors_categories: true,
                 club_types: { select: { name: true } },
@@ -93,11 +93,33 @@ let HonorsService = class HonorsService {
             where: {
                 user_id: userId,
                 honor_id: honorId,
-                active: true,
             },
         });
-        if (existing) {
+        if (existing && existing.active) {
             throw new common_1.ConflictException('User already has this honor in progress');
+        }
+        if (existing) {
+            return this.prisma.users_honors.update({
+                where: { user_honor_id: existing.user_honor_id },
+                data: {
+                    active: true,
+                    date: dto?.date ? new Date(dto.date) : new Date(),
+                    validate: false,
+                    certificate: '',
+                    images: [],
+                    document: null,
+                    modified_at: new Date(),
+                },
+                include: {
+                    honors: {
+                        select: {
+                            name: true,
+                            honor_image: true,
+                            honors_categories: { select: { name: true } },
+                        },
+                    },
+                },
+            });
         }
         return this.prisma.users_honors.create({
             data: {
@@ -136,12 +158,15 @@ let HonorsService = class HonorsService {
         };
         if (dto.validate !== undefined)
             updateData.validate = dto.validate;
-        if (dto.certificate)
-            updateData.certificate = dto.certificate;
-        if (dto.images)
-            updateData.images = dto.images;
-        if (dto.document)
-            updateData.document = dto.document;
+        if (dto.certificate !== undefined) {
+            updateData.certificate = dto.certificate || '';
+        }
+        if (dto.images !== undefined) {
+            updateData.images = (dto.images || []);
+        }
+        if (dto.document !== undefined) {
+            updateData.document = dto.document || null;
+        }
         if (dto.date)
             updateData.date = new Date(dto.date);
         return this.prisma.users_honors.update({

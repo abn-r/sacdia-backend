@@ -24,7 +24,9 @@ describe('LegalRepresentativesController', () => {
       ],
     }).compile();
 
-    controller = module.get<LegalRepresentativesController>(LegalRepresentativesController);
+    controller = module.get<LegalRepresentativesController>(
+      LegalRepresentativesController,
+    );
   });
 
   it('should be defined', () => {

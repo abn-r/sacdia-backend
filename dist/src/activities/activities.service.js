@@ -42,7 +42,9 @@ let ActivitiesService = class ActivitiesService {
             ],
             ...(filters?.clubTypeId && { club_type_id: filters.clubTypeId }),
             ...(filters?.active !== undefined && { active: filters.active }),
-            ...(filters?.activityType !== undefined && { activity_type: filters.activityType }),
+            ...(filters?.activityType !== undefined && {
+                activity_type: filters.activityType,
+            }),
         };
         const [data, total] = await Promise.all([
             this.prisma.activities.findMany({
@@ -64,7 +66,9 @@ let ActivitiesService = class ActivitiesService {
             where: { activity_id: activityId },
             include: {
                 club_types: { select: { name: true } },
-                users: { select: { name: true, paternal_last_name: true, user_image: true } },
+                users: {
+                    select: { name: true, paternal_last_name: true, user_image: true },
+                },
                 club_adv_i: { select: { club_adv_id: true, main_club_id: true } },
                 club_pathf: { select: { club_pathf_id: true, main_club_id: true } },
                 club_mg: { select: { club_mg_id: true, main_club_id: true } },
@@ -90,7 +94,9 @@ let ActivitiesService = class ActivitiesService {
                 activity_type: dto.activity_type || 0,
                 link_meet: dto.link_meet,
                 additional_data: dto.additional_data,
-                classes: dto.classes ? dto.classes : client_1.Prisma.JsonNull,
+                classes: dto.classes
+                    ? dto.classes
+                    : client_1.Prisma.JsonNull,
                 created_by: createdBy,
                 club_adv_id: dto.club_adv_id,
                 club_pathf_id: dto.club_pathf_id,

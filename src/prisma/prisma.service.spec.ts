@@ -7,7 +7,9 @@ describe('PrismaService', () => {
 
   beforeEach(async () => {
     const mockConfigService = {
-      get: jest.fn().mockReturnValue('postgresql://test:test@localhost:5432/test'),
+      get: jest
+        .fn()
+        .mockReturnValue('postgresql://test:test@localhost:5432/test'),
     };
 
     const module: TestingModule = await Test.createTestingModule({

@@ -28,7 +28,8 @@ export class MfaController {
   @Post('enroll')
   @ApiOperation({
     summary: 'Iniciar enrolamiento de 2FA',
-    description: 'Genera un QR code y secret para configurar en tu app de autenticación',
+    description:
+      'Genera un QR code y secret para configurar en tu app de autenticación',
   })
   @ApiResponse({
     status: 200,
@@ -37,7 +38,10 @@ export class MfaController {
       properties: {
         factorId: { type: 'string' },
         qrCode: { type: 'string', description: 'Base64 del QR code' },
-        secret: { type: 'string', description: 'Secret para configurar manualmente' },
+        secret: {
+          type: 'string',
+          description: 'Secret para configurar manualmente',
+        },
         uri: { type: 'string', description: 'URI para apps de autenticación' },
       },
     },
@@ -100,14 +104,18 @@ export class MfaController {
   @Get('status')
   @ApiOperation({
     summary: 'Verificar estado de 2FA',
-    description: 'Indica si el usuario tiene 2FA habilitado y su nivel de autenticación',
+    description:
+      'Indica si el usuario tiene 2FA habilitado y su nivel de autenticación',
   })
   @ApiResponse({
     status: 200,
     schema: {
       properties: {
         mfaEnabled: { type: 'boolean' },
-        currentLevel: { type: 'string', description: 'aal1 = password, aal2 = password + MFA' },
+        currentLevel: {
+          type: 'string',
+          description: 'aal1 = password, aal2 = password + MFA',
+        },
         factors: { type: 'array' },
       },
     },

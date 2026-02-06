@@ -23,7 +23,10 @@ describe('Auth E2E Tests', () => {
         signInWithPassword: jest.fn().mockResolvedValue({
           data: {
             user: { id: 'test-user-id' },
-            session: { access_token: 'fake-jwt', refresh_token: 'fake-refresh' },
+            session: {
+              access_token: 'fake-jwt',
+              refresh_token: 'fake-refresh',
+            },
           },
           error: null,
         }),
@@ -40,7 +43,9 @@ describe('Auth E2E Tests', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
 
     prisma = app.get(PrismaService);
@@ -72,10 +77,10 @@ describe('Auth E2E Tests', () => {
     });
 
     it('should fail with invalid credentials', async () => {
-       mockSupabaseService.admin.auth.signInWithPassword.mockResolvedValueOnce({
+      mockSupabaseService.admin.auth.signInWithPassword.mockResolvedValueOnce({
         data: { user: null, session: null },
         error: { message: 'Invalid login credentials' },
-       });
+      });
 
       return request(app.getHttpServer())
         .post('/api/v1/auth/login')

@@ -11,10 +11,25 @@ import { IpWhitelistGuard } from './guards/ip-whitelist.guard';
     // ==========================================
     // CACHE - Para Token Blacklist y Sessions
     // ==========================================
-    CacheModule.register({
-      ttl: 86400000, // 24 horas en ms
-      max: 10000, // Máximo 10k items en memoria
+    CacheModule.registerAsync({
       isGlobal: true,
+      useFactory: async () => {
+        // Si REDIS_URL está configurado, usar Upstash Redis
+        if (process.env.REDIS_URL) {
+          const { redisStore } = await import('cache-manager-redis-yet');
+          return {
+            store: await redisStore({
+              url: process.env.REDIS_URL,
+            }),
+            ttl: 86400000, // 24 horas en ms
+          };
+        }
+        // Fallback a in-memory cache para desarrollo local
+        return {
+          ttl: 86400000,
+          max: 10000,
+        };
+      },
     }),
   ],
   providers: [

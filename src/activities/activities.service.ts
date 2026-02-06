@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -55,7 +52,9 @@ export class ActivitiesService {
       ],
       ...(filters?.clubTypeId && { club_type_id: filters.clubTypeId }),
       ...(filters?.active !== undefined && { active: filters.active }),
-      ...(filters?.activityType !== undefined && { activity_type: filters.activityType }),
+      ...(filters?.activityType !== undefined && {
+        activity_type: filters.activityType,
+      }),
     };
 
     const [data, total] = await Promise.all([
@@ -84,7 +83,9 @@ export class ActivitiesService {
       where: { activity_id: activityId },
       include: {
         club_types: { select: { name: true } },
-        users: { select: { name: true, paternal_last_name: true, user_image: true } },
+        users: {
+          select: { name: true, paternal_last_name: true, user_image: true },
+        },
         club_adv_i: { select: { club_adv_id: true, main_club_id: true } },
         club_pathf: { select: { club_pathf_id: true, main_club_id: true } },
         club_mg: { select: { club_mg_id: true, main_club_id: true } },
@@ -113,7 +114,9 @@ export class ActivitiesService {
         activity_type: dto.activity_type || 0,
         link_meet: dto.link_meet,
         additional_data: dto.additional_data,
-        classes: dto.classes ? (dto.classes as Prisma.InputJsonValue) : Prisma.JsonNull,
+        classes: dto.classes
+          ? (dto.classes as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
         created_by: createdBy,
         club_adv_id: dto.club_adv_id,
         club_pathf_id: dto.club_pathf_id,
@@ -139,14 +142,18 @@ export class ActivitiesService {
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.lat !== undefined) updateData.lat = dto.lat;
     if (dto.long !== undefined) updateData.long = dto.long;
-    if (dto.activity_time !== undefined) updateData.activity_time = dto.activity_time;
-    if (dto.activity_place !== undefined) updateData.activity_place = dto.activity_place;
+    if (dto.activity_time !== undefined)
+      updateData.activity_time = dto.activity_time;
+    if (dto.activity_place !== undefined)
+      updateData.activity_place = dto.activity_place;
     if (dto.image !== undefined) updateData.image = dto.image;
     if (dto.platform !== undefined) updateData.platform = dto.platform;
-    if (dto.activity_type !== undefined) updateData.activity_type = dto.activity_type;
+    if (dto.activity_type !== undefined)
+      updateData.activity_type = dto.activity_type;
     if (dto.link_meet !== undefined) updateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) updateData.active = dto.active;
-    if (dto.classes !== undefined) updateData.classes = dto.classes as Prisma.InputJsonValue;
+    if (dto.classes !== undefined)
+      updateData.classes = dto.classes as Prisma.InputJsonValue;
 
     return this.prisma.activities.update({
       where: { activity_id: activityId },

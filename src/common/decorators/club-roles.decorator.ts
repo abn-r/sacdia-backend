@@ -13,4 +13,3 @@ import { CLUB_ROLES_KEY, type ClubRoleType } from '../guards/club-roles.guard';
  */
 export const ClubRoles = (...roles: ClubRoleType[]) =>
   SetMetadata(CLUB_ROLES_KEY, roles);
-

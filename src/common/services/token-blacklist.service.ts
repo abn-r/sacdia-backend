@@ -46,7 +46,11 @@ export class TokenBlacklistService {
     expiresInSeconds: number = 86400,
   ): Promise<void> {
     const key = `${this.BLACKLIST_PREFIX}user:${userId}:all`;
-    await this.cacheManager.set(key, Date.now().toString(), expiresInSeconds * 1000);
+    await this.cacheManager.set(
+      key,
+      Date.now().toString(),
+      expiresInSeconds * 1000,
+    );
     this.logger.warn(`All tokens blacklisted for user ${userId}`);
   }
 
@@ -56,12 +60,15 @@ export class TokenBlacklistService {
    * @param tokenIssuedAt - Timestamp de emisión del token
    * @returns true si el token fue emitido antes del bloqueo
    */
-  async isUserBlacklisted(userId: string, tokenIssuedAt: number): Promise<boolean> {
+  async isUserBlacklisted(
+    userId: string,
+    tokenIssuedAt: number,
+  ): Promise<boolean> {
     const key = `${this.BLACKLIST_PREFIX}user:${userId}:all`;
     const blacklistTime = await this.cacheManager.get<string>(key);
-    
+
     if (!blacklistTime) return false;
-    
+
     // Si el token fue emitido antes del bloqueo, está revocado
     return tokenIssuedAt < parseInt(blacklistTime, 10);
   }

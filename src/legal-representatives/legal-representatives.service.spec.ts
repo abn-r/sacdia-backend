@@ -30,7 +30,9 @@ describe('LegalRepresentativesService', () => {
       ],
     }).compile();
 
-    service = module.get<LegalRepresentativesService>(LegalRepresentativesService);
+    service = module.get<LegalRepresentativesService>(
+      LegalRepresentativesService,
+    );
   });
 
   it('should be defined', () => {

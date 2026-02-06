@@ -26,6 +26,11 @@ const classes_module_1 = require("./classes/classes.module");
 const honors_module_1 = require("./honors/honors.module");
 const activities_module_1 = require("./activities/activities.module");
 const finances_module_1 = require("./finances/finances.module");
+const camporees_module_1 = require("./camporees/camporees.module");
+const notifications_module_1 = require("./notifications/notifications.module");
+const certifications_module_1 = require("./certifications/certifications.module");
+const folders_module_1 = require("./folders/folders.module");
+const inventory_module_1 = require("./inventory/inventory.module");
 const health_controller_1 = require("./health/health.controller");
 let AppModule = class AppModule {
 };
@@ -66,6 +71,11 @@ exports.AppModule = AppModule = __decorate([
             honors_module_1.HonorsModule,
             activities_module_1.ActivitiesModule,
             finances_module_1.FinancesModule,
+            camporees_module_1.CamporeesModule,
+            notifications_module_1.NotificationsModule,
+            certifications_module_1.CertificationsModule,
+            folders_module_1.FoldersModule,
+            inventory_module_1.InventoryModule,
         ],
         controllers: [app_controller_1.AppController, health_controller_1.HealthController],
         providers: [

@@ -209,9 +209,12 @@ export class FoldersService {
     // Extraer IDs de clubes desde role assignments
     const clubAssignments = user.club_role_assignments;
     return {
-      adventurers: clubAssignments.find(ca => ca.club_adv_id)?.club_adv_id ?? null,
-      pathfinders: clubAssignments.find(ca => ca.club_pathf_id)?.club_pathf_id ?? null,
-      masterGuilds: clubAssignments.find(ca => ca.club_mg_id)?.club_mg_id ?? null,
+      adventurers:
+        clubAssignments.find((ca) => ca.club_adv_id)?.club_adv_id ?? null,
+      pathfinders:
+        clubAssignments.find((ca) => ca.club_pathf_id)?.club_pathf_id ?? null,
+      masterGuilds:
+        clubAssignments.find((ca) => ca.club_mg_id)?.club_mg_id ?? null,
     };
   }
 
@@ -311,42 +314,43 @@ export class FoldersService {
     });
 
     // Construir respuesta detallada
-    const modules = assignment.folders?.folders_modules.map((module) => {
-      const moduleRecord = moduleRecords.find(
-        (mr) => mr.module_id === module.folder_module_id,
-      );
-
-      const sections = module.folders_sections.map((section) => {
-        const sectionRecord = sectionRecords.find(
-          (sr) => sr.section_id === section.folder_section_id,
+    const modules =
+      assignment.folders?.folders_modules.map((module) => {
+        const moduleRecord = moduleRecords.find(
+          (mr) => mr.module_id === module.folder_module_id,
         );
 
+        const sections = module.folders_sections.map((section) => {
+          const sectionRecord = sectionRecords.find(
+            (sr) => sr.section_id === section.folder_section_id,
+          );
+
+          return {
+            section_id: section.folder_section_id,
+            name: section.name,
+            max_points: section.max_points,
+            earned_points: sectionRecord?.points ?? 0,
+            evidences: sectionRecord?.evidences ?? null,
+          };
+        });
+
+        const earnedPoints = sections.reduce(
+          (sum, s) => sum + (s.earned_points ?? 0),
+          0,
+        );
+        const maxPoints = module.max_points ?? 0;
+        const progressPercentage =
+          maxPoints > 0 ? (earnedPoints / maxPoints) * 100 : 0;
+
         return {
-          section_id: section.folder_section_id,
-          name: section.name,
-          max_points: section.max_points,
-          earned_points: sectionRecord?.points ?? 0,
-          evidences: sectionRecord?.evidences ?? null,
+          module_id: module.folder_module_id,
+          name: module.name,
+          max_points: module.max_points,
+          earned_points: earnedPoints,
+          progress_percentage: Math.round(progressPercentage * 10) / 10,
+          sections,
         };
-      });
-
-      const earnedPoints = sections.reduce(
-        (sum, s) => sum + (s.earned_points ?? 0),
-        0,
-      );
-      const maxPoints = module.max_points ?? 0;
-      const progressPercentage =
-        maxPoints > 0 ? (earnedPoints / maxPoints) * 100 : 0;
-
-      return {
-        module_id: module.folder_module_id,
-        name: module.name,
-        max_points: module.max_points,
-        earned_points: earnedPoints,
-        progress_percentage: Math.round(progressPercentage * 10) / 10,
-        sections,
-      };
-    }) ?? [];
+      }) ?? [];
 
     return {
       folder_id: assignment.folder_id,
@@ -428,7 +432,9 @@ export class FoldersService {
       let sectionRecord;
       if (existingRecord) {
         sectionRecord = await tx.folders_section_records.update({
-          where: { folder_section_record_id: existingRecord.folder_section_record_id },
+          where: {
+            folder_section_record_id: existingRecord.folder_section_record_id,
+          },
           data: {
             points: dto.points,
             evidences: dto.evidences,
@@ -486,7 +492,10 @@ export class FoldersService {
 
       if (existingModuleRecord) {
         await tx.folders_modules_records.update({
-          where: { folder_module_record_id: existingModuleRecord.folder_module_record_id },
+          where: {
+            folder_module_record_id:
+              existingModuleRecord.folder_module_record_id,
+          },
           data: { points: modulePoints },
         });
       } else {
@@ -503,16 +512,18 @@ export class FoldersService {
       }
 
       // 7. Calcular puntos totales de la carpeta
-      const allFolderSectionRecords = await tx.folders_section_records.findMany({
-        where: {
-          folder_id: folderId,
-          OR: [
-            { club_adv_id: assignment.club_adv_id },
-            { club_pathf_id: assignment.club_pathf_id },
-            { club_mg_id: assignment.club_mg_id },
-          ],
+      const allFolderSectionRecords = await tx.folders_section_records.findMany(
+        {
+          where: {
+            folder_id: folderId,
+            OR: [
+              { club_adv_id: assignment.club_adv_id },
+              { club_pathf_id: assignment.club_pathf_id },
+              { club_mg_id: assignment.club_mg_id },
+            ],
+          },
         },
-      });
+      );
 
       const totalPoints = allFolderSectionRecords.reduce(
         (sum, record) => sum + (record.points ?? 0),

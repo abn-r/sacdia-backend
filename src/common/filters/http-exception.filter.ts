@@ -33,9 +33,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         status,
         message: exception.message,
         stack:
-          process.env.NODE_ENV === 'development'
-            ? exception.stack
-            : undefined,
+          process.env.NODE_ENV === 'development' ? exception.stack : undefined,
       }),
     );
 

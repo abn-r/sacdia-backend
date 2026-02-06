@@ -4,6 +4,8 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { OAuthController } from './oauth.controller';
+import { OAuthService } from './oauth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { SupabaseService } from '../common/supabase.service';
 import { MfaController } from './mfa.controller';
@@ -22,9 +24,13 @@ import { SessionsController } from './sessions.controller';
       }),
     }),
   ],
-  controllers: [AuthController, MfaController, SessionsController],
-  providers: [AuthService, JwtStrategy, SupabaseService],
-  exports: [AuthService, JwtStrategy, PassportModule],
+  controllers: [
+    AuthController,
+    MfaController,
+    SessionsController,
+    OAuthController,
+  ],
+  providers: [AuthService, OAuthService, JwtStrategy, SupabaseService],
+  exports: [AuthService, OAuthService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}
-

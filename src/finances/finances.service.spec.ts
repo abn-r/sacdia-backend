@@ -48,7 +48,9 @@ describe('FinancesService', () => {
         { finance_category_id: 2, name: 'Materiales', type: 1 },
       ];
 
-      mockPrismaService.finances_categories.findMany.mockResolvedValue(mockCategories);
+      mockPrismaService.finances_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
 
       const result = await service.getCategories();
 
@@ -60,7 +62,9 @@ describe('FinancesService', () => {
 
       await service.getCategories(0); // Income only
 
-      expect(mockPrismaService.finances_categories.findMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.finances_categories.findMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             type: 0,
@@ -110,8 +114,8 @@ describe('FinancesService', () => {
 
       const mockMovements = [
         { amount: 1000, finances_categories: { type: 0 } }, // income
-        { amount: 500, finances_categories: { type: 0 } },  // income
-        { amount: 300, finances_categories: { type: 1 } },  // expense
+        { amount: 500, finances_categories: { type: 0 } }, // income
+        { amount: 300, finances_categories: { type: 1 } }, // expense
       ];
 
       mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);

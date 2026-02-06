@@ -46,14 +46,25 @@ export class ClubsController {
   @Get()
   @ApiOperation({
     summary: 'Listar clubs',
-    description: 'Obtiene la lista de clubs con filtros opcionales y paginación',
+    description:
+      'Obtiene la lista de clubs con filtros opcionales y paginación',
   })
   @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'districtId', required: false, type: Number })
   @ApiQuery({ name: 'churchId', required: false, type: Number })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (1-indexed)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página (max 100)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Número de página (1-indexed)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Elementos por página (max 100)',
+  })
   @ApiResponse({ status: 200, description: 'Lista paginada de clubs' })
   async findAll(
     @Query('localFieldId', new ParseIntPipe({ optional: true }))
@@ -74,7 +85,8 @@ export class ClubsController {
         localFieldId,
         districtId,
         churchId,
-        active: active === 'true' ? true : active === 'false' ? false : undefined,
+        active:
+          active === 'true' ? true : active === 'false' ? false : undefined,
       },
       pagination,
     );
@@ -99,7 +111,9 @@ export class ClubsController {
   @Patch(':clubId')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'subdirector')
-  @ApiOperation({ summary: 'Actualizar club (requiere rol director o subdirector)' })
+  @ApiOperation({
+    summary: 'Actualizar club (requiere rol director o subdirector)',
+  })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club actualizado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
@@ -173,7 +187,10 @@ export class ClubsController {
   @Patch(':clubId/instances/:type/:instanceId')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'subdirector', 'secretary')
-  @ApiOperation({ summary: 'Actualizar instancia (requiere director, subdirector o secretario)' })
+  @ApiOperation({
+    summary:
+      'Actualizar instancia (requiere director, subdirector o secretario)',
+  })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'type', enum: ClubInstanceType })
   @ApiParam({ name: 'instanceId', type: Number })
@@ -212,7 +229,8 @@ export class ClubsController {
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'subdirector', 'secretary')
   @ApiOperation({
-    summary: 'Asignar rol a un miembro (requiere director, subdirector o secretario)',
+    summary:
+      'Asignar rol a un miembro (requiere director, subdirector o secretario)',
     description: 'Asigna un rol específico a un usuario en la instancia',
   })
   @ApiParam({ name: 'clubId', type: Number })

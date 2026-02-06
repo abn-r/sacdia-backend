@@ -106,9 +106,7 @@ export class UsersService {
     // Validar tamaño (max 5MB)
     const maxSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxSize) {
-      throw new BadRequestException(
-        'Archivo muy grande. Tamaño máximo: 5MB',
-      );
+      throw new BadRequestException('Archivo muy grande. Tamaño máximo: 5MB');
     }
 
     // Determinar extensión

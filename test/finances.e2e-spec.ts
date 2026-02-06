@@ -22,7 +22,9 @@ describe('Finances E2E Tests', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
 
     prisma = app.get(PrismaService);
@@ -57,7 +59,7 @@ describe('Finances E2E Tests', () => {
     it('should return list of categories', async () => {
       // Corrected property name to match service usage (plural)
       jest.spyOn(prisma.finances_categories, 'findMany').mockResolvedValue([]);
-      
+
       const response = await request(app.getHttpServer())
         .get('/api/v1/finances/categories')
         .expect(200);

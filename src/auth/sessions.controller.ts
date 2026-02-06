@@ -81,18 +81,19 @@ export class SessionsController {
   @Delete()
   @ApiOperation({
     summary: 'Cerrar todas las sesiones',
-    description: 'Cierra todas las sesiones excepto la actual (logout de todos los dispositivos)',
+    description:
+      'Cierra todas las sesiones excepto la actual (logout de todos los dispositivos)',
   })
   @ApiResponse({ status: 200, description: 'Todas las sesiones cerradas' })
   async closeAllSessions(@Req() req: Request) {
     const userId = (req.user as any)?.user_id;
-    
+
     // Blacklist todos los tokens del usuario
     await this.tokenBlacklistService.blacklistAllUserTokens(userId);
-    
+
     // Eliminar todas las sesiones
     const count = await this.sessionService.removeAllSessions(userId);
-    
+
     return {
       success: true,
       message: `${count} sessions closed. Please login again.`,
