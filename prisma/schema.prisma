@@ -39,11 +39,18 @@ model activities {
 model folder_assignments {
   folder_assignment_id Int       @id @default(autoincrement())
   folder_id            Int?
+  user_id              String?   @db.Uuid
+  club_adv_id          Int?
+  club_pathf_id        Int?
+  club_mg_id           Int?
+  status               String?   @default("IN_PROGRESS")
+  total_points         Int?      @default(0)
+  progress_percentage  Float?    @default(0)
+  completion_date      DateTime? @db.Timestamptz(6)
   active               Boolean   @default(true)
   assignment_date      DateTime? @default(now()) @db.Timestamptz(6)
   created_at           DateTime  @default(now()) @db.Timestamptz(6)
   modified_at          DateTime? @default(now()) @db.Timestamptz(6)
-  user_id              String?   @db.Uuid
   folders              folders?  @relation(fields: [folder_id], references: [folder_id], onDelete: NoAction, onUpdate: NoAction)
   users                users?    @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_assignments_folders_users_user_id")
 }
@@ -958,14 +965,16 @@ model users_certifications {
 }
 
 model certification_module_progress {
-  progress_id      Int      @id @default(autoincrement())
-  user_id          String   @db.Uuid
+  progress_id      Int       @id @default(autoincrement())
+  user_id          String    @db.Uuid
   certification_id Int
   module_id        Int
   score            Float
-  active           Boolean  @default(true)
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  completed        Boolean   @default(false)
+  completion_date  DateTime? @db.Timestamptz(6)
+  active           Boolean   @default(true)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   certifications certifications @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
   users          users          @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -974,16 +983,18 @@ model certification_module_progress {
 }
 
 model certification_section_progress {
-  progress_id      Int      @id @default(autoincrement())
-  user_id          String   @db.Uuid
+  progress_id      Int       @id @default(autoincrement())
+  user_id          String    @db.Uuid
   certification_id Int
   module_id        Int
   section_id       Int
   score            Float
   evidences        Json?
-  active           Boolean  @default(true)
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  completed        Boolean   @default(false)
+  completion_date  DateTime? @db.Timestamptz(6)
+  active           Boolean   @default(true)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   certifications certifications @relation(fields: [certification_id], references: [certification_id], onDelete: NoAction, onUpdate: NoAction)
   users          users          @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1131,6 +1142,9 @@ model users_honors {
   modified_at   DateTime? @default(now()) @db.Timestamptz(6)
   honors        honors    @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_honor_id_fkey")
   users         users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
+
+  @@unique([user_id, honor_id], map: "users_honors_user_id_honor_id_key")
+  @@index([user_id], map: "idx_users_honors_user_id")
 }
 
 model users_permissions {

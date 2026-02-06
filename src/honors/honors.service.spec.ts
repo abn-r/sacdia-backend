@@ -94,11 +94,11 @@ describe('HonorsService', () => {
 
   describe('getCategories', () => {
     it('should return active categories', async () => {
-      const mockCategories = [
-        { honor_category_id: 1, name: 'Naturaleza' },
-      ];
+      const mockCategories = [{ honor_category_id: 1, name: 'Naturaleza' }];
 
-      mockPrismaService.honors_categories.findMany.mockResolvedValue(mockCategories);
+      mockPrismaService.honors_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
 
       const result = await service.getCategories();
 
@@ -130,18 +130,22 @@ describe('HonorsService', () => {
       const existingUserHonor = { user_honor_id: 1, user_id: 'user-123' };
 
       mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
-      mockPrismaService.users_honors.findFirst.mockResolvedValue(existingUserHonor);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue(
+        existingUserHonor,
+      );
 
-      await expect(service.startHonor('user-123', 1)).rejects.toThrow(ConflictException);
+      await expect(service.startHonor('user-123', 1)).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
   describe('getUserHonorStats', () => {
     it('should return user honor statistics', async () => {
       mockPrismaService.users_honors.count
-        .mockResolvedValueOnce(10)  // total
-        .mockResolvedValueOnce(5)   // validated
-        .mockResolvedValueOnce(5);  // in progress
+        .mockResolvedValueOnce(10) // total
+        .mockResolvedValueOnce(5) // validated
+        .mockResolvedValueOnce(5); // in progress
 
       const result = await service.getUserHonorStats('user-123');
 

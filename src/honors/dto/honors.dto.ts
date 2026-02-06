@@ -1,4 +1,14 @@
-import { IsInt, IsOptional, IsString, IsBoolean, IsArray, IsDateString } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsBoolean,
+  IsArray,
+  IsDateString,
+  IsUrl,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class StartHonorDto {
@@ -14,20 +24,30 @@ export class UpdateUserHonorDto {
   @IsBoolean()
   validate?: boolean;
 
-  @ApiPropertyOptional({ description: 'URL del certificado' })
+  @ApiPropertyOptional({
+    description: 'URL del certificado (pasar null o string vacío para limpiar)',
+  })
   @IsOptional()
   @IsString()
-  certificate?: string;
+  certificate?: string | null;
 
-  @ApiPropertyOptional({ description: 'URLs de imágenes de evidencia' })
+  @ApiPropertyOptional({
+    description:
+      'URLs de imágenes de evidencia (pasar null o array vacío para limpiar)',
+    type: [String],
+  })
   @IsOptional()
   @IsArray()
-  images?: string[];
+  @IsString({ each: true })
+  images?: string[] | null;
 
-  @ApiPropertyOptional({ description: 'URL del documento adicional' })
+  @ApiPropertyOptional({
+    description:
+      'URL del documento adicional (pasar null o string vacío para limpiar)',
+  })
   @IsOptional()
   @IsString()
-  document?: string;
+  document?: string | null;
 
   @ApiPropertyOptional({ description: 'Fecha de completación' })
   @IsOptional()
@@ -46,8 +66,15 @@ export class HonorFiltersDto {
   @IsInt()
   clubTypeId?: number;
 
-  @ApiPropertyOptional({ description: 'Filtrar por nivel de habilidad (1-3)' })
+  @ApiPropertyOptional({
+    description:
+      'Filtrar por nivel de habilidad (1=Básico, 2=Avanzado, 3=Máster)',
+    minimum: 1,
+    maximum: 3,
+  })
   @IsOptional()
   @IsInt()
+  @Min(1)
+  @Max(3)
   skillLevel?: number;
 }

@@ -21,7 +21,7 @@ import {
 } from '@nestjs/swagger';
 import { HonorsService } from './honors.service';
 import { StartHonorDto, UpdateUserHonorDto } from './dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtAuthGuard, OwnerOrAdminGuard } from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 // ========================================
@@ -40,14 +40,22 @@ export class HonorsController {
   })
   @ApiQuery({ name: 'categoryId', required: false, type: Number })
   @ApiQuery({ name: 'clubTypeId', required: false, type: Number })
-  @ApiQuery({ name: 'skillLevel', required: false, type: Number, description: '1=Básico, 2=Avanzado, 3=Máster' })
+  @ApiQuery({
+    name: 'skillLevel',
+    required: false,
+    type: Number,
+    description: '1=Básico, 2=Avanzado, 3=Máster',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Lista paginada de honores' })
   async findAll(
-    @Query('categoryId', new ParseIntPipe({ optional: true })) categoryId?: number,
-    @Query('clubTypeId', new ParseIntPipe({ optional: true })) clubTypeId?: number,
-    @Query('skillLevel', new ParseIntPipe({ optional: true })) skillLevel?: number,
+    @Query('categoryId', new ParseIntPipe({ optional: true }))
+    categoryId?: number,
+    @Query('clubTypeId', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+    @Query('skillLevel', new ParseIntPipe({ optional: true }))
+    skillLevel?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -84,7 +92,7 @@ export class HonorsController {
 
 @ApiTags('user-honors')
 @Controller('users/:userId/honors')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OwnerOrAdminGuard)
 @ApiBearerAuth()
 export class UserHonorsController {
   constructor(private readonly honorsService: HonorsService) {}
@@ -92,7 +100,8 @@ export class UserHonorsController {
   @Get()
   @ApiOperation({
     summary: 'Obtener honores del usuario',
-    description: 'Lista los honores en los que el usuario está inscrito o ha completado',
+    description:
+      'Lista los honores en los que el usuario está inscrito o ha completado',
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiQuery({ name: 'validated', required: false, type: Boolean })
@@ -101,7 +110,8 @@ export class UserHonorsController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Query('validated') validated?: string,
   ) {
-    const validatedBool = validated === 'true' ? true : validated === 'false' ? false : undefined;
+    const validatedBool =
+      validated === 'true' ? true : validated === 'false' ? false : undefined;
     return this.honorsService.getUserHonors(userId, validatedBool);
   }
 

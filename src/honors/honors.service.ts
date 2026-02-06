@@ -54,7 +54,7 @@ export class HonorsService {
 
   async findOne(honorId: number) {
     const honor = await this.prisma.honors.findUnique({
-      where: { honor_id: honorId },
+      where: { honor_id: honorId, active: true },
       include: {
         honors_categories: true,
         club_types: { select: { name: true } },
@@ -109,22 +109,48 @@ export class HonorsService {
   }
 
   async startHonor(userId: string, honorId: number, dto?: StartHonorDto) {
-    // Verificar que el honor existe
+    // Verificar que el honor existe y está activo
     await this.findOne(honorId);
 
-    // Verificar que no esté ya inscrito
+    // Buscar si existe un registro previo (activo o inactivo)
     const existing = await this.prisma.users_honors.findFirst({
       where: {
         user_id: userId,
         honor_id: honorId,
-        active: true,
       },
     });
 
-    if (existing) {
+    // Si ya está activo, rechazar
+    if (existing && existing.active) {
       throw new ConflictException('User already has this honor in progress');
     }
 
+    // Si existe pero está inactivo, reactivar; si no, crear nuevo
+    if (existing) {
+      return this.prisma.users_honors.update({
+        where: { user_honor_id: existing.user_honor_id },
+        data: {
+          active: true,
+          date: dto?.date ? new Date(dto.date) : new Date(),
+          validate: false,
+          certificate: '',
+          images: [],
+          document: null,
+          modified_at: new Date(),
+        },
+        include: {
+          honors: {
+            select: {
+              name: true,
+              honor_image: true,
+              honors_categories: { select: { name: true } },
+            },
+          },
+        },
+      });
+    }
+
+    // Crear nuevo registro
     return this.prisma.users_honors.create({
       data: {
         user_id: userId,
@@ -168,10 +194,25 @@ export class HonorsService {
       modified_at: new Date(),
     };
 
+    // Permitir actualizar validación
     if (dto.validate !== undefined) updateData.validate = dto.validate;
-    if (dto.certificate) updateData.certificate = dto.certificate;
-    if (dto.images) updateData.images = dto.images as Prisma.InputJsonValue;
-    if (dto.document) updateData.document = dto.document;
+
+    // Permitir limpiar certificado (null o string vacío)
+    if (dto.certificate !== undefined) {
+      updateData.certificate = dto.certificate || '';
+    }
+
+    // Permitir limpiar imágenes (null o array vacío)
+    if (dto.images !== undefined) {
+      updateData.images = (dto.images || []) as Prisma.InputJsonValue;
+    }
+
+    // Permitir limpiar documento (null)
+    if (dto.document !== undefined) {
+      updateData.document = dto.document || null;
+    }
+
+    // Actualizar fecha
     if (dto.date) updateData.date = new Date(dto.date);
 
     return this.prisma.users_honors.update({
