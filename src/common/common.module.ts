@@ -14,17 +14,34 @@ import { IpWhitelistGuard } from './guards/ip-whitelist.guard';
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => {
-        // Si REDIS_URL está configurado, usar Upstash Redis
+        // Si REDIS_URL está configurado, intentar usar Upstash Redis
         if (process.env.REDIS_URL) {
-          const { redisStore } = await import('cache-manager-redis-yet');
-          return {
-            store: await redisStore({
+          try {
+            const { redisStore } = await import('cache-manager-redis-yet');
+            console.log('🔄 Attempting to connect to Redis...');
+            
+            const store = await redisStore({
               url: process.env.REDIS_URL,
-            }),
-            ttl: 86400000, // 24 horas en ms
-          };
+              socket: {
+                connectTimeout: 5000, // 5 segundos timeout
+                reconnectStrategy: false, // No reintentar en desarrollo
+              },
+            });
+            
+            console.log('✅ Redis cache connected successfully');
+            return {
+              store,
+              ttl: 86400000, // 24 horas en ms
+            };
+          } catch (error) {
+            console.warn('⚠️  Redis connection failed:', error.message);
+            console.warn('📦 Falling back to in-memory cache (development mode)');
+            // Continuar con fallback en lugar de fallar
+          }
         }
+        
         // Fallback a in-memory cache para desarrollo local
+        console.log('💾 Using in-memory cache');
         return {
           ttl: 86400000,
           max: 10000,

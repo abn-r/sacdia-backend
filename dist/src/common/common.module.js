@@ -24,14 +24,28 @@ exports.CommonModule = CommonModule = __decorate([
                 isGlobal: true,
                 useFactory: async () => {
                     if (process.env.REDIS_URL) {
-                        const { redisStore } = await import('cache-manager-redis-yet');
-                        return {
-                            store: await redisStore({
+                        try {
+                            const { redisStore } = await import('cache-manager-redis-yet');
+                            console.log('🔄 Attempting to connect to Redis...');
+                            const store = await redisStore({
                                 url: process.env.REDIS_URL,
-                            }),
-                            ttl: 86400000,
-                        };
+                                socket: {
+                                    connectTimeout: 5000,
+                                    reconnectStrategy: false,
+                                },
+                            });
+                            console.log('✅ Redis cache connected successfully');
+                            return {
+                                store,
+                                ttl: 86400000,
+                            };
+                        }
+                        catch (error) {
+                            console.warn('⚠️  Redis connection failed:', error.message);
+                            console.warn('📦 Falling back to in-memory cache (development mode)');
+                        }
                     }
+                    console.log('💾 Using in-memory cache');
                     return {
                         ttl: 86400000,
                         max: 10000,
