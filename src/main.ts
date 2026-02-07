@@ -14,17 +14,17 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   // ==========================================
-  // SENTRY - Error Monitoring
+  // SENTRY - Error Monitoring (DESHABILITADO TEMPORALMENTE)
   // ==========================================
-  if (process.env.SENTRY_DSN) {
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      environment: process.env.NODE_ENV || 'development',
-      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-      profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-    });
-    console.log('✅ Sentry monitoring initialized');
-  }
+  // if (process.env.SENTRY_DSN) {
+  //   Sentry.init({
+  //     dsn: process.env.SENTRY_DSN,
+  //     environment: process.env.NODE_ENV || 'development',
+  //     tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  //     profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  //   });
+  //   console.log('✅ Sentry monitoring initialized');
+  // }
 
   const app = await NestFactory.create(AppModule);
 
@@ -124,7 +124,7 @@ async function bootstrap() {
   // ==========================================
   app.useGlobalInterceptors(
     new AuditInterceptor(),
-    new SentryInterceptor(), // Capturar errores en Sentry
+    // new SentryInterceptor(), // DESHABILITADO: Capturar errores en Sentry
   );
 
   // ==========================================
