@@ -8,8 +8,10 @@ describe('AuthController', () => {
   const mockAuthService = {
     register: jest.fn(),
     login: jest.fn(),
-    validateUser: jest.fn(),
+    logout: jest.fn(),
+    requestPasswordReset: jest.fn(),
     getProfile: jest.fn(),
+    getCompletionStatus: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -21,7 +23,99 @@ describe('AuthController', () => {
     controller = module.get<AuthController>(AuthController);
   });
 
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('register', () => {
+    it('should delegate to authService.register', async () => {
+      const dto = {
+        email: 'juan.garcia@example.com',
+        password: 'Password123!',
+        name: 'Juan',
+        paternal_last_name: 'Garcia',
+        maternal_last_name: 'Lopez',
+      };
+      const expected = { success: true };
+      mockAuthService.register.mockResolvedValue(expected);
+
+      const result = await controller.register(dto);
+
+      expect(mockAuthService.register).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('login', () => {
+    it('should delegate to authService.login', async () => {
+      const dto = {
+        email: 'juan.garcia@example.com',
+        password: 'Password123!',
+      };
+      const expected = { status: 'success' };
+      mockAuthService.login.mockResolvedValue(expected);
+
+      const result = await controller.login(dto);
+
+      expect(mockAuthService.login).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('logout', () => {
+    it('should extract bearer token and delegate to authService.logout', async () => {
+      const expected = { success: true };
+      mockAuthService.logout.mockResolvedValue(expected);
+
+      const result = await controller.logout('Bearer access-token');
+
+      expect(mockAuthService.logout).toHaveBeenCalledWith('access-token');
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('requestPasswordReset', () => {
+    it('should delegate to authService.requestPasswordReset', async () => {
+      const dto = { email: 'juan.garcia@example.com' };
+      const expected = { success: true };
+      mockAuthService.requestPasswordReset.mockResolvedValue(expected);
+
+      const result = await controller.requestPasswordReset(dto);
+
+      expect(mockAuthService.requestPasswordReset).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('getProfile', () => {
+    it('should use current user userId and delegate to authService.getProfile', async () => {
+      const currentUser = { userId: 'user-123' };
+      const expected = { status: 'success' };
+      mockAuthService.getProfile.mockResolvedValue(expected);
+
+      const result = await controller.getProfile(currentUser);
+
+      expect(mockAuthService.getProfile).toHaveBeenCalledWith('user-123');
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('getCompletionStatus', () => {
+    it('should use current user userId and delegate to authService.getCompletionStatus', async () => {
+      const currentUser = { userId: 'user-123' };
+      const expected = { status: 'success' };
+      mockAuthService.getCompletionStatus.mockResolvedValue(expected);
+
+      const result = await controller.getCompletionStatus(currentUser);
+
+      expect(mockAuthService.getCompletionStatus).toHaveBeenCalledWith(
+        'user-123',
+      );
+      expect(result).toEqual(expected);
+    });
   });
 });

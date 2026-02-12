@@ -22,6 +22,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { CertificationsModule } from './certifications/certifications.module';
 import { FoldersModule } from './folders/folders.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { RbacModule } from './rbac/rbac.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -75,6 +76,7 @@ import { HealthController } from './health/health.controller';
     CertificationsModule,
     FoldersModule,
     InventoryModule,
+    RbacModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
