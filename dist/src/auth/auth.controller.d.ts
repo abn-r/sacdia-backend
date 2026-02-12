@@ -22,6 +22,7 @@ export declare class AuthController {
                 paternal_last_name: string | null;
                 maternal_last_name: string | null;
                 avatar: string | null;
+                roles: string[];
             };
             needsPostRegistration: boolean;
             postRegistrationStatus: {
@@ -45,6 +46,8 @@ export declare class AuthController {
     }): Promise<{
         status: string;
         data: {
+            roles: string[];
+            permissions: string[];
             created_at: Date;
             name: string | null;
             paternal_last_name: string | null;

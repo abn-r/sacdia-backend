@@ -107,6 +107,17 @@ let AuthService = AuthService_1 = class AuthService {
                         club_selection_complete: true,
                     },
                 },
+                users_roles: {
+                    where: { active: true },
+                    select: {
+                        roles: {
+                            select: {
+                                role_name: true,
+                                role_category: true,
+                            },
+                        },
+                    },
+                },
             },
         });
         if (!user) {
@@ -115,6 +126,7 @@ let AuthService = AuthService_1 = class AuthService {
         const needsPostRegistration = user.users_pr[0]
             ? !user.users_pr[0].complete
             : true;
+        const roles = user.users_roles.map((ur) => ur.roles.role_name);
         return {
             status: 'success',
             data: {
@@ -127,6 +139,7 @@ let AuthService = AuthService_1 = class AuthService {
                     paternal_last_name: user.paternal_last_name,
                     maternal_last_name: user.maternal_last_name,
                     avatar: user.user_image,
+                    roles,
                 },
                 needsPostRegistration,
                 postRegistrationStatus: user.users_pr[0] || null,
@@ -173,12 +186,48 @@ let AuthService = AuthService_1 = class AuthService {
                 union_id: true,
                 local_field_id: true,
                 created_at: true,
+                users_roles: {
+                    where: { active: true },
+                    select: {
+                        roles: {
+                            select: {
+                                role_name: true,
+                                role_category: true,
+                                role_permissions: {
+                                    where: { active: true },
+                                    select: {
+                                        permissions: {
+                                            select: {
+                                                permission_name: true,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
             },
         });
         if (!user) {
             throw new common_1.UnauthorizedException('Usuario no encontrado');
         }
-        return { status: 'success', data: user };
+        const roles = user.users_roles.map((ur) => ur.roles.role_name);
+        const permissionSet = new Set();
+        for (const ur of user.users_roles) {
+            for (const rp of ur.roles.role_permissions) {
+                permissionSet.add(rp.permissions.permission_name);
+            }
+        }
+        const { users_roles: _ignored, ...userData } = user;
+        return {
+            status: 'success',
+            data: {
+                ...userData,
+                roles,
+                permissions: Array.from(permissionSet),
+            },
+        };
     }
     async getCompletionStatus(userId) {
         const userPr = await this.prisma.users_pr.findUnique({

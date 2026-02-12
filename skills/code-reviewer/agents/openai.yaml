@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Reviewer"
+  short_description: "Analyze PRs and draft actionable review reports."
+  default_prompt: "Use $code-reviewer to review this branch diff and produce prioritized findings with file and line references."

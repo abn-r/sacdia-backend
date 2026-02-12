@@ -31,6 +31,7 @@ const notifications_module_1 = require("./notifications/notifications.module");
 const certifications_module_1 = require("./certifications/certifications.module");
 const folders_module_1 = require("./folders/folders.module");
 const inventory_module_1 = require("./inventory/inventory.module");
+const rbac_module_1 = require("./rbac/rbac.module");
 const health_controller_1 = require("./health/health.controller");
 let AppModule = class AppModule {
 };
@@ -76,6 +77,7 @@ exports.AppModule = AppModule = __decorate([
             certifications_module_1.CertificationsModule,
             folders_module_1.FoldersModule,
             inventory_module_1.InventoryModule,
+            rbac_module_1.RbacModule,
         ],
         controllers: [app_controller_1.AppController, health_controller_1.HealthController],
         providers: [
