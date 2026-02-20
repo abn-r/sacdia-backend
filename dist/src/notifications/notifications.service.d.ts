@@ -13,6 +13,7 @@ export interface BroadcastNotificationDto {
 export declare class NotificationsService {
     private prisma;
     constructor(prisma: PrismaService);
+    private isFcmConfigured;
     sendToUser(dto: SendNotificationDto): Promise<{
         success: boolean;
         message: string;

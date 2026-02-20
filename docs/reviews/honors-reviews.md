@@ -1,5 +1,10 @@
 # Revisión del módulo Honors + Roles de Validación (2026-02-05)
 
+> [!NOTE]
+> Documento de revisión histórica para decisiones de diseño.
+> No representa necesariamente el estado actual del módulo.
+> Verifica contra el código actual antes de ejecutar tareas derivadas.
+
 ## Contexto
 
 Solicitud: revisar `src/honors` y alinearlo con un catálogo de honores gestionado por admins y validación de honores de usuarios por roles administrativos (campo local / unión / división + asistentes, coordinador).  

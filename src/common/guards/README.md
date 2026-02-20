@@ -14,7 +14,7 @@ This directory contains authorization guards for the SACDIA API.
 getProfile() { ... }
 ```
 
-**Populates**: `request.user` with `{ sub, userId, email }`
+**Populates**: `request.user` with `{ sub, userId, user_id, email }`
 
 ---
 
@@ -63,6 +63,12 @@ createHonor() { ... }
 - admin: Local field administration
 - coordinator: Union/association level
 - user: Regular user (default)
+
+**Operational requirement (admin user management scope)**:
+- `super_admin`: scope `ALL` (all users)
+- `admin`: scope from actor location. If `union_id` exists => `UNION`; else requires `local_field_id` => `LOCAL_FIELD`
+- `coordinator`: requires `local_field_id` => `LOCAL_FIELD`
+- If scope data is missing for `admin`/`coordinator`, backend must return `403` (misconfigured role assignment)
 
 ---
 

@@ -5,12 +5,20 @@ import {
   Param,
   Delete,
   Get,
-  Headers,
+  Request,
+  UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
+import { GlobalRoles } from '../common/decorators/global-roles.decorator';
+import {
+  GlobalRolesGuard,
+  JwtAuthGuard,
+  OwnerOrAdminGuard,
+} from '../common/guards';
 
 // DTOs
 class SendNotificationDto {
@@ -61,6 +69,7 @@ class RegisterFcmTokenDto {
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(
@@ -75,12 +84,16 @@ export class NotificationsController {
   }
 
   @Post('broadcast')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super_admin', 'admin')
   @ApiOperation({ summary: 'Send notification to all users' })
   async broadcast(@Body() dto: BroadcastNotificationDto) {
     return this.notificationsService.broadcast(dto);
   }
 
   @Post('club/:instanceType/:instanceId')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('super_admin', 'admin')
   @ApiOperation({ summary: 'Send notification to club members' })
   async sendToClub(
     @Param('instanceType')
@@ -98,25 +111,34 @@ export class NotificationsController {
 
 @ApiTags('FCM Tokens')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('fcm-tokens')
 export class FcmTokensController {
   constructor(private fcmTokensService: FcmTokensService) {}
 
   @Post()
   @ApiOperation({ summary: 'Register FCM token' })
-  async registerToken(@Body() dto: RegisterFcmTokenDto & { userId: string }) {
-    return this.fcmTokensService.registerToken(dto.userId, dto);
+  async registerToken(@Body() dto: RegisterFcmTokenDto, @Request() req) {
+    return this.fcmTokensService.registerToken(req.user.sub, dto);
   }
 
   @Delete(':token')
   @ApiOperation({ summary: 'Unregister FCM token' })
-  async unregisterToken(@Param('token') token: string) {
-    return this.fcmTokensService.unregisterToken(token);
+  async unregisterToken(@Param('token') token: string, @Request() req) {
+    return this.fcmTokensService.unregisterToken(token, req.user.sub);
   }
 
+  @Get()
+  @ApiOperation({ summary: 'Get current user FCM tokens' })
+  async getMyTokens(@Request() req) {
+    return this.fcmTokensService.getUserTokens(req.user.sub);
+  }
+
+  // Backwards compatible endpoint for admin/owner access
   @Get('user/:userId')
-  @ApiOperation({ summary: 'Get user FCM tokens' })
-  async getUserTokens(@Param('userId') userId: string) {
+  @UseGuards(OwnerOrAdminGuard)
+  @ApiOperation({ summary: 'Get FCM tokens by user ID (owner/admin only)' })
+  async getUserTokens(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.fcmTokensService.getUserTokens(userId);
   }
 }

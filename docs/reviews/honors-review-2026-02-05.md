@@ -1,5 +1,10 @@
 # Honors Module Review + Validation Roles (2026-02-05)
 
+> [!NOTE]
+> Documento de revisión histórica.
+> Algunos hallazgos ya fueron abordados posteriormente (por ejemplo, guards globales/owner-or-admin).
+> Validar estado vigente contra código actual y `README.md`.
+
 ## Context
 Request: review `src/honors` and align it with an admin-managed honors catalog and user-honor validation by administrative roles (local field / union / division + assistants, coordinator).  
 Scope includes: `src/honors/*`, related DTOs, RBAC guards, Prisma schema, and product/docs references.
@@ -176,4 +181,3 @@ If we use existing roles and data:
 - Do we need new roles for assistants/division, or can we map them to existing global roles?
 - Should catalog CRUD be added now (admin-only), or kept for later?
 - Should club roles (director/subdirector/instructor) ever be allowed to validate honors, or only administrative roles?
-

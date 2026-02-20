@@ -59,9 +59,7 @@ export declare class NotificationsController {
 export declare class FcmTokensController {
     private fcmTokensService;
     constructor(fcmTokensService: FcmTokensService);
-    registerToken(dto: RegisterFcmTokenDto & {
-        userId: string;
-    }): Promise<{
+    registerToken(dto: RegisterFcmTokenDto, req: any): Promise<{
         created_at: Date;
         user_id: string;
         active: boolean;
@@ -72,7 +70,21 @@ export declare class FcmTokensController {
         device_name: string | null;
         last_used: Date;
     }>;
-    unregisterToken(token: string): Promise<import("@prisma/client").Prisma.BatchPayload>;
+    unregisterToken(token: string, req: any): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    getMyTokens(req: any): Promise<{
+        created_at: Date;
+        user_id: string;
+        active: boolean;
+        modified_at: Date;
+        fcm_token_id: string;
+        token: string;
+        device_type: string | null;
+        device_name: string | null;
+        last_used: Date;
+    }[]>;
     getUserTokens(userId: string): Promise<{
         created_at: Date;
         user_id: string;

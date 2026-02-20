@@ -1,5 +1,9 @@
 # Auth Test Coverage Report (2026-02-10)
 
+> [!NOTE]
+> Reporte histórico de cobertura puntual de auth para la fecha indicada.
+> Para estado actual de pruebas revisar `README.md` y suites en `test/`.
+
 ## Objetivo
 Ejecutar el plan de pruebas unitarias para cubrir flujos criticos de `auth`, `oauth` y `sessions` sin modificar comportamiento de produccion.
 
@@ -45,7 +49,7 @@ Ejecutar el plan de pruebas unitarias para cubrir flujos criticos de `auth`, `oa
 Comando ejecutado:
 
 ```bash
-npm test -- --runTestsByPath src/auth/auth.service.spec.ts src/auth/auth.controller.spec.ts src/auth/oauth.service.spec.ts src/auth/sessions.controller.spec.ts
+pnpm run test -- src/auth/auth.service.spec.ts src/auth/auth.controller.spec.ts src/auth/oauth.service.spec.ts src/auth/sessions.controller.spec.ts
 ```
 
 Resultado:

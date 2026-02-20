@@ -1,5 +1,12 @@
 # Database Sync - February 5, 2026
 
+> [!IMPORTANT]
+> Registro histórico del baseline aplicado el **2026-02-05**.
+> No reemplaza el estado actual de migraciones en el repositorio.
+> Ver también:
+> - `README.md` (operación actual)
+> - `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md` (migración FCM 20260204)
+
 ## Resumen
 
 Sincronización de schema con base de datos usando `prisma db push` debido a problemas con shadow database en Supabase.

@@ -11,7 +11,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/src/main.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -19,7 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "generate:spec": "npx ts-node scripts/generate-openapi.ts",
-    "load-test": "node scripts/load-test.js"
+    "load-test": "node scripts/load-test.js",
+    "verify:fcm-migration": "npx tsx scripts/verify-fcm-migration.ts",
+    "import:legacy-catalogs": "npx ts-node scripts/import-legacy-catalogs.ts"
   },
   "dependencies": {
     "@nestjs/cache-manager": "^3.1.0",

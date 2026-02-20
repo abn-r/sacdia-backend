@@ -1,96 +1,69 @@
-# SACDIA Backend - API REST
+# SACDIA Backend - Contexto Rápido
 
-NestJS API con Prisma, Supabase y PostgreSQL.
+Backend NestJS para SACDIA con Prisma + Supabase.
 
-## Comandos
+## Comandos clave
 
 ```bash
-pnpm install           # Instalar dependencias
-pnpm run start:dev     # Dev con hot-reload
-pnpm run build         # Build producción
-pnpm run start:prod    # Ejecutar build
-pnpm test              # Tests unitarios
-pnpm run test:e2e      # Tests E2E
-pnpm run test:cov      # Coverage
-pnpm run load-test     # Load test con autocannon
-pnpm run generate:spec # Generar OpenAPI spec
+pnpm install
+pnpm run start:dev
+pnpm run build
+pnpm run start:prod
+pnpm run test
+pnpm run test:e2e
+pnpm run test:cov
+pnpm prisma migrate deploy
+pnpm run verify:fcm-migration
 ```
 
-## Estructura
+## Módulos principales
 
-```
+```text
 src/
-├── auth/              - Autenticación y RBAC
-├── users/             - Gestión de usuarios
-├── clubs/             - Clubes e instancias
-├── classes/           - Clases progresivas
-├── honors/            - Honores y especialidades
-├── camporees/         - Campamentos
-├── activities/        - Actividades de club
-├── finances/          - Finanzas
-├── inventory/         - Inventario
-├── folders/           - Carpetas de evidencias
-├── certifications/    - Certificaciones (Guías Mayores)
-├── catalogs/          - Catálogos del sistema
-├── notifications/     - Push notifications (FCM)
-├── websockets/        - Gateway real-time
-├── common/            - DTOs, guards, interceptors
-└── prisma/            - Prisma config y schema
+├── auth
+├── users
+├── catalogs
+├── clubs
+├── classes
+├── honors
+├── activities
+├── finances
+├── camporees
+├── notifications
+├── certifications
+├── folders
+├── inventory
+├── rbac
+├── admin
+├── common
+└── prisma
 ```
 
 ## Stack
 
-- **Framework**: NestJS 11
-- **Database**: PostgreSQL vía Supabase
-- **ORM**: Prisma
-- **Auth**: Supabase Auth + Passport JWT
-- **Validation**: class-validator + class-transformer
-- **NestJS 11** con TypeScript
-- **Prisma** como ORM (67 tablas PostgreSQL)
-- **Supabase** para Auth + Storage + DB
-- **JWT** validation via Supabase
-- **Helmet, Throttler** para seguridad
-- **Upstash Redis** para cache distribuido
-- **Firebase FCM** para push notifications
-- **Sentry** para error monitoring
+- NestJS 11 + TypeScript
+- Prisma 7 + PostgreSQL (Supabase)
+- JWT con `SUPABASE_JWT_SECRET`
+- Redis (opcional) con fallback a in-memory
+- Firebase FCM
+- Sentry
 
-## Particularidades
+## Convenciones operativas
 
-- **RBAC**: Roles globales + roles de club
-- **Versioning**: API v1 (URI) `/api/v1/`
-- **Audit log**: `AuditInterceptor` registra todas las requests
-- **Performance**: Load testing con `autocannon`
-- **External Services**: Redis, FCM, Sentry integrados
+- Prefijo y versionado: `/api/v1/*`
+- Swagger: `/api`
+- Health: `/api/v1/health`
+- Respuesta admin: `{ status, data }`
 
-## Variables de Entorno
+## Seguridad
 
-```env
-DATABASE_URL          # PostgreSQL via Supabase
-SUPABASE_URL          # Auth + Storage
-SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
-SUPABASE_JWT_SECRET
+- `JwtAuthGuard` en endpoints protegidos.
+- `GlobalRolesGuard` para administración (`admin|super_admin`).
+- `OwnerOrAdminGuard` para recursos por usuario.
 
-# External Services
-REDIS_URL             # Upstash Redis (opcional, fallback a in-memory)
-FIREBASE_PROJECT_ID   # Para push notifications
-FIREBASE_PRIVATE_KEY
-FIREBASE_CLIENT_EMAIL
-SENTRY_DSN            # Error monitoring (opcional)
-```
+## Documentación
 
-## Testing
-
-```bash
-# E2E tests requieren DB de test
-pnpm run test:e2e
-
-# Ver coverage
-pnpm run test:cov
-```
-
-## Performance
-
-- **AuditInterceptor**: Logs automáticos con response time
-- **Load Testing**: `pnpm run load-test` para benchmarks
-- **Metrics**: Ver logs para duración de requests
+- Referencia operativa actual: `README.md`
+- Implementación admin/notificaciones: `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
+- Índice de documentación local: `docs/README.md`
+- Fuente funcional global (monorepo padre): `../../docs`
