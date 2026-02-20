@@ -25,6 +25,7 @@ let FcmTokensService = class FcmTokensService {
             return this.prisma.user_fcm_tokens.update({
                 where: { fcm_token_id: existing.fcm_token_id },
                 data: {
+                    user_id: userId,
                     active: true,
                     last_used: new Date(),
                     device_type: dto.device_type,
@@ -42,11 +43,24 @@ let FcmTokensService = class FcmTokensService {
             },
         });
     }
-    async unregisterToken(token) {
-        return this.prisma.user_fcm_tokens.updateMany({
+    async unregisterToken(token, userId) {
+        const existing = await this.prisma.user_fcm_tokens.findFirst({
             where: { token },
+        });
+        if (!existing) {
+            throw new common_1.NotFoundException('FCM token not found');
+        }
+        if (existing.user_id !== userId) {
+            throw new common_1.ForbiddenException('You can only unregister your own tokens');
+        }
+        await this.prisma.user_fcm_tokens.updateMany({
+            where: { token, user_id: userId, active: true },
             data: { active: false },
         });
+        return {
+            success: true,
+            message: 'FCM token unregistered successfully',
+        };
     }
     async getUserTokens(userId) {
         return this.prisma.user_fcm_tokens.findMany({

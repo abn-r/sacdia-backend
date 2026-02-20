@@ -18,7 +18,16 @@ let NotificationsService = class NotificationsService {
     constructor(prisma) {
         this.prisma = prisma;
     }
+    isFcmConfigured() {
+        return firebase_admin_module_1.firebaseAdmin.apps.length > 0;
+    }
     async sendToUser(dto) {
+        if (!this.isFcmConfigured()) {
+            return {
+                success: false,
+                message: 'FCM service is not configured in this environment',
+            };
+        }
         const tokens = await this.prisma.user_fcm_tokens.findMany({
             where: {
                 user_id: dto.userId,
@@ -56,6 +65,12 @@ let NotificationsService = class NotificationsService {
         };
     }
     async broadcast(dto) {
+        if (!this.isFcmConfigured()) {
+            return {
+                success: false,
+                message: 'FCM service is not configured in this environment',
+            };
+        }
         const tokens = await this.prisma.user_fcm_tokens.findMany({
             where: { active: true },
             select: { token: true },
@@ -86,6 +101,12 @@ let NotificationsService = class NotificationsService {
         };
     }
     async sendToClubMembers(clubInstanceId, instanceType, dto) {
+        if (!this.isFcmConfigured()) {
+            return {
+                success: false,
+                message: 'FCM service is not configured in this environment',
+            };
+        }
         const columnMap = {
             adventurers: 'club_adv_id',
             pathfinders: 'club_pathf_id',

@@ -24,6 +24,7 @@ import { FoldersModule } from './folders/folders.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { RbacModule } from './rbac/rbac.module';
 import { HealthController } from './health/health.controller';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { HealthController } from './health/health.controller';
     FoldersModule,
     InventoryModule,
     RbacModule,
+    AdminModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

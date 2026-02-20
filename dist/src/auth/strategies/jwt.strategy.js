@@ -29,6 +29,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
         return {
             sub: payload.sub,
             userId: payload.sub,
+            user_id: payload.sub,
             email: payload.email,
         };
     }

@@ -1,247 +1,187 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# SACDIA Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+> Documentacion oficial del proyecto: `/Users/abner/Documents/development/sacdia/docs` (repositorio padre).
+> Este README es una vista operativa del backend y debe mantenerse sincronizado con esa fuente.
 
-## Description
+## Estado actual (2026-02-13)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Endpoints admin para catálogos habilitados bajo `/api/v1/admin/*`.
+- Notificaciones y FCM tokens endurecidos con JWT + roles.
+- Health check extendido con estado de dependencias (`db`, `cache`, `fcm`, `sentry`).
+- Script de verificación de migración FCM disponible (`pnpm run verify:fcm-migration`).
 
-## Project setup
+## Stack
 
-```bash
-$ pnpm install
+- NestJS 11
+- Prisma 7 (`@prisma/adapter-pg`)
+- PostgreSQL (Supabase)
+- Auth JWT con Supabase
+- Cache con Redis (fallback a in-memory)
+- Firebase Admin (FCM)
+- Sentry
+
+## Estructura principal
+
+```text
+src/
+├── auth/
+├── users/
+├── catalogs/
+├── clubs/
+├── classes/
+├── honors/
+├── activities/
+├── finances/
+├── notifications/
+├── admin/
+├── rbac/
+├── common/
+├── prisma/
+└── main.ts
 ```
 
-## Compile and run the project
+## Requisitos
+
+- Node.js 20+
+- pnpm
+- Acceso a PostgreSQL (Supabase)
+
+## Setup rápido
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
-```
-
-## Comandos Principales
-
-```bash
-# Desarrollo
-pnpm run start:dev
-
-# Build
+pnpm install
+cp .env.example .env
 pnpm run build
+pnpm run start:dev
+```
+
+## Scripts
+
+```bash
+# App
+pnpm run start:dev
+pnpm run build
+pnpm run start:prod
 
 # Tests
 pnpm run test
 pnpm run test:e2e
+pnpm run test:cov
 
-# Database
-npx prisma generate      # Regenerar cliente
-npx prisma migrate dev   # Aplicar migraciones
-npx prisma studio        # UI de base de datos
-npx prisma db seed       # Seed inicial
+# Prisma
+pnpm prisma migrate deploy
+pnpm run verify:fcm-migration
 
-# Load Testing
-pnpm run load-test       # Probar rendimiento
+# Utilidades
+pnpm run generate:spec
+pnpm run load-test
 ```
 
----
+## Variables de entorno
 
-## External Services
+### Requeridas
 
-### Upstash Redis
+- `DATABASE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_JWT_SECRET`
 
-Cache distribuido para:
+### Recomendadas para producción
 
-- Token blacklist (logout, revocación)
-- Session management (límites concurrentes)
-- MFA temporal codes
+- `REDIS_URL`
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_PRIVATE_KEY`
+- `FIREBASE_CLIENT_EMAIL`
+- `SENTRY_DSN`
+- `ALLOWED_ORIGINS`
 
-**Setup**:
+Notas:
+- Si `REDIS_URL` falla, el backend usa cache in-memory (no recomendado para prod).
+- Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
 
-1. Crear database en [upstash.com](https://upstash.com)
-2. Agregar `REDIS_URL` a `.env`
-3. El sistema usará Redis automáticamente (fallback a in-memory si no está configurado)
+## API
 
-### Firebase FCM (Push Notifications)
+- Base URL: `/api/v1`
+- Swagger: `/api`
+- Health: `GET /api/v1/health`
 
-**Setup**:
+## Seguridad implementada
 
-1. Crear proyecto en [Firebase Console](https://console.firebase.google.com)
-2. Descargar service account JSON (Project Settings > Service Accounts)
-3. Agregar credenciales a `.env`:
-   ```env
-   FIREBASE_PROJECT_ID="..."
-   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-   FIREBASE_CLIENT_EMAIL="..."
-   ```
+- `JwtAuthGuard` para endpoints protegidos.
+- `GlobalRolesGuard` para rutas administrativas.
+- `OwnerOrAdminGuard` para recursos por usuario cuando aplica.
+- Hardening de notificaciones:
+  - `/api/v1/notifications/*` requiere JWT.
+  - `/api/v1/fcm-tokens/*` requiere JWT.
+  - `POST /api/v1/notifications/broadcast` restringido a `admin|super_admin`.
+  - `POST /api/v1/notifications/club/:instanceType/:instanceId` restringido a `admin|super_admin`.
 
-**Endpoints**:
+## Contrato FCM actualizado
 
-- `POST /fcm-tokens` - Registrar token de dispositivo
-- `POST /notifications/send` - Enviar a usuario
-- `POST /notifications/broadcast` - Enviar a todos
-- `POST /notifications/club/:type/:id` - Enviar a club
+- Registro de token:
+  - `POST /api/v1/fcm-tokens`
+  - El `userId` se toma del JWT autenticado (ya no se envía en body).
+- Listado propio:
+  - `GET /api/v1/fcm-tokens`
+- Desregistro propio:
+  - `DELETE /api/v1/fcm-tokens/:token`
+- Compatibilidad:
+  - `GET /api/v1/fcm-tokens/user/:userId` (owner/admin)
 
-### Sentry (Error Monitoring)
+## Endpoints admin (Fase 3 mínima)
 
-**Setup**:
+Rutas bajo `/api/v1/admin/*` con JWT + roles `admin|super_admin`.
 
-1. Crear proyecto en [sentry.io](https://sentry.io)
-2. Copiar DSN
-3. Agregar a `.env`:
-   ```env
-   SENTRY_DSN="https://...@....ingest.sentry.io/..."
-   ```
+### Geografía
 
-Sentry capturará automáticamente todos los errores no manejados.
+- `GET|POST /countries`
+- `PATCH|DELETE /countries/:countryId`
+- `GET|POST /unions`
+- `PATCH|DELETE /unions/:unionId`
+- `GET|POST /local-fields`
+- `PATCH|DELETE /local-fields/:localFieldId`
+- `GET|POST /districts`
+- `PATCH|DELETE /districts/:districtId`
+- `GET|POST /churches`
+- `PATCH|DELETE /churches/:churchId`
 
----
+### Referencia
 
-### OAuth Authentication (Google & Apple)
+- `GET|POST /relationship-types`
+- `PATCH|DELETE /relationship-types/:relationshipTypeId`
+- `GET|POST /allergies`
+- `PATCH|DELETE /allergies/:allergyId`
+- `GET|POST /diseases`
+- `PATCH|DELETE /diseases/:diseaseId`
+- `GET|POST /ecclesiastical-years`
+- `PATCH|DELETE /ecclesiastical-years/:yearId`
 
-**Setup**:
+## OAuth
 
-OAuth ya está implementado en el backend. Solo necesitas configurar los providers en Supabase:
+- `POST /api/v1/auth/oauth/google`
+- `POST /api/v1/auth/oauth/apple`
+- `GET /api/v1/auth/oauth/callback`
+- `GET /api/v1/auth/oauth/providers`
+- `DELETE /api/v1/auth/oauth/:provider`
 
-#### Google OAuth
-
-1. Ir a [Google Cloud Console](https://console.cloud.google.com/)
-2. Crear OAuth 2.0 Client ID
-3. Agregar redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`
-4. Copiar Client ID y Secret a Supabase Dashboard → Authentication → Providers → Google
-
-#### Apple Sign In
-
-1. Ir a [Apple Developer](https://developer.apple.com/account/)
-2. Crear Service ID y configurar Sign in with Apple
-3. Generar private key (.p8 file)
-4. Agregar a Supabase: Service ID, Team ID, Key ID, Private Key
-
-**Endpoints**:
-
-- `POST /auth/oauth/google` - Iniciar flujo Google
-- `POST /auth/oauth/apple` - Iniciar flujo Apple
-- `GET /auth/oauth/callback` - Manejar callback (auto-crea usuarios)
-- `GET /auth/oauth/providers` - Ver providers conectados (auth required)
-- `DELETE /auth/oauth/:provider` - Desconectar provider (auth required)
-
-**Features**:
-
-- ✅ Auto-creación de usuarios en primera auth
-- ✅ Tracking de providers en BD (`google_connected`, `apple_connected`)
-- ✅ Flag `needsPostRegistration` para nuevos usuarios
-- ✅ Integración con Supabase Auth
-
----
-
-## Run tests
+## Verificación recomendada antes de release
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm run build
+pnpm run test -- src/notifications/fcm-tokens.service.spec.ts
+pnpm run test:e2e -- test/notifications-security.e2e-spec.ts test/admin-catalogs.e2e-spec.ts
+pnpm prisma migrate deploy
+pnpm run verify:fcm-migration
 ```
 
-## Performance Testing
+## Documentación del proyecto
 
-Use `autocannon` to load test your API endpoints and measure performance metrics:
+- Índice local de documentos: `docs/README.md`
+- Sesión de implementación de admin/notificaciones: `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
+- Referencia histórica de implementación previa: `docs/IMPLEMENTATION-SESSION-2026-02-05.md`
+- Referencia de baseline DB: `docs/migrations/2026-02-05-db-push-sync.md`
 
-```bash
-# Test default health endpoint
-$ pnpm run load-test
-
-# Test specific endpoint
-$ pnpm run load-test /api/camporees
-
-# Test with custom URL
-$ URL=https://your-staging.com pnpm run load-test /api/users
-```
-
-### Key Metrics
-
-The load test reports the following metrics:
-
-- **Throughput**: Data transferred per second
-- **Req/sec**: Number of requests per second (average and max)
-- **Latency**: Response time at p50 (median), p99, and max
-- **Errors/Timeouts**: Failed requests
-
-### Performance Benchmarks
-
-- **Excellent**: >1000 req/s, <100ms p99 latency
-- **Good**: 500-1000 req/s, 100-500ms p99 latency
-- **Needs Optimization**: <100 req/s or >1000ms p99 latency
-
-### Monitoring Response Times
-
-All requests are automatically logged with duration metrics via `AuditInterceptor`. Check your logs for real-time performance insights.
-
-````
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-````
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Nota: la documentación funcional oficial del producto vive en el repositorio padre (`../../docs`).

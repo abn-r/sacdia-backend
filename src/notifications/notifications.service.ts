@@ -19,10 +19,21 @@ export interface BroadcastNotificationDto {
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
+  private isFcmConfigured(): boolean {
+    return firebaseAdmin.apps.length > 0;
+  }
+
   /**
    * Enviar notificación a un usuario específico
    */
   async sendToUser(dto: SendNotificationDto) {
+    if (!this.isFcmConfigured()) {
+      return {
+        success: false,
+        message: 'FCM service is not configured in this environment',
+      };
+    }
+
     // Obtener tokens FCM del usuario
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: {
@@ -73,6 +84,13 @@ export class NotificationsService {
    * Enviar notificación a todos los usuarios activos
    */
   async broadcast(dto: BroadcastNotificationDto) {
+    if (!this.isFcmConfigured()) {
+      return {
+        success: false,
+        message: 'FCM service is not configured in this environment',
+      };
+    }
+
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { active: true },
       select: { token: true },
@@ -118,6 +136,13 @@ export class NotificationsService {
     instanceType: 'adventurers' | 'pathfinders' | 'master_guilds',
     dto: Omit<BroadcastNotificationDto, 'userId'>,
   ) {
+    if (!this.isFcmConfigured()) {
+      return {
+        success: false,
+        message: 'FCM service is not configured in this environment',
+      };
+    }
+
     // Mapear tipo de instancia a columna
     const columnMap = {
       adventurers: 'club_adv_id',

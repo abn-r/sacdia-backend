@@ -1,37 +1,24 @@
-# 🤖 AI Context & Documentation Reference - Backend
+# AI Context - SACDIA Backend
 
-Este proyecto es parte del monorepo SACDIA. **NO DUPLIQUES DOCUMENTACIÓN AQUÍ.**
+Este backend forma parte del monorepo SACDIA.
 
-Tu fuente de verdad (Single Source of Truth) se encuentra en el directorio raíz `../../docs/`.
+## Fuente de verdad
 
-## 📚 Documentación Relevante para Backend
+- La documentación funcional/arquitectónica global vive en: `../../docs`.
+- La documentación operativa local de este repo vive en:
+  - `README.md`
+  - `docs/README.md`
+  - `docs/IMPLEMENTATION-SESSION-*.md`
 
-Antes de realizar tareas, consulta estos documentos clave según sea necesario:
+## Qué revisar antes de implementar
 
-### 1. Arquitectura y Estándares
+1. Documentos relevantes en `../../docs` (features, API, DB, roadmap).
+2. Contrato actual del backend en `README.md`.
+3. Estado de implementación local en `docs/README.md`.
 
-- **Stack & Guías**: `../../docs/00-STEERING/tech.md` y `../../docs/00-STEERING/coding-standards.md`
-- **Visión General**: `../../docs/01-OVERVIEW.md`
+## Workflow recomendado
 
-### 2. Especificaciones Funcionales (Features)
-
-Busca la carpeta correspondiente al módulo que estás trabajando en `../../docs/01-FEATURES/`:
-
-- **Auth**: `../../docs/01-FEATURES/auth/`
-- **Finanzas**: `../../docs/01-FEATURES/finanzas/`
-- **Actividades**: `../../docs/01-FEATURES/actividades/`
-- **Infraestructura**: `../../docs/01-FEATURES/infrastructure/`
-
-### 3. API & Base de Datos
-
-- **API Specs**: `../../docs/02-API/API-SPECIFICATION.md`
-- **Database Schema**: `../../docs/03-DATABASE/SCHEMA-REFERENCE.md`
-- **Test Guide**: `../../docs/02-API/TESTING-GUIDE.md`
-
-## 🚀 Workflow
-
-Cuando recibas una tarea:
-
-1. Lee este archivo para ubicar la documentación.
-2. Lee los archivos relevantes en `../../docs/` usando tu path relativo.
-3. Implementa cambios únicamente en este directorio (`sacdia-backend`).
+1. Confirmar contrato y rutas (`/api/v1/*`).
+2. Implementar cambios en `sacdia-backend`.
+3. Actualizar documentación local impactada.
+4. Si hay impacto funcional global, sincronizar también en `../../docs`.

@@ -33,6 +33,7 @@ const folders_module_1 = require("./folders/folders.module");
 const inventory_module_1 = require("./inventory/inventory.module");
 const rbac_module_1 = require("./rbac/rbac.module");
 const health_controller_1 = require("./health/health.controller");
+const admin_module_1 = require("./admin/admin.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -78,6 +79,7 @@ exports.AppModule = AppModule = __decorate([
             folders_module_1.FoldersModule,
             inventory_module_1.InventoryModule,
             rbac_module_1.RbacModule,
+            admin_module_1.AdminModule,
         ],
         controllers: [app_controller_1.AppController, health_controller_1.HealthController],
         providers: [

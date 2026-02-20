@@ -19,6 +19,8 @@ const swagger_1 = require("@nestjs/swagger");
 const notifications_service_1 = require("./notifications.service");
 const fcm_tokens_service_1 = require("./fcm-tokens.service");
 const class_validator_1 = require("class-validator");
+const global_roles_decorator_1 = require("../common/decorators/global-roles.decorator");
+const guards_1 = require("../common/guards");
 class SendNotificationDto {
     userId;
     title;
@@ -114,6 +116,8 @@ __decorate([
 ], NotificationsController.prototype, "sendToUser", null);
 __decorate([
     (0, common_1.Post)('broadcast'),
+    (0, common_1.UseGuards)(guards_1.GlobalRolesGuard),
+    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
     (0, swagger_1.ApiOperation)({ summary: 'Send notification to all users' }),
     openapi.ApiResponse({ status: 201, type: Object }),
     __param(0, (0, common_1.Body)()),
@@ -123,6 +127,8 @@ __decorate([
 ], NotificationsController.prototype, "broadcast", null);
 __decorate([
     (0, common_1.Post)('club/:instanceType/:instanceId'),
+    (0, common_1.UseGuards)(guards_1.GlobalRolesGuard),
+    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
     (0, swagger_1.ApiOperation)({ summary: 'Send notification to club members' }),
     openapi.ApiResponse({ status: 201, type: Object }),
     __param(0, (0, common_1.Param)('instanceType')),
@@ -135,6 +141,7 @@ __decorate([
 exports.NotificationsController = NotificationsController = __decorate([
     (0, swagger_1.ApiTags)('Notifications'),
     (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
     (0, common_1.Controller)('notifications'),
     __metadata("design:paramtypes", [notifications_service_1.NotificationsService,
         fcm_tokens_service_1.FcmTokensService])
@@ -144,11 +151,14 @@ let FcmTokensController = class FcmTokensController {
     constructor(fcmTokensService) {
         this.fcmTokensService = fcmTokensService;
     }
-    async registerToken(dto) {
-        return this.fcmTokensService.registerToken(dto.userId, dto);
+    async registerToken(dto, req) {
+        return this.fcmTokensService.registerToken(req.user.sub, dto);
     }
-    async unregisterToken(token) {
-        return this.fcmTokensService.unregisterToken(token);
+    async unregisterToken(token, req) {
+        return this.fcmTokensService.unregisterToken(token, req.user.sub);
+    }
+    async getMyTokens(req) {
+        return this.fcmTokensService.getUserTokens(req.user.sub);
     }
     async getUserTokens(userId) {
         return this.fcmTokensService.getUserTokens(userId);
@@ -160,24 +170,36 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Register FCM token' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [RegisterFcmTokenDto, Object]),
     __metadata("design:returntype", Promise)
 ], FcmTokensController.prototype, "registerToken", null);
 __decorate([
     (0, common_1.Delete)(':token'),
     (0, swagger_1.ApiOperation)({ summary: 'Unregister FCM token' }),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('token')),
+    __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], FcmTokensController.prototype, "unregisterToken", null);
 __decorate([
-    (0, common_1.Get)('user/:userId'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get user FCM tokens' }),
+    (0, common_1.Get)(),
+    (0, swagger_1.ApiOperation)({ summary: 'Get current user FCM tokens' }),
     openapi.ApiResponse({ status: 200 }),
-    __param(0, (0, common_1.Param)('userId')),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], FcmTokensController.prototype, "getMyTokens", null);
+__decorate([
+    (0, common_1.Get)('user/:userId'),
+    (0, common_1.UseGuards)(guards_1.OwnerOrAdminGuard),
+    (0, swagger_1.ApiOperation)({ summary: 'Get FCM tokens by user ID (owner/admin only)' }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('userId', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
@@ -185,6 +207,7 @@ __decorate([
 exports.FcmTokensController = FcmTokensController = __decorate([
     (0, swagger_1.ApiTags)('FCM Tokens'),
     (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
     (0, common_1.Controller)('fcm-tokens'),
     __metadata("design:paramtypes", [fcm_tokens_service_1.FcmTokensService])
 ], FcmTokensController);

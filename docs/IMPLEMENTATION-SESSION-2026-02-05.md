@@ -1,5 +1,13 @@
 # Sesión de Implementación Backend - 5 de Febrero 2026
 
+> [!IMPORTANT]
+> Documento histórico (snapshot del **2026-02-05**).
+> Parte del contenido quedó superado por cambios posteriores.
+> Para estado operativo más reciente revisa:
+> - `README.md`
+> - `docs/README.md`
+> - `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
+
 ## 📋 Resumen Ejecutivo
 
 Esta sesión completó la implementación de **3 módulos críticos** faltantes del backend SACDIA, actualizó el schema de Prisma y documentó los ajustes necesarios para lograr 100% de funcionalidad.

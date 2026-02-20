@@ -18,7 +18,10 @@ export declare class FcmTokensService {
         device_name: string | null;
         last_used: Date;
     }>;
-    unregisterToken(token: string): Promise<import("@prisma/client").Prisma.BatchPayload>;
+    unregisterToken(token: string, userId: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
     getUserTokens(userId: string): Promise<{
         created_at: Date;
         user_id: string;
