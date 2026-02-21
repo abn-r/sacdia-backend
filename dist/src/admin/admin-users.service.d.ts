@@ -57,20 +57,20 @@ export declare class AdminUsersService {
             } | null;
         }[];
         emergency_contacts: {
-            phone: string;
             name: string;
-            relationship_type: number;
-            primary: boolean;
+            phone: string;
+            relationship_type_id: string;
             emergency_id: number;
+            primary: boolean;
         }[];
         legal_representative: {
-            id: string;
-            phone: string | null;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            representative_user_id: string | null;
+            phone: string | null;
             relationship_type_id: string | null;
+            id: string;
+            representative_user_id: string | null;
         } | null;
         scope: ScopeMeta;
         user_id: any;

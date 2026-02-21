@@ -46,8 +46,12 @@ export class LegalRepresentativesController {
 
   @Get()
   @ApiOperation({ summary: 'Obtener representante legal del usuario' })
-  @ApiResponse({ status: 200, description: 'Representante encontrado' })
-  @ApiResponse({ status: 404, description: 'Representante no encontrado' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Respuesta exitosa. Retorna representante o data=null cuando no existe',
+  })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async findOne(@Param('userId') userId: string) {
     return this.legalRepresentativesService.findOne(userId);
   }

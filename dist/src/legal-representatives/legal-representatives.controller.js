@@ -59,9 +59,12 @@ __decorate([
 __decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener representante legal del usuario' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Representante encontrado' }),
-    (0, swagger_1.ApiResponse)({ status: 404, description: 'Representante no encontrado' }),
-    openapi.ApiResponse({ status: 200 }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Respuesta exitosa. Retorna representante o data=null cuando no existe',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Usuario no encontrado' }),
+    openapi.ApiResponse({ status: 200, type: Object }),
     __param(0, (0, common_1.Param)('userId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

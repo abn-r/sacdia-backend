@@ -1074,7 +1074,7 @@ model allergies {
 model emergency_contacts {
   emergency_id      Int      @id @default(autoincrement())
   name              String
-  relationship_type Int
+  relationship_type_id String   @db.Uuid
   primary           Boolean  @default(false)
   created_at        DateTime @default(now()) @db.Timestamptz(6)
   modified_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
@@ -1083,8 +1083,9 @@ model emergency_contacts {
   active            Boolean  @default(true)
   phone             String   @db.VarChar
 
-  contact_user users? @relation("internal_user_emergency_contact", fields: [contact_user_id], references: [user_id])
-  owner        users  @relation("user_emergency_contact", fields: [owner_id], references: [user_id])
+  contact_user       users?             @relation("internal_user_emergency_contact", fields: [contact_user_id], references: [user_id])
+  owner              users              @relation("user_emergency_contact", fields: [owner_id], references: [user_id])
+  relationship_types relationship_types @relation(fields: [relationship_type_id], references: [relationship_type_id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model weekly_records {
@@ -1195,6 +1196,7 @@ model relationship_types {
   created_at           DateTime @default(now()) @db.Timestamptz(6)
   modified_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  emergency_contacts   emergency_contacts[]
   legal_representatives legal_representatives[]
 
   @@index([name], map: "idx_relationship_types_name")

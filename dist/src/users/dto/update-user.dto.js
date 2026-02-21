@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UpdateUserDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
+const class_transformer_1 = require("class-transformer");
 const swagger_1 = require("@nestjs/swagger");
 const client_1 = require("@prisma/client");
 class UpdateUserDto {
@@ -20,8 +21,11 @@ class UpdateUserDto {
     baptism;
     baptism_date;
     blood;
+    country_id;
+    union_id;
+    local_field_id;
     static _OPENAPI_METADATA_FACTORY() {
-        return { gender: { required: false, type: () => Object, enum: ['M', 'F'] }, birthday: { required: false, type: () => String }, baptism: { required: false, type: () => Boolean }, baptism_date: { required: false, type: () => String }, blood: { required: false, type: () => Object } };
+        return { gender: { required: false, type: () => Object, enum: ['M', 'F'] }, birthday: { required: false, type: () => String }, baptism: { required: false, type: () => Boolean }, baptism_date: { required: false, type: () => String }, blood: { required: false, type: () => Object }, country_id: { required: false, type: () => Number, minimum: 1 }, union_id: { required: false, type: () => Number, minimum: 1 }, local_field_id: { required: false, type: () => Number, minimum: 1 } };
     }
 }
 exports.UpdateUserDto = UpdateUserDto;
@@ -66,4 +70,37 @@ __decorate([
     (0, class_validator_1.IsEnum)(client_1.blood_type),
     __metadata("design:type", String)
 ], UpdateUserDto.prototype, "blood", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 1,
+        description: 'ID del país',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], UpdateUserDto.prototype, "country_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 1,
+        description: 'ID de la unión',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], UpdateUserDto.prototype, "union_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 1,
+        description: 'ID del campo local',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], UpdateUserDto.prototype, "local_field_id", void 0);
 //# sourceMappingURL=update-user.dto.js.map

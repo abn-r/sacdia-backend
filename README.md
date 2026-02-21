@@ -5,9 +5,21 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
 > Documentacion oficial del proyecto: `/Users/abner/Documents/development/sacdia/docs` (repositorio padre).
 > Este README es una vista operativa del backend y debe mantenerse sincronizado con esa fuente.
 
-## Estado actual (2026-02-13)
+## Estado actual (2026-02-21)
 
 - Endpoints admin para catálogos habilitados bajo `/api/v1/admin/*`.
+- Endpoints públicos de catálogo de salud habilitados:
+  - `GET /api/v1/catalogs/allergies`
+  - `GET /api/v1/catalogs/diseases`
+- Endpoints de usuario para persistir salud habilitados:
+  - `PUT /api/v1/users/:userId/allergies`
+  - `PUT /api/v1/users/:userId/diseases`
+- `PATCH /api/v1/users/:userId` ampliado para aceptar también:
+  - `country_id`
+  - `union_id`
+  - `local_field_id`
+- Migración aplicada: `emergency_contacts.relationship_type_id` ahora referencia
+  `relationship_types.relationship_type_id` (UUID).
 - Notificaciones y FCM tokens endurecidos con JWT + roles.
 - Health check extendido con estado de dependencias (`db`, `cache`, `fcm`, `sentry`).
 - Script de verificación de migración FCM disponible (`pnpm run verify:fcm-migration`).
@@ -108,6 +120,120 @@ Notas:
 - Swagger: `/api`
 - Health: `GET /api/v1/health`
 
+### Referencia rápida: catálogos de salud (lectura para app/usuarios)
+
+- `GET /api/v1/catalogs/allergies`
+- `GET /api/v1/catalogs/diseases`
+
+Estructura de respuesta:
+
+```json
+[
+  {
+    "allergy_id": 1,
+    "name": "Polen",
+    "description": "Alergia al polen"
+  }
+]
+```
+
+```json
+[
+  {
+    "disease_id": 10,
+    "name": "Asma",
+    "description": "Asma controlada"
+  }
+]
+```
+
+Estos IDs (`allergy_id`, `disease_id`) se usan para guardar selección de salud del usuario con:
+
+- `PUT /api/v1/users/:userId/allergies`
+- `PUT /api/v1/users/:userId/diseases`
+
+### Referencia rápida: salud del usuario (escritura en tablas pivote)
+
+- `PUT /api/v1/users/:userId/allergies`
+  - Body:
+  ```json
+  {
+    "allergy_ids": [1, 2, 3]
+  }
+  ```
+- `PUT /api/v1/users/:userId/diseases`
+  - Body:
+  ```json
+  {
+    "disease_ids": [10, 12]
+  }
+  ```
+
+Comportamiento de ambos endpoints:
+
+1. Permiten múltiples IDs en una sola request.
+2. Reemplazan el conjunto activo completo del usuario.
+3. Si un ID ya existe inactivo, se reactiva.
+4. Si un ID no existe para el usuario, se crea.
+5. IDs activos no enviados en la lista se desactivan (`active=false`).
+6. Lista vacía (`[]`) deja al usuario sin registros activos en ese tipo.
+7. Validan que usuario exista y que IDs pertenezcan a catálogos activos.
+
+### Referencia rápida: actualización de perfil de usuario
+
+- `PATCH /api/v1/users/:userId`
+
+Campos soportados:
+
+- `gender`, `birthday`, `baptism`, `baptism_date`, `blood`
+- `country_id`, `union_id`, `local_field_id`
+
+Reglas de validación relevantes:
+
+1. `baptism_date` no puede enviarse si `baptism=false`.
+2. `country_id`, `union_id`, `local_field_id` deben existir y estar activos.
+3. `union_id` debe pertenecer a `country_id`.
+4. `local_field_id` debe pertenecer a `union_id`.
+
+### Referencia rápida: representante legal por usuario
+
+- `GET /api/v1/users/:userId/legal-representative`
+
+Contrato de respuesta:
+
+1. Usuario existente con representante:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": "uuid-del-usuario",
+    "relationship_type_id": "uuid-relacion"
+  },
+  "hasLegalRepresentative": true
+}
+```
+
+2. Usuario existente sin representante:
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "hasLegalRepresentative": false,
+  "message": "Usuario sin representante legal registrado"
+}
+```
+
+3. Usuario inexistente:
+
+```json
+{
+  "statusCode": 404,
+  "message": "Usuario no encontrado"
+}
+```
+
 ## Seguridad implementada
 
 - `JwtAuthGuard` para endpoints protegidos.
@@ -180,6 +306,10 @@ pnpm run verify:fcm-migration
 ## Documentación del proyecto
 
 - Índice local de documentos: `docs/README.md`
+- Sesión de implementación de salud/geografía de usuario:
+  `docs/IMPLEMENTATION-SESSION-2026-02-21-user-medical-and-geography.md`
+- Nota de migración UUID en contactos de emergencia:
+  `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
 - Sesión de implementación de admin/notificaciones: `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
 - Referencia histórica de implementación previa: `docs/IMPLEMENTATION-SESSION-2026-02-05.md`
 - Referencia de baseline DB: `docs/migrations/2026-02-05-db-push-sync.md`

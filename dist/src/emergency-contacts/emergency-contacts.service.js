@@ -20,6 +20,15 @@ let EmergencyContactsService = EmergencyContactsService_1 = class EmergencyConta
     constructor(prisma) {
         this.prisma = prisma;
     }
+    async validateRelationshipTypeExists(relationshipTypeId) {
+        const relationshipType = await this.prisma.relationship_types.findUnique({
+            where: { relationship_type_id: relationshipTypeId },
+            select: { relationship_type_id: true },
+        });
+        if (!relationshipType) {
+            throw new common_1.BadRequestException('Tipo de relación no válido');
+        }
+    }
     async create(userId, createDto) {
         const activeCount = await this.prisma.emergency_contacts.count({
             where: {
@@ -41,6 +50,7 @@ let EmergencyContactsService = EmergencyContactsService_1 = class EmergencyConta
         if (duplicate) {
             throw new common_1.ConflictException('Este contacto ya existe');
         }
+        await this.validateRelationshipTypeExists(createDto.relationship_type_id);
         if (createDto.primary) {
             await this.prisma.emergency_contacts.updateMany({
                 where: {
@@ -56,7 +66,7 @@ let EmergencyContactsService = EmergencyContactsService_1 = class EmergencyConta
             data: {
                 owner_id: userId,
                 name: createDto.name,
-                relationship_type: createDto.relationship_type,
+                relationship_type_id: createDto.relationship_type_id,
                 phone: createDto.phone,
                 primary: createDto.primary ?? false,
                 active: true,
@@ -79,7 +89,7 @@ let EmergencyContactsService = EmergencyContactsService_1 = class EmergencyConta
             select: {
                 emergency_id: true,
                 name: true,
-                relationship_type: true,
+                relationship_type_id: true,
                 phone: true,
                 primary: true,
                 created_at: true,
@@ -118,6 +128,9 @@ let EmergencyContactsService = EmergencyContactsService_1 = class EmergencyConta
         });
         if (!existingContact) {
             throw new common_1.NotFoundException('Contacto de emergencia no encontrado');
+        }
+        if (updateDto.relationship_type_id) {
+            await this.validateRelationshipTypeExists(updateDto.relationship_type_id);
         }
         if (updateDto.primary) {
             await this.prisma.emergency_contacts.updateMany({

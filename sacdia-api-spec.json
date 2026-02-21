@@ -788,6 +788,98 @@
         ]
       }
     },
+    "/v1/users/{userId}/allergies": {
+      "put": {
+        "description": "Reemplaza el conjunto de alergias activas del usuario en users_allergies",
+        "operationId": "UsersController_updateAllergies_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserAllergiesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alergias actualizadas"
+          },
+          "400": {
+            "description": "Alergia inválida"
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Guardar alergias del usuario",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/v1/users/{userId}/diseases": {
+      "put": {
+        "description": "Reemplaza el conjunto de enfermedades activas del usuario en users_diseases",
+        "operationId": "UsersController_updateDiseases_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDiseasesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Enfermedades actualizadas"
+          },
+          "400": {
+            "description": "Enfermedad inválida"
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Guardar enfermedades del usuario",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/v1/users/{userId}/profile-picture": {
       "post": {
         "operationId": "UsersController_uploadProfilePicture_v1",
@@ -1174,10 +1266,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Representante encontrado"
+            "description": "Respuesta exitosa. Retorna representante o data=null cuando no existe"
           },
           "404": {
-            "description": "Representante no encontrado"
+            "description": "Usuario no encontrado"
           }
         },
         "security": [
@@ -1415,6 +1507,22 @@
         ]
       }
     },
+    "/v1/catalogs/relationship-types": {
+      "get": {
+        "description": "Lista tipos de relación activos para formularios (padre, madre, tutor, etc.)",
+        "operationId": "CatalogsController_getRelationshipTypes_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Lista de tipos de relación"
+          }
+        },
+        "summary": "Obtener tipos de relación",
+        "tags": [
+          "catalogs"
+        ]
+      }
+    },
     "/v1/catalogs/countries": {
       "get": {
         "description": "Lista todos los países activos",
@@ -1618,6 +1726,38 @@
           }
         },
         "summary": "Obtener ideales de club",
+        "tags": [
+          "catalogs"
+        ]
+      }
+    },
+    "/v1/catalogs/allergies": {
+      "get": {
+        "description": "Lista alergias activas para selección en formularios",
+        "operationId": "CatalogsController_getAllergies_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Lista de alergias"
+          }
+        },
+        "summary": "Obtener catálogo de alergias",
+        "tags": [
+          "catalogs"
+        ]
+      }
+    },
+    "/v1/catalogs/diseases": {
+      "get": {
+        "description": "Lista enfermedades activas para selección en formularios",
+        "operationId": "CatalogsController_getDiseases_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Lista de enfermedades"
+          }
+        },
+        "summary": "Obtener catálogo de enfermedades",
         "tags": [
           "catalogs"
         ]
@@ -6437,8 +6577,61 @@
               "O_NEGATIVE"
             ],
             "description": "Tipo de sangre"
+          },
+          "country_id": {
+            "type": "number",
+            "example": 1,
+            "description": "ID del país"
+          },
+          "union_id": {
+            "type": "number",
+            "example": 1,
+            "description": "ID de la unión"
+          },
+          "local_field_id": {
+            "type": "number",
+            "example": 1,
+            "description": "ID del campo local"
           }
         }
+      },
+      "UpdateUserAllergiesDto": {
+        "type": "object",
+        "properties": {
+          "allergy_ids": {
+            "example": [
+              1,
+              2
+            ],
+            "description": "Lista de IDs de alergias activas para el usuario",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "allergy_ids"
+        ]
+      },
+      "UpdateUserDiseasesDto": {
+        "type": "object",
+        "properties": {
+          "disease_ids": {
+            "example": [
+              10,
+              12
+            ],
+            "description": "Lista de IDs de enfermedades activas para el usuario",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "disease_ids"
+        ]
       },
       "CreateEmergencyContactDto": {
         "type": "object",
@@ -6447,10 +6640,10 @@
             "type": "string",
             "example": "María García López"
           },
-          "relationship_type": {
-            "type": "number",
-            "example": 1,
-            "description": "ID del tipo de relación (actualmente Int, pendiente migración a UUID)"
+          "relationship_type_id": {
+            "type": "string",
+            "example": "11111111-1111-1111-1111-111111111111",
+            "description": "UUID del tipo de relación"
           },
           "phone": {
             "type": "string",
@@ -6464,7 +6657,7 @@
         },
         "required": [
           "name",
-          "relationship_type",
+          "relationship_type_id",
           "phone"
         ]
       },
@@ -6475,10 +6668,10 @@
             "type": "string",
             "example": "María García López"
           },
-          "relationship_type": {
-            "type": "number",
-            "example": 1,
-            "description": "ID del tipo de relación (actualmente Int, pendiente migración a UUID)"
+          "relationship_type_id": {
+            "type": "string",
+            "example": "11111111-1111-1111-1111-111111111111",
+            "description": "UUID del tipo de relación"
           },
           "phone": {
             "type": "string",

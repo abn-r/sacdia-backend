@@ -22,6 +22,100 @@ let UsersService = UsersService_1 = class UsersService {
         this.prisma = prisma;
         this.supabase = supabase;
     }
+    async ensureUserExists(userId) {
+        const user = await this.prisma.users.findUnique({
+            where: { user_id: userId },
+        });
+        if (!user) {
+            throw new common_1.NotFoundException('Usuario no encontrado');
+        }
+        return user;
+    }
+    async validateGeographyReferences(updateUserDto, currentUser) {
+        let selectedUnion = null;
+        if (updateUserDto.country_id !== undefined) {
+            const country = await this.prisma.countries.findFirst({
+                where: { country_id: updateUserDto.country_id, active: true },
+                select: { country_id: true },
+            });
+            if (!country) {
+                throw new common_1.BadRequestException('País no válido o inactivo');
+            }
+        }
+        if (updateUserDto.union_id !== undefined) {
+            selectedUnion = await this.prisma.unions.findFirst({
+                where: { union_id: updateUserDto.union_id, active: true },
+                select: { union_id: true, country_id: true },
+            });
+            if (!selectedUnion) {
+                throw new common_1.BadRequestException('Unión no válida o inactiva');
+            }
+        }
+        if (updateUserDto.local_field_id !== undefined) {
+            const localField = await this.prisma.local_fields.findFirst({
+                where: { local_field_id: updateUserDto.local_field_id, active: true },
+                select: { local_field_id: true },
+            });
+            if (!localField) {
+                throw new common_1.BadRequestException('Campo local no válido o inactivo');
+            }
+        }
+        const targetCountryId = updateUserDto.country_id ?? currentUser.country_id;
+        const targetUnionId = updateUserDto.union_id ?? currentUser.union_id;
+        if (targetCountryId !== null && targetUnionId !== null) {
+            if (!selectedUnion || selectedUnion.union_id !== targetUnionId) {
+                selectedUnion = await this.prisma.unions.findUnique({
+                    where: { union_id: targetUnionId },
+                    select: { union_id: true, country_id: true },
+                });
+            }
+            if (!selectedUnion || selectedUnion.country_id !== targetCountryId) {
+                throw new common_1.BadRequestException('La unión seleccionada no pertenece al país seleccionado');
+            }
+        }
+        const targetLocalFieldId = updateUserDto.local_field_id ?? currentUser.local_field_id;
+        if (targetLocalFieldId !== null && targetUnionId !== null) {
+            const localField = await this.prisma.local_fields.findUnique({
+                where: { local_field_id: targetLocalFieldId },
+                select: { local_field_id: true, union_id: true },
+            });
+            if (!localField || localField.union_id !== targetUnionId) {
+                throw new common_1.BadRequestException('El campo local seleccionado no pertenece a la unión seleccionada');
+            }
+        }
+    }
+    async validateAllergiesExist(allergyIds) {
+        if (!allergyIds.length)
+            return;
+        const rows = await this.prisma.allergies.findMany({
+            where: {
+                allergy_id: { in: allergyIds },
+                active: true,
+            },
+            select: { allergy_id: true },
+        });
+        const found = new Set(rows.map((row) => row.allergy_id));
+        const invalid = allergyIds.filter((id) => !found.has(id));
+        if (invalid.length > 0) {
+            throw new common_1.BadRequestException(`Alergias inválidas o inactivas: ${invalid.join(', ')}`);
+        }
+    }
+    async validateDiseasesExist(diseaseIds) {
+        if (!diseaseIds.length)
+            return;
+        const rows = await this.prisma.diseases.findMany({
+            where: {
+                disease_id: { in: diseaseIds },
+                active: true,
+            },
+            select: { disease_id: true },
+        });
+        const found = new Set(rows.map((row) => row.disease_id));
+        const invalid = diseaseIds.filter((id) => !found.has(id));
+        if (invalid.length > 0) {
+            throw new common_1.BadRequestException(`Enfermedades inválidas o inactivas: ${invalid.join(', ')}`);
+        }
+    }
     async findOne(userId) {
         const user = await this.prisma.users.findUnique({
             where: { user_id: userId },
@@ -52,15 +146,11 @@ let UsersService = UsersService_1 = class UsersService {
         return { status: 'success', data: user };
     }
     async update(userId, updateUserDto) {
-        const existingUser = await this.prisma.users.findUnique({
-            where: { user_id: userId },
-        });
-        if (!existingUser) {
-            throw new common_1.NotFoundException('Usuario no encontrado');
-        }
+        const existingUser = await this.ensureUserExists(userId);
         if (updateUserDto.baptism === false && updateUserDto.baptism_date) {
             throw new common_1.BadRequestException('No se puede especificar fecha de bautismo si no está bautizado');
         }
+        await this.validateGeographyReferences(updateUserDto, existingUser);
         const updatedUser = await this.prisma.users.update({
             where: { user_id: userId },
             data: updateUserDto,
@@ -75,6 +165,9 @@ let UsersService = UsersService_1 = class UsersService {
                 baptism: true,
                 baptism_date: true,
                 blood: true,
+                country_id: true,
+                union_id: true,
+                local_field_id: true,
                 modified_at: true,
             },
         });
@@ -83,6 +176,142 @@ let UsersService = UsersService_1 = class UsersService {
             status: 'success',
             data: updatedUser,
             message: 'Usuario actualizado exitosamente',
+        };
+    }
+    async updateAllergies(userId, dto) {
+        await this.ensureUserExists(userId);
+        const allergyIds = [...new Set(dto.allergy_ids)];
+        await this.validateAllergiesExist(allergyIds);
+        const data = await this.prisma.$transaction(async (tx) => {
+            const now = new Date();
+            await tx.users_allergies.updateMany({
+                where: {
+                    user_id: userId,
+                    active: true,
+                    ...(allergyIds.length > 0 ? { allergy_id: { notIn: allergyIds } } : {}),
+                },
+                data: {
+                    active: false,
+                    modified_at: now,
+                },
+            });
+            for (const allergyId of allergyIds) {
+                const existing = await tx.users_allergies.findFirst({
+                    where: {
+                        user_id: userId,
+                        allergy_id: allergyId,
+                    },
+                    select: { user_allergies_id: true },
+                });
+                if (existing) {
+                    await tx.users_allergies.update({
+                        where: { user_allergies_id: existing.user_allergies_id },
+                        data: {
+                            active: true,
+                            modified_at: now,
+                        },
+                    });
+                }
+                else {
+                    await tx.users_allergies.create({
+                        data: {
+                            user_id: userId,
+                            allergy_id: allergyId,
+                            active: true,
+                        },
+                    });
+                }
+            }
+            return tx.users_allergies.findMany({
+                where: {
+                    user_id: userId,
+                    active: true,
+                },
+                select: {
+                    allergy_id: true,
+                    allergies: {
+                        select: {
+                            name: true,
+                            description: true,
+                        },
+                    },
+                },
+                orderBy: { allergy_id: 'asc' },
+            });
+        });
+        this.logger.log(`User allergies updated: ${userId}`);
+        return {
+            status: 'success',
+            data,
+            message: 'Alergias actualizadas exitosamente',
+        };
+    }
+    async updateDiseases(userId, dto) {
+        await this.ensureUserExists(userId);
+        const diseaseIds = [...new Set(dto.disease_ids)];
+        await this.validateDiseasesExist(diseaseIds);
+        const data = await this.prisma.$transaction(async (tx) => {
+            const now = new Date();
+            await tx.users_diseases.updateMany({
+                where: {
+                    user_id: userId,
+                    active: true,
+                    ...(diseaseIds.length > 0 ? { disease_id: { notIn: diseaseIds } } : {}),
+                },
+                data: {
+                    active: false,
+                    modified_at: now,
+                },
+            });
+            for (const diseaseId of diseaseIds) {
+                const existing = await tx.users_diseases.findFirst({
+                    where: {
+                        user_id: userId,
+                        disease_id: diseaseId,
+                    },
+                    select: { user_disease_id: true },
+                });
+                if (existing) {
+                    await tx.users_diseases.update({
+                        where: { user_disease_id: existing.user_disease_id },
+                        data: {
+                            active: true,
+                            modified_at: now,
+                        },
+                    });
+                }
+                else {
+                    await tx.users_diseases.create({
+                        data: {
+                            user_id: userId,
+                            disease_id: diseaseId,
+                            active: true,
+                        },
+                    });
+                }
+            }
+            return tx.users_diseases.findMany({
+                where: {
+                    user_id: userId,
+                    active: true,
+                },
+                select: {
+                    disease_id: true,
+                    diseases: {
+                        select: {
+                            name: true,
+                            description: true,
+                        },
+                    },
+                },
+                orderBy: { disease_id: 'asc' },
+            });
+        });
+        this.logger.log(`User diseases updated: ${userId}`);
+        return {
+            status: 'success',
+            data,
+            message: 'Enfermedades actualizadas exitosamente',
         };
     }
     async uploadProfilePicture(userId, file) {

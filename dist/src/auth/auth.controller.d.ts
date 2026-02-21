@@ -48,17 +48,17 @@ export declare class AuthController {
         data: {
             roles: string[];
             permissions: string[];
-            created_at: Date;
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
             email: string;
-            user_id: string;
             gender: string | null;
             birthday: Date | null;
             baptism: boolean;
             baptism_date: Date | null;
             user_image: string | null;
+            created_at: Date;
             country_id: number | null;
             union_id: number | null;
             local_field_id: number | null;

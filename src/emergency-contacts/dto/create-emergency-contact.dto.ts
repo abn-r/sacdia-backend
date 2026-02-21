@@ -1,6 +1,6 @@
 import {
   IsString,
-  IsInt,
+  IsUUID,
   IsBoolean,
   IsOptional,
   MaxLength,
@@ -14,12 +14,11 @@ export class CreateEmergencyContactDto {
   name: string;
 
   @ApiProperty({
-    example: 1,
-    description:
-      'ID del tipo de relación (actualmente Int, pendiente migración a UUID)',
+    example: '11111111-1111-1111-1111-111111111111',
+    description: 'UUID del tipo de relación',
   })
-  @IsInt()
-  relationship_type: number;
+  @IsUUID()
+  relationship_type_id: string;
 
   @ApiProperty({ example: '+52 55 1234 5678' })
   @IsString()

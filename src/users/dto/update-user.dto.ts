@@ -6,7 +6,10 @@ import {
   IsBoolean,
   ValidateIf,
   IsEnum,
+  IsInt,
+  Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { blood_type } from '@prisma/client';
 
@@ -46,4 +49,34 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(blood_type)
   blood?: blood_type;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'ID del país',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  country_id?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'ID de la unión',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  union_id?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'ID del campo local',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  local_field_id?: number;
 }

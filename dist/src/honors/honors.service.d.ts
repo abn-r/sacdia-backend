@@ -11,11 +11,11 @@ export declare class HonorsService {
             name: string;
         };
         honors_categories: {
-            created_at: Date | null;
-            description: string | null;
             name: string;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
+            description: string | null;
             honor_category_id: number;
             icon: number;
         };
@@ -23,11 +23,11 @@ export declare class HonorsService {
             name: string;
         } | null;
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date | null;
+        description: string | null;
         year: string | null;
         club_type_id: number;
         material_url: string;
@@ -39,8 +39,8 @@ export declare class HonorsService {
         skill_level: number;
     }>;
     getCategories(): Promise<{
-        description: string | null;
         name: string;
+        description: string | null;
         honor_category_id: number;
         icon: number;
     }[]>;
@@ -56,17 +56,17 @@ export declare class HonorsService {
             skill_level: number;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: Prisma.JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     })[]>;
     startHonor(userId: string, honorId: number, dto?: StartHonorDto): Promise<{
         honors: {
@@ -77,17 +77,17 @@ export declare class HonorsService {
             honor_image: string;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: Prisma.JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     }>;
     updateUserHonor(userId: string, honorId: number, dto: UpdateUserHonorDto): Promise<{
         honors: {
@@ -95,30 +95,30 @@ export declare class HonorsService {
             honor_image: string;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: Prisma.JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     }>;
     abandonHonor(userId: string, honorId: number): Promise<{
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: Prisma.JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     }>;
     getUserHonorStats(userId: string): Promise<{
         total: number;
