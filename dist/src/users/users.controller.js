@@ -19,6 +19,7 @@ const platform_express_1 = require("@nestjs/platform-express");
 const swagger_1 = require("@nestjs/swagger");
 const users_service_1 = require("./users.service");
 const update_user_dto_1 = require("./dto/update-user.dto");
+const update_user_medical_dto_1 = require("./dto/update-user-medical.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 let UsersController = class UsersController {
     usersService;
@@ -30,6 +31,12 @@ let UsersController = class UsersController {
     }
     async update(userId, updateUserDto) {
         return this.usersService.update(userId, updateUserDto);
+    }
+    async updateAllergies(userId, dto) {
+        return this.usersService.updateAllergies(userId, dto);
+    }
+    async updateDiseases(userId, dto) {
+        return this.usersService.updateDiseases(userId, dto);
     }
     async uploadProfilePicture(userId, file) {
         return this.usersService.uploadProfilePicture(userId, file);
@@ -83,6 +90,38 @@ __decorate([
     __metadata("design:paramtypes", [String, update_user_dto_1.UpdateUserDto]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "update", null);
+__decorate([
+    (0, common_1.Put)(':userId/allergies'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Guardar alergias del usuario',
+        description: 'Reemplaza el conjunto de alergias activas del usuario en users_allergies',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Alergias actualizadas' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Usuario no encontrado' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Alergia inválida' }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('userId')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, update_user_medical_dto_1.UpdateUserAllergiesDto]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "updateAllergies", null);
+__decorate([
+    (0, common_1.Put)(':userId/diseases'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Guardar enfermedades del usuario',
+        description: 'Reemplaza el conjunto de enfermedades activas del usuario en users_diseases',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Enfermedades actualizadas' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Usuario no encontrado' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Enfermedad inválida' }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('userId')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, update_user_medical_dto_1.UpdateUserDiseasesDto]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "updateDiseases", null);
 __decorate([
     (0, common_1.Post)(':userId/profile-picture'),
     (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),

@@ -21,21 +21,21 @@ export declare class CamporeesController {
             end_date: Date;
         };
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     create(dto: CreateCamporeeDto, req: any): Promise<{
         local_fields: {
@@ -49,21 +49,21 @@ export declare class CamporeesController {
             end_date: Date;
         };
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     update(camporeeId: number, dto: UpdateCamporeeDto): Promise<{
         local_fields: {
@@ -77,46 +77,46 @@ export declare class CamporeesController {
             end_date: Date;
         };
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     remove(camporeeId: number): Promise<{
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     registerMember(camporeeId: number, dto: RegisterMemberDto): Promise<{
         users: {
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
             email: string;
-            user_id: string;
             user_image: string | null;
         };
         insurance: {
@@ -128,25 +128,25 @@ export declare class CamporeesController {
             policy_number: string | null;
         } | null;
     } & {
-        created_at: Date;
         user_id: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number | null;
-        camporee_type: string;
-        club_name: string | null;
-        insurance_id: number | null;
         camporee_member_id: number;
         camporee_id: number;
+        camporee_type: string;
+        club_name: string | null;
         insurance_verified: boolean;
+        insurance_id: number | null;
     }>;
     getMembers(camporeeId: number): Promise<({
         users: {
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
             email: string;
-            user_id: string;
             birthday: Date | null;
             user_image: string | null;
         };
@@ -159,29 +159,29 @@ export declare class CamporeesController {
             policy_number: string | null;
         } | null;
     } & {
-        created_at: Date;
         user_id: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number | null;
-        camporee_type: string;
-        club_name: string | null;
-        insurance_id: number | null;
         camporee_member_id: number;
         camporee_id: number;
+        camporee_type: string;
+        club_name: string | null;
         insurance_verified: boolean;
+        insurance_id: number | null;
     })[]>;
     removeMember(camporeeId: number, userId: string): Promise<{
-        created_at: Date;
         user_id: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number | null;
-        camporee_type: string;
-        club_name: string | null;
-        insurance_id: number | null;
         camporee_member_id: number;
         camporee_id: number;
+        camporee_type: string;
+        club_name: string | null;
         insurance_verified: boolean;
+        insurance_id: number | null;
     }>;
 }

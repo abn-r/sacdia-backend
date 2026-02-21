@@ -21,6 +21,17 @@ export class CatalogsController {
     return this.catalogsService.getClubTypes();
   }
 
+  @Get('relationship-types')
+  @ApiOperation({
+    summary: 'Obtener tipos de relación',
+    description:
+      'Lista tipos de relación activos para formularios (padre, madre, tutor, etc.)',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de tipos de relación' })
+  async getRelationshipTypes() {
+    return this.catalogsService.getRelationshipTypes();
+  }
+
   // ========================================
   // COUNTRIES
   // ========================================
@@ -188,5 +199,31 @@ export class CatalogsController {
     clubTypeId?: number,
   ) {
     return this.catalogsService.getClubIdeals(clubTypeId);
+  }
+
+  // ========================================
+  // ALLERGIES
+  // ========================================
+  @Get('allergies')
+  @ApiOperation({
+    summary: 'Obtener catálogo de alergias',
+    description: 'Lista alergias activas para selección en formularios',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de alergias' })
+  async getAllergies() {
+    return this.catalogsService.getAllergies();
+  }
+
+  // ========================================
+  // DISEASES
+  // ========================================
+  @Get('diseases')
+  @ApiOperation({
+    summary: 'Obtener catálogo de enfermedades',
+    description: 'Lista enfermedades activas para selección en formularios',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de enfermedades' })
+  async getDiseases() {
+    return this.catalogsService.getDiseases();
   }
 }

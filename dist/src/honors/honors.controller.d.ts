@@ -5,8 +5,8 @@ export declare class HonorsController {
     constructor(honorsService: HonorsService);
     findAll(categoryId?: number, clubTypeId?: number, skillLevel?: number, page?: number, limit?: number): Promise<import("../common/dto/pagination.dto").PaginatedResult<any>>;
     getCategories(): Promise<{
-        description: string | null;
         name: string;
+        description: string | null;
         honor_category_id: number;
         icon: number;
     }[]>;
@@ -15,11 +15,11 @@ export declare class HonorsController {
             name: string;
         };
         honors_categories: {
-            created_at: Date | null;
-            description: string | null;
             name: string;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
+            description: string | null;
             honor_category_id: number;
             icon: number;
         };
@@ -27,11 +27,11 @@ export declare class HonorsController {
             name: string;
         } | null;
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date | null;
+        description: string | null;
         year: string | null;
         club_type_id: number;
         material_url: string;
@@ -58,17 +58,17 @@ export declare class UserHonorsController {
             skill_level: number;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: import("@prisma/client/runtime/client").JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     })[]>;
     getStats(userId: string): Promise<{
         total: number;
@@ -84,17 +84,17 @@ export declare class UserHonorsController {
             honor_image: string;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: import("@prisma/client/runtime/client").JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     }>;
     updateHonor(userId: string, honorId: number, dto: UpdateUserHonorDto): Promise<{
         honors: {
@@ -102,29 +102,29 @@ export declare class UserHonorsController {
             honor_image: string;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: import("@prisma/client/runtime/client").JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     }>;
     abandonHonor(userId: string, honorId: number): Promise<{
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
-        date: Date;
+        honor_id: number;
+        user_honor_id: number;
         validate: boolean;
         images: import("@prisma/client/runtime/client").JsonValue;
         document: string | null;
-        honor_id: number;
-        user_honor_id: number;
+        date: Date;
     }>;
 }

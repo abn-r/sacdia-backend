@@ -25,6 +25,9 @@ let CatalogsController = class CatalogsController {
     async getClubTypes() {
         return this.catalogsService.getClubTypes();
     }
+    async getRelationshipTypes() {
+        return this.catalogsService.getRelationshipTypes();
+    }
     async getCountries() {
         return this.catalogsService.getCountries();
     }
@@ -52,6 +55,12 @@ let CatalogsController = class CatalogsController {
     async getClubIdeals(clubTypeId) {
         return this.catalogsService.getClubIdeals(clubTypeId);
     }
+    async getAllergies() {
+        return this.catalogsService.getAllergies();
+    }
+    async getDiseases() {
+        return this.catalogsService.getDiseases();
+    }
 };
 exports.CatalogsController = CatalogsController;
 __decorate([
@@ -66,6 +75,18 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], CatalogsController.prototype, "getClubTypes", null);
+__decorate([
+    (0, common_1.Get)('relationship-types'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Obtener tipos de relación',
+        description: 'Lista tipos de relación activos para formularios (padre, madre, tutor, etc.)',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de tipos de relación' }),
+    openapi.ApiResponse({ status: 200 }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], CatalogsController.prototype, "getRelationshipTypes", null);
 __decorate([
     (0, common_1.Get)('countries'),
     (0, swagger_1.ApiOperation)({
@@ -217,6 +238,30 @@ __decorate([
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", Promise)
 ], CatalogsController.prototype, "getClubIdeals", null);
+__decorate([
+    (0, common_1.Get)('allergies'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Obtener catálogo de alergias',
+        description: 'Lista alergias activas para selección en formularios',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de alergias' }),
+    openapi.ApiResponse({ status: 200 }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], CatalogsController.prototype, "getAllergies", null);
+__decorate([
+    (0, common_1.Get)('diseases'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Obtener catálogo de enfermedades',
+        description: 'Lista enfermedades activas para selección en formularios',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de enfermedades' }),
+    openapi.ApiResponse({ status: 200 }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], CatalogsController.prototype, "getDiseases", null);
 exports.CatalogsController = CatalogsController = __decorate([
     (0, swagger_1.ApiTags)('catalogs'),
     (0, common_1.Controller)('catalogs'),

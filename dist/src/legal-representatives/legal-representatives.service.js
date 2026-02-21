@@ -77,6 +77,13 @@ let LegalRepresentativesService = LegalRepresentativesService_1 = class LegalRep
         };
     }
     async findOne(userId) {
+        const user = await this.prisma.users.findUnique({
+            where: { user_id: userId },
+            select: { user_id: true },
+        });
+        if (!user) {
+            throw new common_1.NotFoundException('Usuario no encontrado');
+        }
         const representative = await this.prisma.legal_representatives.findUnique({
             where: { user_id: userId },
             include: {
@@ -98,9 +105,18 @@ let LegalRepresentativesService = LegalRepresentativesService_1 = class LegalRep
             },
         });
         if (!representative) {
-            throw new common_1.NotFoundException('Representante legal no encontrado');
+            return {
+                status: 'success',
+                data: null,
+                hasLegalRepresentative: false,
+                message: 'Usuario sin representante legal registrado',
+            };
         }
-        return { status: 'success', data: representative };
+        return {
+            status: 'success',
+            data: representative,
+            hasLegalRepresentative: true,
+        };
     }
     async update(userId, updateDto) {
         const existing = await this.prisma.legal_representatives.findUnique({

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Put,
   Post,
   Delete,
   Param,
@@ -24,8 +25,11 @@ import {
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import {
+  UpdateUserAllergiesDto,
+  UpdateUserDiseasesDto,
+} from './dto/update-user-medical.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -51,6 +55,38 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
   ) {
     return this.usersService.update(userId, updateUserDto);
+  }
+
+  @Put(':userId/allergies')
+  @ApiOperation({
+    summary: 'Guardar alergias del usuario',
+    description:
+      'Reemplaza el conjunto de alergias activas del usuario en users_allergies',
+  })
+  @ApiResponse({ status: 200, description: 'Alergias actualizadas' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 400, description: 'Alergia inválida' })
+  async updateAllergies(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserAllergiesDto,
+  ) {
+    return this.usersService.updateAllergies(userId, dto);
+  }
+
+  @Put(':userId/diseases')
+  @ApiOperation({
+    summary: 'Guardar enfermedades del usuario',
+    description:
+      'Reemplaza el conjunto de enfermedades activas del usuario en users_diseases',
+  })
+  @ApiResponse({ status: 200, description: 'Enfermedades actualizadas' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 400, description: 'Enfermedad inválida' })
+  async updateDiseases(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserDiseasesDto,
+  ) {
+    return this.usersService.updateDiseases(userId, dto);
   }
 
   @Post(':userId/profile-picture')

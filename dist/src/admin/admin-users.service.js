@@ -263,7 +263,7 @@ let AdminUsersService = class AdminUsersService {
                         name: true,
                         phone: true,
                         primary: true,
-                        relationship_type: true,
+                        relationship_type_id: true,
                     },
                 },
                 legal_representative: {
