@@ -71,7 +71,7 @@ exports.AdminUsersController = AdminUsersController = __decorate([
     (0, swagger_1.ApiTags)('admin-users'),
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.GlobalRolesGuard),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin', 'coordinator'),
+    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin', 'assistant_admin', 'coordinator'),
     (0, common_1.Controller)('admin'),
     __metadata("design:paramtypes", [admin_users_service_1.AdminUsersService])
 ], AdminUsersController);

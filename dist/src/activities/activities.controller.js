@@ -85,7 +85,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('clubs/:clubId/activities'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'secretary', 'counselor'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'secretary', 'counselor'),
     (0, swagger_1.ApiOperation)({
         summary: 'Crear actividad',
         description: 'Crea una nueva actividad para el club (requiere rol de liderazgo)',

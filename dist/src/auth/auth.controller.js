@@ -20,6 +20,7 @@ const auth_service_1 = require("./auth.service");
 const register_dto_1 = require("./dto/register.dto");
 const login_dto_1 = require("./dto/login.dto");
 const reset_password_request_dto_1 = require("./dto/reset-password-request.dto");
+const refresh_session_dto_1 = require("./dto/refresh-session.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 let AuthController = class AuthController {
@@ -32,6 +33,9 @@ let AuthController = class AuthController {
     }
     async login(loginDto) {
         return this.authService.login(loginDto);
+    }
+    async refresh(dto) {
+        return this.authService.refreshSession(dto);
     }
     async logout(authorization) {
         const token = authorization?.replace('Bearer ', '');
@@ -83,6 +87,24 @@ __decorate([
     __metadata("design:paramtypes", [login_dto_1.LoginDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
+__decorate([
+    (0, common_1.Post)('refresh'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Refrescar sesión con refresh token' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Tokens renovados exitosamente',
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 401,
+        description: 'Refresh token inválido o expirado',
+    }),
+    openapi.ApiResponse({ status: common_1.HttpStatus.OK }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [refresh_session_dto_1.RefreshSessionDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "refresh", null);
 __decorate([
     (0, common_1.Post)('logout'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

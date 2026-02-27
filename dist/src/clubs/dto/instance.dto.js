@@ -13,6 +13,7 @@ exports.UpdateInstanceDto = exports.CreateInstanceDto = exports.ClubInstanceType
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
+const class_transformer_1 = require("class-transformer");
 var ClubInstanceType;
 (function (ClubInstanceType) {
     ClubInstanceType["ADVENTURERS"] = "adventurers";
@@ -36,17 +37,20 @@ __decorate([
         example: 'pathfinders',
         description: 'Tipo de instancia a crear',
     }),
+    (0, class_validator_1.IsEnum)(ClubInstanceType),
     __metadata("design:type", String)
 ], CreateInstanceDto.prototype, "type", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: 1, description: 'Meta de almas' }),
     (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateInstanceDto.prototype, "souls_target", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: 100, description: 'Cuota mensual' }),
     (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateInstanceDto.prototype, "fee", void 0);
@@ -82,12 +86,14 @@ exports.UpdateInstanceDto = UpdateInstanceDto;
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], UpdateInstanceDto.prototype, "souls_target", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], UpdateInstanceDto.prototype, "fee", void 0);

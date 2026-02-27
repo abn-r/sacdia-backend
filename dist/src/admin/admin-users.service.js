@@ -37,6 +37,7 @@ let AdminUsersService = class AdminUsersService {
                     name: true,
                     paternal_last_name: true,
                     maternal_last_name: true,
+                    user_image: true,
                     active: true,
                     access_app: true,
                     access_panel: true,
@@ -345,14 +346,15 @@ let AdminUsersService = class AdminUsersService {
         if (roles.includes('super_admin')) {
             return { type: 'ALL', roles };
         }
-        if (roles.includes('admin')) {
+        const hasAdminLevelRole = roles.includes('admin') || roles.includes('assistant_admin');
+        if (hasAdminLevelRole) {
             if (actor.union_id) {
                 return { type: 'UNION', roles, unionId: actor.union_id };
             }
             if (actor.local_field_id) {
                 return { type: 'LOCAL_FIELD', roles, localFieldId: actor.local_field_id };
             }
-            throw new common_1.ForbiddenException('Admin sin alcance configurado: requiere union_id o local_field_id');
+            throw new common_1.ForbiddenException('Admin/assistant_admin sin alcance configurado: requiere union_id o local_field_id');
         }
         if (roles.includes('coordinator')) {
             if (actor.local_field_id) {
@@ -454,6 +456,7 @@ let AdminUsersService = class AdminUsersService {
                 .filter(Boolean)
                 .join(' ')
                 .trim(),
+            user_image: user.user_image,
             active: user.active,
             access_app: user.access_app,
             access_panel: user.access_panel,

@@ -11,6 +11,15 @@ import {
   type GlobalRoleType,
 } from '../decorators/global-roles.decorator';
 
+const GLOBAL_ROLE_ALIASES: Record<GlobalRoleType, GlobalRoleType[]> = {
+  super_admin: ['super_admin'],
+  admin: ['admin', 'assistant_admin'],
+  assistant_admin: ['assistant_admin', 'admin'],
+  coordinator: ['coordinator'],
+  pastor: ['pastor'],
+  user: ['user'],
+};
+
 @Injectable()
 export class GlobalRolesGuard implements CanActivate {
   constructor(
@@ -73,9 +82,11 @@ export class GlobalRolesGuard implements CanActivate {
       .filter((ur) => ur.roles.active)
       .map((ur) => ur.roles.role_name.toLowerCase());
 
-    // Verificar si alguno de los roles del usuario coincide con los requeridos
-    return requiredRoles.some((requiredRole) =>
-      activeRoleNames.includes(requiredRole.toLowerCase()),
-    );
+    // Verificar si alguno de los roles del usuario coincide con los requeridos.
+    // `assistant_admin` se considera equivalente de acceso a `admin`.
+    return requiredRoles.some((requiredRole) => {
+      const acceptedRoles = GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole];
+      return acceptedRoles.some((role) => activeRoleNames.includes(role));
+    });
   }
 }

@@ -14,6 +14,16 @@ const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const prisma_service_1 = require("../../prisma/prisma.service");
 exports.CLUB_ROLES_KEY = 'club_roles';
+const CLUB_ROLE_ALIASES = {
+    subdirector: 'deputy_director',
+    secretario: 'secretary',
+    tesorero: 'treasurer',
+    consejero: 'counselor',
+};
+function normalizeClubRoleName(roleName) {
+    const normalized = roleName.toLowerCase();
+    return CLUB_ROLE_ALIASES[normalized] ?? normalized;
+}
 let ClubRolesGuard = class ClubRolesGuard {
     reflector;
     prisma;
@@ -31,6 +41,9 @@ let ClubRolesGuard = class ClubRolesGuard {
         if (!user || !user.sub) {
             throw new common_1.ForbiddenException('User not authenticated');
         }
+        if (await this.isSuperAdmin(user.sub)) {
+            return true;
+        }
         const clubId = this.extractClubId(request);
         if (!clubId) {
             throw new common_1.ForbiddenException('Club ID not found in request');
@@ -40,6 +53,16 @@ let ClubRolesGuard = class ClubRolesGuard {
             throw new common_1.ForbiddenException(`You need one of these club roles: ${requiredRoles.join(', ')}`);
         }
         return true;
+    }
+    async isSuperAdmin(userId) {
+        const userRoles = await this.prisma.users_roles.findMany({
+            where: { user_id: userId, active: true },
+            include: {
+                roles: { select: { role_name: true } },
+            },
+        });
+        return userRoles.some((assignment) => typeof assignment.roles?.role_name === 'string' &&
+            assignment.roles.role_name.toLowerCase() === 'super_admin');
     }
     extractClubId(request) {
         if (request.params?.clubId) {
@@ -83,8 +106,9 @@ let ClubRolesGuard = class ClubRolesGuard {
                 roles: { select: { role_name: true } },
             },
         });
-        const userRoleNames = assignments.map((a) => a.roles.role_name.toLowerCase());
-        return requiredRoles.some((requiredRole) => userRoleNames.includes(requiredRole.toLowerCase()));
+        const normalizedRequiredRoles = requiredRoles.map((requiredRole) => normalizeClubRoleName(requiredRole));
+        const userRoleNames = assignments.map((assignment) => normalizeClubRoleName(assignment.roles.role_name));
+        return normalizedRequiredRoles.some((requiredRole) => userRoleNames.includes(requiredRole));
     }
 };
 exports.ClubRolesGuard = ClubRolesGuard;

@@ -21,7 +21,7 @@ import { AdminUsersService } from './admin-users.service';
 @ApiTags('admin-users')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('super_admin', 'admin', 'coordinator')
+@GlobalRoles('super_admin', 'admin', 'assistant_admin', 'coordinator')
 @Controller('admin')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}

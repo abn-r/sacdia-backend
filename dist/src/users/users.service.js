@@ -314,6 +314,60 @@ let UsersService = UsersService_1 = class UsersService {
             message: 'Enfermedades actualizadas exitosamente',
         };
     }
+    async removeAllergy(userId, allergyId) {
+        await this.ensureUserExists(userId);
+        const now = new Date();
+        const result = await this.prisma.users_allergies.updateMany({
+            where: {
+                user_id: userId,
+                allergy_id: allergyId,
+                active: true,
+            },
+            data: {
+                active: false,
+                modified_at: now,
+            },
+        });
+        if (result.count === 0) {
+            throw new common_1.NotFoundException('Alergia no encontrada en el perfil del usuario');
+        }
+        this.logger.log(`User allergy removed: ${userId} -> ${allergyId}`);
+        return {
+            status: 'success',
+            data: {
+                allergy_id: allergyId,
+                active: false,
+            },
+            message: 'Alergia eliminada exitosamente',
+        };
+    }
+    async removeDisease(userId, diseaseId) {
+        await this.ensureUserExists(userId);
+        const now = new Date();
+        const result = await this.prisma.users_diseases.updateMany({
+            where: {
+                user_id: userId,
+                disease_id: diseaseId,
+                active: true,
+            },
+            data: {
+                active: false,
+                modified_at: now,
+            },
+        });
+        if (result.count === 0) {
+            throw new common_1.NotFoundException('Enfermedad no encontrada en el perfil del usuario');
+        }
+        this.logger.log(`User disease removed: ${userId} -> ${diseaseId}`);
+        return {
+            status: 'success',
+            data: {
+                disease_id: diseaseId,
+                active: false,
+            },
+            message: 'Enfermedad eliminada exitosamente',
+        };
+    }
     async uploadProfilePicture(userId, file) {
         const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
         if (!allowedMimeTypes.includes(file.mimetype)) {

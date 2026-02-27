@@ -14,6 +14,14 @@ const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const global_roles_decorator_1 = require("../decorators/global-roles.decorator");
+const GLOBAL_ROLE_ALIASES = {
+    super_admin: ['super_admin'],
+    admin: ['admin', 'assistant_admin'],
+    assistant_admin: ['assistant_admin', 'admin'],
+    coordinator: ['coordinator'],
+    pastor: ['pastor'],
+    user: ['user'],
+};
 let GlobalRolesGuard = class GlobalRolesGuard {
     reflector;
     prisma;
@@ -55,7 +63,10 @@ let GlobalRolesGuard = class GlobalRolesGuard {
         const activeRoleNames = userRoles
             .filter((ur) => ur.roles.active)
             .map((ur) => ur.roles.role_name.toLowerCase());
-        return requiredRoles.some((requiredRole) => activeRoleNames.includes(requiredRole.toLowerCase()));
+        return requiredRoles.some((requiredRole) => {
+            const acceptedRoles = GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole];
+            return acceptedRoles.some((role) => activeRoleNames.includes(role));
+        });
     }
 };
 exports.GlobalRolesGuard = GlobalRolesGuard;

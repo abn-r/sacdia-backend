@@ -46,6 +46,7 @@ describe('AuthService', () => {
           signOut: jest.fn(),
         },
         signInWithPassword: jest.fn(),
+        refreshSession: jest.fn(),
         resetPasswordForEmail: jest.fn(),
       },
     },
@@ -316,6 +317,58 @@ describe('AuthService', () => {
     });
   });
 
+  describe('refreshSession', () => {
+    it('should throw BadRequestException when refresh token is missing', async () => {
+      await expect(service.refreshSession({} as any)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw UnauthorizedException when Supabase refresh fails', async () => {
+      mockSupabaseService.admin.auth.refreshSession.mockResolvedValue({
+        data: { session: null },
+        error: { message: 'Invalid refresh token' },
+      });
+
+      await expect(
+        service.refreshSession({ refreshToken: 'invalid-refresh-token' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should return new tokens when refresh succeeds', async () => {
+      mockSupabaseService.admin.auth.refreshSession.mockResolvedValue({
+        data: {
+          session: {
+            access_token: 'new-access-token',
+            refresh_token: 'new-refresh-token',
+            expires_at: 1900000000,
+            token_type: 'bearer',
+          },
+        },
+        error: null,
+      });
+
+      const result = await service.refreshSession({
+        refreshToken: 'old-refresh-token',
+      });
+
+      expect(mockSupabaseService.admin.auth.refreshSession).toHaveBeenCalledWith(
+        {
+          refresh_token: 'old-refresh-token',
+        },
+      );
+      expect(result).toEqual({
+        status: 'success',
+        data: {
+          accessToken: 'new-access-token',
+          refreshToken: 'new-refresh-token',
+          expiresAt: 1900000000,
+          tokenType: 'bearer',
+        },
+      });
+    });
+  });
+
   describe('requestPasswordReset', () => {
     it('should request password reset successfully', async () => {
       process.env.FRONTEND_URL = 'https://sacdia.app';
@@ -374,6 +427,8 @@ describe('AuthService', () => {
         union_id: 2,
         local_field_id: 3,
         created_at: new Date('2026-02-10'),
+        users_pr: [{ complete: true }],
+        club_role_assignments: [],
         users_roles: [
           {
             roles: {
@@ -400,6 +455,7 @@ describe('AuthService', () => {
       expect(result.status).toBe('success');
       expect(result.data.roles).toEqual(['user', 'leader']);
       expect(result.data.permissions).toEqual(['read', 'write']);
+      expect(result.data.post_register_complete).toBe(true);
       expect(result.data).not.toHaveProperty('users_roles');
     });
   });

@@ -86,6 +86,34 @@
         ]
       }
     },
+    "/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens renovados exitosamente"
+          },
+          "401": {
+            "description": "Refresh token inválido o expirado"
+          }
+        },
+        "summary": "Refrescar sesión con refresh token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/v1/auth/logout": {
       "post": {
         "operationId": "AuthController_logout_v1",
@@ -875,6 +903,88 @@
           }
         ],
         "summary": "Guardar enfermedades del usuario",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/v1/users/{userId}/allergies/{allergyId}": {
+      "delete": {
+        "description": "Desactiva (active=false) una alergia específica del usuario en users_allergies",
+        "operationId": "UsersController_removeAllergy_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "allergyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alergia eliminada"
+          },
+          "404": {
+            "description": "Alergia no encontrada en el usuario"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Eliminar alergia del usuario (borrado lógico)",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/v1/users/{userId}/diseases/{diseaseId}": {
+      "delete": {
+        "description": "Desactiva (active=false) una enfermedad específica del usuario en users_diseases",
+        "operationId": "UsersController_removeDisease_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "diseaseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enfermedad eliminada"
+          },
+          "404": {
+            "description": "Enfermedad no encontrada en el usuario"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Eliminar enfermedad del usuario (borrado lógico)",
         "tags": [
           "users"
         ]
@@ -6482,6 +6592,21 @@
           "email",
           "password"
         ]
+      },
+      "RefreshSessionDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "example": "v1.abc...",
+            "description": "Refresh token (camelCase)"
+          },
+          "refresh_token": {
+            "type": "string",
+            "example": "v1.abc...",
+            "description": "Refresh token (snake_case, compatibilidad)"
+          }
+        }
       },
       "ResetPasswordRequestDto": {
         "type": "object",

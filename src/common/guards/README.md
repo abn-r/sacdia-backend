@@ -23,7 +23,7 @@ getProfile() { ... }
 
 **Usage**:
 ```typescript
-@ClubRoles('director', 'subdirector')
+@ClubRoles('director', 'deputy_director')
 @UseGuards(JwtAuthGuard, ClubRolesGuard)
 @Post('clubs/:clubId/instances')
 createInstance() { ... }
@@ -35,7 +35,7 @@ createInstance() { ... }
 
 **Roles**:
 - director
-- subdirector
+- deputy_director
 - secretary
 - treasurer
 - counselor
@@ -134,7 +134,7 @@ deleteUser() { ... }
 
 ### Club Role Required
 ```typescript
-@ClubRoles('director', 'subdirector')
+@ClubRoles('director', 'deputy_director')
 @UseGuards(JwtAuthGuard, ClubRolesGuard)
 @Post('clubs/:clubId/activities')
 createActivity() { ... }
@@ -170,7 +170,7 @@ Authorization guard rejects insufficient permissions:
 - `"User not authenticated"`
 - `"You need one of these global roles: admin, super_admin"`
 - `"You can only access your own resources unless you have admin privileges"`
-- `"You need one of these club roles: director, subdirector"`
+- `"You need one of these club roles: director, deputy_director"`
 
 ---
 

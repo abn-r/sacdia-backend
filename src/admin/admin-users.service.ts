@@ -68,6 +68,7 @@ export class AdminUsersService {
           name: true,
           paternal_last_name: true,
           maternal_last_name: true,
+          user_image: true,
           active: true,
           access_app: true,
           access_panel: true,
@@ -388,7 +389,10 @@ export class AdminUsersService {
       return { type: 'ALL', roles };
     }
 
-    if (roles.includes('admin')) {
+    const hasAdminLevelRole =
+      roles.includes('admin') || roles.includes('assistant_admin');
+
+    if (hasAdminLevelRole) {
       if (actor.union_id) {
         return { type: 'UNION', roles, unionId: actor.union_id };
       }
@@ -398,7 +402,7 @@ export class AdminUsersService {
       }
 
       throw new ForbiddenException(
-        'Admin sin alcance configurado: requiere union_id o local_field_id',
+        'Admin/assistant_admin sin alcance configurado: requiere union_id o local_field_id',
       );
     }
 
@@ -532,6 +536,7 @@ export class AdminUsersService {
         .filter(Boolean)
         .join(' ')
         .trim(),
+      user_image: user.user_image,
       active: user.active,
       access_app: user.access_app,
       access_panel: user.access_panel,

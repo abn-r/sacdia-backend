@@ -6,9 +6,9 @@ export declare class AdminGeographyController {
     listCountries(): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             abbreviation: string;
@@ -17,9 +17,9 @@ export declare class AdminGeographyController {
     createCountry(dto: CreateCountryDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             abbreviation: string;
@@ -28,9 +28,9 @@ export declare class AdminGeographyController {
     updateCountry(countryId: number, dto: UpdateCountryDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             abbreviation: string;
@@ -39,9 +39,9 @@ export declare class AdminGeographyController {
     deleteCountry(countryId: number, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             abbreviation: string;
@@ -50,9 +50,9 @@ export declare class AdminGeographyController {
     listUnions(countryId?: number): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             union_id: number;
@@ -62,9 +62,9 @@ export declare class AdminGeographyController {
     createUnion(dto: CreateUnionDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             union_id: number;
@@ -74,9 +74,9 @@ export declare class AdminGeographyController {
     updateUnion(unionId: number, dto: UpdateUnionDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             union_id: number;
@@ -86,9 +86,9 @@ export declare class AdminGeographyController {
     deleteUnion(unionId: number, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             country_id: number;
             union_id: number;
@@ -98,9 +98,9 @@ export declare class AdminGeographyController {
     listLocalFields(unionId?: number): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             union_id: number;
             local_field_id: number;
@@ -110,9 +110,9 @@ export declare class AdminGeographyController {
     createLocalField(dto: CreateLocalFieldDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             union_id: number;
             local_field_id: number;
@@ -122,9 +122,9 @@ export declare class AdminGeographyController {
     updateLocalField(localFieldId: number, dto: UpdateLocalFieldDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             union_id: number;
             local_field_id: number;
@@ -134,9 +134,9 @@ export declare class AdminGeographyController {
     deleteLocalField(localFieldId: number, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             union_id: number;
             local_field_id: number;
@@ -146,9 +146,9 @@ export declare class AdminGeographyController {
     listDistricts(localFieldId?: number): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             local_field_id: number;
             districlub_type_id: number;
@@ -157,9 +157,9 @@ export declare class AdminGeographyController {
     createDistrict(dto: CreateDistrictDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             local_field_id: number;
             districlub_type_id: number;
@@ -168,9 +168,9 @@ export declare class AdminGeographyController {
     updateDistrict(districtId: number, dto: UpdateDistrictDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             local_field_id: number;
             districlub_type_id: number;
@@ -179,9 +179,9 @@ export declare class AdminGeographyController {
     deleteDistrict(districtId: number, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             local_field_id: number;
             districlub_type_id: number;
@@ -190,9 +190,9 @@ export declare class AdminGeographyController {
     listChurches(districtId?: number): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             districlub_type_id: number;
             church_id: number;
@@ -201,9 +201,9 @@ export declare class AdminGeographyController {
     createChurch(dto: CreateChurchDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             districlub_type_id: number;
             church_id: number;
@@ -212,9 +212,9 @@ export declare class AdminGeographyController {
     updateChurch(churchId: number, dto: UpdateChurchDto, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             districlub_type_id: number;
             church_id: number;
@@ -223,9 +223,9 @@ export declare class AdminGeographyController {
     deleteChurch(churchId: number, req: any): Promise<{
         status: string;
         data: {
+            created_at: Date | null;
             name: string;
             active: boolean;
-            created_at: Date | null;
             modified_at: Date | null;
             districlub_type_id: number;
             church_id: number;

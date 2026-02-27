@@ -212,7 +212,7 @@ describe('Camporees E2E Tests', () => {
       });
     });
 
-    it('should reject without proper role (director/subdirector)', async () => {
+    it('should reject without proper role (director/deputy director)', async () => {
       mockClubRolesGuard.canActivate.mockReturnValueOnce(false);
 
       await request(app.getHttpServer())
@@ -950,7 +950,7 @@ describe('Camporees E2E Tests', () => {
         .expect(404);
     });
 
-    it('should require director or subdirector role', async () => {
+    it('should require director or deputy director role', async () => {
       mockClubRolesGuard.canActivate.mockReturnValueOnce(false);
 
       await request(app.getHttpServer())

@@ -16,16 +16,19 @@ const config_1 = require("@nestjs/config");
 let SupabaseService = class SupabaseService {
     configService;
     supabaseAdmin;
+    supabaseAnon;
     constructor(configService) {
         this.configService = configService;
         const supabaseUrl = this.configService.get('SUPABASE_URL');
-        const supabaseKey = this.configService.get('SUPABASE_SERVICE_ROLE_KEY');
-        console.log('--- SUPABASE DEBUG ---');
-        console.log('URL:', supabaseUrl);
-        console.log('Key Length:', supabaseKey?.length);
-        console.log('Key Start:', supabaseKey?.substring(0, 10));
-        console.log('----------------------');
-        this.supabaseAdmin = (0, supabase_js_1.createClient)(supabaseUrl, supabaseKey, {
+        const serviceRoleKey = this.configService.get('SUPABASE_SERVICE_ROLE_KEY');
+        const anonKey = this.configService.get('SUPABASE_ANON_KEY');
+        this.supabaseAdmin = (0, supabase_js_1.createClient)(supabaseUrl, serviceRoleKey, {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false,
+            },
+        });
+        this.supabaseAnon = (0, supabase_js_1.createClient)(supabaseUrl, anonKey, {
             auth: {
                 autoRefreshToken: false,
                 persistSession: false,
@@ -34,6 +37,9 @@ let SupabaseService = class SupabaseService {
     }
     get admin() {
         return this.supabaseAdmin;
+    }
+    get anon() {
+        return this.supabaseAnon;
     }
 };
 exports.SupabaseService = SupabaseService;

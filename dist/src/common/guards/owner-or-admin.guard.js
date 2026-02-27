@@ -37,7 +37,7 @@ let OwnerOrAdminGuard = class OwnerOrAdminGuard {
         throw new common_1.ForbiddenException('You can only access your own resources unless you have admin privileges');
     }
     async checkAdminRole(userId) {
-        const adminRoles = ['admin', 'coordinator', 'super_admin'];
+        const adminRoles = ['admin', 'assistant_admin', 'coordinator', 'super_admin'];
         const userRoles = await this.prisma.users_roles.findMany({
             where: {
                 user_id: userId,

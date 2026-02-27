@@ -29,17 +29,16 @@ export declare class ActivitiesService {
         };
     } & {
         classes: Prisma.JsonValue | null;
+        created_at: Date | null;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date | null;
         modified_at: Date | null;
-        description: string | null;
         club_adv_id: number;
         club_pathf_id: number;
         club_mg_id: number;
         club_type_id: number;
         lat: number;
-        activity_id: number;
         long: number;
         activity_time: string;
         activity_place: string;
@@ -48,6 +47,7 @@ export declare class ActivitiesService {
         activity_type: number;
         link_meet: string | null;
         additional_data: string | null;
+        activity_id: number;
         attendees: Prisma.JsonValue | null;
         created_by: string;
     }>;
@@ -57,17 +57,16 @@ export declare class ActivitiesService {
         };
     } & {
         classes: Prisma.JsonValue | null;
+        created_at: Date | null;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date | null;
         modified_at: Date | null;
-        description: string | null;
         club_adv_id: number;
         club_pathf_id: number;
         club_mg_id: number;
         club_type_id: number;
         lat: number;
-        activity_id: number;
         long: number;
         activity_time: string;
         activity_place: string;
@@ -76,6 +75,7 @@ export declare class ActivitiesService {
         activity_type: number;
         link_meet: string | null;
         additional_data: string | null;
+        activity_id: number;
         attendees: Prisma.JsonValue | null;
         created_by: string;
     }>;
@@ -85,17 +85,16 @@ export declare class ActivitiesService {
         };
     } & {
         classes: Prisma.JsonValue | null;
+        created_at: Date | null;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date | null;
         modified_at: Date | null;
-        description: string | null;
         club_adv_id: number;
         club_pathf_id: number;
         club_mg_id: number;
         club_type_id: number;
         lat: number;
-        activity_id: number;
         long: number;
         activity_time: string;
         activity_place: string;
@@ -104,22 +103,22 @@ export declare class ActivitiesService {
         activity_type: number;
         link_meet: string | null;
         additional_data: string | null;
+        activity_id: number;
         attendees: Prisma.JsonValue | null;
         created_by: string;
     }>;
     remove(activityId: number): Promise<{
         classes: Prisma.JsonValue | null;
+        created_at: Date | null;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date | null;
         modified_at: Date | null;
-        description: string | null;
         club_adv_id: number;
         club_pathf_id: number;
         club_mg_id: number;
         club_type_id: number;
         lat: number;
-        activity_id: number;
         long: number;
         activity_time: string;
         activity_place: string;
@@ -128,22 +127,22 @@ export declare class ActivitiesService {
         activity_type: number;
         link_meet: string | null;
         additional_data: string | null;
+        activity_id: number;
         attendees: Prisma.JsonValue | null;
         created_by: string;
     }>;
     recordAttendance(activityId: number, dto: RecordAttendanceDto): Promise<{
         classes: Prisma.JsonValue | null;
+        created_at: Date | null;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date | null;
         modified_at: Date | null;
-        description: string | null;
         club_adv_id: number;
         club_pathf_id: number;
         club_mg_id: number;
         club_type_id: number;
         lat: number;
-        activity_id: number;
         long: number;
         activity_time: string;
         activity_place: string;
@@ -152,6 +151,7 @@ export declare class ActivitiesService {
         activity_type: number;
         link_meet: string | null;
         additional_data: string | null;
+        activity_id: number;
         attendees: Prisma.JsonValue | null;
         created_by: string;
     }>;
@@ -165,10 +165,10 @@ export declare class ActivitiesService {
         activity_name: string;
         total_attendees: number;
         attendees: {
-            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
+            user_id: string;
             user_image: string | null;
         }[];
     }>;

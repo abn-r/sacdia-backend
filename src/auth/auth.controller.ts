@@ -18,6 +18,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
+import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -53,6 +54,21 @@ export class AuthController {
   })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refrescar sesión con refresh token' })
+  @ApiResponse({
+    status: 200,
+    description: 'Tokens renovados exitosamente',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Refresh token inválido o expirado',
+  })
+  async refresh(@Body() dto: RefreshSessionDto) {
+    return this.authService.refreshSession(dto);
   }
 
   @Post('logout')

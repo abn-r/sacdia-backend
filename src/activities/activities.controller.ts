@@ -80,7 +80,7 @@ export class ActivitiesController {
 
   @Post('clubs/:clubId/activities')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'secretary', 'counselor')
+  @ClubRoles('director', 'deputy_director', 'secretary', 'counselor')
   @ApiOperation({
     summary: 'Crear actividad',
     description:
