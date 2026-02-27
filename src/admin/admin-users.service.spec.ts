@@ -52,6 +52,7 @@ describe('AdminUsersService', () => {
           name: 'Juan',
           paternal_last_name: 'Pérez',
           maternal_last_name: 'García',
+          user_image: 'https://cdn.example.com/users/u1.jpg',
           active: true,
           access_app: true,
           access_panel: false,
@@ -82,6 +83,9 @@ describe('AdminUsersService', () => {
 
       expect(result.meta.scope.type).toBe('ALL');
       expect(result.data).toHaveLength(1);
+      expect(result.data[0].user_image).toBe(
+        'https://cdn.example.com/users/u1.jpg',
+      );
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {},
@@ -159,6 +163,44 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.listUsers('actor-coordinator', {
+          page: 1,
+          limit: 20,
+        } as any),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should enforce UNION scope for assistant_admin with union_id', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'actor-assistant-admin',
+        union_id: 12,
+        local_field_id: 44,
+        users_roles: [{ roles: { role_name: 'assistant_admin' } }],
+      });
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers('actor-assistant-admin', {
+        page: 1,
+        limit: 20,
+      } as any);
+
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { union_id: 12 },
+        }),
+      );
+    });
+
+    it('should reject assistant_admin without union_id/local_field_id', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'actor-assistant-admin',
+        union_id: null,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'assistant_admin' } }],
+      });
+
+      await expect(
+        service.listUsers('actor-assistant-admin', {
           page: 1,
           limit: 20,
         } as any),

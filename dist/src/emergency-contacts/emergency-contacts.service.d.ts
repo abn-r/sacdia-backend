@@ -10,15 +10,15 @@ export declare class EmergencyContactsService {
     create(userId: string, createDto: CreateEmergencyContactDto): Promise<{
         status: string;
         data: {
+            phone: string;
+            created_at: Date;
             name: string;
             active: boolean;
-            created_at: Date;
             modified_at: Date;
-            phone: string;
             relationship_type_id: string;
+            primary: boolean;
             owner_id: string;
             emergency_id: number;
-            primary: boolean;
             contact_user_id: string | null;
         };
         message: string;
@@ -26,13 +26,13 @@ export declare class EmergencyContactsService {
     findAll(userId: string): Promise<{
         status: string;
         data: {
-            name: string;
-            created_at: Date;
-            modified_at: Date;
             phone: string;
+            created_at: Date;
+            name: string;
+            modified_at: Date;
             relationship_type_id: string;
-            emergency_id: number;
             primary: boolean;
+            emergency_id: number;
         }[];
         meta: {
             total: number;
@@ -42,30 +42,30 @@ export declare class EmergencyContactsService {
     findOne(contactId: number, userId: string): Promise<{
         status: string;
         data: {
+            phone: string;
+            created_at: Date;
             name: string;
             active: boolean;
-            created_at: Date;
             modified_at: Date;
-            phone: string;
             relationship_type_id: string;
+            primary: boolean;
             owner_id: string;
             emergency_id: number;
-            primary: boolean;
             contact_user_id: string | null;
         };
     }>;
     update(contactId: number, userId: string, updateDto: UpdateEmergencyContactDto): Promise<{
         status: string;
         data: {
+            phone: string;
+            created_at: Date;
             name: string;
             active: boolean;
-            created_at: Date;
             modified_at: Date;
-            phone: string;
             relationship_type_id: string;
+            primary: boolean;
             owner_id: string;
             emergency_id: number;
-            primary: boolean;
             contact_user_id: string | null;
         };
         message: string;

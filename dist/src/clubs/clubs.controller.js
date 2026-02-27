@@ -130,9 +130,9 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':clubId'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
     (0, swagger_1.ApiOperation)({
-        summary: 'Actualizar club (requiere rol director o subdirector)',
+        summary: 'Actualizar club (requiere rol director o deputy director)',
     }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Club actualizado' }),
@@ -192,9 +192,9 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':clubId/instances'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
     (0, swagger_1.ApiOperation)({
-        summary: 'Crear instancia de club (requiere director o subdirector)',
+        summary: 'Crear instancia de club (requiere director o deputy director)',
         description: 'Crea una nueva instancia (Aventureros, Conquistadores, Guías Mayores)',
     }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
@@ -210,9 +210,9 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':clubId/instances/:type/:instanceId'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'secretary'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'secretary'),
     (0, swagger_1.ApiOperation)({
-        summary: 'Actualizar instancia (requiere director, subdirector o secretario)',
+        summary: 'Actualizar instancia (requiere director, deputy director o secretary)',
     }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiParam)({ name: 'type', enum: dto_1.ClubInstanceType }),
@@ -247,9 +247,9 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':clubId/instances/:type/:instanceId/roles'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'secretary'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'secretary'),
     (0, swagger_1.ApiOperation)({
-        summary: 'Asignar rol a un miembro (requiere director, subdirector o secretario)',
+        summary: 'Asignar rol a un miembro (requiere director, deputy director o secretary)',
         description: 'Asigna un rol específico a un usuario en la instancia',
     }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),

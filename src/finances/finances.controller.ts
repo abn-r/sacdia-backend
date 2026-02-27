@@ -112,7 +112,7 @@ export class FinancesController {
 
   @Post('clubs/:clubId/finances')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'treasurer')
+  @ClubRoles('director', 'deputy_director', 'treasurer')
   @ApiOperation({
     summary: 'Crear movimiento financiero',
     description: 'Crea un nuevo ingreso o egreso (requiere rol de tesorería)',

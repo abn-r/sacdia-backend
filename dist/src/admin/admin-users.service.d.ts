@@ -46,9 +46,9 @@ export declare class AdminUsersService {
             start_date: Date;
             end_date: Date | null;
             ecclesiastical_year: {
-                year_id: number;
                 start_date: Date;
                 end_date: Date;
+                year_id: number;
             };
             club: {
                 type: string;
@@ -57,19 +57,19 @@ export declare class AdminUsersService {
             } | null;
         }[];
         emergency_contacts: {
-            name: string;
             phone: string;
+            name: string;
             relationship_type_id: string;
-            emergency_id: number;
             primary: boolean;
+            emergency_id: number;
         }[];
         legal_representative: {
+            id: string;
+            phone: string | null;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            phone: string | null;
             relationship_type_id: string | null;
-            id: string;
             representative_user_id: string | null;
         } | null;
         scope: ScopeMeta;

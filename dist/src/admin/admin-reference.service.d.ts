@@ -7,132 +7,132 @@ export declare class AdminReferenceService {
     private normalizeName;
     private logMutation;
     listRelationshipTypes(): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         relationship_type_id: string;
     }[]>;
     createRelationshipType(dto: CreateRelationshipTypeDto, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         relationship_type_id: string;
     }>;
     updateRelationshipType(relationshipTypeId: string, dto: UpdateRelationshipTypeDto, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         relationship_type_id: string;
     }>;
     deleteRelationshipType(relationshipTypeId: string, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         relationship_type_id: string;
     }>;
     listAllergies(): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         allergy_id: number;
     }[]>;
     createAllergy(dto: CreateAllergyDto, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         allergy_id: number;
     }>;
     updateAllergy(allergyId: number, dto: UpdateAllergyDto, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         allergy_id: number;
     }>;
     deleteAllergy(allergyId: number, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         allergy_id: number;
     }>;
     listDiseases(): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         disease_id: number;
     }[]>;
     createDisease(dto: CreateDiseaseDto, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         disease_id: number;
     }>;
     updateDisease(diseaseId: number, dto: UpdateDiseaseDto, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         disease_id: number;
     }>;
     deleteDisease(diseaseId: number, actorId: string): Promise<{
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         disease_id: number;
     }>;
     listEcclesiasticalYears(): Promise<{
-        active: boolean;
         created_at: Date | null;
+        active: boolean;
         modified_at: Date | null;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     }[]>;
     createEcclesiasticalYear(dto: CreateEcclesiasticalYearDto, actorId: string): Promise<{
-        active: boolean;
         created_at: Date | null;
+        active: boolean;
         modified_at: Date | null;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     }>;
     updateEcclesiasticalYear(yearId: number, dto: UpdateEcclesiasticalYearDto, actorId: string): Promise<{
-        active: boolean;
         created_at: Date | null;
+        active: boolean;
         modified_at: Date | null;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     }>;
     deleteEcclesiasticalYear(yearId: number, actorId: string): Promise<{
-        active: boolean;
         created_at: Date | null;
+        active: boolean;
         modified_at: Date | null;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     }>;
     private validateDateRange;
     private ensureRelationshipTypeExists;

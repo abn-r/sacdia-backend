@@ -383,6 +383,74 @@ export class UsersService {
     };
   }
 
+  async removeAllergy(userId: string, allergyId: number) {
+    await this.ensureUserExists(userId);
+
+    const now = new Date();
+    const result = await this.prisma.users_allergies.updateMany({
+      where: {
+        user_id: userId,
+        allergy_id: allergyId,
+        active: true,
+      },
+      data: {
+        active: false,
+        modified_at: now,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException(
+        'Alergia no encontrada en el perfil del usuario',
+      );
+    }
+
+    this.logger.log(`User allergy removed: ${userId} -> ${allergyId}`);
+
+    return {
+      status: 'success',
+      data: {
+        allergy_id: allergyId,
+        active: false,
+      },
+      message: 'Alergia eliminada exitosamente',
+    };
+  }
+
+  async removeDisease(userId: string, diseaseId: number) {
+    await this.ensureUserExists(userId);
+
+    const now = new Date();
+    const result = await this.prisma.users_diseases.updateMany({
+      where: {
+        user_id: userId,
+        disease_id: diseaseId,
+        active: true,
+      },
+      data: {
+        active: false,
+        modified_at: now,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException(
+        'Enfermedad no encontrada en el perfil del usuario',
+      );
+    }
+
+    this.logger.log(`User disease removed: ${userId} -> ${diseaseId}`);
+
+    return {
+      status: 'success',
+      data: {
+        disease_id: diseaseId,
+        active: false,
+      },
+      message: 'Enfermedad eliminada exitosamente',
+    };
+  }
+
   async uploadProfilePicture(userId: string, file: Express.Multer.File) {
     // Validar formato
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];

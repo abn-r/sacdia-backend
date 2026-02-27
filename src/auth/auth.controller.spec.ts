@@ -8,6 +8,7 @@ describe('AuthController', () => {
   const mockAuthService = {
     register: jest.fn(),
     login: jest.fn(),
+    refreshSession: jest.fn(),
     logout: jest.fn(),
     requestPasswordReset: jest.fn(),
     getProfile: jest.fn(),
@@ -62,6 +63,19 @@ describe('AuthController', () => {
       const result = await controller.login(dto);
 
       expect(mockAuthService.login).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('refresh', () => {
+    it('should delegate to authService.refreshSession', async () => {
+      const dto = { refreshToken: 'refresh-token' };
+      const expected = { status: 'success' };
+      mockAuthService.refreshSession.mockResolvedValue(expected);
+
+      const result = await controller.refresh(dto);
+
+      expect(mockAuthService.refreshSession).toHaveBeenCalledWith(dto);
       expect(result).toEqual(expected);
     });
   });

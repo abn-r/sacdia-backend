@@ -92,7 +92,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)(),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
     (0, swagger_1.ApiOperation)({
         summary: 'Crear camporee',
         description: 'Crea un nuevo camporee (requiere rol de liderazgo)',
@@ -109,7 +109,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':camporeeId'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar camporee' }),
     (0, swagger_1.ApiParam)({ name: 'camporeeId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Camporee actualizado' }),
@@ -170,7 +170,7 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':camporeeId/members/:userId'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
     (0, swagger_1.ApiOperation)({
         summary: 'Remover miembro del camporee',
         description: 'Desactiva el registro de un miembro en el camporee',

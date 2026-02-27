@@ -13,6 +13,7 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -87,6 +88,39 @@ export class UsersController {
     @Body() dto: UpdateUserDiseasesDto,
   ) {
     return this.usersService.updateDiseases(userId, dto);
+  }
+
+  @Delete(':userId/allergies/:allergyId')
+  @ApiOperation({
+    summary: 'Eliminar alergia del usuario (borrado lógico)',
+    description:
+      'Desactiva (active=false) una alergia específica del usuario en users_allergies',
+  })
+  @ApiResponse({ status: 200, description: 'Alergia eliminada' })
+  @ApiResponse({ status: 404, description: 'Alergia no encontrada en el usuario' })
+  async removeAllergy(
+    @Param('userId') userId: string,
+    @Param('allergyId', ParseIntPipe) allergyId: number,
+  ) {
+    return this.usersService.removeAllergy(userId, allergyId);
+  }
+
+  @Delete(':userId/diseases/:diseaseId')
+  @ApiOperation({
+    summary: 'Eliminar enfermedad del usuario (borrado lógico)',
+    description:
+      'Desactiva (active=false) una enfermedad específica del usuario en users_diseases',
+  })
+  @ApiResponse({ status: 200, description: 'Enfermedad eliminada' })
+  @ApiResponse({
+    status: 404,
+    description: 'Enfermedad no encontrada en el usuario',
+  })
+  async removeDisease(
+    @Param('userId') userId: string,
+    @Param('diseaseId', ParseIntPipe) diseaseId: number,
+  ) {
+    return this.usersService.removeDisease(userId, diseaseId);
   }
 
   @Post(':userId/profile-picture')

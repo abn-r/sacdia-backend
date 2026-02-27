@@ -14,6 +14,8 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
 - Endpoints de usuario para persistir salud habilitados:
   - `PUT /api/v1/users/:userId/allergies`
   - `PUT /api/v1/users/:userId/diseases`
+  - `DELETE /api/v1/users/:userId/allergies/:allergyId` (borrado lógico)
+  - `DELETE /api/v1/users/:userId/diseases/:diseaseId` (borrado lógico)
 - `PATCH /api/v1/users/:userId` ampliado para aceptar también:
   - `country_id`
   - `union_id`
@@ -151,6 +153,8 @@ Estos IDs (`allergy_id`, `disease_id`) se usan para guardar selección de salud 
 
 - `PUT /api/v1/users/:userId/allergies`
 - `PUT /api/v1/users/:userId/diseases`
+- `DELETE /api/v1/users/:userId/allergies/:allergyId`
+- `DELETE /api/v1/users/:userId/diseases/:diseaseId`
 
 ### Referencia rápida: salud del usuario (escritura en tablas pivote)
 
@@ -168,6 +172,10 @@ Estos IDs (`allergy_id`, `disease_id`) se usan para guardar selección de salud 
     "disease_ids": [10, 12]
   }
   ```
+- `DELETE /api/v1/users/:userId/allergies/:allergyId`
+  - Sin body (desactiva el registro en `users_allergies`).
+- `DELETE /api/v1/users/:userId/diseases/:diseaseId`
+  - Sin body (desactiva el registro en `users_diseases`).
 
 Comportamiento de ambos endpoints:
 
@@ -178,6 +186,7 @@ Comportamiento de ambos endpoints:
 5. IDs activos no enviados en la lista se desactivan (`active=false`).
 6. Lista vacía (`[]`) deja al usuario sin registros activos en ese tipo.
 7. Validan que usuario exista y que IDs pertenezcan a catálogos activos.
+8. Para desactivar solo un registro puntual sin reemplazar lista completa, usar `DELETE` por `allergyId` o `diseaseId`.
 
 ### Referencia rápida: actualización de perfil de usuario
 

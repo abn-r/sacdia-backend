@@ -74,7 +74,7 @@ export class CamporeesController {
 
   @Post()
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector')
+  @ClubRoles('director', 'deputy_director')
   @ApiOperation({
     summary: 'Crear camporee',
     description: 'Crea un nuevo camporee (requiere rol de liderazgo)',
@@ -87,7 +87,7 @@ export class CamporeesController {
 
   @Patch(':camporeeId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector')
+  @ClubRoles('director', 'deputy_director')
   @ApiOperation({ summary: 'Actualizar camporee' })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({ status: 200, description: 'Camporee actualizado' })
@@ -144,7 +144,7 @@ export class CamporeesController {
 
   @Delete(':camporeeId/members/:userId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector')
+  @ClubRoles('director', 'deputy_director')
   @ApiOperation({
     summary: 'Remover miembro del camporee',
     description: 'Desactiva el registro de un miembro en el camporee',

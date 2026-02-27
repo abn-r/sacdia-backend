@@ -5,20 +5,24 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class SupabaseService {
   private supabaseAdmin: SupabaseClient;
+  private supabaseAnon: SupabaseClient;
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL')!;
-    const supabaseKey = this.configService.get<string>(
+    const serviceRoleKey = this.configService.get<string>(
       'SUPABASE_SERVICE_ROLE_KEY',
     )!;
+    const anonKey = this.configService.get<string>('SUPABASE_ANON_KEY')!;
 
-    console.log('--- SUPABASE DEBUG ---');
-    console.log('URL:', supabaseUrl);
-    console.log('Key Length:', supabaseKey?.length);
-    console.log('Key Start:', supabaseKey?.substring(0, 10));
-    console.log('----------------------');
+    this.supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
 
-    this.supabaseAdmin = createClient(supabaseUrl, supabaseKey, {
+    // Cliente con anon key para operaciones de sesión de usuario (refresh, etc.)
+    this.supabaseAnon = createClient(supabaseUrl, anonKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -28,5 +32,9 @@ export class SupabaseService {
 
   get admin(): SupabaseClient {
     return this.supabaseAdmin;
+  }
+
+  get anon(): SupabaseClient {
+    return this.supabaseAnon;
   }
 }

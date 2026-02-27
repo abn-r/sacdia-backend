@@ -14,6 +14,8 @@ Se implementaron endpoints para persistir la selección de alergias y enfermedad
 
 - `PUT /api/v1/users/:userId/allergies`
 - `PUT /api/v1/users/:userId/diseases`
+- `DELETE /api/v1/users/:userId/allergies/:allergyId` (borrado lógico individual)
+- `DELETE /api/v1/users/:userId/diseases/:diseaseId` (borrado lógico individual)
 
 Contratos de entrada:
 
@@ -33,6 +35,7 @@ Comportamiento:
 4. Crean registros nuevos si no existen.
 5. Desactivan (`active=false`) los registros activos no incluidos.
 6. Si se envía `[]`, el usuario queda sin registros activos de ese tipo.
+7. Para remover solo un registro puntual, los `DELETE` individuales marcan `active=false` en la tabla pivote correspondiente.
 
 ### 2. Extensión de PATCH de usuario con geografía
 
@@ -68,6 +71,8 @@ Validaciones agregadas:
 3. Confirmación en spec de rutas:
    - `/v1/users/{userId}/allergies`
    - `/v1/users/{userId}/diseases`
+   - `/v1/users/{userId}/allergies/{allergyId}`
+   - `/v1/users/{userId}/diseases/{diseaseId}`
 4. `pnpm exec tsc -p tsconfig.json --noEmit` ⚠️ falla por issue previo no relacionado en:
    - `src/camporees/camporees.service.spec.ts` (`PaginationDto`)
 
@@ -77,4 +82,3 @@ Los catálogos de referencia para alimentar los IDs siguen siendo:
 
 - `GET /api/v1/catalogs/allergies`
 - `GET /api/v1/catalogs/diseases`
-

@@ -132,12 +132,57 @@ export class ClubsService {
   // ========================================
 
   async getInstances(clubId: number) {
-    const club = await this.findOne(clubId);
+    await this.findOne(clubId);
+
+    const [adventurers, pathfinders, masterGuilds] = await Promise.all([
+      this.prisma.club_adventurers.findMany({
+        where: { main_club_id: clubId },
+        include: {
+          club_types: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { club_adv_id: 'asc' },
+      }),
+      this.prisma.club_pathfinders.findMany({
+        where: { main_club_id: clubId },
+        include: {
+          club_types: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { club_pathf_id: 'asc' },
+      }),
+      this.prisma.club_master_guilds.findMany({
+        where: { main_club_id: clubId },
+        include: {
+          club_types: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { club_mg_id: 'asc' },
+      }),
+    ]);
 
     return {
-      adventurers: club.club_adventurers,
-      pathfinders: club.club_pathfinders,
-      master_guilds: club.club_master_guild,
+      adventurers: adventurers.map(({ club_types, ...instance }) => ({
+        ...instance,
+        club_type_name: club_types?.name ?? null,
+      })),
+      pathfinders: pathfinders.map(({ club_types, ...instance }) => ({
+        ...instance,
+        club_type_name: club_types?.name ?? null,
+      })),
+      master_guilds: masterGuilds.map(({ club_types, ...instance }) => ({
+        ...instance,
+        club_type_name: club_types?.name ?? null,
+      })),
     };
   }
 

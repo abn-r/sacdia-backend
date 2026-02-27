@@ -108,7 +108,7 @@ export class InventoryController {
   @ApiOperation({
     summary: 'Agregar nuevo item al inventario',
     description:
-      'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Subdirector o Tesorero.',
+      'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Deputy Director o Treasurer.',
   })
   @ApiParam({
     name: 'clubId',
@@ -137,7 +137,7 @@ export class InventoryController {
   @ApiOperation({
     summary: 'Actualizar un item del inventario',
     description:
-      'Actualiza información de un item existente. Requiere rol de Director, Subdirector o Tesorero.',
+      'Actualiza información de un item existente. Requiere rol de Director, Deputy Director o Treasurer.',
   })
   @ApiParam({
     name: 'id',
@@ -165,7 +165,7 @@ export class InventoryController {
   @ApiOperation({
     summary: 'Eliminar un item del inventario',
     description:
-      'Elimina un item del inventario (soft delete). Requiere rol de Director o Subdirector.',
+      'Elimina un item del inventario (soft delete). Requiere rol de Director o Deputy Director.',
   })
   @ApiParam({
     name: 'id',

@@ -22,6 +22,8 @@ let HttpExceptionFilter = class HttpExceptionFilter {
             url: request.url,
             status,
             message: exception.message,
+            validationDetails: exceptionResponse,
+            requestBody: process.env.NODE_ENV === 'development' ? request.body : undefined,
             stack: process.env.NODE_ENV === 'development' ? exception.stack : undefined,
         }));
         if (process.env.NODE_ENV === 'production') {

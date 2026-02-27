@@ -60,9 +60,9 @@ export declare class FcmTokensController {
     private fcmTokensService;
     constructor(fcmTokensService: FcmTokensService);
     registerToken(dto: RegisterFcmTokenDto, req: any): Promise<{
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         fcm_token_id: string;
         token: string;
@@ -75,9 +75,9 @@ export declare class FcmTokensController {
         message: string;
     }>;
     getMyTokens(req: any): Promise<{
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         fcm_token_id: string;
         token: string;
@@ -86,9 +86,9 @@ export declare class FcmTokensController {
         last_used: Date;
     }[]>;
     getUserTokens(userId: string): Promise<{
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         fcm_token_id: string;
         token: string;

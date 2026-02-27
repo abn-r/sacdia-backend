@@ -7,20 +7,20 @@ export declare class ClassesController {
     findOne(classId: number): Promise<{
         class_modules: ({
             class_sections: {
+                created_at: Date;
+                description: string | null;
                 name: string;
                 active: boolean;
-                created_at: Date;
                 modified_at: Date;
-                description: string | null;
                 section_id: number;
                 module_id: number;
             }[];
         } & {
+            created_at: Date;
+            description: string | null;
             name: string;
             active: boolean;
-            created_at: Date;
             modified_at: Date;
-            description: string | null;
             class_id: number;
             module_id: number;
         })[];
@@ -28,33 +28,33 @@ export declare class ClassesController {
             name: string;
         };
     } & {
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
-        class_id: number;
         club_type_id: number;
+        class_id: number;
         minimum_age: number;
         requires_invested_gm: boolean;
         material_url: string | null;
     }>;
     getModules(classId: number): Promise<({
         class_sections: {
+            created_at: Date;
+            description: string | null;
             name: string;
             active: boolean;
-            created_at: Date;
             modified_at: Date;
-            description: string | null;
             section_id: number;
             module_id: number;
         }[];
     } & {
+        created_at: Date;
+        description: string | null;
         name: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
-        description: string | null;
         class_id: number;
         module_id: number;
     })[]>;
@@ -67,8 +67,8 @@ export declare class UserClassesController {
             club_types: {
                 name: string;
             };
-            name: string;
             description: string | null;
+            name: string;
             class_id: number;
         };
         ecclesiastical_year: {
@@ -76,9 +76,9 @@ export declare class UserClassesController {
             end_date: Date;
         };
     } & {
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         ecclesiastical_year_id: number;
         class_id: number;
@@ -96,9 +96,9 @@ export declare class UserClassesController {
         cross_type_enrollment: boolean;
     })[]>;
     enroll(userId: string, dto: EnrollClassDto): Promise<{
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         ecclesiastical_year_id: number;
         class_id: number;
@@ -137,9 +137,9 @@ export declare class UserClassesController {
         }[];
     }>;
     updateProgress(userId: string, classId: number, dto: UpdateProgressDto): Promise<{
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         class_id: number;
         section_id: number;

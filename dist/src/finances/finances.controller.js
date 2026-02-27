@@ -120,7 +120,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('clubs/:clubId/finances'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'treasurer'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'treasurer'),
     (0, swagger_1.ApiOperation)({
         summary: 'Crear movimiento financiero',
         description: 'Crea un nuevo ingreso o egreso (requiere rol de tesorería)',

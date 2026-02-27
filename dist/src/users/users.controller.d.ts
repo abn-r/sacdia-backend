@@ -7,42 +7,42 @@ export declare class UsersController {
     findOne(userId: string): Promise<{
         status: string;
         data: {
-            user_id: string;
-            email: string;
+            created_at: Date;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
+            email: string;
+            user_id: string;
             gender: string | null;
             birthday: Date | null;
             blood: import("@prisma/client").$Enums.blood_type | null;
             baptism: boolean;
             baptism_date: Date | null;
             user_image: string | null;
-            country_id: number | null;
-            union_id: number | null;
             access_app: boolean | null;
             access_panel: boolean | null;
-            created_at: Date;
             modified_at: Date;
+            country_id: number | null;
+            union_id: number | null;
             local_field_id: number | null;
         };
     }>;
     update(userId: string, updateUserDto: UpdateUserDto): Promise<{
         status: string;
         data: {
-            user_id: string;
-            email: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
+            email: string;
+            user_id: string;
             gender: string | null;
             birthday: Date | null;
             blood: import("@prisma/client").$Enums.blood_type | null;
             baptism: boolean;
             baptism_date: Date | null;
+            modified_at: Date;
             country_id: number | null;
             union_id: number | null;
-            modified_at: Date;
             local_field_id: number | null;
         };
         message: string;
@@ -51,8 +51,8 @@ export declare class UsersController {
         status: string;
         data: {
             allergies: {
-                name: string;
                 description: string | null;
+                name: string;
             } | null;
             allergy_id: number | null;
         }[];
@@ -62,11 +62,27 @@ export declare class UsersController {
         status: string;
         data: {
             diseases: {
-                name: string;
                 description: string | null;
+                name: string;
             };
             disease_id: number;
         }[];
+        message: string;
+    }>;
+    removeAllergy(userId: string, allergyId: number): Promise<{
+        status: string;
+        data: {
+            allergy_id: number;
+            active: boolean;
+        };
+        message: string;
+    }>;
+    removeDisease(userId: string, diseaseId: number): Promise<{
+        status: string;
+        data: {
+            disease_id: number;
+            active: boolean;
+        };
         message: string;
     }>;
     uploadProfilePicture(userId: string, file: Express.Multer.File): Promise<{

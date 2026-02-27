@@ -132,7 +132,7 @@ __decorate([
     (0, common_1.Post)('clubs/:clubId/inventory'),
     (0, swagger_1.ApiOperation)({
         summary: 'Agregar nuevo item al inventario',
-        description: 'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Subdirector o Tesorero.',
+        description: 'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Deputy Director o Treasurer.',
     }),
     (0, swagger_1.ApiParam)({
         name: 'clubId',
@@ -157,7 +157,7 @@ __decorate([
     (0, common_1.Patch)('inventory/:id'),
     (0, swagger_1.ApiOperation)({
         summary: 'Actualizar un item del inventario',
-        description: 'Actualiza información de un item existente. Requiere rol de Director, Subdirector o Tesorero.',
+        description: 'Actualiza información de un item existente. Requiere rol de Director, Deputy Director o Treasurer.',
     }),
     (0, swagger_1.ApiParam)({
         name: 'id',
@@ -181,7 +181,7 @@ __decorate([
     (0, common_1.Delete)('inventory/:id'),
     (0, swagger_1.ApiOperation)({
         summary: 'Eliminar un item del inventario',
-        description: 'Elimina un item del inventario (soft delete). Requiere rol de Director o Subdirector.',
+        description: 'Elimina un item del inventario (soft delete). Requiere rol de Director o Deputy Director.',
     }),
     (0, swagger_1.ApiParam)({
         name: 'id',

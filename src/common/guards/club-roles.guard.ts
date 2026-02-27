@@ -11,13 +11,25 @@ export const CLUB_ROLES_KEY = 'club_roles';
 
 export type ClubRoleType =
   | 'director'
-  | 'subdirector'
+  | 'deputy_director'
   | 'secretary'
   | 'treasurer'
   | 'counselor'
   | 'instructor'
   | 'captain'
   | 'member';
+
+const CLUB_ROLE_ALIASES: Record<string, string> = {
+  subdirector: 'deputy_director',
+  secretario: 'secretary',
+  tesorero: 'treasurer',
+  consejero: 'counselor',
+};
+
+function normalizeClubRoleName(roleName: string): string {
+  const normalized = roleName.toLowerCase();
+  return CLUB_ROLE_ALIASES[normalized] ?? normalized;
+}
 
 @Injectable()
 export class ClubRolesGuard implements CanActivate {
@@ -44,6 +56,11 @@ export class ClubRolesGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
+    // super_admin has full access across all protected resources.
+    if (await this.isSuperAdmin(user.sub)) {
+      return true;
+    }
+
     // Obtener el clubId del request (params o body)
     const clubId = this.extractClubId(request);
 
@@ -65,6 +82,21 @@ export class ClubRolesGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  private async isSuperAdmin(userId: string): Promise<boolean> {
+    const userRoles = await this.prisma.users_roles.findMany({
+      where: { user_id: userId, active: true },
+      include: {
+        roles: { select: { role_name: true } },
+      },
+    });
+
+    return userRoles.some(
+      (assignment) =>
+        typeof assignment.roles?.role_name === 'string' &&
+        assignment.roles.role_name.toLowerCase() === 'super_admin',
+    );
   }
 
   private extractClubId(request: any): number | null {
@@ -128,12 +160,16 @@ export class ClubRolesGuard implements CanActivate {
     });
 
     // Verificar si alguno de los roles del usuario coincide con los requeridos
-    const userRoleNames = assignments.map((a) =>
-      a.roles.role_name.toLowerCase(),
+    const normalizedRequiredRoles = requiredRoles.map((requiredRole) =>
+      normalizeClubRoleName(requiredRole),
     );
 
-    return requiredRoles.some((requiredRole) =>
-      userRoleNames.includes(requiredRole.toLowerCase()),
+    const userRoleNames = assignments.map((assignment) =>
+      normalizeClubRoleName(assignment.roles.role_name),
+    );
+
+    return normalizedRequiredRoles.some((requiredRole) =>
+      userRoleNames.includes(requiredRole),
     );
   }
 }

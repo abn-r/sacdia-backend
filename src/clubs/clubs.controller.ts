@@ -110,9 +110,9 @@ export class ClubsController {
 
   @Patch(':clubId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector')
+  @ClubRoles('director', 'deputy_director')
   @ApiOperation({
-    summary: 'Actualizar club (requiere rol director o subdirector)',
+    summary: 'Actualizar club (requiere rol director o deputy director)',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club actualizado' })
@@ -168,9 +168,9 @@ export class ClubsController {
 
   @Post(':clubId/instances')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector')
+  @ClubRoles('director', 'deputy_director')
   @ApiOperation({
-    summary: 'Crear instancia de club (requiere director o subdirector)',
+    summary: 'Crear instancia de club (requiere director o deputy director)',
     description:
       'Crea una nueva instancia (Aventureros, Conquistadores, Guías Mayores)',
   })
@@ -186,10 +186,10 @@ export class ClubsController {
 
   @Patch(':clubId/instances/:type/:instanceId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'secretary')
+  @ClubRoles('director', 'deputy_director', 'secretary')
   @ApiOperation({
     summary:
-      'Actualizar instancia (requiere director, subdirector o secretario)',
+      'Actualizar instancia (requiere director, deputy director o secretary)',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'type', enum: ClubInstanceType })
@@ -227,10 +227,10 @@ export class ClubsController {
 
   @Post(':clubId/instances/:type/:instanceId/roles')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'secretary')
+  @ClubRoles('director', 'deputy_director', 'secretary')
   @ApiOperation({
     summary:
-      'Asignar rol a un miembro (requiere director, subdirector o secretario)',
+      'Asignar rol a un miembro (requiere director, deputy director o secretary)',
     description: 'Asigna un rol específico a un usuario en la instancia',
   })
   @ApiParam({ name: 'clubId', type: Number })

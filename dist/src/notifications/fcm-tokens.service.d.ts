@@ -8,9 +8,9 @@ export declare class FcmTokensService {
     private prisma;
     constructor(prisma: PrismaService);
     registerToken(userId: string, dto: RegisterFcmTokenDto): Promise<{
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         fcm_token_id: string;
         token: string;
@@ -23,9 +23,9 @@ export declare class FcmTokensService {
         message: string;
     }>;
     getUserTokens(userId: string): Promise<{
+        created_at: Date;
         user_id: string;
         active: boolean;
-        created_at: Date;
         modified_at: Date;
         fcm_token_id: string;
         token: string;

@@ -10,6 +10,7 @@ import { SupabaseService } from '../common/supabase.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
+import { RefreshSessionDto } from './dto/refresh-session.dto';
 
 @Injectable()
 export class AuthService {
@@ -174,6 +175,36 @@ export class AuthService {
     };
   }
 
+  async refreshSession(dto: RefreshSessionDto) {
+    const refreshToken = dto.refreshToken ?? dto.refresh_token;
+
+    if (!refreshToken) {
+      throw new BadRequestException('refreshToken es requerido');
+    }
+
+    const { data, error } = await this.supabase.anon.auth.setSession({
+      access_token: '',
+      refresh_token: refreshToken,
+    });
+
+    if (error || !data.session) {
+      this.logger.warn(
+        `Refresh session failed: ${error?.message ?? 'session is null'}`,
+      );
+      throw new UnauthorizedException('Refresh token inválido o expirado');
+    }
+
+    return {
+      status: 'success',
+      data: {
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        expiresAt: data.session.expires_at ?? null,
+        tokenType: data.session.token_type ?? 'bearer',
+      },
+    };
+  }
+
   async logout(accessToken: string) {
     const { error } = await this.supabase.admin.auth.admin.signOut(accessToken);
 
@@ -227,6 +258,11 @@ export class AuthService {
         union_id: true,
         local_field_id: true,
         created_at: true,
+        users_pr: {
+          select: {
+            complete: true,
+          },
+        },
         users_roles: {
           where: { active: true },
           select: {
@@ -244,6 +280,35 @@ export class AuthService {
                     },
                   },
                 },
+              },
+            },
+          },
+        },
+        club_role_assignments: {
+          where: { active: true, status: 'active' },
+          take: 1,
+          orderBy: { start_date: 'desc' },
+          select: {
+            roles: { select: { role_name: true } },
+            club_adventurers: {
+              select: {
+                club_adv_id: true,
+                club_types: { select: { name: true } },
+                clubs: { select: { club_id: true, name: true } },
+              },
+            },
+            club_pathfinders: {
+              select: {
+                club_pathf_id: true,
+                club_types: { select: { name: true } },
+                clubs: { select: { club_id: true, name: true } },
+              },
+            },
+            club_master_guild: {
+              select: {
+                club_mg_id: true,
+                club_types: { select: { name: true } },
+                clubs: { select: { club_id: true, name: true } },
               },
             },
           },
@@ -266,7 +331,31 @@ export class AuthService {
       }
     }
 
-    const { users_roles: _ignored, ...userData } = user;
+    const postRegisterComplete = user.users_pr?.[0]?.complete ?? false;
+
+    // Extraer información del club desde la asignación activa
+    const assignment = user.club_role_assignments?.[0];
+    let clubInfo: { club_id: number; club_name: string; club_type: string } | null = null;
+    if (assignment) {
+      const instance =
+        assignment.club_adventurers ??
+        assignment.club_pathfinders ??
+        assignment.club_master_guild;
+      if (instance && instance.clubs) {
+        clubInfo = {
+          club_id: instance.clubs.club_id,
+          club_name: instance.clubs.name,
+          club_type: instance.club_types?.name ?? null,
+        };
+      }
+    }
+
+    const {
+      users_roles: _ignored,
+      club_role_assignments: _ignored2,
+      users_pr: _ignored3,
+      ...userData
+    } = user;
 
     return {
       status: 'success',
@@ -274,6 +363,8 @@ export class AuthService {
         ...userData,
         roles,
         permissions: Array.from(permissionSet),
+        post_register_complete: postRegisterComplete,
+        club: clubInfo,
       },
     };
   }

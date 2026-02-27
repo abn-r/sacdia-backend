@@ -11,16 +11,16 @@ export declare class LegalRepresentativesController {
                 name: string;
             } | null;
         } & {
-            user_id: string;
+            id: string;
+            phone: string | null;
+            created_at: Date;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            created_at: Date;
+            user_id: string;
             modified_at: Date;
-            id: string;
-            representative_user_id: string | null;
-            phone: string | null;
             relationship_type_id: string | null;
+            representative_user_id: string | null;
         };
         message: string;
     }>;
@@ -37,23 +37,23 @@ export declare class LegalRepresentativesController {
                 relationship_type_id: string;
             } | null;
             representative_user: {
-                user_id: string;
-                email: string;
                 name: string | null;
                 paternal_last_name: string | null;
                 maternal_last_name: string | null;
+                email: string;
+                user_id: string;
             } | null;
         } & {
-            user_id: string;
+            id: string;
+            phone: string | null;
+            created_at: Date;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            created_at: Date;
+            user_id: string;
             modified_at: Date;
-            id: string;
-            representative_user_id: string | null;
-            phone: string | null;
             relationship_type_id: string | null;
+            representative_user_id: string | null;
         };
         hasLegalRepresentative: boolean;
         message?: undefined;
@@ -65,16 +65,16 @@ export declare class LegalRepresentativesController {
                 name: string;
             } | null;
         } & {
-            user_id: string;
+            id: string;
+            phone: string | null;
+            created_at: Date;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            created_at: Date;
+            user_id: string;
             modified_at: Date;
-            id: string;
-            representative_user_id: string | null;
-            phone: string | null;
             relationship_type_id: string | null;
+            representative_user_id: string | null;
         };
         message: string;
     }>;

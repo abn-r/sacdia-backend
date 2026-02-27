@@ -19,16 +19,19 @@ describe('ClubsService', () => {
     },
     club_adventurers: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
     club_pathfinders: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
     club_master_guilds: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -149,6 +152,62 @@ describe('ClubsService', () => {
       const result = await service.remove(1);
 
       expect(result.active).toBe(false);
+    });
+  });
+
+  describe('getInstances', () => {
+    it('should include club_type_name in each returned instance', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_id: 10,
+        name: 'Club Norte',
+      });
+      mockPrismaService.club_adventurers.findMany.mockResolvedValue([
+        {
+          club_adv_id: 1,
+          club_type_id: 2,
+          active: true,
+          club_types: { name: 'Aventureros' },
+        },
+      ]);
+      mockPrismaService.club_pathfinders.findMany.mockResolvedValue([
+        {
+          club_pathf_id: 2,
+          club_type_id: 3,
+          active: true,
+          club_types: { name: 'Conquistadores' },
+        },
+      ]);
+      mockPrismaService.club_master_guilds.findMany.mockResolvedValue([
+        {
+          club_mg_id: 3,
+          club_type_id: 4,
+          active: true,
+          club_types: { name: 'Guías Mayores' },
+        },
+      ]);
+
+      const result = await service.getInstances(10);
+
+      expect(result).toEqual({
+        adventurers: [
+          expect.objectContaining({
+            club_adv_id: 1,
+            club_type_name: 'Aventureros',
+          }),
+        ],
+        pathfinders: [
+          expect.objectContaining({
+            club_pathf_id: 2,
+            club_type_name: 'Conquistadores',
+          }),
+        ],
+        master_guilds: [
+          expect.objectContaining({
+            club_mg_id: 3,
+            club_type_name: 'Guías Mayores',
+          }),
+        ],
+      });
     });
   });
 });

@@ -7,8 +7,8 @@ export declare class CatalogsController {
         club_type_id: number;
     }[]>;
     getRelationshipTypes(): Promise<{
-        name: string;
         description: string | null;
+        name: string;
         relationship_type_id: string;
     }[]>;
     getCountries(): Promise<{
@@ -43,15 +43,15 @@ export declare class CatalogsController {
     }[]>;
     getEcclesiasticalYears(): Promise<{
         active: boolean;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     }[]>;
     getCurrentEcclesiasticalYear(): Promise<{
         active: boolean;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     } | null>;
     getClubIdeals(clubTypeId?: number): Promise<{
         name: string;
@@ -61,13 +61,13 @@ export declare class CatalogsController {
         ideal: string | null;
     }[]>;
     getAllergies(): Promise<{
-        name: string;
         description: string | null;
+        name: string;
         allergy_id: number;
     }[]>;
     getDiseases(): Promise<{
-        name: string;
         description: string | null;
+        name: string;
         disease_id: number;
     }[]>;
 }

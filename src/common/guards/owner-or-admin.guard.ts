@@ -9,7 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 /**
  * Guard que permite acceso si:
  * 1. El usuario es el propietario del recurso (userId en params coincide con el usuario autenticado)
- * 2. El usuario tiene un rol global administrativo (admin, coordinator, super_admin)
+ * 2. El usuario tiene un rol global administrativo (admin, assistant_admin, coordinator, super_admin)
  */
 @Injectable()
 export class OwnerOrAdminGuard implements CanActivate {
@@ -48,7 +48,7 @@ export class OwnerOrAdminGuard implements CanActivate {
   }
 
   private async checkAdminRole(userId: string): Promise<boolean> {
-    const adminRoles = ['admin', 'coordinator', 'super_admin'];
+    const adminRoles = ['admin', 'assistant_admin', 'coordinator', 'super_admin'];
 
     const userRoles = await this.prisma.users_roles.findMany({
       where: {

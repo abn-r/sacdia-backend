@@ -3,6 +3,7 @@ import { SupabaseService } from '../common/supabase.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
+import { RefreshSessionDto } from './dto/refresh-session.dto';
 export declare class AuthService {
     private prisma;
     private supabase;
@@ -36,6 +37,15 @@ export declare class AuthService {
             };
         };
     }>;
+    refreshSession(dto: RefreshSessionDto): Promise<{
+        status: string;
+        data: {
+            accessToken: string;
+            refreshToken: string;
+            expiresAt: number | null;
+            tokenType: "bearer";
+        };
+    }>;
     logout(accessToken: string): Promise<{
         success: boolean;
         message: string;
@@ -49,6 +59,12 @@ export declare class AuthService {
         data: {
             roles: string[];
             permissions: string[];
+            post_register_complete: boolean;
+            club: {
+                club_id: number;
+                club_name: string;
+                club_type: string;
+            } | null;
             user_id: string;
             name: string | null;
             paternal_last_name: string | null;

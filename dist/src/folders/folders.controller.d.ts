@@ -46,11 +46,11 @@ export declare class FoldersController {
     enrollUser(userId: string, folderId: number): Promise<{
         status: string;
         data: {
+            status: string | null;
+            created_at: Date;
             user_id: string | null;
             active: boolean;
-            created_at: Date;
             modified_at: Date | null;
-            status: string | null;
             club_adv_id: number | null;
             club_pathf_id: number | null;
             club_mg_id: number | null;

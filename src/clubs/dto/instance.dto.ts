@@ -1,4 +1,10 @@
-import { IsInt, IsOptional, IsArray, IsBoolean } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -15,15 +21,18 @@ export class CreateInstanceDto {
     example: 'pathfinders',
     description: 'Tipo de instancia a crear',
   })
+  @IsEnum(ClubInstanceType)
   type: ClubInstanceType;
 
   @ApiPropertyOptional({ example: 1, description: 'Meta de almas' })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   souls_target?: number;
 
   @ApiPropertyOptional({ example: 100, description: 'Cuota mensual' })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   fee?: number;
 
@@ -47,11 +56,13 @@ export class CreateInstanceDto {
 export class UpdateInstanceDto {
   @ApiPropertyOptional()
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   souls_target?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   fee?: number;
 
