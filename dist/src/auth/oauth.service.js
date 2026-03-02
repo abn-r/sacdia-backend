@@ -14,6 +14,7 @@ exports.OAuthService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const supabase_service_1 = require("../common/supabase.service");
+const auth_token_response_util_1 = require("./utils/auth-token-response.util");
 let OAuthService = OAuthService_1 = class OAuthService {
     prisma;
     supabase;
@@ -76,8 +77,10 @@ let OAuthService = OAuthService_1 = class OAuthService {
             where: { user_id: supabaseUser.id },
         });
         return {
-            access_token: dto.access_token,
-            refresh_token: dto.refresh_token,
+            ...(0, auth_token_response_util_1.buildAuthTokenResponse)({
+                accessToken: dto.access_token,
+                refreshToken: dto.refresh_token ?? null,
+            }),
             user: {
                 id: dbUser.user_id,
                 email: dbUser.email,

@@ -13,21 +13,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MfaService = void 0;
 const common_1 = require("@nestjs/common");
 const supabase_js_1 = require("@supabase/supabase-js");
+const MFA_SESSION_BIND_FAILED = 'MFA_SESSION_BIND_FAILED';
 let MfaService = MfaService_1 = class MfaService {
     logger = new common_1.Logger(MfaService_1.name);
     supabase;
     constructor() {
         this.supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
     }
-    async enrollMfa(accessToken) {
+    async enrollMfa(accessToken, refreshToken) {
         try {
-            const { data: sessionData, error: sessionError } = await this.supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: '',
-            });
-            if (sessionError) {
-                throw new common_1.BadRequestException('Invalid session');
-            }
+            await this.bindSession(accessToken, refreshToken);
             const { data, error } = await this.supabase.auth.mfa.enroll({
                 factorType: 'totp',
                 friendlyName: 'SACDIA Authenticator',
@@ -51,12 +46,9 @@ let MfaService = MfaService_1 = class MfaService {
             throw new common_1.BadRequestException('Failed to enroll MFA');
         }
     }
-    async verifyAndActivateMfa(accessToken, factorId, code) {
+    async verifyAndActivateMfa(accessToken, factorId, code, refreshToken) {
         try {
-            await this.supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: '',
-            });
+            await this.bindSession(accessToken, refreshToken);
             const { data: challengeData, error: challengeError } = await this.supabase.auth.mfa.challenge({ factorId });
             if (challengeError) {
                 throw new common_1.BadRequestException(challengeError.message);
@@ -81,12 +73,9 @@ let MfaService = MfaService_1 = class MfaService {
             throw new common_1.BadRequestException('MFA verification failed');
         }
     }
-    async verifyMfaCode(accessToken, factorId, code) {
+    async verifyMfaCode(accessToken, factorId, code, refreshToken) {
         try {
-            await this.supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: '',
-            });
+            await this.bindSession(accessToken, refreshToken);
             const { data: challengeData, error: challengeError } = await this.supabase.auth.mfa.challenge({ factorId });
             if (challengeError) {
                 return false;
@@ -102,12 +91,9 @@ let MfaService = MfaService_1 = class MfaService {
             return false;
         }
     }
-    async listFactors(accessToken) {
+    async listFactors(accessToken, refreshToken) {
         try {
-            await this.supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: '',
-            });
+            await this.bindSession(accessToken, refreshToken);
             const { data, error } = await this.supabase.auth.mfa.listFactors();
             if (error) {
                 throw new common_1.BadRequestException(error.message);
@@ -126,12 +112,9 @@ let MfaService = MfaService_1 = class MfaService {
             throw new common_1.BadRequestException('Failed to list MFA factors');
         }
     }
-    async unenrollFactor(accessToken, factorId) {
+    async unenrollFactor(accessToken, factorId, refreshToken) {
         try {
-            await this.supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: '',
-            });
+            await this.bindSession(accessToken, refreshToken);
             const { error } = await this.supabase.auth.mfa.unenroll({ factorId });
             if (error) {
                 throw new common_1.BadRequestException(error.message);
@@ -144,16 +127,13 @@ let MfaService = MfaService_1 = class MfaService {
             throw new common_1.BadRequestException('Failed to unenroll MFA factor');
         }
     }
-    async hasMfaEnabled(accessToken) {
-        const factors = await this.listFactors(accessToken);
+    async hasMfaEnabled(accessToken, refreshToken) {
+        const factors = await this.listFactors(accessToken, refreshToken);
         return factors.some((f) => f.status === 'verified');
     }
-    async getAuthenticatorAssuranceLevel(accessToken) {
+    async getAuthenticatorAssuranceLevel(accessToken, refreshToken) {
         try {
-            await this.supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: '',
-            });
+            await this.bindSession(accessToken, refreshToken);
             const { data, error } = await this.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
             if (error) {
                 throw new common_1.BadRequestException(error.message);
@@ -168,6 +148,34 @@ let MfaService = MfaService_1 = class MfaService {
                 throw error;
             return { currentLevel: 'aal1', nextLevel: null };
         }
+    }
+    async bindSession(accessToken, refreshToken) {
+        if (!accessToken?.trim()) {
+            throw new common_1.BadRequestException({
+                code: MFA_SESSION_BIND_FAILED,
+                message: 'No access token found for MFA operation.',
+            });
+        }
+        const normalizedRefreshToken = refreshToken?.trim() ?? '';
+        const { error } = await this.supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: normalizedRefreshToken,
+        });
+        if (!error)
+            return;
+        if (!normalizedRefreshToken) {
+            this.logger.warn(JSON.stringify({
+                event: 'mfa_session_bind_failed',
+                reason: 'missing_refresh_token',
+                detail: error.message,
+            }));
+            throw new common_1.BadRequestException({
+                code: MFA_SESSION_BIND_FAILED,
+                message: 'No se pudo ligar la sesión MFA. Proporcione x-refresh-token y reintente.',
+                use: 'x-refresh-token',
+            });
+        }
+        throw new common_1.BadRequestException('Invalid session');
     }
 };
 exports.MfaService = MfaService;

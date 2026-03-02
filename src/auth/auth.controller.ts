@@ -47,6 +47,26 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Login exitoso, retorna tokens y usuario',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          accessToken: 'eyJhbGc...',
+          refreshToken: 'v1.abc...',
+          user: {
+            id: 'uuid-123',
+            email: 'user@sacdia.app',
+            name: 'Juan',
+            paternal_last_name: 'Perez',
+            maternal_last_name: 'Lopez',
+            avatar: null,
+            roles: ['user'],
+          },
+          needsPostRegistration: false,
+          postRegistrationStatus: null,
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 401,
@@ -62,6 +82,30 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Tokens renovados exitosamente',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          accessToken: 'eyJhbGc...',
+          refreshToken: 'v1.abc...',
+          expiresAt: 1900000000,
+          tokenType: 'bearer',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Payload legacy no soportado (`refresh_token` retirado)',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: 'refresh_token was removed. Use refreshToken in request body.',
+        code: 'LEGACY_SNAKE_CASE_REMOVED',
+        removedAt: '2026-03-01',
+        use: 'refreshToken',
+      },
+    },
   })
   @ApiResponse({
     status: 401,
@@ -103,6 +147,43 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Información del usuario',
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', example: 'success' },
+        data: {
+          type: 'object',
+          properties: {
+            user_id: { type: 'string', example: 'user-uuid' },
+            email: { type: 'string', example: 'usuario@sacdia.app' },
+            name: { type: 'string', example: 'Juan' },
+            roles: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['user'],
+            },
+            permissions: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['read'],
+            },
+            post_register_complete: {
+              type: 'boolean',
+              example: true,
+              description: 'Indica si el usuario completó el post-registro.',
+            },
+          },
+          required: [
+            'user_id',
+            'email',
+            'roles',
+            'permissions',
+            'post_register_complete',
+          ],
+        },
+      },
+      required: ['status', 'data'],
+    },
   })
   async getProfile(@CurrentUser() user: { userId: string }) {
     return this.authService.getProfile(user.userId);

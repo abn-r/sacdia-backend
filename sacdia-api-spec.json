@@ -74,7 +74,33 @@
         },
         "responses": {
           "200": {
-            "description": "Login exitoso, retorna tokens y usuario"
+            "description": "Login exitoso, retorna tokens y usuario",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "status": "success",
+                    "data": {
+                      "accessToken": "eyJhbGc...",
+                      "refreshToken": "v1.abc...",
+                      "user": {
+                        "id": "uuid-123",
+                        "email": "user@sacdia.app",
+                        "name": "Juan",
+                        "paternal_last_name": "Perez",
+                        "maternal_last_name": "Lopez",
+                        "avatar": null,
+                        "roles": [
+                          "user"
+                        ]
+                      },
+                      "needsPostRegistration": false,
+                      "postRegistrationStatus": null
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Credenciales inválidas"
@@ -102,7 +128,38 @@
         },
         "responses": {
           "200": {
-            "description": "Tokens renovados exitosamente"
+            "description": "Tokens renovados exitosamente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "status": "success",
+                    "data": {
+                      "accessToken": "eyJhbGc...",
+                      "refreshToken": "v1.abc...",
+                      "expiresAt": 1900000000,
+                      "tokenType": "bearer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Payload legacy no soportado (`refresh_token` retirado)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "statusCode": 400,
+                    "message": "refresh_token was removed. Use refreshToken in request body.",
+                    "code": "LEGACY_SNAKE_CASE_REMOVED",
+                    "removedAt": "2026-03-01",
+                    "use": "refreshToken"
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Refresh token inválido o expirado"
@@ -174,7 +231,71 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Información del usuario"
+            "description": "Información del usuario",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user_id": {
+                          "type": "string",
+                          "example": "user-uuid"
+                        },
+                        "email": {
+                          "type": "string",
+                          "example": "usuario@sacdia.app"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Juan"
+                        },
+                        "roles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "user"
+                          ]
+                        },
+                        "permissions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "read"
+                          ]
+                        },
+                        "post_register_complete": {
+                          "type": "boolean",
+                          "example": true,
+                          "description": "Indica si el usuario completó el post-registro."
+                        }
+                      },
+                      "required": [
+                        "user_id",
+                        "email",
+                        "roles",
+                        "permissions",
+                        "post_register_complete"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "data"
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -212,7 +333,17 @@
       "post": {
         "description": "Genera un QR code y secret para configurar en tu app de autenticación",
         "operationId": "MfaController_enrollMfa_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-refresh-token",
+            "in": "header",
+            "description": "Refresh token opcional para ligar sesión MFA en entornos que lo requieran.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "QR code y secret generados",
@@ -256,7 +387,17 @@
       "post": {
         "description": "Verifica el código TOTP y activa 2FA para la cuenta",
         "operationId": "MfaController_verifyMfa_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-refresh-token",
+            "in": "header",
+            "description": "Refresh token opcional para ligar sesión MFA en entornos que lo requieran.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -290,7 +431,17 @@
       "get": {
         "description": "Obtiene la lista de métodos 2FA configurados para el usuario",
         "operationId": "MfaController_listFactors_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-refresh-token",
+            "in": "header",
+            "description": "Refresh token opcional para ligar sesión MFA en entornos que lo requieran.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Lista de factores",
@@ -337,7 +488,17 @@
       "delete": {
         "description": "Elimina un factor MFA de la cuenta",
         "operationId": "MfaController_unenrollMfa_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-refresh-token",
+            "in": "header",
+            "description": "Refresh token opcional para ligar sesión MFA en entornos que lo requieran.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -368,7 +529,17 @@
       "get": {
         "description": "Indica si el usuario tiene 2FA habilitado y su nivel de autenticación",
         "operationId": "MfaController_getMfaStatus_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-refresh-token",
+            "in": "header",
+            "description": "Refresh token opcional para ligar sesión MFA en entornos que lo requieran.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -588,7 +759,7 @@
     },
     "/v1/auth/oauth/callback": {
       "get": {
-        "description": "Procesa el callback de Google/Apple después de autenticación exitosa. Auto-crea usuario si es primera vez. Retorna access_token y datos de usuario.",
+        "description": "Procesa el callback de Google/Apple después de autenticación exitosa. Auto-crea usuario si es primera vez. Retorna accessToken y datos de usuario.",
         "operationId": "OAuthController_handleCallback_v1",
         "parameters": [
           {
@@ -629,8 +800,8 @@
               "application/json": {
                 "schema": {
                   "example": {
-                    "access_token": "eyJhbGc...",
-                    "refresh_token": "v1.abc...",
+                    "accessToken": "eyJhbGc...",
+                    "refreshToken": "v1.abc...",
                     "user": {
                       "id": "uuid-123",
                       "email": "user@gmail.com",
@@ -2039,7 +2210,7 @@
             "bearer": []
           }
         ],
-        "summary": "Actualizar club (requiere rol director o subdirector)",
+        "summary": "Actualizar club (requiere rol director o deputy director)",
         "tags": [
           "clubs"
         ]
@@ -2140,7 +2311,7 @@
             "bearer": []
           }
         ],
-        "summary": "Crear instancia de club (requiere director o subdirector)",
+        "summary": "Crear instancia de club (requiere director o deputy director)",
         "tags": [
           "clubs"
         ]
@@ -2246,7 +2417,7 @@
             "bearer": []
           }
         ],
-        "summary": "Actualizar instancia (requiere director, subdirector o secretario)",
+        "summary": "Actualizar instancia (requiere director, deputy director o secretary)",
         "tags": [
           "clubs"
         ]
@@ -2361,7 +2532,7 @@
             "bearer": []
           }
         ],
-        "summary": "Asignar rol a un miembro (requiere director, subdirector o secretario)",
+        "summary": "Asignar rol a un miembro (requiere director, deputy director o secretary)",
         "tags": [
           "clubs"
         ]
@@ -4791,7 +4962,7 @@
         ]
       },
       "post": {
-        "description": "Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Subdirector o Tesorero.",
+        "description": "Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Deputy Director o Treasurer.",
         "operationId": "InventoryController_create_v1",
         "parameters": [
           {
@@ -4875,7 +5046,7 @@
         ]
       },
       "patch": {
-        "description": "Actualiza información de un item existente. Requiere rol de Director, Subdirector o Tesorero.",
+        "description": "Actualiza información de un item existente. Requiere rol de Director, Deputy Director o Treasurer.",
         "operationId": "InventoryController_update_v1",
         "parameters": [
           {
@@ -4921,7 +5092,7 @@
         ]
       },
       "delete": {
-        "description": "Elimina un item del inventario (soft delete). Requiere rol de Director o Subdirector.",
+        "description": "Elimina un item del inventario (soft delete). Requiere rol de Director o Deputy Director.",
         "operationId": "InventoryController_delete_v1",
         "parameters": [
           {
@@ -6599,12 +6770,13 @@
           "refreshToken": {
             "type": "string",
             "example": "v1.abc...",
-            "description": "Refresh token (camelCase)"
+            "description": "Refresh token (camelCase, formato soportado)"
           },
           "refresh_token": {
             "type": "string",
             "example": "v1.abc...",
-            "description": "Refresh token (snake_case, compatibilidad)"
+            "description": "Legacy snake_case retirado el 2026-03-01. Solo habilitable temporalmente por rollback flag.",
+            "deprecated": true
           }
         }
       },

@@ -12,6 +12,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiHeader,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -22,6 +23,12 @@ import { VerifyMfaDto, UnenrollMfaDto } from './dto/mfa.dto';
 @Controller('auth/mfa')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
+@ApiHeader({
+  name: 'x-refresh-token',
+  required: false,
+  description:
+    'Refresh token opcional para ligar sesión MFA en entornos que lo requieran.',
+})
 export class MfaController {
   constructor(private readonly mfaService: MfaService) {}
 
@@ -48,7 +55,8 @@ export class MfaController {
   })
   async enrollMfa(@Req() req: Request) {
     const token = this.extractToken(req);
-    return this.mfaService.enrollMfa(token);
+    const refreshToken = this.extractRefreshToken(req);
+    return this.mfaService.enrollMfa(token, refreshToken);
   }
 
   @Post('verify')
@@ -60,7 +68,13 @@ export class MfaController {
   @ApiResponse({ status: 401, description: 'Código inválido' })
   async verifyMfa(@Req() req: Request, @Body() dto: VerifyMfaDto) {
     const token = this.extractToken(req);
-    return this.mfaService.verifyAndActivateMfa(token, dto.factorId, dto.code);
+    const refreshToken = this.extractRefreshToken(req);
+    return this.mfaService.verifyAndActivateMfa(
+      token,
+      dto.factorId,
+      dto.code,
+      refreshToken,
+    );
   }
 
   @Get('factors')
@@ -86,7 +100,8 @@ export class MfaController {
   })
   async listFactors(@Req() req: Request) {
     const token = this.extractToken(req);
-    return this.mfaService.listFactors(token);
+    const refreshToken = this.extractRefreshToken(req);
+    return this.mfaService.listFactors(token, refreshToken);
   }
 
   @Delete('unenroll')
@@ -97,7 +112,8 @@ export class MfaController {
   @ApiResponse({ status: 200, description: '2FA deshabilitado' })
   async unenrollMfa(@Req() req: Request, @Body() dto: UnenrollMfaDto) {
     const token = this.extractToken(req);
-    await this.mfaService.unenrollFactor(token, dto.factorId);
+    const refreshToken = this.extractRefreshToken(req);
+    await this.mfaService.unenrollFactor(token, dto.factorId, refreshToken);
     return { success: true, message: '2FA disabled successfully' };
   }
 
@@ -122,10 +138,11 @@ export class MfaController {
   })
   async getMfaStatus(@Req() req: Request) {
     const token = this.extractToken(req);
+    const refreshToken = this.extractRefreshToken(req);
     const [enabled, level, factors] = await Promise.all([
-      this.mfaService.hasMfaEnabled(token),
-      this.mfaService.getAuthenticatorAssuranceLevel(token),
-      this.mfaService.listFactors(token),
+      this.mfaService.hasMfaEnabled(token, refreshToken),
+      this.mfaService.getAuthenticatorAssuranceLevel(token, refreshToken),
+      this.mfaService.listFactors(token, refreshToken),
     ]);
 
     return {
@@ -139,5 +156,19 @@ export class MfaController {
   private extractToken(req: Request): string {
     const authHeader = req.headers.authorization;
     return authHeader?.replace('Bearer ', '') || '';
+  }
+
+  private extractRefreshToken(req: Request): string | undefined {
+    const header = req.headers['x-refresh-token'];
+
+    if (Array.isArray(header)) {
+      return header[0]?.trim() || undefined;
+    }
+
+    if (typeof header === 'string') {
+      return header.trim() || undefined;
+    }
+
+    return undefined;
   }
 }

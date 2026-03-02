@@ -14,8 +14,6 @@ export declare class AuthController {
     login(loginDto: LoginDto): Promise<{
         status: string;
         data: {
-            accessToken: string;
-            refreshToken: string;
             user: {
                 id: string;
                 email: string;
@@ -32,16 +30,15 @@ export declare class AuthController {
                 personal_info_complete: boolean;
                 club_selection_complete: boolean;
             };
+            accessToken: string;
+            refreshToken?: string | null;
+            expiresAt?: number | null;
+            tokenType?: string;
         };
     }>;
     refresh(dto: RefreshSessionDto): Promise<{
         status: string;
-        data: {
-            accessToken: string;
-            refreshToken: string;
-            expiresAt: number | null;
-            tokenType: "bearer";
-        };
+        data: import("./utils/auth-token-response.util").AuthTokenResponse;
     }>;
     logout(authorization: string): Promise<{
         success: boolean;
@@ -64,17 +61,17 @@ export declare class AuthController {
                 club_name: string;
                 club_type: string;
             } | null;
-            user_id: string;
+            created_at: Date;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
             email: string;
+            user_id: string;
             gender: string | null;
             birthday: Date | null;
             baptism: boolean;
             baptism_date: Date | null;
             user_image: string | null;
-            created_at: Date;
             country_id: number | null;
             union_id: number | null;
             local_field_id: number | null;

@@ -72,7 +72,7 @@ export class OAuthController {
     summary: 'Manejar callback de OAuth',
     description:
       'Procesa el callback de Google/Apple después de autenticación exitosa. ' +
-      'Auto-crea usuario si es primera vez. Retorna access_token y datos de usuario.',
+      'Auto-crea usuario si es primera vez. Retorna accessToken y datos de usuario.',
   })
   @ApiQuery({
     name: 'access_token',
@@ -94,8 +94,8 @@ export class OAuthController {
     description: 'Autenticación exitosa',
     schema: {
       example: {
-        access_token: 'eyJhbGc...',
-        refresh_token: 'v1.abc...',
+        accessToken: 'eyJhbGc...',
+        refreshToken: 'v1.abc...',
         user: {
           id: 'uuid-123',
           email: 'user@gmail.com',

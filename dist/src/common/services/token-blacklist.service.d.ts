@@ -10,4 +10,5 @@ export declare class TokenBlacklistService {
     isUserBlacklisted(userId: string, tokenIssuedAt: number): Promise<boolean>;
     private getBlacklistKey;
     private hashToken;
+    private normalizeEpochSeconds;
 }

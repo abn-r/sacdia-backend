@@ -195,8 +195,8 @@ describe('OAuthService', () => {
         },
       });
       expect(result).toEqual({
-        access_token: 'access-token',
-        refresh_token: 'refresh-token',
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
         user: {
           id: 'user-123',
           email: 'juan.garcia@example.com',

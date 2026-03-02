@@ -111,10 +111,32 @@ pnpm run load-test
 - `FIREBASE_CLIENT_EMAIL`
 - `SENTRY_DSN`
 - `ALLOWED_ORIGINS`
+- `AUTH_REJECT_SNAKE_CASE` (default: `true`)
 
 Notas:
 - Si `REDIS_URL` falla, el backend usa cache in-memory (no recomendado para prod).
 - Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
+- Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
+- `refresh_token` (snake_case) está retirado por defecto. Para rollback temporal usar `AUTH_REJECT_SNAKE_CASE=false`.
+
+### Monitoreo Auth post-cutover (14 días)
+
+Eventos estructurados emitidos:
+- `auth_refresh_legacy_rejected`
+- `auth_refresh_legacy_allowed`
+- `auth_refresh_success`
+- `auth_refresh_failed`
+- `auth_guard_unauthorized`
+- `auth_jwt_revoked_token`
+- `auth_jwt_user_blacklisted`
+- `mfa_session_bind_failed`
+
+Consultas sugeridas (Sentry/Logs):
+- Tasa de legacy rechazado: `event:auth_refresh_legacy_rejected`
+- Éxito de refresh: `event:auth_refresh_success`
+- Fallos de refresh: `event:auth_refresh_failed`
+- 401 en `/api/v1/auth/me`: `event:auth_guard_unauthorized url:/api/v1/auth/me`
+- Revocaciones efectivas: `event:auth_jwt_revoked_token OR event:auth_jwt_user_blacklisted`
 
 ## API
 

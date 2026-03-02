@@ -11,8 +11,6 @@ export declare class OAuthController {
         url: string;
     }>;
     handleCallback(query: OAuthCallbackDto): Promise<{
-        access_token: string;
-        refresh_token: string | undefined;
         user: {
             id: string;
             email: string;
@@ -24,6 +22,10 @@ export declare class OAuthController {
             apple_connected: boolean;
         };
         needsPostRegistration: boolean;
+        accessToken: string;
+        refreshToken?: string | null;
+        expiresAt?: number | null;
+        tokenType?: string;
     }>;
     getConnectedProviders(req: any): Promise<{
         apple_connected: boolean;

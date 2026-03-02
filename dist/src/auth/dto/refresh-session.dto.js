@@ -24,7 +24,7 @@ exports.RefreshSessionDto = RefreshSessionDto;
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         example: 'v1.abc...',
-        description: 'Refresh token (camelCase)',
+        description: 'Refresh token (camelCase, formato soportado)',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
@@ -33,7 +33,8 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         example: 'v1.abc...',
-        description: 'Refresh token (snake_case, compatibilidad)',
+        description: 'Legacy snake_case retirado el 2026-03-01. Solo habilitable temporalmente por rollback flag.',
+        deprecated: true,
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

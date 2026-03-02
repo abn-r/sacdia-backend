@@ -26,27 +26,32 @@ let MfaController = class MfaController {
     }
     async enrollMfa(req) {
         const token = this.extractToken(req);
-        return this.mfaService.enrollMfa(token);
+        const refreshToken = this.extractRefreshToken(req);
+        return this.mfaService.enrollMfa(token, refreshToken);
     }
     async verifyMfa(req, dto) {
         const token = this.extractToken(req);
-        return this.mfaService.verifyAndActivateMfa(token, dto.factorId, dto.code);
+        const refreshToken = this.extractRefreshToken(req);
+        return this.mfaService.verifyAndActivateMfa(token, dto.factorId, dto.code, refreshToken);
     }
     async listFactors(req) {
         const token = this.extractToken(req);
-        return this.mfaService.listFactors(token);
+        const refreshToken = this.extractRefreshToken(req);
+        return this.mfaService.listFactors(token, refreshToken);
     }
     async unenrollMfa(req, dto) {
         const token = this.extractToken(req);
-        await this.mfaService.unenrollFactor(token, dto.factorId);
+        const refreshToken = this.extractRefreshToken(req);
+        await this.mfaService.unenrollFactor(token, dto.factorId, refreshToken);
         return { success: true, message: '2FA disabled successfully' };
     }
     async getMfaStatus(req) {
         const token = this.extractToken(req);
+        const refreshToken = this.extractRefreshToken(req);
         const [enabled, level, factors] = await Promise.all([
-            this.mfaService.hasMfaEnabled(token),
-            this.mfaService.getAuthenticatorAssuranceLevel(token),
-            this.mfaService.listFactors(token),
+            this.mfaService.hasMfaEnabled(token, refreshToken),
+            this.mfaService.getAuthenticatorAssuranceLevel(token, refreshToken),
+            this.mfaService.listFactors(token, refreshToken),
         ]);
         return {
             mfaEnabled: enabled,
@@ -58,6 +63,16 @@ let MfaController = class MfaController {
     extractToken(req) {
         const authHeader = req.headers.authorization;
         return authHeader?.replace('Bearer ', '') || '';
+    }
+    extractRefreshToken(req) {
+        const header = req.headers['x-refresh-token'];
+        if (Array.isArray(header)) {
+            return header[0]?.trim() || undefined;
+        }
+        if (typeof header === 'string') {
+            return header.trim() || undefined;
+        }
+        return undefined;
     }
 };
 exports.MfaController = MfaController;
@@ -175,6 +190,11 @@ exports.MfaController = MfaController = __decorate([
     (0, common_1.Controller)('auth/mfa'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiHeader)({
+        name: 'x-refresh-token',
+        required: false,
+        description: 'Refresh token opcional para ligar sesión MFA en entornos que lo requieran.',
+    }),
     __metadata("design:paramtypes", [mfa_service_1.MfaService])
 ], MfaController);
 //# sourceMappingURL=mfa.controller.js.map
