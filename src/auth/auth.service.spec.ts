@@ -11,6 +11,7 @@ import {
 describe('AuthService', () => {
   let service: AuthService;
   const originalFrontendUrl = process.env.FRONTEND_URL;
+  const originalRejectSnakeCase = process.env.AUTH_REJECT_SNAKE_CASE;
 
   const mockTx = {
     users: {
@@ -46,8 +47,12 @@ describe('AuthService', () => {
           signOut: jest.fn(),
         },
         signInWithPassword: jest.fn(),
-        refreshSession: jest.fn(),
         resetPasswordForEmail: jest.fn(),
+      },
+    },
+    anon: {
+      auth: {
+        refreshSession: jest.fn(),
       },
     },
   };
@@ -72,6 +77,7 @@ describe('AuthService', () => {
   afterEach(() => {
     jest.clearAllMocks();
     process.env.FRONTEND_URL = originalFrontendUrl;
+    process.env.AUTH_REJECT_SNAKE_CASE = originalRejectSnakeCase;
   });
 
   it('should be defined', () => {
@@ -219,6 +225,20 @@ describe('AuthService', () => {
       );
     });
 
+    it('should throw UnauthorizedException when supabase session is missing', async () => {
+      mockSupabaseService.admin.auth.signInWithPassword.mockResolvedValue({
+        data: {
+          user: { id: 'user-123' },
+          session: null,
+        },
+        error: null,
+      });
+
+      await expect(service.login(loginDto)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
     it('should return tokens, user data, and post-registration state', async () => {
       mockSupabaseService.admin.auth.signInWithPassword.mockResolvedValue({
         data: {
@@ -325,7 +345,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException when Supabase refresh fails', async () => {
-      mockSupabaseService.admin.auth.refreshSession.mockResolvedValue({
+      mockSupabaseService.anon.auth.refreshSession.mockResolvedValue({
         data: { session: null },
         error: { message: 'Invalid refresh token' },
       });
@@ -335,8 +355,22 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
+    it('should reject legacy snake_case field by default', async () => {
+      process.env.AUTH_REJECT_SNAKE_CASE = 'true';
+
+      await expect(
+        service.refreshSession({ refresh_token: 'legacy-token' }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'LEGACY_SNAKE_CASE_REMOVED',
+          removedAt: '2026-03-01',
+          use: 'refreshToken',
+        }),
+      });
+    });
+
     it('should return new tokens when refresh succeeds', async () => {
-      mockSupabaseService.admin.auth.refreshSession.mockResolvedValue({
+      mockSupabaseService.anon.auth.refreshSession.mockResolvedValue({
         data: {
           session: {
             access_token: 'new-access-token',
@@ -352,7 +386,7 @@ describe('AuthService', () => {
         refreshToken: 'old-refresh-token',
       });
 
-      expect(mockSupabaseService.admin.auth.refreshSession).toHaveBeenCalledWith(
+      expect(mockSupabaseService.anon.auth.refreshSession).toHaveBeenCalledWith(
         {
           refresh_token: 'old-refresh-token',
         },
@@ -365,6 +399,35 @@ describe('AuthService', () => {
           expiresAt: 1900000000,
           tokenType: 'bearer',
         },
+      });
+    });
+
+    it('should allow snake_case input when rollback flag is disabled', async () => {
+      process.env.AUTH_REJECT_SNAKE_CASE = 'false';
+      mockSupabaseService.anon.auth.refreshSession.mockResolvedValue({
+        data: {
+          session: {
+            access_token: 'legacy-access-token',
+            refresh_token: 'legacy-refresh-token',
+            expires_at: 1900000000,
+            token_type: 'bearer',
+          },
+        },
+        error: null,
+      });
+
+      const result = await service.refreshSession({
+        refresh_token: 'legacy-input-refresh-token',
+      });
+
+      expect(mockSupabaseService.anon.auth.refreshSession).toHaveBeenCalledWith({
+        refresh_token: 'legacy-input-refresh-token',
+      });
+      expect(result.data).toEqual({
+        accessToken: 'legacy-access-token',
+        refreshToken: 'legacy-refresh-token',
+        expiresAt: 1900000000,
+        tokenType: 'bearer',
       });
     });
   });

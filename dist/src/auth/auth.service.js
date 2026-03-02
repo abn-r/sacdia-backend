@@ -14,6 +14,9 @@ exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const supabase_service_1 = require("../common/supabase.service");
+const auth_token_response_util_1 = require("./utils/auth-token-response.util");
+const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
+const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
 let AuthService = AuthService_1 = class AuthService {
     prisma;
     supabase;
@@ -90,6 +93,13 @@ let AuthService = AuthService_1 = class AuthService {
             this.logger.warn(`Login failed for ${dto.email}: ${error.message}`);
             throw new common_1.UnauthorizedException('Credenciales inválidas');
         }
+        if (!data?.user || !data.session) {
+            this.logger.warn(JSON.stringify({
+                event: 'auth_login_missing_session',
+                email: dto.email,
+            }));
+            throw new common_1.UnauthorizedException('Credenciales inválidas');
+        }
         const user = await this.prisma.users.findUnique({
             where: { user_id: data.user.id },
             select: {
@@ -126,12 +136,14 @@ let AuthService = AuthService_1 = class AuthService {
         const needsPostRegistration = user.users_pr[0]
             ? !user.users_pr[0].complete
             : true;
-        const roles = user.users_roles.map((ur) => ur.roles.role_name);
+        const roles = (user.users_roles ?? []).map((ur) => ur.roles.role_name);
         return {
             status: 'success',
             data: {
-                accessToken: data.session.access_token,
-                refreshToken: data.session.refresh_token,
+                ...(0, auth_token_response_util_1.buildAuthTokenResponse)({
+                    accessToken: data.session.access_token,
+                    refreshToken: data.session.refresh_token,
+                }),
                 user: {
                     id: user.user_id,
                     email: user.email,
@@ -147,26 +159,53 @@ let AuthService = AuthService_1 = class AuthService {
         };
     }
     async refreshSession(dto) {
-        const refreshToken = dto.refreshToken ?? dto.refresh_token;
+        const rejectSnakeCase = this.shouldRejectSnakeCase();
+        const usingLegacySnakeCase = !dto.refreshToken && Boolean(dto.refresh_token);
+        let refreshToken = dto.refreshToken;
+        if (usingLegacySnakeCase) {
+            if (rejectSnakeCase) {
+                this.logger.warn(JSON.stringify({
+                    event: 'auth_refresh_legacy_rejected',
+                    removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
+                }));
+                throw new common_1.BadRequestException({
+                    message: 'refresh_token was removed. Use refreshToken in request body.',
+                    code: LEGACY_SNAKE_CASE_REMOVED_CODE,
+                    removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
+                    use: 'refreshToken',
+                });
+            }
+            refreshToken = dto.refresh_token;
+            this.logger.warn(JSON.stringify({
+                event: 'auth_refresh_legacy_allowed',
+                compatibilityMode: true,
+            }));
+        }
         if (!refreshToken) {
             throw new common_1.BadRequestException('refreshToken es requerido');
         }
-        const { data, error } = await this.supabase.anon.auth.setSession({
-            access_token: '',
+        const { data, error } = await this.supabase.anon.auth.refreshSession({
             refresh_token: refreshToken,
         });
         if (error || !data.session) {
-            this.logger.warn(`Refresh session failed: ${error?.message ?? 'session is null'}`);
+            this.logger.warn(JSON.stringify({
+                event: 'auth_refresh_failed',
+                reason: error?.message ?? 'session is null',
+            }));
             throw new common_1.UnauthorizedException('Refresh token inválido o expirado');
         }
+        this.logger.log(JSON.stringify({
+            event: 'auth_refresh_success',
+            usedLegacyInput: usingLegacySnakeCase,
+        }));
         return {
             status: 'success',
-            data: {
+            data: (0, auth_token_response_util_1.buildAuthTokenResponse)({
                 accessToken: data.session.access_token,
                 refreshToken: data.session.refresh_token,
                 expiresAt: data.session.expires_at ?? null,
                 tokenType: data.session.token_type ?? 'bearer',
-            },
+            }),
         };
     }
     async logout(accessToken) {
@@ -340,6 +379,9 @@ let AuthService = AuthService_1 = class AuthService {
                 dateCompleted: userPr.date_completed,
             },
         };
+    }
+    shouldRejectSnakeCase() {
+        return process.env.AUTH_REJECT_SNAKE_CASE?.toLowerCase() !== 'false';
     }
 };
 exports.AuthService = AuthService;

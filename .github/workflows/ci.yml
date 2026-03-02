@@ -175,6 +175,10 @@ jobs:
       - name: Pull Vercel Environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
+      - name: Enforce Auth Snake Case Cutover Flag
+        run: |
+          node -e "const fs = require('fs'); const config = JSON.parse(fs.readFileSync('vercel.json', 'utf8')); if (String(config?.env?.AUTH_REJECT_SNAKE_CASE) !== 'true') { throw new Error('AUTH_REJECT_SNAKE_CASE must be true for production deploys.'); } console.log('AUTH_REJECT_SNAKE_CASE=true enforced for production deploy.');"
+
       - name: Build for Production
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
 

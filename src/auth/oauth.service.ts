@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../common/supabase.service';
 import { OAuthCallbackDto } from './dto/oauth-callback.dto';
+import { buildAuthTokenResponse } from './utils/auth-token-response.util';
 
 @Injectable()
 export class OAuthService {
@@ -107,8 +108,10 @@ export class OAuthService {
     });
 
     return {
-      access_token: dto.access_token,
-      refresh_token: dto.refresh_token,
+      ...buildAuthTokenResponse({
+        accessToken: dto.access_token,
+        refreshToken: dto.refresh_token ?? null,
+      }),
       user: {
         id: dbUser.user_id,
         email: dbUser.email,

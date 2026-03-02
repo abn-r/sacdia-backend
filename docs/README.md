@@ -1,6 +1,6 @@
 # Documentación Local de `sacdia-backend`
 
-Última actualización: **2026-02-23**
+Última actualización: **2026-03-01**
 
 Este directorio contiene documentación técnica local del backend (implementaciones, migraciones y revisiones).  
 La documentación funcional oficial del producto está en el repositorio padre: `../../docs`.
@@ -13,6 +13,8 @@ La documentación funcional oficial del producto está en el repositorio padre: 
   - Implementación del sprint de hardening de notificaciones + habilitación admin.
 - `docs/IMPLEMENTATION-SESSION-2026-02-21-user-medical-and-geography.md`
   - Endpoints para persistir y desactivar (borrado lógico) alergias/enfermedades por usuario y extensión de PATCH de perfil con geografía.
+- `docs/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md`
+  - Ejecución operativa del cutover inmediato de Auth (`snake_case` retirado), despliegue y monitoreo de 14 días.
 - `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
   - Migración de `emergency_contacts.relationship_type` (int legacy) a `relationship_type_id` (UUID) con FK a `relationship_types`.
 

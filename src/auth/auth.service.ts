@@ -11,6 +11,10 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
+import { buildAuthTokenResponse } from './utils/auth-token-response.util';
+
+const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
+const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
 
 @Injectable()
 export class AuthService {
@@ -112,6 +116,16 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    if (!data?.user || !data.session) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_login_missing_session',
+          email: dto.email,
+        }),
+      );
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+
     // 2. Obtener información del usuario y verificar post-registro
     const user = await this.prisma.users.findUnique({
       where: { user_id: data.user.id },
@@ -153,13 +167,15 @@ export class AuthService {
       : true;
 
     // Extraer roles como array plano de strings
-    const roles = user.users_roles.map((ur) => ur.roles.role_name);
+    const roles = (user.users_roles ?? []).map((ur) => ur.roles.role_name);
 
     return {
       status: 'success',
       data: {
-        accessToken: data.session.access_token,
-        refreshToken: data.session.refresh_token,
+        ...buildAuthTokenResponse({
+          accessToken: data.session.access_token,
+          refreshToken: data.session.refresh_token,
+        }),
         user: {
           id: user.user_id,
           email: user.email,
@@ -176,32 +192,70 @@ export class AuthService {
   }
 
   async refreshSession(dto: RefreshSessionDto) {
-    const refreshToken = dto.refreshToken ?? dto.refresh_token;
+    const rejectSnakeCase = this.shouldRejectSnakeCase();
+    const usingLegacySnakeCase = !dto.refreshToken && Boolean(dto.refresh_token);
+    let refreshToken = dto.refreshToken;
+
+    if (usingLegacySnakeCase) {
+      if (rejectSnakeCase) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_refresh_legacy_rejected',
+            removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
+          }),
+        );
+
+        throw new BadRequestException({
+          message:
+            'refresh_token was removed. Use refreshToken in request body.',
+          code: LEGACY_SNAKE_CASE_REMOVED_CODE,
+          removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
+          use: 'refreshToken',
+        });
+      }
+
+      refreshToken = dto.refresh_token;
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_refresh_legacy_allowed',
+          compatibilityMode: true,
+        }),
+      );
+    }
 
     if (!refreshToken) {
       throw new BadRequestException('refreshToken es requerido');
     }
 
-    const { data, error } = await this.supabase.anon.auth.setSession({
-      access_token: '',
+    const { data, error } = await this.supabase.anon.auth.refreshSession({
       refresh_token: refreshToken,
     });
 
     if (error || !data.session) {
       this.logger.warn(
-        `Refresh session failed: ${error?.message ?? 'session is null'}`,
+        JSON.stringify({
+          event: 'auth_refresh_failed',
+          reason: error?.message ?? 'session is null',
+        }),
       );
       throw new UnauthorizedException('Refresh token inválido o expirado');
     }
 
+    this.logger.log(
+      JSON.stringify({
+        event: 'auth_refresh_success',
+        usedLegacyInput: usingLegacySnakeCase,
+      }),
+    );
+
     return {
       status: 'success',
-      data: {
+      data: buildAuthTokenResponse({
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
         expiresAt: data.session.expires_at ?? null,
         tokenType: data.session.token_type ?? 'bearer',
-      },
+      }),
     };
   }
 
@@ -407,5 +461,9 @@ export class AuthService {
         dateCompleted: userPr.date_completed,
       },
     };
+  }
+
+  private shouldRejectSnakeCase(): boolean {
+    return process.env.AUTH_REJECT_SNAKE_CASE?.toLowerCase() !== 'false';
   }
 }
