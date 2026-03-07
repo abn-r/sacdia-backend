@@ -13,6 +13,7 @@ describe('AuthController', () => {
     requestPasswordReset: jest.fn(),
     getProfile: jest.fn(),
     getCompletionStatus: jest.fn(),
+    setActiveClubContext: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -72,22 +73,35 @@ describe('AuthController', () => {
       const dto = { refreshToken: 'refresh-token' };
       const expected = { status: 'success' };
       mockAuthService.refreshSession.mockResolvedValue(expected);
+      const userAgent = 'sacdia-test-agent';
 
-      const result = await controller.refresh(dto);
+      const result = await controller.refresh(dto, userAgent);
 
-      expect(mockAuthService.refreshSession).toHaveBeenCalledWith(dto);
+      expect(mockAuthService.refreshSession).toHaveBeenCalledWith(dto, {
+        userAgent,
+      });
       expect(result).toEqual(expected);
     });
   });
 
   describe('logout', () => {
-    it('should extract bearer token and delegate to authService.logout', async () => {
+    it('should delegate to authService.logout in fail-safe mode', async () => {
       const expected = { success: true };
       mockAuthService.logout.mockResolvedValue(expected);
+      const body = { refreshToken: 'refresh-token' };
+      const userAgent = 'sacdia-test-agent';
 
-      const result = await controller.logout('Bearer access-token');
+      const result = await controller.logout(
+        'Bearer access-token',
+        body,
+        userAgent,
+      );
 
-      expect(mockAuthService.logout).toHaveBeenCalledWith('access-token');
+      expect(mockAuthService.logout).toHaveBeenCalledWith({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        userAgent,
+      });
       expect(result).toEqual(expected);
     });
   });
@@ -128,6 +142,23 @@ describe('AuthController', () => {
 
       expect(mockAuthService.getCompletionStatus).toHaveBeenCalledWith(
         'user-123',
+      );
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('setActiveContext', () => {
+    it('should delegate to authService.setActiveClubContext', async () => {
+      const currentUser = { userId: 'user-123' };
+      const dto = { assignment_id: '15a0f6a5-3197-4f42-ab29-2f8fcf8f3cad' };
+      const expected = { status: 'success' };
+      mockAuthService.setActiveClubContext.mockResolvedValue(expected);
+
+      const result = await controller.setActiveContext(currentUser, dto as any);
+
+      expect(mockAuthService.setActiveClubContext).toHaveBeenCalledWith(
+        'user-123',
+        dto,
       );
       expect(result).toEqual(expected);
     });

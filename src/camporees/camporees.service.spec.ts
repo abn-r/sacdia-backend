@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CamporeesService } from './camporees.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
@@ -35,6 +36,10 @@ describe('CamporeesService', () => {
     $transaction: jest.fn(),
   };
 
+  const mockFileStorageService = {
+    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -42,6 +47,10 @@ describe('CamporeesService', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: FILE_STORAGE_SERVICE,
+          useValue: mockFileStorageService,
         },
       ],
     }).compile();

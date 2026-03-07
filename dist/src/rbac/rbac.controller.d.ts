@@ -8,45 +8,45 @@ export declare class RbacController {
     listPermissions(): Promise<{
         status: string;
         data: {
-            created_at: Date | null;
-            description: string | null;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
             permission_id: string;
             permission_name: string;
+            description: string | null;
         }[];
     }>;
     getPermission(id: string): Promise<{
         status: string;
         data: {
-            created_at: Date | null;
-            description: string | null;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
             permission_id: string;
             permission_name: string;
+            description: string | null;
         };
     }>;
     createPermission(dto: CreatePermissionDto): Promise<{
         status: string;
         data: {
-            created_at: Date | null;
-            description: string | null;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
             permission_id: string;
             permission_name: string;
+            description: string | null;
         };
     }>;
     updatePermission(id: string, dto: UpdatePermissionDto): Promise<{
         status: string;
         data: {
-            created_at: Date | null;
-            description: string | null;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
             permission_id: string;
             permission_name: string;
+            description: string | null;
         };
     }>;
     deletePermission(id: string): Promise<{
@@ -58,21 +58,21 @@ export declare class RbacController {
         data: ({
             role_permissions: ({
                 permissions: {
-                    description: string | null;
                     permission_id: string;
                     permission_name: string;
+                    description: string | null;
                 };
             } & {
-                created_at: Date | null;
                 active: boolean;
+                created_at: Date | null;
                 modified_at: Date | null;
                 role_id: string;
                 role_permission_id: string;
                 permission_id: string;
             })[];
         } & {
-            created_at: Date | null;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
             role_id: string;
             role_name: string;
@@ -84,21 +84,21 @@ export declare class RbacController {
         data: {
             role_permissions: ({
                 permissions: {
-                    description: string | null;
                     permission_id: string;
                     permission_name: string;
+                    description: string | null;
                 };
             } & {
-                created_at: Date | null;
                 active: boolean;
+                created_at: Date | null;
                 modified_at: Date | null;
                 role_id: string;
                 role_permission_id: string;
                 permission_id: string;
             })[];
         } & {
-            created_at: Date | null;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
             role_id: string;
             role_name: string;

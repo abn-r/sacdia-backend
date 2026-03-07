@@ -1,7 +1,7 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { PaginationDto, PaginatedResult } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 export declare class CertificationsService {
     private readonly prisma;
     constructor(prisma: PrismaService);
@@ -68,7 +68,7 @@ export declare class CertificationsService {
             }[];
         }[];
     }>;
-    updateProgress(userId: string, certificationId: number, dto: UpdateProgressDto): Promise<{
+    updateProgress(userId: string, certificationId: number, dto: UpdateCertificationProgressDto): Promise<{
         section_progress_id: any;
         module_id: number;
         section_id: number;

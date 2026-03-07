@@ -12,7 +12,7 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 
 @Injectable()
 export class CertificationsService {
@@ -379,7 +379,7 @@ export class CertificationsService {
   async updateProgress(
     userId: string,
     certificationId: number,
-    dto: UpdateProgressDto,
+    dto: UpdateCertificationProgressDto,
   ) {
     return await this.prisma.$transaction(async (tx) => {
       // 1. Verificar que el usuario está inscrito

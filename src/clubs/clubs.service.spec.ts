@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ClubsService } from './clubs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
 describe('ClubsService', () => {
   let service: ClubsService;
@@ -42,11 +43,16 @@ describe('ClubsService', () => {
     },
   };
 
+  const mockFileStorageService = {
+    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClubsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();
 

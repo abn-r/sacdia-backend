@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminUsersService } from './admin-users.service';
 
@@ -15,6 +16,10 @@ describe('AdminUsersService', () => {
     },
   };
 
+  const mockFileStorageService = {
+    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -22,6 +27,10 @@ describe('AdminUsersService', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: FILE_STORAGE_SERVICE,
+          useValue: mockFileStorageService,
         },
       ],
     }).compile();

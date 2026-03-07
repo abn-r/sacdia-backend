@@ -27,34 +27,30 @@ export class AuditInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const duration = Date.now() - startTime;
-          this.logger.log(
-            JSON.stringify({
-              timestamp: new Date().toISOString(),
-              userId: user?.user_id || 'anonymous',
-              method,
-              url: this.sanitizeUrl(url),
-              ip: this.getClientIp(request),
-              userAgent: userAgent.substring(0, 100),
-              duration: `${duration}ms`,
-              status: 'success',
-            }),
-          );
+          this.logger.log({
+            timestamp: new Date().toISOString(),
+            userId: user?.user_id || 'anonymous',
+            method,
+            url: this.sanitizeUrl(url),
+            ip: this.getClientIp(request),
+            userAgent: userAgent.substring(0, 100),
+            duration: `${duration}ms`,
+            status: 'success',
+          });
         },
         error: (error) => {
           const duration = Date.now() - startTime;
-          this.logger.warn(
-            JSON.stringify({
-              timestamp: new Date().toISOString(),
-              userId: user?.user_id || 'anonymous',
-              method,
-              url: this.sanitizeUrl(url),
-              ip: this.getClientIp(request),
-              userAgent: userAgent.substring(0, 100),
-              duration: `${duration}ms`,
-              status: 'error',
-              errorMessage: error.message,
-            }),
-          );
+          this.logger.warn({
+            timestamp: new Date().toISOString(),
+            userId: user?.user_id || 'anonymous',
+            method,
+            url: this.sanitizeUrl(url),
+            ip: this.getClientIp(request),
+            userAgent: userAgent.substring(0, 100),
+            duration: `${duration}ms`,
+            status: 'error',
+            errorMessage: error.message,
+          });
         },
       }),
     );

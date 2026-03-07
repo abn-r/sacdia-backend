@@ -1,6 +1,6 @@
 # Documentación Local de `sacdia-backend`
 
-Última actualización: **2026-03-01**
+Última actualización: **2026-03-04**
 
 Este directorio contiene documentación técnica local del backend (implementaciones, migraciones y revisiones).  
 La documentación funcional oficial del producto está en el repositorio padre: `../../docs`.
@@ -14,7 +14,13 @@ La documentación funcional oficial del producto está en el repositorio padre: 
 - `docs/IMPLEMENTATION-SESSION-2026-02-21-user-medical-and-geography.md`
   - Endpoints para persistir y desactivar (borrado lógico) alergias/enfermedades por usuario y extensión de PATCH de perfil con geografía.
 - `docs/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md`
-  - Ejecución operativa del cutover inmediato de Auth (`snake_case` retirado), despliegue y monitoreo de 14 días.
+  - Snapshot histórico del cutover inicial de Auth del 2026-03-01.
+- `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
+  - Estabilización de sesiones/Auth: logout fail-safe, enriquecimiento de observabilidad y ventana temporal de compatibilidad legacy.
+- `docs/BACKEND-PANORAMA-2026-03-04.md`
+  - Barrido consolidado del estado real del backend (módulos, riesgos operativos, documentación vigente e hitos siguientes).
+- `docs/adr/ADR-0001-auth-session-compat-window.md`
+  - Decisión arquitectónica operativa sobre compatibilidad temporal de `refresh_token` y fecha de cutback a contrato estricto.
 - `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
   - Migración de `emergency_contacts.relationship_type` (int legacy) a `relationship_type_id` (UUID) con FK a `relationship_types`.
 
@@ -35,3 +41,13 @@ Para reducir desactualización:
 2. Para entregas de sprint, crea/actualiza `docs/IMPLEMENTATION-SESSION-YYYY-MM-DD-*.md`.
 3. En documentos históricos, agrega una nota de vigencia al inicio.
 4. Si una decisión impacta producto/arquitectura global, sincroniza también en `../../docs`.
+
+## Estado operativo actual (resumen rápido)
+
+- Auth/sesiones en estabilización:
+  - Contrato oficial de refresh: `refreshToken` (camelCase).
+  - Ventana temporal de compatibilidad legacy activa hasta **2026-03-18**.
+  - `logout` en modo best-effort para evitar bloqueo de UX por expiración de access token.
+- Ver seguimiento en:
+  - `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
+  - `docs/BACKEND-PANORAMA-2026-03-04.md`

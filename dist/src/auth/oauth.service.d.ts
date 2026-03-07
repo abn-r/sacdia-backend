@@ -1,11 +1,14 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../common/supabase.service';
 import { OAuthCallbackDto } from './dto/oauth-callback.dto';
+import type { FileStorageService } from '../common/services/file-storage.service';
 export declare class OAuthService {
     private readonly prisma;
     private readonly supabase;
+    private readonly fileStorage;
     private readonly logger;
-    constructor(prisma: PrismaService, supabase: SupabaseService);
+    private static readonly PRIVATE_ASSET_URL_TTL_SECONDS;
+    constructor(prisma: PrismaService, supabase: SupabaseService, fileStorage: FileStorageService);
     initiateGoogleSignIn(redirectUrl?: string): Promise<{
         url: string;
     }>;
@@ -39,4 +42,5 @@ export declare class OAuthService {
         success: boolean;
         message: string;
     }>;
+    private resolvePrivateProfilePicture;
 }

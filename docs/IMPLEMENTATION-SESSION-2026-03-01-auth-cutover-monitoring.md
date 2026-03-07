@@ -1,18 +1,37 @@
 # Session: Auth Cutover Deployment + Monitoring
 
 Date: **2026-03-01**
-Status: **Active**
+Status: **Historical (superseded operationally on 2026-03-04)**
+
+> [!IMPORTANT]
+> Este documento representa el estado del cutover inicial del **2026-03-01**.
+> La operación vigente de sesiones/Auth fue actualizada en:
+> - `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
+> - `docs/adr/ADR-0001-auth-session-compat-window.md`
+> - `README.md` (secciones Auth y monitoreo)
 
 ## Objective
 
 Apply the immediate Auth contract cutover in production and operate a 14-day monitoring window without date gating.
 
+## Update 2026-03-04 (Session Stabilization)
+
+- Runtime switched to temporary compatibility window:
+  - `AUTH_REJECT_SNAKE_CASE=false`
+  - Window: **2026-03-04** to **2026-03-18**
+- Planned strict cutback date:
+  - **2026-03-18** with `AUTH_REJECT_SNAKE_CASE=true`
+- New operational event for logout resiliency:
+  - `event:auth_logout_best_effort`
+  - `event:auth_logout_revoke_failed`
+
 ## Applied in Repository
 
 - `vercel.json` enforces runtime default:
-  - `"AUTH_REJECT_SNAKE_CASE": "true"`
-- `ci.yml` production deploy now enforces the cutover flag before build/deploy:
-  - Fails deployment if `AUTH_REJECT_SNAKE_CASE` is not `true`.
+  - `"AUTH_REJECT_SNAKE_CASE": "false"` during 2026-03-04..2026-03-18
+- `ci.yml` production deploy enforces flag by date:
+  - 2026-03-04..2026-03-18 => must be `false`
+  - outside that range => must be `true`
 
 ## Production Execution Checklist (2026-03-01)
 
@@ -38,6 +57,10 @@ Apply the immediate Auth contract cutover in production and operate a 14-day mon
   - `event:auth_refresh_success`
 - Refresh failure rate:
   - `event:auth_refresh_failed`
+- Logout best effort:
+  - `event:auth_logout_best_effort`
+- Logout revoke failures:
+  - `event:auth_logout_revoke_failed`
 - Unauthorized on profile endpoint:
   - `event:auth_guard_unauthorized url:/api/v1/auth/me`
 - Revocation effectiveness:
@@ -55,7 +78,7 @@ Use only if client breakage is confirmed and high-impact.
 4. Open migration incident and define client remediation ETA.
 5. Restore `AUTH_REJECT_SNAKE_CASE=true` after remediation.
 
-## Exit Criteria (2026-03-15)
+## Exit Criteria (2026-03-18)
 
 - Legacy rejection trend near zero.
 - Stable `auth/me` 401 rate with no unexplained spikes.

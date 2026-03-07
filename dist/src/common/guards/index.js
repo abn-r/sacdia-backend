@@ -15,6 +15,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./jwt-auth.guard"), exports);
+__exportStar(require("./optional-jwt-auth.guard"), exports);
 __exportStar(require("./ip-whitelist.guard"), exports);
 __exportStar(require("./club-roles.guard"), exports);
 __exportStar(require("./global-roles.guard"), exports);

@@ -18,7 +18,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const classes_service_1 = require("./classes.service");
 const dto_1 = require("./dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const guards_1 = require("../common/guards");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
 let ClassesController = class ClassesController {
     classesService;
@@ -106,6 +106,7 @@ __decorate([
 exports.ClassesController = ClassesController = __decorate([
     (0, swagger_1.ApiTags)('classes'),
     (0, common_1.Controller)('classes'),
+    (0, common_1.UseGuards)(guards_1.OptionalJwtAuthGuard),
     __metadata("design:paramtypes", [classes_service_1.ClassesService])
 ], ClassesController);
 let UserClassesController = class UserClassesController {
@@ -199,7 +200,7 @@ __decorate([
 exports.UserClassesController = UserClassesController = __decorate([
     (0, swagger_1.ApiTags)('user-classes'),
     (0, common_1.Controller)('users/:userId/classes'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [classes_service_1.ClassesService])
 ], UserClassesController);

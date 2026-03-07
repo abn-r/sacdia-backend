@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import compression from 'compression';
 import * as Sentry from '@sentry/node';
@@ -28,7 +29,10 @@ async function bootstrap() {
     console.log('✅ Sentry monitoring initialized');
   }
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+  app.useLogger(app.get(Logger));
 
   // ==========================================
   // SEGURIDAD - Helmet (Security Headers)
@@ -200,8 +204,8 @@ Los endpoints de listado soportan: \`?page=1&limit=20\`
     },
   });
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
+  const port = parseInt(process.env.PORT || '3000', 10);
+  await app.listen(port, '0.0.0.0');
 
   console.log(`\n🚀 Server running on: http://localhost:${port}`);
   console.log(`📖 Swagger docs on: http://localhost:${port}/api`);

@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("@nestjs/core");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const nestjs_pino_1 = require("nestjs-pino");
 const helmet_1 = __importDefault(require("helmet"));
 const compression_1 = __importDefault(require("compression"));
 const Sentry = __importStar(require("@sentry/node"));
@@ -60,7 +61,10 @@ async function bootstrap() {
         sentryEnabled = true;
         console.log('✅ Sentry monitoring initialized');
     }
-    const app = await core_1.NestFactory.create(app_module_1.AppModule);
+    const app = await core_1.NestFactory.create(app_module_1.AppModule, {
+        bufferLogs: true,
+    });
+    app.useLogger(app.get(nestjs_pino_1.Logger));
     const isDevelopment = process.env.NODE_ENV !== 'production';
     app.use((0, helmet_1.default)({
         contentSecurityPolicy: isDevelopment
@@ -174,8 +178,8 @@ Los endpoints de listado soportan: \`?page=1&limit=20\`
             showRequestDuration: true,
         },
     });
-    const port = process.env.PORT || 3000;
-    await app.listen(port);
+    const port = parseInt(process.env.PORT || '3000', 10);
+    await app.listen(port, '0.0.0.0');
     console.log(`\n🚀 Server running on: http://localhost:${port}`);
     console.log(`📖 Swagger docs on: http://localhost:${port}/api`);
     console.log(`✅ API Version: v1 (default)`);

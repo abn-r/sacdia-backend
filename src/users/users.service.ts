@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -6,20 +7,26 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SupabaseService } from '../common/supabase.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
   UpdateUserAllergiesDto,
   UpdateUserDiseasesDto,
 } from './dto/update-user-medical.dto';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
+  private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
 
   constructor(
     private prisma: PrismaService,
-    private supabase: SupabaseService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   private async ensureUserExists(userId: string) {
@@ -42,12 +49,10 @@ export class UsersService {
       local_field_id: number | null;
     },
   ) {
-    let selectedUnion:
-      | {
-          union_id: number;
-          country_id: number;
-        }
-      | null = null;
+    let selectedUnion: {
+      union_id: number;
+      country_id: number;
+    } | null = null;
 
     if (updateUserDto.country_id !== undefined) {
       const country = await this.prisma.countries.findFirst({
@@ -185,6 +190,13 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    if (user.user_image) {
+      user.user_image = await this.resolvePrivateAssetUrl(
+        StorageBucketAlias.USER_PROFILES,
+        user.user_image,
+      );
+    }
+
     return { status: 'success', data: user };
   }
 
@@ -244,7 +256,9 @@ export class UsersService {
         where: {
           user_id: userId,
           active: true,
-          ...(allergyIds.length > 0 ? { allergy_id: { notIn: allergyIds } } : {}),
+          ...(allergyIds.length > 0
+            ? { allergy_id: { notIn: allergyIds } }
+            : {}),
         },
         data: {
           active: false,
@@ -320,7 +334,9 @@ export class UsersService {
         where: {
           user_id: userId,
           active: true,
-          ...(diseaseIds.length > 0 ? { disease_id: { notIn: diseaseIds } } : {}),
+          ...(diseaseIds.length > 0
+            ? { disease_id: { notIn: diseaseIds } }
+            : {}),
         },
         data: {
           active: false,
@@ -468,40 +484,57 @@ export class UsersService {
 
     // Determinar extensión
     const extension = file.mimetype.split('/')[1];
-    const fileName = `photo-${userId}.${extension}`;
+    const fileName = `photo-${userId}-${Date.now()}.${extension}`;
 
-    // Upload a Supabase Storage
-    const { error: uploadError } = await this.supabase.admin.storage
-      .from('profile-pictures')
-      .upload(fileName, file.buffer, {
-        contentType: file.mimetype,
-        upsert: true, // Sobrescribir si existe
-      });
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { user_image: true },
+    });
 
-    if (uploadError) {
-      this.logger.error('Supabase upload error:', uploadError);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    let uploaded: { key: string; url: string };
+
+    try {
+      uploaded = await this.fileStorage.upload(
+        StorageBucketAlias.USER_PROFILES,
+        fileName,
+        file.buffer,
+        {
+          contentType: file.mimetype,
+        },
+      );
+    } catch (error) {
+      this.logger.error('R2 upload error:', error);
       throw new InternalServerErrorException('Error al subir la imagen');
     }
 
-    // Obtener URL pública
-    const {
-      data: { publicUrl },
-    } = this.supabase.admin.storage
-      .from('profile-pictures')
-      .getPublicUrl(fileName);
+    try {
+      await this.prisma.users.update({
+        where: { user_id: userId },
+        data: { user_image: uploaded.url },
+      });
+    } catch (error) {
+      this.logger.error('Database update failed after upload:', error);
+      await this.rollbackUploadedObjects(StorageBucketAlias.USER_PROFILES, [
+        uploaded.key,
+      ]);
+      throw new InternalServerErrorException('Error al actualizar la imagen');
+    }
 
-    // Actualizar en BD
-    await this.prisma.users.update({
-      where: { user_id: userId },
-      data: { user_image: publicUrl },
-    });
+    await this.cleanupPreviousProfilePicture(user.user_image, uploaded.key);
 
     this.logger.log(`Profile picture uploaded for user: ${userId}`);
 
     return {
       status: 'success',
       data: {
-        url: publicUrl,
+        url: await this.resolvePrivateAssetUrl(
+          StorageBucketAlias.USER_PROFILES,
+          uploaded.url,
+        ),
         fileName,
       },
       message: 'Foto de perfil actualizada exitosamente',
@@ -522,24 +555,53 @@ export class UsersService {
       throw new BadRequestException('El usuario no tiene foto de perfil');
     }
 
-    // Extraer nombre de archivo de la URL
-    const fileName = user.user_image.split('/').pop();
+    const fileKey = this.fileStorage.extractKeyFromPublicUrl(
+      StorageBucketAlias.USER_PROFILES,
+      user.user_image,
+    );
 
-    // Eliminar de Supabase Storage
-    const { error } = await this.supabase.admin.storage
-      .from('profile-pictures')
-      .remove([fileName!]);
+    const previousUrl = user.user_image;
 
-    if (error) {
-      this.logger.error('Supabase delete error:', error);
+    try {
+      await this.prisma.users.update({
+        where: { user_id: userId },
+        data: { user_image: null },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Database update failed while deleting profile image:',
+        error,
+      );
       throw new InternalServerErrorException('Error al eliminar la imagen');
     }
 
-    // Actualizar en BD
-    await this.prisma.users.update({
-      where: { user_id: userId },
-      data: { user_image: null },
-    });
+    if (fileKey) {
+      try {
+        await this.fileStorage.deleteMany(StorageBucketAlias.USER_PROFILES, [
+          fileKey,
+        ]);
+      } catch (error) {
+        this.logger.error('R2 delete error:', error);
+
+        try {
+          await this.prisma.users.update({
+            where: { user_id: userId },
+            data: { user_image: previousUrl },
+          });
+        } catch (restoreError) {
+          this.logger.error(
+            'Critical: failed to restore DB after R2 delete error',
+            restoreError,
+          );
+        }
+
+        throw new InternalServerErrorException('Error al eliminar la imagen');
+      }
+    } else {
+      this.logger.warn(
+        `Skipping remote delete for legacy/non-R2 URL: ${user.user_image}`,
+      );
+    }
 
     this.logger.log(`Profile picture deleted for user: ${userId}`);
 
@@ -577,5 +639,65 @@ export class UsersService {
   async requiresLegalRepresentative(userId: string): Promise<boolean> {
     const age = await this.calculateAge(userId);
     return age !== null && age < 18;
+  }
+
+  private async rollbackUploadedObjects(
+    bucketAlias: StorageBucketAlias,
+    keys: string[],
+  ) {
+    if (keys.length === 0) return;
+
+    try {
+      await this.fileStorage.deleteMany(bucketAlias, keys);
+    } catch (error) {
+      this.logger.error(
+        `Critical: failed to rollback uploaded objects in ${bucketAlias}`,
+        error,
+      );
+    }
+  }
+
+  private async cleanupPreviousProfilePicture(
+    previousUrl: string | null | undefined,
+    newKey: string,
+  ) {
+    if (!previousUrl) return;
+
+    const previousKey = this.fileStorage.extractKeyFromPublicUrl(
+      StorageBucketAlias.USER_PROFILES,
+      previousUrl,
+    );
+
+    if (!previousKey || previousKey === newKey) return;
+
+    try {
+      await this.fileStorage.deleteMany(StorageBucketAlias.USER_PROFILES, [
+        previousKey,
+      ]);
+    } catch (error) {
+      this.logger.warn(
+        `Best-effort cleanup failed for old profile picture: ${previousKey}`,
+        error,
+      );
+    }
+  }
+
+  private async resolvePrivateAssetUrl(
+    bucketAlias: StorageBucketAlias,
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(bucketAlias, value, {
+        expiresInSeconds: UsersService.PRIVATE_ASSET_URL_TTL_SECONDS,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate signed URL for ${bucketAlias}. Returning original value.`,
+        error,
+      );
+      return value;
+    }
   }
 }

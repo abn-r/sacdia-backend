@@ -8,16 +8,26 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+var CamporeesService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CamporeesService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
 const dto_utils_1 = require("../common/utils/dto.utils");
+const file_storage_service_1 = require("../common/services/file-storage.service");
 let CamporeesService = class CamporeesService {
+    static { CamporeesService_1 = this; }
     prisma;
-    constructor(prisma) {
+    fileStorage;
+    logger = new common_1.Logger(CamporeesService_1.name);
+    static PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+    constructor(prisma, fileStorage) {
         this.prisma = prisma;
+        this.fileStorage = fileStorage;
     }
     async findAll(filters, pagination) {
         const where = {};
@@ -169,7 +179,7 @@ let CamporeesService = class CamporeesService {
         });
     }
     async registerMember(camporeeId, dto) {
-        return await this.prisma.$transaction(async (tx) => {
+        const member = await this.prisma.$transaction(async (tx) => {
             const camporee = await tx.local_camporees.findUnique({
                 where: { local_camporee_id: camporeeId },
             });
@@ -250,10 +260,11 @@ let CamporeesService = class CamporeesService {
             });
             return member;
         });
+        return this.applySignedPrivateUrls(member);
     }
     async getMembers(camporeeId) {
         await this.findOne(camporeeId);
-        return await this.prisma.camporee_members.findMany({
+        const members = await this.prisma.camporee_members.findMany({
             where: {
                 camporee_id: camporeeId,
                 active: true,
@@ -283,6 +294,7 @@ let CamporeesService = class CamporeesService {
             },
             orderBy: { created_at: 'asc' },
         });
+        return Promise.all(members.map((member) => this.applySignedPrivateUrls(member)));
     }
     async removeMember(camporeeId, userId) {
         await this.findOne(camporeeId);
@@ -316,10 +328,38 @@ let CamporeesService = class CamporeesService {
         const paginatedMembers = members.slice(skip, skip + take);
         return (0, pagination_dto_1.createPaginatedResult)(paginatedMembers, members.length, pagination ?? new pagination_dto_1.PaginationDto());
     }
+    async applySignedPrivateUrls(member) {
+        if (!member?.users)
+            return member;
+        const userImage = typeof member.users.user_image === 'string'
+            ? await this.resolvePrivateProfileUrl(member.users.user_image)
+            : member.users.user_image;
+        return {
+            ...member,
+            users: {
+                ...member.users,
+                user_image: userImage,
+            },
+        };
+    }
+    async resolvePrivateProfileUrl(value) {
+        if (!value)
+            return null;
+        try {
+            return await this.fileStorage.getSignedDownloadUrl(file_storage_service_1.StorageBucketAlias.USER_PROFILES, value, {
+                expiresInSeconds: CamporeesService_1.PRIVATE_ASSET_URL_TTL_SECONDS,
+            });
+        }
+        catch (error) {
+            this.logger.warn('Failed to generate signed URL for camporee member profile. Returning original value.', error);
+            return value;
+        }
+    }
 };
 exports.CamporeesService = CamporeesService;
-exports.CamporeesService = CamporeesService = __decorate([
+exports.CamporeesService = CamporeesService = CamporeesService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __param(1, (0, common_1.Inject)(file_storage_service_1.FILE_STORAGE_SERVICE)),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object])
 ], CamporeesService);
 //# sourceMappingURL=camporees.service.js.map

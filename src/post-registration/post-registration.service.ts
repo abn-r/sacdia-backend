@@ -211,29 +211,89 @@ export class PostRegistrationService {
         throw new BadRequestException('Club no encontrado');
       }
 
-      // 6. Asignar rol en club
-      await tx.club_role_assignments.create({
-        data: {
+      // 6. Validar que la clase exista antes de crear relaciones dependientes
+      const selectedClass = await tx.classes.findUnique({
+        where: { class_id: dto.class_id },
+        select: {
+          class_id: true,
+          active: true,
+        },
+      });
+
+      if (!selectedClass || !selectedClass.active) {
+        throw new BadRequestException('Clase no encontrada');
+      }
+
+      // 7. Reutilizar asignación activa si el paso llega repetido con el mismo club
+      const existingClubAssignment = await tx.club_role_assignments.findFirst({
+        where: {
           user_id: userId,
           role_id: memberRole.role_id,
-          [clubInstanceField]: dto.club_instance_id,
           ecclesiastical_year_id: currentYear.year_id,
-          start_date: new Date(),
           active: true,
-          status: 'active',
+          [clubInstanceField]: dto.club_instance_id,
         },
       });
 
-      // 7. Inscribir en clase
-      await tx.users_classes.create({
-        data: {
+      if (!existingClubAssignment) {
+        await tx.club_role_assignments.create({
+          data: {
+            user_id: userId,
+            role_id: memberRole.role_id,
+            [clubInstanceField]: dto.club_instance_id,
+            ecclesiastical_year_id: currentYear.year_id,
+            start_date: new Date(),
+            active: true,
+            status: 'active',
+          },
+        });
+      }
+
+      // 8. Mantener una sola clase actual e idempotencia para reintentos del paso
+      await tx.users_classes.updateMany({
+        where: {
           user_id: userId,
-          class_id: dto.class_id,
           current_class: true,
+          NOT: { class_id: dto.class_id },
+        },
+        data: {
+          current_class: false,
         },
       });
 
-      // 8. Marcar post-registro completo
+      const existingUserClass = await tx.users_classes.findUnique({
+        where: {
+          user_id_class_id: {
+            user_id: userId,
+            class_id: dto.class_id,
+          },
+        },
+        select: {
+          user_class_id: true,
+        },
+      });
+
+      if (existingUserClass) {
+        await tx.users_classes.update({
+          where: {
+            user_class_id: existingUserClass.user_class_id,
+          },
+          data: {
+            active: true,
+            current_class: true,
+          },
+        });
+      } else {
+        await tx.users_classes.create({
+          data: {
+            user_id: userId,
+            class_id: dto.class_id,
+            current_class: true,
+          },
+        });
+      }
+
+      // 9. Marcar post-registro completo
       await tx.users_pr.update({
         where: { user_id: userId },
         data: {

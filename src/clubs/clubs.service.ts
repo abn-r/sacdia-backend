@@ -1,7 +1,9 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -19,10 +21,22 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 @Injectable()
 export class ClubsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ClubsService.name);
+  private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   // ========================================
   // CLUBS - CRUD
@@ -318,7 +332,7 @@ export class ClubsService {
   async getMembers(instanceId: number, type: ClubInstanceType) {
     const whereClause = this.getInstanceWhereClause(instanceId, type);
 
-    return this.prisma.club_role_assignments.findMany({
+    const members = await this.prisma.club_role_assignments.findMany({
       where: {
         ...whereClause,
         active: true,
@@ -343,6 +357,21 @@ export class ClubsService {
       },
       orderBy: { start_date: 'desc' },
     });
+
+    return Promise.all(
+      members.map(async (member) => ({
+        ...member,
+        users: member.users
+          ? {
+              ...member.users,
+              user_image:
+                typeof member.users.user_image === 'string'
+                  ? await this.resolvePrivateProfileUrl(member.users.user_image)
+                  : member.users.user_image,
+            }
+          : member.users,
+      })),
+    );
   }
 
   async assignRole(dto: AssignRoleDto) {
@@ -429,6 +458,28 @@ export class ClubsService {
         return { club_mg_id: instanceId };
       default:
         throw new BadRequestException(`Invalid instance type: ${type}`);
+    }
+  }
+
+  private async resolvePrivateProfileUrl(
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        value,
+        {
+          expiresInSeconds: ClubsService.PRIVATE_ASSET_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for club member profile. Returning original value.',
+        error,
+      );
+      return value;
     }
   }
 }

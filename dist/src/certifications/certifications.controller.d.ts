@@ -1,6 +1,6 @@
 import { CertificationsService } from './certifications.service';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 export declare class CertificationsController {
     private readonly certificationsService;
@@ -90,7 +90,7 @@ export declare class CertificationsController {
             }[];
         };
     }>;
-    updateProgress(userId: string, certificationId: number, dto: UpdateProgressDto): Promise<{
+    updateProgress(userId: string, certificationId: number, dto: UpdateCertificationProgressDto): Promise<{
         status: string;
         data: {
             section_progress_id: any;

@@ -1,9 +1,11 @@
-import { Controller, Get, Query, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Query, ParseIntPipe, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { CatalogsService } from './catalogs.service';
+import { OptionalJwtAuthGuard } from '../common/guards';
 
 @ApiTags('catalogs')
 @Controller('catalogs')
+@UseGuards(OptionalJwtAuthGuard)
 export class CatalogsController {
   constructor(private readonly catalogsService: CatalogsService) {}
 
@@ -19,6 +21,17 @@ export class CatalogsController {
   @ApiResponse({ status: 200, description: 'Lista de tipos de club' })
   async getClubTypes() {
     return this.catalogsService.getClubTypes();
+  }
+
+  @Get('activity-types')
+  @ApiOperation({
+    summary: 'Obtener tipos de actividad',
+    description:
+      'Lista los tipos de actividad disponibles para registrar actividades',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de tipos de actividad' })
+  async getActivityTypes() {
+    return this.catalogsService.getActivityTypes();
   }
 
   @Get('relationship-types')

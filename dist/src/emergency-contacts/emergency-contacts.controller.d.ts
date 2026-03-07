@@ -7,11 +7,11 @@ export declare class EmergencyContactsController {
     create(userId: string, createDto: CreateEmergencyContactDto): Promise<{
         status: string;
         data: {
-            phone: string;
-            created_at: Date;
             name: string;
             active: boolean;
+            created_at: Date;
             modified_at: Date;
+            phone: string;
             relationship_type_id: string;
             primary: boolean;
             owner_id: string;
@@ -23,10 +23,10 @@ export declare class EmergencyContactsController {
     findAll(userId: string): Promise<{
         status: string;
         data: {
-            phone: string;
-            created_at: Date;
             name: string;
+            created_at: Date;
             modified_at: Date;
+            phone: string;
             relationship_type_id: string;
             primary: boolean;
             emergency_id: number;
@@ -39,11 +39,11 @@ export declare class EmergencyContactsController {
     findOne(userId: string, contactId: number): Promise<{
         status: string;
         data: {
-            phone: string;
-            created_at: Date;
             name: string;
             active: boolean;
+            created_at: Date;
             modified_at: Date;
+            phone: string;
             relationship_type_id: string;
             primary: boolean;
             owner_id: string;
@@ -54,11 +54,11 @@ export declare class EmergencyContactsController {
     update(userId: string, contactId: number, updateDto: UpdateEmergencyContactDto): Promise<{
         status: string;
         data: {
-            phone: string;
-            created_at: Date;
             name: string;
             active: boolean;
+            created_at: Date;
             modified_at: Date;
+            phone: string;
             relationship_type_id: string;
             primary: boolean;
             owner_id: string;

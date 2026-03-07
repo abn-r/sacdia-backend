@@ -20,11 +20,12 @@ import {
 } from '@nestjs/swagger';
 import { ClassesService } from './classes.service';
 import { EnrollClassDto, UpdateProgressDto } from './dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('classes')
 @Controller('classes')
+@UseGuards(OptionalJwtAuthGuard)
 export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}
 

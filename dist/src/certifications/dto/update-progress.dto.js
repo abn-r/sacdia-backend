@@ -9,11 +9,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpdateProgressDto = void 0;
+exports.UpdateCertificationProgressDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
-class UpdateProgressDto {
+class UpdateCertificationProgressDto {
     module_id;
     section_id;
     completed;
@@ -21,7 +21,7 @@ class UpdateProgressDto {
         return { module_id: { required: true, type: () => Number, minimum: 1 }, section_id: { required: true, type: () => Number, minimum: 1 }, completed: { required: true, type: () => Boolean } };
     }
 }
-exports.UpdateProgressDto = UpdateProgressDto;
+exports.UpdateCertificationProgressDto = UpdateCertificationProgressDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
         description: 'ID del módulo de la certificación',
@@ -30,7 +30,7 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.IsPositive)(),
     __metadata("design:type", Number)
-], UpdateProgressDto.prototype, "module_id", void 0);
+], UpdateCertificationProgressDto.prototype, "module_id", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         description: 'ID de la sección del módulo',
@@ -39,7 +39,7 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.IsPositive)(),
     __metadata("design:type", Number)
-], UpdateProgressDto.prototype, "section_id", void 0);
+], UpdateCertificationProgressDto.prototype, "section_id", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         description: 'Estado de completado de la sección',
@@ -47,5 +47,5 @@ __decorate([
     }),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
-], UpdateProgressDto.prototype, "completed", void 0);
+], UpdateCertificationProgressDto.prototype, "completed", void 0);
 //# sourceMappingURL=update-progress.dto.js.map

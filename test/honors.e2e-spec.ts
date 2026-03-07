@@ -78,6 +78,21 @@ describe('Honors E2E Tests', () => {
     });
   });
 
+  describe('/api/v1/honors/grouped-by-category (GET)', () => {
+    it('should return honors grouped by category', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/honors/grouped-by-category')
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      if (response.body.length > 0) {
+        expect(response.body[0]).toHaveProperty('category');
+        expect(response.body[0]).toHaveProperty('honors');
+        expect(Array.isArray(response.body[0].honors)).toBe(true);
+      }
+    });
+  });
+
   describe('/api/v1/honors/:honorId (GET)', () => {
     it('should return 404 for non-existent honor', async () => {
       await request(app.getHttpServer())

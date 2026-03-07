@@ -18,7 +18,7 @@ model activities {
   activity_place  String             @default("place")
   image           String
   platform        Int                @default(0)
-  activity_type   Int                @default(0)
+  activity_type_id Int
   link_meet       String?
   additional_data String?
   attendees       Json?              @db.Json
@@ -26,14 +26,48 @@ model activities {
   created_by      String             @db.Uuid
   created_at      DateTime?          @db.Timestamptz(6)
   modified_at     DateTime?          @db.Timestamptz(6)
-  club_adv_id     Int
-  club_mg_id      Int
-  club_pathf_id   Int
-  club_adv_i      club_adventurers   @relation(fields: [club_adv_id], references: [club_adv_id], onDelete: NoAction, onUpdate: NoAction)
-  club_mg         club_master_guilds @relation(fields: [club_mg_id], references: [club_mg_id], onDelete: NoAction, onUpdate: NoAction)
-  club_pathf      club_pathfinders   @relation(fields: [club_pathf_id], references: [club_pathf_id], onDelete: NoAction, onUpdate: NoAction)
+  club_adv_id     Int?
+  club_mg_id      Int?
+  club_pathf_id   Int?
+  club_adv_i      club_adventurers?   @relation(fields: [club_adv_id], references: [club_adv_id], onDelete: NoAction, onUpdate: NoAction)
+  club_mg         club_master_guilds? @relation(fields: [club_mg_id], references: [club_mg_id], onDelete: NoAction, onUpdate: NoAction)
+  club_pathf      club_pathfinders?   @relation(fields: [club_pathf_id], references: [club_pathf_id], onDelete: NoAction, onUpdate: NoAction)
+  activity_types  activity_types      @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: NoAction, onUpdate: NoAction)
+  activity_instances activity_instances[]
   club_types      club_types         @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   users           users              @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model activity_types {
+  activity_type_id Int          @id @default(autoincrement())
+  code             String       @unique @db.VarChar(50)
+  name             String       @unique @db.VarChar(100)
+  description      String?
+  active           Boolean      @default(true)
+  created_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime?    @default(now()) @db.Timestamptz(6)
+  activities       activities[]
+}
+
+model activity_instances {
+  activity_instance_id Int                @id @default(autoincrement())
+  activity_id          Int
+  club_adv_id          Int?
+  club_pathf_id        Int?
+  club_mg_id           Int?
+  active               Boolean            @default(true)
+  created_at           DateTime           @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  activities           activities         @relation(fields: [activity_id], references: [activity_id], onDelete: Cascade, onUpdate: NoAction)
+  club_adventurers     club_adventurers?  @relation(fields: [club_adv_id], references: [club_adv_id], onDelete: NoAction, onUpdate: NoAction)
+  club_pathfinders     club_pathfinders?  @relation(fields: [club_pathf_id], references: [club_pathf_id], onDelete: NoAction, onUpdate: NoAction)
+  club_master_guilds   club_master_guilds? @relation(fields: [club_mg_id], references: [club_mg_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([activity_id], map: "idx_activity_instances_activity")
+  @@index([club_adv_id], map: "idx_activity_instances_adv")
+  @@index([club_pathf_id], map: "idx_activity_instances_pathf")
+  @@index([club_mg_id], map: "idx_activity_instances_mg")
+  @@unique([activity_id, club_adv_id, club_pathf_id, club_mg_id], map: "activity_instances_unique_instance_per_activity")
 }
 
 model folder_assignments {
@@ -262,6 +296,7 @@ model club_adventurers {
   modified_at               DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
   main_club_id              Int?
   activities                activities[]
+  activity_instances        activity_instances[]
   attending_clubs_camporees camporee_clubs[]
   club_types                club_types                @relation(fields: [club_type_id], references: [club_type_id])
   clubs                     clubs?                    @relation(fields: [main_club_id], references: [club_id], onDelete: Cascade, onUpdate: NoAction)
@@ -285,6 +320,7 @@ model club_pathfinders {
   modified_at               DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
   main_club_id              Int?
   activities                activities[]
+  activity_instances        activity_instances[]
   attending_clubs_camporees camporee_clubs[]
   club_inventory            club_inventory[]
   club_types                club_types                @relation(fields: [club_type_id], references: [club_type_id])
@@ -308,6 +344,7 @@ model club_master_guilds {
   modified_at               DateTime                  @default(now()) @updatedAt @db.Timestamptz(6)
   main_club_id              Int?
   activities                activities[]
+  activity_instances        activity_instances[]
   attending_clubs_camporees camporee_clubs[]
   club_inventory            club_inventory[]
   club_types                club_types                @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
@@ -875,6 +912,7 @@ model users_pr {
   profile_picture_complete Boolean @default(false)
   personal_info_complete   Boolean @default(false)
   club_selection_complete  Boolean @default(false)
+  active_club_assignment_id String? @db.Uuid
 
   date_completed DateTime? @db.Timestamptz(6)
   created_at     DateTime  @default(now()) @db.Timestamptz(6)

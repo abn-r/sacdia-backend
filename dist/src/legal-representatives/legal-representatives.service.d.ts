@@ -14,14 +14,14 @@ export declare class LegalRepresentativesService {
                 name: string;
             } | null;
         } & {
-            id: string;
-            phone: string | null;
-            created_at: Date;
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            user_id: string;
+            created_at: Date;
             modified_at: Date;
+            id: string;
+            phone: string | null;
             relationship_type_id: string | null;
             representative_user_id: string | null;
         };
@@ -40,21 +40,21 @@ export declare class LegalRepresentativesService {
                 relationship_type_id: string;
             } | null;
             representative_user: {
+                user_id: string;
+                email: string;
                 name: string | null;
                 paternal_last_name: string | null;
                 maternal_last_name: string | null;
-                email: string;
-                user_id: string;
             } | null;
         } & {
-            id: string;
-            phone: string | null;
-            created_at: Date;
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            user_id: string;
+            created_at: Date;
             modified_at: Date;
+            id: string;
+            phone: string | null;
             relationship_type_id: string | null;
             representative_user_id: string | null;
         };
@@ -68,14 +68,14 @@ export declare class LegalRepresentativesService {
                 name: string;
             } | null;
         } & {
-            id: string;
-            phone: string | null;
-            created_at: Date;
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            user_id: string;
+            created_at: Date;
             modified_at: Date;
+            id: string;
+            phone: string | null;
             relationship_type_id: string | null;
             representative_user_id: string | null;
         };

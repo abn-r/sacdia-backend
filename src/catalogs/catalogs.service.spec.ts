@@ -10,6 +10,9 @@ describe('CatalogsService', () => {
     club_types: {
       findMany: jest.fn(),
     },
+    activity_types: {
+      findMany: jest.fn(),
+    },
     relationship_types: {
       findMany: jest.fn(),
     },
@@ -86,6 +89,33 @@ describe('CatalogsService', () => {
           name: true,
         },
         orderBy: { name: 'asc' },
+      });
+    });
+  });
+
+  describe('getActivityTypes', () => {
+    it('should return active activity types', async () => {
+      const mockActivityTypes = [
+        { activity_type_id: 1, code: 'regular', name: 'Regular' },
+        { activity_type_id: 2, code: 'special', name: 'Especial' },
+      ];
+
+      mockPrismaService.activity_types.findMany.mockResolvedValue(
+        mockActivityTypes,
+      );
+
+      const result = await service.getActivityTypes();
+
+      expect(result).toEqual(mockActivityTypes);
+      expect(mockPrismaService.activity_types.findMany).toHaveBeenCalledWith({
+        where: { active: true },
+        select: {
+          activity_type_id: true,
+          code: true,
+          name: true,
+          description: true,
+        },
+        orderBy: { activity_type_id: 'asc' },
       });
     });
   });

@@ -1,7 +1,9 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -13,10 +15,22 @@ import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { RegisterMemberDto } from './dto/register-member.dto';
 import { buildPartialUpdate } from '../common/utils/dto.utils';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 @Injectable()
 export class CamporeesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CamporeesService.name);
+  private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   // ========================================
   // CRUD FOR LOCAL_CAMPOREES
@@ -236,7 +250,7 @@ export class CamporeesService {
    * @param dto - Register member DTO
    */
   async registerMember(camporeeId: number, dto: RegisterMemberDto) {
-    return await this.prisma.$transaction(async (tx) => {
+    const member = await this.prisma.$transaction(async (tx) => {
       // 1. Validate camporee exists
       const camporee = await tx.local_camporees.findUnique({
         where: { local_camporee_id: camporeeId },
@@ -348,6 +362,8 @@ export class CamporeesService {
 
       return member;
     });
+
+    return this.applySignedPrivateUrls(member);
   }
 
   /**
@@ -358,7 +374,7 @@ export class CamporeesService {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
-    return await this.prisma.camporee_members.findMany({
+    const members = await this.prisma.camporee_members.findMany({
       where: {
         camporee_id: camporeeId,
         active: true,
@@ -388,6 +404,10 @@ export class CamporeesService {
       },
       orderBy: { created_at: 'asc' },
     });
+
+    return Promise.all(
+      members.map((member) => this.applySignedPrivateUrls(member)),
+    );
   }
 
   /**
@@ -462,5 +482,46 @@ export class CamporeesService {
       members.length,
       pagination ?? new PaginationDto(),
     );
+  }
+
+  private async applySignedPrivateUrls<T extends Record<string, any>>(
+    member: T,
+  ): Promise<T> {
+    if (!member?.users) return member;
+
+    const userImage =
+      typeof member.users.user_image === 'string'
+        ? await this.resolvePrivateProfileUrl(member.users.user_image)
+        : member.users.user_image;
+
+    return {
+      ...member,
+      users: {
+        ...member.users,
+        user_image: userImage,
+      },
+    };
+  }
+
+  private async resolvePrivateProfileUrl(
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        value,
+        {
+          expiresInSeconds: CamporeesService.PRIVATE_ASSET_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for camporee member profile. Returning original value.',
+        error,
+      );
+      return value;
+    }
   }
 }

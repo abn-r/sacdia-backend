@@ -8,16 +8,26 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+var AdminUsersService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdminUsersService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
+const file_storage_service_1 = require("../common/services/file-storage.service");
 const prisma_service_1 = require("../prisma/prisma.service");
 let AdminUsersService = class AdminUsersService {
+    static { AdminUsersService_1 = this; }
     prisma;
-    constructor(prisma) {
+    fileStorage;
+    logger = new common_1.Logger(AdminUsersService_1.name);
+    static PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+    constructor(prisma, fileStorage) {
         this.prisma = prisma;
+        this.fileStorage = fileStorage;
     }
     async listUsers(actorUserId, query) {
         const scope = await this.resolveScope(actorUserId);
@@ -94,7 +104,7 @@ let AdminUsersService = class AdminUsersService {
             }),
             this.prisma.users.count({ where }),
         ]);
-        const data = users.map((user) => this.toListItem(user));
+        const data = await Promise.all(users.map((user) => this.toListItem(user)));
         const paginated = (0, pagination_dto_1.createPaginatedResult)(data, total, pagination);
         return {
             data: paginated.data,
@@ -283,14 +293,15 @@ let AdminUsersService = class AdminUsersService {
         if (!user) {
             throw new common_1.NotFoundException('Usuario no encontrado o fuera de alcance');
         }
+        const listItem = await this.toListItem(user);
         return {
-            ...this.toListItem(user),
+            ...listItem,
             gender: user.gender,
             birthday: user.birthday,
             blood: user.blood,
             baptism: user.baptism,
             baptism_date: user.baptism_date,
-            user_image: user.user_image,
+            user_image: listItem.user_image,
             modified_at: user.modified_at,
             classes: user.users_classes.map((item) => ({
                 user_class_id: item.user_class_id,
@@ -436,7 +447,7 @@ let AdminUsersService = class AdminUsersService {
     extractRoleNames(assignments) {
         return [...new Set(assignments.map((item) => item.roles.role_name))];
     }
-    toListItem(user) {
+    async toListItem(user) {
         const roles = this.extractRoleNames(user.users_roles).sort((a, b) => a.localeCompare(b));
         const postRegistration = user.users_pr[0]
             ? {
@@ -456,7 +467,7 @@ let AdminUsersService = class AdminUsersService {
                 .filter(Boolean)
                 .join(' ')
                 .trim(),
-            user_image: user.user_image,
+            user_image: await this.resolvePrivateProfileUrl(user.user_image),
             active: user.active,
             access_app: user.access_app,
             access_panel: user.access_panel,
@@ -484,6 +495,19 @@ let AdminUsersService = class AdminUsersService {
             created_at: user.created_at,
         };
     }
+    async resolvePrivateProfileUrl(value) {
+        if (!value)
+            return null;
+        try {
+            return await this.fileStorage.getSignedDownloadUrl(file_storage_service_1.StorageBucketAlias.USER_PROFILES, value, {
+                expiresInSeconds: AdminUsersService_1.PRIVATE_ASSET_URL_TTL_SECONDS,
+            });
+        }
+        catch (error) {
+            this.logger.warn('Failed to generate signed URL for admin user profile. Returning original value.', error);
+            return value;
+        }
+    }
     resolveClubAssignment(assignment) {
         if (assignment.club_adventurers) {
             return {
@@ -510,8 +534,9 @@ let AdminUsersService = class AdminUsersService {
     }
 };
 exports.AdminUsersService = AdminUsersService;
-exports.AdminUsersService = AdminUsersService = __decorate([
+exports.AdminUsersService = AdminUsersService = AdminUsersService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __param(1, (0, common_1.Inject)(file_storage_service_1.FILE_STORAGE_SERVICE)),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object])
 ], AdminUsersService);
 //# sourceMappingURL=admin-users.service.js.map

@@ -1,3 +1,4 @@
+import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListUsersQueryDto } from './dto';
 type ScopeType = 'ALL' | 'UNION' | 'LOCAL_FIELD';
@@ -21,7 +22,10 @@ interface AdminUsersListResult<T> {
 }
 export declare class AdminUsersService {
     private readonly prisma;
-    constructor(prisma: PrismaService);
+    private readonly fileStorage;
+    private readonly logger;
+    private static readonly PRIVATE_ASSET_URL_TTL_SECONDS;
+    constructor(prisma: PrismaService, fileStorage: FileStorageService);
     listUsers(actorUserId: string, query: AdminListUsersQueryDto): Promise<AdminUsersListResult<any>>;
     getUserById(actorUserId: string, userId: string): Promise<{
         gender: string | null;
@@ -57,18 +61,18 @@ export declare class AdminUsersService {
             } | null;
         }[];
         emergency_contacts: {
-            phone: string;
             name: string;
+            phone: string;
             relationship_type_id: string;
             primary: boolean;
             emergency_id: number;
         }[];
         legal_representative: {
-            id: string;
-            phone: string | null;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
+            id: string;
+            phone: string | null;
             relationship_type_id: string | null;
             representative_user_id: string | null;
         } | null;
@@ -110,6 +114,7 @@ export declare class AdminUsersService {
     private toScopeMeta;
     private extractRoleNames;
     private toListItem;
+    private resolvePrivateProfileUrl;
     private resolveClubAssignment;
 }
 export {};

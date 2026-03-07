@@ -6,9 +6,15 @@ export declare class CatalogsController {
         name: string;
         club_type_id: number;
     }[]>;
-    getRelationshipTypes(): Promise<{
-        description: string | null;
+    getActivityTypes(): Promise<{
         name: string;
+        description: string | null;
+        code: string;
+        activity_type_id: number;
+    }[]>;
+    getRelationshipTypes(): Promise<{
+        name: string;
+        description: string | null;
         relationship_type_id: string;
     }[]>;
     getCountries(): Promise<{
@@ -61,13 +67,13 @@ export declare class CatalogsController {
         ideal: string | null;
     }[]>;
     getAllergies(): Promise<{
-        description: string | null;
         name: string;
+        description: string | null;
         allergy_id: number;
     }[]>;
     getDiseases(): Promise<{
-        description: string | null;
         name: string;
+        description: string | null;
         disease_id: number;
     }[]>;
 }
