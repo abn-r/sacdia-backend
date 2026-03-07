@@ -12,7 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClubRolesGuard = exports.CLUB_ROLES_KEY = void 0;
 const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
-const prisma_service_1 = require("../../prisma/prisma.service");
+const authorization_context_service_1 = require("../services/authorization-context.service");
 exports.CLUB_ROLES_KEY = 'club_roles';
 const CLUB_ROLE_ALIASES = {
     subdirector: 'deputy_director',
@@ -26,10 +26,10 @@ function normalizeClubRoleName(roleName) {
 }
 let ClubRolesGuard = class ClubRolesGuard {
     reflector;
-    prisma;
-    constructor(reflector, prisma) {
+    authorizationContext;
+    constructor(reflector, authorizationContext) {
         this.reflector = reflector;
-        this.prisma = prisma;
+        this.authorizationContext = authorizationContext;
     }
     async canActivate(context) {
         const requiredRoles = this.reflector.getAllAndOverride(exports.CLUB_ROLES_KEY, [context.getHandler(), context.getClass()]);
@@ -41,28 +41,25 @@ let ClubRolesGuard = class ClubRolesGuard {
         if (!user || !user.sub) {
             throw new common_1.ForbiddenException('User not authenticated');
         }
-        if (await this.isSuperAdmin(user.sub)) {
-            return true;
-        }
         const clubId = this.extractClubId(request);
         if (!clubId) {
             throw new common_1.ForbiddenException('Club ID not found in request');
         }
-        const hasRole = await this.checkUserClubRole(user.sub, clubId, requiredRoles);
+        if (await this.authorizationContext.canManageClub(user.sub, clubId)) {
+            return true;
+        }
+        const resolved = await this.authorizationContext.resolveUserAuthorization(user.sub);
+        const activeClubScope = resolved.authorization.effective.scope.club;
+        if (!activeClubScope || activeClubScope.club.club_id !== clubId) {
+            throw new common_1.ForbiddenException('You need an active club assignment for this club');
+        }
+        const hasRole = requiredRoles
+            .map((requiredRole) => normalizeClubRoleName(requiredRole))
+            .includes(normalizeClubRoleName(activeClubScope.role_name));
         if (!hasRole) {
             throw new common_1.ForbiddenException(`You need one of these club roles: ${requiredRoles.join(', ')}`);
         }
         return true;
-    }
-    async isSuperAdmin(userId) {
-        const userRoles = await this.prisma.users_roles.findMany({
-            where: { user_id: userId, active: true },
-            include: {
-                roles: { select: { role_name: true } },
-            },
-        });
-        return userRoles.some((assignment) => typeof assignment.roles?.role_name === 'string' &&
-            assignment.roles.role_name.toLowerCase() === 'super_admin');
     }
     extractClubId(request) {
         if (request.params?.clubId) {
@@ -76,45 +73,11 @@ let ClubRolesGuard = class ClubRolesGuard {
         }
         return null;
     }
-    async checkUserClubRole(userId, clubId, requiredRoles) {
-        const club = await this.prisma.clubs.findUnique({
-            where: { club_id: clubId },
-            select: {
-                club_adventurers: { select: { club_adv_id: true } },
-                club_pathfinders: { select: { club_pathf_id: true } },
-                club_master_guild: { select: { club_mg_id: true } },
-            },
-        });
-        if (!club) {
-            return false;
-        }
-        const advIds = club.club_adventurers.map((a) => a.club_adv_id);
-        const pathfIds = club.club_pathfinders.map((p) => p.club_pathf_id);
-        const mgIds = club.club_master_guild.map((m) => m.club_mg_id);
-        const assignments = await this.prisma.club_role_assignments.findMany({
-            where: {
-                user_id: userId,
-                active: true,
-                status: 'active',
-                OR: [
-                    { club_adv_id: { in: advIds.length > 0 ? advIds : [-1] } },
-                    { club_pathf_id: { in: pathfIds.length > 0 ? pathfIds : [-1] } },
-                    { club_mg_id: { in: mgIds.length > 0 ? mgIds : [-1] } },
-                ],
-            },
-            include: {
-                roles: { select: { role_name: true } },
-            },
-        });
-        const normalizedRequiredRoles = requiredRoles.map((requiredRole) => normalizeClubRoleName(requiredRole));
-        const userRoleNames = assignments.map((assignment) => normalizeClubRoleName(assignment.roles.role_name));
-        return normalizedRequiredRoles.some((requiredRole) => userRoleNames.includes(requiredRole));
-    }
 };
 exports.ClubRolesGuard = ClubRolesGuard;
 exports.ClubRolesGuard = ClubRolesGuard = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [core_1.Reflector,
-        prisma_service_1.PrismaService])
+        authorization_context_service_1.AuthorizationContextService])
 ], ClubRolesGuard);
 //# sourceMappingURL=club-roles.guard.js.map
