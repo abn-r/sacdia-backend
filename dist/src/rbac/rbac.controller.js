@@ -16,9 +16,8 @@ exports.RbacController = void 0;
 const openapi = require("@nestjs/swagger");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
-const global_roles_guard_1 = require("../common/guards/global-roles.guard");
-const global_roles_decorator_1 = require("../common/decorators/global-roles.decorator");
+const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 const rbac_service_1 = require("./rbac.service");
 const create_permission_dto_1 = require("./dto/create-permission.dto");
 const update_permission_dto_1 = require("./dto/update-permission.dto");
@@ -68,7 +67,7 @@ let RbacController = class RbacController {
 exports.RbacController = RbacController;
 __decorate([
     (0, common_1.Get)('permissions'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, decorators_1.RequirePermissions)('permissions:read'),
     (0, swagger_1.ApiOperation)({ summary: 'Listar todos los permisos' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de permisos' }),
     openapi.ApiResponse({ status: 200 }),
@@ -78,7 +77,7 @@ __decorate([
 ], RbacController.prototype, "listPermissions", null);
 __decorate([
     (0, common_1.Get)('permissions/:id'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, decorators_1.RequirePermissions)('permissions:read'),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener un permiso por ID' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Detalle del permiso' }),
     openapi.ApiResponse({ status: 200 }),
@@ -89,7 +88,7 @@ __decorate([
 ], RbacController.prototype, "getPermission", null);
 __decorate([
     (0, common_1.Post)('permissions'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin'),
+    (0, decorators_1.RequirePermissions)('permissions:assign'),
     (0, swagger_1.ApiOperation)({ summary: 'Crear un nuevo permiso' }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Permiso creado' }),
     openapi.ApiResponse({ status: 201 }),
@@ -100,7 +99,7 @@ __decorate([
 ], RbacController.prototype, "createPermission", null);
 __decorate([
     (0, common_1.Patch)('permissions/:id'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin'),
+    (0, decorators_1.RequirePermissions)('permissions:assign'),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar un permiso' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Permiso actualizado' }),
     openapi.ApiResponse({ status: 200 }),
@@ -112,7 +111,7 @@ __decorate([
 ], RbacController.prototype, "updatePermission", null);
 __decorate([
     (0, common_1.Delete)('permissions/:id'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin'),
+    (0, decorators_1.RequirePermissions)('permissions:assign'),
     (0, swagger_1.ApiOperation)({ summary: 'Desactivar un permiso' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Permiso desactivado' }),
     openapi.ApiResponse({ status: 200 }),
@@ -123,7 +122,7 @@ __decorate([
 ], RbacController.prototype, "deletePermission", null);
 __decorate([
     (0, common_1.Get)('roles'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, decorators_1.RequirePermissions)('roles:read'),
     (0, swagger_1.ApiOperation)({ summary: 'Listar roles con sus permisos' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de roles con permisos' }),
     openapi.ApiResponse({ status: 200 }),
@@ -133,7 +132,7 @@ __decorate([
 ], RbacController.prototype, "listRoles", null);
 __decorate([
     (0, common_1.Get)('roles/:id'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, decorators_1.RequirePermissions)('roles:read'),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener rol con sus permisos' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Rol con permisos' }),
     openapi.ApiResponse({ status: 200 }),
@@ -144,7 +143,7 @@ __decorate([
 ], RbacController.prototype, "getRole", null);
 __decorate([
     (0, common_1.Post)('roles/:id/permissions'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin'),
+    (0, decorators_1.RequirePermissions)('permissions:assign'),
     (0, swagger_1.ApiOperation)({ summary: 'Asignar permisos a un rol' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Permisos asignados' }),
     openapi.ApiResponse({ status: 201 }),
@@ -156,7 +155,7 @@ __decorate([
 ], RbacController.prototype, "assignPermissions", null);
 __decorate([
     (0, common_1.Put)('roles/:id/permissions'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin'),
+    (0, decorators_1.RequirePermissions)('permissions:assign'),
     (0, swagger_1.ApiOperation)({ summary: 'Sincronizar permisos de un rol (reemplaza todos)' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Permisos sincronizados' }),
     openapi.ApiResponse({ status: 200 }),
@@ -168,7 +167,7 @@ __decorate([
 ], RbacController.prototype, "syncPermissions", null);
 __decorate([
     (0, common_1.Delete)('roles/:id/permissions/:permissionId'),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin'),
+    (0, decorators_1.RequirePermissions)('permissions:assign'),
     (0, swagger_1.ApiOperation)({ summary: 'Remover un permiso de un rol' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Permiso removido del rol' }),
     openapi.ApiResponse({ status: 200 }),
@@ -181,7 +180,7 @@ __decorate([
 exports.RbacController = RbacController = __decorate([
     (0, swagger_1.ApiTags)('rbac'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, global_roles_guard_1.GlobalRolesGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('admin/rbac'),
     __metadata("design:paramtypes", [rbac_service_1.RbacService])
 ], RbacController);

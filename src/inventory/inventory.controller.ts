@@ -21,11 +21,12 @@ import {
 import { InventoryService } from './inventory.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('inventory')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
@@ -35,6 +36,13 @@ export class InventoryController {
   // ========================================
 
   @Get('clubs/:clubId/inventory')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({
+    type: 'inventory_instance',
+    idParam: 'clubId',
+    instanceTypeSource: 'query',
+    instanceTypeField: 'instanceType',
+  })
   @ApiOperation({
     summary: 'Listar items del inventario de un club',
     description:
@@ -81,6 +89,8 @@ export class InventoryController {
   }
 
   @Get('inventory/:id')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Obtener detalles de un item del inventario',
     description:
@@ -105,6 +115,13 @@ export class InventoryController {
   }
 
   @Post('clubs/:clubId/inventory')
+  @RequirePermissions('inventory:create')
+  @AuthorizationResource({
+    type: 'inventory_instance',
+    idParam: 'clubId',
+    instanceTypeSource: 'body',
+    instanceTypeField: 'instanceType',
+  })
   @ApiOperation({
     summary: 'Agregar nuevo item al inventario',
     description:
@@ -134,6 +151,8 @@ export class InventoryController {
   }
 
   @Patch('inventory/:id')
+  @RequirePermissions('inventory:update')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Actualizar un item del inventario',
     description:
@@ -162,6 +181,8 @@ export class InventoryController {
   }
 
   @Delete('inventory/:id')
+  @RequirePermissions('inventory:delete')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Eliminar un item del inventario',
     description:

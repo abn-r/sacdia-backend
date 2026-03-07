@@ -21,13 +21,21 @@ import {
 } from '@nestjs/swagger';
 import { FinancesService } from './finances.service';
 import { CreateFinanceDto, UpdateFinanceDto } from './dto';
-import { JwtAuthGuard, ClubRolesGuard } from '../common/guards';
-import { ClubRoles } from '../common/decorators';
+import {
+  JwtAuthGuard,
+  ClubRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
+import {
+  AuthorizationResource,
+  ClubRoles,
+  RequirePermissions,
+} from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('finances')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class FinancesController {
   constructor(private readonly financesService: FinancesService) {}
@@ -59,6 +67,8 @@ export class FinancesController {
   // ========================================
 
   @Get('clubs/:clubId/finances')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Listar movimientos financieros del club',
     description: 'Obtiene todos los movimientos de las instancias del club',
@@ -94,6 +104,8 @@ export class FinancesController {
   }
 
   @Get('clubs/:clubId/finances/summary')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Resumen financiero del club',
     description: 'Obtiene el resumen de ingresos, egresos y balance',
@@ -113,6 +125,8 @@ export class FinancesController {
   @Post('clubs/:clubId/finances')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director', 'treasurer')
+  @RequirePermissions('finances:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Crear movimiento financiero',
     description: 'Crea un nuevo ingreso o egreso (requiere rol de tesorería)',
@@ -133,6 +147,8 @@ export class FinancesController {
   // ========================================
 
   @Get('finances/:financeId')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
   @ApiOperation({ summary: 'Obtener movimiento por ID' })
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento encontrado' })
@@ -142,6 +158,8 @@ export class FinancesController {
   }
 
   @Patch('finances/:financeId')
+  @RequirePermissions('finances:update')
+  @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
   @ApiOperation({ summary: 'Actualizar movimiento' })
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento actualizado' })
@@ -153,6 +171,8 @@ export class FinancesController {
   }
 
   @Delete('finances/:financeId')
+  @RequirePermissions('finances:delete')
+  @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
   @ApiOperation({ summary: 'Desactivar movimiento' })
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento desactivado' })

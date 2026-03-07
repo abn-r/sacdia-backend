@@ -30,16 +30,19 @@ import {
   UpdateUserAllergiesDto,
   UpdateUserDiseasesDto,
 } from './dto/update-user-medical.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('users')
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get(':userId')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Obtener información de un usuario' })
   @ApiResponse({ status: 200, description: 'Usuario encontrado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
@@ -48,6 +51,8 @@ export class UsersController {
   }
 
   @Patch(':userId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Actualizar información personal del usuario' })
   @ApiResponse({ status: 200, description: 'Usuario actualizado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
@@ -59,6 +64,8 @@ export class UsersController {
   }
 
   @Put(':userId/allergies')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Guardar alergias del usuario',
     description:
@@ -75,6 +82,8 @@ export class UsersController {
   }
 
   @Put(':userId/diseases')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Guardar enfermedades del usuario',
     description:
@@ -91,6 +100,8 @@ export class UsersController {
   }
 
   @Delete(':userId/allergies/:allergyId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Eliminar alergia del usuario (borrado lógico)',
     description:
@@ -106,6 +117,8 @@ export class UsersController {
   }
 
   @Delete(':userId/diseases/:diseaseId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Eliminar enfermedad del usuario (borrado lógico)',
     description:
@@ -124,6 +137,8 @@ export class UsersController {
   }
 
   @Post(':userId/profile-picture')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Subir foto de perfil' })
@@ -156,6 +171,8 @@ export class UsersController {
   }
 
   @Delete(':userId/profile-picture')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Eliminar foto de perfil' })
   @ApiResponse({ status: 200, description: 'Foto eliminada' })
   @ApiResponse({ status: 404, description: 'Usuario sin foto de perfil' })
@@ -164,6 +181,8 @@ export class UsersController {
   }
 
   @Get(':userId/age')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Calcular edad del usuario' })
   @ApiResponse({ status: 200, description: 'Edad calculada' })
   async getAge(@Param('userId') userId: string) {
@@ -175,6 +194,8 @@ export class UsersController {
   }
 
   @Get(':userId/requires-legal-representative')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Verificar si el usuario requiere representante legal',
   })

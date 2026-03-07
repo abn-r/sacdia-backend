@@ -14,6 +14,7 @@ const token_blacklist_service_1 = require("./services/token-blacklist.service");
 const session_management_service_1 = require("./services/session-management.service");
 const mfa_service_1 = require("./services/mfa.service");
 const ip_whitelist_guard_1 = require("./guards/ip-whitelist.guard");
+const permissions_guard_1 = require("./guards/permissions.guard");
 const r2_file_storage_service_1 = require("./services/r2-file-storage.service");
 const file_storage_service_1 = require("./services/file-storage.service");
 function isPlaceholderRedisUrl(value) {
@@ -95,6 +96,7 @@ exports.CommonModule = CommonModule = __decorate([
             mfa_service_1.MfaService,
             authorization_context_service_1.AuthorizationContextService,
             ip_whitelist_guard_1.IpWhitelistGuard,
+            permissions_guard_1.PermissionsGuard,
             r2_file_storage_service_1.R2FileStorageService,
             {
                 provide: file_storage_service_1.FILE_STORAGE_SERVICE,
@@ -108,6 +110,7 @@ exports.CommonModule = CommonModule = __decorate([
             mfa_service_1.MfaService,
             authorization_context_service_1.AuthorizationContextService,
             ip_whitelist_guard_1.IpWhitelistGuard,
+            permissions_guard_1.PermissionsGuard,
             file_storage_service_1.FILE_STORAGE_SERVICE,
         ],
     })

@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { GlobalRoles } from '../common/decorators/global-roles.decorator';
-import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
+import { RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { AdminReferenceService } from './admin-reference.service';
 import {
   CreateAllergyDto,
@@ -28,13 +28,13 @@ import {
 
 @ApiTags('admin-reference')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('super_admin', 'admin')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('admin')
 export class AdminReferenceController {
   constructor(private readonly referenceService: AdminReferenceService) {}
 
   @Get('relationship-types')
+  @RequirePermissions('catalogs:read')
   @ApiOperation({ summary: 'List relationship types for admin management' })
   async listRelationshipTypes() {
     const data = await this.referenceService.listRelationshipTypes();
@@ -42,6 +42,7 @@ export class AdminReferenceController {
   }
 
   @Post('relationship-types')
+  @RequirePermissions('catalogs:create')
   @ApiOperation({ summary: 'Create relationship type' })
   async createRelationshipType(
     @Body() dto: CreateRelationshipTypeDto,
@@ -55,6 +56,7 @@ export class AdminReferenceController {
   }
 
   @Patch('relationship-types/:relationshipTypeId')
+  @RequirePermissions('catalogs:update')
   @ApiOperation({ summary: 'Update relationship type' })
   async updateRelationshipType(
     @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
@@ -70,6 +72,7 @@ export class AdminReferenceController {
   }
 
   @Delete('relationship-types/:relationshipTypeId')
+  @RequirePermissions('catalogs:delete')
   @ApiOperation({ summary: 'Soft delete relationship type' })
   async deleteRelationshipType(
     @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
@@ -83,6 +86,7 @@ export class AdminReferenceController {
   }
 
   @Get('allergies')
+  @RequirePermissions('catalogs:read')
   @ApiOperation({ summary: 'List allergies for admin management' })
   async listAllergies() {
     const data = await this.referenceService.listAllergies();
@@ -90,6 +94,7 @@ export class AdminReferenceController {
   }
 
   @Post('allergies')
+  @RequirePermissions('catalogs:create')
   @ApiOperation({ summary: 'Create allergy' })
   async createAllergy(@Body() dto: CreateAllergyDto, @Request() req) {
     const data = await this.referenceService.createAllergy(dto, req.user.sub);
@@ -97,6 +102,7 @@ export class AdminReferenceController {
   }
 
   @Patch('allergies/:allergyId')
+  @RequirePermissions('catalogs:update')
   @ApiOperation({ summary: 'Update allergy' })
   async updateAllergy(
     @Param('allergyId', ParseIntPipe) allergyId: number,
@@ -112,6 +118,7 @@ export class AdminReferenceController {
   }
 
   @Delete('allergies/:allergyId')
+  @RequirePermissions('catalogs:delete')
   @ApiOperation({ summary: 'Soft delete allergy' })
   async deleteAllergy(
     @Param('allergyId', ParseIntPipe) allergyId: number,
@@ -125,6 +132,7 @@ export class AdminReferenceController {
   }
 
   @Get('diseases')
+  @RequirePermissions('catalogs:read')
   @ApiOperation({ summary: 'List diseases for admin management' })
   async listDiseases() {
     const data = await this.referenceService.listDiseases();
@@ -132,6 +140,7 @@ export class AdminReferenceController {
   }
 
   @Post('diseases')
+  @RequirePermissions('catalogs:create')
   @ApiOperation({ summary: 'Create disease' })
   async createDisease(@Body() dto: CreateDiseaseDto, @Request() req) {
     const data = await this.referenceService.createDisease(dto, req.user.sub);
@@ -139,6 +148,7 @@ export class AdminReferenceController {
   }
 
   @Patch('diseases/:diseaseId')
+  @RequirePermissions('catalogs:update')
   @ApiOperation({ summary: 'Update disease' })
   async updateDisease(
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
@@ -154,6 +164,7 @@ export class AdminReferenceController {
   }
 
   @Delete('diseases/:diseaseId')
+  @RequirePermissions('catalogs:delete')
   @ApiOperation({ summary: 'Soft delete disease' })
   async deleteDisease(
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
@@ -167,6 +178,7 @@ export class AdminReferenceController {
   }
 
   @Get('ecclesiastical-years')
+  @RequirePermissions('ecclesiastical_years:read')
   @ApiOperation({ summary: 'List ecclesiastical years for admin management' })
   async listEcclesiasticalYears() {
     const data = await this.referenceService.listEcclesiasticalYears();
@@ -174,6 +186,7 @@ export class AdminReferenceController {
   }
 
   @Post('ecclesiastical-years')
+  @RequirePermissions('ecclesiastical_years:create')
   @ApiOperation({ summary: 'Create ecclesiastical year' })
   async createEcclesiasticalYear(
     @Body() dto: CreateEcclesiasticalYearDto,
@@ -187,6 +200,7 @@ export class AdminReferenceController {
   }
 
   @Patch('ecclesiastical-years/:yearId')
+  @RequirePermissions('ecclesiastical_years:update')
   @ApiOperation({ summary: 'Update ecclesiastical year' })
   async updateEcclesiasticalYear(
     @Param('yearId', ParseIntPipe) yearId: number,
@@ -202,6 +216,7 @@ export class AdminReferenceController {
   }
 
   @Delete('ecclesiastical-years/:yearId')
+  @RequirePermissions('ecclesiastical_years:update')
   @ApiOperation({ summary: 'Soft delete ecclesiastical year' })
   async deleteEcclesiasticalYear(
     @Param('yearId', ParseIntPipe) yearId: number,

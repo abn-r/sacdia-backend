@@ -20,4 +20,5 @@ __exportStar(require("./ip-whitelist.guard"), exports);
 __exportStar(require("./club-roles.guard"), exports);
 __exportStar(require("./global-roles.guard"), exports);
 __exportStar(require("./owner-or-admin.guard"), exports);
+__exportStar(require("./permissions.guard"), exports);
 //# sourceMappingURL=index.js.map

@@ -60,6 +60,8 @@ let ActivitiesController = class ActivitiesController {
 exports.ActivitiesController = ActivitiesController;
 __decorate([
     (0, common_1.Get)('clubs/:clubId/activities'),
+    (0, decorators_1.RequirePermissions)('activities:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar actividades del club',
         description: 'Obtiene todas las actividades de las instancias del club',
@@ -86,6 +88,8 @@ __decorate([
     (0, common_1.Post)('clubs/:clubId/activities'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
     (0, decorators_1.ClubRoles)('director', 'deputy_director', 'secretary', 'counselor'),
+    (0, decorators_1.RequirePermissions)('activities:create'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Crear actividad',
         description: 'Crea una nueva actividad para el club (requiere rol de liderazgo). Soporta múltiples instancias del mismo club mediante instances[]',
@@ -107,6 +111,8 @@ __decorate([
 ], ActivitiesController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)('activities/:activityId'),
+    (0, decorators_1.RequirePermissions)('activities:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener actividad por ID' }),
     (0, swagger_1.ApiParam)({ name: 'activityId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Actividad encontrada' }),
@@ -119,6 +125,8 @@ __decorate([
 ], ActivitiesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)('activities/:activityId'),
+    (0, decorators_1.RequirePermissions)('activities:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar actividad' }),
     (0, swagger_1.ApiParam)({ name: 'activityId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Actividad actualizada' }),
@@ -131,6 +139,8 @@ __decorate([
 ], ActivitiesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)('activities/:activityId'),
+    (0, decorators_1.RequirePermissions)('activities:delete'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Desactivar actividad' }),
     (0, swagger_1.ApiParam)({ name: 'activityId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Actividad desactivada' }),
@@ -142,6 +152,8 @@ __decorate([
 ], ActivitiesController.prototype, "remove", null);
 __decorate([
     (0, common_1.Post)('activities/:activityId/attendance'),
+    (0, decorators_1.RequirePermissions)('attendance:manage'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Registrar asistencia',
         description: 'Registra la lista de usuarios que asistieron a la actividad',
@@ -157,6 +169,8 @@ __decorate([
 ], ActivitiesController.prototype, "recordAttendance", null);
 __decorate([
     (0, common_1.Get)('activities/:activityId/attendance'),
+    (0, decorators_1.RequirePermissions)('attendance:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Obtener asistencia',
         description: 'Obtiene la lista de usuarios que asistieron a la actividad',
@@ -172,7 +186,7 @@ __decorate([
 exports.ActivitiesController = ActivitiesController = __decorate([
     (0, swagger_1.ApiTags)('activities'),
     (0, common_1.Controller)(),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [activities_service_1.ActivitiesService])
 ], ActivitiesController);
