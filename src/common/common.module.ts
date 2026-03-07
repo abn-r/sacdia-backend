@@ -5,6 +5,7 @@ import { TokenBlacklistService } from './services/token-blacklist.service';
 import { SessionManagementService } from './services/session-management.service';
 import { MfaService } from './services/mfa.service';
 import { IpWhitelistGuard } from './guards/ip-whitelist.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 import { R2FileStorageService } from './services/r2-file-storage.service';
 import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 
@@ -111,6 +112,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     MfaService,
     AuthorizationContextService,
     IpWhitelistGuard,
+    PermissionsGuard,
     R2FileStorageService,
     {
       provide: FILE_STORAGE_SERVICE,
@@ -124,6 +126,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     MfaService,
     AuthorizationContextService,
     IpWhitelistGuard,
+    PermissionsGuard,
     FILE_STORAGE_SERVICE,
   ],
 })

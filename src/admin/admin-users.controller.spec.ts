@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
-import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 describe('AdminUsersController', () => {
   let controller: AdminUsersController;
@@ -23,7 +23,7 @@ describe('AdminUsersController', () => {
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })
-      .overrideGuard(GlobalRolesGuard)
+      .overrideGuard(PermissionsGuard)
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })
       .compile();
 

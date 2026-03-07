@@ -19,7 +19,7 @@ const swagger_1 = require("@nestjs/swagger");
 const notifications_service_1 = require("./notifications.service");
 const fcm_tokens_service_1 = require("./fcm-tokens.service");
 const class_validator_1 = require("class-validator");
-const global_roles_decorator_1 = require("../common/decorators/global-roles.decorator");
+const decorators_1 = require("../common/decorators");
 const guards_1 = require("../common/guards");
 class SendNotificationDto {
     userId;
@@ -107,6 +107,7 @@ let NotificationsController = class NotificationsController {
 exports.NotificationsController = NotificationsController;
 __decorate([
     (0, common_1.Post)('send'),
+    (0, decorators_1.RequirePermissions)('notifications:send'),
     (0, swagger_1.ApiOperation)({ summary: 'Send notification to specific user' }),
     openapi.ApiResponse({ status: 201, type: Object }),
     __param(0, (0, common_1.Body)()),
@@ -116,8 +117,7 @@ __decorate([
 ], NotificationsController.prototype, "sendToUser", null);
 __decorate([
     (0, common_1.Post)('broadcast'),
-    (0, common_1.UseGuards)(guards_1.GlobalRolesGuard),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, decorators_1.RequirePermissions)('notifications:broadcast'),
     (0, swagger_1.ApiOperation)({ summary: 'Send notification to all users' }),
     openapi.ApiResponse({ status: 201, type: Object }),
     __param(0, (0, common_1.Body)()),
@@ -127,8 +127,7 @@ __decorate([
 ], NotificationsController.prototype, "broadcast", null);
 __decorate([
     (0, common_1.Post)('club/:instanceType/:instanceId'),
-    (0, common_1.UseGuards)(guards_1.GlobalRolesGuard),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, decorators_1.RequirePermissions)('notifications:club'),
     (0, swagger_1.ApiOperation)({ summary: 'Send notification to club members' }),
     openapi.ApiResponse({ status: 201, type: Object }),
     __param(0, (0, common_1.Param)('instanceType')),
@@ -141,7 +140,7 @@ __decorate([
 exports.NotificationsController = NotificationsController = __decorate([
     (0, swagger_1.ApiTags)('Notifications'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('notifications'),
     __metadata("design:paramtypes", [notifications_service_1.NotificationsService,
         fcm_tokens_service_1.FcmTokensService])

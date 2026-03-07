@@ -28,13 +28,13 @@ import {
   UpdateRoleAssignmentDto,
   ClubInstanceType,
 } from './dto';
-import { JwtAuthGuard, ClubRolesGuard } from '../common/guards';
-import { ClubRoles } from '../common/decorators';
+import { ClubRoles, AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, ClubRolesGuard, PermissionsGuard } from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('clubs')
 @Controller('clubs')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ClubsController {
   constructor(private readonly clubsService: ClubsService) {}
@@ -44,6 +44,7 @@ export class ClubsController {
   // ========================================
 
   @Get()
+  @RequirePermissions('clubs:read')
   @ApiOperation({
     summary: 'Listar clubs',
     description:
@@ -93,6 +94,8 @@ export class ClubsController {
   }
 
   @Get(':clubId')
+  @RequirePermissions('clubs:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Obtener club por ID' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club encontrado' })
@@ -102,6 +105,7 @@ export class ClubsController {
   }
 
   @Post()
+  @RequirePermissions('clubs:create')
   @ApiOperation({ summary: 'Crear nuevo club' })
   @ApiResponse({ status: 201, description: 'Club creado' })
   async create(@Body() dto: CreateClubDto) {
@@ -111,6 +115,8 @@ export class ClubsController {
   @Patch(':clubId')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director')
+  @RequirePermissions('clubs:update')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Actualizar club (requiere rol director o deputy director)',
   })
@@ -127,6 +133,8 @@ export class ClubsController {
   @Delete(':clubId')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director')
+  @RequirePermissions('clubs:delete')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Desactivar club (requiere rol director)' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club desactivado' })
@@ -140,6 +148,8 @@ export class ClubsController {
   // ========================================
 
   @Get(':clubId/instances')
+  @RequirePermissions('club_instances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Obtener instancias del club',
     description: 'Lista todas las instancias (Aventureros, Conquistadores, GM)',
@@ -151,6 +161,8 @@ export class ClubsController {
   }
 
   @Get(':clubId/instances/:type')
+  @RequirePermissions('club_instances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Obtener instancia por tipo' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({
@@ -169,6 +181,8 @@ export class ClubsController {
   @Post(':clubId/instances')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director')
+  @RequirePermissions('club_instances:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Crear instancia de club (requiere director o deputy director)',
     description:
@@ -187,6 +201,8 @@ export class ClubsController {
   @Patch(':clubId/instances/:type/:instanceId')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director', 'secretary')
+  @RequirePermissions('club_instances:update')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary:
       'Actualizar instancia (requiere director, deputy director o secretary)',
@@ -209,6 +225,8 @@ export class ClubsController {
   // ========================================
 
   @Get(':clubId/instances/:type/:instanceId/members')
+  @RequirePermissions('club_roles:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Listar miembros de la instancia',
     description:
@@ -228,6 +246,8 @@ export class ClubsController {
   @Post(':clubId/instances/:type/:instanceId/roles')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director', 'secretary')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary:
       'Asignar rol a un miembro (requiere director, deputy director o secretary)',
@@ -249,12 +269,14 @@ export class ClubsController {
 
 @ApiTags('club-roles')
 @Controller('club-roles')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ClubRolesController {
   constructor(private readonly clubsService: ClubsService) {}
 
   @Patch(':assignmentId')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({ summary: 'Actualizar asignación de rol' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación actualizada' })
@@ -266,6 +288,8 @@ export class ClubRolesController {
   }
 
   @Delete(':assignmentId')
+  @RequirePermissions('club_roles:revoke')
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({ summary: 'Remover rol de miembro' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Rol removido' })

@@ -8,8 +8,8 @@ export declare class FinancesService {
         name: string;
         description: string | null;
         type: number;
-        icon: number | null;
         finance_category_id: number;
+        icon: number | null;
     }[]>;
     findByClub(clubId: number, filters?: FinanceFiltersDto, pagination?: PaginationDto): Promise<PaginatedResult<any>>;
     getSummary(clubId: number, year?: number, month?: number): Promise<{
@@ -31,8 +31,8 @@ export declare class FinancesService {
             modified_at: Date | null;
             description: string | null;
             type: number;
-            icon: number | null;
             finance_category_id: number;
+            icon: number | null;
         };
         users: {
             name: string | null;
@@ -47,9 +47,9 @@ export declare class FinancesService {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;
@@ -69,9 +69,9 @@ export declare class FinancesService {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;
@@ -91,9 +91,9 @@ export declare class FinancesService {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;
@@ -108,9 +108,9 @@ export declare class FinancesService {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;

@@ -16,7 +16,7 @@ exports.AdminReferenceController = void 0;
 const openapi = require("@nestjs/swagger");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const global_roles_decorator_1 = require("../common/decorators/global-roles.decorator");
+const decorators_1 = require("../common/decorators");
 const guards_1 = require("../common/guards");
 const admin_reference_service_1 = require("./admin-reference.service");
 const dto_1 = require("./dto");
@@ -93,6 +93,7 @@ let AdminReferenceController = class AdminReferenceController {
 exports.AdminReferenceController = AdminReferenceController;
 __decorate([
     (0, common_1.Get)('relationship-types'),
+    (0, decorators_1.RequirePermissions)('catalogs:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List relationship types for admin management' }),
     openapi.ApiResponse({ status: 200 }),
     __metadata("design:type", Function),
@@ -101,6 +102,7 @@ __decorate([
 ], AdminReferenceController.prototype, "listRelationshipTypes", null);
 __decorate([
     (0, common_1.Post)('relationship-types'),
+    (0, decorators_1.RequirePermissions)('catalogs:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create relationship type' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -111,6 +113,7 @@ __decorate([
 ], AdminReferenceController.prototype, "createRelationshipType", null);
 __decorate([
     (0, common_1.Patch)('relationship-types/:relationshipTypeId'),
+    (0, decorators_1.RequirePermissions)('catalogs:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update relationship type' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('relationshipTypeId', common_1.ParseUUIDPipe)),
@@ -122,6 +125,7 @@ __decorate([
 ], AdminReferenceController.prototype, "updateRelationshipType", null);
 __decorate([
     (0, common_1.Delete)('relationship-types/:relationshipTypeId'),
+    (0, decorators_1.RequirePermissions)('catalogs:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete relationship type' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('relationshipTypeId', common_1.ParseUUIDPipe)),
@@ -132,6 +136,7 @@ __decorate([
 ], AdminReferenceController.prototype, "deleteRelationshipType", null);
 __decorate([
     (0, common_1.Get)('allergies'),
+    (0, decorators_1.RequirePermissions)('catalogs:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List allergies for admin management' }),
     openapi.ApiResponse({ status: 200 }),
     __metadata("design:type", Function),
@@ -140,6 +145,7 @@ __decorate([
 ], AdminReferenceController.prototype, "listAllergies", null);
 __decorate([
     (0, common_1.Post)('allergies'),
+    (0, decorators_1.RequirePermissions)('catalogs:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create allergy' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -150,6 +156,7 @@ __decorate([
 ], AdminReferenceController.prototype, "createAllergy", null);
 __decorate([
     (0, common_1.Patch)('allergies/:allergyId'),
+    (0, decorators_1.RequirePermissions)('catalogs:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update allergy' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('allergyId', common_1.ParseIntPipe)),
@@ -161,6 +168,7 @@ __decorate([
 ], AdminReferenceController.prototype, "updateAllergy", null);
 __decorate([
     (0, common_1.Delete)('allergies/:allergyId'),
+    (0, decorators_1.RequirePermissions)('catalogs:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete allergy' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('allergyId', common_1.ParseIntPipe)),
@@ -171,6 +179,7 @@ __decorate([
 ], AdminReferenceController.prototype, "deleteAllergy", null);
 __decorate([
     (0, common_1.Get)('diseases'),
+    (0, decorators_1.RequirePermissions)('catalogs:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List diseases for admin management' }),
     openapi.ApiResponse({ status: 200 }),
     __metadata("design:type", Function),
@@ -179,6 +188,7 @@ __decorate([
 ], AdminReferenceController.prototype, "listDiseases", null);
 __decorate([
     (0, common_1.Post)('diseases'),
+    (0, decorators_1.RequirePermissions)('catalogs:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create disease' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -189,6 +199,7 @@ __decorate([
 ], AdminReferenceController.prototype, "createDisease", null);
 __decorate([
     (0, common_1.Patch)('diseases/:diseaseId'),
+    (0, decorators_1.RequirePermissions)('catalogs:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update disease' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('diseaseId', common_1.ParseIntPipe)),
@@ -200,6 +211,7 @@ __decorate([
 ], AdminReferenceController.prototype, "updateDisease", null);
 __decorate([
     (0, common_1.Delete)('diseases/:diseaseId'),
+    (0, decorators_1.RequirePermissions)('catalogs:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete disease' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('diseaseId', common_1.ParseIntPipe)),
@@ -210,6 +222,7 @@ __decorate([
 ], AdminReferenceController.prototype, "deleteDisease", null);
 __decorate([
     (0, common_1.Get)('ecclesiastical-years'),
+    (0, decorators_1.RequirePermissions)('ecclesiastical_years:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List ecclesiastical years for admin management' }),
     openapi.ApiResponse({ status: 200 }),
     __metadata("design:type", Function),
@@ -218,6 +231,7 @@ __decorate([
 ], AdminReferenceController.prototype, "listEcclesiasticalYears", null);
 __decorate([
     (0, common_1.Post)('ecclesiastical-years'),
+    (0, decorators_1.RequirePermissions)('ecclesiastical_years:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create ecclesiastical year' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -228,6 +242,7 @@ __decorate([
 ], AdminReferenceController.prototype, "createEcclesiasticalYear", null);
 __decorate([
     (0, common_1.Patch)('ecclesiastical-years/:yearId'),
+    (0, decorators_1.RequirePermissions)('ecclesiastical_years:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update ecclesiastical year' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('yearId', common_1.ParseIntPipe)),
@@ -239,6 +254,7 @@ __decorate([
 ], AdminReferenceController.prototype, "updateEcclesiasticalYear", null);
 __decorate([
     (0, common_1.Delete)('ecclesiastical-years/:yearId'),
+    (0, decorators_1.RequirePermissions)('ecclesiastical_years:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete ecclesiastical year' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('yearId', common_1.ParseIntPipe)),
@@ -250,8 +266,7 @@ __decorate([
 exports.AdminReferenceController = AdminReferenceController = __decorate([
     (0, swagger_1.ApiTags)('admin-reference'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.GlobalRolesGuard),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('admin'),
     __metadata("design:paramtypes", [admin_reference_service_1.AdminReferenceService])
 ], AdminReferenceController);

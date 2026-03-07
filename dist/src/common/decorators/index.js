@@ -16,4 +16,6 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./club-roles.decorator"), exports);
 __exportStar(require("./global-roles.decorator"), exports);
+__exportStar(require("./permissions.decorator"), exports);
+__exportStar(require("./authorization-resource.decorator"), exports);
 //# sourceMappingURL=index.js.map

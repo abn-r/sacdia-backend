@@ -13,11 +13,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
-import { GlobalRoles } from '../common/decorators/global-roles.decorator';
+import { RequirePermissions } from '../common/decorators';
 import {
-  GlobalRolesGuard,
   JwtAuthGuard,
   OwnerOrAdminGuard,
+  PermissionsGuard,
 } from '../common/guards';
 
 // DTOs
@@ -69,7 +69,7 @@ class RegisterFcmTokenDto {
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(
@@ -78,22 +78,21 @@ export class NotificationsController {
   ) {}
 
   @Post('send')
+  @RequirePermissions('notifications:send')
   @ApiOperation({ summary: 'Send notification to specific user' })
   async sendToUser(@Body() dto: SendNotificationDto) {
     return this.notificationsService.sendToUser(dto);
   }
 
   @Post('broadcast')
-  @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super_admin', 'admin')
+  @RequirePermissions('notifications:broadcast')
   @ApiOperation({ summary: 'Send notification to all users' })
   async broadcast(@Body() dto: BroadcastNotificationDto) {
     return this.notificationsService.broadcast(dto);
   }
 
   @Post('club/:instanceType/:instanceId')
-  @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('super_admin', 'admin')
+  @RequirePermissions('notifications:club')
   @ApiOperation({ summary: 'Send notification to club members' })
   async sendToClub(
     @Param('instanceType')

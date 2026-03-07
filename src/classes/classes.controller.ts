@@ -20,7 +20,12 @@ import {
 } from '@nestjs/swagger';
 import { ClassesService } from './classes.service';
 import { EnrollClassDto, UpdateProgressDto } from './dto';
-import { JwtAuthGuard, OptionalJwtAuthGuard } from '../common/guards';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  JwtAuthGuard,
+  OptionalJwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('classes')
@@ -102,12 +107,14 @@ export class ClassesController {
 
 @ApiTags('user-classes')
 @Controller('users/:userId/classes')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class UserClassesController {
   constructor(private readonly classesService: ClassesService) {}
 
   @Get()
+  @RequirePermissions('classes:read')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Obtener inscripciones del usuario',
     description: 'Lista las clases en las que está inscrito el usuario',
@@ -128,6 +135,8 @@ export class UserClassesController {
   }
 
   @Post('enroll')
+  @RequirePermissions('classes:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribir usuario en clase',
     description: 'Inscribe al usuario en una clase para el año eclesiástico',
@@ -146,6 +155,8 @@ export class UserClassesController {
   }
 
   @Get(':classId/progress')
+  @RequirePermissions('classes:read')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Obtener progreso del usuario en una clase',
     description: 'Retorna el progreso detallado por módulo y sección',
@@ -161,6 +172,8 @@ export class UserClassesController {
   }
 
   @Patch(':classId/progress')
+  @RequirePermissions('classes:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de sección',
     description: 'Actualiza el puntaje y evidencias de una sección específica',

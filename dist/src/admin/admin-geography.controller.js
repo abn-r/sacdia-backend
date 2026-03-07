@@ -16,7 +16,7 @@ exports.AdminGeographyController = void 0;
 const openapi = require("@nestjs/swagger");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const global_roles_decorator_1 = require("../common/decorators/global-roles.decorator");
+const decorators_1 = require("../common/decorators");
 const guards_1 = require("../common/guards");
 const admin_geography_service_1 = require("./admin-geography.service");
 const dto_1 = require("./dto");
@@ -109,6 +109,7 @@ let AdminGeographyController = class AdminGeographyController {
 exports.AdminGeographyController = AdminGeographyController;
 __decorate([
     (0, common_1.Get)('countries'),
+    (0, decorators_1.RequirePermissions)('countries:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List countries for admin management' }),
     openapi.ApiResponse({ status: 200 }),
     __metadata("design:type", Function),
@@ -117,6 +118,7 @@ __decorate([
 ], AdminGeographyController.prototype, "listCountries", null);
 __decorate([
     (0, common_1.Post)('countries'),
+    (0, decorators_1.RequirePermissions)('countries:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create country' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -127,6 +129,7 @@ __decorate([
 ], AdminGeographyController.prototype, "createCountry", null);
 __decorate([
     (0, common_1.Patch)('countries/:countryId'),
+    (0, decorators_1.RequirePermissions)('countries:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update country' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('countryId', common_1.ParseIntPipe)),
@@ -138,6 +141,7 @@ __decorate([
 ], AdminGeographyController.prototype, "updateCountry", null);
 __decorate([
     (0, common_1.Delete)('countries/:countryId'),
+    (0, decorators_1.RequirePermissions)('countries:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete country' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('countryId', common_1.ParseIntPipe)),
@@ -148,6 +152,7 @@ __decorate([
 ], AdminGeographyController.prototype, "deleteCountry", null);
 __decorate([
     (0, common_1.Get)('unions'),
+    (0, decorators_1.RequirePermissions)('unions:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List unions for admin management' }),
     (0, swagger_1.ApiQuery)({ name: 'countryId', required: false, type: Number }),
     openapi.ApiResponse({ status: 200 }),
@@ -158,6 +163,7 @@ __decorate([
 ], AdminGeographyController.prototype, "listUnions", null);
 __decorate([
     (0, common_1.Post)('unions'),
+    (0, decorators_1.RequirePermissions)('unions:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create union' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -168,6 +174,7 @@ __decorate([
 ], AdminGeographyController.prototype, "createUnion", null);
 __decorate([
     (0, common_1.Patch)('unions/:unionId'),
+    (0, decorators_1.RequirePermissions)('unions:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update union' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('unionId', common_1.ParseIntPipe)),
@@ -179,6 +186,7 @@ __decorate([
 ], AdminGeographyController.prototype, "updateUnion", null);
 __decorate([
     (0, common_1.Delete)('unions/:unionId'),
+    (0, decorators_1.RequirePermissions)('unions:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete union' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('unionId', common_1.ParseIntPipe)),
@@ -189,6 +197,7 @@ __decorate([
 ], AdminGeographyController.prototype, "deleteUnion", null);
 __decorate([
     (0, common_1.Get)('local-fields'),
+    (0, decorators_1.RequirePermissions)('local_fields:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List local fields for admin management' }),
     (0, swagger_1.ApiQuery)({ name: 'unionId', required: false, type: Number }),
     openapi.ApiResponse({ status: 200 }),
@@ -199,6 +208,7 @@ __decorate([
 ], AdminGeographyController.prototype, "listLocalFields", null);
 __decorate([
     (0, common_1.Post)('local-fields'),
+    (0, decorators_1.RequirePermissions)('local_fields:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create local field' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -209,6 +219,7 @@ __decorate([
 ], AdminGeographyController.prototype, "createLocalField", null);
 __decorate([
     (0, common_1.Patch)('local-fields/:localFieldId'),
+    (0, decorators_1.RequirePermissions)('local_fields:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update local field' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('localFieldId', common_1.ParseIntPipe)),
@@ -220,6 +231,7 @@ __decorate([
 ], AdminGeographyController.prototype, "updateLocalField", null);
 __decorate([
     (0, common_1.Delete)('local-fields/:localFieldId'),
+    (0, decorators_1.RequirePermissions)('local_fields:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete local field' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('localFieldId', common_1.ParseIntPipe)),
@@ -230,6 +242,7 @@ __decorate([
 ], AdminGeographyController.prototype, "deleteLocalField", null);
 __decorate([
     (0, common_1.Get)('districts'),
+    (0, decorators_1.RequirePermissions)('local_fields:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List districts for admin management' }),
     (0, swagger_1.ApiQuery)({ name: 'localFieldId', required: false, type: Number }),
     openapi.ApiResponse({ status: 200 }),
@@ -240,6 +253,7 @@ __decorate([
 ], AdminGeographyController.prototype, "listDistricts", null);
 __decorate([
     (0, common_1.Post)('districts'),
+    (0, decorators_1.RequirePermissions)('local_fields:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Create district' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -250,6 +264,7 @@ __decorate([
 ], AdminGeographyController.prototype, "createDistrict", null);
 __decorate([
     (0, common_1.Patch)('districts/:districtId'),
+    (0, decorators_1.RequirePermissions)('local_fields:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update district' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('districtId', common_1.ParseIntPipe)),
@@ -261,6 +276,7 @@ __decorate([
 ], AdminGeographyController.prototype, "updateDistrict", null);
 __decorate([
     (0, common_1.Delete)('districts/:districtId'),
+    (0, decorators_1.RequirePermissions)('local_fields:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete district' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('districtId', common_1.ParseIntPipe)),
@@ -271,6 +287,7 @@ __decorate([
 ], AdminGeographyController.prototype, "deleteDistrict", null);
 __decorate([
     (0, common_1.Get)('churches'),
+    (0, decorators_1.RequirePermissions)('churches:read'),
     (0, swagger_1.ApiOperation)({ summary: 'List churches for admin management' }),
     (0, swagger_1.ApiQuery)({ name: 'districtId', required: false, type: Number }),
     openapi.ApiResponse({ status: 200 }),
@@ -281,6 +298,7 @@ __decorate([
 ], AdminGeographyController.prototype, "listChurches", null);
 __decorate([
     (0, common_1.Post)('churches'),
+    (0, decorators_1.RequirePermissions)('churches:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Create church' }),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -291,6 +309,7 @@ __decorate([
 ], AdminGeographyController.prototype, "createChurch", null);
 __decorate([
     (0, common_1.Patch)('churches/:churchId'),
+    (0, decorators_1.RequirePermissions)('churches:update'),
     (0, swagger_1.ApiOperation)({ summary: 'Update church' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('churchId', common_1.ParseIntPipe)),
@@ -302,6 +321,7 @@ __decorate([
 ], AdminGeographyController.prototype, "updateChurch", null);
 __decorate([
     (0, common_1.Delete)('churches/:churchId'),
+    (0, decorators_1.RequirePermissions)('churches:delete'),
     (0, swagger_1.ApiOperation)({ summary: 'Soft delete church' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('churchId', common_1.ParseIntPipe)),
@@ -313,8 +333,7 @@ __decorate([
 exports.AdminGeographyController = AdminGeographyController = __decorate([
     (0, swagger_1.ApiTags)('admin-geography'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.GlobalRolesGuard),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin'),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('admin'),
     __metadata("design:paramtypes", [admin_geography_service_1.AdminGeographyService])
 ], AdminGeographyController);

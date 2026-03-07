@@ -19,7 +19,8 @@ const swagger_1 = require("@nestjs/swagger");
 const inventory_service_1 = require("./inventory.service");
 const create_item_dto_1 = require("./dto/create-item.dto");
 const update_item_dto_1 = require("./dto/update-item.dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 let InventoryController = class InventoryController {
     inventoryService;
     constructor(inventoryService) {
@@ -71,6 +72,13 @@ let InventoryController = class InventoryController {
 exports.InventoryController = InventoryController;
 __decorate([
     (0, common_1.Get)('clubs/:clubId/inventory'),
+    (0, decorators_1.RequirePermissions)('inventory:read'),
+    (0, decorators_1.AuthorizationResource)({
+        type: 'inventory_instance',
+        idParam: 'clubId',
+        instanceTypeSource: 'query',
+        instanceTypeField: 'instanceType',
+    }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar items del inventario de un club',
         description: 'Obtiene todos los items de inventario de una instancia específica de club (Aventureros, Conquistadores, o Guías Mayores)',
@@ -108,6 +116,8 @@ __decorate([
 ], InventoryController.prototype, "findAllByClub", null);
 __decorate([
     (0, common_1.Get)('inventory/:id'),
+    (0, decorators_1.RequirePermissions)('inventory:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'inventory_item', idParam: 'id' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Obtener detalles de un item del inventario',
         description: 'Obtiene información detallada de un item específico incluyendo historial de cambios',
@@ -130,6 +140,13 @@ __decorate([
 ], InventoryController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Post)('clubs/:clubId/inventory'),
+    (0, decorators_1.RequirePermissions)('inventory:create'),
+    (0, decorators_1.AuthorizationResource)({
+        type: 'inventory_instance',
+        idParam: 'clubId',
+        instanceTypeSource: 'body',
+        instanceTypeField: 'instanceType',
+    }),
     (0, swagger_1.ApiOperation)({
         summary: 'Agregar nuevo item al inventario',
         description: 'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Deputy Director o Treasurer.',
@@ -155,6 +172,8 @@ __decorate([
 ], InventoryController.prototype, "create", null);
 __decorate([
     (0, common_1.Patch)('inventory/:id'),
+    (0, decorators_1.RequirePermissions)('inventory:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'inventory_item', idParam: 'id' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Actualizar un item del inventario',
         description: 'Actualiza información de un item existente. Requiere rol de Director, Deputy Director o Treasurer.',
@@ -179,6 +198,8 @@ __decorate([
 ], InventoryController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)('inventory/:id'),
+    (0, decorators_1.RequirePermissions)('inventory:delete'),
+    (0, decorators_1.AuthorizationResource)({ type: 'inventory_item', idParam: 'id' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Eliminar un item del inventario',
         description: 'Elimina un item del inventario (soft delete). Requiere rol de Director o Deputy Director.',
@@ -218,7 +239,7 @@ __decorate([
 exports.InventoryController = InventoryController = __decorate([
     (0, swagger_1.ApiTags)('inventory'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('inventory'),
     __metadata("design:paramtypes", [inventory_service_1.InventoryService])
 ], InventoryController);

@@ -13,20 +13,20 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { GlobalRoles } from '../common/decorators/global-roles.decorator';
-import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
+import { RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { AdminListUsersQueryDto } from './dto';
 import { AdminUsersService } from './admin-users.service';
 
 @ApiTags('admin-users')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('super_admin', 'admin', 'assistant_admin', 'coordinator')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('admin')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
 
   @Get('users')
+  @RequirePermissions('users:read')
   @ApiOperation({
     summary:
       'Listar usuarios administrativos con alcance por rol (ALL/UNION/LOCAL_FIELD)',
@@ -47,6 +47,7 @@ export class AdminUsersController {
   }
 
   @Get('users/:userId')
+  @RequirePermissions('users:read_detail')
   @ApiOperation({
     summary: 'Obtener detalle de usuario validando alcance por rol del actor',
   })

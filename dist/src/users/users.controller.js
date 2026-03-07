@@ -20,7 +20,8 @@ const swagger_1 = require("@nestjs/swagger");
 const users_service_1 = require("./users.service");
 const update_user_dto_1 = require("./dto/update-user.dto");
 const update_user_medical_dto_1 = require("./dto/update-user-medical.dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 let UsersController = class UsersController {
     usersService;
     constructor(usersService) {
@@ -75,6 +76,8 @@ let UsersController = class UsersController {
 exports.UsersController = UsersController;
 __decorate([
     (0, common_1.Get)(':userId'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener información de un usuario' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Usuario encontrado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Usuario no encontrado' }),
@@ -86,6 +89,8 @@ __decorate([
 ], UsersController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(':userId'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar información personal del usuario' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Usuario actualizado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Usuario no encontrado' }),
@@ -98,6 +103,8 @@ __decorate([
 ], UsersController.prototype, "update", null);
 __decorate([
     (0, common_1.Put)(':userId/allergies'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Guardar alergias del usuario',
         description: 'Reemplaza el conjunto de alergias activas del usuario en users_allergies',
@@ -114,6 +121,8 @@ __decorate([
 ], UsersController.prototype, "updateAllergies", null);
 __decorate([
     (0, common_1.Put)(':userId/diseases'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Guardar enfermedades del usuario',
         description: 'Reemplaza el conjunto de enfermedades activas del usuario en users_diseases',
@@ -130,6 +139,8 @@ __decorate([
 ], UsersController.prototype, "updateDiseases", null);
 __decorate([
     (0, common_1.Delete)(':userId/allergies/:allergyId'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Eliminar alergia del usuario (borrado lógico)',
         description: 'Desactiva (active=false) una alergia específica del usuario en users_allergies',
@@ -145,6 +156,8 @@ __decorate([
 ], UsersController.prototype, "removeAllergy", null);
 __decorate([
     (0, common_1.Delete)(':userId/diseases/:diseaseId'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Eliminar enfermedad del usuario (borrado lógico)',
         description: 'Desactiva (active=false) una enfermedad específica del usuario en users_diseases',
@@ -163,6 +176,8 @@ __decorate([
 ], UsersController.prototype, "removeDisease", null);
 __decorate([
     (0, common_1.Post)(':userId/profile-picture'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),
     (0, swagger_1.ApiConsumes)('multipart/form-data'),
     (0, swagger_1.ApiOperation)({ summary: 'Subir foto de perfil' }),
@@ -193,6 +208,8 @@ __decorate([
 ], UsersController.prototype, "uploadProfilePicture", null);
 __decorate([
     (0, common_1.Delete)(':userId/profile-picture'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Eliminar foto de perfil' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Foto eliminada' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Usuario sin foto de perfil' }),
@@ -204,6 +221,8 @@ __decorate([
 ], UsersController.prototype, "deleteProfilePicture", null);
 __decorate([
     (0, common_1.Get)(':userId/age'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Calcular edad del usuario' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Edad calculada' }),
     openapi.ApiResponse({ status: 200 }),
@@ -214,6 +233,8 @@ __decorate([
 ], UsersController.prototype, "getAge", null);
 __decorate([
     (0, common_1.Get)(':userId/requires-legal-representative'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Verificar si el usuario requiere representante legal',
     }),
@@ -230,7 +251,7 @@ __decorate([
 exports.UsersController = UsersController = __decorate([
     (0, swagger_1.ApiTags)('users'),
     (0, common_1.Controller)('users'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [users_service_1.UsersService])
 ], UsersController);

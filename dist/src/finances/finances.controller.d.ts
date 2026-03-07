@@ -7,8 +7,8 @@ export declare class FinancesController {
         name: string;
         description: string | null;
         type: number;
-        icon: number | null;
         finance_category_id: number;
+        icon: number | null;
     }[]>;
     findByClub(clubId: number, year?: number, month?: number, clubTypeId?: number, categoryId?: number, page?: number, limit?: number): Promise<import("../common/dto/pagination.dto").PaginatedResult<any>>;
     getSummary(clubId: number, year?: number, month?: number): Promise<{
@@ -33,9 +33,9 @@ export declare class FinancesController {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;
@@ -52,8 +52,8 @@ export declare class FinancesController {
             modified_at: Date | null;
             description: string | null;
             type: number;
-            icon: number | null;
             finance_category_id: number;
+            icon: number | null;
         };
         users: {
             name: string | null;
@@ -68,9 +68,9 @@ export declare class FinancesController {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;
@@ -90,9 +90,9 @@ export declare class FinancesController {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;
@@ -107,9 +107,9 @@ export declare class FinancesController {
         club_pathf_id: number | null;
         club_mg_id: number | null;
         club_type_id: number;
-        year: number;
         created_by: string;
         finance_id: number;
+        year: number;
         month: number;
         amount: number;
         finance_category_id: number;

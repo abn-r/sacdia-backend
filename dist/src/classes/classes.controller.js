@@ -18,6 +18,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const classes_service_1 = require("./classes.service");
 const dto_1 = require("./dto");
+const decorators_1 = require("../common/decorators");
 const guards_1 = require("../common/guards");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
 let ClassesController = class ClassesController {
@@ -130,6 +131,8 @@ let UserClassesController = class UserClassesController {
 exports.UserClassesController = UserClassesController;
 __decorate([
     (0, common_1.Get)(),
+    (0, decorators_1.RequirePermissions)('classes:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Obtener inscripciones del usuario',
         description: 'Lista las clases en las que está inscrito el usuario',
@@ -151,6 +154,8 @@ __decorate([
 ], UserClassesController.prototype, "getEnrollments", null);
 __decorate([
     (0, common_1.Post)('enroll'),
+    (0, decorators_1.RequirePermissions)('classes:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Inscribir usuario en clase',
         description: 'Inscribe al usuario en una clase para el año eclesiástico',
@@ -166,6 +171,8 @@ __decorate([
 ], UserClassesController.prototype, "enroll", null);
 __decorate([
     (0, common_1.Get)(':classId/progress'),
+    (0, decorators_1.RequirePermissions)('classes:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Obtener progreso del usuario en una clase',
         description: 'Retorna el progreso detallado por módulo y sección',
@@ -182,6 +189,8 @@ __decorate([
 ], UserClassesController.prototype, "getProgress", null);
 __decorate([
     (0, common_1.Patch)(':classId/progress'),
+    (0, decorators_1.RequirePermissions)('classes:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Actualizar progreso de sección',
         description: 'Actualiza el puntaje y evidencias de una sección específica',
@@ -200,7 +209,7 @@ __decorate([
 exports.UserClassesController = UserClassesController = __decorate([
     (0, swagger_1.ApiTags)('user-classes'),
     (0, common_1.Controller)('users/:userId/classes'),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [classes_service_1.ClassesService])
 ], UserClassesController);

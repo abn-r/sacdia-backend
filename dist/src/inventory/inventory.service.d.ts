@@ -26,8 +26,8 @@ export declare class InventoryService {
             total_items: number;
             total_value_estimated: null;
             club_instance: {
-                [x: string]: number | "pathf" | "adv" | "mg";
-                instance_type: "pathf" | "adv" | "mg";
+                [x: string]: number | "adv" | "pathf" | "mg";
+                instance_type: "adv" | "pathf" | "mg";
             };
         };
     }>;
@@ -95,7 +95,7 @@ export declare class InventoryService {
         active: boolean;
         created_at: Date | null;
         modified_at: Date | null;
-        icon: number | null;
         inventory_category_id: number;
+        icon: number | null;
     }[]>;
 }

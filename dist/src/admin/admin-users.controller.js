@@ -16,7 +16,7 @@ exports.AdminUsersController = void 0;
 const openapi = require("@nestjs/swagger");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const global_roles_decorator_1 = require("../common/decorators/global-roles.decorator");
+const decorators_1 = require("../common/decorators");
 const guards_1 = require("../common/guards");
 const dto_1 = require("./dto");
 const admin_users_service_1 = require("./admin-users.service");
@@ -37,6 +37,7 @@ let AdminUsersController = class AdminUsersController {
 exports.AdminUsersController = AdminUsersController;
 __decorate([
     (0, common_1.Get)('users'),
+    (0, decorators_1.RequirePermissions)('users:read'),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar usuarios administrativos con alcance por rol (ALL/UNION/LOCAL_FIELD)',
     }),
@@ -56,6 +57,7 @@ __decorate([
 ], AdminUsersController.prototype, "listUsers", null);
 __decorate([
     (0, common_1.Get)('users/:userId'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
     (0, swagger_1.ApiOperation)({
         summary: 'Obtener detalle de usuario validando alcance por rol del actor',
     }),
@@ -70,8 +72,7 @@ __decorate([
 exports.AdminUsersController = AdminUsersController = __decorate([
     (0, swagger_1.ApiTags)('admin-users'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.GlobalRolesGuard),
-    (0, global_roles_decorator_1.GlobalRoles)('super_admin', 'admin', 'assistant_admin', 'coordinator'),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('admin'),
     __metadata("design:paramtypes", [admin_users_service_1.AdminUsersService])
 ], AdminUsersController);

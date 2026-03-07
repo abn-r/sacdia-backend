@@ -25,13 +25,21 @@ import {
   UpdateActivityDto,
   RecordAttendanceDto,
 } from './dto';
-import { JwtAuthGuard, ClubRolesGuard } from '../common/guards';
-import { ClubRoles } from '../common/decorators';
+import {
+  JwtAuthGuard,
+  ClubRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
+import {
+  AuthorizationResource,
+  ClubRoles,
+  RequirePermissions,
+} from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('activities')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
@@ -41,6 +49,8 @@ export class ActivitiesController {
   // ========================================
 
   @Get('clubs/:clubId/activities')
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Listar actividades del club',
     description: 'Obtiene todas las actividades de las instancias del club',
@@ -81,6 +91,8 @@ export class ActivitiesController {
   @Post('clubs/:clubId/activities')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director', 'secretary', 'counselor')
+  @RequirePermissions('activities:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Crear actividad',
     description:
@@ -106,6 +118,8 @@ export class ActivitiesController {
   // ========================================
 
   @Get('activities/:activityId')
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({ summary: 'Obtener actividad por ID' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad encontrada' })
@@ -115,6 +129,8 @@ export class ActivitiesController {
   }
 
   @Patch('activities/:activityId')
+  @RequirePermissions('activities:update')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({ summary: 'Actualizar actividad' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad actualizada' })
@@ -126,6 +142,8 @@ export class ActivitiesController {
   }
 
   @Delete('activities/:activityId')
+  @RequirePermissions('activities:delete')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({ summary: 'Desactivar actividad' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad desactivada' })
@@ -138,6 +156,8 @@ export class ActivitiesController {
   // ========================================
 
   @Post('activities/:activityId/attendance')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({
     summary: 'Registrar asistencia',
     description: 'Registra la lista de usuarios que asistieron a la actividad',
@@ -152,6 +172,8 @@ export class ActivitiesController {
   }
 
   @Get('activities/:activityId/attendance')
+  @RequirePermissions('attendance:read')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({
     summary: 'Obtener asistencia',
     description: 'Obtiene la lista de usuarios que asistieron a la actividad',
