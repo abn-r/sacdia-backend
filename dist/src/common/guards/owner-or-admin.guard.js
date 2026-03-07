@@ -11,11 +11,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OwnerOrAdminGuard = void 0;
 const common_1 = require("@nestjs/common");
-const prisma_service_1 = require("../../prisma/prisma.service");
+const authorization_context_service_1 = require("../services/authorization-context.service");
 let OwnerOrAdminGuard = class OwnerOrAdminGuard {
-    prisma;
-    constructor(prisma) {
-        this.prisma = prisma;
+    authorizationContext;
+    constructor(authorizationContext) {
+        this.authorizationContext = authorizationContext;
     }
     async canActivate(context) {
         const request = context.switchToHttp().getRequest();
@@ -30,37 +30,16 @@ let OwnerOrAdminGuard = class OwnerOrAdminGuard {
         if (user.sub === resourceUserId) {
             return true;
         }
-        const isAdmin = await this.checkAdminRole(user.sub);
+        const isAdmin = await this.authorizationContext.hasAnyGlobalRole(user.sub, ['admin', 'assistant_admin', 'coordinator', 'super_admin']);
         if (isAdmin) {
             return true;
         }
         throw new common_1.ForbiddenException('You can only access your own resources unless you have admin privileges');
     }
-    async checkAdminRole(userId) {
-        const adminRoles = ['admin', 'assistant_admin', 'coordinator', 'super_admin'];
-        const userRoles = await this.prisma.users_roles.findMany({
-            where: {
-                user_id: userId,
-                active: true,
-            },
-            include: {
-                roles: {
-                    select: {
-                        role_name: true,
-                        active: true,
-                    },
-                },
-            },
-        });
-        const activeRoleNames = userRoles
-            .filter((ur) => ur.roles.active)
-            .map((ur) => ur.roles.role_name.toLowerCase());
-        return adminRoles.some((adminRole) => activeRoleNames.includes(adminRole.toLowerCase()));
-    }
 };
 exports.OwnerOrAdminGuard = OwnerOrAdminGuard;
 exports.OwnerOrAdminGuard = OwnerOrAdminGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [authorization_context_service_1.AuthorizationContextService])
 ], OwnerOrAdminGuard);
 //# sourceMappingURL=owner-or-admin.guard.js.map

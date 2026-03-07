@@ -1,8 +1,7 @@
 import { CanActivate, ExecutionContext } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { AuthorizationContextService } from '../services/authorization-context.service';
 export declare class OwnerOrAdminGuard implements CanActivate {
-    private readonly prisma;
-    constructor(prisma: PrismaService);
+    private readonly authorizationContext;
+    constructor(authorizationContext: AuthorizationContextService);
     canActivate(context: ExecutionContext): Promise<boolean>;
-    private checkAdminRole;
 }

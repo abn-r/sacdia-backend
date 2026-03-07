@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   UseGuards,
   Headers,
@@ -13,12 +14,15 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiBody,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
+import { LogoutDto } from './dto/logout.dto';
+import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -53,6 +57,8 @@ export class AuthController {
         data: {
           accessToken: 'eyJhbGc...',
           refreshToken: 'v1.abc...',
+          expiresAt: 1900000000,
+          tokenType: 'bearer',
           user: {
             id: 'uuid-123',
             email: 'user@sacdia.app',
@@ -111,22 +117,44 @@ export class AuthController {
     status: 401,
     description: 'Refresh token inválido o expirado',
   })
-  async refresh(@Body() dto: RefreshSessionDto) {
-    return this.authService.refreshSession(dto);
+  async refresh(
+    @Body() dto: RefreshSessionDto,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return this.authService.refreshSession(dto, { userAgent });
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Cerrar sesión' })
+  @ApiBody({
+    required: false,
+    schema: {
+      type: 'object',
+      properties: {
+        refreshToken: {
+          type: 'string',
+          example: 'v1.abc...',
+          description:
+            'Refresh token opcional para logout fail-safe cuando el access token ya expiró.',
+        },
+      },
+    },
+  })
   @ApiResponse({
     status: 200,
-    description: 'Sesión cerrada exitosamente',
+    description: 'Sesión cerrada (best effort, no bloquea UX)',
   })
-  async logout(@Headers('authorization') authorization: string) {
-    const token = authorization?.replace('Bearer ', '');
-    return this.authService.logout(token);
+  async logout(
+    @Headers('authorization') authorization?: string,
+    @Body() dto: LogoutDto = {},
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return this.authService.logout({
+      accessToken: this.extractBearerToken(authorization),
+      refreshToken: dto.refreshToken,
+      userAgent,
+    });
   }
 
   @Post('password/reset-request')
@@ -167,6 +195,11 @@ export class AuthController {
               items: { type: 'string' },
               example: ['read'],
             },
+            authorization: {
+              type: 'object',
+              description:
+                'Contrato canónico de autorización resuelto por backend.',
+            },
             post_register_complete: {
               type: 'boolean',
               example: true,
@@ -178,6 +211,7 @@ export class AuthController {
             'email',
             'roles',
             'permissions',
+            'authorization',
             'post_register_complete',
           ],
         },
@@ -187,6 +221,27 @@ export class AuthController {
   })
   async getProfile(@CurrentUser() user: { userId: string }) {
     return this.authService.getProfile(user.userId);
+  }
+
+  @Patch('me/context')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Cambiar contexto activo de club/instancia del usuario',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Contexto activo actualizado',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'La asignación no pertenece o no está activa para el usuario',
+  })
+  async setActiveContext(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: SetActiveClubContextDto,
+  ) {
+    return this.authService.setActiveClubContext(user.userId, dto);
   }
 
   @Get('profile/completion-status')
@@ -199,5 +254,13 @@ export class AuthController {
   })
   async getCompletionStatus(@CurrentUser() user: { userId: string }) {
     return this.authService.getCompletionStatus(user.userId);
+  }
+
+  private extractBearerToken(authorization?: string): string | undefined {
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return undefined;
+    }
+
+    return authorization.slice('Bearer '.length).trim();
   }
 }

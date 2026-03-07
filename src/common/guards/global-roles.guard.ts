@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PrismaService } from '../../prisma/prisma.service';
+import { AuthorizationContextService } from '../services/authorization-context.service';
 import {
   GLOBAL_ROLES_KEY,
   type GlobalRoleType,
@@ -24,7 +24,7 @@ const GLOBAL_ROLE_ALIASES: Record<GlobalRoleType, GlobalRoleType[]> = {
 export class GlobalRolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -46,7 +46,18 @@ export class GlobalRolesGuard implements CanActivate {
     }
 
     // Verificar si el usuario tiene alguno de los roles requeridos
-    const hasRole = await this.checkUserGlobalRole(user.sub, requiredRoles);
+    const acceptedRoles = Array.from(
+      new Set(
+        requiredRoles.flatMap(
+          (requiredRole) =>
+            GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole],
+        ),
+      ),
+    );
+    const hasRole = await this.authorizationContext.hasAnyGlobalRole(
+      user.sub,
+      acceptedRoles,
+    );
 
     if (!hasRole) {
       throw new ForbiddenException(
@@ -55,38 +66,5 @@ export class GlobalRolesGuard implements CanActivate {
     }
 
     return true;
-  }
-
-  private async checkUserGlobalRole(
-    userId: string,
-    requiredRoles: GlobalRoleType[],
-  ): Promise<boolean> {
-    // Obtener roles activos del usuario desde users_roles
-    const userRoles = await this.prisma.users_roles.findMany({
-      where: {
-        user_id: userId,
-        active: true,
-      },
-      include: {
-        roles: {
-          select: {
-            role_name: true,
-            active: true,
-          },
-        },
-      },
-    });
-
-    // Filtrar solo roles activos y extraer nombres
-    const activeRoleNames = userRoles
-      .filter((ur) => ur.roles.active)
-      .map((ur) => ur.roles.role_name.toLowerCase());
-
-    // Verificar si alguno de los roles del usuario coincide con los requeridos.
-    // `assistant_admin` se considera equivalente de acceso a `admin`.
-    return requiredRoles.some((requiredRole) => {
-      const acceptedRoles = GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole];
-      return acceptedRoles.some((role) => activeRoleNames.includes(role));
-    });
   }
 }

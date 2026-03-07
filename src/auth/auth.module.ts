@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { OAuthController } from './oauth.controller';
 import { OAuthService } from './oauth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { SupabaseService } from '../common/supabase.service';
 import { MfaController } from './mfa.controller';
 import { SessionsController } from './sessions.controller';
@@ -30,7 +31,19 @@ import { SessionsController } from './sessions.controller';
     SessionsController,
     OAuthController,
   ],
-  providers: [AuthService, OAuthService, JwtStrategy, SupabaseService],
-  exports: [AuthService, OAuthService, JwtStrategy, PassportModule],
+  providers: [
+    AuthService,
+    OAuthService,
+    JwtStrategy,
+    SupabaseService,
+    AuthorizationContextService,
+  ],
+  exports: [
+    AuthService,
+    OAuthService,
+    JwtStrategy,
+    PassportModule,
+    AuthorizationContextService,
+  ],
 })
 export class AuthModule {}
