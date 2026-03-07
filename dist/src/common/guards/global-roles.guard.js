@@ -12,7 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GlobalRolesGuard = void 0;
 const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
-const prisma_service_1 = require("../../prisma/prisma.service");
+const authorization_context_service_1 = require("../services/authorization-context.service");
 const global_roles_decorator_1 = require("../decorators/global-roles.decorator");
 const GLOBAL_ROLE_ALIASES = {
     super_admin: ['super_admin'],
@@ -24,10 +24,10 @@ const GLOBAL_ROLE_ALIASES = {
 };
 let GlobalRolesGuard = class GlobalRolesGuard {
     reflector;
-    prisma;
-    constructor(reflector, prisma) {
+    authorizationContext;
+    constructor(reflector, authorizationContext) {
         this.reflector = reflector;
-        this.prisma = prisma;
+        this.authorizationContext = authorizationContext;
     }
     async canActivate(context) {
         const requiredRoles = this.reflector.getAllAndOverride(global_roles_decorator_1.GLOBAL_ROLES_KEY, [context.getHandler(), context.getClass()]);
@@ -39,40 +39,18 @@ let GlobalRolesGuard = class GlobalRolesGuard {
         if (!user || !user.sub) {
             throw new common_1.ForbiddenException('User not authenticated');
         }
-        const hasRole = await this.checkUserGlobalRole(user.sub, requiredRoles);
+        const acceptedRoles = Array.from(new Set(requiredRoles.flatMap((requiredRole) => GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole])));
+        const hasRole = await this.authorizationContext.hasAnyGlobalRole(user.sub, acceptedRoles);
         if (!hasRole) {
             throw new common_1.ForbiddenException(`You need one of these global roles: ${requiredRoles.join(', ')}`);
         }
         return true;
-    }
-    async checkUserGlobalRole(userId, requiredRoles) {
-        const userRoles = await this.prisma.users_roles.findMany({
-            where: {
-                user_id: userId,
-                active: true,
-            },
-            include: {
-                roles: {
-                    select: {
-                        role_name: true,
-                        active: true,
-                    },
-                },
-            },
-        });
-        const activeRoleNames = userRoles
-            .filter((ur) => ur.roles.active)
-            .map((ur) => ur.roles.role_name.toLowerCase());
-        return requiredRoles.some((requiredRole) => {
-            const acceptedRoles = GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole];
-            return acceptedRoles.some((role) => activeRoleNames.includes(role));
-        });
     }
 };
 exports.GlobalRolesGuard = GlobalRolesGuard;
 exports.GlobalRolesGuard = GlobalRolesGuard = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [core_1.Reflector,
-        prisma_service_1.PrismaService])
+        authorization_context_service_1.AuthorizationContextService])
 ], GlobalRolesGuard);
 //# sourceMappingURL=global-roles.guard.js.map
