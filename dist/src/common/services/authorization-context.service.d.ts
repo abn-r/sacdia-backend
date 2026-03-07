@@ -109,6 +109,7 @@ export declare class AuthorizationContextService {
     constructor(prisma: PrismaService);
     resolveUserAuthorization(userId: string): Promise<ResolvedAuthorizationProfile>;
     hasAnyGlobalRole(userId: string, roleNames: string[]): Promise<boolean>;
+    canManageClub(userId: string, clubId: number): Promise<boolean>;
     private buildUserScope;
     private buildClubGrant;
     private buildClubScope;

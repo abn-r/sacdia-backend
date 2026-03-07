@@ -427,6 +427,57 @@ export class AuthorizationContextService {
     );
   }
 
+  async canManageClub(userId: string, clubId: number): Promise<boolean> {
+    const [resolved, club] = await Promise.all([
+      this.resolveUserAuthorization(userId),
+      this.prisma.clubs.findUnique({
+        where: { club_id: clubId },
+        select: {
+          local_field_id: true,
+          local_fields: {
+            select: {
+              union_id: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!club) {
+      return false;
+    }
+
+    const roleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+    const scope = resolved.authorization.effective.scope.global;
+    const localFieldId = scope.local_field?.id;
+    const unionId = scope.union?.id;
+
+    if (roleNames.has('super_admin')) {
+      return true;
+    }
+
+    const managesByLocalField =
+      typeof localFieldId === 'number' &&
+      localFieldId === club.local_field_id &&
+      (roleNames.has('admin') ||
+        roleNames.has('assistant_admin') ||
+        roleNames.has('coordinator'));
+
+    if (managesByLocalField) {
+      return true;
+    }
+
+    return (
+      typeof unionId === 'number' &&
+      unionId === club.local_fields?.union_id &&
+      (roleNames.has('admin') || roleNames.has('assistant_admin'))
+    );
+  }
+
   private buildUserScope(user: {
     countries?: { country_id: number; name: string | null } | null;
     unions?: { union_id: number; name: string | null } | null;
