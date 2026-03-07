@@ -1,25 +1,42 @@
 import { HonorsService } from './honors.service';
-import { StartHonorDto, UpdateUserHonorDto } from './dto';
+import { StartHonorDto, UpdateUserHonorDto, CreateUserHonorDto, BulkCreateUserHonorsDto } from './dto';
 export declare class HonorsController {
     private readonly honorsService;
     constructor(honorsService: HonorsService);
     findAll(categoryId?: number, clubTypeId?: number, skillLevel?: number, page?: number, limit?: number): Promise<import("../common/dto/pagination.dto").PaginatedResult<any>>;
     getCategories(): Promise<{
-        description: string | null;
         name: string;
+        description: string | null;
         honor_category_id: number;
         icon: number;
+    }[]>;
+    getGroupedByCategory(categoryId?: number, clubTypeId?: number, skillLevel?: number): Promise<{
+        category: {
+            honor_category_id: number | null;
+            name: string;
+            description: string | null;
+            icon: number | null;
+        };
+        honors: {
+            honor_id: number;
+            name: string;
+            description: string | null;
+            honor_image: string | null;
+            skill_level: number | null;
+            club_type_id: number | null;
+            club_type_name: string | null;
+        }[];
     }[]>;
     findOne(honorId: number): Promise<{
         club_types: {
             name: string;
         };
         honors_categories: {
-            created_at: Date | null;
-            description: string | null;
             name: string;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
+            description: string | null;
             honor_category_id: number;
             icon: number;
         };
@@ -27,11 +44,11 @@ export declare class HonorsController {
             name: string;
         } | null;
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date | null;
+        description: string | null;
         club_type_id: number;
         year: string | null;
         material_url: string;
@@ -58,9 +75,9 @@ export declare class UserHonorsController {
             skill_level: number;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
         date: Date;
@@ -75,6 +92,66 @@ export declare class UserHonorsController {
         validated: number;
         in_progress: number;
     }>;
+    createUserHonor(userId: string, dto: CreateUserHonorDto): Promise<{
+        honors: {
+            honors_categories: {
+                name: string;
+            };
+            name: string;
+            honor_id: number;
+            honor_image: string;
+        };
+    } & {
+        user_id: string;
+        active: boolean;
+        created_at: Date | null;
+        modified_at: Date | null;
+        certificate: string;
+        date: Date;
+        validate: boolean;
+        images: import("@prisma/client/runtime/client").JsonValue;
+        document: string | null;
+        honor_id: number;
+        user_honor_id: number;
+    }>;
+    createUserHonorsBulk(userId: string, dto: BulkCreateUserHonorsDto): Promise<({
+        honors: {
+            honors_categories: {
+                name: string;
+            };
+            name: string;
+            honor_id: number;
+            honor_image: string;
+        };
+    } & {
+        user_id: string;
+        active: boolean;
+        created_at: Date | null;
+        modified_at: Date | null;
+        certificate: string;
+        date: Date;
+        validate: boolean;
+        images: import("@prisma/client/runtime/client").JsonValue;
+        document: string | null;
+        honor_id: number;
+        user_honor_id: number;
+    })[]>;
+    uploadHonorFiles(userId: string, honorId: number, files: {
+        certificate?: Express.Multer.File[];
+        document?: Express.Multer.File[];
+        images?: Express.Multer.File[];
+    }): Promise<{
+        status: string;
+        data: {
+            user_honor: any;
+            uploaded: {
+                certificate: string | null;
+                document: string | null;
+                images: (string | null)[];
+            };
+        };
+        message: string;
+    }>;
     startHonor(userId: string, honorId: number, dto: StartHonorDto): Promise<{
         honors: {
             honors_categories: {
@@ -84,9 +161,9 @@ export declare class UserHonorsController {
             honor_image: string;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
         date: Date;
@@ -102,9 +179,9 @@ export declare class UserHonorsController {
             honor_image: string;
         };
     } & {
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
         date: Date;
@@ -115,9 +192,9 @@ export declare class UserHonorsController {
         user_honor_id: number;
     }>;
     abandonHonor(userId: string, honorId: number): Promise<{
-        created_at: Date | null;
         user_id: string;
         active: boolean;
+        created_at: Date | null;
         modified_at: Date | null;
         certificate: string;
         date: Date;

@@ -11,6 +11,7 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const throttler_1 = require("@nestjs/throttler");
 const core_1 = require("@nestjs/core");
+const nestjs_pino_1 = require("nestjs-pino");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const prisma_module_1 = require("./prisma/prisma.module");
@@ -42,6 +43,41 @@ exports.AppModule = AppModule = __decorate([
         imports: [
             config_1.ConfigModule.forRoot({
                 isGlobal: true,
+            }),
+            nestjs_pino_1.LoggerModule.forRoot({
+                forRoutes: [{ path: '/{*path}', method: common_1.RequestMethod.ALL }],
+                pinoHttp: {
+                    level: process.env.LOG_LEVEL ||
+                        (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+                    autoLogging: false,
+                    quietReqLogger: true,
+                    redact: {
+                        paths: [
+                            'req.headers.authorization',
+                            'req.headers.cookie',
+                            'req.body.password',
+                            'req.body.refreshToken',
+                            'requestBody.password',
+                            'requestBody.refreshToken',
+                        ],
+                        remove: true,
+                    },
+                    ...(process.env.NODE_ENV !== 'production' ||
+                        process.env.LOG_PRETTY === 'true'
+                        ? {
+                            transport: {
+                                target: 'pino-pretty',
+                                options: {
+                                    colorize: true,
+                                    translateTime: 'SYS:standard',
+                                    ignore: process.env.LOG_PRETTY_IGNORE ||
+                                        'pid,hostname,req,res,responseTime',
+                                    singleLine: false,
+                                },
+                            },
+                        }
+                        : {}),
+                },
             }),
             throttler_1.ThrottlerModule.forRoot([
                 {

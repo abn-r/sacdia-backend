@@ -20,6 +20,19 @@ export class CatalogsService {
     });
   }
 
+  async getActivityTypes() {
+    return this.prisma.activity_types.findMany({
+      where: { active: true },
+      select: {
+        activity_type_id: true,
+        code: true,
+        name: true,
+        description: true,
+      },
+      orderBy: { activity_type_id: 'asc' },
+    });
+  }
+
   async getRelationshipTypes() {
     return this.prisma.relationship_types.findMany({
       where: { active: true },

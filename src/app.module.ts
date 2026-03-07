@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -33,6 +34,47 @@ import { AdminModule } from './admin/admin.module';
     // ==========================================
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+
+    // ==========================================
+    // LOGGING - Pino (pretty en desarrollo, JSON en producción)
+    // ==========================================
+    LoggerModule.forRoot({
+      forRoutes: [{ path: '/{*path}', method: RequestMethod.ALL }],
+      pinoHttp: {
+        level:
+          process.env.LOG_LEVEL ||
+          (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+        autoLogging: false,
+        quietReqLogger: true,
+        redact: {
+          paths: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.body.password',
+            'req.body.refreshToken',
+            'requestBody.password',
+            'requestBody.refreshToken',
+          ],
+          remove: true,
+        },
+        ...(process.env.NODE_ENV !== 'production' ||
+        process.env.LOG_PRETTY === 'true'
+          ? {
+              transport: {
+                target: 'pino-pretty',
+                options: {
+                  colorize: true,
+                  translateTime: 'SYS:standard',
+                  ignore:
+                    process.env.LOG_PRETTY_IGNORE ||
+                    'pid,hostname,req,res,responseTime',
+                  singleLine: false,
+                },
+              },
+            }
+          : {}),
+      },
     }),
 
     // ==========================================

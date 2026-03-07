@@ -48,7 +48,7 @@ export class ActivitiesController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiQuery({ name: 'clubTypeId', required: false, type: Number })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
-  @ApiQuery({ name: 'activityType', required: false, type: Number })
+  @ApiQuery({ name: 'activityTypeId', required: false, type: Number })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Lista paginada de actividades' })
@@ -57,8 +57,8 @@ export class ActivitiesController {
     @Query('clubTypeId', new ParseIntPipe({ optional: true }))
     clubTypeId?: number,
     @Query('active') active?: string,
-    @Query('activityType', new ParseIntPipe({ optional: true }))
-    activityType?: number,
+    @Query('activityTypeId', new ParseIntPipe({ optional: true }))
+    activityTypeId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -72,7 +72,7 @@ export class ActivitiesController {
         clubTypeId,
         active:
           active === 'true' ? true : active === 'false' ? false : undefined,
-        activityType,
+        activityTypeId,
       },
       pagination,
     );
@@ -84,17 +84,21 @@ export class ActivitiesController {
   @ApiOperation({
     summary: 'Crear actividad',
     description:
-      'Crea una nueva actividad para el club (requiere rol de liderazgo)',
+      'Crea una nueva actividad para el club (requiere rol de liderazgo). Soporta múltiples instancias del mismo club mediante instances[]',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 201, description: 'Actividad creada' })
+  @ApiResponse({
+    status: 400,
+    description: 'Payload inválido para el tipo/instancia de club',
+  })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   async create(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Body() dto: CreateActivityDto,
     @Request() req: any,
   ) {
-    return this.activitiesService.create(dto, req.user.sub);
+    return this.activitiesService.create(clubId, dto, req.user.sub);
   }
 
   // ========================================

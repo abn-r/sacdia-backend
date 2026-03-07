@@ -239,7 +239,7 @@ __decorate([
     __param(1, (0, common_1.Param)('certificationId', common_1.ParseIntPipe)),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Number, update_progress_dto_1.UpdateProgressDto]),
+    __metadata("design:paramtypes", [String, Number, update_progress_dto_1.UpdateCertificationProgressDto]),
     __metadata("design:returntype", Promise)
 ], CertificationsController.prototype, "updateProgress", null);
 __decorate([

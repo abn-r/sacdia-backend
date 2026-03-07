@@ -1,12 +1,13 @@
 import { PrismaService } from '../prisma/prisma.service';
-import { SupabaseService } from '../common/supabase.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserAllergiesDto, UpdateUserDiseasesDto } from './dto/update-user-medical.dto';
+import type { FileStorageService } from '../common/services/file-storage.service';
 export declare class UsersService {
     private prisma;
-    private supabase;
+    private readonly fileStorage;
     private readonly logger;
-    constructor(prisma: PrismaService, supabase: SupabaseService);
+    private static readonly PRIVATE_ASSET_URL_TTL_SECONDS;
+    constructor(prisma: PrismaService, fileStorage: FileStorageService);
     private ensureUserExists;
     private validateGeographyReferences;
     private validateAllergiesExist;
@@ -14,42 +15,42 @@ export declare class UsersService {
     findOne(userId: string): Promise<{
         status: string;
         data: {
-            created_at: Date;
+            user_id: string;
+            email: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            email: string;
-            user_id: string;
             gender: string | null;
             birthday: Date | null;
             blood: import("@prisma/client").$Enums.blood_type | null;
             baptism: boolean;
             baptism_date: Date | null;
             user_image: string | null;
-            access_app: boolean | null;
-            access_panel: boolean | null;
-            modified_at: Date;
             country_id: number | null;
             union_id: number | null;
+            access_app: boolean | null;
+            access_panel: boolean | null;
+            created_at: Date;
+            modified_at: Date;
             local_field_id: number | null;
         };
     }>;
     update(userId: string, updateUserDto: UpdateUserDto): Promise<{
         status: string;
         data: {
+            user_id: string;
+            email: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            email: string;
-            user_id: string;
             gender: string | null;
             birthday: Date | null;
             blood: import("@prisma/client").$Enums.blood_type | null;
             baptism: boolean;
             baptism_date: Date | null;
-            modified_at: Date;
             country_id: number | null;
             union_id: number | null;
+            modified_at: Date;
             local_field_id: number | null;
         };
         message: string;
@@ -58,8 +59,8 @@ export declare class UsersService {
         status: string;
         data: {
             allergies: {
-                description: string | null;
                 name: string;
+                description: string | null;
             } | null;
             allergy_id: number | null;
         }[];
@@ -69,8 +70,8 @@ export declare class UsersService {
         status: string;
         data: {
             diseases: {
-                description: string | null;
                 name: string;
+                description: string | null;
             };
             disease_id: number;
         }[];
@@ -95,7 +96,7 @@ export declare class UsersService {
     uploadProfilePicture(userId: string, file: Express.Multer.File): Promise<{
         status: string;
         data: {
-            url: string;
+            url: string | null;
             fileName: string;
         };
         message: string;
@@ -106,4 +107,7 @@ export declare class UsersService {
     }>;
     calculateAge(userId: string): Promise<number | null>;
     requiresLegalRepresentative(userId: string): Promise<boolean>;
+    private rollbackUploadedObjects;
+    private cleanupPreviousProfilePicture;
+    private resolvePrivateAssetUrl;
 }

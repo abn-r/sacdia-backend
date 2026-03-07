@@ -49,29 +49,93 @@ let FirebaseAdminModule = class FirebaseAdminModule {
     constructor() {
         if (!admin.apps.length) {
             try {
-                const projectId = process.env.FIREBASE_PROJECT_ID;
-                const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-                const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-                if (!projectId || !privateKey || !clientEmail) {
+                const credentials = this.resolveCredentials();
+                if (!credentials) {
                     console.warn('⚠️  Firebase Admin credentials not found. FCM notifications will be disabled.');
-                    console.warn('Missing:', !projectId ? 'FIREBASE_PROJECT_ID ' : '', !privateKey ? 'FIREBASE_PRIVATE_KEY ' : '', !clientEmail ? 'FIREBASE_CLIENT_EMAIL' : '');
                     return;
                 }
-                const formattedPrivateKey = privateKey.replace(/\\n/gm, '\n');
                 admin.initializeApp({
                     credential: admin.credential.cert({
-                        projectId,
-                        privateKey: formattedPrivateKey,
-                        clientEmail,
+                        projectId: credentials.projectId,
+                        privateKey: credentials.privateKey,
+                        clientEmail: credentials.clientEmail,
                     }),
                 });
-                console.log('✅ Firebase Admin initialized successfully');
+                console.log(`✅ Firebase Admin initialized successfully (source: ${credentials.source})`);
             }
             catch (error) {
                 console.error('❌ Failed to initialize Firebase Admin:', error.message);
                 console.warn('Firebase services (FCM) will be disabled.');
             }
         }
+    }
+    resolveCredentials() {
+        const jsonBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64;
+        const jsonRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+        if (this.hasValue(jsonBase64) || this.hasValue(jsonRaw)) {
+            const parsed = this.parseServiceAccountJson(jsonBase64, jsonRaw);
+            if (parsed) {
+                return {
+                    ...parsed,
+                    source: 'service_account_json',
+                };
+            }
+        }
+        const projectId = process.env.FIREBASE_PROJECT_ID;
+        const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+        const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+        const hasLegacyValues = this.hasValue(projectId) &&
+            this.hasValue(privateKey) &&
+            this.hasValue(clientEmail);
+        if (!hasLegacyValues) {
+            return null;
+        }
+        return {
+            projectId: projectId.trim(),
+            privateKey: this.normalizePrivateKey(privateKey),
+            clientEmail: clientEmail.trim(),
+            source: 'legacy_env',
+        };
+    }
+    parseServiceAccountJson(jsonBase64, jsonRaw) {
+        try {
+            const payload = this.hasValue(jsonBase64)
+                ? Buffer.from(jsonBase64.trim(), 'base64').toString('utf8')
+                : jsonRaw.trim();
+            const parsed = JSON.parse(payload);
+            if (!this.hasValue(parsed.project_id) ||
+                !this.hasValue(parsed.private_key) ||
+                !this.hasValue(parsed.client_email)) {
+                console.warn('⚠️  Firebase service account JSON is missing project_id/private_key/client_email. FCM disabled.');
+                return null;
+            }
+            return {
+                projectId: parsed.project_id.trim(),
+                privateKey: this.normalizePrivateKey(parsed.private_key),
+                clientEmail: parsed.client_email.trim(),
+            };
+        }
+        catch (error) {
+            console.warn('⚠️  Firebase service account JSON could not be parsed. Falling back to legacy env vars.');
+            return null;
+        }
+    }
+    hasValue(value) {
+        if (!value)
+            return false;
+        const trimmed = value.trim();
+        if (!trimmed)
+            return false;
+        const placeholderPatterns = [
+            /YOUR_/i,
+            /your-project-id/i,
+            /firebase-adminsdk-xxxxx/i,
+            /YOUR_PRIVATE_KEY_HERE/i,
+        ];
+        return !placeholderPatterns.some((pattern) => pattern.test(trimmed));
+    }
+    normalizePrivateKey(privateKey) {
+        return privateKey.replace(/\\n/gm, '\n');
     }
 };
 exports.FirebaseAdminModule = FirebaseAdminModule;

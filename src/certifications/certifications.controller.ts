@@ -20,7 +20,7 @@ import {
 } from '@nestjs/swagger';
 import { CertificationsService } from './certifications.service';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
@@ -216,7 +216,7 @@ export class CertificationsController {
   async updateProgress(
     @Param('userId') userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Body() dto: UpdateProgressDto,
+    @Body() dto: UpdateCertificationProgressDto,
   ) {
     const data = await this.certificationsService.updateProgress(
       userId,

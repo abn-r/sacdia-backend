@@ -166,24 +166,79 @@ let PostRegistrationService = PostRegistrationService_1 = class PostRegistration
             if (!club) {
                 throw new common_1.BadRequestException('Club no encontrado');
             }
-            await tx.club_role_assignments.create({
-                data: {
+            const selectedClass = await tx.classes.findUnique({
+                where: { class_id: dto.class_id },
+                select: {
+                    class_id: true,
+                    active: true,
+                },
+            });
+            if (!selectedClass || !selectedClass.active) {
+                throw new common_1.BadRequestException('Clase no encontrada');
+            }
+            const existingClubAssignment = await tx.club_role_assignments.findFirst({
+                where: {
                     user_id: userId,
                     role_id: memberRole.role_id,
-                    [clubInstanceField]: dto.club_instance_id,
                     ecclesiastical_year_id: currentYear.year_id,
-                    start_date: new Date(),
                     active: true,
-                    status: 'active',
+                    [clubInstanceField]: dto.club_instance_id,
                 },
             });
-            await tx.users_classes.create({
-                data: {
+            if (!existingClubAssignment) {
+                await tx.club_role_assignments.create({
+                    data: {
+                        user_id: userId,
+                        role_id: memberRole.role_id,
+                        [clubInstanceField]: dto.club_instance_id,
+                        ecclesiastical_year_id: currentYear.year_id,
+                        start_date: new Date(),
+                        active: true,
+                        status: 'active',
+                    },
+                });
+            }
+            await tx.users_classes.updateMany({
+                where: {
                     user_id: userId,
-                    class_id: dto.class_id,
                     current_class: true,
+                    NOT: { class_id: dto.class_id },
+                },
+                data: {
+                    current_class: false,
                 },
             });
+            const existingUserClass = await tx.users_classes.findUnique({
+                where: {
+                    user_id_class_id: {
+                        user_id: userId,
+                        class_id: dto.class_id,
+                    },
+                },
+                select: {
+                    user_class_id: true,
+                },
+            });
+            if (existingUserClass) {
+                await tx.users_classes.update({
+                    where: {
+                        user_class_id: existingUserClass.user_class_id,
+                    },
+                    data: {
+                        active: true,
+                        current_class: true,
+                    },
+                });
+            }
+            else {
+                await tx.users_classes.create({
+                    data: {
+                        user_id: userId,
+                        class_id: dto.class_id,
+                        current_class: true,
+                    },
+                });
+            }
             await tx.users_pr.update({
                 where: { user_id: userId },
                 data: {

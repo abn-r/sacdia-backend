@@ -8,16 +8,26 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+var ClubsService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClubsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const dto_1 = require("./dto");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
+const file_storage_service_1 = require("../common/services/file-storage.service");
 let ClubsService = class ClubsService {
+    static { ClubsService_1 = this; }
     prisma;
-    constructor(prisma) {
+    fileStorage;
+    logger = new common_1.Logger(ClubsService_1.name);
+    static PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+    constructor(prisma, fileStorage) {
         this.prisma = prisma;
+        this.fileStorage = fileStorage;
     }
     async findAll(filters, pagination) {
         const where = {
@@ -250,7 +260,7 @@ let ClubsService = class ClubsService {
     }
     async getMembers(instanceId, type) {
         const whereClause = this.getInstanceWhereClause(instanceId, type);
-        return this.prisma.club_role_assignments.findMany({
+        const members = await this.prisma.club_role_assignments.findMany({
             where: {
                 ...whereClause,
                 active: true,
@@ -275,6 +285,17 @@ let ClubsService = class ClubsService {
             },
             orderBy: { start_date: 'desc' },
         });
+        return Promise.all(members.map(async (member) => ({
+            ...member,
+            users: member.users
+                ? {
+                    ...member.users,
+                    user_image: typeof member.users.user_image === 'string'
+                        ? await this.resolvePrivateProfileUrl(member.users.user_image)
+                        : member.users.user_image,
+                }
+                : member.users,
+        })));
     }
     async assignRole(dto) {
         const assignment = {
@@ -347,10 +368,24 @@ let ClubsService = class ClubsService {
                 throw new common_1.BadRequestException(`Invalid instance type: ${type}`);
         }
     }
+    async resolvePrivateProfileUrl(value) {
+        if (!value)
+            return null;
+        try {
+            return await this.fileStorage.getSignedDownloadUrl(file_storage_service_1.StorageBucketAlias.USER_PROFILES, value, {
+                expiresInSeconds: ClubsService_1.PRIVATE_ASSET_URL_TTL_SECONDS,
+            });
+        }
+        catch (error) {
+            this.logger.warn('Failed to generate signed URL for club member profile. Returning original value.', error);
+            return value;
+        }
+    }
 };
 exports.ClubsService = ClubsService;
-exports.ClubsService = ClubsService = __decorate([
+exports.ClubsService = ClubsService = ClubsService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __param(1, (0, common_1.Inject)(file_storage_service_1.FILE_STORAGE_SERVICE)),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object])
 ], ClubsService);
 //# sourceMappingURL=clubs.service.js.map

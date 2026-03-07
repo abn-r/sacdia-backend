@@ -30,19 +30,19 @@ export declare class FoldersService {
         }[];
     }>;
     enrollUser(userId: string, folderId: number): Promise<{
-        status: string | null;
-        created_at: Date;
         user_id: string | null;
         active: boolean;
+        created_at: Date;
         modified_at: Date | null;
+        status: string | null;
         club_adv_id: number | null;
         club_pathf_id: number | null;
         club_mg_id: number | null;
-        completion_date: Date | null;
-        progress_percentage: number | null;
         folder_id: number | null;
         total_points: number | null;
         folder_assignment_id: number;
+        progress_percentage: number | null;
+        completion_date: Date | null;
         assignment_date: Date | null;
     }>;
     private getUserClubInstances;

@@ -83,6 +83,8 @@
                     "data": {
                       "accessToken": "eyJhbGc...",
                       "refreshToken": "v1.abc...",
+                      "expiresAt": 1900000000,
+                      "tokenType": "bearer",
                       "user": {
                         "id": "uuid-123",
                         "email": "user@sacdia.app",
@@ -115,7 +117,16 @@
     "/v1/auth/refresh": {
       "post": {
         "operationId": "AuthController_refresh_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "user-agent",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -182,18 +193,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "user-agent",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "Sesión cerrada exitosamente"
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "example": "v1.abc...",
+                    "description": "Refresh token opcional para logout fail-safe cuando el access token ya expiró."
+                  }
+                }
+              }
+            }
           }
         },
-        "security": [
-          {
-            "bearer": []
+        "responses": {
+          "200": {
+            "description": "Sesión cerrada (best effort, no bloquea UX)"
           }
-        ],
+        },
         "summary": "Cerrar sesión",
         "tags": [
           "auth"
@@ -304,6 +335,39 @@
           }
         ],
         "summary": "Obtener perfil del usuario autenticado",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/me/context": {
+      "patch": {
+        "operationId": "AuthController_setActiveContext_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActiveClubContextDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contexto activo actualizado"
+          },
+          "400": {
+            "description": "La asignación no pertenece o no está activa para el usuario"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cambiar contexto activo de club/instancia del usuario",
         "tags": [
           "auth"
         ]
@@ -1788,6 +1852,22 @@
         ]
       }
     },
+    "/v1/catalogs/activity-types": {
+      "get": {
+        "description": "Lista los tipos de actividad disponibles para registrar actividades",
+        "operationId": "CatalogsController_getActivityTypes_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Lista de tipos de actividad"
+          }
+        },
+        "summary": "Obtener tipos de actividad",
+        "tags": [
+          "catalogs"
+        ]
+      }
+    },
     "/v1/catalogs/relationship-types": {
       "get": {
         "description": "Lista tipos de relación activos para formularios (padre, madre, tutor, etc.)",
@@ -2937,6 +3017,47 @@
         ]
       }
     },
+    "/v1/honors/grouped-by-category": {
+      "get": {
+        "operationId": "HonorsController_getGroupedByCategory_v1",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "clubTypeId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "skillLevel",
+            "required": false,
+            "in": "query",
+            "description": "1=Básico, 2=Avanzado, 3=Máster",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de categorías con sus honores asociados"
+          }
+        },
+        "summary": "Listar honores agrupados por categoría",
+        "tags": [
+          "honors"
+        ]
+      }
+    },
     "/v1/honors/{honorId}": {
       "get": {
         "operationId": "HonorsController_findOne_v1",
@@ -3000,6 +3121,44 @@
         "tags": [
           "user-honors"
         ]
+      },
+      "post": {
+        "description": "Registra (o reactiva) un honor del usuario permitiendo enviar evidencias en el alta",
+        "operationId": "UserHonorsController_createUserHonor_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserHonorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Honor registrado para el usuario"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Registrar honor con datos iniciales",
+        "tags": [
+          "user-honors"
+        ]
       }
     },
     "/v1/users/{userId}/honors/stats": {
@@ -3026,6 +3185,107 @@
           }
         ],
         "summary": "Obtener estadísticas de honores del usuario",
+        "tags": [
+          "user-honors"
+        ]
+      }
+    },
+    "/v1/users/{userId}/honors/bulk": {
+      "post": {
+        "description": "Registra o reactiva múltiples honores en una sola petición para acelerar carga inicial",
+        "operationId": "UserHonorsController_createUserHonorsBulk_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkCreateUserHonorsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Honores registrados de forma masiva"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Registrar honores de usuario de forma masiva",
+        "tags": [
+          "user-honors"
+        ]
+      }
+    },
+    "/v1/users/{userId}/honors/{honorId}/files": {
+      "post": {
+        "description": "Sube certificado e imágenes al bucket users-honors y actualiza users_honors",
+        "operationId": "UserHonorsController_uploadHonorFiles_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "honorId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "certificate": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Evidencias subidas y asociadas al honor del usuario"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Subir evidencias del honor",
         "tags": [
           "user-honors"
         ]
@@ -3194,7 +3454,7 @@
             }
           },
           {
-            "name": "activityType",
+            "name": "activityTypeId",
             "required": false,
             "in": "query",
             "schema": {
@@ -3234,7 +3494,7 @@
         ]
       },
       "post": {
-        "description": "Crea una nueva actividad para el club (requiere rol de liderazgo)",
+        "description": "Crea una nueva actividad para el club (requiere rol de liderazgo). Soporta múltiples instancias del mismo club mediante instances[]",
         "operationId": "ActivitiesController_create_v1",
         "parameters": [
           {
@@ -3259,6 +3519,9 @@
         "responses": {
           "201": {
             "description": "Actividad creada"
+          },
+          "400": {
+            "description": "Payload inválido para el tipo/instancia de club"
           },
           "403": {
             "description": "Permisos insuficientes"
@@ -4486,7 +4749,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateProgressDto"
+                "$ref": "#/components/schemas/UpdateCertificationProgressDto"
               }
             }
           }
@@ -6793,6 +7056,19 @@
           "email"
         ]
       },
+      "SetActiveClubContextDto": {
+        "type": "object",
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "description": "ID de la asignación de rol/instancia activa del usuario",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "assignment_id"
+        ]
+      },
       "VerifyMfaDto": {
         "type": "object",
         "properties": {
@@ -7320,24 +7596,77 @@
         "properties": {
           "module_id": {
             "type": "number",
-            "description": "ID del módulo de la certificación",
-            "example": 1
+            "description": "ID del módulo"
           },
           "section_id": {
             "type": "number",
-            "description": "ID de la sección del módulo",
-            "example": 1
+            "description": "ID de la sección"
           },
-          "completed": {
-            "type": "boolean",
-            "description": "Estado de completado de la sección",
-            "example": true
+          "score": {
+            "type": "number",
+            "description": "Puntaje obtenido (0-100)",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "evidences": {
+            "type": "object",
+            "description": "Evidencias en formato JSON (URLs, notas, etc.)"
           }
         },
         "required": [
           "module_id",
           "section_id",
-          "completed"
+          "score"
+        ]
+      },
+      "CreateUserHonorDto": {
+        "type": "object",
+        "properties": {
+          "honorId": {
+            "type": "number",
+            "description": "ID del honor/especialidad"
+          },
+          "date": {
+            "type": "string",
+            "description": "Fecha de registro/inicio del honor"
+          },
+          "validate": {
+            "type": "boolean",
+            "description": "Honor validado por instructor"
+          },
+          "certificate": {
+            "type": "object",
+            "description": "URL del certificado (pasar null o string vacío para limpiar)"
+          },
+          "images": {
+            "description": "URLs de imágenes de evidencia",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "document": {
+            "type": "object",
+            "description": "URL del documento adicional"
+          }
+        },
+        "required": [
+          "honorId"
+        ]
+      },
+      "BulkCreateUserHonorsDto": {
+        "type": "object",
+        "properties": {
+          "honors": {
+            "description": "Listado de honores a registrar",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateUserHonorDto"
+            }
+          }
+        },
+        "required": [
+          "honors"
         ]
       },
       "StartHonorDto": {
@@ -7376,6 +7705,30 @@
             "description": "Fecha de completación"
           }
         }
+      },
+      "ActivityInstanceSelectionDto": {
+        "type": "object",
+        "properties": {
+          "instance_type": {
+            "type": "string",
+            "description": "Tipo de instancia del club",
+            "enum": [
+              "adventurers",
+              "pathfinders",
+              "master_guilds"
+            ],
+            "example": "pathfinders"
+          },
+          "instance_id": {
+            "type": "number",
+            "description": "ID de la instancia seleccionada",
+            "example": 10
+          }
+        },
+        "required": [
+          "instance_type",
+          "instance_id"
+        ]
       },
       "CreateActivityDto": {
         "type": "object",
@@ -7418,10 +7771,9 @@
             "description": "Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)",
             "default": 0
           },
-          "activity_type": {
+          "activity_type_id": {
             "type": "number",
-            "description": "Tipo de actividad (0=Regular, 1=Especial, 2=Camporee)",
-            "default": 0
+            "description": "ID del tipo de actividad (catálogo activity_types: 1=Regular, 2=Especial, 3=Camporee)"
           },
           "link_meet": {
             "type": "string",
@@ -7438,17 +7790,24 @@
               "type": "string"
             }
           },
+          "instances": {
+            "description": "Instancias destino de la actividad (permite compartir una actividad entre múltiples instancias del mismo club)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityInstanceSelectionDto"
+            }
+          },
           "club_adv_id": {
             "type": "number",
-            "description": "ID de la instancia de Aventureros"
+            "description": "ID de instancia de Aventureros (requerido cuando club_type_id corresponde a Aventureros)"
           },
           "club_pathf_id": {
             "type": "number",
-            "description": "ID de la instancia de Conquistadores"
+            "description": "ID de instancia de Conquistadores (requerido cuando club_type_id corresponde a Conquistadores)"
           },
           "club_mg_id": {
             "type": "number",
-            "description": "ID de la instancia de Guías Mayores"
+            "description": "ID de instancia de Guías Mayores (requerido cuando club_type_id corresponde a Guías Mayores)"
           }
         },
         "required": [
@@ -7458,9 +7817,7 @@
           "long",
           "activity_place",
           "image",
-          "club_adv_id",
-          "club_pathf_id",
-          "club_mg_id"
+          "activity_type_id"
         ]
       },
       "UpdateActivityDto": {
@@ -7490,7 +7847,7 @@
           "platform": {
             "type": "number"
           },
-          "activity_type": {
+          "activity_type_id": {
             "type": "number"
           },
           "link_meet": {
@@ -7773,6 +8130,31 @@
         },
         "required": [
           "certification_id"
+        ]
+      },
+      "UpdateCertificationProgressDto": {
+        "type": "object",
+        "properties": {
+          "module_id": {
+            "type": "number",
+            "description": "ID del módulo de la certificación",
+            "example": 1
+          },
+          "section_id": {
+            "type": "number",
+            "description": "ID de la sección del módulo",
+            "example": 1
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "Estado de completado de la sección",
+            "example": true
+          }
+        },
+        "required": [
+          "module_id",
+          "section_id",
+          "completed"
         ]
       },
       "UpdateSectionRecordDto": {

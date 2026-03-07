@@ -1,6 +1,8 @@
 import {
   ForbiddenException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, role_category } from '@prisma/client';
@@ -8,6 +10,11 @@ import {
   createPaginatedResult,
   PaginationDto,
 } from '../common/dto/pagination.dto';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListUsersQueryDto } from './dto';
 
@@ -42,7 +49,14 @@ interface AdminUsersListResult<T> {
 
 @Injectable()
 export class AdminUsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AdminUsersService.name);
+  private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   async listUsers(
     actorUserId: string,
@@ -126,7 +140,7 @@ export class AdminUsersService {
       this.prisma.users.count({ where }),
     ]);
 
-    const data = users.map((user) => this.toListItem(user));
+    const data = await Promise.all(users.map((user) => this.toListItem(user)));
     const paginated = createPaginatedResult(data, total, pagination);
 
     return {
@@ -321,14 +335,16 @@ export class AdminUsersService {
       throw new NotFoundException('Usuario no encontrado o fuera de alcance');
     }
 
+    const listItem = await this.toListItem(user);
+
     return {
-      ...this.toListItem(user),
+      ...listItem,
       gender: user.gender,
       birthday: user.birthday,
       blood: user.blood,
       baptism: user.baptism,
       baptism_date: user.baptism_date,
-      user_image: user.user_image,
+      user_image: listItem.user_image,
       modified_at: user.modified_at,
       classes: user.users_classes.map((item) => ({
         user_class_id: item.user_class_id,
@@ -513,7 +529,7 @@ export class AdminUsersService {
     return [...new Set(assignments.map((item) => item.roles.role_name))];
   }
 
-  private toListItem(user: any) {
+  private async toListItem(user: any) {
     const roles = this.extractRoleNames(user.users_roles).sort((a, b) =>
       a.localeCompare(b),
     );
@@ -536,7 +552,7 @@ export class AdminUsersService {
         .filter(Boolean)
         .join(' ')
         .trim(),
-      user_image: user.user_image,
+      user_image: await this.resolvePrivateProfileUrl(user.user_image),
       active: user.active,
       access_app: user.access_app,
       access_panel: user.access_panel,
@@ -563,6 +579,28 @@ export class AdminUsersService {
       post_registration: postRegistration,
       created_at: user.created_at,
     };
+  }
+
+  private async resolvePrivateProfileUrl(
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        value,
+        {
+          expiresInSeconds: AdminUsersService.PRIVATE_ASSET_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for admin user profile. Returning original value.',
+        error,
+      );
+      return value;
+    }
   }
 
   private resolveClubAssignment(assignment: any) {

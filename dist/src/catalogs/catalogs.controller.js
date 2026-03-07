@@ -17,6 +17,7 @@ const openapi = require("@nestjs/swagger");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const catalogs_service_1 = require("./catalogs.service");
+const guards_1 = require("../common/guards");
 let CatalogsController = class CatalogsController {
     catalogsService;
     constructor(catalogsService) {
@@ -24,6 +25,9 @@ let CatalogsController = class CatalogsController {
     }
     async getClubTypes() {
         return this.catalogsService.getClubTypes();
+    }
+    async getActivityTypes() {
+        return this.catalogsService.getActivityTypes();
     }
     async getRelationshipTypes() {
         return this.catalogsService.getRelationshipTypes();
@@ -75,6 +79,18 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], CatalogsController.prototype, "getClubTypes", null);
+__decorate([
+    (0, common_1.Get)('activity-types'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Obtener tipos de actividad',
+        description: 'Lista los tipos de actividad disponibles para registrar actividades',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de tipos de actividad' }),
+    openapi.ApiResponse({ status: 200 }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], CatalogsController.prototype, "getActivityTypes", null);
 __decorate([
     (0, common_1.Get)('relationship-types'),
     (0, swagger_1.ApiOperation)({
@@ -265,6 +281,7 @@ __decorate([
 exports.CatalogsController = CatalogsController = __decorate([
     (0, swagger_1.ApiTags)('catalogs'),
     (0, common_1.Controller)('catalogs'),
+    (0, common_1.UseGuards)(guards_1.OptionalJwtAuthGuard),
     __metadata("design:paramtypes", [catalogs_service_1.CatalogsService])
 ], CatalogsController);
 //# sourceMappingURL=catalogs.controller.js.map

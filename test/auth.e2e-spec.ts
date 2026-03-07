@@ -27,6 +27,8 @@ describe('Auth E2E Tests', () => {
             session: {
               access_token: 'fake-jwt',
               refresh_token: 'fake-refresh',
+              expires_at: 1900000000,
+              token_type: 'bearer',
             },
           },
           error: null,
@@ -116,6 +118,8 @@ describe('Auth E2E Tests', () => {
           expect(res.body.status).toBe('success');
           expect(res.body.data).toHaveProperty('accessToken');
           expect(res.body.data).toHaveProperty('refreshToken');
+          expect(res.body.data).toHaveProperty('expiresAt');
+          expect(res.body.data).toHaveProperty('tokenType', 'bearer');
         });
     });
 
@@ -213,6 +217,47 @@ describe('Auth E2E Tests', () => {
         .expect((res) => {
           expect(res.body.status).toBe('success');
           expect(res.body.data.user_id).toBe('test-user-id');
+        });
+    });
+
+    it('should allow legacy snake_case payload when rollback flag is disabled', async () => {
+      process.env.AUTH_REJECT_SNAKE_CASE = 'false';
+
+      mockSupabaseService.anon.auth.refreshSession.mockResolvedValueOnce({
+        data: {
+          session: {
+            access_token: 'legacy-access-token',
+            refresh_token: 'legacy-refresh-token',
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+            token_type: 'bearer',
+          },
+        },
+        error: null,
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refresh_token: 'legacy-refresh' })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.data.accessToken).toBe('legacy-access-token');
+          expect(res.body.data.refreshToken).toBe('legacy-refresh-token');
+        });
+
+      process.env.AUTH_REJECT_SNAKE_CASE = 'true';
+    });
+  });
+
+  describe('/api/v1/auth/logout (POST)', () => {
+    it('should return 200 even without Authorization header', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/logout')
+        .send({})
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.revocationAttempted).toBe(false);
+          expect(res.body.revocationSucceeded).toBe(false);
         });
     });
   });

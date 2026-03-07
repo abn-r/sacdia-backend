@@ -5,7 +5,7 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
 > Documentacion oficial del proyecto: `/Users/abner/Documents/development/sacdia/docs` (repositorio padre).
 > Este README es una vista operativa del backend y debe mantenerse sincronizado con esa fuente.
 
-## Estado actual (2026-02-21)
+## Estado actual (2026-03-04)
 
 - Endpoints admin para catálogos habilitados bajo `/api/v1/admin/*`.
 - Endpoints públicos de catálogo de salud habilitados:
@@ -25,6 +25,11 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
 - Notificaciones y FCM tokens endurecidos con JWT + roles.
 - Health check extendido con estado de dependencias (`db`, `cache`, `fcm`, `sentry`).
 - Script de verificación de migración FCM disponible (`pnpm run verify:fcm-migration`).
+- Sesiones Auth estabilizadas:
+  - `POST /api/v1/auth/login` retorna `accessToken`, `refreshToken`, `expiresAt`, `tokenType`.
+  - `POST /api/v1/auth/refresh` mantiene `refreshToken` como contrato oficial.
+  - Ventana temporal legacy activa: `refresh_token` permitido del **2026-03-04** al **2026-03-18**.
+  - `POST /api/v1/auth/logout` en modo fail-safe (best effort) para evitar bloqueo con access token expirado.
 
 ## Stack
 
@@ -91,6 +96,7 @@ pnpm run verify:fcm-migration
 # Utilidades
 pnpm run generate:spec
 pnpm run load-test
+pnpm run migrate:storage-urls:r2
 ```
 
 ## Variables de entorno
@@ -106,18 +112,56 @@ pnpm run load-test
 ### Recomendadas para producción
 
 - `REDIS_URL`
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_PRIVATE_KEY`
-- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` (recomendada para FCM)
+- `FIREBASE_SERVICE_ACCOUNT_JSON` (alternativa)
+- `FIREBASE_PROJECT_ID` + `FIREBASE_PRIVATE_KEY` + `FIREBASE_CLIENT_EMAIL` (legacy)
 - `SENTRY_DSN`
 - `ALLOWED_ORIGINS`
-- `AUTH_REJECT_SNAKE_CASE` (default: `true`)
+- `AUTH_REJECT_SNAKE_CASE` (default general: `true`; ventana temporal: `false`)
+
+## Migración de URLs a R2
+
+El script `migrate:storage-urls:r2` normaliza URLs legacy en BD hacia los valores actuales de `R2_PUBLIC_URL_*` y `R2_KEY_PREFIX_*`.
+
+```bash
+# 1) Simulación (sin escribir en BD)
+pnpm run migrate:storage-urls:r2
+
+# 2) Simulación de tablas específicas
+pnpm run migrate:storage-urls:r2 -- --only users,users_honors --limit 200
+
+# 3) Aplicar cambios reales
+pnpm run migrate:storage-urls:r2 -- --apply
+```
 
 Notas:
 - Si `REDIS_URL` falla, el backend usa cache in-memory (no recomendado para prod).
 - Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
 - Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
-- `refresh_token` (snake_case) está retirado por defecto. Para rollback temporal usar `AUTH_REJECT_SNAKE_CASE=false`.
+- Ventana de compatibilidad temporal: **2026-03-04 a 2026-03-18** con `AUTH_REJECT_SNAKE_CASE=false`.
+- Fecha objetivo de retorno a estricto: **2026-03-18** (`AUTH_REJECT_SNAKE_CASE=true`).
+
+### Configuración rápida Redis + FCM
+
+1. Redis
+   - Local: `REDIS_URL=redis://localhost:6379`
+   - Upstash: `REDIS_URL=redis://default:<PASSWORD>@<HOST>:<PORT>`
+
+2. FCM (recomendado)
+   - Crea/descarga el Service Account JSON en Firebase Console.
+   - Convierte a Base64:
+     ```bash
+     base64 -i service-account.json | tr -d '\n'
+     ```
+   - Asigna el resultado a `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`.
+
+3. Verificación
+   - Levanta backend y revisa:
+     - `✅ Redis cache connected successfully`
+     - `✅ Firebase Admin initialized successfully`
+   - Healthcheck:
+     - `GET /api/v1/health`
+     - Esperado: `dependencies.cache.ok=true`, `dependencies.fcm.initialized=true`.
 
 ### Monitoreo Auth post-cutover (14 días)
 
@@ -126,6 +170,8 @@ Eventos estructurados emitidos:
 - `auth_refresh_legacy_allowed`
 - `auth_refresh_success`
 - `auth_refresh_failed`
+- `auth_logout_best_effort`
+- `auth_logout_revoke_failed`
 - `auth_guard_unauthorized`
 - `auth_jwt_revoked_token`
 - `auth_jwt_user_blacklisted`
@@ -135,8 +181,38 @@ Consultas sugeridas (Sentry/Logs):
 - Tasa de legacy rechazado: `event:auth_refresh_legacy_rejected`
 - Éxito de refresh: `event:auth_refresh_success`
 - Fallos de refresh: `event:auth_refresh_failed`
+- Logout best effort (ruta y resultado): `event:auth_logout_best_effort`
+- Fallo al revocar en logout: `event:auth_logout_revoke_failed`
 - 401 en `/api/v1/auth/me`: `event:auth_guard_unauthorized url:/api/v1/auth/me`
 - Revocaciones efectivas: `event:auth_jwt_revoked_token OR event:auth_jwt_user_blacklisted`
+
+### Contrato Auth de sesiones (estado actual)
+
+- `POST /api/v1/auth/login`
+  - Respuesta de tokens:
+  ```json
+  {
+    "accessToken": "eyJ...",
+    "refreshToken": "v1....",
+    "expiresAt": 1900000000,
+    "tokenType": "bearer"
+  }
+  ```
+- `POST /api/v1/auth/refresh`
+  - Contrato oficial: body con `refreshToken`.
+  - Compatibilidad temporal: acepta `refresh_token` solo mientras `AUTH_REJECT_SNAKE_CASE=false`.
+- `POST /api/v1/auth/logout`
+  - No bloquea UX por expiración de access token.
+  - Acepta `Authorization: Bearer ...` opcional y `refreshToken` opcional.
+  - Respuesta incluye:
+  ```json
+  {
+    "success": true,
+    "revocationAttempted": true,
+    "revocationSucceeded": true,
+    "path": "access"
+  }
+  ```
 
 ## API
 
@@ -339,9 +415,16 @@ pnpm run verify:fcm-migration
 - Índice local de documentos: `docs/README.md`
 - Sesión de implementación de salud/geografía de usuario:
   `docs/IMPLEMENTATION-SESSION-2026-02-21-user-medical-and-geography.md`
+- Sesión de estabilización de sesiones/auth:
+  `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
+- Panorama global del backend:
+  `docs/BACKEND-PANORAMA-2026-03-04.md`
 - Nota de migración UUID en contactos de emergencia:
   `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
-- Sesión de implementación de admin/notificaciones: `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
+- Sesión de implementación de admin/notificaciones:
+  `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
+- Histórico de cutover auth del 2026-03-01:
+  `docs/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md`
 - Referencia histórica de implementación previa: `docs/IMPLEMENTATION-SESSION-2026-02-05.md`
 - Referencia de baseline DB: `docs/migrations/2026-02-05-db-push-sync.md`
 

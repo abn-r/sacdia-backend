@@ -8,6 +8,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var OAuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OAuthService = void 0;
@@ -15,13 +18,18 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const supabase_service_1 = require("../common/supabase.service");
 const auth_token_response_util_1 = require("./utils/auth-token-response.util");
-let OAuthService = OAuthService_1 = class OAuthService {
+const file_storage_service_1 = require("../common/services/file-storage.service");
+let OAuthService = class OAuthService {
+    static { OAuthService_1 = this; }
     prisma;
     supabase;
+    fileStorage;
     logger = new common_1.Logger(OAuthService_1.name);
-    constructor(prisma, supabase) {
+    static PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+    constructor(prisma, supabase, fileStorage) {
         this.prisma = prisma;
         this.supabase = supabase;
+        this.fileStorage = fileStorage;
     }
     async initiateGoogleSignIn(redirectUrl) {
         const { data, error } = await this.supabase.admin.auth.signInWithOAuth({
@@ -87,7 +95,7 @@ let OAuthService = OAuthService_1 = class OAuthService {
                 name: dbUser.name,
                 paternal_last_name: dbUser.paternal_last_name,
                 maternal_last_name: dbUser.maternal_last_name,
-                avatar: dbUser.user_image,
+                avatar: await this.resolvePrivateProfilePicture(dbUser.user_image),
                 google_connected: googleConnected,
                 apple_connected: appleConnected,
             },
@@ -165,11 +173,25 @@ let OAuthService = OAuthService_1 = class OAuthService {
             message: 'Provider desconectado exitosamente',
         };
     }
+    async resolvePrivateProfilePicture(value) {
+        if (!value)
+            return null;
+        try {
+            return await this.fileStorage.getSignedDownloadUrl(file_storage_service_1.StorageBucketAlias.USER_PROFILES, value, {
+                expiresInSeconds: OAuthService_1.PRIVATE_ASSET_URL_TTL_SECONDS,
+            });
+        }
+        catch (error) {
+            this.logger.warn('Failed to generate signed URL for OAuth profile picture. Returning original value.', error);
+            return value;
+        }
+    }
 };
 exports.OAuthService = OAuthService;
 exports.OAuthService = OAuthService = OAuthService_1 = __decorate([
     (0, common_1.Injectable)(),
+    __param(2, (0, common_1.Inject)(file_storage_service_1.FILE_STORAGE_SERVICE)),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        supabase_service_1.SupabaseService])
+        supabase_service_1.SupabaseService, Object])
 ], OAuthService);
 //# sourceMappingURL=oauth.service.js.map

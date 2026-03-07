@@ -101,9 +101,9 @@ export declare class InventoryController {
     findAllCategories(): Promise<{
         status: string;
         data: {
-            created_at: Date | null;
             name: string;
             active: boolean;
+            created_at: Date | null;
             modified_at: Date | null;
             icon: number | null;
             inventory_category_id: number;

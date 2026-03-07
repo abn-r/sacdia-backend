@@ -237,7 +237,7 @@ __decorate([
     (0, swagger_1.ApiParam)({ name: 'type', enum: dto_1.ClubInstanceType }),
     (0, swagger_1.ApiParam)({ name: 'instanceId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de miembros' }),
-    openapi.ApiResponse({ status: 200, type: [Object] }),
+    openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('instanceId', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Param)('type')),
     __metadata("design:type", Function),

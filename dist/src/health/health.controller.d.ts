@@ -35,4 +35,5 @@ export declare class HealthController {
     private checkDatabase;
     private checkCache;
     private isFcmConfigured;
+    private hasConfiguredValue;
 }

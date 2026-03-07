@@ -21,12 +21,12 @@ export declare class CamporeesController {
             year_id: number;
         };
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
@@ -49,12 +49,12 @@ export declare class CamporeesController {
             year_id: number;
         };
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
@@ -77,12 +77,12 @@ export declare class CamporeesController {
             year_id: number;
         };
     } & {
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
@@ -94,12 +94,12 @@ export declare class CamporeesController {
         local_camporee_id: number;
     }>;
     remove(camporeeId: number): Promise<{
-        created_at: Date;
-        description: string | null;
         name: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number;
+        description: string | null;
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
@@ -112,11 +112,11 @@ export declare class CamporeesController {
     }>;
     registerMember(camporeeId: number, dto: RegisterMemberDto): Promise<{
         users: {
+            user_id: string;
+            email: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            email: string;
-            user_id: string;
             user_image: string | null;
         };
         insurance: {
@@ -128,25 +128,25 @@ export declare class CamporeesController {
             policy_number: string | null;
         } | null;
     } & {
-        created_at: Date;
         user_id: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number | null;
         club_name: string | null;
-        camporee_type: string;
-        insurance_id: number | null;
         camporee_member_id: number;
         camporee_id: number;
+        camporee_type: string;
         insurance_verified: boolean;
+        insurance_id: number | null;
     }>;
     getMembers(camporeeId: number): Promise<({
         users: {
+            user_id: string;
+            email: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            email: string;
-            user_id: string;
             birthday: Date | null;
             user_image: string | null;
         };
@@ -159,29 +159,29 @@ export declare class CamporeesController {
             policy_number: string | null;
         } | null;
     } & {
-        created_at: Date;
         user_id: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number | null;
         club_name: string | null;
-        camporee_type: string;
-        insurance_id: number | null;
         camporee_member_id: number;
         camporee_id: number;
+        camporee_type: string;
         insurance_verified: boolean;
+        insurance_id: number | null;
     })[]>;
     removeMember(camporeeId: number, userId: string): Promise<{
-        created_at: Date;
         user_id: string;
         active: boolean;
+        created_at: Date;
         modified_at: Date;
         local_field_id: number | null;
         club_name: string | null;
-        camporee_type: string;
-        insurance_id: number | null;
         camporee_member_id: number;
         camporee_id: number;
+        camporee_type: string;
         insurance_verified: boolean;
+        insurance_id: number | null;
     }>;
 }

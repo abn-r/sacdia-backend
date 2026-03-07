@@ -4,19 +4,28 @@ import {
   InternalServerErrorException,
   BadRequestException,
   Logger,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../common/supabase.service';
 import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 import { buildAuthTokenResponse } from './utils/auth-token-response.util';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 @Injectable()
 export class OAuthService {
   private readonly logger = new Logger(OAuthService.name);
+  private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabase: SupabaseService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   /**
@@ -118,7 +127,7 @@ export class OAuthService {
         name: dbUser.name,
         paternal_last_name: dbUser.paternal_last_name,
         maternal_last_name: dbUser.maternal_last_name,
-        avatar: dbUser.user_image,
+        avatar: await this.resolvePrivateProfilePicture(dbUser.user_image),
         google_connected: googleConnected,
         apple_connected: appleConnected,
       },
@@ -227,5 +236,27 @@ export class OAuthService {
       success: true,
       message: 'Provider desconectado exitosamente',
     };
+  }
+
+  private async resolvePrivateProfilePicture(
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        value,
+        {
+          expiresInSeconds: OAuthService.PRIVATE_ASSET_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for OAuth profile picture. Returning original value.',
+        error,
+      );
+      return value;
+    }
   }
 }

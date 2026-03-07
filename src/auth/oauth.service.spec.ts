@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OAuthService } from './oauth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../common/supabase.service';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import {
   BadRequestException,
   InternalServerErrorException,
@@ -46,6 +47,10 @@ describe('OAuthService', () => {
     },
   };
 
+  const mockFileStorageService = {
+    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+  };
+
   beforeEach(async () => {
     mockPrismaService.$transaction.mockImplementation(
       async (callback: (tx: typeof mockTx) => Promise<unknown>) =>
@@ -57,6 +62,7 @@ describe('OAuthService', () => {
         OAuthService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: SupabaseService, useValue: mockSupabaseService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();
 
