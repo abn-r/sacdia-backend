@@ -23,9 +23,11 @@ describe('UsersService', () => {
     },
     users_allergies: {
       updateMany: jest.fn(),
+      findMany: jest.fn(),
     },
     users_diseases: {
       updateMany: jest.fn(),
+      findMany: jest.fn(),
     },
   };
 
@@ -59,6 +61,132 @@ describe('UsersService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('getAllergies', () => {
+    it('should return active allergies as a flat list', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_allergies.findMany.mockResolvedValue([
+        {
+          allergy_id: 2,
+          allergies: {
+            name: 'Polen',
+          },
+        },
+        {
+          allergy_id: 9,
+          allergies: {
+            name: 'Lactosa',
+          },
+        },
+      ]);
+
+      const result = await service.getAllergies('u1');
+
+      expect(mockPrismaService.users_allergies.findMany).toHaveBeenCalledWith({
+        where: {
+          user_id: 'u1',
+          active: true,
+        },
+        select: {
+          allergy_id: true,
+          allergies: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { allergy_id: 'asc' },
+      });
+      expect(result).toEqual({
+        status: 'success',
+        data: [
+          { allergy_id: 2, name: 'Polen' },
+          { allergy_id: 9, name: 'Lactosa' },
+        ],
+      });
+    });
+
+    it('should return an empty list for an existing user without active allergies', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_allergies.findMany.mockResolvedValue([]);
+
+      await expect(service.getAllergies('u1')).resolves.toEqual({
+        status: 'success',
+        data: [],
+      });
+    });
+
+    it('should throw when the user does not exist', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
+
+      await expect(service.getAllergies('missing-user')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('getDiseases', () => {
+    it('should return active diseases as a flat list', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_diseases.findMany.mockResolvedValue([
+        {
+          disease_id: 4,
+          diseases: {
+            name: 'Asma',
+          },
+        },
+        {
+          disease_id: 8,
+          diseases: {
+            name: 'Diabetes',
+          },
+        },
+      ]);
+
+      const result = await service.getDiseases('u1');
+
+      expect(mockPrismaService.users_diseases.findMany).toHaveBeenCalledWith({
+        where: {
+          user_id: 'u1',
+          active: true,
+        },
+        select: {
+          disease_id: true,
+          diseases: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { disease_id: 'asc' },
+      });
+      expect(result).toEqual({
+        status: 'success',
+        data: [
+          { disease_id: 4, name: 'Asma' },
+          { disease_id: 8, name: 'Diabetes' },
+        ],
+      });
+    });
+
+    it('should return an empty list for an existing user without active diseases', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_diseases.findMany.mockResolvedValue([]);
+
+      await expect(service.getDiseases('u1')).resolves.toEqual({
+        status: 'success',
+        data: [],
+      });
+    });
+
+    it('should throw when the user does not exist', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
+
+      await expect(service.getDiseases('missing-user')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
   describe('removeAllergy', () => {

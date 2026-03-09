@@ -243,6 +243,62 @@ export class UsersService {
     };
   }
 
+  async getAllergies(userId: string) {
+    await this.ensureUserExists(userId);
+
+    const data = await this.prisma.users_allergies.findMany({
+      where: {
+        user_id: userId,
+        active: true,
+      },
+      select: {
+        allergy_id: true,
+        allergies: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: { allergy_id: 'asc' },
+    });
+
+    return {
+      status: 'success',
+      data: data.map((row) => ({
+        allergy_id: row.allergy_id,
+        name: row.allergies.name,
+      })),
+    };
+  }
+
+  async getDiseases(userId: string) {
+    await this.ensureUserExists(userId);
+
+    const data = await this.prisma.users_diseases.findMany({
+      where: {
+        user_id: userId,
+        active: true,
+      },
+      select: {
+        disease_id: true,
+        diseases: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: { disease_id: 'asc' },
+    });
+
+    return {
+      status: 'success',
+      data: data.map((row) => ({
+        disease_id: row.disease_id,
+        name: row.diseases.name,
+      })),
+    };
+  }
+
   async updateAllergies(userId: string, dto: UpdateUserAllergiesDto) {
     await this.ensureUserExists(userId);
 
