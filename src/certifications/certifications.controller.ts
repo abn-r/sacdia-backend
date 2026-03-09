@@ -22,11 +22,12 @@ import { CertificationsService } from './certifications.service';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
 import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('certifications')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('certifications')
 export class CertificationsController {
   constructor(private readonly certificationsService: CertificationsService) {}
@@ -93,6 +94,8 @@ export class CertificationsController {
   // ========================================
 
   @Post('users/:userId/certifications/enroll')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribirse en una certificación',
     description:
@@ -125,6 +128,8 @@ export class CertificationsController {
   }
 
   @Get('users/:userId/certifications')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Listar certificaciones del usuario',
     description:
@@ -148,6 +153,8 @@ export class CertificationsController {
   }
 
   @Get('users/:userId/certifications/:certificationId/progress')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Ver progreso detallado de una certificación',
     description:
@@ -186,6 +193,8 @@ export class CertificationsController {
   }
 
   @Patch('users/:userId/certifications/:certificationId/progress')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
     description:
@@ -230,6 +239,8 @@ export class CertificationsController {
   }
 
   @Delete('users/:userId/certifications/:certificationId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Abandonar una certificación',
     description:

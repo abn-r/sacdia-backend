@@ -375,11 +375,22 @@ export class ClubsService {
   }
 
   async assignRole(dto: AssignRoleDto) {
+    if (!dto.instance_type || !dto.instance_id) {
+      throw new BadRequestException(
+        'instance_type and instance_id are required',
+      );
+    }
+
+    const roleId = await this.resolveRoleId(dto);
+    const ecclesiasticalYearId =
+      dto.ecclesiastical_year_id ?? (await this.getActiveEcclesiasticalYearId());
+    const startDate = dto.start_date ?? new Date();
+
     const assignment = {
       user_id: dto.user_id,
-      role_id: dto.role_id,
-      ecclesiastical_year_id: dto.ecclesiastical_year_id,
-      start_date: dto.start_date,
+      role_id: roleId,
+      ecclesiastical_year_id: ecclesiasticalYearId,
+      start_date: startDate,
       end_date: dto.end_date,
       active: true,
       status: 'active',
@@ -410,12 +421,33 @@ export class ClubsService {
     assignmentId: string,
     dto: UpdateRoleAssignmentDto,
   ) {
+    const updateData: Record<string, unknown> = {
+      modified_at: new Date(),
+    };
+
+    if (dto.role_id || dto.role) {
+      updateData.role_id = await this.resolveRoleId(dto);
+    }
+
+    if (dto.ecclesiastical_year_id !== undefined) {
+      updateData.ecclesiastical_year_id = dto.ecclesiastical_year_id;
+    }
+
+    if (dto.start_date !== undefined) {
+      updateData.start_date = dto.start_date;
+    }
+
+    if (dto.end_date !== undefined) {
+      updateData.end_date = dto.end_date;
+    }
+
+    if (dto.status !== undefined) {
+      updateData.status = dto.status;
+    }
+
     return this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
-      data: {
-        ...dto,
-        modified_at: new Date(),
-      },
+      data: updateData,
     });
   }
 
@@ -459,6 +491,58 @@ export class ClubsService {
       default:
         throw new BadRequestException(`Invalid instance type: ${type}`);
     }
+  }
+
+  private async getActiveEcclesiasticalYearId(): Promise<number> {
+    const currentYear = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: new Date() },
+        end_date: { gte: new Date() },
+      },
+      select: { year_id: true },
+    });
+
+    if (!currentYear) {
+      throw new BadRequestException(
+        'No active ecclesiastical year configured',
+      );
+    }
+
+    return currentYear.year_id;
+  }
+
+  private async resolveRoleId(
+    dto: Pick<AssignRoleDto, 'role_id' | 'role'>,
+  ): Promise<string> {
+    if (dto.role_id) {
+      return dto.role_id;
+    }
+
+    if (!dto.role) {
+      throw new BadRequestException('role_id or role is required');
+    }
+
+    const normalizedRoleName = dto.role.trim().toLowerCase();
+    if (!normalizedRoleName) {
+      throw new BadRequestException('role is empty');
+    }
+
+    const role = await this.prisma.roles.findFirst({
+      where: {
+        role_name: normalizedRoleName,
+        role_category: 'CLUB',
+        active: true,
+      },
+      select: { role_id: true },
+    });
+
+    if (!role) {
+      throw new BadRequestException(
+        `Role "${normalizedRoleName}" not found in CLUB category`,
+      );
+    }
+
+    return role.role_id;
   }
 
   private async resolvePrivateProfileUrl(

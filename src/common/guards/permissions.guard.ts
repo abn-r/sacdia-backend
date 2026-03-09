@@ -27,6 +27,12 @@ type ResolvedInstanceScope = {
   instanceId: number;
 };
 
+type ResolvedTerritoryScope = {
+  localFieldId: number;
+  unionId?: number | null;
+  countryId?: number | null;
+};
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -77,9 +83,16 @@ export class PermissionsGuard implements CanActivate {
     switch (resource.type) {
       case 'global':
       case 'user':
+      case 'active_assignment':
         return true;
       case 'club':
         return this.validateClubScope(userId, request, resolved, resource);
+      case 'camporee':
+        return this.validateTerritoryScope(
+          resolved,
+          await this.resolveCamporeeScope(request, resource),
+          'You need an active assignment or global scope for this camporee',
+        );
       case 'activity':
         return this.validateInstanceScope(
           userId,
@@ -230,6 +243,71 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 
+  private validateTerritoryScope(
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: ResolvedTerritoryScope,
+    errorMessage: string,
+  ): boolean {
+    const globalRoleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (globalRoleNames.has('super_admin')) {
+      return true;
+    }
+
+    const globalScope = resolved.authorization.effective.scope.global;
+    const globalLocalFieldId = globalScope.local_field?.id;
+    const globalUnionId = globalScope.union?.id;
+    const globalCountryId = globalScope.country?.id;
+
+    if (
+      typeof globalLocalFieldId === 'number' &&
+      globalLocalFieldId === resourceScope.localFieldId &&
+      (globalRoleNames.has('admin') ||
+        globalRoleNames.has('assistant_admin') ||
+        globalRoleNames.has('coordinator'))
+    ) {
+      return true;
+    }
+
+    if (
+      typeof resourceScope.unionId === 'number' &&
+      typeof globalUnionId === 'number' &&
+      globalUnionId === resourceScope.unionId &&
+      (globalRoleNames.has('admin') || globalRoleNames.has('assistant_admin'))
+    ) {
+      return true;
+    }
+
+    if (
+      typeof resourceScope.countryId === 'number' &&
+      typeof globalCountryId === 'number' &&
+      globalCountryId === resourceScope.countryId &&
+      globalRoleNames.has('admin')
+    ) {
+      return true;
+    }
+
+    const activeAssignmentId =
+      resolved.authorization.active_assignment.assignment_id;
+    const activeGrant = resolved.authorization.grants.club_assignments.find(
+      (assignment) => assignment.assignment_id === activeAssignmentId,
+    );
+    const activeGrantLocalFieldId = activeGrant?.scope.local_field?.id;
+
+    if (
+      typeof activeGrantLocalFieldId === 'number' &&
+      activeGrantLocalFieldId === resourceScope.localFieldId
+    ) {
+      return true;
+    }
+
+    throw new ForbiddenException(errorMessage);
+  }
+
   private isResourceOwner(
     request: any,
     userId: string,
@@ -272,6 +350,43 @@ export class PermissionsGuard implements CanActivate {
       club_pathfinders: activity.club_pathf,
       club_master_guild: activity.club_mg,
     });
+  }
+
+  private async resolveCamporeeScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedTerritoryScope> {
+    const camporeeId = this.getRequiredNumericValue(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'camporeeId'),
+      'Camporee ID not found in request',
+    );
+
+    const camporee = await this.prisma.local_camporees.findUnique({
+      where: { local_camporee_id: camporeeId },
+      select: {
+        local_field_id: true,
+        local_fields: {
+          select: {
+            union_id: true,
+            unions: {
+              select: {
+                country_id: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!camporee) {
+      throw new NotFoundException('Camporee not found');
+    }
+
+    return {
+      localFieldId: camporee.local_field_id,
+      unionId: camporee.local_fields?.union_id ?? null,
+      countryId: camporee.local_fields?.unions?.country_id ?? null,
+    };
   }
 
   private async resolveFinanceScope(

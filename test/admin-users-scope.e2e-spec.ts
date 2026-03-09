@@ -6,6 +6,10 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { PermissionsGuard } from '../src/common/guards';
+import {
+  createTestJwtService,
+} from './helpers/rbac-test-helpers';
 
 describe('Admin Users Scope E2E', () => {
   let app: INestApplication;
@@ -15,6 +19,9 @@ describe('Admin Users Scope E2E', () => {
   const makeToken = (sub: string, email: string) =>
     jwtService.sign({ sub, email });
   const mockThrottlerGuard = {
+    canActivate: jest.fn().mockReturnValue(true),
+  };
+  const mockPermissionsGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };
 
@@ -27,9 +34,7 @@ describe('Admin Users Scope E2E', () => {
     process.env.SUPABASE_JWT_SECRET =
       process.env.SUPABASE_JWT_SECRET || 'test-secret';
 
-    jwtService = new JwtService({
-      secret: process.env.SUPABASE_JWT_SECRET,
-    });
+    jwtService = createTestJwtService();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -38,6 +43,8 @@ describe('Admin Users Scope E2E', () => {
       .useValue(mockThrottlerGuard)
       .overrideGuard(ThrottlerGuard)
       .useValue(mockThrottlerGuard)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();

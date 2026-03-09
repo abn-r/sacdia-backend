@@ -4,7 +4,9 @@ export const AUTHORIZATION_RESOURCE_KEY = 'authorization_resource';
 
 export type AuthorizationResourceType =
   | 'global'
+  | 'active_assignment'
   | 'club'
+  | 'camporee'
   | 'activity'
   | 'finance'
   | 'inventory_instance'

@@ -1,29 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
-import { ClubRolesGuard } from '../src/common/guards/club-roles.guard';
+import { PermissionsGuard } from '../src/common/guards';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import {
+  buildAuthorizationSnapshot,
+  createBearerToken,
+  createTestJwtService,
+} from './helpers/rbac-test-helpers';
 
 describe('Camporees E2E Tests', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-
-  const mockJwtAuthGuard = {
-    canActivate: jest.fn((context) => {
-      const request = context.switchToHttp().getRequest();
-      // Mock the user in the request object
-      request.user = { sub: TEST_USER_ID, email: 'test@example.com' };
-      return true;
-    }),
-  };
-
-  const mockClubRolesGuard = {
-    canActivate: jest.fn().mockReturnValue(true),
-  };
+  let jwtService: JwtService;
 
   const mockThrottlerGuard = {
     canActivate: jest.fn().mockReturnValue(true),
@@ -36,6 +29,31 @@ describe('Camporees E2E Tests', () => {
   const TEST_LOCAL_FIELD_ID = 1;
   const TEST_ECCLESIASTICAL_YEAR_ID = 1;
   const TEST_INSURANCE_ID = 1;
+  let currentAuthorization = buildAuthorizationSnapshot({
+    activePermissions: [
+      'activities:read',
+      'activities:create',
+      'activities:update',
+      'activities:delete',
+      'attendance:read',
+      'attendance:manage',
+    ],
+    assignmentId: 'assignment-1',
+    clubId: 1,
+    instanceType: 'pathfinders',
+    instanceId: 1,
+    localFieldId: TEST_LOCAL_FIELD_ID,
+    unionId: 1,
+    countryId: 1,
+  });
+
+  const mockPermissionsGuard = {
+    canActivate: jest.fn((context) => {
+      const req = context.switchToHttp().getRequest();
+      req.authorization = currentAuthorization;
+      return true;
+    }),
+  };
 
   // Mock test data
   const mockEcclesiasticalYear = {
@@ -119,15 +137,15 @@ describe('Camporees E2E Tests', () => {
   };
 
   beforeAll(async () => {
+    jwtService = createTestJwtService();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(APP_GUARD)
       .useValue(mockThrottlerGuard)
-      .overrideGuard(JwtAuthGuard)
-      .useValue(mockJwtAuthGuard)
-      .overrideGuard(ClubRolesGuard)
-      .useValue(mockClubRolesGuard)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -146,16 +164,44 @@ describe('Camporees E2E Tests', () => {
 
   afterEach(async () => {
     jest.clearAllMocks();
-    // Restore mock implementations
-    mockJwtAuthGuard.canActivate.mockImplementation((context) => {
-      const request = context.switchToHttp().getRequest();
-      request.user = { sub: TEST_USER_ID, email: 'test@example.com' };
+    currentAuthorization = buildAuthorizationSnapshot({
+      activePermissions: [
+        'activities:read',
+        'activities:create',
+        'activities:update',
+        'activities:delete',
+        'attendance:read',
+        'attendance:manage',
+      ],
+      assignmentId: 'assignment-1',
+      clubId: 1,
+      instanceType: 'pathfinders',
+      instanceId: 1,
+      localFieldId: TEST_LOCAL_FIELD_ID,
+      unionId: 1,
+      countryId: 1,
+    });
+    mockPermissionsGuard.canActivate.mockImplementation((context) => {
+      const req = context.switchToHttp().getRequest();
+      req.authorization = currentAuthorization;
       return true;
     });
-    mockClubRolesGuard.canActivate.mockReturnValue(true);
     // Add small delay to avoid rate limiting (throttler is set to 3 requests per second)
     await new Promise((resolve) => setTimeout(resolve, 400));
   });
+
+  const authHeaders = (userId = TEST_USER_ID, email = 'test@example.com') => ({
+    Authorization: `Bearer ${createBearerToken(jwtService, userId, email)}`,
+  });
+
+  const getAsUser = (url: string) =>
+    request(app.getHttpServer()).get(url).set(authHeaders());
+  const postAsUser = (url: string) =>
+    request(app.getHttpServer()).post(url).set(authHeaders());
+  const patchAsUser = (url: string) =>
+    request(app.getHttpServer()).patch(url).set(authHeaders());
+  const deleteAsUser = (url: string) =>
+    request(app.getHttpServer()).delete(url).set(authHeaders());
 
   // ========================================
   // POST /camporees - Create camporee
@@ -185,8 +231,7 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.local_camporees, 'create')
         .mockResolvedValue(mockCamporee as any);
 
-      const response = await request(app.getHttpServer())
-        .post('/api/v1/camporees')
+      const response = await postAsUser('/api/v1/camporees')
         .send(createCamporeeDto)
         .expect(201);
 
@@ -197,26 +242,16 @@ describe('Camporees E2E Tests', () => {
     });
 
     it('should reject without authentication', async () => {
-      mockJwtAuthGuard.canActivate.mockImplementationOnce(() => false);
-
       await request(app.getHttpServer())
         .post('/api/v1/camporees')
         .send(createCamporeeDto)
-        .expect(403);
-
-      // Restore mock
-      mockJwtAuthGuard.canActivate.mockImplementation((context) => {
-        const request = context.switchToHttp().getRequest();
-        request.user = { sub: TEST_USER_ID, email: 'test@example.com' };
-        return true;
-      });
+        .expect(401);
     });
 
-    it('should reject without proper role (director/deputy director)', async () => {
-      mockClubRolesGuard.canActivate.mockReturnValueOnce(false);
+    it('should reject without required permissions', async () => {
+      mockPermissionsGuard.canActivate.mockReturnValueOnce(false);
 
-      await request(app.getHttpServer())
-        .post('/api/v1/camporees')
+      await postAsUser('/api/v1/camporees')
         .send(createCamporeeDto)
         .expect(403);
     });
@@ -226,8 +261,7 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.ecclesiastical_years, 'findFirst')
         .mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .post('/api/v1/camporees')
+      await postAsUser('/api/v1/camporees')
         .send(createCamporeeDto)
         .expect(400);
     });
@@ -238,15 +272,13 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue(mockEcclesiasticalYear);
       jest.spyOn(prisma.local_fields, 'findUnique').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .post('/api/v1/camporees')
+      await postAsUser('/api/v1/camporees')
         .send(createCamporeeDto)
         .expect(400);
     });
 
     it('should reject with invalid data (missing required fields)', async () => {
-      await request(app.getHttpServer())
-        .post('/api/v1/camporees')
+      await postAsUser('/api/v1/camporees')
         .send({
           name: 'Test Camporee',
           // Missing required fields
@@ -270,8 +302,7 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue(mockCamporees as any);
       jest.spyOn(prisma.local_camporees, 'count').mockResolvedValue(2);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/camporees')
+      const response = await getAsUser('/api/v1/camporees')
         .expect(200);
 
       expect(response.body).toHaveProperty('data');
@@ -289,8 +320,7 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue(activeCamporees as any);
       jest.spyOn(prisma.local_camporees, 'count').mockResolvedValue(1);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/camporees?active=true')
+      const response = await getAsUser('/api/v1/camporees?active=true')
         .expect(200);
 
       expect(response.body.data).toBeInstanceOf(Array);
@@ -306,8 +336,7 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue([inactiveCamporee] as any);
       jest.spyOn(prisma.local_camporees, 'count').mockResolvedValue(1);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/camporees?active=false')
+      const response = await getAsUser('/api/v1/camporees?active=false')
         .expect(200);
 
       expect(response.body.data).toBeInstanceOf(Array);
@@ -320,8 +349,7 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue([mockCamporee] as any);
       jest.spyOn(prisma.local_camporees, 'count').mockResolvedValue(10);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/camporees?page=2&limit=5')
+      const response = await getAsUser('/api/v1/camporees?page=2&limit=5')
         .expect(200);
 
       expect(response.body).toHaveProperty('meta');
@@ -333,8 +361,7 @@ describe('Camporees E2E Tests', () => {
       jest.spyOn(prisma.local_camporees, 'findMany').mockResolvedValue([]);
       jest.spyOn(prisma.local_camporees, 'count').mockResolvedValue(0);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/camporees')
+      const response = await getAsUser('/api/v1/camporees')
         .expect(200);
 
       expect(response.body.data).toBeInstanceOf(Array);
@@ -352,8 +379,7 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.local_camporees, 'findUnique')
         .mockResolvedValue(mockCamporee as any);
 
-      const response = await request(app.getHttpServer())
-        .get(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
+      const response = await getAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
         .expect(200);
 
       expect(response.body).toHaveProperty(
@@ -368,8 +394,7 @@ describe('Camporees E2E Tests', () => {
     it('should return 404 if camporee not found', async () => {
       jest.spyOn(prisma.local_camporees, 'findUnique').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .get('/api/v1/camporees/9999')
+      await getAsUser('/api/v1/camporees/9999')
         .expect(404);
     });
 
@@ -389,8 +414,7 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.local_camporees, 'findUnique')
         .mockResolvedValue(camporeeWithMembers as any);
 
-      const response = await request(app.getHttpServer())
-        .get(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
+      const response = await getAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
         .expect(200);
 
       expect(response.body.attending_members_camporees).toBeInstanceOf(Array);
@@ -417,8 +441,7 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.local_camporees, 'update')
         .mockResolvedValue(updatedCamporee as any);
 
-      const response = await request(app.getHttpServer())
-        .patch(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
+      const response = await patchAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
         .send(updateDto)
         .expect(200);
 
@@ -429,8 +452,7 @@ describe('Camporees E2E Tests', () => {
     it('should return 404 if camporee not found', async () => {
       jest.spyOn(prisma.local_camporees, 'findUnique').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .patch('/api/v1/camporees/9999')
+      await patchAsUser('/api/v1/camporees/9999')
         .send(updateDto)
         .expect(404);
     });
@@ -446,19 +468,17 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.local_camporees, 'update')
         .mockResolvedValue(updatedCamporee as any);
 
-      const response = await request(app.getHttpServer())
-        .patch(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
+      const response = await patchAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
         .send(partialUpdate)
         .expect(200);
 
       expect(response.body.name).toBe(partialUpdate.name);
     });
 
-    it('should reject without proper role', async () => {
-      mockClubRolesGuard.canActivate.mockReturnValueOnce(false);
+    it('should reject without required permissions', async () => {
+      mockPermissionsGuard.canActivate.mockReturnValueOnce(false);
 
-      await request(app.getHttpServer())
-        .patch(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
+      await patchAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
         .send(updateDto)
         .expect(403);
     });
@@ -478,8 +498,7 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.local_camporees, 'update')
         .mockResolvedValue(deactivatedCamporee as any);
 
-      const response = await request(app.getHttpServer())
-        .delete(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
+      const response = await deleteAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
         .expect(200);
 
       expect(response.body.active).toBe(false);
@@ -488,16 +507,14 @@ describe('Camporees E2E Tests', () => {
     it('should return 404 if camporee not found', async () => {
       jest.spyOn(prisma.local_camporees, 'findUnique').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .delete('/api/v1/camporees/9999')
+      await deleteAsUser('/api/v1/camporees/9999')
         .expect(404);
     });
 
-    it('should require director role', async () => {
-      mockClubRolesGuard.canActivate.mockReturnValueOnce(false);
+    it('should require the delete permission', async () => {
+      mockPermissionsGuard.canActivate.mockReturnValueOnce(false);
 
-      await request(app.getHttpServer())
-        .delete(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
+      await deleteAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}`)
         .expect(403);
     });
   });
@@ -534,8 +551,9 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      const response = await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      const response = await postAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/register`,
+      )
         .send(registerDto)
         .expect(201);
 
@@ -580,8 +598,9 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      const response = await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      const response = await postAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/register`,
+      )
         .send(registerWithoutInsurance)
         .expect(201);
 
@@ -611,8 +630,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -642,8 +660,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -670,8 +687,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -687,8 +703,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post('/api/v1/camporees/9999/register')
+      await postAsUser('/api/v1/camporees/9999/register')
         .send(registerDto)
         .expect(404);
     });
@@ -706,8 +721,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -726,8 +740,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -749,8 +762,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -777,8 +789,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -803,8 +814,7 @@ describe('Camporees E2E Tests', () => {
           });
         });
 
-      await request(app.getHttpServer())
-        .post(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
+      await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
     });
@@ -831,8 +841,9 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.camporee_members, 'findMany')
         .mockResolvedValue(mockMembers as any);
 
-      const response = await request(app.getHttpServer())
-        .get(`/api/v1/camporees/${TEST_CAMPOREE_ID}/members`)
+      const response = await getAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
+      )
         .expect(200);
 
       expect(response.body).toBeInstanceOf(Array);
@@ -847,8 +858,9 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue(mockCamporee as any);
       jest.spyOn(prisma.camporee_members, 'findMany').mockResolvedValue([]);
 
-      const response = await request(app.getHttpServer())
-        .get(`/api/v1/camporees/${TEST_CAMPOREE_ID}/members`)
+      const response = await getAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
+      )
         .expect(200);
 
       expect(response.body).toBeInstanceOf(Array);
@@ -858,8 +870,7 @@ describe('Camporees E2E Tests', () => {
     it('should return 404 if camporee not found', async () => {
       jest.spyOn(prisma.local_camporees, 'findUnique').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .get('/api/v1/camporees/9999/members')
+      await getAsUser('/api/v1/camporees/9999/members')
         .expect(404);
     });
 
@@ -878,8 +889,9 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.camporee_members, 'findMany')
         .mockResolvedValue([activeMember] as any);
 
-      const response = await request(app.getHttpServer())
-        .get(`/api/v1/camporees/${TEST_CAMPOREE_ID}/members`)
+      const response = await getAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
+      )
         .expect(200);
 
       expect(response.body.length).toBe(1);
@@ -894,8 +906,9 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.camporee_members, 'findMany')
         .mockResolvedValue([mockCamporeeMember] as any);
 
-      const response = await request(app.getHttpServer())
-        .get(`/api/v1/camporees/${TEST_CAMPOREE_ID}/members`)
+      const response = await getAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
+      )
         .expect(200);
 
       expect(response.body[0].users).toHaveProperty('name');
@@ -922,8 +935,9 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.camporee_members, 'update')
         .mockResolvedValue(deactivatedMember as any);
 
-      const response = await request(app.getHttpServer())
-        .delete(`/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID}`)
+      const response = await deleteAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID}`,
+      )
         .expect(200);
 
       expect(response.body.active).toBe(false);
@@ -932,8 +946,7 @@ describe('Camporees E2E Tests', () => {
     it('should return 404 if camporee not found', async () => {
       jest.spyOn(prisma.local_camporees, 'findUnique').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .delete(`/api/v1/camporees/9999/members/${TEST_USER_ID}`)
+      await deleteAsUser(`/api/v1/camporees/9999/members/${TEST_USER_ID}`)
         .expect(404);
     });
 
@@ -943,18 +956,18 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue(mockCamporee as any);
       jest.spyOn(prisma.camporee_members, 'findFirst').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .delete(
-          `/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID_2}`,
-        )
+      await deleteAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID_2}`,
+      )
         .expect(404);
     });
 
-    it('should require director or deputy director role', async () => {
-      mockClubRolesGuard.canActivate.mockReturnValueOnce(false);
+    it('should require the attendance manage permission', async () => {
+      mockPermissionsGuard.canActivate.mockReturnValueOnce(false);
 
-      await request(app.getHttpServer())
-        .delete(`/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID}`)
+      await deleteAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID}`,
+      )
         .expect(403);
     });
 
@@ -966,8 +979,9 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue(mockCamporee as any);
       jest.spyOn(prisma.camporee_members, 'findFirst').mockResolvedValue(null);
 
-      await request(app.getHttpServer())
-        .delete(`/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID}`)
+      await deleteAsUser(
+        `/api/v1/camporees/${TEST_CAMPOREE_ID}/members/${TEST_USER_ID}`,
+      )
         .expect(404);
     });
   });

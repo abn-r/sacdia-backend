@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -28,7 +29,7 @@ import {
   UpdateRoleAssignmentDto,
   ClubInstanceType,
 } from './dto';
-import { ClubRoles, AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { AuthorizationResource, ClubRoles, RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, ClubRolesGuard, PermissionsGuard } from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
@@ -244,8 +245,6 @@ export class ClubsController {
   }
 
   @Post(':clubId/instances/:type/:instanceId/roles')
-  @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy_director', 'secretary')
   @RequirePermissions('club_roles:assign')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
@@ -258,8 +257,28 @@ export class ClubsController {
   @ApiParam({ name: 'instanceId', type: Number })
   @ApiResponse({ status: 201, description: 'Rol asignado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  async assignRole(@Body() dto: AssignRoleDto) {
-    return this.clubsService.assignRole(dto);
+  async assignRole(
+    @Param('type') type: ClubInstanceType,
+    @Param('instanceId', ParseIntPipe) instanceId: number,
+    @Body() dto: AssignRoleDto,
+  ) {
+    if (dto.instance_type && dto.instance_type !== type) {
+      throw new BadRequestException(
+        'instance_type in body must match route type',
+      );
+    }
+
+    if (dto.instance_id && dto.instance_id !== instanceId) {
+      throw new BadRequestException(
+        'instance_id in body must match route instanceId',
+      );
+    }
+
+    return this.clubsService.assignRole({
+      ...dto,
+      instance_type: type,
+      instance_id: instanceId,
+    });
   }
 }
 

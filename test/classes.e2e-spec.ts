@@ -1,24 +1,32 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../src/common/guards';
+import {
+  createBearerToken,
+  createTestJwtService,
+} from './helpers/rbac-test-helpers';
 
 describe('Classes E2E Tests', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let jwtService: JwtService;
 
-  const mockJwtAuthGuard = {
+  const mockPermissionsGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };
 
   beforeAll(async () => {
+    jwtService = createTestJwtService();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideGuard(JwtAuthGuard)
-      .useValue(mockJwtAuthGuard)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -33,6 +41,14 @@ describe('Classes E2E Tests', () => {
 
   afterAll(async () => {
     await app.close();
+  });
+
+  const authHeaders = (userId: string) => ({
+    Authorization: `Bearer ${createBearerToken(
+      jwtService,
+      userId,
+      'classes@test.com',
+    )}`,
   });
 
   describe('/api/v1/classes (GET)', () => {
@@ -66,6 +82,7 @@ describe('Classes E2E Tests', () => {
       return (
         request(app.getHttpServer())
           .post(`/api/v1/users/${userId}/classes/enroll`)
+          .set(authHeaders(userId))
           // The DTO likely expects class_id and ecclesiastical_year_id
           // Let's check DTO later if this fails, but guessing standard fields
           .send({ class_id: 1, ecclesiastical_year_id: 2025 })

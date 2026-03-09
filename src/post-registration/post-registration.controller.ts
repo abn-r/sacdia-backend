@@ -16,11 +16,12 @@ import {
 } from '@nestjs/swagger';
 import { PostRegistrationService } from './post-registration.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('post-registration')
 @Controller('users/:userId/post-registration')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class PostRegistrationController {
   constructor(
@@ -28,6 +29,8 @@ export class PostRegistrationController {
   ) {}
 
   @Get('status')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Obtener estado del post-registro' })
   @ApiResponse({ status: 200, description: 'Estado actual' })
   async getStatus(@Param('userId') userId: string) {
@@ -35,6 +38,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-1/complete')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 1: Foto de perfil',
@@ -50,6 +55,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-2/complete')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 2: Información personal',
@@ -66,6 +73,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-3/complete')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 3: Selección de club',

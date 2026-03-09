@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +21,10 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import type {
+  AuthorizationSnapshot,
+  GlobalAuthorizationGrant,
+} from '../common/services/authorization-context.service';
 
 @Injectable()
 export class CamporeesService {
@@ -44,12 +49,15 @@ export class CamporeesService {
   async findAll(
     filters?: { active?: boolean },
     pagination?: PaginationDto,
+    authorization?: AuthorizationSnapshot,
   ): Promise<PaginatedResult<any>> {
     const where: any = {};
 
     if (filters?.active !== undefined) {
       where.active = filters.active;
     }
+
+    this.applyCamporeeScope(where, authorization);
 
     const [data, total] = await Promise.all([
       this.prisma.local_camporees.findMany({
@@ -129,7 +137,13 @@ export class CamporeesService {
    * @param dto - Create camporee DTO
    * @param createdBy - User ID creating the camporee (not used in schema but kept for future use)
    */
-  async create(dto: CreateCamporeeDto, createdBy: string) {
+  async create(
+    dto: CreateCamporeeDto,
+    createdBy: string,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    await this.assertCanManageLocalField(dto.local_field_id, authorization);
+
     // Get the active ecclesiastical year
     const activeYear = await this.prisma.ecclesiastical_years.findFirst({
       where: { active: true },
@@ -523,5 +537,108 @@ export class CamporeesService {
       );
       return value;
     }
+  }
+
+  private applyCamporeeScope(
+    where: Record<string, unknown>,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    const scope = this.resolveCamporeeAccessScope(authorization);
+    if (!scope) {
+      return;
+    }
+
+    if (scope.type === 'local_field') {
+      where.local_field_id = scope.id;
+      return;
+    }
+
+    where.local_fields = {
+      union_id: scope.id,
+    };
+  }
+
+  private async assertCanManageLocalField(
+    localFieldId: number,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    const scope = this.resolveCamporeeAccessScope(authorization);
+    if (!scope) {
+      return;
+    }
+
+    if (scope.type === 'local_field' && scope.id === localFieldId) {
+      return;
+    }
+
+    if (scope.type === 'union') {
+      const localField = await this.prisma.local_fields.findUnique({
+        where: { local_field_id: localFieldId },
+        select: { union_id: true },
+      });
+
+      if (localField?.union_id === scope.id) {
+        return;
+      }
+
+      throw new ForbiddenException(
+        'You do not have access to manage camporees for this local field',
+      );
+    }
+
+    throw new ForbiddenException(
+      'You do not have access to manage camporees for this local field',
+    );
+  }
+
+  private resolveCamporeeAccessScope(authorization?: AuthorizationSnapshot):
+    | { type: 'local_field'; id: number }
+    | { type: 'union'; id: number }
+    | null {
+    if (!authorization) {
+      return null;
+    }
+
+    const globalRoles = authorization.grants.global_roles;
+    if (this.hasGlobalRole(globalRoles, ['super_admin'])) {
+      return null;
+    }
+
+    const globalScope = authorization.effective.scope.global;
+    const globalLocalFieldId = globalScope.local_field?.id;
+    if (
+      typeof globalLocalFieldId === 'number' &&
+      this.hasGlobalRole(globalRoles, ['admin', 'assistant_admin', 'coordinator'])
+    ) {
+      return { type: 'local_field', id: globalLocalFieldId };
+    }
+
+    const globalUnionId = globalScope.union?.id;
+    if (
+      typeof globalUnionId === 'number' &&
+      this.hasGlobalRole(globalRoles, ['admin', 'assistant_admin'])
+    ) {
+      return { type: 'union', id: globalUnionId };
+    }
+
+    const activeAssignmentId = authorization.active_assignment.assignment_id;
+    const activeGrant = authorization.grants.club_assignments.find(
+      (assignment) => assignment.assignment_id === activeAssignmentId,
+    );
+    const activeLocalFieldId = activeGrant?.scope.local_field?.id;
+
+    if (typeof activeLocalFieldId === 'number') {
+      return { type: 'local_field', id: activeLocalFieldId };
+    }
+
+    return null;
+  }
+
+  private hasGlobalRole(
+    grants: GlobalAuthorizationGrant[],
+    roleNames: string[],
+  ) {
+    const normalized = new Set(roleNames.map((roleName) => roleName.toLowerCase()));
+    return grants.some((grant) => normalized.has(grant.role_name.toLowerCase()));
   }
 }

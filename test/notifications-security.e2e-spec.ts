@@ -5,11 +5,11 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { FcmTokensService } from '../src/notifications/fcm-tokens.service';
-import { PrismaService } from '../src/prisma/prisma.service';
+import { PermissionsGuard } from '../src/common/guards';
+import { createTestJwtService } from './helpers/rbac-test-helpers';
 
 describe('Notifications Security E2E', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
   let jwtService: JwtService;
 
   const mockNotificationsService = {
@@ -34,6 +34,9 @@ describe('Notifications Security E2E', () => {
 
   const makeToken = (sub: string, email: string) =>
     jwtService.sign({ sub, email });
+  const mockPermissionsGuard = {
+    canActivate: jest.fn().mockReturnValue(true),
+  };
 
   beforeAll(async () => {
     delete process.env.REDIS_URL;
@@ -44,9 +47,7 @@ describe('Notifications Security E2E', () => {
     process.env.SUPABASE_JWT_SECRET =
       process.env.SUPABASE_JWT_SECRET || 'test-secret';
 
-    jwtService = new JwtService({
-      secret: process.env.SUPABASE_JWT_SECRET,
-    });
+    jwtService = createTestJwtService();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -55,12 +56,13 @@ describe('Notifications Security E2E', () => {
       .useValue(mockNotificationsService)
       .overrideProvider(FcmTokensService)
       .useValue(mockFcmTokensService)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api/v1');
 
-    prisma = app.get(PrismaService);
     await app.init();
   });
 
@@ -70,6 +72,7 @@ describe('Notifications Security E2E', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    mockPermissionsGuard.canActivate.mockReturnValue(true);
   });
 
   it('should return 401 on protected notifications endpoint without token', async () => {
@@ -110,12 +113,7 @@ describe('Notifications Security E2E', () => {
 
   it('should return 403 for non-admin user on broadcast', async () => {
     const token = makeToken('user-2', 'user2@test.com');
-
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      {
-        roles: { role_name: 'user', active: true },
-      } as any,
-    ]);
+    mockPermissionsGuard.canActivate.mockReturnValueOnce(false);
 
     await request(app.getHttpServer())
       .post('/api/v1/notifications/broadcast')
@@ -126,12 +124,6 @@ describe('Notifications Security E2E', () => {
 
   it('should allow admin user on broadcast and club notifications', async () => {
     const token = makeToken('admin-1', 'admin@test.com');
-
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      {
-        roles: { role_name: 'admin', active: true },
-      } as any,
-    ]);
 
     await request(app.getHttpServer())
       .post('/api/v1/notifications/broadcast')
