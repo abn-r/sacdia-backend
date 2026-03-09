@@ -33,6 +33,34 @@ describe('Permissions metadata', () => {
     ).toEqual({ type: 'user', ownerParam: 'userId' });
   });
 
+  it('marks user health read routes as owner-aware detail reads', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.getAllergies,
+      ),
+    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UsersController.prototype.getAllergies,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.getDiseases,
+      ),
+    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UsersController.prototype.getDiseases,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+  });
+
   it('marks inventory creation as instance-scoped inventory permission', () => {
     expect(
       Reflect.getMetadata(PERMISSIONS_KEY, InventoryController.prototype.create),

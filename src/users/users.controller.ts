@@ -30,7 +30,10 @@ import {
   UpdateUserAllergiesDto,
   UpdateUserDiseasesDto,
 } from './dto/update-user-medical.dto';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('users')
@@ -48,6 +51,26 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async findOne(@Param('userId') userId: string) {
     return this.usersService.findOne(userId);
+  }
+
+  @Get(':userId/allergies')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
+  @ApiResponse({ status: 200, description: 'Alergias obtenidas' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  async getAllergies(@Param('userId') userId: string) {
+    return this.usersService.getAllergies(userId);
+  }
+
+  @Get(':userId/diseases')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
+  @ApiResponse({ status: 200, description: 'Enfermedades obtenidas' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  async getDiseases(@Param('userId') userId: string) {
+    return this.usersService.getDiseases(userId);
   }
 
   @Patch(':userId')
@@ -108,7 +131,10 @@ export class UsersController {
       'Desactiva (active=false) una alergia específica del usuario en users_allergies',
   })
   @ApiResponse({ status: 200, description: 'Alergia eliminada' })
-  @ApiResponse({ status: 404, description: 'Alergia no encontrada en el usuario' })
+  @ApiResponse({
+    status: 404,
+    description: 'Alergia no encontrada en el usuario',
+  })
   async removeAllergy(
     @Param('userId') userId: string,
     @Param('allergyId', ParseIntPipe) allergyId: number,
