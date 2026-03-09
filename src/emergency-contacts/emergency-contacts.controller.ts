@@ -18,11 +18,12 @@ import {
 import { EmergencyContactsService } from './emergency-contacts.service';
 import { CreateEmergencyContactDto } from './dto/create-emergency-contact.dto';
 import { UpdateEmergencyContactDto } from './dto/update-emergency-contact.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('emergency-contacts')
 @Controller('users/:userId/emergency-contacts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class EmergencyContactsController {
   constructor(
@@ -30,6 +31,8 @@ export class EmergencyContactsController {
   ) {}
 
   @Post()
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Crear contacto de emergencia (máximo 5)' })
   @ApiResponse({ status: 201, description: 'Contacto creado' })
   @ApiResponse({ status: 400, description: 'Máximo de contactos alcanzado' })
@@ -41,6 +44,8 @@ export class EmergencyContactsController {
   }
 
   @Get()
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Listar contactos de emergencia del usuario' })
   @ApiResponse({ status: 200, description: 'Lista de contactos' })
   async findAll(@Param('userId') userId: string) {
@@ -48,6 +53,8 @@ export class EmergencyContactsController {
   }
 
   @Get(':contactId')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Obtener un contacto específico' })
   @ApiResponse({ status: 200, description: 'Contacto encontrado' })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
@@ -59,6 +66,8 @@ export class EmergencyContactsController {
   }
 
   @Patch(':contactId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Actualizar contacto de emergencia' })
   @ApiResponse({ status: 200, description: 'Contacto actualizado' })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
@@ -71,6 +80,8 @@ export class EmergencyContactsController {
   }
 
   @Delete(':contactId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Eliminar contacto de emergencia (soft delete)' })
   @ApiResponse({ status: 200, description: 'Contacto eliminado' })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })

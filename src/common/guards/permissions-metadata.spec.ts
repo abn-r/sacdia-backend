@@ -3,11 +3,14 @@ import { AdminGeographyController } from '../../admin/admin-geography.controller
 import { AdminReferenceController } from '../../admin/admin-reference.controller';
 import { AUTHORIZATION_RESOURCE_KEY } from '../decorators/authorization-resource.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { CLUB_ROLES_KEY } from '../guards/club-roles.guard';
 import { AdminUsersController } from '../../admin/admin-users.controller';
-import { ClubRolesController } from '../../clubs/clubs.controller';
+import { ClubsController, ClubRolesController } from '../../clubs/clubs.controller';
+import { CamporeesController } from '../../camporees/camporees.controller';
 import { FinancesController } from '../../finances/finances.controller';
 import { InventoryController } from '../../inventory/inventory.controller';
 import { NotificationsController } from '../../notifications/notifications.controller';
+import { PostRegistrationController } from '../../post-registration/post-registration.controller';
 import { RbacController } from '../../rbac/rbac.controller';
 import { UsersController } from '../../users/users.controller';
 
@@ -62,6 +65,15 @@ describe('Permissions metadata', () => {
     ).toEqual({ type: 'club_assignment', idParam: 'assignmentId' });
   });
 
+  it('keeps club role assignment creation free from legacy club role metadata', () => {
+    expect(
+      Reflect.getMetadata(CLUB_ROLES_KEY, ClubRolesController.prototype.updateAssignment),
+    ).toBeUndefined();
+    expect(
+      Reflect.getMetadata(CLUB_ROLES_KEY, ClubsController.prototype.assignRole),
+    ).toBeUndefined();
+  });
+
   it('marks geography admin reads with explicit country permissions', () => {
     expect(
       Reflect.getMetadata(
@@ -98,6 +110,36 @@ describe('Permissions metadata', () => {
     ).toEqual({ permissions: ['notifications:send'], mode: 'all' });
   });
 
+  it('marks notification variants with explicit broadcast and club permissions', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        NotificationsController.prototype.broadcast,
+      ),
+    ).toEqual({ permissions: ['notifications:broadcast'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        NotificationsController.prototype.sendToClub,
+      ),
+    ).toEqual({ permissions: ['notifications:club'], mode: 'all' });
+  });
+
+  it('marks post-registration step completion as user-owned updates', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PostRegistrationController.prototype.completeStep3,
+      ),
+    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        PostRegistrationController.prototype.completeStep3,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+  });
+
   it('marks activity updates as activity-scoped permissions', () => {
     expect(
       Reflect.getMetadata(
@@ -111,6 +153,21 @@ describe('Permissions metadata', () => {
         ActivitiesController.prototype.update,
       ),
     ).toEqual({ type: 'activity', idParam: 'activityId' });
+  });
+
+  it('marks camporee creation with active-assignment scoped activity permissions', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        CamporeesController.prototype.create,
+      ),
+    ).toEqual({ permissions: ['activities:create'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        CamporeesController.prototype.create,
+      ),
+    ).toEqual({ type: 'active_assignment' });
   });
 
   it('marks finance updates as finance-scoped permissions', () => {

@@ -1,14 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { SupabaseService } from '../src/common/supabase.service';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../src/common/guards';
+import {
+  createBearerToken,
+  createTestJwtService,
+} from './helpers/rbac-test-helpers';
 
 describe('Users E2E Tests', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let jwtService: JwtService;
 
   const mockSupabaseService = {
     admin: {
@@ -25,18 +31,20 @@ describe('Users E2E Tests', () => {
     },
   };
 
-  const mockJwtAuthGuard = {
+  const mockPermissionsGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };
 
   beforeAll(async () => {
+    jwtService = createTestJwtService();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(SupabaseService)
       .useValue(mockSupabaseService)
-      .overrideGuard(JwtAuthGuard)
-      .useValue(mockJwtAuthGuard)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -53,6 +61,14 @@ describe('Users E2E Tests', () => {
     await app.close();
   });
 
+  const authHeaders = () => ({
+    Authorization: `Bearer ${createBearerToken(
+      jwtService,
+      'test-user-id',
+      'test@example.com',
+    )}`,
+  });
+
   describe('/api/v1/users/:userId (GET)', () => {
     it('should return user info', async () => {
       jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
@@ -64,6 +80,7 @@ describe('Users E2E Tests', () => {
 
       return request(app.getHttpServer())
         .get('/api/v1/users/test-user-id')
+        .set(authHeaders())
         .expect(200)
         .expect((res) => {
           expect(res.body.status).toBe('success');

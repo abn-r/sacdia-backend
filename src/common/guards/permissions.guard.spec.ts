@@ -21,6 +21,7 @@ describe('PermissionsGuard', () => {
   const mockPrisma = {
     activities: { findUnique: jest.fn() },
     finances: { findUnique: jest.fn() },
+    local_camporees: { findUnique: jest.fn() },
     club_inventory: { findUnique: jest.fn() },
     club_role_assignments: { findUnique: jest.fn() },
     club_adventurers: { findUnique: jest.fn() },
@@ -49,12 +50,16 @@ describe('PermissionsGuard', () => {
     clubId = 10,
     instanceType = 'pathfinders',
     instanceId = 22,
+    localFieldId = 50,
+    unionId = 70,
   }: {
     globalPermissions?: string[];
     activeClubPermissions?: string[];
     clubId?: number;
     instanceType?: 'adventurers' | 'pathfinders' | 'master_guilds';
     instanceId?: number;
+    localFieldId?: number;
+    unionId?: number;
   }) => ({
     authorization: {
       grants: {
@@ -79,7 +84,10 @@ describe('PermissionsGuard', () => {
               instance_id: instanceId,
               instance_name: 'Conquistadores',
             },
-            scope: {},
+            scope: {
+              local_field: { id: localFieldId, name: 'Campo Norte' },
+              union: { id: unionId, name: 'Union Norte' },
+            },
             status: 'active',
             start_date: null,
             end_date: null,
@@ -260,6 +268,79 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).resolves.toBe(true);
+  });
+
+  it('allows a camporee resource when the active assignment belongs to the same local field', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['activities:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'camporee', idParam: 'camporeeId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['activities:read'],
+        localFieldId: 50,
+      }),
+    );
+    mockPrisma.local_camporees.findUnique.mockResolvedValue({
+      local_camporee_id: 8,
+      local_field_id: 50,
+      local_fields: {
+        union_id: 70,
+      },
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-user-1' },
+          params: { camporeeId: '8' },
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('rejects a camporee resource when neither global nor active assignment scope matches the local field', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['activities:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'camporee', idParam: 'camporeeId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['activities:read'],
+        localFieldId: 50,
+        unionId: 70,
+      }),
+    );
+    mockPrisma.local_camporees.findUnique.mockResolvedValue({
+      local_camporee_id: 8,
+      local_field_id: 99,
+      local_fields: {
+        union_id: 101,
+      },
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-user-1' },
+          params: { camporeeId: '8' },
+        }),
+      ),
+    ).rejects.toThrow(
+      new ForbiddenException(
+        'You need an active assignment or global scope for this camporee',
+      ),
+    );
   });
 
   it('rejects an instance resource when the active assignment points to another instance of the same club', async () => {

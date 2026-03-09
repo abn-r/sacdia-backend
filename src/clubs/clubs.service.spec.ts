@@ -41,6 +41,9 @@ describe('ClubsService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    roles: {
+      findFirst: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
@@ -214,6 +217,37 @@ describe('ClubsService', () => {
           }),
         ],
       });
+    });
+  });
+
+  describe('updateRoleAssignment', () => {
+    it('should update role_id on an existing assignment without recreating it', async () => {
+      mockPrismaService.club_role_assignments.update.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        role_id: 'role-2',
+        status: 'active',
+      });
+
+      const result = await service.updateRoleAssignment('assignment-1', {
+        role_id: 'role-2',
+        status: 'active',
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          assignment_id: 'assignment-1',
+          role_id: 'role-2',
+        }),
+      );
+      expect(mockPrismaService.club_role_assignments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { assignment_id: 'assignment-1' },
+          data: expect.objectContaining({
+            role_id: 'role-2',
+            status: 'active',
+          }),
+        }),
+      );
     });
   });
 });

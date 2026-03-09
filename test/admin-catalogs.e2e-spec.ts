@@ -3,13 +3,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/prisma/prisma.service';
 import { AdminGeographyService } from '../src/admin/admin-geography.service';
 import { AdminReferenceService } from '../src/admin/admin-reference.service';
+import { PermissionsGuard } from '../src/common/guards';
+import { createTestJwtService } from './helpers/rbac-test-helpers';
 
 describe('Admin Catalogs E2E', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
   let jwtService: JwtService;
 
   const mockAdminGeographyService = {
@@ -56,6 +56,9 @@ describe('Admin Catalogs E2E', () => {
 
   const makeToken = (sub: string, email: string) =>
     jwtService.sign({ sub, email });
+  const mockPermissionsGuard = {
+    canActivate: jest.fn().mockReturnValue(true),
+  };
 
   beforeAll(async () => {
     delete process.env.REDIS_URL;
@@ -66,9 +69,7 @@ describe('Admin Catalogs E2E', () => {
     process.env.SUPABASE_JWT_SECRET =
       process.env.SUPABASE_JWT_SECRET || 'test-secret';
 
-    jwtService = new JwtService({
-      secret: process.env.SUPABASE_JWT_SECRET,
-    });
+    jwtService = createTestJwtService();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -77,11 +78,12 @@ describe('Admin Catalogs E2E', () => {
       .useValue(mockAdminGeographyService)
       .overrideProvider(AdminReferenceService)
       .useValue(mockAdminReferenceService)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api/v1');
-    prisma = app.get(PrismaService);
     await app.init();
   });
 
@@ -91,6 +93,7 @@ describe('Admin Catalogs E2E', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    mockPermissionsGuard.canActivate.mockReturnValue(true);
   });
 
   it('should return 401 when no token is provided', async () => {
@@ -102,11 +105,7 @@ describe('Admin Catalogs E2E', () => {
 
   it('should return 403 for non-admin user', async () => {
     const token = makeToken('user-1', 'user@test.com');
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      {
-        roles: { role_name: 'user', active: true },
-      } as any,
-    ]);
+    mockPermissionsGuard.canActivate.mockReturnValueOnce(false);
 
     await request(app.getHttpServer())
       .post('/api/v1/admin/countries')
@@ -117,11 +116,6 @@ describe('Admin Catalogs E2E', () => {
 
   it('should allow admin to create country', async () => {
     const token = makeToken('admin-1', 'admin@test.com');
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      {
-        roles: { role_name: 'admin', active: true },
-      } as any,
-    ]);
 
     const response = await request(app.getHttpServer())
       .post('/api/v1/admin/countries')
@@ -135,11 +129,6 @@ describe('Admin Catalogs E2E', () => {
 
   it('should allow admin to list relationship types', async () => {
     const token = makeToken('admin-1', 'admin@test.com');
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      {
-        roles: { role_name: 'super_admin', active: true },
-      } as any,
-    ]);
 
     const response = await request(app.getHttpServer())
       .get('/api/v1/admin/relationship-types')
