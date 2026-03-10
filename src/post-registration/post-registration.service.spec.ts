@@ -133,6 +133,19 @@ describe('PostRegistrationService', () => {
   });
 
   describe('completeStep1', () => {
+    it('should return a minimal success payload for third-party completion', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_image: 'profile.jpg',
+      });
+
+      const result = await service.completeStep1('target-user-1', adminActor);
+
+      expect(result).toEqual({
+        status: 'success',
+        message: 'Paso 1 completado',
+      });
+    });
+
     it('should return a generic validation error for third-party completion', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_image: null,
@@ -181,6 +194,23 @@ describe('PostRegistrationService', () => {
           'No se puede completar el paso 2 para este usuario',
         ),
       );
+    });
+
+    it('should return a minimal success payload for third-party completion', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        gender: 'M',
+        birthday: new Date('2009-03-15'),
+        baptism: true,
+      });
+      mockPrismaService.emergency_contacts.count.mockResolvedValue(1);
+      mockUsersService.requiresLegalRepresentative.mockResolvedValue(false);
+
+      const result = await service.completeStep2('target-user-1', adminActor);
+
+      expect(result).toEqual({
+        status: 'success',
+        message: 'Paso 2 completado',
+      });
     });
   });
 

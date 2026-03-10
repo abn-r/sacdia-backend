@@ -9,6 +9,8 @@ import { AuthorizationContextService } from '../services/authorization-context.s
 import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
 import { PrismaService } from '../../prisma/prisma.service';
 
+const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
+
 describe('PermissionsGuard', () => {
   const mockReflector = {
     getAllAndOverride: jest.fn(),
@@ -138,6 +140,94 @@ describe('PermissionsGuard', () => {
       }
       return undefined;
     });
+  });
+
+  describe('sensitive user subresource policy', () => {
+    const expectSensitiveUserAccess = async ({
+      permission,
+      legacyFallback,
+      mode,
+    }: {
+      permission: string;
+      legacyFallback: string;
+      mode: 'read' | 'update';
+    }) => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: [permission], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'user', ownerParam: 'userId' };
+        }
+        if (key === SENSITIVE_USER_SUBRESOURCE_KEY) {
+          return { family: permission.split(':')[0], mode };
+        }
+        return undefined;
+      });
+
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ globalPermissions: [permission] }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'admin-1' },
+            params: { userId: 'user-123' },
+          }),
+        ),
+      ).resolves.toBe(true);
+
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ globalPermissions: [legacyFallback] }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'admin-1' },
+            params: { userId: 'user-123' },
+          }),
+        ),
+      ).resolves.toBe(true);
+
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ activeClubPermissions: [permission] }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'club-user-1' },
+            params: { userId: 'user-123' },
+          }),
+        ),
+      ).rejects.toThrow(
+        new ForbiddenException(
+          `Missing required global permissions: ${permission}`,
+        ),
+      );
+    };
+
+    it.each([
+      ['health:read', 'users:read_detail', 'read'],
+      ['health:update', 'users:update', 'update'],
+      ['emergency_contacts:read', 'users:read_detail', 'read'],
+      ['emergency_contacts:update', 'users:update', 'update'],
+      ['legal_representative:read', 'users:read_detail', 'read'],
+      ['legal_representative:update', 'users:update', 'update'],
+      ['post_registration:read', 'users:read_detail', 'read'],
+      ['post_registration:update', 'users:update', 'update'],
+    ] as const)(
+      'allows fine permission, allows legacy fallback, and rejects club-only third-party access for %s',
+      async (permission, legacyFallback, mode) => {
+        await expectSensitiveUserAccess({
+          permission,
+          legacyFallback,
+          mode,
+        });
+      },
+    );
   });
 
   it('allows when no permissions are required', async () => {
