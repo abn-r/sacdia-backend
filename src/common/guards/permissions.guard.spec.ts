@@ -1,12 +1,15 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  type ExecutionContext,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
-import {
-  AUTHORIZATION_RESOURCE_KEY,
-  PERMISSIONS_KEY,
-} from '../decorators';
+import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
 
 describe('PermissionsGuard', () => {
   const mockReflector = {
@@ -35,14 +38,17 @@ describe('PermissionsGuard', () => {
     mockPrisma as unknown as PrismaService,
   );
 
-  const createContext = (request: Record<string, unknown>) =>
-    ({
+  const createContext = (
+    request: Record<string, unknown>,
+  ): ExecutionContext => {
+    return {
       getHandler: jest.fn(),
       getClass: jest.fn(),
       switchToHttp: () => ({
         getRequest: () => request,
       }),
-    }) as any;
+    } as unknown as ExecutionContext;
+  };
 
   const createResolved = ({
     globalPermissions = [],
@@ -98,7 +104,9 @@ describe('PermissionsGuard', () => {
         assignment_id: activeClubPermissions.length ? 'assignment-1' : null,
       },
       effective: {
-        permissions: [...new Set([...globalPermissions, ...activeClubPermissions])],
+        permissions: [
+          ...new Set([...globalPermissions, ...activeClubPermissions]),
+        ],
         scope: {
           global: {},
           club: activeClubPermissions.length
@@ -132,6 +140,94 @@ describe('PermissionsGuard', () => {
       }
       return undefined;
     });
+  });
+
+  describe('sensitive user subresource policy', () => {
+    const expectSensitiveUserAccess = async ({
+      permission,
+      legacyFallback,
+      mode,
+    }: {
+      permission: string;
+      legacyFallback: string;
+      mode: 'read' | 'update';
+    }) => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === PERMISSIONS_KEY) {
+          return { permissions: [permission], mode: 'all' };
+        }
+        if (key === AUTHORIZATION_RESOURCE_KEY) {
+          return { type: 'user', ownerParam: 'userId' };
+        }
+        if (key === SENSITIVE_USER_SUBRESOURCE_KEY) {
+          return { family: permission.split(':')[0], mode };
+        }
+        return undefined;
+      });
+
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ globalPermissions: [permission] }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'admin-1' },
+            params: { userId: 'user-123' },
+          }),
+        ),
+      ).resolves.toBe(true);
+
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ globalPermissions: [legacyFallback] }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'admin-1' },
+            params: { userId: 'user-123' },
+          }),
+        ),
+      ).resolves.toBe(true);
+
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ activeClubPermissions: [permission] }),
+      );
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'club-user-1' },
+            params: { userId: 'user-123' },
+          }),
+        ),
+      ).rejects.toThrow(
+        new ForbiddenException(
+          `Missing required global permissions: ${permission}`,
+        ),
+      );
+    };
+
+    it.each([
+      ['health:read', 'users:read_detail', 'read'],
+      ['health:update', 'users:update', 'update'],
+      ['emergency_contacts:read', 'users:read_detail', 'read'],
+      ['emergency_contacts:update', 'users:update', 'update'],
+      ['legal_representative:read', 'users:read_detail', 'read'],
+      ['legal_representative:update', 'users:update', 'update'],
+      ['post_registration:read', 'users:read_detail', 'read'],
+      ['post_registration:update', 'users:update', 'update'],
+    ] as const)(
+      'allows fine permission, allows legacy fallback, and rejects club-only third-party access for %s',
+      async (permission, legacyFallback, mode) => {
+        await expectSensitiveUserAccess({
+          permission,
+          legacyFallback,
+          mode,
+        });
+      },
+    );
   });
 
   it('allows when no permissions are required', async () => {
@@ -170,9 +266,7 @@ describe('PermissionsGuard', () => {
     await expect(
       guard.canActivate(createContext({ user: { sub: 'club-user-1' } })),
     ).rejects.toThrow(
-      new ForbiddenException(
-        'Missing required global permissions: clubs:read',
-      ),
+      new ForbiddenException('Missing required global permissions: clubs:read'),
     );
   });
 
@@ -409,6 +503,58 @@ describe('PermissionsGuard', () => {
     expect(
       mockAuthorizationContext.resolveUserAuthorization,
     ).not.toHaveBeenCalled();
+  });
+
+  it('allows a non-owner user resource when the actor has the required global permission', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['users:update'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'user', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({ globalPermissions: ['users:update'] }),
+    );
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'admin-1' },
+          params: { userId: 'user-123' },
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('rejects a non-owner user resource when the permission only exists on the active club assignment', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['users:read_detail'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'user', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({ activeClubPermissions: ['users:read_detail'] }),
+    );
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-user-1' },
+          params: { userId: 'user-123' },
+        }),
+      ),
+    ).rejects.toThrow(
+      new ForbiddenException(
+        'Missing required global permissions: users:read_detail',
+      ),
+    );
   });
 
   it('throws not found when an assignment resource cannot be resolved', async () => {

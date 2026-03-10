@@ -29,8 +29,13 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import {
   UpdateUserAllergiesDto,
   UpdateUserDiseasesDto,
+  UpdateUserMedicinesDto,
 } from './dto/update-user-medical.dto';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  SensitiveUserSubresource,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('users')
@@ -50,6 +55,33 @@ export class UsersController {
     return this.usersService.findOne(userId);
   }
 
+  @Get(':userId/allergies')
+  @SensitiveUserSubresource('health', 'read')
+  @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
+  @ApiResponse({ status: 200, description: 'Alergias obtenidas' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  async getAllergies(@Param('userId') userId: string) {
+    return this.usersService.getAllergies(userId);
+  }
+
+  @Get(':userId/diseases')
+  @SensitiveUserSubresource('health', 'read')
+  @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
+  @ApiResponse({ status: 200, description: 'Enfermedades obtenidas' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  async getDiseases(@Param('userId') userId: string) {
+    return this.usersService.getDiseases(userId);
+  }
+
+  @Get(':userId/medicines')
+  @SensitiveUserSubresource('health', 'read')
+  @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
+  @ApiResponse({ status: 200, description: 'Medicamentos obtenidos' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  async getMedicines(@Param('userId') userId: string) {
+    return this.usersService.getMedicines(userId);
+  }
+
   @Patch(':userId')
   @RequirePermissions('users:update')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -64,8 +96,7 @@ export class UsersController {
   }
 
   @Put(':userId/allergies')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar alergias del usuario',
     description:
@@ -82,8 +113,7 @@ export class UsersController {
   }
 
   @Put(':userId/diseases')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar enfermedades del usuario',
     description:
@@ -99,16 +129,35 @@ export class UsersController {
     return this.usersService.updateDiseases(userId, dto);
   }
 
+  @Put(':userId/medicines')
+  @SensitiveUserSubresource('health', 'update')
+  @ApiOperation({
+    summary: 'Guardar medicamentos del usuario',
+    description:
+      'Reemplaza el conjunto de medicamentos activos del usuario en users_medicines',
+  })
+  @ApiResponse({ status: 200, description: 'Medicamentos actualizados' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 400, description: 'Medicamento inválido' })
+  async updateMedicines(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserMedicinesDto,
+  ) {
+    return this.usersService.updateMedicines(userId, dto);
+  }
+
   @Delete(':userId/allergies/:allergyId')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar alergia del usuario (borrado lógico)',
     description:
       'Desactiva (active=false) una alergia específica del usuario en users_allergies',
   })
   @ApiResponse({ status: 200, description: 'Alergia eliminada' })
-  @ApiResponse({ status: 404, description: 'Alergia no encontrada en el usuario' })
+  @ApiResponse({
+    status: 404,
+    description: 'Alergia no encontrada en el usuario',
+  })
   async removeAllergy(
     @Param('userId') userId: string,
     @Param('allergyId', ParseIntPipe) allergyId: number,
@@ -117,8 +166,7 @@ export class UsersController {
   }
 
   @Delete(':userId/diseases/:diseaseId')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar enfermedad del usuario (borrado lógico)',
     description:
@@ -134,6 +182,25 @@ export class UsersController {
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
   ) {
     return this.usersService.removeDisease(userId, diseaseId);
+  }
+
+  @Delete(':userId/medicines/:medicineId')
+  @SensitiveUserSubresource('health', 'update')
+  @ApiOperation({
+    summary: 'Eliminar medicamento del usuario (borrado lógico)',
+    description:
+      'Desactiva (active=false) un medicamento específico del usuario en users_medicines',
+  })
+  @ApiResponse({ status: 200, description: 'Medicamento eliminado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Medicamento no encontrado en el usuario',
+  })
+  async removeMedicine(
+    @Param('userId') userId: string,
+    @Param('medicineId', ParseIntPipe) medicineId: number,
+  ) {
+    return this.usersService.removeMedicine(userId, medicineId);
   }
 
   @Post(':userId/profile-picture')

@@ -869,6 +869,7 @@ model users {
   users_allergies                users_allergies[]
   users_classes                  users_classes[]
   users_diseases                 users_diseases[]
+  users_medicines                users_medicines[]
   users_honors                   users_honors[]
   users_permissions              users_permissions[]
   users_pr                       users_pr[]
@@ -1167,6 +1168,19 @@ model users_diseases {
   @@unique([user_id, disease_id], map: "user_diseases_user_id_disease_id_key")
 }
 
+model users_medicines {
+  user_medicine_id Int       @id(map: "user_medicines_pkey") @default(autoincrement())
+  user_id          String    @db.Uuid
+  medicine_id      Int
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime  @default(now()) @db.Timestamptz(6)
+  active           Boolean   @default(true)
+  medicines        medicines @relation(fields: [medicine_id], references: [medicine_id], onDelete: NoAction, onUpdate: NoAction, map: "user_medicines_medicine_id_fkey")
+  users            users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_medicines_user_id_fkey")
+
+  @@unique([user_id, medicine_id], map: "user_medicines_user_id_medicine_id_key")
+}
+
 model users_honors {
   user_honor_id Int       @id(map: "user_honors_pkey") @default(autoincrement())
   user_id       String    @db.Uuid
@@ -1214,12 +1228,13 @@ model users_roles {
 }
 
 model medicines {
-  medicine_id Int       @id @default(autoincrement())
-  name        String    @db.VarChar
-  description String?   @db.VarChar
-  active      Boolean?  @default(true)
-  created_at  DateTime  @default(now()) @db.Timestamptz(6)
-  modified_at DateTime? @default(now()) @db.Timestamptz(6)
+  medicine_id     Int               @id @default(autoincrement())
+  name            String            @db.VarChar
+  description     String?           @db.VarChar
+  active          Boolean           @default(true)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+  users_medicines users_medicines[]
 }
 
 // ========================================

@@ -10,10 +10,12 @@ import {
   CreateAllergyDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
+  CreateMedicineDto,
   CreateRelationshipTypeDto,
   UpdateAllergyDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
+  UpdateMedicineDto,
   UpdateRelationshipTypeDto,
 } from './dto';
 
@@ -50,7 +52,10 @@ export class AdminReferenceService {
     });
   }
 
-  async createRelationshipType(dto: CreateRelationshipTypeDto, actorId: string) {
+  async createRelationshipType(
+    dto: CreateRelationshipTypeDto,
+    actorId: string,
+  ) {
     const name = this.normalizeName(dto.name);
     await this.ensureRelationshipTypeUnique(name);
 
@@ -156,7 +161,11 @@ export class AdminReferenceService {
     return allergy;
   }
 
-  async updateAllergy(allergyId: number, dto: UpdateAllergyDto, actorId: string) {
+  async updateAllergy(
+    allergyId: number,
+    dto: UpdateAllergyDto,
+    actorId: string,
+  ) {
     await this.ensureAllergyExists(allergyId);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
@@ -191,7 +200,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException('Cannot deactivate allergy because it is in use');
+      throw new ConflictException(
+        'Cannot deactivate allergy because it is in use',
+      );
     }
 
     const allergy = await this.prisma.allergies.update({
@@ -228,7 +239,11 @@ export class AdminReferenceService {
     return disease;
   }
 
-  async updateDisease(diseaseId: number, dto: UpdateDiseaseDto, actorId: string) {
+  async updateDisease(
+    diseaseId: number,
+    dto: UpdateDiseaseDto,
+    actorId: string,
+  ) {
     await this.ensureDiseaseExists(diseaseId);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
@@ -263,7 +278,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException('Cannot deactivate disease because it is in use');
+      throw new ConflictException(
+        'Cannot deactivate disease because it is in use',
+      );
     }
 
     const disease = await this.prisma.diseases.update({
@@ -276,6 +293,84 @@ export class AdminReferenceService {
 
     this.logMutation('delete', 'diseases', diseaseId, actorId);
     return disease;
+  }
+
+  async listMedicines() {
+    return this.prisma.medicines.findMany({
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createMedicine(dto: CreateMedicineDto, actorId: string) {
+    const name = this.normalizeName(dto.name);
+    await this.ensureMedicineUnique(name);
+
+    const medicine = await this.prisma.medicines.create({
+      data: {
+        name,
+        description: dto.description,
+        active: dto.active ?? true,
+      },
+    });
+
+    this.logMutation('create', 'medicines', medicine.medicine_id, actorId);
+    return medicine;
+  }
+
+  async updateMedicine(
+    medicineId: number,
+    dto: UpdateMedicineDto,
+    actorId: string,
+  ) {
+    await this.ensureMedicineExists(medicineId);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+    if (name) {
+      await this.ensureMedicineUnique(name, medicineId);
+    }
+
+    const medicine = await this.prisma.medicines.update({
+      where: { medicine_id: medicineId },
+      data: {
+        ...(name ? { name } : {}),
+        ...(typeof dto.description === 'string'
+          ? { description: dto.description }
+          : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation('update', 'medicines', medicineId, actorId);
+    return medicine;
+  }
+
+  async deleteMedicine(medicineId: number, actorId: string) {
+    await this.ensureMedicineExists(medicineId);
+
+    const inUseCount = await this.prisma.users_medicines.count({
+      where: {
+        medicine_id: medicineId,
+        active: true,
+      },
+    });
+
+    if (inUseCount > 0) {
+      throw new ConflictException(
+        'Cannot deactivate medicine because it is in use',
+      );
+    }
+
+    const medicine = await this.prisma.medicines.update({
+      where: { medicine_id: medicineId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation('delete', 'medicines', medicineId, actorId);
+    return medicine;
   }
 
   async listEcclesiasticalYears() {
@@ -466,6 +561,31 @@ export class AdminReferenceService {
 
     if (existing) {
       throw new ConflictException('Disease name already exists');
+    }
+  }
+
+  private async ensureMedicineExists(medicineId: number) {
+    const entity = await this.prisma.medicines.findUnique({
+      where: { medicine_id: medicineId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(`Medicine ${medicineId} not found`);
+    }
+
+    return entity;
+  }
+
+  private async ensureMedicineUnique(name: string, medicineId?: number) {
+    const existing = await this.prisma.medicines.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        ...(medicineId ? { NOT: { medicine_id: medicineId } } : {}),
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('Medicine name already exists');
     }
   }
 
