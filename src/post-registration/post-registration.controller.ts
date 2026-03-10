@@ -4,10 +4,12 @@ import {
   Post,
   Param,
   Body,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -16,8 +18,17 @@ import {
 } from '@nestjs/swagger';
 import { PostRegistrationService } from './post-registration.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+
+type AuthenticatedRequest = Request & {
+  user?: {
+    sub?: string;
+  };
+};
 
 @ApiTags('post-registration')
 @Controller('users/:userId/post-registration')
@@ -28,13 +39,28 @@ export class PostRegistrationController {
     private readonly postRegistrationService: PostRegistrationService,
   ) {}
 
+  private buildActorContext(userId: string, request: AuthenticatedRequest) {
+    const actorUserId = request.user?.sub ?? '';
+
+    return {
+      actorUserId,
+      isOwner: actorUserId === userId,
+    };
+  }
+
   @Get('status')
   @RequirePermissions('users:read_detail')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Obtener estado del post-registro' })
   @ApiResponse({ status: 200, description: 'Estado actual' })
-  async getStatus(@Param('userId') userId: string) {
-    return this.postRegistrationService.getStatus(userId);
+  async getStatus(
+    @Param('userId') userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.getStatus(
+      userId,
+      this.buildActorContext(userId, request),
+    );
   }
 
   @Post('step-1/complete')
@@ -50,8 +76,14 @@ export class PostRegistrationController {
     status: 400,
     description: 'Usuario no tiene foto de perfil',
   })
-  async completeStep1(@Param('userId') userId: string) {
-    return this.postRegistrationService.completeStep1(userId);
+  async completeStep1(
+    @Param('userId') userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.completeStep1(
+      userId,
+      this.buildActorContext(userId, request),
+    );
   }
 
   @Post('step-2/complete')
@@ -68,8 +100,14 @@ export class PostRegistrationController {
     status: 400,
     description: 'Faltan datos requeridos',
   })
-  async completeStep2(@Param('userId') userId: string) {
-    return this.postRegistrationService.completeStep2(userId);
+  async completeStep2(
+    @Param('userId') userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.completeStep2(
+      userId,
+      this.buildActorContext(userId, request),
+    );
   }
 
   @Post('step-3/complete')
@@ -92,7 +130,12 @@ export class PostRegistrationController {
   async completeStep3(
     @Param('userId') userId: string,
     @Body() dto: CompleteClubSelectionDto,
+    @Req() request: AuthenticatedRequest,
   ) {
-    return this.postRegistrationService.completeStep3(userId, dto);
+    return this.postRegistrationService.completeStep3(
+      userId,
+      dto,
+      this.buildActorContext(userId, request),
+    );
   }
 }

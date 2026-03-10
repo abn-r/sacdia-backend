@@ -317,7 +317,7 @@ describe('Permissions metadata', () => {
     ).toEqual({ permissions: ['notifications:club'], mode: 'all' });
   });
 
-  it('marks post-registration step completion as user-owned updates', () => {
+  it('keeps post-registration permissions on users:* without inventing new permissions', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
