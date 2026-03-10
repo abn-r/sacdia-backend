@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EmergencyContactsController } from './emergency-contacts.controller';
 import { EmergencyContactsService } from './emergency-contacts.service';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 describe('EmergencyContactsController', () => {
   let controller: EmergencyContactsController;
@@ -22,7 +23,12 @@ describe('EmergencyContactsController', () => {
           useValue: mockEmergencyContactsService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
 
     controller = module.get<EmergencyContactsController>(
       EmergencyContactsController,
