@@ -83,8 +83,13 @@ describe('Users E2E Tests', () => {
         .set(authHeaders())
         .expect(200)
         .expect((res) => {
-          expect(res.body.status).toBe('success');
-          expect(res.body.data.email).toBe('test@example.com');
+          const body = res.body as {
+            status: string;
+            data: { email: string };
+          };
+
+          expect(body.status).toBe('success');
+          expect(body.data.email).toBe('test@example.com');
         });
     });
   });
@@ -124,7 +129,9 @@ describe('Users E2E Tests', () => {
       jest
         .spyOn(prisma.users, 'findUnique')
         .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
-      jest.spyOn(prisma.users_allergies, 'findMany').mockResolvedValue([] as any);
+      jest
+        .spyOn(prisma.users_allergies, 'findMany')
+        .mockResolvedValue([] as any);
 
       return request(app.getHttpServer())
         .get('/api/v1/users/test-user-id/allergies')
@@ -168,6 +175,31 @@ describe('Users E2E Tests', () => {
           expect(res.body).toEqual({
             status: 'success',
             data: [{ disease_id: 2, name: 'Asma' }],
+          });
+        });
+    });
+  });
+
+  describe('/api/v1/users/:userId/medicines (GET)', () => {
+    it('should return active medicines as a flat success envelope', async () => {
+      jest
+        .spyOn(prisma.users, 'findUnique')
+        .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
+      jest.spyOn(prisma.users_medicines, 'findMany').mockResolvedValue([
+        {
+          medicine_id: 3,
+          medicines: { name: 'Ibuprofeno' },
+        },
+      ] as any);
+
+      return request(app.getHttpServer())
+        .get('/api/v1/users/test-user-id/medicines')
+        .set(authHeaders())
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({
+            status: 'success',
+            data: [{ medicine_id: 3, name: 'Ibuprofeno' }],
           });
         });
     });

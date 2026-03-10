@@ -69,6 +69,19 @@ describe('Permissions metadata', () => {
         UsersController.prototype.getDiseases,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.getMedicines,
+      ),
+    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UsersController.prototype.getMedicines,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
   });
 
   it('marks sensitive user profile writes as owner-aware updates', () => {
@@ -95,6 +108,32 @@ describe('Permissions metadata', () => {
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.updateDiseases,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.updateMedicines,
+      ),
+    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UsersController.prototype.updateMedicines,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.removeMedicine,
+      ),
+    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UsersController.prototype.removeMedicine,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
 
@@ -282,6 +321,30 @@ describe('Permissions metadata', () => {
         AdminReferenceController.prototype.createAllergy,
       ),
     ).toEqual({ permissions: ['catalogs:create'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        AdminReferenceController.prototype.listMedicines,
+      ),
+    ).toEqual({ permissions: ['catalogs:read'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        AdminReferenceController.prototype.createMedicine,
+      ),
+    ).toEqual({ permissions: ['catalogs:create'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        AdminReferenceController.prototype.updateMedicine,
+      ),
+    ).toEqual({ permissions: ['catalogs:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        AdminReferenceController.prototype.deleteMedicine,
+      ),
+    ).toEqual({ permissions: ['catalogs:delete'], mode: 'all' });
   });
 
   it('marks RBAC endpoints with explicit permission permissions', () => {
