@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  BadRequestException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,7 +14,20 @@ import {
 describe('UsersService', () => {
   let service: UsersService;
 
+  const createTransactionMock = () => ({
+    users_medicines: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findFirst: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({}),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+  });
+
+  let transactionMock: ReturnType<typeof createTransactionMock>;
+
   const mockPrismaService = {
+    $transaction: jest.fn(),
     users: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -23,9 +37,18 @@ describe('UsersService', () => {
     },
     users_allergies: {
       updateMany: jest.fn(),
+      findMany: jest.fn(),
     },
     users_diseases: {
       updateMany: jest.fn(),
+      findMany: jest.fn(),
+    },
+    medicines: {
+      findMany: jest.fn(),
+    },
+    users_medicines: {
+      updateMany: jest.fn(),
+      findMany: jest.fn(),
     },
   };
 
@@ -37,11 +60,20 @@ describe('UsersService', () => {
     deleteMany: jest.fn().mockResolvedValue(undefined),
     extractKeyFromPublicUrl: jest.fn().mockReturnValue('photo-u1-122.jpeg'),
     getSignedDownloadUrl: jest.fn(
-      async (_bucket: StorageBucketAlias, value: string) => value,
+      (_bucket: StorageBucketAlias, value: string) => Promise.resolve(value),
     ),
   };
 
   beforeEach(async () => {
+    transactionMock = createTransactionMock();
+    mockPrismaService.$transaction.mockImplementation(
+      (
+        callback: (
+          tx: ReturnType<typeof createTransactionMock>,
+        ) => Promise<unknown>,
+      ) => callback(transactionMock),
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
@@ -61,6 +93,256 @@ describe('UsersService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('getAllergies', () => {
+    it('should return active allergies as a flat list', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_allergies.findMany.mockResolvedValue([
+        {
+          allergy_id: 2,
+          allergies: {
+            name: 'Polen',
+          },
+        },
+        {
+          allergy_id: 9,
+          allergies: {
+            name: 'Lactosa',
+          },
+        },
+      ]);
+
+      const result = await service.getAllergies('u1');
+
+      expect(mockPrismaService.users_allergies.findMany).toHaveBeenCalledWith({
+        where: {
+          user_id: 'u1',
+          active: true,
+        },
+        select: {
+          allergy_id: true,
+          allergies: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { allergy_id: 'asc' },
+      });
+      expect(result).toEqual({
+        status: 'success',
+        data: [
+          { allergy_id: 2, name: 'Polen' },
+          { allergy_id: 9, name: 'Lactosa' },
+        ],
+      });
+    });
+
+    it('should return an empty list for an existing user without active allergies', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_allergies.findMany.mockResolvedValue([]);
+
+      await expect(service.getAllergies('u1')).resolves.toEqual({
+        status: 'success',
+        data: [],
+      });
+    });
+
+    it('should throw when the user does not exist', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
+
+      await expect(service.getAllergies('missing-user')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('getDiseases', () => {
+    it('should return active diseases as a flat list', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_diseases.findMany.mockResolvedValue([
+        {
+          disease_id: 4,
+          diseases: {
+            name: 'Asma',
+          },
+        },
+        {
+          disease_id: 8,
+          diseases: {
+            name: 'Diabetes',
+          },
+        },
+      ]);
+
+      const result = await service.getDiseases('u1');
+
+      expect(mockPrismaService.users_diseases.findMany).toHaveBeenCalledWith({
+        where: {
+          user_id: 'u1',
+          active: true,
+        },
+        select: {
+          disease_id: true,
+          diseases: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: { disease_id: 'asc' },
+      });
+      expect(result).toEqual({
+        status: 'success',
+        data: [
+          { disease_id: 4, name: 'Asma' },
+          { disease_id: 8, name: 'Diabetes' },
+        ],
+      });
+    });
+
+    it('should return an empty list for an existing user without active diseases', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_diseases.findMany.mockResolvedValue([]);
+
+      await expect(service.getDiseases('u1')).resolves.toEqual({
+        status: 'success',
+        data: [],
+      });
+    });
+
+    it('should throw when the user does not exist', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
+
+      await expect(service.getDiseases('missing-user')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('getMedicines', () => {
+    it('should return active medicines as a flat list', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_medicines.findMany.mockResolvedValue([
+        {
+          medicine_id: 3,
+          medicines: {
+            name: 'Ibuprofeno',
+          },
+        },
+        {
+          medicine_id: 9,
+          medicines: {
+            name: 'Paracetamol',
+          },
+        },
+      ]);
+
+      const result = await service.getMedicines('u1');
+
+      expect(result).toEqual({
+        status: 'success',
+        data: [
+          { medicine_id: 3, name: 'Ibuprofeno' },
+          { medicine_id: 9, name: 'Paracetamol' },
+        ],
+      });
+    });
+
+    it('should return an empty list for an existing user without active medicines', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_medicines.findMany.mockResolvedValue([]);
+
+      await expect(service.getMedicines('u1')).resolves.toEqual({
+        status: 'success',
+        data: [],
+      });
+    });
+  });
+
+  describe('updateMedicines', () => {
+    it('should replace the active medicines set for a user', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.medicines.findMany.mockResolvedValue([
+        { medicine_id: 3 },
+        { medicine_id: 7 },
+      ]);
+      transactionMock.users_medicines.findMany.mockResolvedValue([
+        {
+          medicine_id: 3,
+          medicines: {
+            name: 'Ibuprofeno',
+            description: 'Analgésico',
+          },
+        },
+        {
+          medicine_id: 7,
+          medicines: {
+            name: 'Paracetamol',
+            description: 'Antipirético',
+          },
+        },
+      ]);
+
+      const result = await service.updateMedicines('u1', {
+        medicine_ids: [3, 7],
+      });
+
+      expect(result).toEqual({
+        status: 'success',
+        data: [
+          {
+            medicine_id: 3,
+            medicines: {
+              name: 'Ibuprofeno',
+              description: 'Analgésico',
+            },
+          },
+          {
+            medicine_id: 7,
+            medicines: {
+              name: 'Paracetamol',
+              description: 'Antipirético',
+            },
+          },
+        ],
+        message: 'Medicamentos actualizados exitosamente',
+      });
+    });
+
+    it('should reject invalid or inactive medicines', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.medicines.findMany.mockResolvedValue([
+        { medicine_id: 3 },
+      ]);
+
+      await expect(
+        service.updateMedicines('u1', { medicine_ids: [3, 99] }),
+      ).rejects.toThrow(
+        new BadRequestException('Medicamentos inválidos o inactivos: 99'),
+      );
+    });
+  });
+
+  describe('removeMedicine', () => {
+    it('should soft-delete user medicine', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.users_medicines.updateMany.mockResolvedValue({
+        count: 1,
+      });
+
+      const result = await service.removeMedicine('u1', 5);
+
+      expect(result).toEqual({
+        status: 'success',
+        data: {
+          medicine_id: 5,
+          active: false,
+        },
+        message: 'Medicamento eliminado exitosamente',
+      });
+    });
+  });
+
   describe('removeAllergy', () => {
     it('should soft-delete user allergy', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
@@ -70,19 +352,27 @@ describe('UsersService', () => {
 
       const result = await service.removeAllergy('u1', 7);
 
-      expect(mockPrismaService.users_allergies.updateMany).toHaveBeenCalledWith(
-        {
-          where: {
-            user_id: 'u1',
-            allergy_id: 7,
-            active: true,
+      const removeAllergyCalls = mockPrismaService.users_allergies.updateMany
+        .mock.calls as Array<
+        [
+          {
+            where: { user_id: string; allergy_id: number; active: boolean };
+            data: { active: boolean; modified_at: Date };
           },
-          data: {
-            active: false,
-            modified_at: expect.any(Date),
-          },
-        },
-      );
+        ]
+      >;
+      const removeAllergyCall = removeAllergyCalls[0]?.[0] as {
+        where: { user_id: string; allergy_id: number; active: boolean };
+        data: { active: boolean; modified_at: Date };
+      };
+
+      expect(removeAllergyCall.where).toEqual({
+        user_id: 'u1',
+        allergy_id: 7,
+        active: true,
+      });
+      expect(removeAllergyCall.data.active).toBe(false);
+      expect(removeAllergyCall.data.modified_at).toBeInstanceOf(Date);
       expect(result).toEqual({
         status: 'success',
         data: {
@@ -114,17 +404,27 @@ describe('UsersService', () => {
 
       const result = await service.removeDisease('u1', 5);
 
-      expect(mockPrismaService.users_diseases.updateMany).toHaveBeenCalledWith({
-        where: {
-          user_id: 'u1',
-          disease_id: 5,
-          active: true,
-        },
-        data: {
-          active: false,
-          modified_at: expect.any(Date),
-        },
+      const removeDiseaseCalls = mockPrismaService.users_diseases.updateMany
+        .mock.calls as Array<
+        [
+          {
+            where: { user_id: string; disease_id: number; active: boolean };
+            data: { active: boolean; modified_at: Date };
+          },
+        ]
+      >;
+      const removeDiseaseCall = removeDiseaseCalls[0]?.[0] as {
+        where: { user_id: string; disease_id: number; active: boolean };
+        data: { active: boolean; modified_at: Date };
+      };
+
+      expect(removeDiseaseCall.where).toEqual({
+        user_id: 'u1',
+        disease_id: 5,
+        active: true,
       });
+      expect(removeDiseaseCall.data.active).toBe(false);
+      expect(removeDiseaseCall.data.modified_at).toBeInstanceOf(Date);
       expect(result).toEqual({
         status: 'success',
         data: {
@@ -153,18 +453,27 @@ describe('UsersService', () => {
 
       const result = await service.uploadProfilePicture('u1', file);
 
+      const updateCalls = mockPrismaService.users.update.mock.calls as Array<
+        [
+          {
+            where: { user_id: string };
+            data: { user_image: string };
+          },
+        ]
+      >;
+      const updateCall = updateCalls[0]?.[0] as {
+        where: { user_id: string };
+        data: { user_image: string };
+      };
+
       expect(mockFileStorageService.upload).toHaveBeenCalledWith(
         StorageBucketAlias.USER_PROFILES,
         expect.stringMatching(/^photo-u1-\d+\.jpeg$/),
         file.buffer,
         expect.objectContaining({ contentType: 'image/jpeg' }),
       );
-      expect(mockPrismaService.users.update).toHaveBeenCalledWith({
-        where: { user_id: 'u1' },
-        data: {
-          user_image: expect.stringContaining('https://cdn.r2.example/'),
-        },
-      });
+      expect(updateCall.where).toEqual({ user_id: 'u1' });
+      expect(updateCall.data.user_image).toContain('https://cdn.r2.example/');
       expect(mockFileStorageService.deleteMany).toHaveBeenCalledWith(
         StorageBucketAlias.USER_PROFILES,
         ['photo-u1-122.jpeg'],

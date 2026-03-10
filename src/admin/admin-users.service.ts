@@ -11,6 +11,14 @@ import {
   PaginationDto,
 } from '../common/dto/pagination.dto';
 import {
+  AuthorizationContextService,
+  type ResolvedAuthorizationProfile,
+} from '../common/services/authorization-context.service';
+import {
+  getSensitiveUserSubresourcePolicy,
+  type SensitiveUserSubresourceFamily,
+} from '../common/guards/sensitive-user-subresource-policy';
+import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
@@ -54,6 +62,7 @@ export class AdminUsersService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -154,6 +163,11 @@ export class AdminUsersService {
 
   async getUserById(actorUserId: string, userId: string) {
     const scope = await this.resolveScope(actorUserId);
+    const resolvedAuthorization =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    const actorGlobalPermissions = this.getActorGlobalPermissions(
+      resolvedAuthorization,
+    );
 
     const filters: Prisma.usersWhereInput[] = [{ user_id: userId }];
     const scopedFilter = this.buildScopeWhere(scope);
@@ -328,6 +342,42 @@ export class AdminUsersService {
             phone: true,
           },
         },
+        users_allergies: {
+          where: { active: true },
+          orderBy: { allergy_id: 'asc' },
+          select: {
+            allergy_id: true,
+            allergies: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        users_diseases: {
+          where: { active: true },
+          orderBy: { disease_id: 'asc' },
+          select: {
+            disease_id: true,
+            diseases: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        users_medicines: {
+          where: { active: true },
+          orderBy: { medicine_id: 'asc' },
+          select: {
+            medicine_id: true,
+            medicines: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -336,12 +386,16 @@ export class AdminUsersService {
     }
 
     const listItem = await this.toListItem(user);
+    const sensitiveBlocks = this.buildSensitiveBlocks(
+      user,
+      actorGlobalPermissions,
+    );
 
     return {
       ...listItem,
       gender: user.gender,
       birthday: user.birthday,
-      blood: user.blood,
+      blood: sensitiveBlocks.health ? user.blood : null,
       baptism: user.baptism,
       baptism_date: user.baptism_date,
       user_image: listItem.user_image,
@@ -363,9 +417,101 @@ export class AdminUsersService {
         ecclesiastical_year: assignment.ecclesiastical_year,
         club: this.resolveClubAssignment(assignment),
       })),
-      emergency_contacts: user.emergency_contact,
-      legal_representative: user.legal_representative,
+      health: sensitiveBlocks.health,
+      emergency_contacts: sensitiveBlocks.emergency_contacts,
+      legal_representative: sensitiveBlocks.legal_representative,
+      post_registration: sensitiveBlocks.post_registration,
       scope: this.toScopeMeta(scope),
+    };
+  }
+
+  private getActorGlobalPermissions(
+    resolvedAuthorization: ResolvedAuthorizationProfile,
+  ): Set<string> {
+    return new Set(
+      resolvedAuthorization.authorization.grants.global_roles.flatMap(
+        (grant) => grant.permissions,
+      ),
+    );
+  }
+
+  private buildSensitiveBlocks(
+    user: any,
+    actorGlobalPermissions: Set<string>,
+  ): {
+    health: Record<string, unknown> | null;
+    emergency_contacts: unknown[] | null;
+    legal_representative: Record<string, unknown> | null;
+    post_registration: Record<string, unknown> | null;
+  } {
+    return {
+      health: this.canReadSensitiveFamily(actorGlobalPermissions, 'health')
+        ? this.buildHealthBlock(user)
+        : null,
+      emergency_contacts: this.canReadSensitiveFamily(
+        actorGlobalPermissions,
+        'emergency_contacts',
+      )
+        ? user.emergency_contact
+        : null,
+      legal_representative: this.canReadSensitiveFamily(
+        actorGlobalPermissions,
+        'legal_representative',
+      )
+        ? user.legal_representative
+        : null,
+      post_registration: this.canReadSensitiveFamily(
+        actorGlobalPermissions,
+        'post_registration',
+      )
+        ? this.buildMinimalPostRegistrationBlock(user)
+        : null,
+    };
+  }
+
+  private canReadSensitiveFamily(
+    actorGlobalPermissions: Set<string>,
+    family: SensitiveUserSubresourceFamily,
+  ): boolean {
+    const policy = getSensitiveUserSubresourcePolicy(family, 'read');
+
+    return (
+      actorGlobalPermissions.has(policy.finePermission) ||
+      actorGlobalPermissions.has(policy.legacyFallbackPermission)
+    );
+  }
+
+  private buildHealthBlock(user: any) {
+    return {
+      blood: user.blood,
+      allergies: (user.users_allergies ?? []).map((item) => ({
+        allergy_id: item.allergy_id,
+        name: item.allergies?.name ?? null,
+      })),
+      diseases: (user.users_diseases ?? []).map((item) => ({
+        disease_id: item.disease_id,
+        name: item.diseases?.name ?? null,
+      })),
+      medicines: (user.users_medicines ?? []).map((item) => ({
+        medicine_id: item.medicine_id,
+        name: item.medicines?.name ?? null,
+      })),
+    };
+  }
+
+  private buildMinimalPostRegistrationBlock(user: any) {
+    const latestPostRegistration = user.users_pr?.[0];
+
+    if (!latestPostRegistration) {
+      return null;
+    }
+
+    return {
+      complete: latestPostRegistration.complete,
+      profile_picture_complete: latestPostRegistration.profile_picture_complete,
+      personal_info_complete: latestPostRegistration.personal_info_complete,
+      club_selection_complete: latestPostRegistration.club_selection_complete,
+      date_completed: latestPostRegistration.date_completed ?? null,
     };
   }
 

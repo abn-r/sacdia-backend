@@ -20,6 +20,11 @@ import {
   PERMISSIONS_KEY,
   type PermissionRequirement,
 } from '../decorators/permissions.decorator';
+import {
+  SENSITIVE_USER_SUBRESOURCE_KEY,
+  type SensitiveUserSubresourceMetadata,
+} from '../decorators/sensitive-user-subresource.decorator';
+import { getSensitiveUserSubresourceFallbackPermission } from './sensitive-user-subresource-policy';
 
 type ResolvedInstanceScope = {
   mainClubId: number;
@@ -64,6 +69,11 @@ export class PermissionsGuard implements CanActivate {
         AUTHORIZATION_RESOURCE_KEY,
         [context.getHandler(), context.getClass()],
       ) ?? { type: 'global' };
+    const sensitiveUserSubresource =
+      this.reflector.getAllAndOverride<SensitiveUserSubresourceMetadata>(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        [context.getHandler(), context.getClass()],
+      );
 
     if (resource.type === 'user' && this.isResourceOwner(request, userId, resource)) {
       return true;
@@ -74,7 +84,14 @@ export class PermissionsGuard implements CanActivate {
     );
     request.authorization = resolved.authorization;
 
-    if (!this.hasRequiredPermissions(resolved, requirement, resource)) {
+    if (
+      !this.hasRequiredPermissions(
+        resolved,
+        requirement,
+        resource,
+        sensitiveUserSubresource,
+      )
+    ) {
       throw new ForbiddenException(
         this.buildPermissionsErrorMessage(requirement, resource),
       );
@@ -132,8 +149,18 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
     requirement: PermissionRequirement,
     resource: AuthorizationResourceMetadata,
+    sensitiveUserSubresource?: SensitiveUserSubresourceMetadata,
   ): boolean {
     const globalPermissions = this.getGlobalPermissions(resolved);
+
+    if (resource.type === 'user' && sensitiveUserSubresource) {
+      return this.hasSensitiveUserSubresourcePermissions(
+        globalPermissions,
+        requirement,
+        sensitiveUserSubresource,
+      );
+    }
+
     const activeClubPermissions = this.getActiveClubPermissions(resolved);
     const candidatePermissions =
       resource.type === 'global' || resource.type === 'user'
@@ -149,6 +176,31 @@ export class PermissionsGuard implements CanActivate {
     return requirement.permissions.every((permission) =>
       candidatePermissions.has(permission),
     );
+  }
+
+  private hasSensitiveUserSubresourcePermissions(
+    globalPermissions: Set<string>,
+    requirement: PermissionRequirement,
+    sensitiveUserSubresource: SensitiveUserSubresourceMetadata,
+  ): boolean {
+    const matchesPermission = (permission: string): boolean => {
+      const legacyFallbackPermission =
+        getSensitiveUserSubresourceFallbackPermission(
+          sensitiveUserSubresource.family,
+          sensitiveUserSubresource.mode,
+        );
+
+      return (
+        globalPermissions.has(permission) ||
+        globalPermissions.has(legacyFallbackPermission)
+      );
+    };
+
+    if (requirement.mode === 'any') {
+      return requirement.permissions.some(matchesPermission);
+    }
+
+    return requirement.permissions.every(matchesPermission);
   }
 
   private getGlobalPermissions(

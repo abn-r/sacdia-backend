@@ -119,6 +119,43 @@ export class UpdateDiseaseDto {
   active?: boolean;
 }
 
+export class CreateMedicineDto {
+  @ApiProperty({ example: 'Ibuprofeno' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name: string;
+
+  @ApiPropertyOptional({ example: 'Analgésico antiinflamatorio' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class UpdateMedicineDto {
+  @ApiPropertyOptional({ example: 'Ibuprofeno' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'Analgésico antiinflamatorio' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
 export class CreateEcclesiasticalYearDto {
   @ApiProperty({ example: '2026-01-01' })
   @IsDateString()

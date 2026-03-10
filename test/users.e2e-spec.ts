@@ -83,8 +83,124 @@ describe('Users E2E Tests', () => {
         .set(authHeaders())
         .expect(200)
         .expect((res) => {
-          expect(res.body.status).toBe('success');
-          expect(res.body.data.email).toBe('test@example.com');
+          const body = res.body as {
+            status: string;
+            data: { email: string };
+          };
+
+          expect(body.status).toBe('success');
+          expect(body.data.email).toBe('test@example.com');
+        });
+    });
+  });
+
+  describe('/api/v1/users/:userId/allergies (GET)', () => {
+    it('should return active allergies as a flat success envelope', async () => {
+      jest
+        .spyOn(prisma.users, 'findUnique')
+        .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
+      jest.spyOn(prisma.users_allergies, 'findMany').mockResolvedValue([
+        {
+          allergy_id: 1,
+          allergies: { name: 'Polen' },
+        },
+        {
+          allergy_id: 3,
+          allergies: { name: 'Mariscos' },
+        },
+      ] as any);
+
+      return request(app.getHttpServer())
+        .get('/api/v1/users/test-user-id/allergies')
+        .set(authHeaders())
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({
+            status: 'success',
+            data: [
+              { allergy_id: 1, name: 'Polen' },
+              { allergy_id: 3, name: 'Mariscos' },
+            ],
+          });
+        });
+    });
+
+    it('should return an empty list for an existing user without active allergies', async () => {
+      jest
+        .spyOn(prisma.users, 'findUnique')
+        .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
+      jest
+        .spyOn(prisma.users_allergies, 'findMany')
+        .mockResolvedValue([] as any);
+
+      return request(app.getHttpServer())
+        .get('/api/v1/users/test-user-id/allergies')
+        .set(authHeaders())
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({
+            status: 'success',
+            data: [],
+          });
+        });
+    });
+
+    it('should return 404 when the user does not exist', async () => {
+      jest.spyOn(prisma.users, 'findUnique').mockResolvedValueOnce(null as any);
+
+      return request(app.getHttpServer())
+        .get('/api/v1/users/missing-user/allergies')
+        .set(authHeaders())
+        .expect(404);
+    });
+  });
+
+  describe('/api/v1/users/:userId/diseases (GET)', () => {
+    it('should return active diseases as a flat success envelope', async () => {
+      jest
+        .spyOn(prisma.users, 'findUnique')
+        .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
+      jest.spyOn(prisma.users_diseases, 'findMany').mockResolvedValue([
+        {
+          disease_id: 2,
+          diseases: { name: 'Asma' },
+        },
+      ] as any);
+
+      return request(app.getHttpServer())
+        .get('/api/v1/users/test-user-id/diseases')
+        .set(authHeaders())
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({
+            status: 'success',
+            data: [{ disease_id: 2, name: 'Asma' }],
+          });
+        });
+    });
+  });
+
+  describe('/api/v1/users/:userId/medicines (GET)', () => {
+    it('should return active medicines as a flat success envelope', async () => {
+      jest
+        .spyOn(prisma.users, 'findUnique')
+        .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
+      jest.spyOn(prisma.users_medicines, 'findMany').mockResolvedValue([
+        {
+          medicine_id: 3,
+          medicines: { name: 'Ibuprofeno' },
+        },
+      ] as any);
+
+      return request(app.getHttpServer())
+        .get('/api/v1/users/test-user-id/medicines')
+        .set(authHeaders())
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({
+            status: 'success',
+            data: [{ medicine_id: 3, name: 'Ibuprofeno' }],
+          });
         });
     });
   });

@@ -11,6 +11,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
@@ -19,10 +20,12 @@ import {
   CreateAllergyDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
+  CreateMedicineDto,
   CreateRelationshipTypeDto,
   UpdateAllergyDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
+  UpdateMedicineDto,
   UpdateRelationshipTypeDto,
 } from './dto';
 
@@ -32,6 +35,10 @@ import {
 @Controller('admin')
 export class AdminReferenceController {
   constructor(private readonly referenceService: AdminReferenceService) {}
+
+  private getActorId(request: Request & { user: { sub: string } }) {
+    return request.user.sub;
+  }
 
   @Get('relationship-types')
   @RequirePermissions('catalogs:read')
@@ -46,11 +53,11 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Create relationship type' })
   async createRelationshipType(
     @Body() dto: CreateRelationshipTypeDto,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.createRelationshipType(
       dto,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -61,12 +68,12 @@ export class AdminReferenceController {
   async updateRelationshipType(
     @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
     @Body() dto: UpdateRelationshipTypeDto,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateRelationshipType(
       relationshipTypeId,
       dto,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -76,11 +83,11 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete relationship type' })
   async deleteRelationshipType(
     @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteRelationshipType(
       relationshipTypeId,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -96,8 +103,14 @@ export class AdminReferenceController {
   @Post('allergies')
   @RequirePermissions('catalogs:create')
   @ApiOperation({ summary: 'Create allergy' })
-  async createAllergy(@Body() dto: CreateAllergyDto, @Request() req) {
-    const data = await this.referenceService.createAllergy(dto, req.user.sub);
+  async createAllergy(
+    @Body() dto: CreateAllergyDto,
+    @Request() req: Request & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.createAllergy(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -107,12 +120,12 @@ export class AdminReferenceController {
   async updateAllergy(
     @Param('allergyId', ParseIntPipe) allergyId: number,
     @Body() dto: UpdateAllergyDto,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateAllergy(
       allergyId,
       dto,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -122,11 +135,11 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete allergy' })
   async deleteAllergy(
     @Param('allergyId', ParseIntPipe) allergyId: number,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteAllergy(
       allergyId,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -142,8 +155,14 @@ export class AdminReferenceController {
   @Post('diseases')
   @RequirePermissions('catalogs:create')
   @ApiOperation({ summary: 'Create disease' })
-  async createDisease(@Body() dto: CreateDiseaseDto, @Request() req) {
-    const data = await this.referenceService.createDisease(dto, req.user.sub);
+  async createDisease(
+    @Body() dto: CreateDiseaseDto,
+    @Request() req: Request & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.createDisease(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -153,12 +172,12 @@ export class AdminReferenceController {
   async updateDisease(
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
     @Body() dto: UpdateDiseaseDto,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateDisease(
       diseaseId,
       dto,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -168,11 +187,63 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete disease' })
   async deleteDisease(
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteDisease(
       diseaseId,
-      req.user.sub,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('medicines')
+  @RequirePermissions('catalogs:read')
+  @ApiOperation({ summary: 'List medicines for admin management' })
+  async listMedicines() {
+    const data = await this.referenceService.listMedicines();
+    return { status: 'success', data };
+  }
+
+  @Post('medicines')
+  @RequirePermissions('catalogs:create')
+  @ApiOperation({ summary: 'Create medicine' })
+  async createMedicine(
+    @Body() dto: CreateMedicineDto,
+    @Request() req: Request & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.createMedicine(
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Patch('medicines/:medicineId')
+  @RequirePermissions('catalogs:update')
+  @ApiOperation({ summary: 'Update medicine' })
+  async updateMedicine(
+    @Param('medicineId', ParseIntPipe) medicineId: number,
+    @Body() dto: UpdateMedicineDto,
+    @Request() req: Request & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.updateMedicine(
+      medicineId,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('medicines/:medicineId')
+  @RequirePermissions('catalogs:delete')
+  @ApiOperation({ summary: 'Soft delete medicine' })
+  async deleteMedicine(
+    @Param('medicineId', ParseIntPipe) medicineId: number,
+    @Request() req: Request & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.deleteMedicine(
+      medicineId,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -190,11 +261,11 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Create ecclesiastical year' })
   async createEcclesiasticalYear(
     @Body() dto: CreateEcclesiasticalYearDto,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.createEcclesiasticalYear(
       dto,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -205,12 +276,12 @@ export class AdminReferenceController {
   async updateEcclesiasticalYear(
     @Param('yearId', ParseIntPipe) yearId: number,
     @Body() dto: UpdateEcclesiasticalYearDto,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateEcclesiasticalYear(
       yearId,
       dto,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
@@ -220,11 +291,11 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete ecclesiastical year' })
   async deleteEcclesiasticalYear(
     @Param('yearId', ParseIntPipe) yearId: number,
-    @Request() req,
+    @Request() req: Request & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteEcclesiasticalYear(
       yearId,
-      req.user.sub,
+      this.getActorId(req),
     );
     return { status: 'success', data };
   }
