@@ -29,3 +29,17 @@ export class UpdateUserDiseasesDto {
   @Min(1, { each: true })
   disease_ids: number[];
 }
+
+export class UpdateUserMedicinesDto {
+  @ApiProperty({
+    example: [3, 7],
+    description: 'Lista de IDs de medicamentos activos para el usuario',
+    type: [Number],
+  })
+  @IsArray()
+  @ArrayUnique()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  medicine_ids: number[];
+}

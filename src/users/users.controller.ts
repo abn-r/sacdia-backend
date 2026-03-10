@@ -29,6 +29,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import {
   UpdateUserAllergiesDto,
   UpdateUserDiseasesDto,
+  UpdateUserMedicinesDto,
 } from './dto/update-user-medical.dto';
 import {
   AuthorizationResource,
@@ -71,6 +72,16 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async getDiseases(@Param('userId') userId: string) {
     return this.usersService.getDiseases(userId);
+  }
+
+  @Get(':userId/medicines')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
+  @ApiResponse({ status: 200, description: 'Medicamentos obtenidos' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  async getMedicines(@Param('userId') userId: string) {
+    return this.usersService.getMedicines(userId);
   }
 
   @Patch(':userId')
@@ -122,6 +133,24 @@ export class UsersController {
     return this.usersService.updateDiseases(userId, dto);
   }
 
+  @Put(':userId/medicines')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({
+    summary: 'Guardar medicamentos del usuario',
+    description:
+      'Reemplaza el conjunto de medicamentos activos del usuario en users_medicines',
+  })
+  @ApiResponse({ status: 200, description: 'Medicamentos actualizados' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 400, description: 'Medicamento inválido' })
+  async updateMedicines(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserMedicinesDto,
+  ) {
+    return this.usersService.updateMedicines(userId, dto);
+  }
+
   @Delete(':userId/allergies/:allergyId')
   @RequirePermissions('users:update')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -160,6 +189,26 @@ export class UsersController {
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
   ) {
     return this.usersService.removeDisease(userId, diseaseId);
+  }
+
+  @Delete(':userId/medicines/:medicineId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({
+    summary: 'Eliminar medicamento del usuario (borrado lógico)',
+    description:
+      'Desactiva (active=false) un medicamento específico del usuario en users_medicines',
+  })
+  @ApiResponse({ status: 200, description: 'Medicamento eliminado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Medicamento no encontrado en el usuario',
+  })
+  async removeMedicine(
+    @Param('userId') userId: string,
+    @Param('medicineId', ParseIntPipe) medicineId: number,
+  ) {
+    return this.usersService.removeMedicine(userId, medicineId);
   }
 
   @Post(':userId/profile-picture')
