@@ -17,7 +17,7 @@ import {
 import { LegalRepresentativesService } from './legal-representatives.service';
 import { CreateLegalRepresentativeDto } from './dto/create-legal-representative.dto';
 import { UpdateLegalRepresentativeDto } from './dto/update-legal-representative.dto';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import { SensitiveUserSubresource } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('legal-representatives')
@@ -30,8 +30,7 @@ export class LegalRepresentativesController {
   ) {}
 
   @Post()
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('legal_representative', 'update')
   @ApiOperation({
     summary: 'Registrar representante legal (solo para menores de 18)',
   })
@@ -48,8 +47,7 @@ export class LegalRepresentativesController {
   }
 
   @Get()
-  @RequirePermissions('users:read_detail')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('legal_representative', 'read')
   @ApiOperation({ summary: 'Obtener representante legal del usuario' })
   @ApiResponse({
     status: 200,
@@ -62,8 +60,7 @@ export class LegalRepresentativesController {
   }
 
   @Patch()
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('legal_representative', 'update')
   @ApiOperation({ summary: 'Actualizar representante legal' })
   @ApiResponse({ status: 200, description: 'Representante actualizado' })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })
@@ -75,8 +72,7 @@ export class LegalRepresentativesController {
   }
 
   @Delete()
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('legal_representative', 'update')
   @ApiOperation({ summary: 'Eliminar representante legal' })
   @ApiResponse({ status: 200, description: 'Representante eliminado' })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })

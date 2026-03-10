@@ -34,6 +34,7 @@ import {
 import {
   AuthorizationResource,
   RequirePermissions,
+  SensitiveUserSubresource,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
@@ -55,8 +56,7 @@ export class UsersController {
   }
 
   @Get(':userId/allergies')
-  @RequirePermissions('users:read_detail')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
   @ApiResponse({ status: 200, description: 'Alergias obtenidas' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
@@ -65,8 +65,7 @@ export class UsersController {
   }
 
   @Get(':userId/diseases')
-  @RequirePermissions('users:read_detail')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
   @ApiResponse({ status: 200, description: 'Enfermedades obtenidas' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
@@ -75,8 +74,7 @@ export class UsersController {
   }
 
   @Get(':userId/medicines')
-  @RequirePermissions('users:read_detail')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
   @ApiResponse({ status: 200, description: 'Medicamentos obtenidos' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
@@ -98,8 +96,7 @@ export class UsersController {
   }
 
   @Put(':userId/allergies')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar alergias del usuario',
     description:
@@ -116,8 +113,7 @@ export class UsersController {
   }
 
   @Put(':userId/diseases')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar enfermedades del usuario',
     description:
@@ -134,8 +130,7 @@ export class UsersController {
   }
 
   @Put(':userId/medicines')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Guardar medicamentos del usuario',
     description:
@@ -152,8 +147,7 @@ export class UsersController {
   }
 
   @Delete(':userId/allergies/:allergyId')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar alergia del usuario (borrado lógico)',
     description:
@@ -172,8 +166,7 @@ export class UsersController {
   }
 
   @Delete(':userId/diseases/:diseaseId')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar enfermedad del usuario (borrado lógico)',
     description:
@@ -192,8 +185,7 @@ export class UsersController {
   }
 
   @Delete(':userId/medicines/:medicineId')
-  @RequirePermissions('users:update')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @SensitiveUserSubresource('health', 'update')
   @ApiOperation({
     summary: 'Eliminar medicamento del usuario (borrado lógico)',
     description:

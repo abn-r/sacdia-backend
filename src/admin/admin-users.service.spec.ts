@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminUsersService } from './admin-users.service';
@@ -20,6 +21,10 @@ describe('AdminUsersService', () => {
     getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
   };
 
+  const mockAuthorizationContextService = {
+    resolveUserAuthorization: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -32,6 +37,10 @@ describe('AdminUsersService', () => {
           provide: FILE_STORAGE_SERVICE,
           useValue: mockFileStorageService,
         },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContextService,
+        },
       ],
     }).compile();
 
@@ -40,6 +49,114 @@ describe('AdminUsersService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  const buildResolvedAuthorization = (globalPermissions: string[]) => ({
+    profile: {},
+    post_register_complete: false,
+    authorization: {
+      grants: {
+        global_roles: [
+          {
+            role_name: 'admin',
+            permissions: globalPermissions,
+            scope: {},
+          },
+        ],
+        club_assignments: [],
+      },
+      active_assignment: { assignment_id: null },
+      effective: {
+        permissions: globalPermissions,
+        scope: {
+          global: {},
+          club: null,
+        },
+      },
+    },
+    legacy: {
+      roles: ['admin'],
+      permissions: globalPermissions,
+      club: null,
+      club_context: {
+        active_assignment_id: null,
+        active: null,
+        available: [],
+      },
+    },
+  });
+
+  const buildAdminDetailRecord = () => ({
+    user_id: 'user-1',
+    email: 'user1@example.com',
+    name: 'Maria',
+    paternal_last_name: 'Lopez',
+    maternal_last_name: 'Diaz',
+    gender: 'Femenino',
+    birthday: new Date('2010-10-01'),
+    blood: 'A_POSITIVE',
+    baptism: false,
+    baptism_date: null,
+    user_image: null,
+    active: true,
+    access_app: true,
+    access_panel: false,
+    country_id: 1,
+    union_id: 2,
+    local_field_id: 3,
+    created_at: new Date('2026-01-01'),
+    modified_at: new Date('2026-01-05'),
+    countries: { country_id: 1, name: 'Mexico' },
+    unions: { union_id: 2, name: 'UMS' },
+    local_fields: { local_field_id: 3, union_id: 2, name: 'Campo Sur' },
+    users_roles: [{ role_id: 'r1', roles: { role_name: 'user' } }],
+    users_pr: [
+      {
+        complete: false,
+        profile_picture_complete: true,
+        personal_info_complete: false,
+        club_selection_complete: false,
+        date_completed: null,
+      },
+    ],
+    users_classes: [],
+    club_role_assignments: [],
+    emergency_contact: [
+      {
+        emergency_id: 91,
+        name: 'Ana Tutor',
+        phone: '555-1111',
+        primary: true,
+        relationship_type_id: 4,
+      },
+    ],
+    legal_representative: {
+      id: 41,
+      representative_user_id: null,
+      relationship_type_id: 8,
+      name: 'Carlos',
+      paternal_last_name: 'Tutor',
+      maternal_last_name: 'Perez',
+      phone: '555-2222',
+    },
+    users_allergies: [
+      {
+        allergy_id: 1,
+        allergies: { name: 'Peanuts' },
+      },
+    ],
+    users_diseases: [
+      {
+        disease_id: 2,
+        diseases: { name: 'Asthma' },
+      },
+    ],
+    users_medicines: [
+      {
+        medicine_id: 3,
+        medicines: { name: 'Salbutamol' },
+      },
+    ],
   });
 
   it('should be defined', () => {
@@ -225,6 +342,9 @@ describe('AdminUsersService', () => {
         local_field_id: null,
         users_roles: [{ roles: { role_name: 'super_admin' } }],
       });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization(['users:read_detail']),
+      );
 
       mockPrismaService.users.findFirst.mockResolvedValue({
         user_id: 'user-1',
@@ -279,6 +399,9 @@ describe('AdminUsersService', () => {
         local_field_id: null,
         users_roles: [{ roles: { role_name: 'admin' } }],
       });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization(['users:read_detail']),
+      );
       mockPrismaService.users.findFirst.mockResolvedValue(null);
 
       await expect(
@@ -296,5 +419,103 @@ describe('AdminUsersService', () => {
         }),
       );
     });
+
+    describe('sensitive subresource pruning', () => {
+      const actor = {
+        user_id: 'actor-admin',
+        union_id: 2,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'admin' } }],
+      };
+
+      beforeEach(() => {
+        mockPrismaService.users.findUnique.mockResolvedValue(actor);
+        mockPrismaService.users.findFirst.mockResolvedValue(buildAdminDetailRecord());
+      });
+
+      it.each([
+        ['health', ['health:read'], 'health'],
+        ['emergency_contacts', ['emergency_contacts:read'], 'emergency_contacts'],
+        ['legal_representative', ['legal_representative:read'], 'legal_representative'],
+        ['post_registration', ['post_registration:read'], 'post_registration'],
+      ])(
+        'should expose only %s block for fine-grained readers',
+        async (_family, permissions, visibleBlock) => {
+          mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+            buildResolvedAuthorization(permissions),
+          );
+
+          const result = await service.getUserById('actor-admin', 'user-1');
+
+          expect(result.health).toEqual(
+            visibleBlock === 'health' ? definedHealth() : null,
+          );
+          expect(result.emergency_contacts).toEqual(
+            visibleBlock === 'emergency_contacts'
+              ? buildAdminDetailRecord().emergency_contact
+              : null,
+          );
+          expect(result.legal_representative).toEqual(
+            visibleBlock === 'legal_representative'
+              ? buildAdminDetailRecord().legal_representative
+              : null,
+          );
+          expect(result.post_registration).toEqual(
+            visibleBlock === 'post_registration'
+              ? definedPostRegistration()
+              : null,
+          );
+        },
+      );
+
+      it('should preserve transitional legacy compatibility for users:read_detail', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization(['users:read_detail']),
+        );
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.health).toEqual(definedHealth());
+        expect(result.emergency_contacts).toEqual(
+          buildAdminDetailRecord().emergency_contact,
+        );
+        expect(result.legal_representative).toEqual(
+          buildAdminDetailRecord().legal_representative,
+        );
+        expect(result.post_registration).toEqual(definedPostRegistration());
+      });
+
+      it('should prune sensitive blocks when actor lacks fine and legacy detail permissions', async () => {
+        mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+          buildResolvedAuthorization(['users:read']),
+        );
+
+        const result = await service.getUserById('actor-admin', 'user-1');
+
+        expect(result.health).toBeNull();
+        expect(result.emergency_contacts).toBeNull();
+        expect(result.legal_representative).toBeNull();
+        expect(result.post_registration).toBeNull();
+      });
+    });
   });
 });
+
+function definedHealth() {
+  return {
+    blood: 'A_POSITIVE',
+    allergies: [{ allergy_id: 1, name: 'Peanuts' }],
+    diseases: [{ disease_id: 2, name: 'Asthma' }],
+    medicines: [{ medicine_id: 3, name: 'Salbutamol' }],
+  };
+}
+
+function definedPostRegistration() {
+  return {
+    complete: false,
+    profile_picture_complete: true,
+    personal_info_complete: false,
+    club_selection_complete: false,
+    date_completed: null,
+  };
+}

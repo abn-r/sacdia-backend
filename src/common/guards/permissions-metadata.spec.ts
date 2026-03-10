@@ -3,6 +3,10 @@
 import { ActivitiesController } from '../../activities/activities.controller';
 import { AdminGeographyController } from '../../admin/admin-geography.controller';
 import { AdminReferenceController } from '../../admin/admin-reference.controller';
+import {
+  SENSITIVE_USER_SUBRESOURCE_KEY,
+  SensitiveUserSubresource,
+} from '../decorators/sensitive-user-subresource.decorator';
 import { AUTHORIZATION_RESOURCE_KEY } from '../decorators/authorization-resource.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { CLUB_ROLES_KEY } from '../guards/club-roles.guard';
@@ -20,6 +24,32 @@ import { NotificationsController } from '../../notifications/notifications.contr
 import { PostRegistrationController } from '../../post-registration/post-registration.controller';
 import { RbacController } from '../../rbac/rbac.controller';
 import { UsersController } from '../../users/users.controller';
+
+class SensitiveUserSubresourceMetadataFixture {
+  @SensitiveUserSubresource('health', 'read')
+  healthRead() {}
+
+  @SensitiveUserSubresource('health', 'update')
+  healthUpdate() {}
+
+  @SensitiveUserSubresource('emergency_contacts', 'read')
+  emergencyContactsRead() {}
+
+  @SensitiveUserSubresource('emergency_contacts', 'update')
+  emergencyContactsUpdate() {}
+
+  @SensitiveUserSubresource('legal_representative', 'read')
+  legalRepresentativeRead() {}
+
+  @SensitiveUserSubresource('legal_representative', 'update')
+  legalRepresentativeUpdate() {}
+
+  @SensitiveUserSubresource('post_registration', 'read')
+  postRegistrationRead() {}
+
+  @SensitiveUserSubresource('post_registration', 'update')
+  postRegistrationUpdate() {}
+}
 
 describe('Permissions metadata', () => {
   it('marks admin users listing with users:read', () => {
@@ -43,112 +73,179 @@ describe('Permissions metadata', () => {
     ).toEqual({ type: 'user', ownerParam: 'userId' });
   });
 
-  it('marks user health read routes as owner-aware detail reads', () => {
+  it('marks user health read routes as owner-aware health reads', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.getAllergies,
       ),
-    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    ).toEqual({ permissions: ['health:read'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.getAllergies,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.getAllergies,
+      ),
+    ).toEqual({ family: 'health', mode: 'read' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.getDiseases,
       ),
-    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    ).toEqual({ permissions: ['health:read'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.getDiseases,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.getDiseases,
+      ),
+    ).toEqual({ family: 'health', mode: 'read' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.getMedicines,
       ),
-    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    ).toEqual({ permissions: ['health:read'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.getMedicines,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.getMedicines,
+      ),
+    ).toEqual({ family: 'health', mode: 'read' });
   });
 
-  it('marks sensitive user profile writes as owner-aware updates', () => {
+  it('marks scoped user health writes as owner-aware health updates', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.updateAllergies,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['health:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.updateAllergies,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.updateAllergies,
+      ),
+    ).toEqual({ family: 'health', mode: 'update' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.updateDiseases,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['health:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.updateDiseases,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.updateDiseases,
+      ),
+    ).toEqual({ family: 'health', mode: 'update' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.updateMedicines,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['health:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.updateMedicines,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.updateMedicines,
+      ),
+    ).toEqual({ family: 'health', mode: 'update' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.removeAllergy,
+      ),
+    ).toEqual({ permissions: ['health:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UsersController.prototype.removeAllergy,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.removeAllergy,
+      ),
+    ).toEqual({ family: 'health', mode: 'update' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.removeDisease,
+      ),
+    ).toEqual({ permissions: ['health:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UsersController.prototype.removeDisease,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.removeDisease,
+      ),
+    ).toEqual({ family: 'health', mode: 'update' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.removeMedicine,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['health:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UsersController.prototype.removeMedicine,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
-
     expect(
       Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        UsersController.prototype.uploadProfilePicture,
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        UsersController.prototype.removeMedicine,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        UsersController.prototype.uploadProfilePicture,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    ).toEqual({ family: 'health', mode: 'update' });
   });
 
   it('marks derived user health checks as owner-aware detail reads', () => {
@@ -176,45 +273,159 @@ describe('Permissions metadata', () => {
     ).toEqual({ type: 'user', ownerParam: 'userId' });
   });
 
+  it.each([
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.healthRead,
+      'health:read',
+      { family: 'health', mode: 'read' },
+    ],
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.healthUpdate,
+      'health:update',
+      { family: 'health', mode: 'update' },
+    ],
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.emergencyContactsRead,
+      'emergency_contacts:read',
+      { family: 'emergency_contacts', mode: 'read' },
+    ],
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.emergencyContactsUpdate,
+      'emergency_contacts:update',
+      { family: 'emergency_contacts', mode: 'update' },
+    ],
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.legalRepresentativeRead,
+      'legal_representative:read',
+      { family: 'legal_representative', mode: 'read' },
+    ],
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.legalRepresentativeUpdate,
+      'legal_representative:update',
+      { family: 'legal_representative', mode: 'update' },
+    ],
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.postRegistrationRead,
+      'post_registration:read',
+      { family: 'post_registration', mode: 'read' },
+    ],
+    [
+      SensitiveUserSubresourceMetadataFixture.prototype.postRegistrationUpdate,
+      'post_registration:update',
+      { family: 'post_registration', mode: 'update' },
+    ],
+  ] as const)(
+    'sets fine-grained metadata for sensitive user subresources on %p',
+    (handler, permission, subresourceMetadata) => {
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+        permissions: [permission],
+        mode: 'all',
+      });
+      expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
+        type: 'user',
+        ownerParam: 'userId',
+      });
+      expect(
+        Reflect.getMetadata(SENSITIVE_USER_SUBRESOURCE_KEY, handler),
+      ).toEqual(subresourceMetadata);
+    },
+  );
+
   it('marks emergency contact routes as owner-aware sensitive user resources', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         EmergencyContactsController.prototype.findAll,
       ),
-    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    ).toEqual({ permissions: ['emergency_contacts:read'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         EmergencyContactsController.prototype.findAll,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        EmergencyContactsController.prototype.findAll,
+      ),
+    ).toEqual({ family: 'emergency_contacts', mode: 'read' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        EmergencyContactsController.prototype.findOne,
+      ),
+    ).toEqual({ permissions: ['emergency_contacts:read'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        EmergencyContactsController.prototype.findOne,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        EmergencyContactsController.prototype.findOne,
+      ),
+    ).toEqual({ family: 'emergency_contacts', mode: 'read' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         EmergencyContactsController.prototype.create,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['emergency_contacts:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         EmergencyContactsController.prototype.create,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        EmergencyContactsController.prototype.create,
+      ),
+    ).toEqual({ family: 'emergency_contacts', mode: 'update' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         EmergencyContactsController.prototype.update,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['emergency_contacts:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         EmergencyContactsController.prototype.update,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        EmergencyContactsController.prototype.update,
+      ),
+    ).toEqual({ family: 'emergency_contacts', mode: 'update' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        EmergencyContactsController.prototype.remove,
+      ),
+    ).toEqual({ permissions: ['emergency_contacts:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        EmergencyContactsController.prototype.remove,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        EmergencyContactsController.prototype.remove,
+      ),
+    ).toEqual({ family: 'emergency_contacts', mode: 'update' });
   });
 
   it('marks legal representative routes as owner-aware sensitive user resources', () => {
@@ -223,39 +434,76 @@ describe('Permissions metadata', () => {
         PERMISSIONS_KEY,
         LegalRepresentativesController.prototype.findOne,
       ),
-    ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
+    ).toEqual({ permissions: ['legal_representative:read'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         LegalRepresentativesController.prototype.findOne,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        LegalRepresentativesController.prototype.findOne,
+      ),
+    ).toEqual({ family: 'legal_representative', mode: 'read' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         LegalRepresentativesController.prototype.create,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['legal_representative:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         LegalRepresentativesController.prototype.create,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        LegalRepresentativesController.prototype.create,
+      ),
+    ).toEqual({ family: 'legal_representative', mode: 'update' });
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         LegalRepresentativesController.prototype.update,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['legal_representative:update'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         LegalRepresentativesController.prototype.update,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        LegalRepresentativesController.prototype.update,
+      ),
+    ).toEqual({ family: 'legal_representative', mode: 'update' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        LegalRepresentativesController.prototype.remove,
+      ),
+    ).toEqual({ permissions: ['legal_representative:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        LegalRepresentativesController.prototype.remove,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        LegalRepresentativesController.prototype.remove,
+      ),
+    ).toEqual({ family: 'legal_representative', mode: 'update' });
   });
 
   it('marks inventory creation as instance-scoped inventory permission', () => {
@@ -380,58 +628,103 @@ describe('Permissions metadata', () => {
     ).toEqual({ permissions: ['notifications:club'], mode: 'all' });
   });
 
-  it('keeps post-registration permissions on users:* without inventing new permissions', () => {
+  it('marks post-registration routes as owner-aware sensitive user resources', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         PostRegistrationController.prototype.getStatus,
       ),
+    ).toEqual({ permissions: ['post_registration:read'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        PostRegistrationController.prototype.getStatus,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        PostRegistrationController.prototype.getStatus,
+      ),
+    ).toEqual({ family: 'post_registration', mode: 'read' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PostRegistrationController.prototype.completeStep1,
+      ),
+    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        PostRegistrationController.prototype.completeStep1,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        PostRegistrationController.prototype.completeStep1,
+      ),
+    ).toEqual({ family: 'post_registration', mode: 'update' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PostRegistrationController.prototype.completeStep2,
+      ),
+    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        PostRegistrationController.prototype.completeStep2,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        PostRegistrationController.prototype.completeStep2,
+      ),
+    ).toEqual({ family: 'post_registration', mode: 'update' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PostRegistrationController.prototype.completeStep3,
+      ),
+    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        PostRegistrationController.prototype.completeStep3,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+    expect(
+      Reflect.getMetadata(
+        SENSITIVE_USER_SUBRESOURCE_KEY,
+        PostRegistrationController.prototype.completeStep3,
+      ),
+    ).toEqual({ family: 'post_registration', mode: 'update' });
+  });
+
+  it('keeps out-of-scope user routes on legacy users:* metadata', () => {
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, UsersController.prototype.update),
+    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.uploadProfilePicture,
+      ),
+    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UsersController.prototype.deleteProfilePicture,
+      ),
+    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(PERMISSIONS_KEY, UsersController.prototype.getAge),
     ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        PostRegistrationController.prototype.getStatus,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        PostRegistrationController.prototype.completeStep1,
-      ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        PostRegistrationController.prototype.completeStep1,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        PostRegistrationController.prototype.completeStep2,
-      ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        PostRegistrationController.prototype.completeStep2,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        PostRegistrationController.prototype.completeStep3,
-      ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        PostRegistrationController.prototype.completeStep3,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
   });
 
   it('marks activity updates as activity-scoped permissions', () => {
