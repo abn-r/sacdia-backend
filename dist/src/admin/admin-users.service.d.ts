@@ -1,3 +1,4 @@
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListUsersQueryDto } from './dto';
@@ -22,10 +23,11 @@ interface AdminUsersListResult<T> {
 }
 export declare class AdminUsersService {
     private readonly prisma;
+    private readonly authorizationContext;
     private readonly fileStorage;
     private readonly logger;
     private static readonly PRIVATE_ASSET_URL_TTL_SECONDS;
-    constructor(prisma: PrismaService, fileStorage: FileStorageService);
+    constructor(prisma: PrismaService, authorizationContext: AuthorizationContextService, fileStorage: FileStorageService);
     listUsers(actorUserId: string, query: AdminListUsersQueryDto): Promise<AdminUsersListResult<any>>;
     getUserById(actorUserId: string, userId: string): Promise<{
         gender: string | null;
@@ -60,22 +62,10 @@ export declare class AdminUsersService {
                 club: any;
             } | null;
         }[];
-        emergency_contacts: {
-            name: string;
-            phone: string;
-            relationship_type_id: string;
-            primary: boolean;
-            emergency_id: number;
-        }[];
-        legal_representative: {
-            name: string | null;
-            paternal_last_name: string | null;
-            maternal_last_name: string | null;
-            id: string;
-            phone: string | null;
-            relationship_type_id: string | null;
-            representative_user_id: string | null;
-        } | null;
+        health: Record<string, unknown> | null;
+        emergency_contacts: unknown[] | null;
+        legal_representative: Record<string, unknown> | null;
+        post_registration: Record<string, unknown> | null;
         scope: ScopeMeta;
         user_id: any;
         email: any;
@@ -100,14 +90,13 @@ export declare class AdminUsersService {
             name: any;
         } | null;
         roles: string[];
-        post_registration: {
-            complete: any;
-            profile_picture_complete: any;
-            personal_info_complete: any;
-            club_selection_complete: any;
-        } | null;
         created_at: any;
     }>;
+    private getActorGlobalPermissions;
+    private buildSensitiveBlocks;
+    private canReadSensitiveFamily;
+    private buildHealthBlock;
+    private buildMinimalPostRegistrationBlock;
     private resolveScope;
     private buildListWhere;
     private buildScopeWhere;

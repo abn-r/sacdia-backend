@@ -17,16 +17,20 @@ exports.AdminUsersService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
+const authorization_context_service_1 = require("../common/services/authorization-context.service");
+const sensitive_user_subresource_policy_1 = require("../common/guards/sensitive-user-subresource-policy");
 const file_storage_service_1 = require("../common/services/file-storage.service");
 const prisma_service_1 = require("../prisma/prisma.service");
 let AdminUsersService = class AdminUsersService {
     static { AdminUsersService_1 = this; }
     prisma;
+    authorizationContext;
     fileStorage;
     logger = new common_1.Logger(AdminUsersService_1.name);
     static PRIVATE_ASSET_URL_TTL_SECONDS = 300;
-    constructor(prisma, fileStorage) {
+    constructor(prisma, authorizationContext, fileStorage) {
         this.prisma = prisma;
+        this.authorizationContext = authorizationContext;
         this.fileStorage = fileStorage;
     }
     async listUsers(actorUserId, query) {
@@ -116,6 +120,8 @@ let AdminUsersService = class AdminUsersService {
     }
     async getUserById(actorUserId, userId) {
         const scope = await this.resolveScope(actorUserId);
+        const resolvedAuthorization = await this.authorizationContext.resolveUserAuthorization(actorUserId);
+        const actorGlobalPermissions = this.getActorGlobalPermissions(resolvedAuthorization);
         const filters = [{ user_id: userId }];
         const scopedFilter = this.buildScopeWhere(scope);
         if (Object.keys(scopedFilter).length > 0) {
@@ -288,17 +294,54 @@ let AdminUsersService = class AdminUsersService {
                         phone: true,
                     },
                 },
+                users_allergies: {
+                    where: { active: true },
+                    orderBy: { allergy_id: 'asc' },
+                    select: {
+                        allergy_id: true,
+                        allergies: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
+                users_diseases: {
+                    where: { active: true },
+                    orderBy: { disease_id: 'asc' },
+                    select: {
+                        disease_id: true,
+                        diseases: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
+                users_medicines: {
+                    where: { active: true },
+                    orderBy: { medicine_id: 'asc' },
+                    select: {
+                        medicine_id: true,
+                        medicines: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
             },
         });
         if (!user) {
             throw new common_1.NotFoundException('Usuario no encontrado o fuera de alcance');
         }
         const listItem = await this.toListItem(user);
+        const sensitiveBlocks = this.buildSensitiveBlocks(user, actorGlobalPermissions);
         return {
             ...listItem,
             gender: user.gender,
             birthday: user.birthday,
-            blood: user.blood,
+            blood: sensitiveBlocks.health ? user.blood : null,
             baptism: user.baptism,
             baptism_date: user.baptism_date,
             user_image: listItem.user_image,
@@ -320,9 +363,65 @@ let AdminUsersService = class AdminUsersService {
                 ecclesiastical_year: assignment.ecclesiastical_year,
                 club: this.resolveClubAssignment(assignment),
             })),
-            emergency_contacts: user.emergency_contact,
-            legal_representative: user.legal_representative,
+            health: sensitiveBlocks.health,
+            emergency_contacts: sensitiveBlocks.emergency_contacts,
+            legal_representative: sensitiveBlocks.legal_representative,
+            post_registration: sensitiveBlocks.post_registration,
             scope: this.toScopeMeta(scope),
+        };
+    }
+    getActorGlobalPermissions(resolvedAuthorization) {
+        return new Set(resolvedAuthorization.authorization.grants.global_roles.flatMap((grant) => grant.permissions));
+    }
+    buildSensitiveBlocks(user, actorGlobalPermissions) {
+        return {
+            health: this.canReadSensitiveFamily(actorGlobalPermissions, 'health')
+                ? this.buildHealthBlock(user)
+                : null,
+            emergency_contacts: this.canReadSensitiveFamily(actorGlobalPermissions, 'emergency_contacts')
+                ? user.emergency_contact
+                : null,
+            legal_representative: this.canReadSensitiveFamily(actorGlobalPermissions, 'legal_representative')
+                ? user.legal_representative
+                : null,
+            post_registration: this.canReadSensitiveFamily(actorGlobalPermissions, 'post_registration')
+                ? this.buildMinimalPostRegistrationBlock(user)
+                : null,
+        };
+    }
+    canReadSensitiveFamily(actorGlobalPermissions, family) {
+        const policy = (0, sensitive_user_subresource_policy_1.getSensitiveUserSubresourcePolicy)(family, 'read');
+        return (actorGlobalPermissions.has(policy.finePermission) ||
+            actorGlobalPermissions.has(policy.legacyFallbackPermission));
+    }
+    buildHealthBlock(user) {
+        return {
+            blood: user.blood,
+            allergies: (user.users_allergies ?? []).map((item) => ({
+                allergy_id: item.allergy_id,
+                name: item.allergies?.name ?? null,
+            })),
+            diseases: (user.users_diseases ?? []).map((item) => ({
+                disease_id: item.disease_id,
+                name: item.diseases?.name ?? null,
+            })),
+            medicines: (user.users_medicines ?? []).map((item) => ({
+                medicine_id: item.medicine_id,
+                name: item.medicines?.name ?? null,
+            })),
+        };
+    }
+    buildMinimalPostRegistrationBlock(user) {
+        const latestPostRegistration = user.users_pr?.[0];
+        if (!latestPostRegistration) {
+            return null;
+        }
+        return {
+            complete: latestPostRegistration.complete,
+            profile_picture_complete: latestPostRegistration.profile_picture_complete,
+            personal_info_complete: latestPostRegistration.personal_info_complete,
+            club_selection_complete: latestPostRegistration.club_selection_complete,
+            date_completed: latestPostRegistration.date_completed ?? null,
         };
     }
     async resolveScope(actorUserId) {
@@ -536,7 +635,8 @@ let AdminUsersService = class AdminUsersService {
 exports.AdminUsersService = AdminUsersService;
 exports.AdminUsersService = AdminUsersService = AdminUsersService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(1, (0, common_1.Inject)(file_storage_service_1.FILE_STORAGE_SERVICE)),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object])
+    __param(2, (0, common_1.Inject)(file_storage_service_1.FILE_STORAGE_SERVICE)),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        authorization_context_service_1.AuthorizationContextService, Object])
 ], AdminUsersService);
 //# sourceMappingURL=admin-users.service.js.map

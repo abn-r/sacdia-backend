@@ -20,7 +20,8 @@ const certifications_service_1 = require("./certifications.service");
 const enroll_certification_dto_1 = require("./dto/enroll-certification.dto");
 const update_progress_dto_1 = require("./dto/update-progress.dto");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 let CertificationsController = class CertificationsController {
     certificationsService;
     constructor(certificationsService) {
@@ -128,6 +129,8 @@ __decorate([
 ], CertificationsController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Post)('users/:userId/certifications/enroll'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Inscribirse en una certificación',
         description: 'Permite a un Guía Mayor investido inscribirse en una certificación. Valida automáticamente elegibilidad.',
@@ -156,6 +159,8 @@ __decorate([
 ], CertificationsController.prototype, "enrollUser", null);
 __decorate([
     (0, common_1.Get)('users/:userId/certifications'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar certificaciones del usuario',
         description: 'Obtiene todas las certificaciones en las que está inscrito el usuario con progreso',
@@ -177,6 +182,8 @@ __decorate([
 ], CertificationsController.prototype, "getUserCertifications", null);
 __decorate([
     (0, common_1.Get)('users/:userId/certifications/:certificationId/progress'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Ver progreso detallado de una certificación',
         description: 'Obtiene el progreso detallado por módulos y secciones de una certificación específica',
@@ -208,6 +215,8 @@ __decorate([
 ], CertificationsController.prototype, "getCertificationProgress", null);
 __decorate([
     (0, common_1.Patch)('users/:userId/certifications/:certificationId/progress'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Actualizar progreso de una sección',
         description: 'Marca una sección como completa/incompleta. Auto-completa módulo y certificación si todas las secciones/módulos están completos.',
@@ -244,6 +253,8 @@ __decorate([
 ], CertificationsController.prototype, "updateProgress", null);
 __decorate([
     (0, common_1.Delete)('users/:userId/certifications/:certificationId'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Abandonar una certificación',
         description: 'Desactiva la inscripción del usuario en una certificación (soft delete)',
@@ -276,7 +287,7 @@ __decorate([
 exports.CertificationsController = CertificationsController = __decorate([
     (0, swagger_1.ApiTags)('certifications'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('certifications'),
     __metadata("design:paramtypes", [certifications_service_1.CertificationsService])
 ], CertificationsController);

@@ -9,13 +9,16 @@ export declare class PermissionsGuard implements CanActivate {
     constructor(reflector: Reflector, authorizationContext: AuthorizationContextService, prisma: PrismaService);
     canActivate(context: ExecutionContext): Promise<boolean>;
     private hasRequiredPermissions;
+    private hasSensitiveUserSubresourcePermissions;
     private getGlobalPermissions;
     private getActiveClubPermissions;
     private buildPermissionsErrorMessage;
     private validateClubScope;
     private validateInstanceScope;
+    private validateTerritoryScope;
     private isResourceOwner;
     private resolveActivityScope;
+    private resolveCamporeeScope;
     private resolveFinanceScope;
     private resolveInventoryInstanceScope;
     private resolveInventoryItemScope;

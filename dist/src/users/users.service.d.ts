@@ -1,6 +1,6 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UpdateUserAllergiesDto, UpdateUserDiseasesDto } from './dto/update-user-medical.dto';
+import { UpdateUserAllergiesDto, UpdateUserDiseasesDto, UpdateUserMedicinesDto } from './dto/update-user-medical.dto';
 import type { FileStorageService } from '../common/services/file-storage.service';
 export declare class UsersService {
     private prisma;
@@ -12,6 +12,7 @@ export declare class UsersService {
     private validateGeographyReferences;
     private validateAllergiesExist;
     private validateDiseasesExist;
+    private validateMedicinesExist;
     findOne(userId: string): Promise<{
         status: string;
         data: {
@@ -55,6 +56,27 @@ export declare class UsersService {
         };
         message: string;
     }>;
+    getAllergies(userId: string): Promise<{
+        status: string;
+        data: {
+            allergy_id: number | null;
+            name: string;
+        }[];
+    }>;
+    getDiseases(userId: string): Promise<{
+        status: string;
+        data: {
+            disease_id: number;
+            name: string;
+        }[];
+    }>;
+    getMedicines(userId: string): Promise<{
+        status: string;
+        data: {
+            medicine_id: number;
+            name: string;
+        }[];
+    }>;
     updateAllergies(userId: string, dto: UpdateUserAllergiesDto): Promise<{
         status: string;
         data: {
@@ -77,6 +99,17 @@ export declare class UsersService {
         }[];
         message: string;
     }>;
+    updateMedicines(userId: string, dto: UpdateUserMedicinesDto): Promise<{
+        status: string;
+        data: {
+            medicines: {
+                name: string;
+                description: string | null;
+            };
+            medicine_id: number;
+        }[];
+        message: string;
+    }>;
     removeAllergy(userId: string, allergyId: number): Promise<{
         status: string;
         data: {
@@ -89,6 +122,14 @@ export declare class UsersService {
         status: string;
         data: {
             disease_id: number;
+            active: boolean;
+        };
+        message: string;
+    }>;
+    removeMedicine(userId: string, medicineId: number): Promise<{
+        status: string;
+        data: {
+            medicine_id: number;
             active: boolean;
         };
         message: string;

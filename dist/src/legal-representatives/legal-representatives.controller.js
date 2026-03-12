@@ -42,8 +42,7 @@ let LegalRepresentativesController = class LegalRepresentativesController {
 exports.LegalRepresentativesController = LegalRepresentativesController;
 __decorate([
     (0, common_1.Post)(),
-    (0, decorators_1.RequirePermissions)('users:update'),
-    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'update'),
     (0, swagger_1.ApiOperation)({
         summary: 'Registrar representante legal (solo para menores de 18)',
     }),
@@ -61,8 +60,7 @@ __decorate([
 ], LegalRepresentativesController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
-    (0, decorators_1.RequirePermissions)('users:read_detail'),
-    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'read'),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener representante legal del usuario' }),
     (0, swagger_1.ApiResponse)({
         status: 200,
@@ -77,8 +75,7 @@ __decorate([
 ], LegalRepresentativesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(),
-    (0, decorators_1.RequirePermissions)('users:update'),
-    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'update'),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar representante legal' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Representante actualizado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Representante no encontrado' }),
@@ -91,8 +88,7 @@ __decorate([
 ], LegalRepresentativesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(),
-    (0, decorators_1.RequirePermissions)('users:update'),
-    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'update'),
     (0, swagger_1.ApiOperation)({ summary: 'Eliminar representante legal' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Representante eliminado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Representante no encontrado' }),

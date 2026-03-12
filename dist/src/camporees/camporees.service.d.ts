@@ -4,6 +4,7 @@ import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { RegisterMemberDto } from './dto/register-member.dto';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 export declare class CamporeesService {
     private readonly prisma;
     private readonly fileStorage;
@@ -12,7 +13,7 @@ export declare class CamporeesService {
     constructor(prisma: PrismaService, fileStorage: FileStorageService);
     findAll(filters?: {
         active?: boolean;
-    }, pagination?: PaginationDto): Promise<PaginatedResult<any>>;
+    }, pagination?: PaginationDto, authorization?: AuthorizationSnapshot): Promise<PaginatedResult<any>>;
     findOne(camporeeId: number): Promise<{
         local_fields: {
             name: string;
@@ -39,14 +40,14 @@ export declare class CamporeesService {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
-    create(dto: CreateCamporeeDto, createdBy: string): Promise<{
+    create(dto: CreateCamporeeDto, createdBy: string, authorization?: AuthorizationSnapshot): Promise<{
         local_fields: {
             name: string;
             local_field_id: number;
@@ -67,12 +68,12 @@ export declare class CamporeesService {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     update(camporeeId: number, dto: UpdateCamporeeDto): Promise<{
         local_fields: {
@@ -95,12 +96,12 @@ export declare class CamporeesService {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     remove(camporeeId: number): Promise<{
         name: string;
@@ -112,12 +113,12 @@ export declare class CamporeesService {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     registerMember(camporeeId: number, dto: RegisterMemberDto): Promise<{
         users: {
@@ -226,4 +227,8 @@ export declare class CamporeesService {
     getParticipants(camporeeId: number, pagination?: PaginationDto): Promise<PaginatedResult<any>>;
     private applySignedPrivateUrls;
     private resolvePrivateProfileUrl;
+    private applyCamporeeScope;
+    private assertCanManageLocalField;
+    private resolveCamporeeAccessScope;
+    private hasGlobalRole;
 }

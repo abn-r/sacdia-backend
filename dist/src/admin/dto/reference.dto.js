@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpdateEcclesiasticalYearDto = exports.CreateEcclesiasticalYearDto = exports.UpdateDiseaseDto = exports.CreateDiseaseDto = exports.UpdateAllergyDto = exports.CreateAllergyDto = exports.UpdateRelationshipTypeDto = exports.CreateRelationshipTypeDto = void 0;
+exports.UpdateEcclesiasticalYearDto = exports.CreateEcclesiasticalYearDto = exports.UpdateMedicineDto = exports.CreateMedicineDto = exports.UpdateDiseaseDto = exports.CreateDiseaseDto = exports.UpdateAllergyDto = exports.CreateAllergyDto = exports.UpdateRelationshipTypeDto = exports.CreateRelationshipTypeDto = void 0;
 const openapi = require("@nestjs/swagger");
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
@@ -184,6 +184,63 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], UpdateDiseaseDto.prototype, "active", void 0);
+class CreateMedicineDto {
+    name;
+    description;
+    active;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { name: { required: true, type: () => String, maxLength: 100 }, description: { required: false, type: () => String }, active: { required: false, type: () => Boolean } };
+    }
+}
+exports.CreateMedicineDto = CreateMedicineDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Ibuprofeno' }),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", String)
+], CreateMedicineDto.prototype, "name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'Analgésico antiinflamatorio' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateMedicineDto.prototype, "description", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: true }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateMedicineDto.prototype, "active", void 0);
+class UpdateMedicineDto {
+    name;
+    description;
+    active;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { name: { required: false, type: () => String, maxLength: 100 }, description: { required: false, type: () => String }, active: { required: false, type: () => Boolean } };
+    }
+}
+exports.UpdateMedicineDto = UpdateMedicineDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'Ibuprofeno' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.MaxLength)(100),
+    __metadata("design:type", String)
+], UpdateMedicineDto.prototype, "name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'Analgésico antiinflamatorio' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateMedicineDto.prototype, "description", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: true }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateMedicineDto.prototype, "active", void 0);
 class CreateEcclesiasticalYearDto {
     start_date;
     end_date;

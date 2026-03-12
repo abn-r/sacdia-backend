@@ -26,7 +26,7 @@ let CamporeesController = class CamporeesController {
     constructor(camporeesService) {
         this.camporeesService = camporeesService;
     }
-    async findAll(active, page, limit) {
+    async findAll(req, active, page, limit) {
         const pagination = new pagination_dto_1.PaginationDto();
         if (page)
             pagination.page = page;
@@ -34,13 +34,13 @@ let CamporeesController = class CamporeesController {
             pagination.limit = Math.min(limit, 100);
         return this.camporeesService.findAll({
             active: active === 'true' ? true : active === 'false' ? false : undefined,
-        }, pagination);
+        }, pagination, req.authorization);
     }
     async findOne(camporeeId) {
         return this.camporeesService.findOne(camporeeId);
     }
     async create(dto, req) {
-        return this.camporeesService.create(dto, req.user.sub);
+        return this.camporeesService.create(dto, req.user.sub, req.authorization);
     }
     async update(camporeeId, dto) {
         return this.camporeesService.update(camporeeId, dto);
@@ -68,19 +68,24 @@ __decorate([
     (0, swagger_1.ApiQuery)({ name: 'active', required: false, type: Boolean }),
     (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
+    (0, decorators_1.RequirePermissions)('activities:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'active_assignment' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista paginada de camporees' }),
     openapi.ApiResponse({ status: 200 }),
-    __param(0, (0, common_1.Query)('active')),
-    __param(1, (0, common_1.Query)('page', new common_1.ParseIntPipe({ optional: true }))),
-    __param(2, (0, common_1.Query)('limit', new common_1.ParseIntPipe({ optional: true }))),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('active')),
+    __param(2, (0, common_1.Query)('page', new common_1.ParseIntPipe({ optional: true }))),
+    __param(3, (0, common_1.Query)('limit', new common_1.ParseIntPipe({ optional: true }))),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Number, Number]),
+    __metadata("design:paramtypes", [Object, String, Number, Number]),
     __metadata("design:returntype", Promise)
 ], CamporeesController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)(':camporeeId'),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener camporee por ID' }),
     (0, swagger_1.ApiParam)({ name: 'camporeeId', type: Number }),
+    (0, decorators_1.RequirePermissions)('activities:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'camporee', idParam: 'camporeeId' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Camporee encontrado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Camporee no encontrado' }),
     openapi.ApiResponse({ status: 200, type: Object }),
@@ -91,11 +96,11 @@ __decorate([
 ], CamporeesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Post)(),
-    (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
+    (0, decorators_1.RequirePermissions)('activities:create'),
+    (0, decorators_1.AuthorizationResource)({ type: 'active_assignment' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Crear camporee',
-        description: 'Crea un nuevo camporee (requiere rol de liderazgo)',
+        description: 'Crea un nuevo camporee (requiere permisos de actividades en el contexto activo)',
     }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Camporee creado' }),
     (0, swagger_1.ApiResponse)({ status: 403, description: 'Permisos insuficientes' }),
@@ -108,8 +113,8 @@ __decorate([
 ], CamporeesController.prototype, "create", null);
 __decorate([
     (0, common_1.Patch)(':camporeeId'),
-    (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
+    (0, decorators_1.RequirePermissions)('activities:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'camporee', idParam: 'camporeeId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar camporee' }),
     (0, swagger_1.ApiParam)({ name: 'camporeeId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Camporee actualizado' }),
@@ -123,8 +128,8 @@ __decorate([
 ], CamporeesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':camporeeId'),
-    (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director'),
+    (0, decorators_1.RequirePermissions)('activities:delete'),
+    (0, decorators_1.AuthorizationResource)({ type: 'camporee', idParam: 'camporeeId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Desactivar camporee' }),
     (0, swagger_1.ApiParam)({ name: 'camporeeId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Camporee desactivado' }),
@@ -137,6 +142,8 @@ __decorate([
 ], CamporeesController.prototype, "remove", null);
 __decorate([
     (0, common_1.Post)(':camporeeId/register'),
+    (0, decorators_1.RequirePermissions)('attendance:manage'),
+    (0, decorators_1.AuthorizationResource)({ type: 'camporee', idParam: 'camporeeId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Registrar miembro en camporee',
         description: 'Registra un miembro en el camporee con validación de seguro',
@@ -154,6 +161,8 @@ __decorate([
 ], CamporeesController.prototype, "registerMember", null);
 __decorate([
     (0, common_1.Get)(':camporeeId/members'),
+    (0, decorators_1.RequirePermissions)('attendance:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'camporee', idParam: 'camporeeId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar miembros del camporee',
         description: 'Obtiene la lista de miembros registrados en el camporee',
@@ -169,8 +178,8 @@ __decorate([
 ], CamporeesController.prototype, "getMembers", null);
 __decorate([
     (0, common_1.Delete)(':camporeeId/members/:userId'),
-    (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
+    (0, decorators_1.RequirePermissions)('attendance:manage'),
+    (0, decorators_1.AuthorizationResource)({ type: 'camporee', idParam: 'camporeeId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Remover miembro del camporee',
         description: 'Desactiva el registro de un miembro en el camporee',
@@ -189,7 +198,7 @@ __decorate([
 exports.CamporeesController = CamporeesController = __decorate([
     (0, swagger_1.ApiTags)('camporees'),
     (0, common_1.Controller)('camporees'),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [camporees_service_1.CamporeesService])
 ], CamporeesController);

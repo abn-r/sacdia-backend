@@ -1,6 +1,6 @@
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UpdateUserAllergiesDto, UpdateUserDiseasesDto } from './dto/update-user-medical.dto';
+import { UpdateUserAllergiesDto, UpdateUserDiseasesDto, UpdateUserMedicinesDto } from './dto/update-user-medical.dto';
 export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
@@ -26,6 +26,27 @@ export declare class UsersController {
             modified_at: Date;
             local_field_id: number | null;
         };
+    }>;
+    getAllergies(userId: string): Promise<{
+        status: string;
+        data: {
+            allergy_id: number | null;
+            name: string;
+        }[];
+    }>;
+    getDiseases(userId: string): Promise<{
+        status: string;
+        data: {
+            disease_id: number;
+            name: string;
+        }[];
+    }>;
+    getMedicines(userId: string): Promise<{
+        status: string;
+        data: {
+            medicine_id: number;
+            name: string;
+        }[];
     }>;
     update(userId: string, updateUserDto: UpdateUserDto): Promise<{
         status: string;
@@ -69,6 +90,17 @@ export declare class UsersController {
         }[];
         message: string;
     }>;
+    updateMedicines(userId: string, dto: UpdateUserMedicinesDto): Promise<{
+        status: string;
+        data: {
+            medicines: {
+                name: string;
+                description: string | null;
+            };
+            medicine_id: number;
+        }[];
+        message: string;
+    }>;
     removeAllergy(userId: string, allergyId: number): Promise<{
         status: string;
         data: {
@@ -81,6 +113,14 @@ export declare class UsersController {
         status: string;
         data: {
             disease_id: number;
+            active: boolean;
+        };
+        message: string;
+    }>;
+    removeMedicine(userId: string, medicineId: number): Promise<{
+        status: string;
+        data: {
+            medicine_id: number;
             active: boolean;
         };
         message: string;

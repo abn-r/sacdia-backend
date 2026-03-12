@@ -19,7 +19,8 @@ const swagger_1 = require("@nestjs/swagger");
 const folders_service_1 = require("./folders.service");
 const update_section_record_dto_1 = require("./dto/update-section-record.dto");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 let FoldersController = class FoldersController {
     foldersService;
     constructor(foldersService) {
@@ -137,6 +138,8 @@ __decorate([
 ], FoldersController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Post)('users/:userId/folders/:folderId/enroll'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Inscribirse en una carpeta',
         description: 'Asigna un template de carpeta a un usuario. Valida que el usuario pertenezca a un club del tipo requerido.',
@@ -173,6 +176,8 @@ __decorate([
 ], FoldersController.prototype, "enrollUser", null);
 __decorate([
     (0, common_1.Get)('users/:userId/folders'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar carpetas asignadas del usuario',
         description: 'Obtiene todas las carpetas asignadas al usuario con progreso y estado',
@@ -194,6 +199,8 @@ __decorate([
 ], FoldersController.prototype, "getUserFolders", null);
 __decorate([
     (0, common_1.Get)('users/:userId/folders/:folderId/progress'),
+    (0, decorators_1.RequirePermissions)('users:read_detail'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Ver progreso detallado de una carpeta',
         description: 'Obtiene el progreso detallado por módulos y secciones con evidencias',
@@ -225,6 +232,8 @@ __decorate([
 ], FoldersController.prototype, "getFolderProgress", null);
 __decorate([
     (0, common_1.Patch)('users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Actualizar progreso de una sección',
         description: 'Registra evidencias y puntos obtenidos en una sección. Auto-completa módulo y carpeta según criterios.',
@@ -273,6 +282,8 @@ __decorate([
 ], FoldersController.prototype, "updateSectionProgress", null);
 __decorate([
     (0, common_1.Delete)('users/:userId/folders/:folderId'),
+    (0, decorators_1.RequirePermissions)('users:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'user', ownerParam: 'userId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Abandonar una carpeta',
         description: 'Desactiva la asignación de carpeta del usuario (soft delete)',
@@ -305,7 +316,7 @@ __decorate([
 exports.FoldersController = FoldersController = __decorate([
     (0, swagger_1.ApiTags)('folders'),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, common_1.Controller)('folders'),
     __metadata("design:paramtypes", [folders_service_1.FoldersService])
 ], FoldersController);

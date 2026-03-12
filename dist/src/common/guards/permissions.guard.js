@@ -16,6 +16,8 @@ const prisma_service_1 = require("../../prisma/prisma.service");
 const authorization_context_service_1 = require("../services/authorization-context.service");
 const authorization_resource_decorator_1 = require("../decorators/authorization-resource.decorator");
 const permissions_decorator_1 = require("../decorators/permissions.decorator");
+const sensitive_user_subresource_decorator_1 = require("../decorators/sensitive-user-subresource.decorator");
+const sensitive_user_subresource_policy_1 = require("./sensitive-user-subresource-policy");
 let PermissionsGuard = class PermissionsGuard {
     reflector;
     authorizationContext;
@@ -36,20 +38,24 @@ let PermissionsGuard = class PermissionsGuard {
             throw new common_1.ForbiddenException('User not authenticated');
         }
         const resource = this.reflector.getAllAndOverride(authorization_resource_decorator_1.AUTHORIZATION_RESOURCE_KEY, [context.getHandler(), context.getClass()]) ?? { type: 'global' };
+        const sensitiveUserSubresource = this.reflector.getAllAndOverride(sensitive_user_subresource_decorator_1.SENSITIVE_USER_SUBRESOURCE_KEY, [context.getHandler(), context.getClass()]);
         if (resource.type === 'user' && this.isResourceOwner(request, userId, resource)) {
             return true;
         }
         const resolved = await this.authorizationContext.resolveUserAuthorization(userId);
         request.authorization = resolved.authorization;
-        if (!this.hasRequiredPermissions(resolved, requirement, resource)) {
+        if (!this.hasRequiredPermissions(resolved, requirement, resource, sensitiveUserSubresource)) {
             throw new common_1.ForbiddenException(this.buildPermissionsErrorMessage(requirement, resource));
         }
         switch (resource.type) {
             case 'global':
             case 'user':
+            case 'active_assignment':
                 return true;
             case 'club':
                 return this.validateClubScope(userId, request, resolved, resource);
+            case 'camporee':
+                return this.validateTerritoryScope(resolved, await this.resolveCamporeeScope(request, resource), 'You need an active assignment or global scope for this camporee');
             case 'activity':
                 return this.validateInstanceScope(userId, resolved, await this.resolveActivityScope(request, resource));
             case 'finance':
@@ -64,8 +70,11 @@ let PermissionsGuard = class PermissionsGuard {
                 return true;
         }
     }
-    hasRequiredPermissions(resolved, requirement, resource) {
+    hasRequiredPermissions(resolved, requirement, resource, sensitiveUserSubresource) {
         const globalPermissions = this.getGlobalPermissions(resolved);
+        if (resource.type === 'user' && sensitiveUserSubresource) {
+            return this.hasSensitiveUserSubresourcePermissions(globalPermissions, requirement, sensitiveUserSubresource);
+        }
         const activeClubPermissions = this.getActiveClubPermissions(resolved);
         const candidatePermissions = resource.type === 'global' || resource.type === 'user'
             ? globalPermissions
@@ -74,6 +83,17 @@ let PermissionsGuard = class PermissionsGuard {
             return requirement.permissions.some((permission) => candidatePermissions.has(permission));
         }
         return requirement.permissions.every((permission) => candidatePermissions.has(permission));
+    }
+    hasSensitiveUserSubresourcePermissions(globalPermissions, requirement, sensitiveUserSubresource) {
+        const matchesPermission = (permission) => {
+            const legacyFallbackPermission = (0, sensitive_user_subresource_policy_1.getSensitiveUserSubresourceFallbackPermission)(sensitiveUserSubresource.family, sensitiveUserSubresource.mode);
+            return (globalPermissions.has(permission) ||
+                globalPermissions.has(legacyFallbackPermission));
+        };
+        if (requirement.mode === 'any') {
+            return requirement.permissions.some(matchesPermission);
+        }
+        return requirement.permissions.every(matchesPermission);
     }
     getGlobalPermissions(resolved) {
         return new Set(resolved.authorization.grants.global_roles.flatMap((grant) => grant.permissions));
@@ -116,6 +136,43 @@ let PermissionsGuard = class PermissionsGuard {
         }
         return true;
     }
+    validateTerritoryScope(resolved, resourceScope, errorMessage) {
+        const globalRoleNames = new Set(resolved.authorization.grants.global_roles.map((grant) => grant.role_name.toLowerCase()));
+        if (globalRoleNames.has('super_admin')) {
+            return true;
+        }
+        const globalScope = resolved.authorization.effective.scope.global;
+        const globalLocalFieldId = globalScope.local_field?.id;
+        const globalUnionId = globalScope.union?.id;
+        const globalCountryId = globalScope.country?.id;
+        if (typeof globalLocalFieldId === 'number' &&
+            globalLocalFieldId === resourceScope.localFieldId &&
+            (globalRoleNames.has('admin') ||
+                globalRoleNames.has('assistant_admin') ||
+                globalRoleNames.has('coordinator'))) {
+            return true;
+        }
+        if (typeof resourceScope.unionId === 'number' &&
+            typeof globalUnionId === 'number' &&
+            globalUnionId === resourceScope.unionId &&
+            (globalRoleNames.has('admin') || globalRoleNames.has('assistant_admin'))) {
+            return true;
+        }
+        if (typeof resourceScope.countryId === 'number' &&
+            typeof globalCountryId === 'number' &&
+            globalCountryId === resourceScope.countryId &&
+            globalRoleNames.has('admin')) {
+            return true;
+        }
+        const activeAssignmentId = resolved.authorization.active_assignment.assignment_id;
+        const activeGrant = resolved.authorization.grants.club_assignments.find((assignment) => assignment.assignment_id === activeAssignmentId);
+        const activeGrantLocalFieldId = activeGrant?.scope.local_field?.id;
+        if (typeof activeGrantLocalFieldId === 'number' &&
+            activeGrantLocalFieldId === resourceScope.localFieldId) {
+            return true;
+        }
+        throw new common_1.ForbiddenException(errorMessage);
+    }
     isResourceOwner(request, userId, resource) {
         const ownerParam = resource.ownerParam ?? 'userId';
         return request.params?.[ownerParam] === userId;
@@ -144,6 +201,33 @@ let PermissionsGuard = class PermissionsGuard {
             club_pathfinders: activity.club_pathf,
             club_master_guild: activity.club_mg,
         });
+    }
+    async resolveCamporeeScope(request, resource) {
+        const camporeeId = this.getRequiredNumericValue(this.getRequestValue(request, 'param', resource.idParam ?? 'camporeeId'), 'Camporee ID not found in request');
+        const camporee = await this.prisma.local_camporees.findUnique({
+            where: { local_camporee_id: camporeeId },
+            select: {
+                local_field_id: true,
+                local_fields: {
+                    select: {
+                        union_id: true,
+                        unions: {
+                            select: {
+                                country_id: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        if (!camporee) {
+            throw new common_1.NotFoundException('Camporee not found');
+        }
+        return {
+            localFieldId: camporee.local_field_id,
+            unionId: camporee.local_fields?.union_id ?? null,
+            countryId: camporee.local_fields?.unions?.country_id ?? null,
+        };
     }
     async resolveFinanceScope(request, resource) {
         const financeId = this.getRequiredNumericValue(this.getRequestValue(request, 'param', resource.idParam ?? 'financeId'), 'Finance ID not found in request');

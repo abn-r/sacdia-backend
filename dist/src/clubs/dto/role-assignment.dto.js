@@ -18,13 +18,14 @@ const instance_dto_1 = require("./instance.dto");
 class AssignRoleDto {
     user_id;
     role_id;
+    role;
     instance_type;
     instance_id;
     ecclesiastical_year_id;
     start_date;
     end_date;
     static _OPENAPI_METADATA_FACTORY() {
-        return { user_id: { required: true, type: () => String, format: "uuid" }, role_id: { required: true, type: () => String, format: "uuid" }, instance_type: { required: true, enum: require("./instance.dto").ClubInstanceType }, instance_id: { required: true, type: () => Number }, ecclesiastical_year_id: { required: true, type: () => Number }, start_date: { required: true, type: () => Date }, end_date: { required: false, type: () => Date } };
+        return { user_id: { required: true, type: () => String, format: "uuid" }, role_id: { required: false, type: () => String, format: "uuid" }, role: { required: false, type: () => String }, instance_type: { required: false, enum: require("./instance.dto").ClubInstanceType }, instance_id: { required: false, type: () => Number }, ecclesiastical_year_id: { required: false, type: () => Number }, start_date: { required: false, type: () => Date }, end_date: { required: false, type: () => Date } };
     }
 }
 exports.AssignRoleDto = AssignRoleDto;
@@ -34,27 +35,46 @@ __decorate([
     __metadata("design:type", String)
 ], AssignRoleDto.prototype, "user_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'ID del rol a asignar' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'ID del rol a asignar (preferido, formato UUID)',
+    }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], AssignRoleDto.prototype, "role_id", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Compatibilidad temporal: nombre del rol (ej. member, director).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], AssignRoleDto.prototype, "role", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({
         enum: instance_dto_1.ClubInstanceType,
-        description: 'Tipo de instancia de club',
+        description: 'Tipo de instancia de club (se resuelve desde ruta en contrato assignment-first).',
     }),
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], AssignRoleDto.prototype, "instance_type", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'ID de la instancia de club' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'ID de la instancia de club (se resuelve desde ruta en contrato assignment-first).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], AssignRoleDto.prototype, "instance_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'ID del año eclesiástico' }),
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ID del año eclesiástico' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], AssignRoleDto.prototype, "ecclesiastical_year_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Fecha de inicio del rol' }),
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Fecha de inicio del rol' }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDate)(),
     (0, class_transformer_1.Type)(() => Date),
     __metadata("design:type", Date)
@@ -67,13 +87,46 @@ __decorate([
     __metadata("design:type", Date)
 ], AssignRoleDto.prototype, "end_date", void 0);
 class UpdateRoleAssignmentDto {
+    role_id;
+    role;
+    ecclesiastical_year_id;
+    start_date;
     end_date;
     status;
     static _OPENAPI_METADATA_FACTORY() {
-        return { end_date: { required: false, type: () => Date }, status: { required: false, type: () => String } };
+        return { role_id: { required: false, type: () => String, format: "uuid" }, role: { required: false, type: () => String }, ecclesiastical_year_id: { required: false, type: () => Number }, start_date: { required: false, type: () => Date }, end_date: { required: false, type: () => Date }, status: { required: false, type: () => String } };
     }
 }
 exports.UpdateRoleAssignmentDto = UpdateRoleAssignmentDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Nuevo ID del rol asignado (preferido, formato UUID)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], UpdateRoleAssignmentDto.prototype, "role_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Compatibilidad temporal: nombre del rol a asignar (ej. member, director).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateRoleAssignmentDto.prototype, "role", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'ID del año eclesiástico' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], UpdateRoleAssignmentDto.prototype, "ecclesiastical_year_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Fecha de inicio del rol' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDate)(),
+    (0, class_transformer_1.Type)(() => Date),
+    __metadata("design:type", Date)
+], UpdateRoleAssignmentDto.prototype, "start_date", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'Fecha de fin del rol' }),
     (0, class_validator_1.IsOptional)(),
