@@ -1,5 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateAllergyDto, CreateDiseaseDto, CreateEcclesiasticalYearDto, CreateRelationshipTypeDto, UpdateAllergyDto, UpdateDiseaseDto, UpdateEcclesiasticalYearDto, UpdateRelationshipTypeDto } from './dto';
+import { CreateAllergyDto, CreateDiseaseDto, CreateEcclesiasticalYearDto, CreateMedicineDto, CreateRelationshipTypeDto, UpdateAllergyDto, UpdateDiseaseDto, UpdateEcclesiasticalYearDto, UpdateMedicineDto, UpdateRelationshipTypeDto } from './dto';
 export declare class AdminReferenceService {
     private readonly prisma;
     private readonly logger;
@@ -102,6 +102,38 @@ export declare class AdminReferenceService {
         description: string | null;
         disease_id: number;
     }>;
+    listMedicines(): Promise<{
+        name: string;
+        active: boolean;
+        created_at: Date;
+        modified_at: Date;
+        description: string | null;
+        medicine_id: number;
+    }[]>;
+    createMedicine(dto: CreateMedicineDto, actorId: string): Promise<{
+        name: string;
+        active: boolean;
+        created_at: Date;
+        modified_at: Date;
+        description: string | null;
+        medicine_id: number;
+    }>;
+    updateMedicine(medicineId: number, dto: UpdateMedicineDto, actorId: string): Promise<{
+        name: string;
+        active: boolean;
+        created_at: Date;
+        modified_at: Date;
+        description: string | null;
+        medicine_id: number;
+    }>;
+    deleteMedicine(medicineId: number, actorId: string): Promise<{
+        name: string;
+        active: boolean;
+        created_at: Date;
+        modified_at: Date;
+        description: string | null;
+        medicine_id: number;
+    }>;
     listEcclesiasticalYears(): Promise<{
         active: boolean;
         created_at: Date | null;
@@ -141,5 +173,7 @@ export declare class AdminReferenceService {
     private ensureAllergyUnique;
     private ensureDiseaseExists;
     private ensureDiseaseUnique;
+    private ensureMedicineExists;
+    private ensureMedicineUnique;
     private ensureEcclesiasticalYearExists;
 }

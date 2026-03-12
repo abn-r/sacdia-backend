@@ -18,4 +18,5 @@ __exportStar(require("./club-roles.decorator"), exports);
 __exportStar(require("./global-roles.decorator"), exports);
 __exportStar(require("./permissions.decorator"), exports);
 __exportStar(require("./authorization-resource.decorator"), exports);
+__exportStar(require("./sensitive-user-subresource.decorator"), exports);
 //# sourceMappingURL=index.js.map

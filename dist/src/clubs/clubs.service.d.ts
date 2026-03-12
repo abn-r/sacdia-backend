@@ -354,5 +354,7 @@ export declare class ClubsService {
     }>;
     private getClubTypeName;
     private getInstanceWhereClause;
+    private getActiveEcclesiasticalYearId;
+    private resolveRoleId;
     private resolvePrivateProfileUrl;
 }

@@ -205,6 +205,65 @@ let AdminReferenceService = AdminReferenceService_1 = class AdminReferenceServic
         this.logMutation('delete', 'diseases', diseaseId, actorId);
         return disease;
     }
+    async listMedicines() {
+        return this.prisma.medicines.findMany({
+            orderBy: { name: 'asc' },
+        });
+    }
+    async createMedicine(dto, actorId) {
+        const name = this.normalizeName(dto.name);
+        await this.ensureMedicineUnique(name);
+        const medicine = await this.prisma.medicines.create({
+            data: {
+                name,
+                description: dto.description,
+                active: dto.active ?? true,
+            },
+        });
+        this.logMutation('create', 'medicines', medicine.medicine_id, actorId);
+        return medicine;
+    }
+    async updateMedicine(medicineId, dto, actorId) {
+        await this.ensureMedicineExists(medicineId);
+        const name = dto.name ? this.normalizeName(dto.name) : undefined;
+        if (name) {
+            await this.ensureMedicineUnique(name, medicineId);
+        }
+        const medicine = await this.prisma.medicines.update({
+            where: { medicine_id: medicineId },
+            data: {
+                ...(name ? { name } : {}),
+                ...(typeof dto.description === 'string'
+                    ? { description: dto.description }
+                    : {}),
+                ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+                modified_at: new Date(),
+            },
+        });
+        this.logMutation('update', 'medicines', medicineId, actorId);
+        return medicine;
+    }
+    async deleteMedicine(medicineId, actorId) {
+        await this.ensureMedicineExists(medicineId);
+        const inUseCount = await this.prisma.users_medicines.count({
+            where: {
+                medicine_id: medicineId,
+                active: true,
+            },
+        });
+        if (inUseCount > 0) {
+            throw new common_1.ConflictException('Cannot deactivate medicine because it is in use');
+        }
+        const medicine = await this.prisma.medicines.update({
+            where: { medicine_id: medicineId },
+            data: {
+                active: false,
+                modified_at: new Date(),
+            },
+        });
+        this.logMutation('delete', 'medicines', medicineId, actorId);
+        return medicine;
+    }
     async listEcclesiasticalYears() {
         return this.prisma.ecclesiastical_years.findMany({
             orderBy: { start_date: 'desc' },
@@ -347,6 +406,26 @@ let AdminReferenceService = AdminReferenceService_1 = class AdminReferenceServic
         });
         if (existing) {
             throw new common_1.ConflictException('Disease name already exists');
+        }
+    }
+    async ensureMedicineExists(medicineId) {
+        const entity = await this.prisma.medicines.findUnique({
+            where: { medicine_id: medicineId },
+        });
+        if (!entity) {
+            throw new common_1.NotFoundException(`Medicine ${medicineId} not found`);
+        }
+        return entity;
+    }
+    async ensureMedicineUnique(name, medicineId) {
+        const existing = await this.prisma.medicines.findFirst({
+            where: {
+                name: { equals: name, mode: 'insensitive' },
+                ...(medicineId ? { NOT: { medicine_id: medicineId } } : {}),
+            },
+        });
+        if (existing) {
+            throw new common_1.ConflictException('Medicine name already exists');
         }
     }
     async ensureEcclesiasticalYearExists(yearId) {

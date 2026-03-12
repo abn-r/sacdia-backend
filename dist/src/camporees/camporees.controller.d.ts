@@ -3,7 +3,7 @@ import { CreateCamporeeDto, UpdateCamporeeDto, RegisterMemberDto } from './dto';
 export declare class CamporeesController {
     private readonly camporeesService;
     constructor(camporeesService: CamporeesService);
-    findAll(active?: string, page?: number, limit?: number): Promise<import("../common/dto/pagination.dto").PaginatedResult<any>>;
+    findAll(req: any, active?: string, page?: number, limit?: number): Promise<import("../common/dto/pagination.dto").PaginatedResult<any>>;
     findOne(camporeeId: number): Promise<{
         local_fields: {
             name: string;
@@ -30,12 +30,12 @@ export declare class CamporeesController {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     create(dto: CreateCamporeeDto, req: any): Promise<{
         local_fields: {
@@ -58,12 +58,12 @@ export declare class CamporeesController {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     update(camporeeId: number, dto: UpdateCamporeeDto): Promise<{
         local_fields: {
@@ -86,12 +86,12 @@ export declare class CamporeesController {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     remove(camporeeId: number): Promise<{
         name: string;
@@ -103,12 +103,12 @@ export declare class CamporeesController {
         start_date: Date;
         end_date: Date;
         ecclesiastical_year: number;
+        local_camporee_id: number;
         includes_adventurers: boolean | null;
         includes_pathfinders: boolean | null;
         includes_master_guides: boolean | null;
         local_camporee_place: string;
         registration_cost: import("@prisma/client/runtime/client").Decimal | null;
-        local_camporee_id: number;
     }>;
     registerMember(camporeeId: number, dto: RegisterMemberDto): Promise<{
         users: {

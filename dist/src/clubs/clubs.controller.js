@@ -66,8 +66,18 @@ let ClubsController = class ClubsController {
     async getMembers(instanceId, type) {
         return this.clubsService.getMembers(instanceId, type);
     }
-    async assignRole(dto) {
-        return this.clubsService.assignRole(dto);
+    async assignRole(type, instanceId, dto) {
+        if (dto.instance_type && dto.instance_type !== type) {
+            throw new common_1.BadRequestException('instance_type in body must match route type');
+        }
+        if (dto.instance_id && dto.instance_id !== instanceId) {
+            throw new common_1.BadRequestException('instance_id in body must match route instanceId');
+        }
+        return this.clubsService.assignRole({
+            ...dto,
+            instance_type: type,
+            instance_id: instanceId,
+        });
     }
 };
 exports.ClubsController = ClubsController;
@@ -264,8 +274,6 @@ __decorate([
 ], ClubsController.prototype, "getMembers", null);
 __decorate([
     (0, common_1.Post)(':clubId/instances/:type/:instanceId/roles'),
-    (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'secretary'),
     (0, decorators_1.RequirePermissions)('club_roles:assign'),
     (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
@@ -278,9 +286,11 @@ __decorate([
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Rol asignado' }),
     (0, swagger_1.ApiResponse)({ status: 403, description: 'Permisos insuficientes' }),
     openapi.ApiResponse({ status: 201, type: Object }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_1.Param)('type')),
+    __param(1, (0, common_1.Param)('instanceId', common_1.ParseIntPipe)),
+    __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dto_1.AssignRoleDto]),
+    __metadata("design:paramtypes", [String, Number, dto_1.AssignRoleDto]),
     __metadata("design:returntype", Promise)
 ], ClubsController.prototype, "assignRole", null);
 exports.ClubsController = ClubsController = __decorate([

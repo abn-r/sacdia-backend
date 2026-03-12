@@ -25,20 +25,23 @@ let AdminReferenceController = class AdminReferenceController {
     constructor(referenceService) {
         this.referenceService = referenceService;
     }
+    getActorId(request) {
+        return request.user.sub;
+    }
     async listRelationshipTypes() {
         const data = await this.referenceService.listRelationshipTypes();
         return { status: 'success', data };
     }
     async createRelationshipType(dto, req) {
-        const data = await this.referenceService.createRelationshipType(dto, req.user.sub);
+        const data = await this.referenceService.createRelationshipType(dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async updateRelationshipType(relationshipTypeId, dto, req) {
-        const data = await this.referenceService.updateRelationshipType(relationshipTypeId, dto, req.user.sub);
+        const data = await this.referenceService.updateRelationshipType(relationshipTypeId, dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async deleteRelationshipType(relationshipTypeId, req) {
-        const data = await this.referenceService.deleteRelationshipType(relationshipTypeId, req.user.sub);
+        const data = await this.referenceService.deleteRelationshipType(relationshipTypeId, this.getActorId(req));
         return { status: 'success', data };
     }
     async listAllergies() {
@@ -46,15 +49,15 @@ let AdminReferenceController = class AdminReferenceController {
         return { status: 'success', data };
     }
     async createAllergy(dto, req) {
-        const data = await this.referenceService.createAllergy(dto, req.user.sub);
+        const data = await this.referenceService.createAllergy(dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async updateAllergy(allergyId, dto, req) {
-        const data = await this.referenceService.updateAllergy(allergyId, dto, req.user.sub);
+        const data = await this.referenceService.updateAllergy(allergyId, dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async deleteAllergy(allergyId, req) {
-        const data = await this.referenceService.deleteAllergy(allergyId, req.user.sub);
+        const data = await this.referenceService.deleteAllergy(allergyId, this.getActorId(req));
         return { status: 'success', data };
     }
     async listDiseases() {
@@ -62,15 +65,31 @@ let AdminReferenceController = class AdminReferenceController {
         return { status: 'success', data };
     }
     async createDisease(dto, req) {
-        const data = await this.referenceService.createDisease(dto, req.user.sub);
+        const data = await this.referenceService.createDisease(dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async updateDisease(diseaseId, dto, req) {
-        const data = await this.referenceService.updateDisease(diseaseId, dto, req.user.sub);
+        const data = await this.referenceService.updateDisease(diseaseId, dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async deleteDisease(diseaseId, req) {
-        const data = await this.referenceService.deleteDisease(diseaseId, req.user.sub);
+        const data = await this.referenceService.deleteDisease(diseaseId, this.getActorId(req));
+        return { status: 'success', data };
+    }
+    async listMedicines() {
+        const data = await this.referenceService.listMedicines();
+        return { status: 'success', data };
+    }
+    async createMedicine(dto, req) {
+        const data = await this.referenceService.createMedicine(dto, this.getActorId(req));
+        return { status: 'success', data };
+    }
+    async updateMedicine(medicineId, dto, req) {
+        const data = await this.referenceService.updateMedicine(medicineId, dto, this.getActorId(req));
+        return { status: 'success', data };
+    }
+    async deleteMedicine(medicineId, req) {
+        const data = await this.referenceService.deleteMedicine(medicineId, this.getActorId(req));
         return { status: 'success', data };
     }
     async listEcclesiasticalYears() {
@@ -78,15 +97,15 @@ let AdminReferenceController = class AdminReferenceController {
         return { status: 'success', data };
     }
     async createEcclesiasticalYear(dto, req) {
-        const data = await this.referenceService.createEcclesiasticalYear(dto, req.user.sub);
+        const data = await this.referenceService.createEcclesiasticalYear(dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async updateEcclesiasticalYear(yearId, dto, req) {
-        const data = await this.referenceService.updateEcclesiasticalYear(yearId, dto, req.user.sub);
+        const data = await this.referenceService.updateEcclesiasticalYear(yearId, dto, this.getActorId(req));
         return { status: 'success', data };
     }
     async deleteEcclesiasticalYear(yearId, req) {
-        const data = await this.referenceService.deleteEcclesiasticalYear(yearId, req.user.sub);
+        const data = await this.referenceService.deleteEcclesiasticalYear(yearId, this.getActorId(req));
         return { status: 'success', data };
     }
 };
@@ -220,6 +239,49 @@ __decorate([
     __metadata("design:paramtypes", [Number, Object]),
     __metadata("design:returntype", Promise)
 ], AdminReferenceController.prototype, "deleteDisease", null);
+__decorate([
+    (0, common_1.Get)('medicines'),
+    (0, decorators_1.RequirePermissions)('catalogs:read'),
+    (0, swagger_1.ApiOperation)({ summary: 'List medicines for admin management' }),
+    openapi.ApiResponse({ status: 200 }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AdminReferenceController.prototype, "listMedicines", null);
+__decorate([
+    (0, common_1.Post)('medicines'),
+    (0, decorators_1.RequirePermissions)('catalogs:create'),
+    (0, swagger_1.ApiOperation)({ summary: 'Create medicine' }),
+    openapi.ApiResponse({ status: 201 }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dto_1.CreateMedicineDto, Object]),
+    __metadata("design:returntype", Promise)
+], AdminReferenceController.prototype, "createMedicine", null);
+__decorate([
+    (0, common_1.Patch)('medicines/:medicineId'),
+    (0, decorators_1.RequirePermissions)('catalogs:update'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update medicine' }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('medicineId', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, dto_1.UpdateMedicineDto, Object]),
+    __metadata("design:returntype", Promise)
+], AdminReferenceController.prototype, "updateMedicine", null);
+__decorate([
+    (0, common_1.Delete)('medicines/:medicineId'),
+    (0, decorators_1.RequirePermissions)('catalogs:delete'),
+    (0, swagger_1.ApiOperation)({ summary: 'Soft delete medicine' }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('medicineId', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], AdminReferenceController.prototype, "deleteMedicine", null);
 __decorate([
     (0, common_1.Get)('ecclesiastical-years'),
     (0, decorators_1.RequirePermissions)('ecclesiastical_years:read'),

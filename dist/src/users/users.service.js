@@ -121,6 +121,22 @@ let UsersService = class UsersService {
             throw new common_1.BadRequestException(`Enfermedades inválidas o inactivas: ${invalid.join(', ')}`);
         }
     }
+    async validateMedicinesExist(medicineIds) {
+        if (!medicineIds.length)
+            return;
+        const rows = await this.prisma.medicines.findMany({
+            where: {
+                medicine_id: { in: medicineIds },
+                active: true,
+            },
+            select: { medicine_id: true },
+        });
+        const found = new Set(rows.map((row) => row.medicine_id));
+        const invalid = medicineIds.filter((id) => !found.has(id));
+        if (invalid.length > 0) {
+            throw new common_1.BadRequestException(`Medicamentos inválidos o inactivos: ${invalid.join(', ')}`);
+        }
+    }
     async findOne(userId) {
         const user = await this.prisma.users.findUnique({
             where: { user_id: userId },
@@ -184,6 +200,81 @@ let UsersService = class UsersService {
             status: 'success',
             data: updatedUser,
             message: 'Usuario actualizado exitosamente',
+        };
+    }
+    async getAllergies(userId) {
+        await this.ensureUserExists(userId);
+        const data = await this.prisma.users_allergies.findMany({
+            where: {
+                user_id: userId,
+                active: true,
+            },
+            select: {
+                allergy_id: true,
+                allergies: {
+                    select: {
+                        name: true,
+                    },
+                },
+            },
+            orderBy: { allergy_id: 'asc' },
+        });
+        return {
+            status: 'success',
+            data: data.map((row) => ({
+                allergy_id: row.allergy_id,
+                name: row.allergies.name,
+            })),
+        };
+    }
+    async getDiseases(userId) {
+        await this.ensureUserExists(userId);
+        const data = await this.prisma.users_diseases.findMany({
+            where: {
+                user_id: userId,
+                active: true,
+            },
+            select: {
+                disease_id: true,
+                diseases: {
+                    select: {
+                        name: true,
+                    },
+                },
+            },
+            orderBy: { disease_id: 'asc' },
+        });
+        return {
+            status: 'success',
+            data: data.map((row) => ({
+                disease_id: row.disease_id,
+                name: row.diseases.name,
+            })),
+        };
+    }
+    async getMedicines(userId) {
+        await this.ensureUserExists(userId);
+        const data = await this.prisma.users_medicines.findMany({
+            where: {
+                user_id: userId,
+                active: true,
+            },
+            select: {
+                medicine_id: true,
+                medicines: {
+                    select: {
+                        name: true,
+                    },
+                },
+            },
+            orderBy: { medicine_id: 'asc' },
+        });
+        return {
+            status: 'success',
+            data: data.map((row) => ({
+                medicine_id: row.medicine_id,
+                name: row.medicines.name,
+            })),
         };
     }
     async updateAllergies(userId, dto) {
@@ -326,6 +417,76 @@ let UsersService = class UsersService {
             message: 'Enfermedades actualizadas exitosamente',
         };
     }
+    async updateMedicines(userId, dto) {
+        await this.ensureUserExists(userId);
+        const medicineIds = [...new Set(dto.medicine_ids)];
+        await this.validateMedicinesExist(medicineIds);
+        const data = await this.prisma.$transaction(async (tx) => {
+            const now = new Date();
+            await tx.users_medicines.updateMany({
+                where: {
+                    user_id: userId,
+                    active: true,
+                    ...(medicineIds.length > 0
+                        ? { medicine_id: { notIn: medicineIds } }
+                        : {}),
+                },
+                data: {
+                    active: false,
+                    modified_at: now,
+                },
+            });
+            for (const medicineId of medicineIds) {
+                const existing = await tx.users_medicines.findFirst({
+                    where: {
+                        user_id: userId,
+                        medicine_id: medicineId,
+                    },
+                    select: { user_medicine_id: true },
+                });
+                if (existing) {
+                    await tx.users_medicines.update({
+                        where: { user_medicine_id: existing.user_medicine_id },
+                        data: {
+                            active: true,
+                            modified_at: now,
+                        },
+                    });
+                }
+                else {
+                    await tx.users_medicines.create({
+                        data: {
+                            user_id: userId,
+                            medicine_id: medicineId,
+                            active: true,
+                        },
+                    });
+                }
+            }
+            return tx.users_medicines.findMany({
+                where: {
+                    user_id: userId,
+                    active: true,
+                },
+                select: {
+                    medicine_id: true,
+                    medicines: {
+                        select: {
+                            name: true,
+                            description: true,
+                        },
+                    },
+                },
+                orderBy: { medicine_id: 'asc' },
+            });
+        });
+        this.logger.log(`User medicines updated: ${userId}`);
+        return {
+            status: 'success',
+            data,
+            message: 'Medicamentos actualizados exitosamente',
+        };
+    }
     async removeAllergy(userId, allergyId) {
         await this.ensureUserExists(userId);
         const now = new Date();
@@ -378,6 +539,33 @@ let UsersService = class UsersService {
                 active: false,
             },
             message: 'Enfermedad eliminada exitosamente',
+        };
+    }
+    async removeMedicine(userId, medicineId) {
+        await this.ensureUserExists(userId);
+        const now = new Date();
+        const result = await this.prisma.users_medicines.updateMany({
+            where: {
+                user_id: userId,
+                medicine_id: medicineId,
+                active: true,
+            },
+            data: {
+                active: false,
+                modified_at: now,
+            },
+        });
+        if (result.count === 0) {
+            throw new common_1.NotFoundException('Medicamento no encontrado en el perfil del usuario');
+        }
+        this.logger.log(`User medicine removed: ${userId} -> ${medicineId}`);
+        return {
+            status: 'success',
+            data: {
+                medicine_id: medicineId,
+                active: false,
+            },
+            message: 'Medicamento eliminado exitosamente',
         };
     }
     async uploadProfilePicture(userId, file) {

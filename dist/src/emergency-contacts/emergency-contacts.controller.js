@@ -19,7 +19,8 @@ const swagger_1 = require("@nestjs/swagger");
 const emergency_contacts_service_1 = require("./emergency-contacts.service");
 const create_emergency_contact_dto_1 = require("./dto/create-emergency-contact.dto");
 const update_emergency_contact_dto_1 = require("./dto/update-emergency-contact.dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 let EmergencyContactsController = class EmergencyContactsController {
     emergencyContactsService;
     constructor(emergencyContactsService) {
@@ -44,6 +45,7 @@ let EmergencyContactsController = class EmergencyContactsController {
 exports.EmergencyContactsController = EmergencyContactsController;
 __decorate([
     (0, common_1.Post)(),
+    (0, decorators_1.SensitiveUserSubresource)('emergency_contacts', 'update'),
     (0, swagger_1.ApiOperation)({ summary: 'Crear contacto de emergencia (máximo 5)' }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Contacto creado' }),
     (0, swagger_1.ApiResponse)({ status: 400, description: 'Máximo de contactos alcanzado' }),
@@ -56,6 +58,7 @@ __decorate([
 ], EmergencyContactsController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
+    (0, decorators_1.SensitiveUserSubresource)('emergency_contacts', 'read'),
     (0, swagger_1.ApiOperation)({ summary: 'Listar contactos de emergencia del usuario' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de contactos' }),
     openapi.ApiResponse({ status: 200 }),
@@ -66,6 +69,7 @@ __decorate([
 ], EmergencyContactsController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)(':contactId'),
+    (0, decorators_1.SensitiveUserSubresource)('emergency_contacts', 'read'),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener un contacto específico' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Contacto encontrado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Contacto no encontrado' }),
@@ -78,6 +82,7 @@ __decorate([
 ], EmergencyContactsController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(':contactId'),
+    (0, decorators_1.SensitiveUserSubresource)('emergency_contacts', 'update'),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar contacto de emergencia' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Contacto actualizado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Contacto no encontrado' }),
@@ -91,6 +96,7 @@ __decorate([
 ], EmergencyContactsController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':contactId'),
+    (0, decorators_1.SensitiveUserSubresource)('emergency_contacts', 'update'),
     (0, swagger_1.ApiOperation)({ summary: 'Eliminar contacto de emergencia (soft delete)' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Contacto eliminado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Contacto no encontrado' }),
@@ -104,7 +110,7 @@ __decorate([
 exports.EmergencyContactsController = EmergencyContactsController = __decorate([
     (0, swagger_1.ApiTags)('emergency-contacts'),
     (0, common_1.Controller)('users/:userId/emergency-contacts'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [emergency_contacts_service_1.EmergencyContactsService])
 ], EmergencyContactsController);

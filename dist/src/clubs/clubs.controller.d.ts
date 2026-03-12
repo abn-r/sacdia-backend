@@ -288,7 +288,7 @@ export declare class ClubsController {
         ecclesiastical_year_id: number;
         end_date: Date | null;
     }[]>;
-    assignRole(dto: AssignRoleDto): Promise<{
+    assignRole(type: ClubInstanceType, instanceId: number, dto: AssignRoleDto): Promise<{
         roles: {
             role_name: string;
         };

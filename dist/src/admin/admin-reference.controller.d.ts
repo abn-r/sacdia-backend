@@ -1,8 +1,9 @@
 import { AdminReferenceService } from './admin-reference.service';
-import { CreateAllergyDto, CreateDiseaseDto, CreateEcclesiasticalYearDto, CreateRelationshipTypeDto, UpdateAllergyDto, UpdateDiseaseDto, UpdateEcclesiasticalYearDto, UpdateRelationshipTypeDto } from './dto';
+import { CreateAllergyDto, CreateDiseaseDto, CreateEcclesiasticalYearDto, CreateMedicineDto, CreateRelationshipTypeDto, UpdateAllergyDto, UpdateDiseaseDto, UpdateEcclesiasticalYearDto, UpdateMedicineDto, UpdateRelationshipTypeDto } from './dto';
 export declare class AdminReferenceController {
     private readonly referenceService;
     constructor(referenceService: AdminReferenceService);
+    private getActorId;
     listRelationshipTypes(): Promise<{
         status: string;
         data: {
@@ -14,7 +15,11 @@ export declare class AdminReferenceController {
             relationship_type_id: string;
         }[];
     }>;
-    createRelationshipType(dto: CreateRelationshipTypeDto, req: any): Promise<{
+    createRelationshipType(dto: CreateRelationshipTypeDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -25,7 +30,11 @@ export declare class AdminReferenceController {
             relationship_type_id: string;
         };
     }>;
-    updateRelationshipType(relationshipTypeId: string, dto: UpdateRelationshipTypeDto, req: any): Promise<{
+    updateRelationshipType(relationshipTypeId: string, dto: UpdateRelationshipTypeDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -36,7 +45,11 @@ export declare class AdminReferenceController {
             relationship_type_id: string;
         };
     }>;
-    deleteRelationshipType(relationshipTypeId: string, req: any): Promise<{
+    deleteRelationshipType(relationshipTypeId: string, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -58,7 +71,11 @@ export declare class AdminReferenceController {
             allergy_id: number;
         }[];
     }>;
-    createAllergy(dto: CreateAllergyDto, req: any): Promise<{
+    createAllergy(dto: CreateAllergyDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -69,7 +86,11 @@ export declare class AdminReferenceController {
             allergy_id: number;
         };
     }>;
-    updateAllergy(allergyId: number, dto: UpdateAllergyDto, req: any): Promise<{
+    updateAllergy(allergyId: number, dto: UpdateAllergyDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -80,7 +101,11 @@ export declare class AdminReferenceController {
             allergy_id: number;
         };
     }>;
-    deleteAllergy(allergyId: number, req: any): Promise<{
+    deleteAllergy(allergyId: number, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -102,7 +127,11 @@ export declare class AdminReferenceController {
             disease_id: number;
         }[];
     }>;
-    createDisease(dto: CreateDiseaseDto, req: any): Promise<{
+    createDisease(dto: CreateDiseaseDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -113,7 +142,11 @@ export declare class AdminReferenceController {
             disease_id: number;
         };
     }>;
-    updateDisease(diseaseId: number, dto: UpdateDiseaseDto, req: any): Promise<{
+    updateDisease(diseaseId: number, dto: UpdateDiseaseDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -124,7 +157,11 @@ export declare class AdminReferenceController {
             disease_id: number;
         };
     }>;
-    deleteDisease(diseaseId: number, req: any): Promise<{
+    deleteDisease(diseaseId: number, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             name: string;
@@ -133,6 +170,62 @@ export declare class AdminReferenceController {
             modified_at: Date;
             description: string | null;
             disease_id: number;
+        };
+    }>;
+    listMedicines(): Promise<{
+        status: string;
+        data: {
+            name: string;
+            active: boolean;
+            created_at: Date;
+            modified_at: Date;
+            description: string | null;
+            medicine_id: number;
+        }[];
+    }>;
+    createMedicine(dto: CreateMedicineDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
+        status: string;
+        data: {
+            name: string;
+            active: boolean;
+            created_at: Date;
+            modified_at: Date;
+            description: string | null;
+            medicine_id: number;
+        };
+    }>;
+    updateMedicine(medicineId: number, dto: UpdateMedicineDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
+        status: string;
+        data: {
+            name: string;
+            active: boolean;
+            created_at: Date;
+            modified_at: Date;
+            description: string | null;
+            medicine_id: number;
+        };
+    }>;
+    deleteMedicine(medicineId: number, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
+        status: string;
+        data: {
+            name: string;
+            active: boolean;
+            created_at: Date;
+            modified_at: Date;
+            description: string | null;
+            medicine_id: number;
         };
     }>;
     listEcclesiasticalYears(): Promise<{
@@ -146,7 +239,11 @@ export declare class AdminReferenceController {
             year_id: number;
         }[];
     }>;
-    createEcclesiasticalYear(dto: CreateEcclesiasticalYearDto, req: any): Promise<{
+    createEcclesiasticalYear(dto: CreateEcclesiasticalYearDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             active: boolean;
@@ -157,7 +254,11 @@ export declare class AdminReferenceController {
             year_id: number;
         };
     }>;
-    updateEcclesiasticalYear(yearId: number, dto: UpdateEcclesiasticalYearDto, req: any): Promise<{
+    updateEcclesiasticalYear(yearId: number, dto: UpdateEcclesiasticalYearDto, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             active: boolean;
@@ -168,7 +269,11 @@ export declare class AdminReferenceController {
             year_id: number;
         };
     }>;
-    deleteEcclesiasticalYear(yearId: number, req: any): Promise<{
+    deleteEcclesiasticalYear(yearId: number, req: Request & {
+        user: {
+            sub: string;
+        };
+    }): Promise<{
         status: string;
         data: {
             active: boolean;

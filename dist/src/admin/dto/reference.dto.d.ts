@@ -28,6 +28,16 @@ export declare class UpdateDiseaseDto {
     description?: string;
     active?: boolean;
 }
+export declare class CreateMedicineDto {
+    name: string;
+    description?: string;
+    active?: boolean;
+}
+export declare class UpdateMedicineDto {
+    name?: string;
+    description?: string;
+    active?: boolean;
+}
 export declare class CreateEcclesiasticalYearDto {
     start_date: string;
     end_date: string;
