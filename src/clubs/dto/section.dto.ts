@@ -1,59 +1,37 @@
-import {
-  IsInt,
-  IsOptional,
-  IsArray,
-  IsBoolean,
-  IsEnum,
-} from 'class-validator';
+import { IsInt, IsOptional, IsArray, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
-// Tipo de club
-export enum ClubInstanceType {
-  ADVENTURERS = 'adventurers',
-  PATHFINDERS = 'pathfinders',
-  MASTER_GUILDS = 'master_guilds',
-}
+export class CreateClubSectionDto {
+  @ApiProperty({ example: 2, description: 'ID del tipo de club (FK a club_types)' })
+  @Type(() => Number)
+  @IsInt()
+  club_type_id: number;
 
-export class CreateInstanceDto {
-  @ApiProperty({
-    enum: ClubInstanceType,
-    example: 'pathfinders',
-    description: 'Tipo de instancia a crear',
-  })
-  @IsEnum(ClubInstanceType)
-  type: ClubInstanceType;
-
-  @ApiPropertyOptional({ example: 1, description: 'Meta de almas' })
+  @ApiPropertyOptional({ example: 1 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   souls_target?: number;
 
-  @ApiPropertyOptional({ example: 100, description: 'Cuota mensual' })
+  @ApiPropertyOptional({ example: 100 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   fee?: number;
 
-  @ApiPropertyOptional({
-    example: [{ day: 'Saturday' }],
-    description: 'Días de reunión',
-  })
+  @ApiPropertyOptional({ example: [{ day: 'Saturday' }] })
   @IsOptional()
   @IsArray()
   meeting_day?: Record<string, unknown>[];
 
-  @ApiPropertyOptional({
-    example: [{ time: '09:00' }],
-    description: 'Horarios de reunión',
-  })
+  @ApiPropertyOptional({ example: [{ time: '09:00' }] })
   @IsOptional()
   @IsArray()
   meeting_time?: Record<string, unknown>[];
 }
 
-export class UpdateInstanceDto {
+export class UpdateClubSectionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
