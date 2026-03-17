@@ -393,8 +393,8 @@ ALTER TABLE "club_role_assignments"
   DROP CONSTRAINT IF EXISTS "club_role_assignment_unique_refactored";
 
 ALTER TABLE "club_role_assignments"
-  ADD CONSTRAINT "club_role_assignments_club_section_id_unique"
-    UNIQUE ("club_section_id", "user_id", "club_role_id");
+  ADD CONSTRAINT "club_role_assignment_unique"
+    UNIQUE ("user_id", "role_id", "club_section_id", "ecclesiastical_year_id", "start_date");
 
 -- activity_instances: drop old unique constraint, create new
 ALTER TABLE "activity_instances"
