@@ -5,19 +5,27 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateAllergyDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
+  CreateHonorCategoryDto,
   CreateMedicineDto,
+  HonorCategoryListQueryDto,
   CreateRelationshipTypeDto,
   UpdateAllergyDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
+  UpdateHonorCategoryDto,
   UpdateMedicineDto,
   UpdateRelationshipTypeDto,
 } from './dto';
+
+type HonorCategoryRecord = Prisma.honors_categoriesGetPayload<{
+  include: { _count: { select: { honors: true } } };
+}>;
 
 @Injectable()
 export class AdminReferenceService {
@@ -472,6 +480,150 @@ export class AdminReferenceService {
     return year;
   }
 
+  async listHonorCategories(query: HonorCategoryListQueryDto = {}) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const search = query.search?.trim();
+    const where: Prisma.honors_categoriesWhereInput = search
+      ? {
+          name: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        }
+      : {};
+
+    const [items, total] = await Promise.all([
+      this.prisma.honors_categories.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { name: 'asc' },
+        include: {
+          _count: {
+            select: { honors: true },
+          },
+        },
+      }),
+      this.prisma.honors_categories.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async getHonorCategory(id: number): Promise<HonorCategoryRecord> {
+    return this.prisma.honors_categories.findUniqueOrThrow({
+      where: { honor_category_id: id },
+      include: {
+        _count: {
+          select: { honors: true },
+        },
+      },
+    });
+  }
+
+  async createHonorCategory(
+    dto: CreateHonorCategoryDto,
+    actorId: string,
+  ): Promise<HonorCategoryRecord> {
+    const name = this.normalizeName(dto.name);
+    await this.ensureHonorCategoryUnique(name);
+
+    const category = await this.prisma.honors_categories.create({
+      data: {
+        name,
+        description: dto.description,
+        icon: dto.icon ?? null,
+        active: dto.active ?? true,
+      },
+      include: {
+        _count: {
+          select: { honors: true },
+        },
+      },
+    });
+
+    this.logMutation(
+      'create',
+      'honors_categories',
+      category.honor_category_id,
+      actorId,
+    );
+    return category;
+  }
+
+  async updateHonorCategory(
+    id: number,
+    dto: UpdateHonorCategoryDto,
+    actorId: string,
+  ): Promise<HonorCategoryRecord> {
+    await this.ensureHonorCategoryExists(id);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+    if (name) {
+      await this.ensureHonorCategoryUnique(name, id);
+    }
+
+    const category = await this.prisma.honors_categories.update({
+      where: { honor_category_id: id },
+      data: {
+        ...(name ? { name } : {}),
+        ...(typeof dto.description === 'string'
+          ? { description: dto.description }
+          : {}),
+        ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+      include: {
+        _count: {
+          select: { honors: true },
+        },
+      },
+    });
+
+    this.logMutation('update', 'honors_categories', id, actorId);
+    return category;
+  }
+
+  async deleteHonorCategory(id: number, actorId: string): Promise<HonorCategoryRecord> {
+    await this.ensureHonorCategoryExists(id);
+
+    const inUseCount = await this.prisma.honors.count({
+      where: {
+        honors_category_id: id,
+        active: true,
+      },
+    });
+
+    if (inUseCount > 0) {
+      throw new ConflictException(
+        'Cannot deactivate honor category because it is in use',
+      );
+    }
+
+    const category = await this.prisma.honors_categories.update({
+      where: { honor_category_id: id },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+      include: {
+        _count: {
+          select: { honors: true },
+        },
+      },
+    });
+
+    this.logMutation('delete', 'honors_categories', id, actorId);
+    return category;
+  }
+
   private validateDateRange(startDate: Date, endDate: Date) {
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       throw new BadRequestException('Invalid date format');
@@ -599,5 +751,35 @@ export class AdminReferenceService {
     }
 
     return entity;
+  }
+
+  private async ensureHonorCategoryExists(honorCategoryId: number) {
+    const entity = await this.prisma.honors_categories.findUnique({
+      where: { honor_category_id: honorCategoryId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(
+        `Honor category ${honorCategoryId} not found`,
+      );
+    }
+
+    return entity;
+  }
+
+  private async ensureHonorCategoryUnique(
+    name: string,
+    honorCategoryId?: number,
+  ) {
+    const existing = await this.prisma.honors_categories.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        ...(honorCategoryId ? { NOT: { honor_category_id: honorCategoryId } } : {}),
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('Honor category name already exists');
+    }
   }
 }
