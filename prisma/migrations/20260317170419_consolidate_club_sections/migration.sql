@@ -387,18 +387,21 @@ CREATE INDEX "idx_units_club_section_id" ON "units"("club_section_id");
 -- PHASE 5: Update unique constraints
 -- ============================================================
 
--- club_role_assignments: drop BOTH old unique constraints, create new
+-- club_role_assignments: drop BOTH old unique constraints/indexes, create new
 ALTER TABLE "club_role_assignments"
   DROP CONSTRAINT IF EXISTS "club_role_assignment_unique",
   DROP CONSTRAINT IF EXISTS "club_role_assignment_unique_refactored";
+DROP INDEX IF EXISTS "club_role_assignment_unique";
+DROP INDEX IF EXISTS "club_role_assignment_unique_refactored";
 
 ALTER TABLE "club_role_assignments"
   ADD CONSTRAINT "club_role_assignment_unique"
     UNIQUE ("user_id", "role_id", "club_section_id", "ecclesiastical_year_id", "start_date");
 
--- activity_instances: drop old unique constraint, create new
+-- activity_instances: drop old unique constraint/index, create new
 ALTER TABLE "activity_instances"
   DROP CONSTRAINT IF EXISTS "activity_instances_unique_instance_per_activity";
+DROP INDEX IF EXISTS "activity_instances_unique_instance_per_activity";
 
 ALTER TABLE "activity_instances"
   ADD CONSTRAINT "activity_instances_unique_instance_per_activity"
