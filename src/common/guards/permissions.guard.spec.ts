@@ -83,10 +83,9 @@ describe('PermissionsGuard', () => {
               club_id: clubId,
               club_name: 'Club Amanecer',
             },
-            instance: {
-              type: instanceType,
-              instance_id: instanceId,
-              instance_name: 'Conquistadores',
+            section: {
+              club_section_id: instanceId,
+              club_type_name: instanceType,
             },
             scope: {
               local_field: { id: localFieldId, name: 'Campo Norte' },
@@ -115,10 +114,9 @@ describe('PermissionsGuard', () => {
                   club_id: clubId,
                   club_name: 'Club Amanecer',
                 },
-                instance: {
-                  type: instanceType,
-                  instance_id: instanceId,
-                  instance_name: 'Conquistadores',
+                section: {
+                  club_section_id: instanceId,
+                  club_type_name: instanceType,
                 },
               }
             : null,

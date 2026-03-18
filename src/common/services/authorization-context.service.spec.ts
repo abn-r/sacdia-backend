@@ -170,17 +170,15 @@ describe('AuthorizationContextService', () => {
         club_id: 10,
         club_name: 'Club Amanecer',
       },
-      instance: {
-        type: 'pathfinders',
-        instance_id: 22,
-        instance_name: 'Conquistadores',
+      section: {
+        club_section_id: 22,
+        club_type_name: 'Conquistadores',
       },
     });
     expect(result.legacy.club_context.active).toEqual({
       assignment_id: 'assignment-2',
       role_name: 'treasurer',
-      instance_type: 'pathfinders',
-      instance_id: 22,
+      club_section_id: 22,
       club_id: 10,
       club_name: 'Club Amanecer',
       club_type: 'Conquistadores',
@@ -248,10 +246,9 @@ describe('AuthorizationContextService', () => {
         club_id: 44,
         club_name: 'Club Horizonte',
       },
-      instance: {
-        type: 'master_guilds',
-        instance_id: 33,
-        instance_name: 'Guías Mayores',
+      section: {
+        club_section_id: 33,
+        club_type_name: 'Guías Mayores',
       },
     });
   });
