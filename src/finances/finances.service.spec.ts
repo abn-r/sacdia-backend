@@ -78,9 +78,7 @@ describe('FinancesService', () => {
     it('should return paginated finances for a club', async () => {
       const mockClub = {
         club_id: 1,
-        club_adventurers: [{ club_adv_id: 1 }],
-        club_pathfinders: [],
-        club_master_guild: [],
+        club_sections: [{ club_section_id: 1 }],
       };
       const mockFinances = [
         { finance_id: 1, amount: 1000, description: 'Cuota mensual' },
@@ -107,9 +105,7 @@ describe('FinancesService', () => {
     it('should return financial summary', async () => {
       const mockClub = {
         club_id: 1,
-        club_adventurers: [{ club_adv_id: 1 }],
-        club_pathfinders: [],
-        club_master_guild: [],
+        club_sections: [{ club_section_id: 1 }],
       };
 
       const mockMovements = [
@@ -138,7 +134,7 @@ describe('FinancesService', () => {
         club_type_id: 2,
         finance_category_id: 1,
         finance_date: '2026-01-15',
-        club_pathf_id: 1,
+        club_section_id: 1,
       };
 
       const mockFinance = { finance_id: 1, ...createDto };

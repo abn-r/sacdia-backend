@@ -591,7 +591,9 @@ export class CamporeesService {
     );
   }
 
-  private resolveCamporeeAccessScope(authorization?: AuthorizationSnapshot):
+  private resolveCamporeeAccessScope(
+    authorization?: AuthorizationSnapshot,
+  ):
     | { type: 'local_field'; id: number }
     | { type: 'union'; id: number }
     | null {
@@ -608,7 +610,11 @@ export class CamporeesService {
     const globalLocalFieldId = globalScope.local_field?.id;
     if (
       typeof globalLocalFieldId === 'number' &&
-      this.hasGlobalRole(globalRoles, ['admin', 'assistant_admin', 'coordinator'])
+      this.hasGlobalRole(globalRoles, [
+        'admin',
+        'assistant_admin',
+        'coordinator',
+      ])
     ) {
       return { type: 'local_field', id: globalLocalFieldId };
     }
@@ -638,7 +644,11 @@ export class CamporeesService {
     grants: GlobalAuthorizationGrant[],
     roleNames: string[],
   ) {
-    const normalized = new Set(roleNames.map((roleName) => roleName.toLowerCase()));
-    return grants.some((grant) => normalized.has(grant.role_name.toLowerCase()));
+    const normalized = new Set(
+      roleNames.map((roleName) => roleName.toLowerCase()),
+    );
+    return grants.some((grant) =>
+      normalized.has(grant.role_name.toLowerCase()),
+    );
   }
 }

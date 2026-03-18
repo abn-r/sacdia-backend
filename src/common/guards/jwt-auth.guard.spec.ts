@@ -24,7 +24,12 @@ describe('JwtAuthGuard', () => {
     const guard = new JwtAuthGuard();
 
     expect(() =>
-      guard.handleRequest(null, null, { message: 'No auth token' }, mockContext),
+      guard.handleRequest(
+        null,
+        null,
+        { message: 'No auth token' },
+        mockContext,
+      ),
     ).toThrow(UnauthorizedException);
   });
 });

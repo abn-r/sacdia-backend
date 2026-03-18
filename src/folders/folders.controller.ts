@@ -21,7 +21,10 @@ import {
 import { FoldersService } from './folders.service';
 import { UpdateSectionRecordDto } from './dto/update-section-record.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('folders')

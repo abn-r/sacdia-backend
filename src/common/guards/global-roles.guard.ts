@@ -49,8 +49,7 @@ export class GlobalRolesGuard implements CanActivate {
     const acceptedRoles = Array.from(
       new Set(
         requiredRoles.flatMap(
-          (requiredRole) =>
-            GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole],
+          (requiredRole) => GLOBAL_ROLE_ALIASES[requiredRole] ?? [requiredRole],
         ),
       ),
     );

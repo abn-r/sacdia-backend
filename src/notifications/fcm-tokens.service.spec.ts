@@ -81,9 +81,9 @@ describe('FcmTokensService', () => {
     it('should throw NotFoundException when token does not exist', async () => {
       mockPrismaService.user_fcm_tokens.findFirst.mockResolvedValue(null);
 
-      await expect(service.unregisterToken('missing-token', 'user-1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.unregisterToken('missing-token', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw ForbiddenException when token belongs to another user', async () => {
@@ -92,9 +92,9 @@ describe('FcmTokensService', () => {
         user_id: 'other-user',
       });
 
-      await expect(service.unregisterToken('fcm-token', 'user-1')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        service.unregisterToken('fcm-token', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should unregister token when user owns it', async () => {
@@ -102,7 +102,9 @@ describe('FcmTokensService', () => {
         token: 'fcm-token',
         user_id: 'user-1',
       });
-      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+        count: 1,
+      });
 
       const result = await service.unregisterToken('fcm-token', 'user-1');
 

@@ -51,7 +51,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (
       payload.sub &&
       payload.iat &&
-      (await this.tokenBlacklistService.isUserBlacklisted(payload.sub, payload.iat))
+      (await this.tokenBlacklistService.isUserBlacklisted(
+        payload.sub,
+        payload.iat,
+      ))
     ) {
       this.logger.warn(
         JSON.stringify({

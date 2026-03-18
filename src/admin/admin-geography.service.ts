@@ -73,7 +73,11 @@ export class AdminGeographyService {
     return country;
   }
 
-  async updateCountry(countryId: number, dto: UpdateCountryDto, actorId: string) {
+  async updateCountry(
+    countryId: number,
+    dto: UpdateCountryDto,
+    actorId: string,
+  ) {
     await this.ensureCountryExists(countryId);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
@@ -236,7 +240,12 @@ export class AdminGeographyService {
       },
     });
 
-    this.logMutation('create', 'local_fields', localField.local_field_id, actorId);
+    this.logMutation(
+      'create',
+      'local_fields',
+      localField.local_field_id,
+      actorId,
+    );
     return localField;
   }
 
@@ -397,7 +406,9 @@ export class AdminGeographyService {
     });
 
     if (activeChurches > 0) {
-      throw new ConflictException('Cannot deactivate district with active churches');
+      throw new ConflictException(
+        'Cannot deactivate district with active churches',
+      );
     }
 
     const district = await this.prisma.districts.update({
@@ -476,9 +487,7 @@ export class AdminGeographyService {
       where: { church_id: churchId },
       data: {
         ...(name ? { name } : {}),
-        ...(dto.district_id
-          ? { districlub_type_id: dto.district_id }
-          : {}),
+        ...(dto.district_id ? { districlub_type_id: dto.district_id } : {}),
         ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
         modified_at: new Date(),
       },

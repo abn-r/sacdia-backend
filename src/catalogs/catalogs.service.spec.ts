@@ -137,17 +137,17 @@ describe('CatalogsService', () => {
       const result = await service.getRelationshipTypes();
 
       expect(result).toEqual(mockRelationshipTypes);
-      expect(mockPrismaService.relationship_types.findMany).toHaveBeenCalledWith(
-        {
-          where: { active: true },
-          select: {
-            relationship_type_id: true,
-            name: true,
-            description: true,
-          },
-          orderBy: { name: 'asc' },
+      expect(
+        mockPrismaService.relationship_types.findMany,
+      ).toHaveBeenCalledWith({
+        where: { active: true },
+        select: {
+          relationship_type_id: true,
+          name: true,
+          description: true,
         },
-      );
+        orderBy: { name: 'asc' },
+      });
     });
   });
 

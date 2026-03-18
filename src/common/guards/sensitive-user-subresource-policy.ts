@@ -11,10 +11,11 @@ export type SensitiveUserSubresourcePolicy = {
   legacyFallbackPermission: string;
 };
 
-const LEGACY_PERMISSION_BY_MODE: Record<SensitiveUserSubresourceMode, string> = {
-  read: 'users:read_detail',
-  update: 'users:update',
-};
+const LEGACY_PERMISSION_BY_MODE: Record<SensitiveUserSubresourceMode, string> =
+  {
+    read: 'users:read_detail',
+    update: 'users:update',
+  };
 
 export function getSensitiveUserSubresourcePolicy(
   family: SensitiveUserSubresourceFamily,
@@ -30,5 +31,6 @@ export function getSensitiveUserSubresourceFallbackPermission(
   family: SensitiveUserSubresourceFamily,
   mode: SensitiveUserSubresourceMode,
 ): string {
-  return getSensitiveUserSubresourcePolicy(family, mode).legacyFallbackPermission;
+  return getSensitiveUserSubresourcePolicy(family, mode)
+    .legacyFallbackPermission;
 }

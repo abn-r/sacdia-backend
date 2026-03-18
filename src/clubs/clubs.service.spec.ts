@@ -18,21 +18,10 @@ describe('ClubsService', () => {
     club_types: {
       findFirst: jest.fn(),
     },
-    club_adventurers: {
+    club_sections: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
-    club_pathfinders: {
-      findFirst: jest.fn(),
-      findMany: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
-    club_master_guilds: {
-      findFirst: jest.fn(),
-      findMany: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -47,7 +36,9 @@ describe('ClubsService', () => {
   };
 
   const mockFileStorageService = {
-    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+    getSignedDownloadUrl: jest.fn(
+      async (_bucket: unknown, value: string) => value,
+    ),
   };
 
   beforeEach(async () => {
@@ -164,59 +155,39 @@ describe('ClubsService', () => {
     });
   });
 
-  describe('getInstances', () => {
-    it('should include club_type_name in each returned instance', async () => {
+  describe('getSections', () => {
+    it('should return sections with club_type name', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue({
         club_id: 10,
         name: 'Club Norte',
       });
-      mockPrismaService.club_adventurers.findMany.mockResolvedValue([
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
         {
-          club_adv_id: 1,
-          club_type_id: 2,
+          club_section_id: 1,
+          club_type_id: 1,
           active: true,
           club_types: { name: 'Aventureros' },
         },
-      ]);
-      mockPrismaService.club_pathfinders.findMany.mockResolvedValue([
         {
-          club_pathf_id: 2,
-          club_type_id: 3,
+          club_section_id: 2,
+          club_type_id: 2,
           active: true,
           club_types: { name: 'Conquistadores' },
         },
       ]);
-      mockPrismaService.club_master_guilds.findMany.mockResolvedValue([
-        {
-          club_mg_id: 3,
-          club_type_id: 4,
-          active: true,
-          club_types: { name: 'Guías Mayores' },
-        },
+
+      const result = await service.getSections(10);
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          club_section_id: 1,
+          club_types: { name: 'Aventureros' },
+        }),
+        expect.objectContaining({
+          club_section_id: 2,
+          club_types: { name: 'Conquistadores' },
+        }),
       ]);
-
-      const result = await service.getInstances(10);
-
-      expect(result).toEqual({
-        adventurers: [
-          expect.objectContaining({
-            club_adv_id: 1,
-            club_type_name: 'Aventureros',
-          }),
-        ],
-        pathfinders: [
-          expect.objectContaining({
-            club_pathf_id: 2,
-            club_type_name: 'Conquistadores',
-          }),
-        ],
-        master_guilds: [
-          expect.objectContaining({
-            club_mg_id: 3,
-            club_type_name: 'Guías Mayores',
-          }),
-        ],
-      });
     });
   });
 
@@ -239,7 +210,9 @@ describe('ClubsService', () => {
           role_id: 'role-2',
         }),
       );
-      expect(mockPrismaService.club_role_assignments.update).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.club_role_assignments.update,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { assignment_id: 'assignment-1' },
           data: expect.objectContaining({

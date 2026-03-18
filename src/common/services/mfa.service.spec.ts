@@ -42,7 +42,10 @@ describe('MfaService', () => {
   it('should bind session using optional refresh token when provided', async () => {
     mockSetSession.mockResolvedValue({ error: null });
     mockEnroll.mockResolvedValue({
-      data: { id: 'factor-1', totp: { qr_code: 'qr', secret: 'sec', uri: 'u' } },
+      data: {
+        id: 'factor-1',
+        totp: { qr_code: 'qr', secret: 'sec', uri: 'u' },
+      },
       error: null,
     });
 

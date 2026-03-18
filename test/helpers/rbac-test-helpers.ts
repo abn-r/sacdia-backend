@@ -1,6 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
 import type {
-  AuthorizationInstanceType,
   AuthorizationSnapshot,
 } from '../../src/common/services/authorization-context.service';
 
@@ -12,9 +11,8 @@ type AuthorizationFixtureOptions = {
   assignmentId?: string | null;
   clubId?: number;
   clubName?: string;
-  instanceType?: AuthorizationInstanceType;
-  instanceId?: number;
-  instanceName?: string;
+  clubSectionId?: number;
+  clubTypeName?: string | null;
   localFieldId?: number;
   localFieldName?: string;
   unionId?: number;
@@ -84,10 +82,9 @@ export function buildAuthorizationSnapshot(
             club_id: options.clubId ?? 1,
             club_name: options.clubName ?? 'Club Test',
           },
-          instance: {
-            type: options.instanceType ?? 'pathfinders',
-            instance_id: options.instanceId ?? 1,
-            instance_name: options.instanceName ?? 'Instance Test',
+          section: {
+            club_section_id: options.clubSectionId ?? 1,
+            club_type_name: options.clubTypeName ?? 'Conquistadores',
           },
           scope: globalScope,
           status: 'active',
@@ -121,7 +118,7 @@ export function buildAuthorizationSnapshot(
               assignment_id: clubAssignment.assignment_id,
               role_name: clubAssignment.role_name,
               club: clubAssignment.club,
-              instance: clubAssignment.instance,
+              section: clubAssignment.section,
             }
           : null,
       },

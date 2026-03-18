@@ -22,7 +22,10 @@ import { CertificationsService } from './certifications.service';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
 import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('certifications')

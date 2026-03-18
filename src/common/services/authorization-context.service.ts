@@ -12,11 +12,6 @@ export type AuthorizationTerritoryScope = {
   local_field?: AuthorizationScopeNode;
 };
 
-export type AuthorizationInstanceType =
-  | 'adventurers'
-  | 'pathfinders'
-  | 'master_guilds';
-
 export type GlobalAuthorizationGrant = {
   role_name: string;
   permissions: string[];
@@ -31,10 +26,9 @@ export type ClubAuthorizationGrant = {
     club_id: number;
     club_name: string;
   };
-  instance: {
-    type: AuthorizationInstanceType;
-    instance_id: number;
-    instance_name?: string | null;
+  section: {
+    club_section_id: number;
+    club_type_name?: string | null;
   };
   scope: AuthorizationTerritoryScope;
   status: string;
@@ -49,10 +43,9 @@ export type EffectiveClubAuthorization = {
     club_id: number;
     club_name: string;
   };
-  instance: {
-    type: AuthorizationInstanceType;
-    instance_id: number;
-    instance_name?: string | null;
+  section: {
+    club_section_id: number;
+    club_type_name?: string | null;
   };
 };
 
@@ -76,8 +69,7 @@ export type AuthorizationSnapshot = {
 export type LegacyAssignmentContext = {
   assignment_id: string;
   role_name: string;
-  instance_type: AuthorizationInstanceType;
-  instance_id: number;
+  club_section_id: number;
   club_id: number;
   club_name: string;
   club_type: string | null;
@@ -150,18 +142,8 @@ type ClubAssignmentRecord = {
     role_name: string;
     role_permissions: RolePermissionRecord[];
   };
-  club_adventurers?: {
-    club_adv_id: number;
-    club_types?: { name: string | null } | null;
-    clubs?: ClubHierarchyRecord | null;
-  } | null;
-  club_pathfinders?: {
-    club_pathf_id: number;
-    club_types?: { name: string | null } | null;
-    clubs?: ClubHierarchyRecord | null;
-  } | null;
-  club_master_guild?: {
-    club_mg_id: number;
+  club_sections?: {
+    club_section_id: number;
     club_types?: { name: string | null } | null;
     clubs?: ClubHierarchyRecord | null;
   } | null;
@@ -287,23 +269,9 @@ export class AuthorizationContextService {
                 },
               },
             },
-            club_adventurers: {
+            club_sections: {
               select: {
-                club_adv_id: true,
-                club_types: { select: { name: true } },
-                clubs: { select: CLUB_SCOPE_SELECT },
-              },
-            },
-            club_pathfinders: {
-              select: {
-                club_pathf_id: true,
-                club_types: { select: { name: true } },
-                clubs: { select: CLUB_SCOPE_SELECT },
-              },
-            },
-            club_master_guild: {
-              select: {
-                club_mg_id: true,
+                club_section_id: true,
                 club_types: { select: { name: true } },
                 clubs: { select: CLUB_SCOPE_SELECT },
               },
@@ -334,7 +302,8 @@ export class AuthorizationContextService {
       user.users_pr?.[0]?.active_club_assignment_id ?? null;
     const activeClubGrant =
       clubGrants.find(
-        (assignment) => assignment.assignment_id === persistedActiveAssignmentId,
+        (assignment) =>
+          assignment.assignment_id === persistedActiveAssignmentId,
       ) ??
       clubGrants[0] ??
       null;
@@ -386,7 +355,7 @@ export class AuthorizationContextService {
                   assignment_id: activeClubGrant.assignment_id,
                   role_name: activeClubGrant.role_name,
                   club: activeClubGrant.club,
-                  instance: activeClubGrant.instance,
+                  section: activeClubGrant.section,
                 }
               : null,
           },
@@ -399,7 +368,7 @@ export class AuthorizationContextService {
           ? {
               club_id: activeClubGrant.club.club_id,
               club_name: activeClubGrant.club.club_name,
-              club_type: activeClubGrant.instance.instance_name ?? null,
+              club_type: activeClubGrant.section.club_type_name ?? null,
             }
           : null,
         club_context: {
@@ -516,63 +485,20 @@ export class AuthorizationContextService {
       assignment.roles.role_permissions,
     );
 
-    if (assignment.club_adventurers?.clubs) {
+    if (assignment.club_sections?.clubs) {
       return {
         assignment_id: assignment.assignment_id,
         role_name: assignment.roles.role_name,
         permissions,
         club: {
-          club_id: assignment.club_adventurers.clubs.club_id,
-          club_name: assignment.club_adventurers.clubs.name ?? '',
+          club_id: assignment.club_sections.clubs.club_id,
+          club_name: assignment.club_sections.clubs.name ?? '',
         },
-        instance: {
-          type: 'adventurers',
-          instance_id: assignment.club_adventurers.club_adv_id,
-          instance_name: assignment.club_adventurers.club_types?.name ?? null,
+        section: {
+          club_section_id: assignment.club_sections.club_section_id,
+          club_type_name: assignment.club_sections.club_types?.name ?? null,
         },
-        scope: this.buildClubScope(assignment.club_adventurers.clubs),
-        status: assignment.status ?? 'active',
-        start_date: assignment.start_date,
-        end_date: assignment.end_date,
-      };
-    }
-
-    if (assignment.club_pathfinders?.clubs) {
-      return {
-        assignment_id: assignment.assignment_id,
-        role_name: assignment.roles.role_name,
-        permissions,
-        club: {
-          club_id: assignment.club_pathfinders.clubs.club_id,
-          club_name: assignment.club_pathfinders.clubs.name ?? '',
-        },
-        instance: {
-          type: 'pathfinders',
-          instance_id: assignment.club_pathfinders.club_pathf_id,
-          instance_name: assignment.club_pathfinders.club_types?.name ?? null,
-        },
-        scope: this.buildClubScope(assignment.club_pathfinders.clubs),
-        status: assignment.status ?? 'active',
-        start_date: assignment.start_date,
-        end_date: assignment.end_date,
-      };
-    }
-
-    if (assignment.club_master_guild?.clubs) {
-      return {
-        assignment_id: assignment.assignment_id,
-        role_name: assignment.roles.role_name,
-        permissions,
-        club: {
-          club_id: assignment.club_master_guild.clubs.club_id,
-          club_name: assignment.club_master_guild.clubs.name ?? '',
-        },
-        instance: {
-          type: 'master_guilds',
-          instance_id: assignment.club_master_guild.club_mg_id,
-          instance_name: assignment.club_master_guild.club_types?.name ?? null,
-        },
-        scope: this.buildClubScope(assignment.club_master_guild.clubs),
+        scope: this.buildClubScope(assignment.club_sections.clubs),
         status: assignment.status ?? 'active',
         start_date: assignment.start_date,
         end_date: assignment.end_date,
@@ -582,7 +508,9 @@ export class AuthorizationContextService {
     return null;
   }
 
-  private buildClubScope(club: ClubHierarchyRecord): AuthorizationTerritoryScope {
+  private buildClubScope(
+    club: ClubHierarchyRecord,
+  ): AuthorizationTerritoryScope {
     const scope: AuthorizationTerritoryScope = {};
     const localField = club.local_fields;
     const union = localField?.unions;
@@ -632,11 +560,10 @@ export class AuthorizationContextService {
     return {
       assignment_id: assignment.assignment_id,
       role_name: assignment.role_name,
-      instance_type: assignment.instance.type,
-      instance_id: assignment.instance.instance_id,
+      club_section_id: assignment.section.club_section_id,
       club_id: assignment.club.club_id,
       club_name: assignment.club.club_name,
-      club_type: assignment.instance.instance_name ?? null,
+      club_type: assignment.section.club_type_name ?? null,
     };
   }
 }

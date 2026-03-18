@@ -26,9 +26,9 @@ describe('JwtStrategy', () => {
     (mockTokenBlacklistService.isBlacklisted as jest.Mock).mockResolvedValue(
       false,
     );
-    (mockTokenBlacklistService.isUserBlacklisted as jest.Mock).mockResolvedValue(
-      false,
-    );
+    (
+      mockTokenBlacklistService.isUserBlacklisted as jest.Mock
+    ).mockResolvedValue(false);
     const strategy = new JwtStrategy(
       mockConfigService,
       mockTokenBlacklistService,
@@ -70,9 +70,9 @@ describe('JwtStrategy', () => {
     (mockTokenBlacklistService.isBlacklisted as jest.Mock).mockResolvedValue(
       false,
     );
-    (mockTokenBlacklistService.isUserBlacklisted as jest.Mock).mockResolvedValue(
-      true,
-    );
+    (
+      mockTokenBlacklistService.isUserBlacklisted as jest.Mock
+    ).mockResolvedValue(true);
     const strategy = new JwtStrategy(
       mockConfigService,
       mockTokenBlacklistService,

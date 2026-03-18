@@ -37,7 +37,9 @@ describe('CamporeesService', () => {
   };
 
   const mockFileStorageService = {
-    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+    getSignedDownloadUrl: jest.fn(
+      async (_bucket: unknown, value: string) => value,
+    ),
   };
 
   beforeEach(async () => {

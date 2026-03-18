@@ -14,7 +14,9 @@ describe('Admin Catalogs E2E', () => {
 
   const mockAdminGeographyService = {
     listCountries: jest.fn().mockResolvedValue([]),
-    createCountry: jest.fn().mockResolvedValue({ country_id: 1, name: 'México' }),
+    createCountry: jest
+      .fn()
+      .mockResolvedValue({ country_id: 1, name: 'México' }),
     updateCountry: jest.fn(),
     deleteCountry: jest.fn(),
     listUnions: jest.fn(),

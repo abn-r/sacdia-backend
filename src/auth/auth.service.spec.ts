@@ -585,63 +585,65 @@ describe('AuthService', () => {
     });
 
     it('should return profile with canonical authorization and legacy fields', async () => {
-      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
-        profile: {
-          user_id: 'user-123',
-          email: 'juan.garcia@example.com',
-          name: 'Juan',
-          paternal_last_name: 'Garcia',
-          maternal_last_name: 'Lopez',
-          gender: 'M',
-          birthday: new Date('2000-01-01'),
-          baptism: true,
-          baptism_date: new Date('2015-01-01'),
-          user_image: 'https://avatar.test/user-123.png',
-          country_id: 1,
-          union_id: 2,
-          local_field_id: 3,
-          created_at: new Date('2026-02-10'),
-        },
-        post_register_complete: true,
-        authorization: {
-          grants: {
-            global_roles: [
-              {
-                role_name: 'user',
-                permissions: ['read', 'write'],
-                scope: {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: {
+            user_id: 'user-123',
+            email: 'juan.garcia@example.com',
+            name: 'Juan',
+            paternal_last_name: 'Garcia',
+            maternal_last_name: 'Lopez',
+            gender: 'M',
+            birthday: new Date('2000-01-01'),
+            baptism: true,
+            baptism_date: new Date('2015-01-01'),
+            user_image: 'https://avatar.test/user-123.png',
+            country_id: 1,
+            union_id: 2,
+            local_field_id: 3,
+            created_at: new Date('2026-02-10'),
+          },
+          post_register_complete: true,
+          authorization: {
+            grants: {
+              global_roles: [
+                {
+                  role_name: 'user',
+                  permissions: ['read', 'write'],
+                  scope: {
+                    country: { id: 1, name: 'México' },
+                    union: { id: 2, name: 'UMS' },
+                    local_field: { id: 3, name: 'Campo Sur' },
+                  },
+                },
+              ],
+              club_assignments: [],
+            },
+            active_assignment: { assignment_id: null },
+            effective: {
+              permissions: ['read', 'write'],
+              scope: {
+                global: {
                   country: { id: 1, name: 'México' },
                   union: { id: 2, name: 'UMS' },
                   local_field: { id: 3, name: 'Campo Sur' },
                 },
+                club: null,
               },
-            ],
-            club_assignments: [],
+            },
           },
-          active_assignment: { assignment_id: null },
-          effective: {
+          legacy: {
+            roles: ['user', 'leader'],
             permissions: ['read', 'write'],
-            scope: {
-              global: {
-                country: { id: 1, name: 'México' },
-                union: { id: 2, name: 'UMS' },
-                local_field: { id: 3, name: 'Campo Sur' },
-              },
-              club: null,
+            club: null,
+            club_context: {
+              active_assignment_id: null,
+              active: null,
+              available: [],
             },
           },
         },
-        legacy: {
-          roles: ['user', 'leader'],
-          permissions: ['read', 'write'],
-          club: null,
-          club_context: {
-            active_assignment_id: null,
-            active: null,
-            available: [],
-          },
-        },
-      });
+      );
 
       const result = await service.getProfile('user-123');
 
@@ -680,116 +682,98 @@ describe('AuthService', () => {
     });
 
     it('should prioritize active context from authorization resolver', async () => {
-      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
-        profile: {
-        user_id: 'user-123',
-        email: 'juan.garcia@example.com',
-        name: 'Juan',
-        paternal_last_name: 'Garcia',
-        maternal_last_name: 'Lopez',
-        gender: 'M',
-        birthday: new Date('2000-01-01'),
-        baptism: true,
-        baptism_date: new Date('2015-01-01'),
-        user_image: 'https://avatar.test/user-123.png',
-        country_id: 1,
-        union_id: 2,
-        local_field_id: 3,
-        created_at: new Date('2026-02-10'),
-        },
-        post_register_complete: true,
-        authorization: {
-          grants: {
-            global_roles: [
-              {
-                role_name: 'user',
-                permissions: ['read'],
-                scope: {},
-              },
-            ],
-            club_assignments: [
-              {
-                assignment_id: 'assignment-1',
-                role_name: 'member',
-                permissions: ['clubs:read'],
-                club: { club_id: 1, club_name: 'Club A' },
-                instance: {
-                  type: 'adventurers',
-                  instance_id: 11,
-                  instance_name: 'Aventureros',
-                },
-                scope: {},
-                status: 'active',
-                start_date: new Date('2026-01-01'),
-                end_date: null,
-              },
-              {
-                assignment_id: 'assignment-2',
-                role_name: 'member',
-                permissions: ['clubs:read'],
-                club: { club_id: 2, club_name: 'Club B' },
-                instance: {
-                  type: 'pathfinders',
-                  instance_id: 22,
-                  instance_name: 'Conquistadores',
-                },
-                scope: {},
-                status: 'active',
-                start_date: new Date('2026-01-01'),
-                end_date: null,
-              },
-            ],
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: {
+            user_id: 'user-123',
+            email: 'juan.garcia@example.com',
+            name: 'Juan',
+            paternal_last_name: 'Garcia',
+            maternal_last_name: 'Lopez',
+            gender: 'M',
+            birthday: new Date('2000-01-01'),
+            baptism: true,
+            baptism_date: new Date('2015-01-01'),
+            user_image: 'https://avatar.test/user-123.png',
+            country_id: 1,
+            union_id: 2,
+            local_field_id: 3,
+            created_at: new Date('2026-02-10'),
           },
-          active_assignment: {
-            assignment_id: 'assignment-2',
-          },
-          effective: {
-            permissions: ['clubs:read', 'read'],
-            scope: {
-              global: {},
-              club: {
-                assignment_id: 'assignment-2',
-                role_name: 'member',
-                club: { club_id: 2, club_name: 'Club B' },
-                instance: {
-                  type: 'pathfinders',
-                  instance_id: 22,
-                  instance_name: 'Conquistadores',
+          post_register_complete: true,
+          authorization: {
+            grants: {
+              global_roles: [
+                {
+                  role_name: 'user',
+                  permissions: ['read'],
+                  scope: {},
+                },
+              ],
+              club_assignments: [
+                {
+                  assignment_id: 'assignment-1',
+                  role_name: 'member',
+                  permissions: ['clubs:read'],
+                  club: { club_id: 1, club_name: 'Club A' },
+                  instance: {
+                    type: 'adventurers',
+                    instance_id: 11,
+                    instance_name: 'Aventureros',
+                  },
+                  scope: {},
+                  status: 'active',
+                  start_date: new Date('2026-01-01'),
+                  end_date: null,
+                },
+                {
+                  assignment_id: 'assignment-2',
+                  role_name: 'member',
+                  permissions: ['clubs:read'],
+                  club: { club_id: 2, club_name: 'Club B' },
+                  instance: {
+                    type: 'pathfinders',
+                    instance_id: 22,
+                    instance_name: 'Conquistadores',
+                  },
+                  scope: {},
+                  status: 'active',
+                  start_date: new Date('2026-01-01'),
+                  end_date: null,
+                },
+              ],
+            },
+            active_assignment: {
+              assignment_id: 'assignment-2',
+            },
+            effective: {
+              permissions: ['clubs:read', 'read'],
+              scope: {
+                global: {},
+                club: {
+                  assignment_id: 'assignment-2',
+                  role_name: 'member',
+                  club: { club_id: 2, club_name: 'Club B' },
+                  instance: {
+                    type: 'pathfinders',
+                    instance_id: 22,
+                    instance_name: 'Conquistadores',
+                  },
                 },
               },
             },
           },
-        },
-        legacy: {
-          roles: ['user'],
-          permissions: ['read'],
-          club: {
-            club_id: 2,
-            club_name: 'Club B',
-            club_type: 'Conquistadores',
-          },
-          club_context: {
-            active_assignment_id: 'assignment-2',
-            active: {
-              assignment_id: 'assignment-2',
-              role_name: 'member',
-              instance_type: 'pathfinders',
-              instance_id: 22,
+          legacy: {
+            roles: ['user'],
+            permissions: ['read'],
+            club: {
               club_id: 2,
               club_name: 'Club B',
               club_type: 'Conquistadores',
             },
-            available: [
-              {
-                assignment_id: 'assignment-1',
-                role_name: 'member',
-                instance_type: 'adventurers',
-                instance_id: 11,
-                club_id: 1,
-                club_name: 'Club A',
-                club_type: 'Aventureros',
-              },
-              {
+            club_context: {
+              active_assignment_id: 'assignment-2',
+              active: {
                 assignment_id: 'assignment-2',
                 role_name: 'member',
                 instance_type: 'pathfinders',
@@ -798,10 +782,30 @@ describe('AuthService', () => {
                 club_name: 'Club B',
                 club_type: 'Conquistadores',
               },
-            ],
+              available: [
+                {
+                  assignment_id: 'assignment-1',
+                  role_name: 'member',
+                  instance_type: 'adventurers',
+                  instance_id: 11,
+                  club_id: 1,
+                  club_name: 'Club A',
+                  club_type: 'Aventureros',
+                },
+                {
+                  assignment_id: 'assignment-2',
+                  role_name: 'member',
+                  instance_type: 'pathfinders',
+                  instance_id: 22,
+                  club_id: 2,
+                  club_name: 'Club B',
+                  club_type: 'Conquistadores',
+                },
+              ],
+            },
           },
         },
-      });
+      );
 
       const result = await service.getProfile('user-123');
 
@@ -810,7 +814,7 @@ describe('AuthService', () => {
         club_name: 'Club B',
         club_type: 'Conquistadores',
       });
-      expect(result.data.club_context.active.assignment_id).toBe(
+      expect(result.data.club_context.active!.assignment_id).toBe(
         'assignment-2',
       );
     });
@@ -831,96 +835,85 @@ describe('AuthService', () => {
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-1',
         roles: { role_name: 'member' },
-        club_adventurers: null,
-        club_pathfinders: {
-          club_pathf_id: 22,
+        club_sections: {
+          club_section_id: 22,
           club_types: { name: 'Conquistadores' },
           clubs: { club_id: 2, name: 'Club B' },
         },
-        club_master_guild: null,
       });
       mockPrismaService.users_pr.upsert.mockResolvedValue({
         user_id: 'user-123',
         active_club_assignment_id: 'assignment-1',
       });
-      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
-        profile: {
-          user_id: 'user-123',
-          email: 'juan.garcia@example.com',
-          name: 'Juan',
-          paternal_last_name: 'Garcia',
-          maternal_last_name: 'Lopez',
-          gender: 'M',
-          birthday: new Date('2000-01-01'),
-          baptism: true,
-          baptism_date: new Date('2015-01-01'),
-          user_image: 'https://avatar.test/user-123.png',
-          country_id: 1,
-          union_id: 2,
-          local_field_id: 3,
-          created_at: new Date('2026-02-10'),
-        },
-        post_register_complete: true,
-        authorization: {
-          grants: {
-            global_roles: [],
-            club_assignments: [
-              {
-                assignment_id: 'assignment-1',
-                role_name: 'member',
-                permissions: ['clubs:read'],
-                club: { club_id: 2, club_name: 'Club B' },
-                instance: {
-                  type: 'pathfinders',
-                  instance_id: 22,
-                  instance_name: 'Conquistadores',
-                },
-                scope: {},
-                status: 'active',
-                start_date: new Date('2026-01-01'),
-                end_date: null,
-              },
-            ],
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: {
+            user_id: 'user-123',
+            email: 'juan.garcia@example.com',
+            name: 'Juan',
+            paternal_last_name: 'Garcia',
+            maternal_last_name: 'Lopez',
+            gender: 'M',
+            birthday: new Date('2000-01-01'),
+            baptism: true,
+            baptism_date: new Date('2015-01-01'),
+            user_image: 'https://avatar.test/user-123.png',
+            country_id: 1,
+            union_id: 2,
+            local_field_id: 3,
+            created_at: new Date('2026-02-10'),
           },
-          active_assignment: { assignment_id: 'assignment-1' },
-          effective: {
-            permissions: ['clubs:read'],
-            scope: {
-              global: {},
-              club: {
-                assignment_id: 'assignment-1',
-                role_name: 'member',
-                club: { club_id: 2, club_name: 'Club B' },
-                instance: {
-                  type: 'pathfinders',
-                  instance_id: 22,
-                  instance_name: 'Conquistadores',
+          post_register_complete: true,
+          authorization: {
+            grants: {
+              global_roles: [],
+              club_assignments: [
+                {
+                  assignment_id: 'assignment-1',
+                  role_name: 'member',
+                  permissions: ['clubs:read'],
+                  club: { club_id: 2, club_name: 'Club B' },
+                  instance: {
+                    type: 'pathfinders',
+                    instance_id: 22,
+                    instance_name: 'Conquistadores',
+                  },
+                  scope: {},
+                  status: 'active',
+                  start_date: new Date('2026-01-01'),
+                  end_date: null,
+                },
+              ],
+            },
+            active_assignment: { assignment_id: 'assignment-1' },
+            effective: {
+              permissions: ['clubs:read'],
+              scope: {
+                global: {},
+                club: {
+                  assignment_id: 'assignment-1',
+                  role_name: 'member',
+                  club: { club_id: 2, club_name: 'Club B' },
+                  instance: {
+                    type: 'pathfinders',
+                    instance_id: 22,
+                    instance_name: 'Conquistadores',
+                  },
                 },
               },
             },
           },
-        },
-        legacy: {
-          roles: [],
-          permissions: [],
-          club: {
-            club_id: 2,
-            club_name: 'Club B',
-            club_type: 'Conquistadores',
-          },
-          club_context: {
-            active_assignment_id: 'assignment-1',
-            active: {
-              assignment_id: 'assignment-1',
-              role_name: 'member',
-              instance_type: 'pathfinders',
-              instance_id: 22,
+          legacy: {
+            roles: [],
+            permissions: [],
+            club: {
               club_id: 2,
               club_name: 'Club B',
               club_type: 'Conquistadores',
             },
-            available: [
-              {
+            club_context: {
+              active_assignment_id: 'assignment-1',
+              active: {
                 assignment_id: 'assignment-1',
                 role_name: 'member',
                 instance_type: 'pathfinders',
@@ -929,10 +922,21 @@ describe('AuthService', () => {
                 club_name: 'Club B',
                 club_type: 'Conquistadores',
               },
-            ],
+              available: [
+                {
+                  assignment_id: 'assignment-1',
+                  role_name: 'member',
+                  instance_type: 'pathfinders',
+                  instance_id: 22,
+                  club_id: 2,
+                  club_name: 'Club B',
+                  club_type: 'Conquistadores',
+                },
+              ],
+            },
           },
         },
-      });
+      );
 
       const result = await service.setActiveClubContext('user-123', {
         assignment_id: 'assignment-1',

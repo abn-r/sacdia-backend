@@ -23,14 +23,21 @@ import { ClubsService } from './clubs.service';
 import {
   CreateClubDto,
   UpdateClubDto,
-  CreateInstanceDto,
-  UpdateInstanceDto,
+  CreateClubSectionDto,
+  UpdateClubSectionDto,
   AssignRoleDto,
   UpdateRoleAssignmentDto,
-  ClubInstanceType,
 } from './dto';
-import { AuthorizationResource, ClubRoles, RequirePermissions } from '../common/decorators';
-import { JwtAuthGuard, ClubRolesGuard, PermissionsGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  ClubRoles,
+  RequirePermissions,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  ClubRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('clubs')
@@ -145,139 +152,121 @@ export class ClubsController {
   }
 
   // ========================================
-  // INSTANCES
+  // SECTIONS
   // ========================================
 
-  @Get(':clubId/instances')
-  @RequirePermissions('club_instances:read')
+  @Get(':clubId/sections')
+  @RequirePermissions('club_sections:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
-    summary: 'Obtener instancias del club',
-    description: 'Lista todas las instancias (Aventureros, Conquistadores, GM)',
+    summary: 'Obtener secciones del club',
+    description: 'Lista todas las secciones (Aventureros, Conquistadores, GM)',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 200, description: 'Instancias del club' })
-  async getInstances(@Param('clubId', ParseIntPipe) clubId: number) {
-    return this.clubsService.getInstances(clubId);
+  @ApiResponse({ status: 200, description: 'Secciones del club' })
+  async getSections(@Param('clubId', ParseIntPipe) clubId: number) {
+    return this.clubsService.getSections(clubId);
   }
 
-  @Get(':clubId/instances/:type')
-  @RequirePermissions('club_instances:read')
+  @Get(':clubId/sections/:sectionId')
+  @RequirePermissions('club_sections:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
-  @ApiOperation({ summary: 'Obtener instancia por tipo' })
+  @ApiOperation({ summary: 'Obtener sección por ID' })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({
-    name: 'type',
-    enum: ClubInstanceType,
-    description: 'Tipo de instancia',
-  })
-  @ApiResponse({ status: 200, description: 'Instancia encontrada' })
-  async getInstance(
-    @Param('clubId', ParseIntPipe) clubId: number,
-    @Param('type') type: ClubInstanceType,
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Sección encontrada' })
+  async getSection(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
   ) {
-    return this.clubsService.getInstance(clubId, type);
+    return this.clubsService.getSection(sectionId);
   }
 
-  @Post(':clubId/instances')
+  @Post(':clubId/sections')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director')
-  @RequirePermissions('club_instances:create')
+  @RequirePermissions('club_sections:create')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
-    summary: 'Crear instancia de club (requiere director o deputy director)',
+    summary: 'Crear sección de club (requiere director o deputy director)',
     description:
-      'Crea una nueva instancia (Aventureros, Conquistadores, Guías Mayores)',
+      'Crea una nueva sección (Aventureros, Conquistadores, Guías Mayores)',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 201, description: 'Instancia creada' })
+  @ApiResponse({ status: 201, description: 'Sección creada' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  async createInstance(
+  async createSection(
     @Param('clubId', ParseIntPipe) clubId: number,
-    @Body() dto: CreateInstanceDto,
+    @Body() dto: CreateClubSectionDto,
   ) {
-    return this.clubsService.createInstance(clubId, dto);
+    return this.clubsService.createSection(clubId, dto);
   }
 
-  @Patch(':clubId/instances/:type/:instanceId')
+  @Patch(':clubId/sections/:sectionId')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director', 'deputy_director', 'secretary')
-  @RequirePermissions('club_instances:update')
+  @RequirePermissions('club_sections:update')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary:
-      'Actualizar instancia (requiere director, deputy director o secretary)',
+      'Actualizar sección (requiere director, deputy director o secretary)',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({ name: 'type', enum: ClubInstanceType })
-  @ApiParam({ name: 'instanceId', type: Number })
-  @ApiResponse({ status: 200, description: 'Instancia actualizada' })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Sección actualizada' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  async updateInstance(
-    @Param('instanceId', ParseIntPipe) instanceId: number,
-    @Param('type') type: ClubInstanceType,
-    @Body() dto: UpdateInstanceDto,
+  async updateSection(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Body() dto: UpdateClubSectionDto,
   ) {
-    return this.clubsService.updateInstance(instanceId, type, dto);
+    return this.clubsService.updateSection(sectionId, dto);
   }
 
   // ========================================
   // MEMBERS & ROLES
   // ========================================
 
-  @Get(':clubId/instances/:type/:instanceId/members')
+  @Get(':clubId/sections/:sectionId/members')
   @RequirePermissions('club_roles:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
-    summary: 'Listar miembros de la instancia',
+    summary: 'Listar miembros de la sección',
     description:
-      'Retorna todos los miembros asignados a la instancia con sus roles',
+      'Retorna todos los miembros asignados a la sección con sus roles',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({ name: 'type', enum: ClubInstanceType })
-  @ApiParam({ name: 'instanceId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
   async getMembers(
-    @Param('instanceId', ParseIntPipe) instanceId: number,
-    @Param('type') type: ClubInstanceType,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
   ) {
-    return this.clubsService.getMembers(instanceId, type);
+    return this.clubsService.getMembers(sectionId);
   }
 
-  @Post(':clubId/instances/:type/:instanceId/roles')
+  @Post(':clubId/sections/:sectionId/roles')
   @RequirePermissions('club_roles:assign')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary:
       'Asignar rol a un miembro (requiere director, deputy director o secretary)',
-    description: 'Asigna un rol específico a un usuario en la instancia',
+    description: 'Asigna un rol específico a un usuario en la sección',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({ name: 'type', enum: ClubInstanceType })
-  @ApiParam({ name: 'instanceId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 201, description: 'Rol asignado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   async assignRole(
-    @Param('type') type: ClubInstanceType,
-    @Param('instanceId', ParseIntPipe) instanceId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
     @Body() dto: AssignRoleDto,
   ) {
-    if (dto.instance_type && dto.instance_type !== type) {
+    if (dto.club_section_id && dto.club_section_id !== sectionId) {
       throw new BadRequestException(
-        'instance_type in body must match route type',
-      );
-    }
-
-    if (dto.instance_id && dto.instance_id !== instanceId) {
-      throw new BadRequestException(
-        'instance_id in body must match route instanceId',
+        'club_section_id in body must match route sectionId',
       );
     }
 
     return this.clubsService.assignRole({
       ...dto,
-      instance_type: type,
-      instance_id: instanceId,
+      club_section_id: sectionId,
     });
   }
 }

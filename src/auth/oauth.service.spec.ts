@@ -48,7 +48,9 @@ describe('OAuthService', () => {
   };
 
   const mockFileStorageService = {
-    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+    getSignedDownloadUrl: jest.fn(
+      async (_bucket: unknown, value: string) => value,
+    ),
   };
 
   beforeEach(async () => {
@@ -88,14 +90,14 @@ describe('OAuthService', () => {
         'https://sacdia.app/auth/callback',
       );
 
-      expect(mockSupabaseService.admin.auth.signInWithOAuth).toHaveBeenCalledWith(
-        {
-          provider: 'google',
-          options: {
-            redirectTo: 'https://sacdia.app/auth/callback',
-          },
+      expect(
+        mockSupabaseService.admin.auth.signInWithOAuth,
+      ).toHaveBeenCalledWith({
+        provider: 'google',
+        options: {
+          redirectTo: 'https://sacdia.app/auth/callback',
         },
-      );
+      });
       expect(result).toEqual({
         url: 'https://accounts.google.com/o/oauth2/auth',
       });
@@ -122,14 +124,14 @@ describe('OAuthService', () => {
 
       const result = await service.initiateAppleSignIn();
 
-      expect(mockSupabaseService.admin.auth.signInWithOAuth).toHaveBeenCalledWith(
-        {
-          provider: 'apple',
-          options: {
-            redirectTo: 'https://sacdia.app/auth/callback',
-          },
+      expect(
+        mockSupabaseService.admin.auth.signInWithOAuth,
+      ).toHaveBeenCalledWith({
+        provider: 'apple',
+        options: {
+          redirectTo: 'https://sacdia.app/auth/callback',
         },
-      );
+      });
       expect(result).toEqual({
         url: 'https://appleid.apple.com/auth/authorize',
       });
@@ -299,9 +301,9 @@ describe('OAuthService', () => {
     it('should throw BadRequestException when user does not exist', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.getConnectedProviders('missing-user')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.getConnectedProviders('missing-user'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

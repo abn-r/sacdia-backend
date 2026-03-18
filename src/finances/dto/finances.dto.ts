@@ -2,7 +2,6 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsNumber,
   IsDateString,
   Min,
 } from 'class-validator';
@@ -42,20 +41,9 @@ export class CreateFinanceDto {
   @IsDateString()
   finance_date: string;
 
-  @ApiPropertyOptional({ description: 'ID de la instancia de Aventureros' })
-  @IsOptional()
+  @ApiProperty({ description: 'ID de la sección del club (FK a club_sections)' })
   @IsInt()
-  club_adv_id?: number;
-
-  @ApiPropertyOptional({ description: 'ID de la instancia de Conquistadores' })
-  @IsOptional()
-  @IsInt()
-  club_pathf_id?: number;
-
-  @ApiPropertyOptional({ description: 'ID de la instancia de Guías Mayores' })
-  @IsOptional()
-  @IsInt()
-  club_mg_id?: number;
+  club_section_id: number;
 }
 
 export class UpdateFinanceDto {

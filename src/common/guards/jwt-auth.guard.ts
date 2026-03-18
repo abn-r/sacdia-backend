@@ -15,12 +15,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return super.canActivate(context);
   }
 
-  handleRequest(
-    err: any,
-    user: any,
-    info: any,
-    context: ExecutionContext,
-  ) {
+  handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
     if (err || !user) {
       const request = context.switchToHttp().getRequest<Request>();
       const reason = this.resolveReason(err, info);
@@ -51,7 +46,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (lower.includes('no auth token')) return 'missing';
     if (lower.includes('revoked')) return 'revoked';
     if (lower.includes('expired')) return 'expired';
-    if (lower.includes('invalid signature') || lower.includes('invalid token')) {
+    if (
+      lower.includes('invalid signature') ||
+      lower.includes('invalid token')
+    ) {
       return 'invalid_signature';
     }
     if (lower.includes('malformed')) return 'malformed';

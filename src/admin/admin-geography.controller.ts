@@ -149,7 +149,10 @@ export class AdminGeographyController {
   @RequirePermissions('local_fields:create')
   @ApiOperation({ summary: 'Create local field' })
   async createLocalField(@Body() dto: CreateLocalFieldDto, @Request() req) {
-    const data = await this.geographyService.createLocalField(dto, req.user.sub);
+    const data = await this.geographyService.createLocalField(
+      dto,
+      req.user.sub,
+    );
     return { status: 'success', data };
   }
 
@@ -276,7 +279,10 @@ export class AdminGeographyController {
     @Param('churchId', ParseIntPipe) churchId: number,
     @Request() req,
   ) {
-    const data = await this.geographyService.deleteChurch(churchId, req.user.sub);
+    const data = await this.geographyService.deleteChurch(
+      churchId,
+      req.user.sub,
+    );
     return { status: 'success', data };
   }
 }

@@ -300,7 +300,8 @@ describe('Permissions metadata', () => {
       { family: 'legal_representative', mode: 'read' },
     ],
     [
-      SensitiveUserSubresourceMetadataFixture.prototype.legalRepresentativeUpdate,
+      SensitiveUserSubresourceMetadataFixture.prototype
+        .legalRepresentativeUpdate,
       'legal_representative:update',
       { family: 'legal_representative', mode: 'update' },
     ],

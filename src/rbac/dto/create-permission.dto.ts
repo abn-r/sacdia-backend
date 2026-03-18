@@ -1,13 +1,23 @@
-import { IsString, IsNotEmpty, IsOptional, Matches, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePermissionDto {
-  @ApiProperty({ example: 'users:read', description: 'Nombre del permiso (resource:action)' })
+  @ApiProperty({
+    example: 'users:read',
+    description: 'Nombre del permiso (resource:action)',
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
   @Matches(/^[a-z_]+:[a-z_]+$/, {
-    message: 'permission_name debe seguir el formato resource:action (lowercase, separado por :)',
+    message:
+      'permission_name debe seguir el formato resource:action (lowercase, separado por :)',
   })
   permission_name: string;
 

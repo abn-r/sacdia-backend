@@ -27,9 +27,7 @@ describe('PermissionsGuard', () => {
     local_camporees: { findUnique: jest.fn() },
     club_inventory: { findUnique: jest.fn() },
     club_role_assignments: { findUnique: jest.fn() },
-    club_adventurers: { findUnique: jest.fn() },
-    club_pathfinders: { findUnique: jest.fn() },
-    club_master_guilds: { findUnique: jest.fn() },
+    club_sections: { findUnique: jest.fn() },
   };
 
   const guard = new PermissionsGuard(
@@ -348,9 +346,10 @@ describe('PermissionsGuard', () => {
       }),
     );
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
-    mockPrisma.club_pathfinders.findUnique.mockResolvedValue({
-      club_pathf_id: 22,
+    mockPrisma.club_sections.findUnique.mockResolvedValue({
+      club_section_id: 22,
       main_club_id: 10,
+      club_type_id: 2,
     });
 
     await expect(
@@ -461,9 +460,10 @@ describe('PermissionsGuard', () => {
       }),
     );
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
-    mockPrisma.club_pathfinders.findUnique.mockResolvedValue({
-      club_pathf_id: 99,
+    mockPrisma.club_sections.findUnique.mockResolvedValue({
+      club_section_id: 99,
       main_club_id: 10,
+      club_type_id: 2,
     });
 
     await expect(

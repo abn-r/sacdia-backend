@@ -9,7 +9,6 @@ import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AuthorizationContextService,
-  type AuthorizationInstanceType,
   type ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
 import {
@@ -26,9 +25,11 @@ import {
 } from '../decorators/sensitive-user-subresource.decorator';
 import { getSensitiveUserSubresourceFallbackPermission } from './sensitive-user-subresource-policy';
 
+type AuthorizationSectionType = 'adventurers' | 'pathfinders' | 'master_guilds';
+
 type ResolvedInstanceScope = {
   mainClubId: number;
-  instanceType: AuthorizationInstanceType;
+  instanceType: AuthorizationSectionType;
   instanceId: number;
 };
 
@@ -47,11 +48,10 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requirement =
-      this.reflector.getAllAndOverride<PermissionRequirement>(
-        PERMISSIONS_KEY,
-        [context.getHandler(), context.getClass()],
-      );
+    const requirement = this.reflector.getAllAndOverride<PermissionRequirement>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     if (!requirement || requirement.permissions.length === 0) {
       return true;
@@ -75,13 +75,15 @@ export class PermissionsGuard implements CanActivate {
         [context.getHandler(), context.getClass()],
       );
 
-    if (resource.type === 'user' && this.isResourceOwner(request, userId, resource)) {
+    if (
+      resource.type === 'user' &&
+      this.isResourceOwner(request, userId, resource)
+    ) {
       return true;
     }
 
-    const resolved = await this.authorizationContext.resolveUserAuthorization(
-      userId,
-    );
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
     request.authorization = resolved.authorization;
 
     if (
@@ -207,7 +209,9 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
   ): Set<string> {
     return new Set(
-      resolved.authorization.grants.global_roles.flatMap((grant) => grant.permissions),
+      resolved.authorization.grants.global_roles.flatMap(
+        (grant) => grant.permissions,
+      ),
     );
   }
 
@@ -284,8 +288,7 @@ export class PermissionsGuard implements CanActivate {
     if (
       !activeClubScope ||
       activeClubScope.club.club_id !== resourceScope.mainClubId ||
-      activeClubScope.instance.type !== resourceScope.instanceType ||
-      activeClubScope.instance.instance_id !== resourceScope.instanceId
+      activeClubScope.section.club_section_id !== resourceScope.instanceId
     ) {
       throw new ForbiddenException(
         'You need an active club assignment for this exact instance',
@@ -381,12 +384,14 @@ export class PermissionsGuard implements CanActivate {
     const activity = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
       select: {
-        club_adv_id: true,
-        club_pathf_id: true,
-        club_mg_id: true,
-        club_adv_i: { select: { main_club_id: true } },
-        club_pathf: { select: { main_club_id: true } },
-        club_mg: { select: { main_club_id: true } },
+        club_section_id: true,
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
       },
     });
 
@@ -394,14 +399,7 @@ export class PermissionsGuard implements CanActivate {
       throw new NotFoundException('Activity not found');
     }
 
-    return this.buildInstanceScopeFromRecord({
-      club_adv_id: activity.club_adv_id,
-      club_pathf_id: activity.club_pathf_id,
-      club_mg_id: activity.club_mg_id,
-      club_adventurers: activity.club_adv_i,
-      club_pathfinders: activity.club_pathf,
-      club_master_guild: activity.club_mg,
-    });
+    return this.buildInstanceScopeFromSection(activity.club_sections);
   }
 
   private async resolveCamporeeScope(
@@ -453,12 +451,14 @@ export class PermissionsGuard implements CanActivate {
     const finance = await this.prisma.finances.findUnique({
       where: { finance_id: financeId },
       select: {
-        club_adv_id: true,
-        club_pathf_id: true,
-        club_mg_id: true,
-        club_adventurers: { select: { main_club_id: true } },
-        club_pathfinders: { select: { main_club_id: true } },
-        club_master_guild: { select: { main_club_id: true } },
+        club_section_id: true,
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
       },
     });
 
@@ -466,83 +466,28 @@ export class PermissionsGuard implements CanActivate {
       throw new NotFoundException('Finance record not found');
     }
 
-    return this.buildInstanceScopeFromRecord(finance);
+    return this.buildInstanceScopeFromSection(finance.club_sections);
   }
 
   private async resolveInventoryInstanceScope(
     request: any,
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
-    const instanceId = this.getRequiredNumericValue(
+    const sectionId = this.getRequiredNumericValue(
       this.getRequestValue(request, 'param', resource.idParam ?? 'clubId'),
-      'Inventory instance ID not found in request',
+      'Club section ID not found in request',
     );
-    const rawInstanceType = this.getRequestValue(
-      request,
-      resource.instanceTypeSource ?? 'query',
-      resource.instanceTypeField ?? 'instanceType',
-    );
-    const instanceType = this.normalizeInstanceType(rawInstanceType);
 
-    switch (instanceType) {
-      case 'adventurers': {
-        const instance = await this.prisma.club_adventurers.findUnique({
-          where: { club_adv_id: instanceId },
-          select: { club_adv_id: true, main_club_id: true },
-        });
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { club_section_id: true, main_club_id: true, club_type_id: true },
+    });
 
-        if (!instance) {
-          throw new NotFoundException('Club adventurers instance not found');
-        }
-
-        return {
-          mainClubId: this.requireMainClubId(
-            instance.main_club_id,
-            'Club adventurers instance does not belong to a main club',
-          ),
-          instanceType,
-          instanceId: instance.club_adv_id,
-        };
-      }
-      case 'pathfinders': {
-        const instance = await this.prisma.club_pathfinders.findUnique({
-          where: { club_pathf_id: instanceId },
-          select: { club_pathf_id: true, main_club_id: true },
-        });
-
-        if (!instance) {
-          throw new NotFoundException('Club pathfinders instance not found');
-        }
-
-        return {
-          mainClubId: this.requireMainClubId(
-            instance.main_club_id,
-            'Club pathfinders instance does not belong to a main club',
-          ),
-          instanceType,
-          instanceId: instance.club_pathf_id,
-        };
-      }
-      case 'master_guilds': {
-        const instance = await this.prisma.club_master_guilds.findUnique({
-          where: { club_mg_id: instanceId },
-          select: { club_mg_id: true, main_club_id: true },
-        });
-
-        if (!instance) {
-          throw new NotFoundException('Club master guilds instance not found');
-        }
-
-        return {
-          mainClubId: this.requireMainClubId(
-            instance.main_club_id,
-            'Club master guilds instance does not belong to a main club',
-          ),
-          instanceType,
-          instanceId: instance.club_mg_id,
-        };
-      }
+    if (!section) {
+      throw new NotFoundException('Club section not found');
     }
+
+    return this.buildInstanceScopeFromSection(section);
   }
 
   private async resolveInventoryItemScope(
@@ -557,12 +502,14 @@ export class PermissionsGuard implements CanActivate {
     const inventoryItem = await this.prisma.club_inventory.findUnique({
       where: { club_inventory_id: inventoryId },
       select: {
-        club_adv_id: true,
-        club_pathf_id: true,
-        club_mg_id: true,
-        club_adventurers: { select: { main_club_id: true } },
-        club_pathfinders: { select: { main_club_id: true } },
-        club_master_guild: { select: { main_club_id: true } },
+        club_section_id: true,
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
       },
     });
 
@@ -570,7 +517,7 @@ export class PermissionsGuard implements CanActivate {
       throw new NotFoundException('Inventory item not found');
     }
 
-    return this.buildInstanceScopeFromRecord(inventoryItem);
+    return this.buildInstanceScopeFromSection(inventoryItem.club_sections);
   }
 
   private async resolveClubAssignmentScope(
@@ -578,7 +525,11 @@ export class PermissionsGuard implements CanActivate {
     resource: AuthorizationResourceMetadata,
   ): Promise<ResolvedInstanceScope> {
     const assignmentId = String(
-      this.getRequestValue(request, 'param', resource.idParam ?? 'assignmentId'),
+      this.getRequestValue(
+        request,
+        'param',
+        resource.idParam ?? 'assignmentId',
+      ),
     );
 
     if (!assignmentId) {
@@ -588,12 +539,14 @@ export class PermissionsGuard implements CanActivate {
     const assignment = await this.prisma.club_role_assignments.findUnique({
       where: { assignment_id: assignmentId },
       select: {
-        club_adv_id: true,
-        club_pathf_id: true,
-        club_mg_id: true,
-        club_adventurers: { select: { main_club_id: true } },
-        club_pathfinders: { select: { main_club_id: true } },
-        club_master_guild: { select: { main_club_id: true } },
+        club_section_id: true,
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
       },
     });
 
@@ -601,53 +554,44 @@ export class PermissionsGuard implements CanActivate {
       throw new NotFoundException('Club assignment not found');
     }
 
-    return this.buildInstanceScopeFromRecord(assignment);
+    return this.buildInstanceScopeFromSection(assignment.club_sections);
   }
 
-  private buildInstanceScopeFromRecord(record: {
-    club_adv_id?: number | null;
-    club_pathf_id?: number | null;
-    club_mg_id?: number | null;
-    club_adventurers?: { main_club_id: number | null } | null;
-    club_pathfinders?: { main_club_id: number | null } | null;
-    club_master_guild?: { main_club_id: number | null } | null;
-  }): ResolvedInstanceScope {
-    if (record.club_adv_id && record.club_adventurers?.main_club_id) {
-      return {
-        mainClubId: this.requireMainClubId(
-          record.club_adventurers.main_club_id,
-          'Club adventurers resource does not belong to a main club',
-        ),
-        instanceType: 'adventurers',
-        instanceId: record.club_adv_id,
-      };
+  private buildInstanceScopeFromSection(
+    section: {
+      club_section_id: number;
+      main_club_id: number | null;
+      club_type_id: number;
+    } | null,
+  ): ResolvedInstanceScope {
+    if (!section || !section.main_club_id) {
+      throw new ForbiddenException(
+        'Unable to resolve the club instance for this resource',
+      );
     }
 
-    if (record.club_pathf_id && record.club_pathfinders?.main_club_id) {
-      return {
-        mainClubId: this.requireMainClubId(
-          record.club_pathfinders.main_club_id,
-          'Club pathfinders resource does not belong to a main club',
-        ),
-        instanceType: 'pathfinders',
-        instanceId: record.club_pathf_id,
-      };
-    }
+    // Map club_type_id to instance type name for backward compatibility
+    const instanceType = this.clubTypeIdToInstanceType(section.club_type_id);
 
-    if (record.club_mg_id && record.club_master_guild?.main_club_id) {
-      return {
-        mainClubId: this.requireMainClubId(
-          record.club_master_guild.main_club_id,
-          'Club master guild resource does not belong to a main club',
-        ),
-        instanceType: 'master_guilds',
-        instanceId: record.club_mg_id,
-      };
-    }
+    return {
+      mainClubId: section.main_club_id,
+      instanceType,
+      instanceId: section.club_section_id,
+    };
+  }
 
-    throw new ForbiddenException(
-      'Unable to resolve the club instance for this resource',
-    );
+  private clubTypeIdToInstanceType(clubTypeId: number): AuthorizationSectionType {
+    // These mappings follow the club_types catalog convention
+    switch (clubTypeId) {
+      case 1:
+        return 'adventurers';
+      case 2:
+        return 'pathfinders';
+      case 3:
+        return 'master_guilds';
+      default:
+        return 'pathfinders'; // safe fallback
+    }
   }
 
   private getRequestValue(
@@ -666,7 +610,10 @@ export class PermissionsGuard implements CanActivate {
     }
   }
 
-  private getRequiredNumericValue(value: unknown, errorMessage: string): number {
+  private getRequiredNumericValue(
+    value: unknown,
+    errorMessage: string,
+  ): number {
     const parsed =
       typeof value === 'number' ? value : Number.parseInt(String(value), 10);
 
@@ -675,24 +622,6 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return parsed;
-  }
-
-  private normalizeInstanceType(rawValue: unknown): AuthorizationInstanceType {
-    const value = String(rawValue ?? '').trim().toLowerCase();
-
-    if (value === 'adv' || value === 'adventurers') {
-      return 'adventurers';
-    }
-
-    if (value === 'pathf' || value === 'pathfinders') {
-      return 'pathfinders';
-    }
-
-    if (value === 'mg' || value === 'master_guilds') {
-      return 'master_guilds';
-    }
-
-    throw new ForbiddenException('Instance type not found in request');
   }
 
   private requireMainClubId(

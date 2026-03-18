@@ -1,7 +1,6 @@
 import { IsDate, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ClubInstanceType } from './instance.dto';
 
 export class AssignRoleDto {
   @ApiProperty({ description: 'ID del usuario' })
@@ -23,21 +22,13 @@ export class AssignRoleDto {
   @IsString()
   role?: string;
 
-  @ApiProperty({
-    enum: ClubInstanceType,
-    description:
-      'Tipo de instancia de club (se resuelve desde ruta en contrato assignment-first).',
-  })
-  @IsOptional()
-  instance_type?: ClubInstanceType;
-
   @ApiPropertyOptional({
-    description:
-      'ID de la instancia de club (se resuelve desde ruta en contrato assignment-first).',
+    description: 'ID de la sección del club (FK a club_sections).',
   })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  instance_id?: number;
+  club_section_id?: number;
 
   @ApiPropertyOptional({ description: 'ID del año eclesiástico' })
   @IsOptional()

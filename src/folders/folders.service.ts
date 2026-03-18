@@ -150,23 +150,11 @@ export class FoldersService {
       );
     }
 
-    // 3. Obtener instancia de club del usuario según el tipo de club
-    const clubInstances = await this.getUserClubInstances(userId);
-
-    let clubAdvId: number | null = null;
-    let clubPathfId: number | null = null;
-    let clubMgId: number | null = null;
-
-    if (folder.club_type === 1) {
-      clubAdvId = clubInstances.adventurers;
-    } else if (folder.club_type === 2) {
-      clubPathfId = clubInstances.pathfinders;
-    } else if (folder.club_type === 3) {
-      clubMgId = clubInstances.masterGuilds;
-    }
+    // 3. Obtener sección de club del usuario según el tipo de club
+    const clubSectionId = await this.getUserClubSectionId(userId, folder.club_type);
 
     // Validar que el usuario pertenece a un club del tipo requerido
-    if (!clubAdvId && !clubPathfId && !clubMgId) {
+    if (!clubSectionId) {
       throw new BadRequestException(
         `User does not belong to a club of the required type`,
       );
@@ -177,9 +165,7 @@ export class FoldersService {
       data: {
         folder_id: folderId,
         user_id: userId,
-        club_adv_id: clubAdvId,
-        club_pathf_id: clubPathfId,
-        club_mg_id: clubMgId,
+        club_section_id: clubSectionId,
         assignment_date: new Date(),
         status: 'IN_PROGRESS',
         total_points: 0,
@@ -192,13 +178,20 @@ export class FoldersService {
   }
 
   /**
-   * Obtener instancias de club del usuario
+   * Obtener sección de club del usuario para un tipo de club específico
    */
-  private async getUserClubInstances(userId: string) {
+  private async getUserClubSectionId(userId: string, clubType: number | null): Promise<number | null> {
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       include: {
-        club_role_assignments: true,
+        club_role_assignments: {
+          where: { active: true },
+          include: {
+            club_sections: {
+              select: { club_section_id: true, club_type_id: true },
+            },
+          },
+        },
       },
     });
 
@@ -206,16 +199,14 @@ export class FoldersService {
       throw new NotFoundException('User not found');
     }
 
-    // Extraer IDs de clubes desde role assignments
-    const clubAssignments = user.club_role_assignments;
-    return {
-      adventurers:
-        clubAssignments.find((ca) => ca.club_adv_id)?.club_adv_id ?? null,
-      pathfinders:
-        clubAssignments.find((ca) => ca.club_pathf_id)?.club_pathf_id ?? null,
-      masterGuilds:
-        clubAssignments.find((ca) => ca.club_mg_id)?.club_mg_id ?? null,
-    };
+    // Find a club_role_assignment that has a club_section matching the folder's club_type
+    for (const assignment of user.club_role_assignments) {
+      if (assignment.club_sections && assignment.club_sections.club_type_id === clubType) {
+        return assignment.club_sections.club_section_id;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -289,27 +280,19 @@ export class FoldersService {
       throw new NotFoundException('Folder assignment not found');
     }
 
-    // Obtener registros de módulos (por club, no por usuario)
+    // Obtener registros de módulos (por club section)
     const moduleRecords = await this.prisma.folders_modules_records.findMany({
       where: {
         folder_id: folderId,
-        OR: [
-          { club_adv_id: assignment.club_adv_id },
-          { club_pathf_id: assignment.club_pathf_id },
-          { club_mg_id: assignment.club_mg_id },
-        ],
+        club_section_id: assignment.club_section_id,
       },
     });
 
-    // Obtener registros de secciones (por club, no por usuario)
+    // Obtener registros de secciones (por club section)
     const sectionRecords = await this.prisma.folders_section_records.findMany({
       where: {
         folder_id: folderId,
-        OR: [
-          { club_adv_id: assignment.club_adv_id },
-          { club_pathf_id: assignment.club_pathf_id },
-          { club_mg_id: assignment.club_mg_id },
-        ],
+        club_section_id: assignment.club_section_id,
       },
     });
 
@@ -416,16 +399,12 @@ export class FoldersService {
         throw new BadRequestException('Points exceed section maximum');
       }
 
-      // 4. Buscar o crear registro de sección (por club, no por usuario)
+      // 4. Buscar o crear registro de sección (por club section)
       const existingRecord = await tx.folders_section_records.findFirst({
         where: {
           folder_id: folderId,
           section_id: sectionId,
-          OR: [
-            { club_adv_id: assignment.club_adv_id },
-            { club_pathf_id: assignment.club_pathf_id },
-            { club_mg_id: assignment.club_mg_id },
-          ],
+          club_section_id: assignment.club_section_id,
         },
       });
 
@@ -448,9 +427,7 @@ export class FoldersService {
             section_id: sectionId,
             points: dto.points,
             evidences: dto.evidences,
-            club_adv_id: assignment.club_adv_id,
-            club_pathf_id: assignment.club_pathf_id,
-            club_mg_id: assignment.club_mg_id,
+            club_section_id: assignment.club_section_id,
           },
         });
       }
@@ -464,11 +441,7 @@ export class FoldersService {
         where: {
           folder_id: folderId,
           module_id: moduleId,
-          OR: [
-            { club_adv_id: assignment.club_adv_id },
-            { club_pathf_id: assignment.club_pathf_id },
-            { club_mg_id: assignment.club_mg_id },
-          ],
+          club_section_id: assignment.club_section_id,
         },
       });
 
@@ -482,11 +455,7 @@ export class FoldersService {
         where: {
           folder_id: folderId,
           module_id: moduleId,
-          OR: [
-            { club_adv_id: assignment.club_adv_id },
-            { club_pathf_id: assignment.club_pathf_id },
-            { club_mg_id: assignment.club_mg_id },
-          ],
+          club_section_id: assignment.club_section_id,
         },
       });
 
@@ -504,9 +473,7 @@ export class FoldersService {
             folder_id: folderId,
             module_id: moduleId,
             points: modulePoints,
-            club_adv_id: assignment.club_adv_id,
-            club_pathf_id: assignment.club_pathf_id,
-            club_mg_id: assignment.club_mg_id,
+            club_section_id: assignment.club_section_id,
           },
         });
       }
@@ -516,11 +483,7 @@ export class FoldersService {
         {
           where: {
             folder_id: folderId,
-            OR: [
-              { club_adv_id: assignment.club_adv_id },
-              { club_pathf_id: assignment.club_pathf_id },
-              { club_mg_id: assignment.club_mg_id },
-            ],
+            club_section_id: assignment.club_section_id,
           },
         },
       );

@@ -79,9 +79,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
               };
             } catch (error) {
               if (redisClient?.isOpen) {
-                await redisClient
-                  .disconnect()
-                  .catch(() => undefined);
+                await redisClient.disconnect().catch(() => undefined);
               }
               const message =
                 error instanceof Error ? error.message : 'Unknown error';

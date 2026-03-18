@@ -391,9 +391,8 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const resolved = await this.authorizationContext.resolveUserAuthorization(
-      userId,
-    );
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
     const signedUserImage = await this.resolvePrivateProfilePicture(
       resolved.profile.user_image,
     );
@@ -424,23 +423,9 @@ export class AuthService {
       select: {
         assignment_id: true,
         roles: { select: { role_name: true } },
-        club_adventurers: {
+        club_sections: {
           select: {
-            club_adv_id: true,
-            club_types: { select: { name: true } },
-            clubs: { select: { club_id: true, name: true } },
-          },
-        },
-        club_pathfinders: {
-          select: {
-            club_pathf_id: true,
-            club_types: { select: { name: true } },
-            clubs: { select: { club_id: true, name: true } },
-          },
-        },
-        club_master_guild: {
-          select: {
-            club_mg_id: true,
+            club_section_id: true,
             club_types: { select: { name: true } },
             clubs: { select: { club_id: true, name: true } },
           },
@@ -463,9 +448,8 @@ export class AuthService {
       },
     });
 
-    const resolved = await this.authorizationContext.resolveUserAuthorization(
-      userId,
-    );
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
 
     return {
       status: 'success',
@@ -571,8 +555,8 @@ export class AuthService {
     const [localPart, domain] = email.split('@');
     if (!localPart || !domain) return '***';
 
-    const visibleLocal = localPart.length <= 2 ? localPart[0] ?? '*' : localPart.slice(0, 2);
+    const visibleLocal =
+      localPart.length <= 2 ? (localPart[0] ?? '*') : localPart.slice(0, 2);
     return `${visibleLocal}***@${domain}`;
   }
-
 }

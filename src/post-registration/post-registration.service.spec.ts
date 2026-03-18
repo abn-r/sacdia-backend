@@ -11,23 +11,21 @@ describe('PostRegistrationService', () => {
   const createTransactionMock = () => ({
     users: { update: jest.fn().mockResolvedValue({}) },
     ecclesiastical_years: {
-      findFirst: jest.fn().mockResolvedValue({ year_id: 2026 }),
+      findFirst: jest.fn().mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+      }),
     },
     roles: {
       findFirst: jest.fn().mockResolvedValue({ role_id: 'role-member' }),
     },
-    club_adventurers: {
-      findUnique: jest.fn().mockResolvedValue({ club_adv_id: 10 }),
-    },
-    club_pathfinders: {
-      findUnique: jest.fn().mockResolvedValue({ club_pathf_id: 20 }),
-    },
-    club_master_guilds: {
-      findUnique: jest.fn().mockResolvedValue({ club_mg_id: 30 }),
+    club_sections: {
+      findUnique: jest.fn().mockResolvedValue({ club_section_id: 10 }),
     },
     club_role_assignments: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ assignment_id: 'assignment-1' }),
+      update: jest.fn().mockResolvedValue({ assignment_id: 'assignment-1' }),
     },
     classes: {
       findUnique: jest.fn().mockResolvedValue({ class_id: 5, active: true }),
@@ -37,6 +35,14 @@ describe('PostRegistrationService', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       update: jest.fn().mockResolvedValue({ user_class_id: 99 }),
       create: jest.fn().mockResolvedValue({ user_class_id: 1 }),
+    },
+    enrollments: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ enrollment_id: 77, active: true }),
+      create: jest
+        .fn()
+        .mockResolvedValue({ enrollment_id: 1001, active: true }),
     },
     users_pr: {
       update: jest.fn().mockResolvedValue({}),
@@ -220,8 +226,7 @@ describe('PostRegistrationService', () => {
       country_id: 1,
       union_id: 2,
       local_field_id: 3,
-      club_type: 'adventurers' as const,
-      club_instance_id: 10,
+      club_section_id: 10,
       class_id: 5,
     };
 
@@ -236,6 +241,10 @@ describe('PostRegistrationService', () => {
         active: true,
         current_class: false,
       });
+      transactionMock.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 501,
+        active: true,
+      });
 
       const result = await service.completeStep3(userId, dto, ownerActor);
 
@@ -243,6 +252,8 @@ describe('PostRegistrationService', () => {
       expect(
         transactionMock.club_role_assignments.create,
       ).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.update).not.toHaveBeenCalled();
       expect(transactionMock.users_classes.create).not.toHaveBeenCalled();
       expect(transactionMock.users_classes.updateMany).toHaveBeenCalledWith({
         where: {
@@ -259,6 +270,141 @@ describe('PostRegistrationService', () => {
           current_class: true,
         },
       });
+    });
+
+    it('should create enrollment-first operational truth on first completion', async () => {
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(transactionMock.enrollments.updateMany).toHaveBeenCalledWith({
+        where: {
+          user_id: userId,
+          ecclesiastical_year_id: 2026,
+          active: true,
+          NOT: { class_id: dto.class_id },
+        },
+        data: {
+          active: false,
+        },
+      });
+      expect(transactionMock.enrollments.create).toHaveBeenCalledWith({
+        data: {
+          user_id: userId,
+          class_id: dto.class_id,
+          ecclesiastical_year_id: 2026,
+        },
+      });
+      expect(transactionMock.users_classes.updateMany).toHaveBeenCalled();
+      expect(transactionMock.users_classes.create).toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).toHaveBeenCalled();
+    });
+
+    it('should reactivate existing inactive enrollment without resetting metadata', async () => {
+      transactionMock.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 1002,
+        active: false,
+        investiture_status: 'VALIDATED',
+        submitted_for_validation: true,
+      });
+
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.update).toHaveBeenCalledWith({
+        where: {
+          enrollment_id: 1002,
+        },
+        data: {
+          active: true,
+        },
+      });
+    });
+
+    it('should recover from enrollment unique conflict by re-reading tuple', async () => {
+      transactionMock.enrollments.create.mockRejectedValue({
+        code: 'P2002',
+      });
+      transactionMock.enrollments.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          enrollment_id: 1009,
+          active: true,
+        });
+
+      const result = await service.completeStep3(userId, dto, ownerActor);
+
+      expect(result.status).toBe('success');
+      expect(transactionMock.enrollments.create).toHaveBeenCalledTimes(1);
+      expect(transactionMock.enrollments.findUnique).toHaveBeenCalledTimes(2);
+    });
+
+    it('should fail when enrollment conflict cannot be resolved', async () => {
+      transactionMock.enrollments.create.mockRejectedValue({
+        code: 'P2002',
+      });
+      transactionMock.enrollments.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toThrow('No se pudo resolver la inscripción anual operativa');
+    });
+
+    it('should recover member assignment on duplicate create race', async () => {
+      transactionMock.club_role_assignments.create.mockRejectedValue({
+        code: 'P2002',
+      });
+      transactionMock.club_role_assignments.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          assignment_id: 'assignment-recovered',
+          active: true,
+        });
+
+      const result = await service.completeStep3(userId, dto, ownerActor);
+
+      expect(result.status).toBe('success');
+      expect(
+        transactionMock.club_role_assignments.findFirst,
+      ).toHaveBeenCalledTimes(2);
+    });
+
+    it('should deactivate other active same-year enrollments when switching classes', async () => {
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(transactionMock.enrollments.updateMany).toHaveBeenCalledWith({
+        where: {
+          user_id: userId,
+          ecclesiastical_year_id: 2026,
+          active: true,
+          NOT: { class_id: dto.class_id },
+        },
+        data: {
+          active: false,
+        },
+      });
+      expect(transactionMock.users_classes.updateMany).toHaveBeenCalledWith({
+        where: {
+          user_id: userId,
+          current_class: true,
+          NOT: { class_id: dto.class_id },
+        },
+        data: {
+          current_class: false,
+        },
+      });
+    });
+
+    it('should fail atomically when no active ecclesiastical year exists', async () => {
+      transactionMock.ecclesiastical_years.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toThrow('No hay año eclesiástico activo configurado');
+
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.users_classes.create).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when class does not exist', async () => {
@@ -282,7 +428,7 @@ describe('PostRegistrationService', () => {
     });
 
     it('should hide detailed validation feedback from third-party completion failures', async () => {
-      transactionMock.club_adventurers.findUnique.mockResolvedValue(null);
+      transactionMock.club_sections.findUnique.mockResolvedValue(null);
 
       await expect(
         service.completeStep3(userId, dto, adminActor),
