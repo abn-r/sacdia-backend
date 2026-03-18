@@ -52,7 +52,7 @@ describe('FS-03 bounded progress backfill policy', () => {
   it('keeps the migration SQL bounded to deterministic matches only', () => {
     const migrationPath = join(
       __dirname,
-      '../../docs/03-DATABASE/migrations/20260313_fs03_enrollment_aware_progress.sql',
+      '../../docs/database/migrations/20260313_fs03_enrollment_aware_progress.sql',
     );
     const migrationSql = readFileSync(migrationPath, 'utf8');
 

@@ -44,8 +44,7 @@ describe('Post-registration step 3 E2E', () => {
     country_id: 1,
     union_id: 2,
     local_field_id: 3,
-    club_type: 'adventurers',
-    club_instance_id: 10,
+    club_section_id: 10,
     class_id: 5,
   };
 
@@ -94,14 +93,8 @@ describe('Post-registration step 3 E2E', () => {
       roles: {
         findFirst: jest.fn().mockResolvedValue({ role_id: 'role-member' }),
       },
-      club_adventurers: {
-        findUnique: jest.fn().mockResolvedValue({ club_adv_id: 10 }),
-      },
-      club_pathfinders: {
-        findUnique: jest.fn(),
-      },
-      club_master_guilds: {
-        findUnique: jest.fn(),
+      club_sections: {
+        findUnique: jest.fn().mockResolvedValue({ club_section_id: 10 }),
       },
       classes: {
         findUnique: jest.fn().mockResolvedValue({ class_id: 5, active: true }),
@@ -172,9 +165,7 @@ describe('Post-registration step 3 E2E', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
       roles: { findFirst: jest.fn() },
-      club_adventurers: { findUnique: jest.fn() },
-      club_pathfinders: { findUnique: jest.fn() },
-      club_master_guilds: { findUnique: jest.fn() },
+      club_sections: { findUnique: jest.fn() },
       classes: { findUnique: jest.fn() },
       club_role_assignments: {
         findFirst: jest.fn(),
