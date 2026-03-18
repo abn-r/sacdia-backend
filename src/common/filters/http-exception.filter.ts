@@ -36,7 +36,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
           ? this.sanitizeRequestBody(request.url, request.body)
           : undefined,
       stack:
-        process.env.NODE_ENV === 'development' && status !== HttpStatus.UNAUTHORIZED
+        process.env.NODE_ENV === 'development' &&
+        status !== HttpStatus.UNAUTHORIZED
           ? exception.stack
           : undefined,
     };
@@ -121,7 +122,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const [localPart, domain] = email.split('@');
     if (!localPart || !domain) return '***';
 
-    const visibleLocal = localPart.length <= 2 ? localPart[0] ?? '*' : localPart.slice(0, 2);
+    const visibleLocal =
+      localPart.length <= 2 ? (localPart[0] ?? '*') : localPart.slice(0, 2);
     return `${visibleLocal}***@${domain}`;
   }
 }

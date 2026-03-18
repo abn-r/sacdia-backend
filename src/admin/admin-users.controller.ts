@@ -6,8 +6,11 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import type { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
+  ApiExtraModels,
+  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -15,15 +18,26 @@ import {
 } from '@nestjs/swagger';
 import { RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
-import { AdminListUsersQueryDto } from './dto';
+import {
+  AdminCurrentOperationalEnrollmentDto,
+  AdminListUsersQueryDto,
+  AdminTrajectoryClassDto,
+} from './dto';
 import { AdminUsersService } from './admin-users.service';
 
 @ApiTags('admin-users')
 @ApiBearerAuth()
+@ApiExtraModels(AdminCurrentOperationalEnrollmentDto, AdminTrajectoryClassDto)
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('admin')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
+
+  private getActorId(
+    request: ExpressRequest & { user: { sub: string } },
+  ): string {
+    return request.user.sub;
+  }
 
   @Get('users')
   @RequirePermissions('users:read')
@@ -39,10 +53,16 @@ export class AdminUsersController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async listUsers(
-    @Request() req,
+    @Request() req: ExpressRequest & { user: { sub: string } },
     @Query() query: AdminListUsersQueryDto,
-  ): Promise<{ status: string; data: any }> {
-    const data = await this.adminUsersService.listUsers(req.user.sub, query);
+  ): Promise<{
+    status: string;
+    data: Awaited<ReturnType<AdminUsersService['listUsers']>>;
+  }> {
+    const data = await this.adminUsersService.listUsers(
+      this.getActorId(req),
+      query,
+    );
     return { status: 'success', data };
   }
 
@@ -51,12 +71,50 @@ export class AdminUsersController {
   @ApiOperation({
     summary: 'Obtener detalle de usuario validando alcance por rol del actor',
   })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', example: 'success' },
+        data: {
+          type: 'object',
+          properties: {
+            current_operational_enrollment: {
+              oneOf: [
+                {
+                  $ref: '#/components/schemas/AdminCurrentOperationalEnrollmentDto',
+                },
+                { type: 'null' },
+              ],
+            },
+            trajectory_classes: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/AdminTrajectoryClassDto' },
+            },
+            classes: {
+              type: 'array',
+              description:
+                'Deprecated compatibility alias of trajectory_classes (legacy only).',
+              deprecated: true,
+              items: { $ref: '#/components/schemas/AdminTrajectoryClassDto' },
+            },
+          },
+        },
+      },
+    },
+  })
   @ApiParam({ name: 'userId', type: String })
   async getUserById(
-    @Request() req,
+    @Request() req: ExpressRequest & { user: { sub: string } },
     @Param('userId') userId: string,
-  ): Promise<{ status: string; data: any }> {
-    const data = await this.adminUsersService.getUserById(req.user.sub, userId);
+  ): Promise<{
+    status: string;
+    data: Awaited<ReturnType<AdminUsersService['getUserById']>>;
+  }> {
+    const data = await this.adminUsersService.getUserById(
+      this.getActorId(req),
+      userId,
+    );
     return { status: 'success', data };
   }
 }

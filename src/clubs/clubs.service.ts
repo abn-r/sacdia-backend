@@ -10,11 +10,10 @@ import { Prisma } from '@prisma/client';
 import {
   CreateClubDto,
   UpdateClubDto,
-  CreateInstanceDto,
-  UpdateInstanceDto,
+  CreateClubSectionDto,
+  UpdateClubSectionDto,
   AssignRoleDto,
   UpdateRoleAssignmentDto,
-  ClubInstanceType,
 } from './dto';
 import {
   PaginationDto,
@@ -67,9 +66,9 @@ export class ClubsService {
           churches: { select: { name: true } },
           districts: { select: { name: true } },
           local_fields: { select: { name: true } },
-          club_adventurers: { select: { club_adv_id: true, active: true } },
-          club_pathfinders: { select: { club_pathf_id: true, active: true } },
-          club_master_guild: { select: { club_mg_id: true, active: true } },
+          club_sections: {
+            select: { club_section_id: true, active: true, club_types: { select: { name: true } } },
+          },
         },
         orderBy: { name: 'asc' },
         skip: pagination?.skip ?? 0,
@@ -92,9 +91,9 @@ export class ClubsService {
         churches: true,
         districts: true,
         local_fields: true,
-        club_adventurers: true,
-        club_pathfinders: true,
-        club_master_guild: true,
+        club_sections: {
+          include: { club_types: { select: { name: true } } },
+        },
       },
     });
 
@@ -142,199 +141,75 @@ export class ClubsService {
   }
 
   // ========================================
-  // INSTANCES (Adventurers, Pathfinders, Master Guilds)
+  // SECTIONS (unified club_sections)
   // ========================================
 
-  async getInstances(clubId: number) {
+  async getSections(clubId: number) {
     await this.findOne(clubId);
-
-    const [adventurers, pathfinders, masterGuilds] = await Promise.all([
-      this.prisma.club_adventurers.findMany({
-        where: { main_club_id: clubId },
-        include: {
-          club_types: {
-            select: {
-              name: true,
-            },
-          },
-        },
-        orderBy: { club_adv_id: 'asc' },
-      }),
-      this.prisma.club_pathfinders.findMany({
-        where: { main_club_id: clubId },
-        include: {
-          club_types: {
-            select: {
-              name: true,
-            },
-          },
-        },
-        orderBy: { club_pathf_id: 'asc' },
-      }),
-      this.prisma.club_master_guilds.findMany({
-        where: { main_club_id: clubId },
-        include: {
-          club_types: {
-            select: {
-              name: true,
-            },
-          },
-        },
-        orderBy: { club_mg_id: 'asc' },
-      }),
-    ]);
-
-    return {
-      adventurers: adventurers.map(({ club_types, ...instance }) => ({
-        ...instance,
-        club_type_name: club_types?.name ?? null,
-      })),
-      pathfinders: pathfinders.map(({ club_types, ...instance }) => ({
-        ...instance,
-        club_type_name: club_types?.name ?? null,
-      })),
-      master_guilds: masterGuilds.map(({ club_types, ...instance }) => ({
-        ...instance,
-        club_type_name: club_types?.name ?? null,
-      })),
-    };
+    return this.prisma.club_sections.findMany({
+      where: { main_club_id: clubId },
+      include: { club_types: { select: { name: true } } },
+      orderBy: { club_section_id: 'asc' },
+    });
   }
 
-  async getInstance(clubId: number, type: ClubInstanceType) {
-    const club = await this.findOne(clubId);
+  async getSection(sectionId: number) {
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      include: { club_types: { select: { name: true } } },
+    });
+    if (!section) throw new NotFoundException(`Club section ${sectionId} not found`);
+    return section;
+  }
 
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return club.club_adventurers;
-      case ClubInstanceType.PATHFINDERS:
-        return club.club_pathfinders;
-      case ClubInstanceType.MASTER_GUILDS:
-        return club.club_master_guild;
-      default:
-        throw new BadRequestException(`Invalid instance type: ${type}`);
+  async createSection(clubId: number, dto: CreateClubSectionDto) {
+    await this.findOne(clubId);
+    const clubType = await this.prisma.club_types.findUnique({
+      where: { club_type_id: dto.club_type_id },
+    });
+    if (!clubType || !clubType.active) {
+      throw new BadRequestException(`Club type ${dto.club_type_id} not found or inactive`);
     }
-  }
-
-  async createInstance(clubId: number, dto: CreateInstanceDto) {
-    await this.findOne(clubId); // Verify club exists
-
-    // Get club type id
-    const clubType = await this.prisma.club_types.findFirst({
-      where: {
-        name: this.getClubTypeName(dto.type),
+    return this.prisma.club_sections.create({
+      data: {
+        main_club_id: clubId,
+        club_type_id: dto.club_type_id,
+        souls_target: dto.souls_target || 1,
+        fee: dto.fee || 0,
+        meeting_day: (dto.meeting_day || []) as Prisma.InputJsonValue[],
+        meeting_time: (dto.meeting_time || []) as Prisma.InputJsonValue[],
         active: true,
       },
+      include: { club_types: { select: { name: true } } },
     });
-
-    if (!clubType) {
-      throw new BadRequestException(
-        `Club type for ${dto.type} not found in catalog`,
-      );
-    }
-
-    // Cast meeting arrays to Prisma InputJsonValue
-    const meetingDay = (dto.meeting_day || []) as Prisma.InputJsonValue[];
-    const meetingTime = (dto.meeting_time || []) as Prisma.InputJsonValue[];
-
-    switch (dto.type) {
-      case ClubInstanceType.ADVENTURERS:
-        return this.prisma.club_adventurers.create({
-          data: {
-            main_club_id: clubId,
-            club_type_id: clubType.club_type_id,
-            souls_target: dto.souls_target || 1,
-            fee: dto.fee || 0,
-            meeting_day: meetingDay,
-            meeting_time: meetingTime,
-            active: true,
-          },
-        });
-      case ClubInstanceType.PATHFINDERS:
-        return this.prisma.club_pathfinders.create({
-          data: {
-            main_club_id: clubId,
-            club_type_id: clubType.club_type_id,
-            souls_target: dto.souls_target || 1,
-            fee: dto.fee || 0,
-            meeting_day: meetingDay,
-            meeting_time: meetingTime,
-            active: true,
-          },
-        });
-      case ClubInstanceType.MASTER_GUILDS:
-        return this.prisma.club_master_guilds.create({
-          data: {
-            main_club_id: clubId,
-            club_type_id: clubType.club_type_id,
-            souls_target: dto.souls_target || 1,
-            fee: dto.fee || 0,
-            meeting_day: meetingDay,
-            meeting_time: meetingTime,
-            active: true,
-          },
-        });
-      default:
-        throw new BadRequestException(`Invalid instance type: ${dto.type}`);
-    }
   }
 
-  async updateInstance(
-    instanceId: number,
-    type: ClubInstanceType,
-    dto: UpdateInstanceDto,
-  ) {
-    // Build update data with proper types
-    const updateData: {
-      souls_target?: number;
-      fee?: number;
-      meeting_day?: Prisma.InputJsonValue[];
-      meeting_time?: Prisma.InputJsonValue[];
-      active?: boolean;
-      modified_at: Date;
-    } = {
-      modified_at: new Date(),
-    };
-
-    if (dto.souls_target !== undefined)
-      updateData.souls_target = dto.souls_target;
-    if (dto.fee !== undefined) updateData.fee = dto.fee;
-    if (dto.active !== undefined) updateData.active = dto.active;
-    if (dto.meeting_day)
-      updateData.meeting_day = dto.meeting_day as Prisma.InputJsonValue[];
-    if (dto.meeting_time)
-      updateData.meeting_time = dto.meeting_time as Prisma.InputJsonValue[];
-
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return this.prisma.club_adventurers.update({
-          where: { club_adv_id: instanceId },
-          data: updateData,
-        });
-      case ClubInstanceType.PATHFINDERS:
-        return this.prisma.club_pathfinders.update({
-          where: { club_pathf_id: instanceId },
-          data: updateData,
-        });
-      case ClubInstanceType.MASTER_GUILDS:
-        return this.prisma.club_master_guilds.update({
-          where: { club_mg_id: instanceId },
-          data: updateData,
-        });
-      default:
-        throw new BadRequestException(`Invalid instance type: ${type}`);
-    }
+  async updateSection(sectionId: number, dto: UpdateClubSectionDto) {
+    const { meeting_day, meeting_time, ...rest } = dto;
+    return this.prisma.club_sections.update({
+      where: { club_section_id: sectionId },
+      data: {
+        ...rest,
+        ...(meeting_day !== undefined && {
+          meeting_day: meeting_day as Prisma.InputJsonValue[],
+        }),
+        ...(meeting_time !== undefined && {
+          meeting_time: meeting_time as Prisma.InputJsonValue[],
+        }),
+        modified_at: new Date(),
+      },
+      include: { club_types: { select: { name: true } } },
+    });
   }
 
   // ========================================
   // ROLE ASSIGNMENTS
   // ========================================
 
-  async getMembers(instanceId: number, type: ClubInstanceType) {
-    const whereClause = this.getInstanceWhereClause(instanceId, type);
-
+  async getMembers(sectionId: number) {
     const members = await this.prisma.club_role_assignments.findMany({
       where: {
-        ...whereClause,
+        club_section_id: sectionId,
         active: true,
       },
       include: {
@@ -375,15 +250,16 @@ export class ClubsService {
   }
 
   async assignRole(dto: AssignRoleDto) {
-    if (!dto.instance_type || !dto.instance_id) {
+    if (!dto.club_section_id) {
       throw new BadRequestException(
-        'instance_type and instance_id are required',
+        'club_section_id is required',
       );
     }
 
     const roleId = await this.resolveRoleId(dto);
     const ecclesiasticalYearId =
-      dto.ecclesiastical_year_id ?? (await this.getActiveEcclesiasticalYearId());
+      dto.ecclesiastical_year_id ??
+      (await this.getActiveEcclesiasticalYearId());
     const startDate = dto.start_date ?? new Date();
 
     const assignment = {
@@ -394,18 +270,7 @@ export class ClubsService {
       end_date: dto.end_date,
       active: true,
       status: 'active',
-      club_adv_id:
-        dto.instance_type === ClubInstanceType.ADVENTURERS
-          ? dto.instance_id
-          : null,
-      club_pathf_id:
-        dto.instance_type === ClubInstanceType.PATHFINDERS
-          ? dto.instance_id
-          : null,
-      club_mg_id:
-        dto.instance_type === ClubInstanceType.MASTER_GUILDS
-          ? dto.instance_id
-          : null,
+      club_section_id: dto.club_section_id,
     };
 
     return this.prisma.club_role_assignments.create({
@@ -467,32 +332,6 @@ export class ClubsService {
   // HELPERS
   // ========================================
 
-  private getClubTypeName(type: ClubInstanceType): string {
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return 'Aventureros';
-      case ClubInstanceType.PATHFINDERS:
-        return 'Conquistadores';
-      case ClubInstanceType.MASTER_GUILDS:
-        return 'Guías Mayores';
-      default:
-        return '';
-    }
-  }
-
-  private getInstanceWhereClause(instanceId: number, type: ClubInstanceType) {
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return { club_adv_id: instanceId };
-      case ClubInstanceType.PATHFINDERS:
-        return { club_pathf_id: instanceId };
-      case ClubInstanceType.MASTER_GUILDS:
-        return { club_mg_id: instanceId };
-      default:
-        throw new BadRequestException(`Invalid instance type: ${type}`);
-    }
-  }
-
   private async getActiveEcclesiasticalYearId(): Promise<number> {
     const currentYear = await this.prisma.ecclesiastical_years.findFirst({
       where: {
@@ -503,9 +342,7 @@ export class ClubsService {
     });
 
     if (!currentYear) {
-      throw new BadRequestException(
-        'No active ecclesiastical year configured',
-      );
+      throw new BadRequestException('No active ecclesiastical year configured');
     }
 
     return currentYear.year_id;

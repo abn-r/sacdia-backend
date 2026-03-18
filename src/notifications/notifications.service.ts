@@ -129,11 +129,10 @@ export class NotificationsService {
   }
 
   /**
-   * Enviar notificación a miembros de un club
+   * Enviar notificación a miembros de una sección de club
    */
   async sendToClubMembers(
-    clubInstanceId: number,
-    instanceType: 'adventurers' | 'pathfinders' | 'master_guilds',
+    clubSectionId: number,
     dto: Omit<BroadcastNotificationDto, 'userId'>,
   ) {
     if (!this.isFcmConfigured()) {
@@ -143,17 +142,10 @@ export class NotificationsService {
       };
     }
 
-    // Mapear tipo de instancia a columna
-    const columnMap = {
-      adventurers: 'club_adv_id',
-      pathfinders: 'club_pathf_id',
-      master_guilds: 'club_mg_id',
-    };
-
-    // Obtener miembros del club
+    // Obtener miembros de la sección del club
     const members = await this.prisma.club_role_assignments.findMany({
       where: {
-        [columnMap[instanceType]]: clubInstanceId,
+        club_section_id: clubSectionId,
         active: true,
       },
       select: { user_id: true },

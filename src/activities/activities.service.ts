@@ -11,7 +11,6 @@ import {
   UpdateActivityDto,
   RecordAttendanceDto,
   ActivityFiltersDto,
-  ActivityInstanceSelectionDto,
 } from './dto';
 import {
   PaginationDto,
@@ -23,17 +22,6 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
-
-type ActivityInstanceType = 'adventurers' | 'pathfinders' | 'master_guilds';
-
-type NormalizedActivityInstance = {
-  instance_type: ActivityInstanceType;
-  instance_id: number;
-  club_type_id: number;
-  club_adv_id: number | null;
-  club_pathf_id: number | null;
-  club_mg_id: number | null;
-};
 
 @Injectable()
 export class ActivitiesService {
@@ -53,34 +41,22 @@ export class ActivitiesService {
     users: {
       select: { name: true, paternal_last_name: true, user_image: true },
     },
-    club_adv_i: { select: { club_adv_id: true, main_club_id: true } },
-    club_pathf: { select: { club_pathf_id: true, main_club_id: true } },
-    club_mg: { select: { club_mg_id: true, main_club_id: true } },
+    club_sections: {
+      select: {
+        club_section_id: true,
+        main_club_id: true,
+        club_types: { select: { name: true } },
+      },
+    },
     activity_instances: {
       where: { active: true },
       orderBy: { activity_instance_id: 'asc' },
       select: {
         activity_instance_id: true,
-        club_adv_id: true,
-        club_pathf_id: true,
-        club_mg_id: true,
-        club_adventurers: {
+        club_section_id: true,
+        club_sections: {
           select: {
-            club_adv_id: true,
-            main_club_id: true,
-            club_types: { select: { name: true } },
-          },
-        },
-        club_pathfinders: {
-          select: {
-            club_pathf_id: true,
-            main_club_id: true,
-            club_types: { select: { name: true } },
-          },
-        },
-        club_master_guilds: {
-          select: {
-            club_mg_id: true,
+            club_section_id: true,
             main_club_id: true,
             club_types: { select: { name: true } },
           },
@@ -101,11 +77,9 @@ export class ActivitiesService {
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: {
-        club_adventurers: { select: { club_adv_id: true, club_type_id: true } },
-        club_pathfinders: {
-          select: { club_pathf_id: true, club_type_id: true },
+        club_sections: {
+          select: { club_section_id: true, club_type_id: true },
         },
-        club_master_guild: { select: { club_mg_id: true, club_type_id: true } },
       },
     });
 
@@ -113,12 +87,13 @@ export class ActivitiesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const instanceConditions = this.buildInstanceConditions(
-      club,
-      filters?.clubTypeId,
-    );
+    const sectionIds = club.club_sections
+      .filter(
+        (section) => !filters?.clubTypeId || section.club_type_id === filters.clubTypeId,
+      )
+      .map((section) => section.club_section_id);
 
-    if (instanceConditions.length === 0) {
+    if (sectionIds.length === 0) {
       return createPaginatedResult([], 0, pagination ?? new PaginationDto());
     }
 
@@ -126,7 +101,7 @@ export class ActivitiesService {
       activity_instances: {
         some: {
           active: true,
-          OR: instanceConditions,
+          club_section_id: { in: sectionIds },
         },
       },
       ...(filters?.active !== undefined && { active: filters.active }),
@@ -173,14 +148,7 @@ export class ActivitiesService {
   }
 
   async create(clubId: number, dto: CreateActivityDto, createdBy: string) {
-    const normalizedInstances = await this.resolveAndValidateInstances(
-      clubId,
-      dto,
-    );
-    const primaryInstance = this.selectPrimaryInstance(
-      normalizedInstances,
-      dto.club_type_id,
-    );
+    const sectionId = await this.resolveAndValidateSection(clubId, dto.club_section_id);
 
     const created = await this.prisma.activities.create({
       data: {
@@ -200,19 +168,19 @@ export class ActivitiesService {
           ? (dto.classes as Prisma.InputJsonValue)
           : Prisma.JsonNull,
         created_by: createdBy,
-        ...primaryInstance,
+        club_section_id: sectionId,
         active: true,
         created_at: new Date(),
         modified_at: new Date(),
         activity_instances: {
-          create: normalizedInstances.map((instance) => ({
-            club_adv_id: instance.club_adv_id,
-            club_pathf_id: instance.club_pathf_id,
-            club_mg_id: instance.club_mg_id,
-            active: true,
-            created_at: new Date(),
-            modified_at: new Date(),
-          })),
+          create: [
+            {
+              club_section_id: sectionId,
+              active: true,
+              created_at: new Date(),
+              modified_at: new Date(),
+            },
+          ],
         },
       },
       include: this.activityInclude,
@@ -327,67 +295,14 @@ export class ActivitiesService {
     };
   }
 
-  private buildInstanceConditions(
-    club: {
-      club_adventurers: Array<{ club_adv_id: number; club_type_id: number }>;
-      club_pathfinders: Array<{ club_pathf_id: number; club_type_id: number }>;
-      club_master_guild: Array<{ club_mg_id: number; club_type_id: number }>;
-    },
-    clubTypeId?: number,
-  ): Prisma.activity_instancesWhereInput[] {
-    const advIds = club.club_adventurers
-      .filter((instance) => !clubTypeId || instance.club_type_id === clubTypeId)
-      .map((instance) => instance.club_adv_id);
-    const pathfIds = club.club_pathfinders
-      .filter((instance) => !clubTypeId || instance.club_type_id === clubTypeId)
-      .map((instance) => instance.club_pathf_id);
-    const mgIds = club.club_master_guild
-      .filter((instance) => !clubTypeId || instance.club_type_id === clubTypeId)
-      .map((instance) => instance.club_mg_id);
-
-    const conditions: Prisma.activity_instancesWhereInput[] = [];
-
-    if (advIds.length > 0) {
-      conditions.push({ club_adv_id: { in: advIds } });
-    }
-    if (pathfIds.length > 0) {
-      conditions.push({ club_pathf_id: { in: pathfIds } });
-    }
-    if (mgIds.length > 0) {
-      conditions.push({ club_mg_id: { in: mgIds } });
-    }
-
-    return conditions;
-  }
-
   private attachInstances(activity: any) {
     const instances = (activity.activity_instances ?? [])
       .map((instance: any) => {
-        if (instance.club_adventurers) {
+        if (instance.club_sections) {
           return {
-            instance_type: 'adventurers' as const,
-            instance_id: instance.club_adventurers.club_adv_id,
-            club_id: instance.club_adventurers.main_club_id,
-            club_type_name: instance.club_adventurers.club_types?.name ?? null,
-          };
-        }
-
-        if (instance.club_pathfinders) {
-          return {
-            instance_type: 'pathfinders' as const,
-            instance_id: instance.club_pathfinders.club_pathf_id,
-            club_id: instance.club_pathfinders.main_club_id,
-            club_type_name: instance.club_pathfinders.club_types?.name ?? null,
-          };
-        }
-
-        if (instance.club_master_guilds) {
-          return {
-            instance_type: 'master_guilds' as const,
-            instance_id: instance.club_master_guilds.club_mg_id,
-            club_id: instance.club_master_guilds.main_club_id,
-            club_type_name:
-              instance.club_master_guilds.club_types?.name ?? null,
+            section_id: instance.club_sections.club_section_id,
+            club_id: instance.club_sections.main_club_id,
+            club_type_name: instance.club_sections.club_types?.name ?? null,
           };
         }
 
@@ -443,10 +358,10 @@ export class ActivitiesService {
     });
   }
 
-  private async resolveAndValidateInstances(
+  private async resolveAndValidateSection(
     clubId: number,
-    dto: CreateActivityDto,
-  ): Promise<NormalizedActivityInstance[]> {
+    clubSectionId: number,
+  ): Promise<number> {
     const clubExists = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: { club_id: true },
@@ -456,177 +371,23 @@ export class ActivitiesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const selections = this.extractInstanceSelections(dto);
-    const normalized: NormalizedActivityInstance[] = [];
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: clubSectionId },
+      select: { main_club_id: true, club_type_id: true },
+    });
 
-    for (const selection of selections) {
-      if (selection.instance_type === 'adventurers') {
-        const instance = await this.prisma.club_adventurers.findUnique({
-          where: { club_adv_id: selection.instance_id },
-          select: { main_club_id: true, club_type_id: true },
-        });
-
-        if (!instance) {
-          throw new BadRequestException(
-            `Instancia adventurers ${selection.instance_id} no existe`,
-          );
-        }
-
-        if (instance.main_club_id !== clubId) {
-          throw new BadRequestException(
-            `Instancia adventurers ${selection.instance_id} no pertenece al clubId=${clubId}`,
-          );
-        }
-
-        normalized.push({
-          instance_type: 'adventurers',
-          instance_id: selection.instance_id,
-          club_type_id: instance.club_type_id,
-          club_adv_id: selection.instance_id,
-          club_pathf_id: null,
-          club_mg_id: null,
-        });
-        continue;
-      }
-
-      if (selection.instance_type === 'pathfinders') {
-        const instance = await this.prisma.club_pathfinders.findUnique({
-          where: { club_pathf_id: selection.instance_id },
-          select: { main_club_id: true, club_type_id: true },
-        });
-
-        if (!instance) {
-          throw new BadRequestException(
-            `Instancia pathfinders ${selection.instance_id} no existe`,
-          );
-        }
-
-        if (instance.main_club_id !== clubId) {
-          throw new BadRequestException(
-            `Instancia pathfinders ${selection.instance_id} no pertenece al clubId=${clubId}`,
-          );
-        }
-
-        normalized.push({
-          instance_type: 'pathfinders',
-          instance_id: selection.instance_id,
-          club_type_id: instance.club_type_id,
-          club_adv_id: null,
-          club_pathf_id: selection.instance_id,
-          club_mg_id: null,
-        });
-        continue;
-      }
-
-      const instance = await this.prisma.club_master_guilds.findUnique({
-        where: { club_mg_id: selection.instance_id },
-        select: { main_club_id: true, club_type_id: true },
-      });
-
-      if (!instance) {
-        throw new BadRequestException(
-          `Instancia master_guilds ${selection.instance_id} no existe`,
-        );
-      }
-
-      if (instance.main_club_id !== clubId) {
-        throw new BadRequestException(
-          `Instancia master_guilds ${selection.instance_id} no pertenece al clubId=${clubId}`,
-        );
-      }
-
-      normalized.push({
-        instance_type: 'master_guilds',
-        instance_id: selection.instance_id,
-        club_type_id: instance.club_type_id,
-        club_adv_id: null,
-        club_pathf_id: null,
-        club_mg_id: selection.instance_id,
-      });
-    }
-
-    const uniqueByKey = new Map<string, NormalizedActivityInstance>();
-    for (const instance of normalized) {
-      const key = `${instance.instance_type}:${instance.instance_id}`;
-      uniqueByKey.set(key, instance);
-    }
-    const unique = Array.from(uniqueByKey.values());
-
-    if (
-      !unique.some((instance) => instance.club_type_id === dto.club_type_id)
-    ) {
+    if (!section) {
       throw new BadRequestException(
-        `club_type_id=${dto.club_type_id} debe corresponder al menos a una de las instancias seleccionadas`,
+        `Sección ${clubSectionId} no existe`,
       );
     }
 
-    return unique;
-  }
-
-  private selectPrimaryInstance(
-    instances: NormalizedActivityInstance[],
-    clubTypeId: number,
-  ) {
-    const primary = instances.find(
-      (instance) => instance.club_type_id === clubTypeId,
-    );
-
-    if (!primary) {
+    if (section.main_club_id !== clubId) {
       throw new BadRequestException(
-        `No se encontró instancia primaria para club_type_id=${clubTypeId}`,
+        `Sección ${clubSectionId} no pertenece al clubId=${clubId}`,
       );
     }
 
-    return {
-      club_adv_id: primary.club_adv_id,
-      club_pathf_id: primary.club_pathf_id,
-      club_mg_id: primary.club_mg_id,
-    };
-  }
-
-  private extractInstanceSelections(
-    dto: CreateActivityDto,
-  ): ActivityInstanceSelectionDto[] {
-    const legacySelections: ActivityInstanceSelectionDto[] = [];
-
-    if (dto.club_adv_id !== undefined && dto.club_adv_id !== null) {
-      legacySelections.push({
-        instance_type: 'adventurers',
-        instance_id: dto.club_adv_id,
-      });
-    }
-
-    if (dto.club_pathf_id !== undefined && dto.club_pathf_id !== null) {
-      legacySelections.push({
-        instance_type: 'pathfinders',
-        instance_id: dto.club_pathf_id,
-      });
-    }
-
-    if (dto.club_mg_id !== undefined && dto.club_mg_id !== null) {
-      legacySelections.push({
-        instance_type: 'master_guilds',
-        instance_id: dto.club_mg_id,
-      });
-    }
-
-    const explicitSelections = dto.instances ?? [];
-
-    if (explicitSelections.length > 0 && legacySelections.length > 0) {
-      throw new BadRequestException(
-        'No combines instances[] con club_adv_id/club_pathf_id/club_mg_id en el mismo payload',
-      );
-    }
-
-    const selections =
-      explicitSelections.length > 0 ? explicitSelections : legacySelections;
-
-    if (selections.length === 0) {
-      throw new BadRequestException(
-        'Debes enviar al menos una instancia en instances[] (o legacy fields durante transición)',
-      );
-    }
-
-    return selections;
+    return clubSectionId;
   }
 }

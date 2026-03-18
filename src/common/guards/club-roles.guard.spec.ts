@@ -50,7 +50,9 @@ describe('ClubRolesGuard', () => {
         createContext({ user: { sub: 'user-123' }, params: { clubId: '10' } }),
       ),
     ).resolves.toBe(true);
-    expect(mockAuthorizationContext.resolveUserAuthorization).not.toHaveBeenCalled();
+    expect(
+      mockAuthorizationContext.resolveUserAuthorization,
+    ).not.toHaveBeenCalled();
   });
 
   it('should allow when active assignment belongs to the club and role matches', async () => {
@@ -90,9 +92,7 @@ describe('ClubRolesGuard', () => {
 
     await expect(
       guard.canActivate(createContext({ user: { sub: 'user-123' } })),
-    ).rejects.toThrow(
-      new ForbiddenException('Club ID not found in request'),
-    );
+    ).rejects.toThrow(new ForbiddenException('Club ID not found in request'));
   });
 
   it('should reject when the active assignment belongs to another club', async () => {
@@ -125,7 +125,9 @@ describe('ClubRolesGuard', () => {
         createContext({ user: { sub: 'user-123' }, params: { clubId: '10' } }),
       ),
     ).rejects.toThrow(
-      new ForbiddenException('You need an active club assignment for this club'),
+      new ForbiddenException(
+        'You need an active club assignment for this club',
+      ),
     );
   });
 

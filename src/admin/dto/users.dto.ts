@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -89,4 +89,93 @@ export class AdminListUsersQueryDto extends PaginationDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+}
+
+export class AdminTrajectoryClassDto {
+  @ApiProperty({ example: 101 })
+  user_class_id!: number;
+
+  @ApiProperty({ example: 6 })
+  class_id!: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Amigo',
+  })
+  class_name!: string | null;
+
+  @ApiProperty({ example: true })
+  investiture!: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '2025-11-09',
+  })
+  date_investiture!: Date | null;
+
+  @ApiProperty({ example: false })
+  advanced!: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'CERT-12345',
+  })
+  certificate!: string | null;
+
+  @ApiProperty({
+    description:
+      'Legacy metadata only; not source of current operational truth.',
+    example: false,
+  })
+  current_class!: boolean;
+}
+
+export class AdminCurrentOperationalEnrollmentDto {
+  @ApiProperty({ example: 4001 })
+  enrollment_id!: number;
+
+  @ApiProperty({ example: 2026 })
+  ecclesiastical_year_id!: number;
+
+  @ApiProperty({ example: 6 })
+  class_id!: number;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Amigo' })
+  class_name!: string | null;
+
+  @ApiProperty({ example: '2026-01-08T09:15:00.000Z' })
+  enrollment_date!: Date;
+
+  @ApiProperty({ example: 'IN_PROGRESS' })
+  investiture_status!: string;
+
+  @ApiProperty({ example: false })
+  submitted_for_validation!: boolean;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  submitted_at!: Date | null;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  validated_by!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  validated_at!: Date | null;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  rejection_reason!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  investiture_date!: Date | null;
+
+  @ApiPropertyOptional({ nullable: true, example: false })
+  advanced_status!: boolean | null;
+
+  @ApiProperty({ example: false })
+  locked_for_validation!: boolean;
+
+  @ApiProperty({ example: false })
+  cross_type_enrollment!: boolean;
+
+  @ApiProperty({ example: true })
+  active!: boolean;
 }

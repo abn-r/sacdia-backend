@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
@@ -13,6 +14,8 @@ export type PostRegistrationActorContext = {
   actorUserId: string;
   isOwner: boolean;
 };
+
+type ClubInstanceField = 'club_section_id';
 
 @Injectable()
 export class PostRegistrationService {
@@ -200,7 +203,14 @@ export class PostRegistrationService {
   ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Actualizar país, unión, campo local
+        const now = new Date();
+        const currentYear = await this.resolveActiveEcclesiasticalYear(tx, now);
+        const memberRoleId = await this.resolveMemberRoleId(tx);
+        const clubInstanceField: ClubInstanceField = 'club_section_id';
+
+        await this.resolveSelectedClub(tx, dto);
+        await this.resolveSelectedClass(tx, dto.class_id);
+
         await tx.users.update({
           where: { user_id: userId },
           data: {
@@ -210,151 +220,44 @@ export class PostRegistrationService {
           },
         });
 
-        // 2. Obtener año eclesiástico actual
-        const currentYear = await tx.ecclesiastical_years.findFirst({
-          where: {
-            start_date: { lte: new Date() },
-            end_date: { gte: new Date() },
-          },
+        await this.resolveMemberAssignment(tx, {
+          userId,
+          roleId: memberRoleId,
+          clubInstanceField,
+          clubInstanceId: dto.club_section_id,
+          ecclesiasticalYearId: currentYear.year_id,
+          assignmentStartDate: currentYear.start_date,
         });
 
-        if (!currentYear) {
-          throw new InternalServerErrorException(
-            'No hay año eclesiástico activo configurado',
-          );
-        }
-
-        // 3. Obtener rol "member" (CLUB)
-        const memberRole = await tx.roles.findFirst({
-          where: {
-            role_name: 'member',
-            role_category: 'CLUB',
-          },
-        });
-
-        if (!memberRole) {
-          throw new InternalServerErrorException(
-            'Rol "member" no encontrado en el sistema',
-          );
-        }
-
-        // 4. Determinar campo de instancia según tipo de club
-        const clubInstanceField =
-          dto.club_type === 'adventurers'
-            ? 'club_adv_id'
-            : dto.club_type === 'pathfinders'
-              ? 'club_pathf_id'
-              : 'club_mg_id';
-
-        // 5. Verificar que el club existe
-        const club =
-          dto.club_type === 'adventurers'
-            ? await tx.club_adventurers.findUnique({
-                where: { club_adv_id: dto.club_instance_id },
-              })
-            : dto.club_type === 'pathfinders'
-              ? await tx.club_pathfinders.findUnique({
-                  where: { club_pathf_id: dto.club_instance_id },
-                })
-              : await tx.club_master_guilds.findUnique({
-                  where: { club_mg_id: dto.club_instance_id },
-                });
-
-        if (!club) {
-          throw new BadRequestException('Club no encontrado');
-        }
-
-        // 6. Validar que la clase exista antes de crear relaciones dependientes
-        const selectedClass = await tx.classes.findUnique({
-          where: { class_id: dto.class_id },
-          select: {
-            class_id: true,
-            active: true,
-          },
-        });
-
-        if (!selectedClass || !selectedClass.active) {
-          throw new BadRequestException('Clase no encontrada');
-        }
-
-        // 7. Reutilizar asignación activa si el paso llega repetido con el mismo club
-        const existingClubAssignment = await tx.club_role_assignments.findFirst(
-          {
-            where: {
-              user_id: userId,
-              role_id: memberRole.role_id,
-              ecclesiastical_year_id: currentYear.year_id,
-              active: true,
-              [clubInstanceField]: dto.club_instance_id,
-            },
-          },
-        );
-
-        if (!existingClubAssignment) {
-          await tx.club_role_assignments.create({
-            data: {
-              user_id: userId,
-              role_id: memberRole.role_id,
-              [clubInstanceField]: dto.club_instance_id,
-              ecclesiastical_year_id: currentYear.year_id,
-              start_date: new Date(),
-              active: true,
-              status: 'active',
-            },
-          });
-        }
-
-        // 8. Mantener una sola clase actual e idempotencia para reintentos del paso
-        await tx.users_classes.updateMany({
+        await tx.enrollments.updateMany({
           where: {
             user_id: userId,
-            current_class: true,
+            ecclesiastical_year_id: currentYear.year_id,
+            active: true,
             NOT: { class_id: dto.class_id },
           },
           data: {
-            current_class: false,
+            active: false,
           },
         });
 
-        const existingUserClass = await tx.users_classes.findUnique({
-          where: {
-            user_id_class_id: {
-              user_id: userId,
-              class_id: dto.class_id,
-            },
-          },
-          select: {
-            user_class_id: true,
-          },
+        await this.resolveOperationalEnrollment(tx, {
+          userId,
+          classId: dto.class_id,
+          ecclesiasticalYearId: currentYear.year_id,
         });
 
-        if (existingUserClass) {
-          await tx.users_classes.update({
-            where: {
-              user_class_id: existingUserClass.user_class_id,
-            },
-            data: {
-              active: true,
-              current_class: true,
-            },
-          });
-        } else {
-          await tx.users_classes.create({
-            data: {
-              user_id: userId,
-              class_id: dto.class_id,
-              current_class: true,
-            },
-          });
-        }
+        await this.syncLegacyCurrentClassProjection(tx, {
+          userId,
+          classId: dto.class_id,
+        });
 
-        // 9. Marcar post-registro completo
         await tx.users_pr.update({
           where: { user_id: userId },
           data: {
             club_selection_complete: true,
             complete: true,
-            date_completed: new Date(),
+            date_completed: now,
           },
         });
 
@@ -366,8 +269,7 @@ export class PostRegistrationService {
           status: 'success',
           message: 'Post-registro completado exitosamente',
           data: {
-            clubType: dto.club_type,
-            clubId: dto.club_instance_id,
+            clubSectionId: dto.club_section_id,
             classId: dto.class_id,
             ecclesiasticalYear: currentYear.year_id,
           },
@@ -389,6 +291,299 @@ export class PostRegistrationService {
         'No se puede completar el paso 3 para este usuario',
       );
     }
+  }
+
+  private async resolveActiveEcclesiasticalYear(
+    tx: Prisma.TransactionClient,
+    at: Date,
+  ): Promise<{ year_id: number; start_date: Date }> {
+    const currentYear = await tx.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: at },
+        end_date: { gte: at },
+      },
+      select: {
+        year_id: true,
+        start_date: true,
+      },
+    });
+
+    if (!currentYear) {
+      throw new InternalServerErrorException(
+        'No hay año eclesiástico activo configurado',
+      );
+    }
+
+    return currentYear;
+  }
+
+  private async resolveMemberRoleId(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
+    const memberRole = await tx.roles.findFirst({
+      where: {
+        role_name: 'member',
+        role_category: 'CLUB',
+      },
+      select: {
+        role_id: true,
+      },
+    });
+
+    if (!memberRole) {
+      throw new InternalServerErrorException(
+        'Rol "member" no encontrado en el sistema',
+      );
+    }
+
+    return memberRole.role_id;
+  }
+
+  private async resolveSelectedClub(
+    tx: Prisma.TransactionClient,
+    dto: CompleteClubSelectionDto,
+  ) {
+    const section = await tx.club_sections.findUnique({
+      where: { club_section_id: dto.club_section_id },
+    });
+
+    if (!section) {
+      throw new BadRequestException('Club no encontrado');
+    }
+  }
+
+  private async resolveSelectedClass(
+    tx: Prisma.TransactionClient,
+    classId: number,
+  ) {
+    const selectedClass = await tx.classes.findUnique({
+      where: { class_id: classId },
+      select: {
+        class_id: true,
+        active: true,
+      },
+    });
+
+    if (!selectedClass || !selectedClass.active) {
+      throw new BadRequestException('Clase no encontrada');
+    }
+  }
+
+  private async resolveMemberAssignment(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      roleId: string;
+      clubInstanceField: ClubInstanceField;
+      clubInstanceId: number;
+      ecclesiasticalYearId: number;
+      assignmentStartDate: Date;
+    },
+  ) {
+    const where: Prisma.club_role_assignmentsWhereInput = {
+      user_id: params.userId,
+      role_id: params.roleId,
+      ecclesiastical_year_id: params.ecclesiasticalYearId,
+      [params.clubInstanceField]: params.clubInstanceId,
+      start_date: params.assignmentStartDate,
+    };
+
+    const existingAssignment = await tx.club_role_assignments.findFirst({
+      where,
+    });
+
+    if (existingAssignment) {
+      if (
+        !existingAssignment.active ||
+        existingAssignment.status !== 'active'
+      ) {
+        await tx.club_role_assignments.update({
+          where: {
+            assignment_id: existingAssignment.assignment_id,
+          },
+          data: {
+            active: true,
+            status: 'active',
+            end_date: null,
+          },
+        });
+      }
+
+      return;
+    }
+
+    try {
+      await tx.club_role_assignments.create({
+        data: {
+          user_id: params.userId,
+          role_id: params.roleId,
+          [params.clubInstanceField]: params.clubInstanceId,
+          ecclesiastical_year_id: params.ecclesiasticalYearId,
+          start_date: params.assignmentStartDate,
+          active: true,
+          status: 'active',
+        },
+      });
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const recoveredAssignment = await tx.club_role_assignments.findFirst({
+        where,
+      });
+
+      if (!recoveredAssignment) {
+        throw new InternalServerErrorException(
+          'No se pudo resolver la asignación de membresía del club',
+        );
+      }
+
+      if (
+        !recoveredAssignment.active ||
+        recoveredAssignment.status !== 'active'
+      ) {
+        await tx.club_role_assignments.update({
+          where: {
+            assignment_id: recoveredAssignment.assignment_id,
+          },
+          data: {
+            active: true,
+            status: 'active',
+            end_date: null,
+          },
+        });
+      }
+    }
+  }
+
+  private async resolveOperationalEnrollment(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      classId: number;
+      ecclesiasticalYearId: number;
+    },
+  ) {
+    const enrollmentWhere = {
+      user_id_class_id_ecclesiastical_year_id: {
+        user_id: params.userId,
+        class_id: params.classId,
+        ecclesiastical_year_id: params.ecclesiasticalYearId,
+      },
+    };
+
+    const existingEnrollment = await tx.enrollments.findUnique({
+      where: enrollmentWhere,
+      select: {
+        enrollment_id: true,
+        active: true,
+      },
+    });
+
+    if (existingEnrollment) {
+      if (!existingEnrollment.active) {
+        await tx.enrollments.update({
+          where: {
+            enrollment_id: existingEnrollment.enrollment_id,
+          },
+          data: {
+            active: true,
+          },
+        });
+      }
+
+      return;
+    }
+
+    try {
+      await tx.enrollments.create({
+        data: {
+          user_id: params.userId,
+          class_id: params.classId,
+          ecclesiastical_year_id: params.ecclesiasticalYearId,
+        },
+      });
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const recoveredEnrollment = await tx.enrollments.findUnique({
+        where: enrollmentWhere,
+        select: {
+          enrollment_id: true,
+        },
+      });
+
+      if (!recoveredEnrollment) {
+        throw new InternalServerErrorException(
+          'No se pudo resolver la inscripción anual operativa',
+        );
+      }
+    }
+  }
+
+  private async syncLegacyCurrentClassProjection(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      classId: number;
+    },
+  ) {
+    await tx.users_classes.updateMany({
+      where: {
+        user_id: params.userId,
+        current_class: true,
+        NOT: { class_id: params.classId },
+      },
+      data: {
+        current_class: false,
+      },
+    });
+
+    const existingUserClass = await tx.users_classes.findUnique({
+      where: {
+        user_id_class_id: {
+          user_id: params.userId,
+          class_id: params.classId,
+        },
+      },
+      select: {
+        user_class_id: true,
+      },
+    });
+
+    if (existingUserClass) {
+      await tx.users_classes.update({
+        where: {
+          user_class_id: existingUserClass.user_class_id,
+        },
+        data: {
+          active: true,
+          current_class: true,
+        },
+      });
+
+      return;
+    }
+
+    await tx.users_classes.create({
+      data: {
+        user_id: params.userId,
+        class_id: params.classId,
+        current_class: true,
+      },
+    });
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    );
   }
 
   private createOwnerContext(userId: string): PostRegistrationActorContext {

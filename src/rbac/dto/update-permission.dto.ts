@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsBoolean, Matches, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdatePermissionDto {
@@ -7,7 +13,8 @@ export class UpdatePermissionDto {
   @IsOptional()
   @MaxLength(255)
   @Matches(/^[a-z_]+:[a-z_]+$/, {
-    message: 'permission_name debe seguir el formato resource:action (lowercase, separado por :)',
+    message:
+      'permission_name debe seguir el formato resource:action (lowercase, separado por :)',
   })
   permission_name?: string;
 

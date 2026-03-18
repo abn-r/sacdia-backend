@@ -32,9 +32,9 @@ describe('AuthorizationContextService', () => {
   it('should throw UnauthorizedException when user is not found', async () => {
     mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-    await expect(service.resolveUserAuthorization('missing-user')).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      service.resolveUserAuthorization('missing-user'),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   it('should resolve canonical authorization payload with active assignment and structured scope', async () => {
@@ -85,8 +85,8 @@ describe('AuthorizationContextService', () => {
               { permissions: { permission_name: 'clubs:update' } },
             ],
           },
-          club_adventurers: {
-            club_adv_id: 11,
+          club_sections: {
+            club_section_id: 11,
             club_types: { name: 'Aventureros' },
             clubs: {
               club_id: 10,
@@ -105,8 +105,6 @@ describe('AuthorizationContextService', () => {
               },
             },
           },
-          club_pathfinders: null,
-          club_master_guild: null,
         },
         {
           assignment_id: 'assignment-2',
@@ -119,9 +117,8 @@ describe('AuthorizationContextService', () => {
               { permissions: { permission_name: 'finances:update' } },
             ],
           },
-          club_adventurers: null,
-          club_pathfinders: {
-            club_pathf_id: 22,
+          club_sections: {
+            club_section_id: 22,
             club_types: { name: 'Conquistadores' },
             clubs: {
               club_id: 10,
@@ -140,7 +137,6 @@ describe('AuthorizationContextService', () => {
               },
             },
           },
-          club_master_guild: null,
         },
       ],
     });
@@ -227,10 +223,8 @@ describe('AuthorizationContextService', () => {
             role_name: 'director',
             role_permissions: [],
           },
-          club_adventurers: null,
-          club_pathfinders: null,
-          club_master_guild: {
-            club_mg_id: 33,
+          club_sections: {
+            club_section_id: 33,
             club_types: { name: 'Guías Mayores' },
             clubs: {
               club_id: 44,

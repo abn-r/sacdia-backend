@@ -110,7 +110,7 @@ export class PostRegistrationController {
   @ApiOperation({
     summary: 'Completar Paso 3: Selección de club',
     description:
-      'Transacción completa: actualiza país/unión/campo, asigna rol member, inscribe en clase, marca post-registro completo',
+      'Transacción completa: actualiza país/unión/campo, resuelve membresía de club, registra inscripción anual en enrollments y sincroniza users_classes como compatibilidad temporal antes de cerrar post-registro',
   })
   @ApiResponse({
     status: 200,

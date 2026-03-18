@@ -222,9 +222,7 @@ export class RbacService {
     });
 
     if (!assignment) {
-      throw new NotFoundException(
-        'Asignación de permiso a rol no encontrada',
-      );
+      throw new NotFoundException('Asignación de permiso a rol no encontrada');
     }
 
     await this.prisma.role_permissions.update({
@@ -232,9 +230,7 @@ export class RbacService {
       data: { active: false, modified_at: new Date() },
     });
 
-    this.logger.log(
-      `Permiso ${permissionId} removido del rol ${roleId}`,
-    );
+    this.logger.log(`Permiso ${permissionId} removido del rol ${roleId}`);
 
     return { success: true, message: 'Permiso removido del rol' };
   }

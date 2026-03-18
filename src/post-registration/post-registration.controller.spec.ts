@@ -50,8 +50,7 @@ describe('PostRegistrationController', () => {
       country_id: 1,
       union_id: 2,
       local_field_id: 3,
-      club_type: 'adventurers' as const,
-      club_instance_id: 10,
+      club_section_id: 10,
       class_id: 5,
     };
 

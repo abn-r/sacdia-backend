@@ -38,10 +38,12 @@ export class OwnerOrAdminGuard implements CanActivate {
     }
 
     // Caso 2: El usuario tiene rol administrativo global
-    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
-      user.sub,
-      ['admin', 'assistant_admin', 'coordinator', 'super_admin'],
-    );
+    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(user.sub, [
+      'admin',
+      'assistant_admin',
+      'coordinator',
+      'super_admin',
+    ]);
 
     if (isAdmin) {
       return true;

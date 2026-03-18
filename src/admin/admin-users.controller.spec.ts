@@ -1,7 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import type { Request } from 'express';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { AdminListUsersQueryDto } from './dto';
 
 describe('AdminUsersController', () => {
   let controller: AdminUsersController;
@@ -40,8 +42,14 @@ describe('AdminUsersController', () => {
 
   describe('listUsers', () => {
     it('should delegate to service with actor id from JWT and query filters', async () => {
-      const req = { user: { sub: 'actor-1' } };
-      const query = { page: 1, limit: 20, search: 'juan' } as any;
+      const req = { user: { sub: 'actor-1' } } as Request & {
+        user: { sub: string };
+      };
+      const query: AdminListUsersQueryDto = {
+        page: 1,
+        limit: 20,
+        search: 'juan',
+      };
       const expected = {
         data: [],
         meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
@@ -60,8 +68,37 @@ describe('AdminUsersController', () => {
 
   describe('getUserById', () => {
     it('should delegate to service with actor id and target user id', async () => {
-      const req = { user: { sub: 'actor-1' } };
-      const expected = { user_id: 'target-1' };
+      const req = { user: { sub: 'actor-1' } } as Request & {
+        user: { sub: string };
+      };
+      const expected = {
+        user_id: 'target-1',
+        current_operational_enrollment: null,
+        trajectory_classes: [
+          {
+            user_class_id: 10,
+            class_id: 3,
+            class_name: 'Explorador',
+            investiture: true,
+            date_investiture: null,
+            advanced: false,
+            certificate: null,
+            current_class: false,
+          },
+        ],
+        classes: [
+          {
+            user_class_id: 10,
+            class_id: 3,
+            class_name: 'Explorador',
+            investiture: true,
+            date_investiture: null,
+            advanced: false,
+            certificate: null,
+            current_class: false,
+          },
+        ],
+      };
       mockAdminUsersService.getUserById.mockResolvedValue(expected);
 
       const result = await controller.getUserById(req, 'target-1');

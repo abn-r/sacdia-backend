@@ -7,9 +7,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PermissionsGuard } from '../src/common/guards';
-import {
-  createTestJwtService,
-} from './helpers/rbac-test-helpers';
+import { createTestJwtService } from './helpers/rbac-test-helpers';
 
 describe('Admin Users Scope E2E', () => {
   let app: INestApplication;
@@ -48,7 +46,9 @@ describe('Admin Users Scope E2E', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
     prisma = app.get(PrismaService);
     await app.init();
@@ -70,9 +70,11 @@ describe('Admin Users Scope E2E', () => {
   it('should allow super_admin with ALL scope', async () => {
     const token = makeToken('super-1', 'super@test.com');
 
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      { roles: { role_name: 'super_admin', active: true } } as any,
-    ]);
+    jest
+      .spyOn(prisma.users_roles, 'findMany')
+      .mockResolvedValue([
+        { roles: { role_name: 'super_admin', active: true } } as any,
+      ]);
     jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
       user_id: 'super-1',
       union_id: null,
@@ -97,9 +99,11 @@ describe('Admin Users Scope E2E', () => {
   it('should enforce UNION scope for admin even when filters are provided', async () => {
     const token = makeToken('admin-1', 'admin@test.com');
 
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      { roles: { role_name: 'admin', active: true } } as any,
-    ]);
+    jest
+      .spyOn(prisma.users_roles, 'findMany')
+      .mockResolvedValue([
+        { roles: { role_name: 'admin', active: true } } as any,
+      ]);
     jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
       user_id: 'admin-1',
       union_id: 7,
@@ -127,9 +131,11 @@ describe('Admin Users Scope E2E', () => {
   it('should enforce LOCAL_FIELD scope for coordinator', async () => {
     const token = makeToken('coord-1', 'coord@test.com');
 
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      { roles: { role_name: 'coordinator', active: true } } as any,
-    ]);
+    jest
+      .spyOn(prisma.users_roles, 'findMany')
+      .mockResolvedValue([
+        { roles: { role_name: 'coordinator', active: true } } as any,
+      ]);
     jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
       user_id: 'coord-1',
       union_id: 5,
@@ -155,9 +161,11 @@ describe('Admin Users Scope E2E', () => {
   it('should return 403 for coordinator without local_field_id configured', async () => {
     const token = makeToken('coord-bad', 'coordbad@test.com');
 
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      { roles: { role_name: 'coordinator', active: true } } as any,
-    ]);
+    jest
+      .spyOn(prisma.users_roles, 'findMany')
+      .mockResolvedValue([
+        { roles: { role_name: 'coordinator', active: true } } as any,
+      ]);
     jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
       user_id: 'coord-bad',
       union_id: 5,
@@ -174,9 +182,11 @@ describe('Admin Users Scope E2E', () => {
   it('should return 404 when requested user is outside actor scope', async () => {
     const token = makeToken('admin-2', 'admin2@test.com');
 
-    jest.spyOn(prisma.users_roles, 'findMany').mockResolvedValue([
-      { roles: { role_name: 'admin', active: true } } as any,
-    ]);
+    jest
+      .spyOn(prisma.users_roles, 'findMany')
+      .mockResolvedValue([
+        { roles: { role_name: 'admin', active: true } } as any,
+      ]);
     jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
       user_id: 'admin-2',
       union_id: 4,

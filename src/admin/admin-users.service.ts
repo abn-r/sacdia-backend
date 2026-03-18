@@ -25,6 +25,11 @@ import {
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListUsersQueryDto } from './dto';
+import {
+  buildFormativeReadModel,
+  type CurrentOperationalEnrollmentDto,
+  type TrajectoryClassDto,
+} from './mappers/formative-read-model.mapper';
 
 type ScopeType = 'ALL' | 'UNION' | 'LOCAL_FIELD';
 
@@ -55,6 +60,326 @@ interface AdminUsersListResult<T> {
   };
 }
 
+const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
+  user_id: true,
+  email: true,
+  name: true,
+  paternal_last_name: true,
+  maternal_last_name: true,
+  user_image: true,
+  active: true,
+  access_app: true,
+  access_panel: true,
+  country_id: true,
+  union_id: true,
+  local_field_id: true,
+  created_at: true,
+  countries: {
+    select: {
+      country_id: true,
+      name: true,
+    },
+  },
+  unions: {
+    select: {
+      union_id: true,
+      name: true,
+    },
+  },
+  local_fields: {
+    select: {
+      local_field_id: true,
+      union_id: true,
+      name: true,
+    },
+  },
+  users_roles: {
+    where: {
+      active: true,
+      roles: {
+        active: true,
+        role_category: role_category.GLOBAL,
+      },
+    },
+    select: {
+      roles: {
+        select: {
+          role_name: true,
+        },
+      },
+    },
+  },
+  users_pr: {
+    orderBy: { created_at: 'desc' },
+    take: 1,
+    select: {
+      complete: true,
+      profile_picture_complete: true,
+      personal_info_complete: true,
+      club_selection_complete: true,
+    },
+  },
+});
+
+const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
+  ...adminUserListSelect,
+  gender: true,
+  birthday: true,
+  blood: true,
+  baptism: true,
+  baptism_date: true,
+  modified_at: true,
+  users_roles: {
+    where: {
+      active: true,
+      roles: {
+        active: true,
+        role_category: role_category.GLOBAL,
+      },
+    },
+    select: {
+      role_id: true,
+      roles: {
+        select: {
+          role_name: true,
+        },
+      },
+    },
+  },
+  users_pr: {
+    orderBy: { created_at: 'desc' },
+    take: 1,
+    select: {
+      complete: true,
+      profile_picture_complete: true,
+      personal_info_complete: true,
+      club_selection_complete: true,
+      date_completed: true,
+    },
+  },
+  users_classes: {
+    where: { active: true },
+    orderBy: { created_at: 'desc' },
+    select: {
+      user_class_id: true,
+      class_id: true,
+      investiture: true,
+      date_investiture: true,
+      advanced: true,
+      certificate: true,
+      current_class: true,
+      classes: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  },
+  club_role_assignments: {
+    where: { active: true },
+    orderBy: { created_at: 'desc' },
+    select: {
+      assignment_id: true,
+      role_id: true,
+      club_section_id: true,
+      ecclesiastical_year_id: true,
+      start_date: true,
+      end_date: true,
+      roles: {
+        select: {
+          role_name: true,
+        },
+      },
+      ecclesiastical_year: {
+        select: {
+          year_id: true,
+          start_date: true,
+          end_date: true,
+        },
+      },
+      club_sections: {
+        select: {
+          club_section_id: true,
+          club_type_id: true,
+          club_types: {
+            select: {
+              name: true,
+            },
+          },
+          clubs: {
+            select: {
+              club_id: true,
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  },
+  emergency_contact: {
+    where: { active: true },
+    orderBy: { created_at: 'desc' },
+    select: {
+      emergency_id: true,
+      name: true,
+      phone: true,
+      primary: true,
+      relationship_type_id: true,
+    },
+  },
+  legal_representative: {
+    select: {
+      id: true,
+      representative_user_id: true,
+      relationship_type_id: true,
+      name: true,
+      paternal_last_name: true,
+      maternal_last_name: true,
+      phone: true,
+    },
+  },
+  users_allergies: {
+    where: { active: true },
+    orderBy: { allergy_id: 'asc' },
+    select: {
+      allergy_id: true,
+      allergies: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  },
+  users_diseases: {
+    where: { active: true },
+    orderBy: { disease_id: 'asc' },
+    select: {
+      disease_id: true,
+      diseases: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  },
+  users_medicines: {
+    where: { active: true },
+    orderBy: { medicine_id: 'asc' },
+    select: {
+      medicine_id: true,
+      medicines: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  },
+});
+
+const adminEnrollmentSelect = Prisma.validator<Prisma.enrollmentsSelect>()({
+  enrollment_id: true,
+  ecclesiastical_year_id: true,
+  class_id: true,
+  enrollment_date: true,
+  investiture_status: true,
+  submitted_for_validation: true,
+  submitted_at: true,
+  validated_by: true,
+  validated_at: true,
+  rejection_reason: true,
+  investiture_date: true,
+  advanced_status: true,
+  locked_for_validation: true,
+  cross_type_enrollment: true,
+  active: true,
+  classes: {
+    select: {
+      name: true,
+    },
+  },
+});
+
+type AdminUserListRecord = Prisma.usersGetPayload<{
+  select: typeof adminUserListSelect;
+}>;
+type AdminUserDetailRecord = Prisma.usersGetPayload<{
+  select: typeof adminUserDetailSelect;
+}>;
+type ClubAssignmentRecord =
+  AdminUserDetailRecord['club_role_assignments'][number];
+
+interface SensitiveHealthBlock {
+  blood: AdminUserDetailRecord['blood'];
+  allergies: Array<{ allergy_id: number; name: string | null }>;
+  diseases: Array<{ disease_id: number; name: string | null }>;
+  medicines: Array<{ medicine_id: number; name: string | null }>;
+}
+
+interface MinimalPostRegistrationBlock {
+  complete: boolean;
+  profile_picture_complete: boolean;
+  personal_info_complete: boolean;
+  club_selection_complete: boolean;
+  date_completed: Date | null;
+}
+
+interface AdminUserListItem {
+  user_id: string;
+  email: string;
+  name: string | null;
+  paternal_last_name: string | null;
+  maternal_last_name: string | null;
+  full_name: string;
+  user_image: string | null;
+  active: boolean;
+  access_app: boolean;
+  access_panel: boolean;
+  country: { country_id: number; name: string } | null;
+  union: { union_id: number; name: string } | null;
+  local_field: {
+    local_field_id: number;
+    union_id: number | null;
+    name: string;
+  } | null;
+  roles: string[];
+  post_registration: {
+    complete: boolean;
+    profile_picture_complete: boolean;
+    personal_info_complete: boolean;
+    club_selection_complete: boolean;
+  } | null;
+  created_at: Date;
+}
+
+interface AdminUserDetail extends AdminUserListItem {
+  gender: string | null;
+  birthday: Date | null;
+  blood: AdminUserDetailRecord['blood'] | null;
+  baptism: boolean | null;
+  baptism_date: Date | null;
+  modified_at: Date;
+  current_operational_enrollment: CurrentOperationalEnrollmentDto | null;
+  trajectory_classes: TrajectoryClassDto[];
+  classes: TrajectoryClassDto[];
+  club_assignments: Array<{
+    assignment_id: string;
+    role_name: string;
+    start_date: Date;
+    end_date: Date | null;
+    ecclesiastical_year: ClubAssignmentRecord['ecclesiastical_year'];
+    club: {
+      type: 'adventurers' | 'pathfinders' | 'master_guides';
+      instance_id: number;
+      club: { club_id: number; name: string } | null;
+    } | null;
+  }>;
+  health: SensitiveHealthBlock | null;
+  emergency_contacts: AdminUserDetailRecord['emergency_contact'] | null;
+  legal_representative: AdminUserDetailRecord['legal_representative'] | null;
+  post_registration: MinimalPostRegistrationBlock | null;
+  scope: ScopeMeta;
+}
+
 @Injectable()
 export class AdminUsersService {
   private readonly logger = new Logger(AdminUsersService.name);
@@ -70,7 +395,7 @@ export class AdminUsersService {
   async listUsers(
     actorUserId: string,
     query: AdminListUsersQueryDto,
-  ): Promise<AdminUsersListResult<any>> {
+  ): Promise<AdminUsersListResult<AdminUserListItem>> {
     const scope = await this.resolveScope(actorUserId);
 
     const pagination = new PaginationDto();
@@ -85,66 +410,7 @@ export class AdminUsersService {
         orderBy: { created_at: 'desc' },
         skip: pagination.skip,
         take: pagination.take,
-        select: {
-          user_id: true,
-          email: true,
-          name: true,
-          paternal_last_name: true,
-          maternal_last_name: true,
-          user_image: true,
-          active: true,
-          access_app: true,
-          access_panel: true,
-          country_id: true,
-          union_id: true,
-          local_field_id: true,
-          created_at: true,
-          countries: {
-            select: {
-              country_id: true,
-              name: true,
-            },
-          },
-          unions: {
-            select: {
-              union_id: true,
-              name: true,
-            },
-          },
-          local_fields: {
-            select: {
-              local_field_id: true,
-              union_id: true,
-              name: true,
-            },
-          },
-          users_roles: {
-            where: {
-              active: true,
-              roles: {
-                active: true,
-                role_category: role_category.GLOBAL,
-              },
-            },
-            select: {
-              roles: {
-                select: {
-                  role_name: true,
-                },
-              },
-            },
-          },
-          users_pr: {
-            orderBy: { created_at: 'desc' },
-            take: 1,
-            select: {
-              complete: true,
-              profile_picture_complete: true,
-              personal_info_complete: true,
-              club_selection_complete: true,
-            },
-          },
-        },
+        select: adminUserListSelect,
       }),
       this.prisma.users.count({ where }),
     ]);
@@ -161,7 +427,10 @@ export class AdminUsersService {
     };
   }
 
-  async getUserById(actorUserId: string, userId: string) {
+  async getUserById(
+    actorUserId: string,
+    userId: string,
+  ): Promise<AdminUserDetail> {
     const scope = await this.resolveScope(actorUserId);
     const resolvedAuthorization =
       await this.authorizationContext.resolveUserAuthorization(actorUserId);
@@ -177,212 +446,43 @@ export class AdminUsersService {
 
     const user = await this.prisma.users.findFirst({
       where: { AND: filters },
-      select: {
-        user_id: true,
-        email: true,
-        name: true,
-        paternal_last_name: true,
-        maternal_last_name: true,
-        gender: true,
-        birthday: true,
-        blood: true,
-        baptism: true,
-        baptism_date: true,
-        user_image: true,
-        active: true,
-        access_app: true,
-        access_panel: true,
-        country_id: true,
-        union_id: true,
-        local_field_id: true,
-        created_at: true,
-        modified_at: true,
-        countries: {
-          select: {
-            country_id: true,
-            name: true,
-          },
-        },
-        unions: {
-          select: {
-            union_id: true,
-            name: true,
-          },
-        },
-        local_fields: {
-          select: {
-            local_field_id: true,
-            union_id: true,
-            name: true,
-          },
-        },
-        users_roles: {
-          where: {
-            active: true,
-            roles: {
-              active: true,
-              role_category: role_category.GLOBAL,
-            },
-          },
-          select: {
-            role_id: true,
-            roles: {
-              select: {
-                role_name: true,
-              },
-            },
-          },
-        },
-        users_pr: {
-          orderBy: { created_at: 'desc' },
-          take: 1,
-          select: {
-            complete: true,
-            profile_picture_complete: true,
-            personal_info_complete: true,
-            club_selection_complete: true,
-            date_completed: true,
-          },
-        },
-        users_classes: {
-          where: { active: true },
-          orderBy: { created_at: 'desc' },
-          select: {
-            user_class_id: true,
-            class_id: true,
-            investiture: true,
-            date_investiture: true,
-            advanced: true,
-            current_class: true,
-            classes: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-        club_role_assignments: {
-          where: { active: true },
-          orderBy: { created_at: 'desc' },
-          select: {
-            assignment_id: true,
-            role_id: true,
-            club_adv_id: true,
-            club_pathf_id: true,
-            club_mg_id: true,
-            ecclesiastical_year_id: true,
-            start_date: true,
-            end_date: true,
-            roles: {
-              select: {
-                role_name: true,
-              },
-            },
-            ecclesiastical_year: {
-              select: {
-                year_id: true,
-                start_date: true,
-                end_date: true,
-              },
-            },
-            club_adventurers: {
-              select: {
-                club_adv_id: true,
-                clubs: {
-                  select: {
-                    club_id: true,
-                    name: true,
-                  },
-                },
-              },
-            },
-            club_pathfinders: {
-              select: {
-                club_pathf_id: true,
-                clubs: {
-                  select: {
-                    club_id: true,
-                    name: true,
-                  },
-                },
-              },
-            },
-            club_master_guild: {
-              select: {
-                club_mg_id: true,
-                clubs: {
-                  select: {
-                    club_id: true,
-                    name: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-        emergency_contact: {
-          where: { active: true },
-          orderBy: { created_at: 'desc' },
-          select: {
-            emergency_id: true,
-            name: true,
-            phone: true,
-            primary: true,
-            relationship_type_id: true,
-          },
-        },
-        legal_representative: {
-          select: {
-            id: true,
-            representative_user_id: true,
-            relationship_type_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            phone: true,
-          },
-        },
-        users_allergies: {
-          where: { active: true },
-          orderBy: { allergy_id: 'asc' },
-          select: {
-            allergy_id: true,
-            allergies: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-        users_diseases: {
-          where: { active: true },
-          orderBy: { disease_id: 'asc' },
-          select: {
-            disease_id: true,
-            diseases: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-        users_medicines: {
-          where: { active: true },
-          orderBy: { medicine_id: 'asc' },
-          select: {
-            medicine_id: true,
-            medicines: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-      },
+      select: adminUserDetailSelect,
     });
 
     if (!user) {
       throw new NotFoundException('Usuario no encontrado o fuera de alcance');
+    }
+
+    const activeEcclesiasticalYearId =
+      await this.resolveActiveEcclesiasticalYearId();
+
+    const enrollmentCandidates =
+      activeEcclesiasticalYearId === null
+        ? []
+        : await this.prisma.enrollments.findMany({
+            where: {
+              user_id: user.user_id,
+              ecclesiastical_year_id: activeEcclesiasticalYearId,
+              active: true,
+            },
+            orderBy: { enrollment_date: 'desc' },
+            select: adminEnrollmentSelect,
+          });
+
+    const formativeReadModel = buildFormativeReadModel({
+      activeEcclesiasticalYearId,
+      enrollments: enrollmentCandidates,
+      trajectoryClasses: user.users_classes,
+    });
+
+    if (formativeReadModel.conflictEnrollmentIds.length > 0) {
+      this.logger.warn({
+        event: 'formative_read_model_conflict',
+        userId: user.user_id,
+        ecclesiasticalYearId: activeEcclesiasticalYearId,
+        enrollmentIds: formativeReadModel.conflictEnrollmentIds,
+        source: 'admin-user-detail',
+      });
     }
 
     const listItem = await this.toListItem(user);
@@ -400,15 +500,10 @@ export class AdminUsersService {
       baptism_date: user.baptism_date,
       user_image: listItem.user_image,
       modified_at: user.modified_at,
-      classes: user.users_classes.map((item) => ({
-        user_class_id: item.user_class_id,
-        class_id: item.class_id,
-        class_name: item.classes?.name ?? null,
-        investiture: item.investiture,
-        date_investiture: item.date_investiture,
-        advanced: item.advanced,
-        current_class: item.current_class,
-      })),
+      current_operational_enrollment:
+        formativeReadModel.current_operational_enrollment,
+      trajectory_classes: formativeReadModel.trajectory_classes,
+      classes: formativeReadModel.classes,
       club_assignments: user.club_role_assignments.map((assignment) => ({
         assignment_id: assignment.assignment_id,
         role_name: assignment.roles.role_name,
@@ -425,6 +520,20 @@ export class AdminUsersService {
     };
   }
 
+  private async resolveActiveEcclesiasticalYearId(): Promise<number | null> {
+    const currentYear = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: new Date() },
+        end_date: { gte: new Date() },
+      },
+      select: {
+        year_id: true,
+      },
+    });
+
+    return currentYear?.year_id ?? null;
+  }
+
   private getActorGlobalPermissions(
     resolvedAuthorization: ResolvedAuthorizationProfile,
   ): Set<string> {
@@ -436,13 +545,13 @@ export class AdminUsersService {
   }
 
   private buildSensitiveBlocks(
-    user: any,
+    user: AdminUserDetailRecord,
     actorGlobalPermissions: Set<string>,
   ): {
-    health: Record<string, unknown> | null;
-    emergency_contacts: unknown[] | null;
-    legal_representative: Record<string, unknown> | null;
-    post_registration: Record<string, unknown> | null;
+    health: SensitiveHealthBlock | null;
+    emergency_contacts: AdminUserDetailRecord['emergency_contact'] | null;
+    legal_representative: AdminUserDetailRecord['legal_representative'] | null;
+    post_registration: MinimalPostRegistrationBlock | null;
   } {
     return {
       health: this.canReadSensitiveFamily(actorGlobalPermissions, 'health')
@@ -481,7 +590,7 @@ export class AdminUsersService {
     );
   }
 
-  private buildHealthBlock(user: any) {
+  private buildHealthBlock(user: AdminUserDetailRecord): SensitiveHealthBlock {
     return {
       blood: user.blood,
       allergies: (user.users_allergies ?? []).map((item) => ({
@@ -499,7 +608,9 @@ export class AdminUsersService {
     };
   }
 
-  private buildMinimalPostRegistrationBlock(user: any) {
+  private buildMinimalPostRegistrationBlock(
+    user: AdminUserDetailRecord,
+  ): MinimalPostRegistrationBlock | null {
     const latestPostRegistration = user.users_pr?.[0];
 
     if (!latestPostRegistration) {
@@ -560,7 +671,11 @@ export class AdminUsersService {
       }
 
       if (actor.local_field_id) {
-        return { type: 'LOCAL_FIELD', roles, localFieldId: actor.local_field_id };
+        return {
+          type: 'LOCAL_FIELD',
+          roles,
+          localFieldId: actor.local_field_id,
+        };
       }
 
       throw new ForbiddenException(
@@ -570,7 +685,11 @@ export class AdminUsersService {
 
     if (roles.includes('coordinator')) {
       if (actor.local_field_id) {
-        return { type: 'LOCAL_FIELD', roles, localFieldId: actor.local_field_id };
+        return {
+          type: 'LOCAL_FIELD',
+          roles,
+          localFieldId: actor.local_field_id,
+        };
       }
 
       throw new ForbiddenException(
@@ -675,7 +794,9 @@ export class AdminUsersService {
     return [...new Set(assignments.map((item) => item.roles.role_name))];
   }
 
-  private async toListItem(user: any) {
+  private async toListItem(
+    user: AdminUserListRecord,
+  ): Promise<AdminUserListItem> {
     const roles = this.extractRoleNames(user.users_roles).sort((a, b) =>
       a.localeCompare(b),
     );
@@ -749,28 +870,22 @@ export class AdminUsersService {
     }
   }
 
-  private resolveClubAssignment(assignment: any) {
-    if (assignment.club_adventurers) {
-      return {
-        type: 'adventurers',
-        instance_id: assignment.club_adventurers.club_adv_id,
-        club: assignment.club_adventurers.clubs,
-      };
-    }
+  private resolveClubAssignment(
+    assignment: ClubAssignmentRecord,
+  ): AdminUserDetail['club_assignments'][number]['club'] {
+    if (assignment.club_sections) {
+      const typeName = assignment.club_sections.club_types?.name?.toLowerCase() ?? '';
+      let type: 'adventurers' | 'pathfinders' | 'master_guides' = 'pathfinders';
+      if (typeName.includes('aventurero') || typeName.includes('adventurer')) {
+        type = 'adventurers';
+      } else if (typeName.includes('guía') || typeName.includes('master') || typeName.includes('guild')) {
+        type = 'master_guides';
+      }
 
-    if (assignment.club_pathfinders) {
       return {
-        type: 'pathfinders',
-        instance_id: assignment.club_pathfinders.club_pathf_id,
-        club: assignment.club_pathfinders.clubs,
-      };
-    }
-
-    if (assignment.club_master_guild) {
-      return {
-        type: 'master_guides',
-        instance_id: assignment.club_master_guild.club_mg_id,
-        club: assignment.club_master_guild.clubs,
+        type,
+        instance_id: assignment.club_sections.club_section_id,
+        club: assignment.club_sections.clubs,
       };
     }
 

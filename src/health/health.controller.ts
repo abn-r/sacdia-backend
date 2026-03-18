@@ -71,8 +71,9 @@ export class HealthController {
 
   private isFcmConfigured(): boolean {
     const hasJsonCredentials =
-      this.hasConfiguredValue(process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64) ||
-      this.hasConfiguredValue(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      this.hasConfiguredValue(
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64,
+      ) || this.hasConfiguredValue(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
 
     const hasLegacyCredentials =
       this.hasConfiguredValue(process.env.FIREBASE_PROJECT_ID) &&

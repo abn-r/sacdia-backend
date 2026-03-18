@@ -7,30 +7,9 @@ import {
   IsArray,
   Min,
   Max,
-  IsIn,
-  ValidateNested,
-  ArrayMinSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-
-export class ActivityInstanceSelectionDto {
-  @ApiProperty({
-    description: 'Tipo de instancia del club',
-    enum: ['adventurers', 'pathfinders', 'master_guilds'],
-    example: 'pathfinders',
-  })
-  @IsIn(['adventurers', 'pathfinders', 'master_guilds'])
-  instance_type: 'adventurers' | 'pathfinders' | 'master_guilds';
-
-  @ApiProperty({
-    description: 'ID de la instancia seleccionada',
-    example: 10,
-  })
-  @Type(() => Number)
-  @IsInt()
-  instance_id: number;
-}
 
 export class CreateActivityDto {
   @ApiProperty({ description: 'Nombre de la actividad' })
@@ -106,44 +85,12 @@ export class CreateActivityDto {
   @IsArray()
   classes?: number[];
 
-  @ApiPropertyOptional({
-    description:
-      'Instancias destino de la actividad (permite compartir una actividad entre múltiples instancias del mismo club)',
-    type: [ActivityInstanceSelectionDto],
+  @ApiProperty({
+    description: 'ID de la sección del club (FK a club_sections)',
   })
-  @IsOptional()
-  @IsArray()
-  @ArrayMinSize(1)
-  @ValidateNested({ each: true })
-  @Type(() => ActivityInstanceSelectionDto)
-  instances?: ActivityInstanceSelectionDto[];
-
-  @ApiPropertyOptional({
-    description:
-      'ID de instancia de Aventureros (requerido cuando club_type_id corresponde a Aventureros)',
-  })
-  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  club_adv_id?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'ID de instancia de Conquistadores (requerido cuando club_type_id corresponde a Conquistadores)',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  club_pathf_id?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'ID de instancia de Guías Mayores (requerido cuando club_type_id corresponde a Guías Mayores)',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  club_mg_id?: number;
+  club_section_id: number;
 }
 
 export class UpdateActivityDto {

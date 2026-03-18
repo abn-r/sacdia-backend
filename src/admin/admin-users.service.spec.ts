@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminListUsersQueryDto } from './dto';
 import { AdminUsersService } from './admin-users.service';
 
 describe('AdminUsersService', () => {
@@ -15,10 +16,18 @@ describe('AdminUsersService', () => {
       count: jest.fn(),
       findFirst: jest.fn(),
     },
+    ecclesiastical_years: {
+      findFirst: jest.fn(),
+    },
+    enrollments: {
+      findMany: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
-    getSignedDownloadUrl: jest.fn(async (_bucket: unknown, value: string) => value),
+    getSignedDownloadUrl: jest.fn((_bucket: unknown, value: string) =>
+      Promise.resolve(value),
+    ),
   };
 
   const mockAuthorizationContextService = {
@@ -45,6 +54,9 @@ describe('AdminUsersService', () => {
     }).compile();
 
     service = module.get<AdminUsersService>(AdminUsersService);
+
+    mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
+    mockPrismaService.enrollments.findMany.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -159,6 +171,48 @@ describe('AdminUsersService', () => {
     ],
   });
 
+  const buildTrajectoryClass = () => ({
+    user_class_id: 55,
+    class_id: 9,
+    investiture: true,
+    date_investiture: new Date('2025-11-10'),
+    advanced: false,
+    certificate: 'CERT-9',
+    current_class: true,
+    classes: {
+      name: 'Explorador',
+    },
+  });
+
+  const buildEnrollmentCandidate = (enrollmentId: number) => ({
+    enrollment_id: enrollmentId,
+    ecclesiastical_year_id: 2026,
+    class_id: 7,
+    enrollment_date: new Date('2026-01-05T10:00:00.000Z'),
+    investiture_status: 'IN_PROGRESS',
+    submitted_for_validation: false,
+    submitted_at: null,
+    validated_by: null,
+    validated_at: null,
+    rejection_reason: null,
+    investiture_date: null,
+    advanced_status: false,
+    locked_for_validation: false,
+    cross_type_enrollment: false,
+    active: true,
+    classes: {
+      name: 'Amigo',
+    },
+  });
+
+  const buildListQuery = (
+    overrides: Partial<AdminListUsersQueryDto> = {},
+  ): AdminListUsersQueryDto => ({
+    page: 1,
+    limit: 20,
+    ...overrides,
+  });
+
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
@@ -202,10 +256,7 @@ describe('AdminUsersService', () => {
       ]);
       mockPrismaService.users.count.mockResolvedValue(1);
 
-      const result = await service.listUsers('actor-super', {
-        page: 1,
-        limit: 20,
-      } as any);
+      const result = await service.listUsers('actor-super', buildListQuery());
 
       expect(result.meta.scope.type).toBe('ALL');
       expect(result.data).toHaveLength(1);
@@ -229,10 +280,7 @@ describe('AdminUsersService', () => {
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
 
-      await service.listUsers('actor-admin', {
-        page: 1,
-        limit: 20,
-      } as any);
+      await service.listUsers('actor-admin', buildListQuery());
 
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -251,10 +299,7 @@ describe('AdminUsersService', () => {
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
 
-      await service.listUsers('actor-coordinator', {
-        page: 1,
-        limit: 20,
-      } as any);
+      await service.listUsers('actor-coordinator', buildListQuery());
 
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -272,10 +317,7 @@ describe('AdminUsersService', () => {
       });
 
       await expect(
-        service.listUsers('actor-admin', {
-          page: 1,
-          limit: 20,
-        } as any),
+        service.listUsers('actor-admin', buildListQuery()),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -288,10 +330,7 @@ describe('AdminUsersService', () => {
       });
 
       await expect(
-        service.listUsers('actor-coordinator', {
-          page: 1,
-          limit: 20,
-        } as any),
+        service.listUsers('actor-coordinator', buildListQuery()),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -305,10 +344,7 @@ describe('AdminUsersService', () => {
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
 
-      await service.listUsers('actor-assistant-admin', {
-        page: 1,
-        limit: 20,
-      } as any);
+      await service.listUsers('actor-assistant-admin', buildListQuery());
 
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -326,10 +362,7 @@ describe('AdminUsersService', () => {
       });
 
       await expect(
-        service.listUsers('actor-assistant-admin', {
-          page: 1,
-          limit: 20,
-        } as any),
+        service.listUsers('actor-assistant-admin', buildListQuery()),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -390,6 +423,9 @@ describe('AdminUsersService', () => {
       expect(result.user_id).toBe('user-1');
       expect(result.roles).toEqual(['user']);
       expect(result.scope.type).toBe('ALL');
+      expect(result.current_operational_enrollment).toBeNull();
+      expect(result.trajectory_classes).toEqual([]);
+      expect(result.classes).toEqual([]);
     });
 
     it('should throw NotFoundException when user is outside scope', async () => {
@@ -408,15 +444,21 @@ describe('AdminUsersService', () => {
         service.getUserById('actor-admin', 'user-outside-scope'),
       ).rejects.toThrow(NotFoundException);
 
-      expect(mockPrismaService.users.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            AND: expect.arrayContaining([
-              { user_id: 'user-outside-scope' },
-              { union_id: 4 },
-            ]),
-          }),
-        }),
+      const findFirstCalls = mockPrismaService.users.findFirst.mock
+        .calls as Array<[unknown?]>;
+      const findFirstArgs = findFirstCalls[0]?.[0] as
+        | {
+            where?: {
+              AND?: Array<{ user_id?: string; union_id?: number }>;
+            };
+          }
+        | undefined;
+
+      expect(findFirstArgs?.where?.AND).toEqual(
+        expect.arrayContaining([
+          { user_id: 'user-outside-scope' },
+          { union_id: 4 },
+        ]),
       );
     });
 
@@ -430,13 +472,23 @@ describe('AdminUsersService', () => {
 
       beforeEach(() => {
         mockPrismaService.users.findUnique.mockResolvedValue(actor);
-        mockPrismaService.users.findFirst.mockResolvedValue(buildAdminDetailRecord());
+        mockPrismaService.users.findFirst.mockResolvedValue(
+          buildAdminDetailRecord(),
+        );
       });
 
       it.each([
         ['health', ['health:read'], 'health'],
-        ['emergency_contacts', ['emergency_contacts:read'], 'emergency_contacts'],
-        ['legal_representative', ['legal_representative:read'], 'legal_representative'],
+        [
+          'emergency_contacts',
+          ['emergency_contacts:read'],
+          'emergency_contacts',
+        ],
+        [
+          'legal_representative',
+          ['legal_representative:read'],
+          'legal_representative',
+        ],
         ['post_registration', ['post_registration:read'], 'post_registration'],
       ])(
         'should expose only %s block for fine-grained readers',
@@ -497,6 +549,154 @@ describe('AdminUsersService', () => {
         expect(result.legal_representative).toBeNull();
         expect(result.post_registration).toBeNull();
       });
+    });
+
+    it('should map operational and trajectory sources with legacy classes alias', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'actor-super',
+        union_id: null,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super_admin' } }],
+      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization(['users:read_detail']),
+      );
+
+      const userRecord = buildAdminDetailRecord();
+      userRecord.users_classes = [buildTrajectoryClass()];
+      mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
+
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        buildEnrollmentCandidate(9001),
+      ]);
+
+      const result = await service.getUserById('actor-super', 'user-1');
+
+      expect(result.current_operational_enrollment).toEqual(
+        expect.objectContaining({
+          enrollment_id: 9001,
+          ecclesiastical_year_id: 2026,
+          class_id: 7,
+          class_name: 'Amigo',
+        }),
+      );
+      expect(result.trajectory_classes).toEqual([
+        {
+          user_class_id: 55,
+          class_id: 9,
+          class_name: 'Explorador',
+          investiture: true,
+          date_investiture: new Date('2025-11-10'),
+          advanced: false,
+          certificate: 'CERT-9',
+          current_class: true,
+        },
+      ]);
+      expect(result.classes).toEqual(result.trajectory_classes);
+    });
+
+    it('should return null operational enrollment when active year has no enrollment candidates', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'actor-super',
+        union_id: null,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super_admin' } }],
+      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization(['users:read_detail']),
+      );
+
+      const userRecord = buildAdminDetailRecord();
+      userRecord.users_classes = [buildTrajectoryClass()];
+      mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
+
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserById('actor-super', 'user-1');
+
+      expect(result.current_operational_enrollment).toBeNull();
+      expect(result.trajectory_classes).toHaveLength(1);
+      expect(result.classes).toEqual(result.trajectory_classes);
+    });
+
+    it('should return trajectory item with null class_name when linked class metadata is missing', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'actor-super',
+        union_id: null,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super_admin' } }],
+      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization(['users:read_detail']),
+      );
+
+      const userRecord = buildAdminDetailRecord();
+      userRecord.users_classes = [
+        {
+          ...buildTrajectoryClass(),
+          classes: null,
+        },
+      ];
+      mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
+
+      const result = await service.getUserById('actor-super', 'user-1');
+
+      expect(result.current_operational_enrollment).toBeNull();
+      expect(result.trajectory_classes[0]).toEqual(
+        expect.objectContaining({
+          class_name: null,
+          class_id: 9,
+        }),
+      );
+    });
+
+    it('should return null operational enrollment and warn on enrollment conflicts', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'actor-super',
+        union_id: null,
+        local_field_id: null,
+        users_roles: [{ roles: { role_name: 'super_admin' } }],
+      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization(['users:read_detail']),
+      );
+
+      const userRecord = buildAdminDetailRecord();
+      userRecord.users_classes = [buildTrajectoryClass()];
+      mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
+
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        buildEnrollmentCandidate(9001),
+        buildEnrollmentCandidate(9002),
+      ]);
+
+      const warnSpy = jest
+        .spyOn<any, any>(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      const result = await service.getUserById('actor-super', 'user-1');
+
+      expect(result.current_operational_enrollment).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'formative_read_model_conflict',
+          userId: 'user-1',
+          ecclesiasticalYearId: 2026,
+          enrollmentIds: [9001, 9002],
+          source: 'admin-user-detail',
+        }),
+      );
+
+      warnSpy.mockRestore();
     });
   });
 });
