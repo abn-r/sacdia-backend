@@ -56,9 +56,7 @@ describe('Finances E2E Tests', () => {
     it('should return paginated list of finances', async () => {
       jest.spyOn(prisma.clubs, 'findUnique').mockResolvedValue({
         club_id: 1,
-        club_adventurers: [],
-        club_pathfinders: [],
-        club_master_guild: [],
+        club_sections: [],
       } as any);
 
       jest.spyOn(prisma.finances, 'findMany').mockResolvedValue([]);
