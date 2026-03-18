@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { user_approval_status } from '@prisma/client';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,6 +16,7 @@ describe('AdminUsersService', () => {
       findMany: jest.fn(),
       count: jest.fn(),
       findFirst: jest.fn(),
+      update: jest.fn(),
     },
     ecclesiastical_years: {
       findFirst: jest.fn(),
@@ -98,7 +100,7 @@ describe('AdminUsersService', () => {
     },
   });
 
-  const buildAdminDetailRecord = () => ({
+  const buildAdminDetailRecord = (): any => ({
     user_id: 'user-1',
     email: 'user1@example.com',
     name: 'Maria',
@@ -210,6 +212,8 @@ describe('AdminUsersService', () => {
   ): AdminListUsersQueryDto => ({
     page: 1,
     limit: 20,
+    skip: 0,
+    take: 20,
     ...overrides,
   });
 
@@ -697,6 +701,77 @@ describe('AdminUsersService', () => {
       );
 
       warnSpy.mockRestore();
+    });
+  });
+
+  describe('updateUserApproval', () => {
+    it('should approve a user, clear rejection reason, and activate access', async () => {
+      const expected = {
+        user_id: 'user-1',
+        approval_status: user_approval_status.approved,
+        rejection_reason: null,
+        active: true,
+      };
+      mockPrismaService.users.update.mockResolvedValue(expected);
+
+      const result = await service.updateUserApproval('user-1', {
+        approved: true,
+      });
+
+      expect(mockPrismaService.users.update).toHaveBeenCalledWith({
+        where: { user_id: 'user-1' },
+        data: {
+          approval_status: user_approval_status.approved,
+          rejection_reason: null,
+          active: true,
+        },
+      });
+      expect(result).toEqual(expected);
+    });
+
+    it('should reject a user, persist rejection reason, and deactivate access', async () => {
+      const expected = {
+        user_id: 'user-1',
+        approval_status: user_approval_status.rejected,
+        rejection_reason: 'Incomplete profile',
+        active: false,
+      };
+      mockPrismaService.users.update.mockResolvedValue(expected);
+
+      const result = await service.updateUserApproval('user-1', {
+        approved: false,
+        rejection_reason: 'Incomplete profile',
+      });
+
+      expect(mockPrismaService.users.update).toHaveBeenCalledWith({
+        where: { user_id: 'user-1' },
+        data: {
+          approval_status: user_approval_status.rejected,
+          rejection_reason: 'Incomplete profile',
+          active: false,
+        },
+      });
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('updateUser', () => {
+    it('should forward partial admin updates to prisma', async () => {
+      const dto = {
+        active: false,
+        access_panel: true,
+        approval_status: user_approval_status.approved,
+      };
+      const expected = { user_id: 'user-1', ...dto };
+      mockPrismaService.users.update.mockResolvedValue(expected);
+
+      const result = await service.updateUser('user-1', dto);
+
+      expect(mockPrismaService.users.update).toHaveBeenCalledWith({
+        where: { user_id: 'user-1' },
+        data: dto,
+      });
+      expect(result).toEqual(expected);
     });
   });
 });

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { user_approval_status } from '@prisma/client';
 import type { Request } from 'express';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
@@ -11,6 +12,8 @@ describe('AdminUsersController', () => {
   const mockAdminUsersService = {
     listUsers: jest.fn(),
     getUserById: jest.fn(),
+    updateUserApproval: jest.fn(),
+    updateUser: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -49,6 +52,8 @@ describe('AdminUsersController', () => {
         page: 1,
         limit: 20,
         search: 'juan',
+        skip: 0,
+        take: 20,
       };
       const expected = {
         data: [],
@@ -106,6 +111,52 @@ describe('AdminUsersController', () => {
       expect(mockAdminUsersService.getUserById).toHaveBeenCalledWith(
         'actor-1',
         'target-1',
+      );
+      expect(result).toEqual({ status: 'success', data: expected });
+    });
+  });
+
+  describe('updateUserApproval', () => {
+    it('should delegate approval updates to the service', async () => {
+      const expected = {
+        user_id: 'target-1',
+        approval_status: 'approved',
+        rejection_reason: null,
+        active: true,
+      };
+      const dto = { approved: true };
+      mockAdminUsersService.updateUserApproval.mockResolvedValue(expected);
+
+      const result = await controller.updateUserApproval('target-1', dto);
+
+      expect(mockAdminUsersService.updateUserApproval).toHaveBeenCalledWith(
+        'target-1',
+        dto,
+      );
+      expect(result).toEqual({ status: 'success', data: expected });
+    });
+  });
+
+  describe('updateUser', () => {
+    it('should delegate admin user updates to the service', async () => {
+      const expected = {
+        user_id: 'target-1',
+        approval_status: 'rejected',
+        rejection_reason: 'Missing documents',
+        active: false,
+      };
+      const dto = {
+        approval_status: user_approval_status.rejected,
+        rejection_reason: 'Missing documents',
+        active: false,
+      };
+      mockAdminUsersService.updateUser.mockResolvedValue(expected);
+
+      const result = await controller.updateUser('target-1', dto);
+
+      expect(mockAdminUsersService.updateUser).toHaveBeenCalledWith(
+        'target-1',
+        dto,
       );
       expect(result).toEqual({ status: 'success', data: expected });
     });

@@ -750,6 +750,8 @@ model users {
   paternal_last_name             String?                          @db.VarChar(50)
   maternal_last_name             String?                          @db.VarChar(50)
   active                         Boolean                          @default(true)
+  approval_status                user_approval_status             @default(pending)
+  rejection_reason               String?
   email                          String                           @unique @db.VarChar(100)
   gender                         String?                          @db.VarChar
   birthday                       DateTime?                        @db.Date
@@ -1221,6 +1223,12 @@ enum gender {
 enum role_category {
   GLOBAL
   CLUB
+}
+
+enum user_approval_status {
+  pending
+  approved
+  rejected
 }
 
 enum investiture_status_enum {

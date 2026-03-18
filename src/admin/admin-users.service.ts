@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, role_category } from '@prisma/client';
+import { Prisma, role_category, user_approval_status } from '@prisma/client';
 import {
   createPaginatedResult,
   PaginationDto,
@@ -24,7 +24,11 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AdminListUsersQueryDto } from './dto';
+import {
+  AdminListUsersQueryDto,
+  UpdateAdminUserDto,
+  UpdateUserApprovalDto,
+} from './dto';
 import {
   buildFormativeReadModel,
   type CurrentOperationalEnrollmentDto,
@@ -520,6 +524,26 @@ export class AdminUsersService {
     };
   }
 
+  async updateUserApproval(userId: string, dto: UpdateUserApprovalDto) {
+    return this.prisma.users.update({
+      where: { user_id: userId },
+      data: {
+        approval_status: dto.approved
+          ? user_approval_status.approved
+          : user_approval_status.rejected,
+        rejection_reason: dto.approved ? null : dto.rejection_reason ?? null,
+        active: dto.approved,
+      },
+    });
+  }
+
+  async updateUser(userId: string, dto: UpdateAdminUserDto) {
+    return this.prisma.users.update({
+      where: { user_id: userId },
+      data: dto,
+    });
+  }
+
   private async resolveActiveEcclesiasticalYearId(): Promise<number | null> {
     const currentYear = await this.prisma.ecclesiastical_years.findFirst({
       where: {
@@ -593,10 +617,12 @@ export class AdminUsersService {
   private buildHealthBlock(user: AdminUserDetailRecord): SensitiveHealthBlock {
     return {
       blood: user.blood,
-      allergies: (user.users_allergies ?? []).map((item) => ({
-        allergy_id: item.allergy_id,
-        name: item.allergies?.name ?? null,
-      })),
+      allergies: (user.users_allergies ?? [])
+        .filter((item) => item.allergy_id !== null)
+        .map((item) => ({
+          allergy_id: item.allergy_id,
+          name: item.allergies?.name ?? null,
+        })),
       diseases: (user.users_diseases ?? []).map((item) => ({
         disease_id: item.disease_id,
         name: item.diseases?.name ?? null,
@@ -821,8 +847,8 @@ export class AdminUsersService {
         .trim(),
       user_image: await this.resolvePrivateProfileUrl(user.user_image),
       active: user.active,
-      access_app: user.access_app,
-      access_panel: user.access_panel,
+      access_app: user.access_app ?? false,
+      access_panel: user.access_panel ?? false,
       country: user.countries
         ? {
             country_id: user.countries.country_id,

@@ -390,6 +390,21 @@ export class AuthService {
     };
   }
 
+  async updatePassword(userId: string, newPassword: string) {
+    const { error } = await this.supabase.admin.auth.admin.updateUserById(
+      userId,
+      { password: newPassword },
+    );
+
+    if (error) {
+      this.logger.error(
+        `Password update error for ${userId}: ${error.message}`,
+        error,
+      );
+      throw new InternalServerErrorException('Failed to update password');
+    }
+  }
+
   async getProfile(userId: string) {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
