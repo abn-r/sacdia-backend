@@ -52,9 +52,7 @@ describe('Activities E2E Tests', () => {
     it('should return paginated list of activities', async () => {
       jest.spyOn(prisma.clubs, 'findUnique').mockResolvedValue({
         club_id: 1,
-        club_adventurers: [],
-        club_pathfinders: [],
-        club_master_guild: [],
+        club_sections: [],
       } as any);
 
       jest.spyOn(prisma.activities, 'findMany').mockResolvedValue([]);
