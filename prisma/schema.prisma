@@ -558,7 +558,7 @@ model honors_categories {
   honor_category_id Int       @id @default(autoincrement())
   name              String    @unique @db.VarChar(100)
   description       String?
-  icon              Int
+  icon              Int?
   active            Boolean   @default(false)
   created_at        DateTime? @default(now()) @db.Timestamptz(6)
   modified_at       DateTime? @default(now()) @db.Timestamptz(6)
