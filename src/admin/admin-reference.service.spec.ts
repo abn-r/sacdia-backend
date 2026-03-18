@@ -16,6 +16,9 @@ describe('AdminReferenceService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    club_ideals: {
+      findMany: jest.fn(),
+    },
     honors: {
       count: jest.fn(),
     },
@@ -293,6 +296,34 @@ describe('AdminReferenceService', () => {
       await expect(service.deleteHonorCategory(12, 'actor-3')).rejects.toThrow(
         ConflictException,
       );
+    });
+  });
+
+  describe('listClubIdeals', () => {
+    it('should return all club ideals ordered by club type and ideal order', async () => {
+      const ideals = [
+        {
+          club_ideal_id: 2,
+          name: 'Amor',
+          ideal_order: 1,
+          club_type_id: 1,
+        },
+        {
+          club_ideal_id: 4,
+          name: 'Servicio',
+          ideal_order: 2,
+          club_type_id: 1,
+        },
+      ];
+
+      mockPrismaService.club_ideals.findMany.mockResolvedValue(ideals);
+
+      const result = await service.listClubIdeals();
+
+      expect(result).toEqual(ideals);
+      expect(mockPrismaService.club_ideals.findMany).toHaveBeenCalledWith({
+        orderBy: [{ club_type_id: 'asc' }, { ideal_order: 'asc' }],
+      });
     });
   });
 });

@@ -387,6 +387,12 @@ export class AdminReferenceService {
     });
   }
 
+  async listClubIdeals() {
+    return this.prisma.club_ideals.findMany({
+      orderBy: [{ club_type_id: 'asc' }, { ideal_order: 'asc' }],
+    });
+  }
+
   async createEcclesiasticalYear(
     dto: CreateEcclesiasticalYearDto,
     actorId: string,
