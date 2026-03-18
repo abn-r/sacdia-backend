@@ -1,7 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
+  Patch,
   Query,
   Request,
   UseGuards,
@@ -22,6 +24,8 @@ import {
   AdminCurrentOperationalEnrollmentDto,
   AdminListUsersQueryDto,
   AdminTrajectoryClassDto,
+  UpdateAdminUserDto,
+  UpdateUserApprovalDto,
 } from './dto';
 import { AdminUsersService } from './admin-users.service';
 
@@ -115,6 +119,28 @@ export class AdminUsersController {
       this.getActorId(req),
       userId,
     );
+    return { status: 'success', data };
+  }
+
+  @Patch('users/:userId/approval')
+  @RequirePermissions('users:update')
+  @ApiOperation({ summary: 'Approve or reject a user' })
+  async updateUserApproval(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserApprovalDto,
+  ) {
+    const data = await this.adminUsersService.updateUserApproval(userId, dto);
+    return { status: 'success', data };
+  }
+
+  @Patch('users/:userId')
+  @RequirePermissions('users:update')
+  @ApiOperation({ summary: 'Update user administrative fields' })
+  async updateUser(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateAdminUserDto,
+  ) {
+    const data = await this.adminUsersService.updateUser(userId, dto);
     return { status: 'success', data };
   }
 }
