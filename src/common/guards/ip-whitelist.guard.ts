@@ -9,8 +9,8 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 
 export const ADMIN_ONLY_KEY = 'adminOnly';
-export const AdminOnly = () =>
-  (target: any, key?: string, descriptor?: any) => {
+export const AdminOnly =
+  () => (target: any, key?: string, descriptor?: any) => {
     Reflect.defineMetadata(ADMIN_ONLY_KEY, true, descriptor?.value ?? target);
     return descriptor ?? target;
   };
@@ -37,7 +37,9 @@ export class IpWhitelistGuard implements CanActivate {
       this.allowedIps.push('127.0.0.1', '::1', 'localhost', '::ffff:127.0.0.1');
     }
 
-    this.logger.log(`IP Whitelist configured with ${this.allowedIps.length} IPs`);
+    this.logger.log(
+      `IP Whitelist configured with ${this.allowedIps.length} IPs`,
+    );
   }
 
   canActivate(context: ExecutionContext): boolean {
@@ -109,19 +111,19 @@ export class IpWhitelistGuard implements CanActivate {
   private isIpInCidr(ip: string, cidr: string): boolean {
     const [range, bits] = cidr.split('/');
     const mask = ~(2 ** (32 - parseInt(bits, 10)) - 1);
-    
+
     const ipNum = this.ipToNumber(ip);
     const rangeNum = this.ipToNumber(range);
-    
+
     if (ipNum === null || rangeNum === null) return false;
-    
+
     return (ipNum & mask) === (rangeNum & mask);
   }
 
   private ipToNumber(ip: string): number | null {
     const parts = ip.split('.');
     if (parts.length !== 4) return null;
-    
+
     return parts.reduce((acc, octet) => {
       const num = parseInt(octet, 10);
       if (isNaN(num) || num < 0 || num > 255) return NaN;

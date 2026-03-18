@@ -23,20 +23,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const errorMessage =
       exception instanceof Error ? exception.message : 'Unknown error';
-    const errorStack =
-      exception instanceof Error ? exception.stack : undefined;
+    const errorStack = exception instanceof Error ? exception.stack : undefined;
 
     // Log completo internamente
-    this.logger.error(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        method: request.method,
-        url: request.url,
-        message: errorMessage,
-        stack:
-          process.env.NODE_ENV === 'development' ? errorStack : undefined,
-      }),
-    );
+    this.logger.error({
+      timestamp: new Date().toISOString(),
+      method: request.method,
+      url: request.url,
+      message: errorMessage,
+      stack: process.env.NODE_ENV === 'development' ? errorStack : undefined,
+    });
 
     // Siempre retornar error genérico al cliente
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({

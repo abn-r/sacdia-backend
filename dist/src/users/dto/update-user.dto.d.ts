@@ -5,4 +5,7 @@ export declare class UpdateUserDto {
     baptism?: boolean;
     baptism_date?: string;
     blood?: blood_type;
+    country_id?: number;
+    union_id?: number;
+    local_field_id?: number;
 }

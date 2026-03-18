@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LegalRepresentativesController } from './legal-representatives.controller';
 import { LegalRepresentativesService } from './legal-representatives.service';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 describe('LegalRepresentativesController', () => {
   let controller: LegalRepresentativesController;
@@ -22,9 +23,16 @@ describe('LegalRepresentativesController', () => {
           useValue: mockLegalRepresentativesService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
 
-    controller = module.get<LegalRepresentativesController>(LegalRepresentativesController);
+    controller = module.get<LegalRepresentativesController>(
+      LegalRepresentativesController,
+    );
   });
 
   it('should be defined', () => {

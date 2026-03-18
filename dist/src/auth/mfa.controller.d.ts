@@ -20,4 +20,5 @@ export declare class MfaController {
         factors: import("../common/services/mfa.service").MfaFactor[];
     }>;
     private extractToken;
+    private extractRefreshToken;
 }

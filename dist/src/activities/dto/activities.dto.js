@@ -9,11 +9,37 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ActivityFiltersDto = exports.RecordAttendanceDto = exports.UpdateActivityDto = exports.CreateActivityDto = void 0;
+exports.ActivityFiltersDto = exports.RecordAttendanceDto = exports.UpdateActivityDto = exports.CreateActivityDto = exports.ActivityInstanceSelectionDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
+class ActivityInstanceSelectionDto {
+    instance_type;
+    instance_id;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { instance_type: { required: true, type: () => Object, enum: ['adventurers', 'pathfinders', 'master_guilds'] }, instance_id: { required: true, type: () => Number } };
+    }
+}
+exports.ActivityInstanceSelectionDto = ActivityInstanceSelectionDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'Tipo de instancia del club',
+        enum: ['adventurers', 'pathfinders', 'master_guilds'],
+        example: 'pathfinders',
+    }),
+    (0, class_validator_1.IsIn)(['adventurers', 'pathfinders', 'master_guilds']),
+    __metadata("design:type", String)
+], ActivityInstanceSelectionDto.prototype, "instance_type", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'ID de la instancia seleccionada',
+        example: 10,
+    }),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], ActivityInstanceSelectionDto.prototype, "instance_id", void 0);
 class CreateActivityDto {
     name;
     description;
@@ -24,15 +50,16 @@ class CreateActivityDto {
     activity_place;
     image;
     platform;
-    activity_type;
+    activity_type_id;
     link_meet;
     additional_data;
     classes;
+    instances;
     club_adv_id;
     club_pathf_id;
     club_mg_id;
     static _OPENAPI_METADATA_FACTORY() {
-        return { name: { required: true, type: () => String }, description: { required: false, type: () => String }, club_type_id: { required: true, type: () => Number }, lat: { required: true, type: () => Number, minimum: -90, maximum: 90 }, long: { required: true, type: () => Number, minimum: -180, maximum: 180 }, activity_time: { required: false, type: () => String }, activity_place: { required: true, type: () => String }, image: { required: true, type: () => String }, platform: { required: false, type: () => Number }, activity_type: { required: false, type: () => Number }, link_meet: { required: false, type: () => String }, additional_data: { required: false, type: () => String }, classes: { required: false, type: () => [Number] }, club_adv_id: { required: true, type: () => Number }, club_pathf_id: { required: true, type: () => Number }, club_mg_id: { required: true, type: () => Number } };
+        return { name: { required: true, type: () => String }, description: { required: false, type: () => String }, club_type_id: { required: true, type: () => Number }, lat: { required: true, type: () => Number, minimum: -90, maximum: 90 }, long: { required: true, type: () => Number, minimum: -180, maximum: 180 }, activity_time: { required: false, type: () => String }, activity_place: { required: true, type: () => String }, image: { required: true, type: () => String }, platform: { required: false, type: () => Number }, activity_type_id: { required: true, type: () => Number }, link_meet: { required: false, type: () => String }, additional_data: { required: false, type: () => String }, classes: { required: false, type: () => [Number] }, instances: { required: false, type: () => [require("./activities.dto").ActivityInstanceSelectionDto], minItems: 1 }, club_adv_id: { required: false, type: () => Number }, club_pathf_id: { required: false, type: () => Number }, club_mg_id: { required: false, type: () => Number } };
     }
 }
 exports.CreateActivityDto = CreateActivityDto;
@@ -48,7 +75,9 @@ __decorate([
     __metadata("design:type", String)
 ], CreateActivityDto.prototype, "description", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+    }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "club_type_id", void 0);
@@ -67,7 +96,10 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "long", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Hora de la actividad (HH:mm)', default: '09:00' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Hora de la actividad (HH:mm)',
+        default: '09:00',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
@@ -83,17 +115,21 @@ __decorate([
     __metadata("design:type", String)
 ], CreateActivityDto.prototype, "image", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)', default: 0 }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)',
+        default: 0,
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "platform", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Tipo de actividad (0=Regular, 1=Especial, 2=Camporee)', default: 0 }),
-    (0, class_validator_1.IsOptional)(),
+    (0, swagger_1.ApiProperty)({
+        description: 'ID del tipo de actividad (catálogo activity_types: 1=Regular, 2=Especial, 3=Camporee)',
+    }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], CreateActivityDto.prototype, "activity_type", void 0);
+], CreateActivityDto.prototype, "activity_type_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'Link de reunión virtual' }),
     (0, class_validator_1.IsOptional)(),
@@ -113,17 +149,41 @@ __decorate([
     __metadata("design:type", Array)
 ], CreateActivityDto.prototype, "classes", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'ID de la instancia de Aventureros' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Instancias destino de la actividad (permite compartir una actividad entre múltiples instancias del mismo club)',
+        type: [ActivityInstanceSelectionDto],
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMinSize)(1),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => ActivityInstanceSelectionDto),
+    __metadata("design:type", Array)
+], CreateActivityDto.prototype, "instances", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'ID de instancia de Aventureros (requerido cuando club_type_id corresponde a Aventureros)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "club_adv_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'ID de la instancia de Conquistadores' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'ID de instancia de Conquistadores (requerido cuando club_type_id corresponde a Conquistadores)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "club_pathf_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'ID de la instancia de Guías Mayores' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'ID de instancia de Guías Mayores (requerido cuando club_type_id corresponde a Guías Mayores)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateActivityDto.prototype, "club_mg_id", void 0);
@@ -136,12 +196,12 @@ class UpdateActivityDto {
     activity_place;
     image;
     platform;
-    activity_type;
+    activity_type_id;
     link_meet;
     active;
     classes;
     static _OPENAPI_METADATA_FACTORY() {
-        return { name: { required: false, type: () => String }, description: { required: false, type: () => String }, lat: { required: false, type: () => Number }, long: { required: false, type: () => Number }, activity_time: { required: false, type: () => String }, activity_place: { required: false, type: () => String }, image: { required: false, type: () => String }, platform: { required: false, type: () => Number }, activity_type: { required: false, type: () => Number }, link_meet: { required: false, type: () => String }, active: { required: false, type: () => Boolean }, classes: { required: false, type: () => [Number] } };
+        return { name: { required: false, type: () => String }, description: { required: false, type: () => String }, lat: { required: false, type: () => Number }, long: { required: false, type: () => Number }, activity_time: { required: false, type: () => String }, activity_place: { required: false, type: () => String }, image: { required: false, type: () => String }, platform: { required: false, type: () => Number }, activity_type_id: { required: false, type: () => Number }, link_meet: { required: false, type: () => String }, active: { required: false, type: () => Boolean }, classes: { required: false, type: () => [Number] } };
     }
 }
 exports.UpdateActivityDto = UpdateActivityDto;
@@ -198,7 +258,7 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], UpdateActivityDto.prototype, "activity_type", void 0);
+], UpdateActivityDto.prototype, "activity_type_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, class_validator_1.IsOptional)(),
@@ -232,9 +292,9 @@ __decorate([
 class ActivityFiltersDto {
     clubTypeId;
     active;
-    activityType;
+    activityTypeId;
     static _OPENAPI_METADATA_FACTORY() {
-        return { clubTypeId: { required: false, type: () => Number }, active: { required: false, type: () => Boolean }, activityType: { required: false, type: () => Number } };
+        return { clubTypeId: { required: false, type: () => Number }, active: { required: false, type: () => Boolean }, activityTypeId: { required: false, type: () => Number } };
     }
 }
 exports.ActivityFiltersDto = ActivityFiltersDto;
@@ -257,5 +317,5 @@ __decorate([
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], ActivityFiltersDto.prototype, "activityType", void 0);
+], ActivityFiltersDto.prototype, "activityTypeId", void 0);
 //# sourceMappingURL=activities.dto.js.map

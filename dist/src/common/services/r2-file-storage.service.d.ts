@@ -1,0 +1,32 @@
+import { ConfigService } from '@nestjs/config';
+import { FileStorageService, SignedUrlOptions, StorageBucketAlias, UploadFileOptions, UploadedFileResult } from './file-storage.service';
+export declare class R2FileStorageService implements FileStorageService {
+    private readonly configService;
+    private readonly logger;
+    private static readonly DEFAULT_SIGNED_URL_EXPIRATION_SECONDS;
+    private s3Client;
+    constructor(configService: ConfigService);
+    upload(bucketAlias: StorageBucketAlias, key: string, buffer: Buffer, options: UploadFileOptions): Promise<UploadedFileResult>;
+    deleteMany(bucketAlias: StorageBucketAlias, keys: string[]): Promise<void>;
+    extractKeyFromPublicUrl(bucketAlias: StorageBucketAlias, publicUrl: string): string | null;
+    getSignedDownloadUrl(bucketAlias: StorageBucketAlias, keyOrPublicUrl: string, options?: SignedUrlOptions): Promise<string>;
+    private buildPublicUrl;
+    private assertKeyDoesNotExist;
+    private isNotFoundError;
+    private getClient;
+    private getBucketConfig;
+    private getRequiredEnv;
+    private getOptionalEnv;
+    private normalizeBaseUrl;
+    private normalizeKey;
+    private toObjectKey;
+    private normalizeUrl;
+    private resolveSignedUrlExpiration;
+    private resolveObjectKey;
+    private parseUrl;
+    private extractPathFromUrl;
+    private isKnownR2UrlHost;
+    private hasKeyPrefix;
+    private toRelativeKey;
+    private looksLikeUrl;
+}

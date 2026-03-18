@@ -5,7 +5,6 @@ import {
   IsBoolean,
   IsNumber,
   IsArray,
-  IsDateString,
   Min,
   Max,
 } from 'class-validator';
@@ -22,7 +21,9 @@ export class CreateActivityDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)' })
+  @ApiProperty({
+    description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+  })
   @IsInt()
   club_type_id: number;
 
@@ -38,7 +39,10 @@ export class CreateActivityDto {
   @Max(180)
   long: number;
 
-  @ApiPropertyOptional({ description: 'Hora de la actividad (HH:mm)', default: '09:00' })
+  @ApiPropertyOptional({
+    description: 'Hora de la actividad (HH:mm)',
+    default: '09:00',
+  })
   @IsOptional()
   @IsString()
   activity_time?: string;
@@ -51,15 +55,20 @@ export class CreateActivityDto {
   @IsString()
   image: string;
 
-  @ApiPropertyOptional({ description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)', default: 0 })
+  @ApiPropertyOptional({
+    description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)',
+    default: 0,
+  })
   @IsOptional()
   @IsInt()
   platform?: number;
 
-  @ApiPropertyOptional({ description: 'Tipo de actividad (0=Regular, 1=Especial, 2=Camporee)', default: 0 })
-  @IsOptional()
+  @ApiProperty({
+    description:
+      'ID del tipo de actividad (catálogo activity_types: 1=Regular, 2=Especial, 3=Camporee)',
+  })
   @IsInt()
-  activity_type?: number;
+  activity_type_id: number;
 
   @ApiPropertyOptional({ description: 'Link de reunión virtual' })
   @IsOptional()
@@ -76,17 +85,12 @@ export class CreateActivityDto {
   @IsArray()
   classes?: number[];
 
-  @ApiProperty({ description: 'ID de la instancia de Aventureros' })
+  @ApiProperty({
+    description: 'ID de la sección del club (FK a club_sections)',
+  })
+  @Type(() => Number)
   @IsInt()
-  club_adv_id: number;
-
-  @ApiProperty({ description: 'ID de la instancia de Conquistadores' })
-  @IsInt()
-  club_pathf_id: number;
-
-  @ApiProperty({ description: 'ID de la instancia de Guías Mayores' })
-  @IsInt()
-  club_mg_id: number;
+  club_section_id: number;
 }
 
 export class UpdateActivityDto {
@@ -133,7 +137,7 @@ export class UpdateActivityDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
-  activity_type?: number;
+  activity_type_id?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -173,5 +177,5 @@ export class ActivityFiltersDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  activityType?: number;
+  activityTypeId?: number;
 }

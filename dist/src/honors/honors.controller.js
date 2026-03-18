@@ -16,9 +16,10 @@ exports.UserHonorsController = exports.HonorsController = void 0;
 const openapi = require("@nestjs/swagger");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const platform_express_1 = require("@nestjs/platform-express");
 const honors_service_1 = require("./honors.service");
 const dto_1 = require("./dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const guards_1 = require("../common/guards");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
 let HonorsController = class HonorsController {
     honorsService;
@@ -36,6 +37,13 @@ let HonorsController = class HonorsController {
     async getCategories() {
         return this.honorsService.getCategories();
     }
+    async getGroupedByCategory(categoryId, clubTypeId, skillLevel) {
+        return this.honorsService.getGroupedByCategory({
+            categoryId,
+            clubTypeId,
+            skillLevel,
+        });
+    }
     async findOne(honorId) {
         return this.honorsService.findOne(honorId);
     }
@@ -49,7 +57,12 @@ __decorate([
     }),
     (0, swagger_1.ApiQuery)({ name: 'categoryId', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'clubTypeId', required: false, type: Number }),
-    (0, swagger_1.ApiQuery)({ name: 'skillLevel', required: false, type: Number, description: '1=Básico, 2=Avanzado, 3=Máster' }),
+    (0, swagger_1.ApiQuery)({
+        name: 'skillLevel',
+        required: false,
+        type: Number,
+        description: '1=Básico, 2=Avanzado, 3=Máster',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista paginada de honores' }),
@@ -73,6 +86,29 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], HonorsController.prototype, "getCategories", null);
 __decorate([
+    (0, common_1.Get)('grouped-by-category'),
+    (0, swagger_1.ApiOperation)({ summary: 'Listar honores agrupados por categoría' }),
+    (0, swagger_1.ApiQuery)({ name: 'categoryId', required: false, type: Number }),
+    (0, swagger_1.ApiQuery)({ name: 'clubTypeId', required: false, type: Number }),
+    (0, swagger_1.ApiQuery)({
+        name: 'skillLevel',
+        required: false,
+        type: Number,
+        description: '1=Básico, 2=Avanzado, 3=Máster',
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Lista de categorías con sus honores asociados',
+    }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)('categoryId', new common_1.ParseIntPipe({ optional: true }))),
+    __param(1, (0, common_1.Query)('clubTypeId', new common_1.ParseIntPipe({ optional: true }))),
+    __param(2, (0, common_1.Query)('skillLevel', new common_1.ParseIntPipe({ optional: true }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Number, Number]),
+    __metadata("design:returntype", Promise)
+], HonorsController.prototype, "getGroupedByCategory", null);
+__decorate([
     (0, common_1.Get)(':honorId'),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener honor por ID' }),
     (0, swagger_1.ApiParam)({ name: 'honorId', type: Number }),
@@ -87,6 +123,7 @@ __decorate([
 exports.HonorsController = HonorsController = __decorate([
     (0, swagger_1.ApiTags)('honors'),
     (0, common_1.Controller)('honors'),
+    (0, common_1.UseGuards)(guards_1.OptionalJwtAuthGuard),
     __metadata("design:paramtypes", [honors_service_1.HonorsService])
 ], HonorsController);
 let UserHonorsController = class UserHonorsController {
@@ -100,6 +137,15 @@ let UserHonorsController = class UserHonorsController {
     }
     async getStats(userId) {
         return this.honorsService.getUserHonorStats(userId);
+    }
+    async createUserHonor(userId, dto) {
+        return this.honorsService.createUserHonor(userId, dto);
+    }
+    async createUserHonorsBulk(userId, dto) {
+        return this.honorsService.createUserHonorsBulk(userId, dto);
+    }
+    async uploadHonorFiles(userId, honorId, files) {
+        return this.honorsService.uploadUserHonorFiles(userId, honorId, files);
     }
     async startHonor(userId, honorId, dto) {
         return this.honorsService.startHonor(userId, honorId, dto);
@@ -139,6 +185,78 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UserHonorsController.prototype, "getStats", null);
+__decorate([
+    (0, common_1.Post)(),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Registrar honor con datos iniciales',
+        description: 'Registra (o reactiva) un honor del usuario permitiendo enviar evidencias en el alta',
+    }),
+    (0, swagger_1.ApiParam)({ name: 'userId', type: String }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Honor registrado para el usuario' }),
+    openapi.ApiResponse({ status: 201, type: Object }),
+    __param(0, (0, common_1.Param)('userId', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, dto_1.CreateUserHonorDto]),
+    __metadata("design:returntype", Promise)
+], UserHonorsController.prototype, "createUserHonor", null);
+__decorate([
+    (0, common_1.Post)('bulk'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Registrar honores de usuario de forma masiva',
+        description: 'Registra o reactiva múltiples honores en una sola petición para acelerar carga inicial',
+    }),
+    (0, swagger_1.ApiParam)({ name: 'userId', type: String }),
+    (0, swagger_1.ApiResponse)({
+        status: 201,
+        description: 'Honores registrados de forma masiva',
+    }),
+    openapi.ApiResponse({ status: 201, type: [Object] }),
+    __param(0, (0, common_1.Param)('userId', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, dto_1.BulkCreateUserHonorsDto]),
+    __metadata("design:returntype", Promise)
+], UserHonorsController.prototype, "createUserHonorsBulk", null);
+__decorate([
+    (0, common_1.Post)(':honorId/files'),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileFieldsInterceptor)([
+        { name: 'certificate', maxCount: 1 },
+        { name: 'document', maxCount: 1 },
+        { name: 'images', maxCount: 10 },
+    ])),
+    (0, swagger_1.ApiConsumes)('multipart/form-data'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Subir evidencias del honor',
+        description: 'Sube certificado, documento e imágenes a R2 (users_honors/users_honors_cert) y actualiza users_honors',
+    }),
+    (0, swagger_1.ApiParam)({ name: 'userId', type: String }),
+    (0, swagger_1.ApiParam)({ name: 'honorId', type: Number }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                certificate: { type: 'string', format: 'binary' },
+                document: { type: 'string', format: 'binary' },
+                images: {
+                    type: 'array',
+                    items: { type: 'string', format: 'binary' },
+                },
+            },
+        },
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: 201,
+        description: 'Evidencias subidas y asociadas al honor del usuario',
+    }),
+    openapi.ApiResponse({ status: 201 }),
+    __param(0, (0, common_1.Param)('userId', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('honorId', common_1.ParseIntPipe)),
+    __param(2, (0, common_1.UploadedFiles)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Number, Object]),
+    __metadata("design:returntype", Promise)
+], UserHonorsController.prototype, "uploadHonorFiles", null);
 __decorate([
     (0, common_1.Post)(':honorId'),
     (0, swagger_1.ApiOperation)({
@@ -193,7 +311,7 @@ __decorate([
 exports.UserHonorsController = UserHonorsController = __decorate([
     (0, swagger_1.ApiTags)('user-honors'),
     (0, common_1.Controller)('users/:userId/honors'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.OwnerOrAdminGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [honors_service_1.HonorsService])
 ], UserHonorsController);

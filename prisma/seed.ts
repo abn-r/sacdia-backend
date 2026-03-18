@@ -68,6 +68,21 @@ async function main() {
                 active: true,
             },
             {
+                role_name: 'assistant_admin',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'coordinator',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
+                role_name: 'pastor',
+                role_category: 'GLOBAL',
+                active: true,
+            },
+            {
                 role_name: 'user',
                 role_category: 'GLOBAL',
                 active: true,
@@ -86,22 +101,22 @@ async function main() {
                 active: true,
             },
             {
-                role_name: 'subdirector',
+                role_name: 'deputy_director',
                 role_category: 'CLUB',
                 active: true,
             },
             {
-                role_name: 'secretario',
+                role_name: 'secretary',
                 role_category: 'CLUB',
                 active: true,
             },
             {
-                role_name: 'tesorero',
+                role_name: 'treasurer',
                 role_category: 'CLUB',
                 active: true,
             },
             {
-                role_name: 'consejero',
+                role_name: 'counselor',
                 role_category: 'CLUB',
                 active: true,
             },

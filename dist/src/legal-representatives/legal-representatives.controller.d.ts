@@ -11,20 +11,25 @@ export declare class LegalRepresentativesController {
                 name: string;
             } | null;
         } & {
-            id: string;
-            phone: string | null;
-            created_at: Date;
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            user_id: string;
+            created_at: Date;
             modified_at: Date;
-            representative_user_id: string | null;
+            id: string;
+            phone: string | null;
             relationship_type_id: string | null;
+            representative_user_id: string | null;
         };
         message: string;
     }>;
     findOne(userId: string): Promise<{
+        status: string;
+        data: null;
+        hasLegalRepresentative: boolean;
+        message: string;
+    } | {
         status: string;
         data: {
             relationship_types: {
@@ -32,24 +37,26 @@ export declare class LegalRepresentativesController {
                 relationship_type_id: string;
             } | null;
             representative_user: {
+                user_id: string;
+                email: string;
                 name: string | null;
                 paternal_last_name: string | null;
                 maternal_last_name: string | null;
-                email: string;
-                user_id: string;
             } | null;
         } & {
-            id: string;
-            phone: string | null;
-            created_at: Date;
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            user_id: string;
+            created_at: Date;
             modified_at: Date;
-            representative_user_id: string | null;
+            id: string;
+            phone: string | null;
             relationship_type_id: string | null;
+            representative_user_id: string | null;
         };
+        hasLegalRepresentative: boolean;
+        message?: undefined;
     }>;
     update(userId: string, updateDto: UpdateLegalRepresentativeDto): Promise<{
         status: string;
@@ -58,16 +65,16 @@ export declare class LegalRepresentativesController {
                 name: string;
             } | null;
         } & {
-            id: string;
-            phone: string | null;
-            created_at: Date;
+            user_id: string;
             name: string | null;
             paternal_last_name: string | null;
             maternal_last_name: string | null;
-            user_id: string;
+            created_at: Date;
             modified_at: Date;
-            representative_user_id: string | null;
+            id: string;
+            phone: string | null;
             relationship_type_id: string | null;
+            representative_user_id: string | null;
         };
         message: string;
     }>;

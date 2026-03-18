@@ -18,8 +18,8 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const clubs_service_1 = require("./clubs.service");
 const dto_1 = require("./dto");
-const guards_1 = require("../common/guards");
 const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
 let ClubsController = class ClubsController {
     clubsService;
@@ -66,13 +66,24 @@ let ClubsController = class ClubsController {
     async getMembers(instanceId, type) {
         return this.clubsService.getMembers(instanceId, type);
     }
-    async assignRole(dto) {
-        return this.clubsService.assignRole(dto);
+    async assignRole(type, instanceId, dto) {
+        if (dto.instance_type && dto.instance_type !== type) {
+            throw new common_1.BadRequestException('instance_type in body must match route type');
+        }
+        if (dto.instance_id && dto.instance_id !== instanceId) {
+            throw new common_1.BadRequestException('instance_id in body must match route instanceId');
+        }
+        return this.clubsService.assignRole({
+            ...dto,
+            instance_type: type,
+            instance_id: instanceId,
+        });
     }
 };
 exports.ClubsController = ClubsController;
 __decorate([
     (0, common_1.Get)(),
+    (0, decorators_1.RequirePermissions)('clubs:read'),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar clubs',
         description: 'Obtiene la lista de clubs con filtros opcionales y paginación',
@@ -81,8 +92,18 @@ __decorate([
     (0, swagger_1.ApiQuery)({ name: 'districtId', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'churchId', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'active', required: false, type: Boolean }),
-    (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, description: 'Número de página (1-indexed)' }),
-    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, description: 'Elementos por página (max 100)' }),
+    (0, swagger_1.ApiQuery)({
+        name: 'page',
+        required: false,
+        type: Number,
+        description: 'Número de página (1-indexed)',
+    }),
+    (0, swagger_1.ApiQuery)({
+        name: 'limit',
+        required: false,
+        type: Number,
+        description: 'Elementos por página (max 100)',
+    }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista paginada de clubs' }),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)('localFieldId', new common_1.ParseIntPipe({ optional: true }))),
@@ -97,6 +118,8 @@ __decorate([
 ], ClubsController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)(':clubId'),
+    (0, decorators_1.RequirePermissions)('clubs:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener club por ID' }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Club encontrado' }),
@@ -109,6 +132,7 @@ __decorate([
 ], ClubsController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Post)(),
+    (0, decorators_1.RequirePermissions)('clubs:create'),
     (0, swagger_1.ApiOperation)({ summary: 'Crear nuevo club' }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Club creado' }),
     openapi.ApiResponse({ status: 201 }),
@@ -120,8 +144,12 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':clubId'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector'),
-    (0, swagger_1.ApiOperation)({ summary: 'Actualizar club (requiere rol director o subdirector)' }),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
+    (0, decorators_1.RequirePermissions)('clubs:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Actualizar club (requiere rol director o deputy director)',
+    }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Club actualizado' }),
     (0, swagger_1.ApiResponse)({ status: 403, description: 'Permisos insuficientes' }),
@@ -136,6 +164,8 @@ __decorate([
     (0, common_1.Delete)(':clubId'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
     (0, decorators_1.ClubRoles)('director'),
+    (0, decorators_1.RequirePermissions)('clubs:delete'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Desactivar club (requiere rol director)' }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Club desactivado' }),
@@ -148,6 +178,8 @@ __decorate([
 ], ClubsController.prototype, "remove", null);
 __decorate([
     (0, common_1.Get)(':clubId/instances'),
+    (0, decorators_1.RequirePermissions)('club_instances:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Obtener instancias del club',
         description: 'Lista todas las instancias (Aventureros, Conquistadores, GM)',
@@ -162,6 +194,8 @@ __decorate([
 ], ClubsController.prototype, "getInstances", null);
 __decorate([
     (0, common_1.Get)(':clubId/instances/:type'),
+    (0, decorators_1.RequirePermissions)('club_instances:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener instancia por tipo' }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiParam)({
@@ -180,9 +214,11 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':clubId/instances'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director'),
+    (0, decorators_1.RequirePermissions)('club_instances:create'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
-        summary: 'Crear instancia de club (requiere director o subdirector)',
+        summary: 'Crear instancia de club (requiere director o deputy director)',
         description: 'Crea una nueva instancia (Aventureros, Conquistadores, Guías Mayores)',
     }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
@@ -198,8 +234,12 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':clubId/instances/:type/:instanceId'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'secretary'),
-    (0, swagger_1.ApiOperation)({ summary: 'Actualizar instancia (requiere director, subdirector o secretario)' }),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'secretary'),
+    (0, decorators_1.RequirePermissions)('club_instances:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Actualizar instancia (requiere director, deputy director o secretary)',
+    }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiParam)({ name: 'type', enum: dto_1.ClubInstanceType }),
     (0, swagger_1.ApiParam)({ name: 'instanceId', type: Number }),
@@ -215,6 +255,8 @@ __decorate([
 ], ClubsController.prototype, "updateInstance", null);
 __decorate([
     (0, common_1.Get)(':clubId/instances/:type/:instanceId/members'),
+    (0, decorators_1.RequirePermissions)('club_roles:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar miembros de la instancia',
         description: 'Retorna todos los miembros asignados a la instancia con sus roles',
@@ -223,7 +265,7 @@ __decorate([
     (0, swagger_1.ApiParam)({ name: 'type', enum: dto_1.ClubInstanceType }),
     (0, swagger_1.ApiParam)({ name: 'instanceId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista de miembros' }),
-    openapi.ApiResponse({ status: 200, type: [Object] }),
+    openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('instanceId', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Param)('type')),
     __metadata("design:type", Function),
@@ -232,10 +274,10 @@ __decorate([
 ], ClubsController.prototype, "getMembers", null);
 __decorate([
     (0, common_1.Post)(':clubId/instances/:type/:instanceId/roles'),
-    (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'secretary'),
+    (0, decorators_1.RequirePermissions)('club_roles:assign'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
-        summary: 'Asignar rol a un miembro (requiere director, subdirector o secretario)',
+        summary: 'Asignar rol a un miembro (requiere director, deputy director o secretary)',
         description: 'Asigna un rol específico a un usuario en la instancia',
     }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
@@ -244,15 +286,17 @@ __decorate([
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Rol asignado' }),
     (0, swagger_1.ApiResponse)({ status: 403, description: 'Permisos insuficientes' }),
     openapi.ApiResponse({ status: 201, type: Object }),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_1.Param)('type')),
+    __param(1, (0, common_1.Param)('instanceId', common_1.ParseIntPipe)),
+    __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dto_1.AssignRoleDto]),
+    __metadata("design:paramtypes", [String, Number, dto_1.AssignRoleDto]),
     __metadata("design:returntype", Promise)
 ], ClubsController.prototype, "assignRole", null);
 exports.ClubsController = ClubsController = __decorate([
     (0, swagger_1.ApiTags)('clubs'),
     (0, common_1.Controller)('clubs'),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [clubs_service_1.ClubsService])
 ], ClubsController);
@@ -271,6 +315,8 @@ let ClubRolesController = class ClubRolesController {
 exports.ClubRolesController = ClubRolesController;
 __decorate([
     (0, common_1.Patch)(':assignmentId'),
+    (0, decorators_1.RequirePermissions)('club_roles:assign'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club_assignment', idParam: 'assignmentId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar asignación de rol' }),
     (0, swagger_1.ApiParam)({ name: 'assignmentId', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Asignación actualizada' }),
@@ -283,6 +329,8 @@ __decorate([
 ], ClubRolesController.prototype, "updateAssignment", null);
 __decorate([
     (0, common_1.Delete)(':assignmentId'),
+    (0, decorators_1.RequirePermissions)('club_roles:revoke'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club_assignment', idParam: 'assignmentId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Remover rol de miembro' }),
     (0, swagger_1.ApiParam)({ name: 'assignmentId', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Rol removido' }),
@@ -295,7 +343,7 @@ __decorate([
 exports.ClubRolesController = ClubRolesController = __decorate([
     (0, swagger_1.ApiTags)('club-roles'),
     (0, common_1.Controller)('club-roles'),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [clubs_service_1.ClubsService])
 ], ClubRolesController);

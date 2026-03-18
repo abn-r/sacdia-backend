@@ -15,11 +15,11 @@ const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 class CreateEmergencyContactDto {
     name;
-    relationship_type;
+    relationship_type_id;
     phone;
     primary;
     static _OPENAPI_METADATA_FACTORY() {
-        return { name: { required: true, type: () => String, maxLength: 100 }, relationship_type: { required: true, type: () => Number }, phone: { required: true, type: () => String, maxLength: 20 }, primary: { required: false, type: () => Boolean } };
+        return { name: { required: true, type: () => String, maxLength: 100 }, relationship_type_id: { required: true, type: () => String, format: "uuid" }, phone: { required: true, type: () => String, maxLength: 20 }, primary: { required: false, type: () => Boolean } };
     }
 }
 exports.CreateEmergencyContactDto = CreateEmergencyContactDto;
@@ -31,12 +31,12 @@ __decorate([
 ], CreateEmergencyContactDto.prototype, "name", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
-        example: 1,
-        description: 'ID del tipo de relación (actualmente Int, pendiente migración a UUID)'
+        example: '11111111-1111-1111-1111-111111111111',
+        description: 'UUID del tipo de relación',
     }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateEmergencyContactDto.prototype, "relationship_type", void 0);
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], CreateEmergencyContactDto.prototype, "relationship_type_id", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: '+52 55 1234 5678' }),
     (0, class_validator_1.IsString)(),
@@ -44,7 +44,10 @@ __decorate([
     __metadata("design:type", String)
 ], CreateEmergencyContactDto.prototype, "phone", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: true, description: 'Si es el contacto principal' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        example: true,
+        description: 'Si es el contacto principal',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)

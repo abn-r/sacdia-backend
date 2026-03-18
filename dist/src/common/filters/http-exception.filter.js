@@ -16,16 +16,26 @@ let HttpExceptionFilter = class HttpExceptionFilter {
         const request = ctx.getRequest();
         const status = exception.getStatus();
         const exceptionResponse = exception.getResponse();
-        this.logger.error(JSON.stringify({
+        const logPayload = {
             timestamp: new Date().toISOString(),
             method: request.method,
             url: request.url,
             status,
             message: exception.message,
-            stack: process.env.NODE_ENV === 'development'
+            validationDetails: exceptionResponse,
+            requestBody: process.env.NODE_ENV === 'development'
+                ? this.sanitizeRequestBody(request.url, request.body)
+                : undefined,
+            stack: process.env.NODE_ENV === 'development' && status !== common_1.HttpStatus.UNAUTHORIZED
                 ? exception.stack
                 : undefined,
-        }));
+        };
+        if (status === common_1.HttpStatus.UNAUTHORIZED) {
+            this.logger.warn(logPayload);
+        }
+        else {
+            this.logger.error(logPayload);
+        }
         if (process.env.NODE_ENV === 'production') {
             response.status(status).json({
                 status: 'error',
@@ -59,6 +69,39 @@ let HttpExceptionFilter = class HttpExceptionFilter {
             return Array.isArray(message) ? message[0] : message;
         }
         return 'An error occurred';
+    }
+    sanitizeRequestBody(url, body) {
+        if (!body || typeof body !== 'object')
+            return body;
+        if (!url.includes('/auth/login'))
+            return body;
+        return this.maskEmailInObject(body);
+    }
+    maskEmailInObject(value) {
+        if (Array.isArray(value)) {
+            return value.map((item) => this.maskEmailInObject(item));
+        }
+        if (!value || typeof value !== 'object') {
+            return value;
+        }
+        const source = value;
+        const masked = {};
+        for (const [key, raw] of Object.entries(source)) {
+            if (key.toLowerCase() === 'email' && typeof raw === 'string') {
+                masked[key] = this.maskEmail(raw);
+            }
+            else {
+                masked[key] = this.maskEmailInObject(raw);
+            }
+        }
+        return masked;
+    }
+    maskEmail(email) {
+        const [localPart, domain] = email.split('@');
+        if (!localPart || !domain)
+            return '***';
+        const visibleLocal = localPart.length <= 2 ? localPart[0] ?? '*' : localPart.slice(0, 2);
+        return `${visibleLocal}***@${domain}`;
     }
 };
 exports.HttpExceptionFilter = HttpExceptionFilter;

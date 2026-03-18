@@ -1,28 +1,39 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../src/common/guards';
+import {
+  createBearerToken,
+  createTestJwtService,
+} from './helpers/rbac-test-helpers';
 
 describe('Clubs E2E Tests', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let jwtService: JwtService;
+  const TEST_USER_ID = 'clubs-e2e-user';
 
-  const mockJwtAuthGuard = {
+  const mockPermissionsGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };
 
   beforeAll(async () => {
+    jwtService = createTestJwtService();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideGuard(JwtAuthGuard)
-      .useValue(mockJwtAuthGuard)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
 
     prisma = app.get(PrismaService);
@@ -33,6 +44,14 @@ describe('Clubs E2E Tests', () => {
     await app.close();
   });
 
+  const authHeaders = () => ({
+    Authorization: `Bearer ${createBearerToken(
+      jwtService,
+      TEST_USER_ID,
+      'clubs@test.com',
+    )}`,
+  });
+
   describe('/api/v1/clubs (GET)', () => {
     it('should return paginated list of clubs', async () => {
       jest.spyOn(prisma.clubs, 'findMany').mockResolvedValue([]);
@@ -40,6 +59,7 @@ describe('Clubs E2E Tests', () => {
 
       const response = await request(app.getHttpServer())
         .get('/api/v1/clubs')
+        .set(authHeaders())
         .expect(200);
 
       expect(response.body).toHaveProperty('data');
@@ -59,9 +79,10 @@ describe('Clubs E2E Tests', () => {
       jest.spyOn(prisma.clubs, 'create').mockResolvedValue(mockClub as any);
       // Spy on nested instance creation if necessary for service logic
       // Assuming service simple create:
-      
+
       return request(app.getHttpServer())
         .post('/api/v1/clubs')
+        .set(authHeaders())
         .send({
           name: 'Test Club',
           local_field_id: 1,

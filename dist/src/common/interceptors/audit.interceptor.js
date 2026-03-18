@@ -20,7 +20,7 @@ let AuditInterceptor = class AuditInterceptor {
         return next.handle().pipe((0, operators_1.tap)({
             next: () => {
                 const duration = Date.now() - startTime;
-                this.logger.log(JSON.stringify({
+                this.logger.log({
                     timestamp: new Date().toISOString(),
                     userId: user?.user_id || 'anonymous',
                     method,
@@ -29,11 +29,11 @@ let AuditInterceptor = class AuditInterceptor {
                     userAgent: userAgent.substring(0, 100),
                     duration: `${duration}ms`,
                     status: 'success',
-                }));
+                });
             },
             error: (error) => {
                 const duration = Date.now() - startTime;
-                this.logger.warn(JSON.stringify({
+                this.logger.warn({
                     timestamp: new Date().toISOString(),
                     userId: user?.user_id || 'anonymous',
                     method,
@@ -43,7 +43,7 @@ let AuditInterceptor = class AuditInterceptor {
                     duration: `${duration}ms`,
                     status: 'error',
                     errorMessage: error.message,
-                }));
+                });
             },
         }));
     }

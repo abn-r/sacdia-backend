@@ -19,7 +19,8 @@ const swagger_1 = require("@nestjs/swagger");
 const legal_representatives_service_1 = require("./legal-representatives.service");
 const create_legal_representative_dto_1 = require("./dto/create-legal-representative.dto");
 const update_legal_representative_dto_1 = require("./dto/update-legal-representative.dto");
-const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const decorators_1 = require("../common/decorators");
+const guards_1 = require("../common/guards");
 let LegalRepresentativesController = class LegalRepresentativesController {
     legalRepresentativesService;
     constructor(legalRepresentativesService) {
@@ -41,6 +42,7 @@ let LegalRepresentativesController = class LegalRepresentativesController {
 exports.LegalRepresentativesController = LegalRepresentativesController;
 __decorate([
     (0, common_1.Post)(),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'update'),
     (0, swagger_1.ApiOperation)({
         summary: 'Registrar representante legal (solo para menores de 18)',
     }),
@@ -58,10 +60,14 @@ __decorate([
 ], LegalRepresentativesController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'read'),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener representante legal del usuario' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Representante encontrado' }),
-    (0, swagger_1.ApiResponse)({ status: 404, description: 'Representante no encontrado' }),
-    openapi.ApiResponse({ status: 200 }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Respuesta exitosa. Retorna representante o data=null cuando no existe',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Usuario no encontrado' }),
+    openapi.ApiResponse({ status: 200, type: Object }),
     __param(0, (0, common_1.Param)('userId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -69,6 +75,7 @@ __decorate([
 ], LegalRepresentativesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)(),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'update'),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar representante legal' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Representante actualizado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Representante no encontrado' }),
@@ -81,6 +88,7 @@ __decorate([
 ], LegalRepresentativesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(),
+    (0, decorators_1.SensitiveUserSubresource)('legal_representative', 'update'),
     (0, swagger_1.ApiOperation)({ summary: 'Eliminar representante legal' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Representante eliminado' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Representante no encontrado' }),
@@ -93,7 +101,7 @@ __decorate([
 exports.LegalRepresentativesController = LegalRepresentativesController = __decorate([
     (0, swagger_1.ApiTags)('legal-representatives'),
     (0, common_1.Controller)('users/:userId/legal-representative'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [legal_representatives_service_1.LegalRepresentativesService])
 ], LegalRepresentativesController);

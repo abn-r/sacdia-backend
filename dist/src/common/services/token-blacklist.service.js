@@ -35,7 +35,8 @@ let TokenBlacklistService = TokenBlacklistService_1 = class TokenBlacklistServic
     }
     async blacklistAllUserTokens(userId, expiresInSeconds = 86400) {
         const key = `${this.BLACKLIST_PREFIX}user:${userId}:all`;
-        await this.cacheManager.set(key, Date.now().toString(), expiresInSeconds * 1000);
+        const timestampSeconds = Math.floor(Date.now() / 1000);
+        await this.cacheManager.set(key, timestampSeconds.toString(), expiresInSeconds * 1000);
         this.logger.warn(`All tokens blacklisted for user ${userId}`);
     }
     async isUserBlacklisted(userId, tokenIssuedAt) {
@@ -43,7 +44,11 @@ let TokenBlacklistService = TokenBlacklistService_1 = class TokenBlacklistServic
         const blacklistTime = await this.cacheManager.get(key);
         if (!blacklistTime)
             return false;
-        return tokenIssuedAt < parseInt(blacklistTime, 10);
+        const parsed = parseInt(blacklistTime, 10);
+        if (Number.isNaN(parsed))
+            return false;
+        const normalizedSeconds = this.normalizeEpochSeconds(parsed);
+        return tokenIssuedAt < normalizedSeconds;
     }
     getBlacklistKey(token) {
         const hash = this.hashToken(token);
@@ -51,6 +56,11 @@ let TokenBlacklistService = TokenBlacklistService_1 = class TokenBlacklistServic
     }
     hashToken(token) {
         return token.slice(-32);
+    }
+    normalizeEpochSeconds(timestamp) {
+        return timestamp > 1_000_000_000_000
+            ? Math.floor(timestamp / 1000)
+            : timestamp;
     }
 };
 exports.TokenBlacklistService = TokenBlacklistService;

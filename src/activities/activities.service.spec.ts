@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ActivitiesService } from './activities.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
 
 describe('ActivitiesService', () => {
   let service: ActivitiesService;
@@ -17,9 +21,18 @@ describe('ActivitiesService', () => {
     clubs: {
       findUnique: jest.fn(),
     },
+    club_sections: {
+      findUnique: jest.fn(),
+    },
     users: {
       findMany: jest.fn(),
     },
+  };
+
+  const mockFileStorageService = {
+    getSignedDownloadUrl: jest.fn(
+      async (_bucket: StorageBucketAlias, value: string) => value,
+    ),
   };
 
   beforeEach(async () => {
@@ -27,6 +40,7 @@ describe('ActivitiesService', () => {
       providers: [
         ActivitiesService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();
 
@@ -45,9 +59,10 @@ describe('ActivitiesService', () => {
     it('should return paginated activities for a club', async () => {
       const mockClub = {
         club_id: 1,
-        club_adventurers: [{ club_adv_id: 1 }],
-        club_pathfinders: [{ club_pathf_id: 1 }],
-        club_master_guild: [],
+        club_sections: [
+          { club_section_id: 1, club_type_id: 1 },
+          { club_section_id: 2, club_type_id: 2 },
+        ],
       };
       const mockActivities = [
         { activity_id: 1, name: 'Campamento', active: true },
@@ -59,7 +74,7 @@ describe('ActivitiesService', () => {
 
       const result = await service.findByClub(1);
 
-      expect(result.data).toEqual(mockActivities);
+      expect(result.data).toEqual([{ ...mockActivities[0], instances: [] }]);
       expect(result.meta.total).toBe(1);
     });
 
@@ -77,7 +92,8 @@ describe('ActivitiesService', () => {
 
       const result = await service.findOne(1);
 
-      expect(result).toEqual(mockActivity);
+      const { activity_instances: _ignored, ...rest } = mockActivity as any;
+      expect(result).toEqual({ ...rest, instances: [] });
     });
 
     it('should throw NotFoundException when not found', async () => {
@@ -88,7 +104,50 @@ describe('ActivitiesService', () => {
   });
 
   describe('create', () => {
-    it('should create an activity', async () => {
+    it('should create an activity with a club_section_id', async () => {
+      const createDto = {
+        name: 'Campamento',
+        club_type_id: 1,
+        lat: 19.4326,
+        long: -99.1332,
+        activity_place: 'Parque Nacional',
+        image: 'https://example.com/image.jpg',
+        activity_type_id: 1,
+        club_section_id: 10,
+      };
+
+      const mockActivity = {
+        activity_id: 1,
+        ...createDto,
+        activity_instances: [],
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 1,
+        club_type_id: 1,
+      });
+      mockPrismaService.activities.create.mockResolvedValue(mockActivity);
+
+      const result = await service.create(1, createDto, 'user-123');
+
+      expect(mockPrismaService.activities.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            club_section_id: 10,
+            activity_instances: {
+              create: [
+                expect.objectContaining({ club_section_id: 10 }),
+              ],
+            },
+          }),
+        }),
+      );
+      const { activity_instances: _ignored, ...rest } = mockActivity as any;
+      expect(result).toEqual({ ...rest, instances: [] });
+    });
+
+    it('should throw when no club_section_id is provided', async () => {
       const createDto = {
         name: 'Campamento',
         club_type_id: 2,
@@ -96,17 +155,38 @@ describe('ActivitiesService', () => {
         long: -99.1332,
         activity_place: 'Parque Nacional',
         image: 'https://example.com/image.jpg',
-        club_adv_id: 1,
-        club_pathf_id: 1,
-        club_mg_id: 1,
+        activity_type_id: 1,
       };
 
-      const mockActivity = { activity_id: 1, ...createDto };
-      mockPrismaService.activities.create.mockResolvedValue(mockActivity);
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
 
-      const result = await service.create(createDto, 'user-123');
+      await expect(
+        service.create(1, createDto as any, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
 
-      expect(result).toEqual(mockActivity);
+    it('should throw when section does not belong to club', async () => {
+      const createDto = {
+        name: 'Campamento',
+        club_type_id: 2,
+        lat: 19.4326,
+        long: -99.1332,
+        activity_place: 'Parque Nacional',
+        image: 'https://example.com/image.jpg',
+        activity_type_id: 1,
+        club_section_id: 999,
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 2,
+        club_type_id: 2,
+      });
+
+      await expect(
+        service.create(1, createDto as any, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

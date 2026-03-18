@@ -16,13 +16,13 @@ let AllExceptionsFilter = class AllExceptionsFilter {
         const request = ctx.getRequest();
         const errorMessage = exception instanceof Error ? exception.message : 'Unknown error';
         const errorStack = exception instanceof Error ? exception.stack : undefined;
-        this.logger.error(JSON.stringify({
+        this.logger.error({
             timestamp: new Date().toISOString(),
             method: request.method,
             url: request.url,
             message: errorMessage,
             stack: process.env.NODE_ENV === 'development' ? errorStack : undefined,
-        }));
+        });
         response.status(common_1.HttpStatus.INTERNAL_SERVER_ERROR).json({
             status: 'error',
             statusCode: common_1.HttpStatus.INTERNAL_SERVER_ERROR,

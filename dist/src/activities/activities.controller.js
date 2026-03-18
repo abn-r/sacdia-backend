@@ -26,7 +26,7 @@ let ActivitiesController = class ActivitiesController {
     constructor(activitiesService) {
         this.activitiesService = activitiesService;
     }
-    async findByClub(clubId, clubTypeId, active, activityType, page, limit) {
+    async findByClub(clubId, clubTypeId, active, activityTypeId, page, limit) {
         const pagination = new pagination_dto_1.PaginationDto();
         if (page)
             pagination.page = page;
@@ -35,11 +35,11 @@ let ActivitiesController = class ActivitiesController {
         return this.activitiesService.findByClub(clubId, {
             clubTypeId,
             active: active === 'true' ? true : active === 'false' ? false : undefined,
-            activityType,
+            activityTypeId,
         }, pagination);
     }
     async create(clubId, dto, req) {
-        return this.activitiesService.create(dto, req.user.sub);
+        return this.activitiesService.create(clubId, dto, req.user.sub);
     }
     async findOne(activityId) {
         return this.activitiesService.findOne(activityId);
@@ -60,6 +60,8 @@ let ActivitiesController = class ActivitiesController {
 exports.ActivitiesController = ActivitiesController;
 __decorate([
     (0, common_1.Get)('clubs/:clubId/activities'),
+    (0, decorators_1.RequirePermissions)('activities:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar actividades del club',
         description: 'Obtiene todas las actividades de las instancias del club',
@@ -67,7 +69,7 @@ __decorate([
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'clubTypeId', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'active', required: false, type: Boolean }),
-    (0, swagger_1.ApiQuery)({ name: 'activityType', required: false, type: Number }),
+    (0, swagger_1.ApiQuery)({ name: 'activityTypeId', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Lista paginada de actividades' }),
@@ -75,7 +77,7 @@ __decorate([
     __param(0, (0, common_1.Param)('clubId', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Query)('clubTypeId', new common_1.ParseIntPipe({ optional: true }))),
     __param(2, (0, common_1.Query)('active')),
-    __param(3, (0, common_1.Query)('activityType', new common_1.ParseIntPipe({ optional: true }))),
+    __param(3, (0, common_1.Query)('activityTypeId', new common_1.ParseIntPipe({ optional: true }))),
     __param(4, (0, common_1.Query)('page', new common_1.ParseIntPipe({ optional: true }))),
     __param(5, (0, common_1.Query)('limit', new common_1.ParseIntPipe({ optional: true }))),
     __metadata("design:type", Function),
@@ -85,13 +87,19 @@ __decorate([
 __decorate([
     (0, common_1.Post)('clubs/:clubId/activities'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'secretary', 'counselor'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'secretary', 'counselor'),
+    (0, decorators_1.RequirePermissions)('activities:create'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Crear actividad',
-        description: 'Crea una nueva actividad para el club (requiere rol de liderazgo)',
+        description: 'Crea una nueva actividad para el club (requiere rol de liderazgo). Soporta múltiples instancias del mismo club mediante instances[]',
     }),
     (0, swagger_1.ApiParam)({ name: 'clubId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Actividad creada' }),
+    (0, swagger_1.ApiResponse)({
+        status: 400,
+        description: 'Payload inválido para el tipo/instancia de club',
+    }),
     (0, swagger_1.ApiResponse)({ status: 403, description: 'Permisos insuficientes' }),
     openapi.ApiResponse({ status: 201, type: Object }),
     __param(0, (0, common_1.Param)('clubId', common_1.ParseIntPipe)),
@@ -103,6 +111,8 @@ __decorate([
 ], ActivitiesController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)('activities/:activityId'),
+    (0, decorators_1.RequirePermissions)('activities:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener actividad por ID' }),
     (0, swagger_1.ApiParam)({ name: 'activityId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Actividad encontrada' }),
@@ -115,6 +125,8 @@ __decorate([
 ], ActivitiesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)('activities/:activityId'),
+    (0, decorators_1.RequirePermissions)('activities:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar actividad' }),
     (0, swagger_1.ApiParam)({ name: 'activityId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Actividad actualizada' }),
@@ -127,6 +139,8 @@ __decorate([
 ], ActivitiesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)('activities/:activityId'),
+    (0, decorators_1.RequirePermissions)('activities:delete'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Desactivar actividad' }),
     (0, swagger_1.ApiParam)({ name: 'activityId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Actividad desactivada' }),
@@ -138,6 +152,8 @@ __decorate([
 ], ActivitiesController.prototype, "remove", null);
 __decorate([
     (0, common_1.Post)('activities/:activityId/attendance'),
+    (0, decorators_1.RequirePermissions)('attendance:manage'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Registrar asistencia',
         description: 'Registra la lista de usuarios que asistieron a la actividad',
@@ -153,6 +169,8 @@ __decorate([
 ], ActivitiesController.prototype, "recordAttendance", null);
 __decorate([
     (0, common_1.Get)('activities/:activityId/attendance'),
+    (0, decorators_1.RequirePermissions)('attendance:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'activity', idParam: 'activityId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Obtener asistencia',
         description: 'Obtiene la lista de usuarios que asistieron a la actividad',
@@ -168,7 +186,7 @@ __decorate([
 exports.ActivitiesController = ActivitiesController = __decorate([
     (0, swagger_1.ApiTags)('activities'),
     (0, common_1.Controller)(),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [activities_service_1.ActivitiesService])
 ], ActivitiesController);

@@ -1,3 +1,3 @@
 export * from './club.dto';
-export * from './instance.dto';
+export * from './section.dto';
 export * from './role-assignment.dto';

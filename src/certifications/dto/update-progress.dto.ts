@@ -1,7 +1,7 @@
 import { IsInt, IsPositive, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class UpdateProgressDto {
+export class UpdateCertificationProgressDto {
   @ApiProperty({
     description: 'ID del módulo de la certificación',
     example: 1,

@@ -21,11 +21,15 @@ import {
 import { InventoryService } from './inventory.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('inventory')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
@@ -35,6 +39,13 @@ export class InventoryController {
   // ========================================
 
   @Get('clubs/:clubId/inventory')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({
+    type: 'inventory_instance',
+    idParam: 'clubId',
+    instanceTypeSource: 'query',
+    instanceTypeField: 'instanceType',
+  })
   @ApiOperation({
     summary: 'Listar items del inventario de un club',
     description:
@@ -81,6 +92,8 @@ export class InventoryController {
   }
 
   @Get('inventory/:id')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Obtener detalles de un item del inventario',
     description:
@@ -105,10 +118,17 @@ export class InventoryController {
   }
 
   @Post('clubs/:clubId/inventory')
+  @RequirePermissions('inventory:create')
+  @AuthorizationResource({
+    type: 'inventory_instance',
+    idParam: 'clubId',
+    instanceTypeSource: 'body',
+    instanceTypeField: 'instanceType',
+  })
   @ApiOperation({
     summary: 'Agregar nuevo item al inventario',
     description:
-      'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Subdirector o Tesorero.',
+      'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Deputy Director o Treasurer.',
   })
   @ApiParam({
     name: 'clubId',
@@ -134,10 +154,12 @@ export class InventoryController {
   }
 
   @Patch('inventory/:id')
+  @RequirePermissions('inventory:update')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Actualizar un item del inventario',
     description:
-      'Actualiza información de un item existente. Requiere rol de Director, Subdirector o Tesorero.',
+      'Actualiza información de un item existente. Requiere rol de Director, Deputy Director o Treasurer.',
   })
   @ApiParam({
     name: 'id',
@@ -162,10 +184,12 @@ export class InventoryController {
   }
 
   @Delete('inventory/:id')
+  @RequirePermissions('inventory:delete')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Eliminar un item del inventario',
     description:
-      'Elimina un item del inventario (soft delete). Requiere rol de Director o Subdirector.',
+      'Elimina un item del inventario (soft delete). Requiere rol de Director o Deputy Director.',
   })
   @ApiParam({
     name: 'id',

@@ -93,7 +93,9 @@ let ClassesService = class ClassesService {
         return this.prisma.enrollments.findMany({
             where: {
                 user_id: userId,
-                ...(ecclesiasticalYearId && { ecclesiastical_year_id: ecclesiasticalYearId }),
+                ...(ecclesiasticalYearId && {
+                    ecclesiastical_year_id: ecclesiasticalYearId,
+                }),
             },
             include: {
                 classes: {
@@ -170,7 +172,9 @@ let ClassesService = class ClassesService {
                 where: { section_progress_id: existing.section_progress_id },
                 data: {
                     score,
-                    evidences: evidences ? evidences : undefined,
+                    evidences: evidences
+                        ? evidences
+                        : undefined,
                     modified_at: new Date(),
                 },
             });
@@ -182,7 +186,9 @@ let ClassesService = class ClassesService {
                 module_id: moduleId,
                 section_id: sectionId,
                 score,
-                evidences: evidences ? evidences : client_1.Prisma.JsonNull,
+                evidences: evidences
+                    ? evidences
+                    : client_1.Prisma.JsonNull,
                 active: true,
             },
         });

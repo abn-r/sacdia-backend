@@ -6,6 +6,17 @@ export declare class CatalogsService {
         name: string;
         club_type_id: number;
     }[]>;
+    getActivityTypes(): Promise<{
+        name: string;
+        description: string | null;
+        code: string;
+        activity_type_id: number;
+    }[]>;
+    getRelationshipTypes(): Promise<{
+        name: string;
+        description: string | null;
+        relationship_type_id: string;
+    }[]>;
     getCountries(): Promise<{
         name: string;
         country_id: number;
@@ -38,15 +49,15 @@ export declare class CatalogsService {
     }[]>;
     getEcclesiasticalYears(): Promise<{
         active: boolean;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     }[]>;
     getCurrentEcclesiasticalYear(): Promise<{
         active: boolean;
-        year_id: number;
         start_date: Date;
         end_date: Date;
+        year_id: number;
     } | null>;
     getClubIdeals(clubTypeId?: number): Promise<{
         name: string;
@@ -54,5 +65,15 @@ export declare class CatalogsService {
         club_ideal_id: number;
         ideal_order: number;
         ideal: string | null;
+    }[]>;
+    getAllergies(): Promise<{
+        name: string;
+        description: string | null;
+        allergy_id: number;
+    }[]>;
+    getDiseases(): Promise<{
+        name: string;
+        description: string | null;
+        disease_id: number;
     }[]>;
 }

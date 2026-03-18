@@ -119,7 +119,9 @@ let FinancesService = class FinancesService {
         });
         return {
             club_id: clubId,
-            period: year ? `${year}${month ? `-${String(month).padStart(2, '0')}` : ''}` : 'all',
+            period: year
+                ? `${year}${month ? `-${String(month).padStart(2, '0')}` : ''}`
+                : 'all',
             total_income: totalIncome,
             total_expense: totalExpense,
             balance: totalIncome - totalExpense,

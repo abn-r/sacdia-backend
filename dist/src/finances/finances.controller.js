@@ -75,6 +75,8 @@ __decorate([
 ], FinancesController.prototype, "getCategories", null);
 __decorate([
     (0, common_1.Get)('clubs/:clubId/finances'),
+    (0, decorators_1.RequirePermissions)('finances:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Listar movimientos financieros del club',
         description: 'Obtiene todos los movimientos de las instancias del club',
@@ -101,6 +103,8 @@ __decorate([
 ], FinancesController.prototype, "findByClub", null);
 __decorate([
     (0, common_1.Get)('clubs/:clubId/finances/summary'),
+    (0, decorators_1.RequirePermissions)('finances:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Resumen financiero del club',
         description: 'Obtiene el resumen de ingresos, egresos y balance',
@@ -120,7 +124,9 @@ __decorate([
 __decorate([
     (0, common_1.Post)('clubs/:clubId/finances'),
     (0, common_1.UseGuards)(guards_1.ClubRolesGuard),
-    (0, decorators_1.ClubRoles)('director', 'subdirector', 'treasurer'),
+    (0, decorators_1.ClubRoles)('director', 'deputy_director', 'treasurer'),
+    (0, decorators_1.RequirePermissions)('finances:create'),
+    (0, decorators_1.AuthorizationResource)({ type: 'club', clubIdParam: 'clubId' }),
     (0, swagger_1.ApiOperation)({
         summary: 'Crear movimiento financiero',
         description: 'Crea un nuevo ingreso o egreso (requiere rol de tesorería)',
@@ -138,6 +144,8 @@ __decorate([
 ], FinancesController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)('finances/:financeId'),
+    (0, decorators_1.RequirePermissions)('finances:read'),
+    (0, decorators_1.AuthorizationResource)({ type: 'finance', idParam: 'financeId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Obtener movimiento por ID' }),
     (0, swagger_1.ApiParam)({ name: 'financeId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Movimiento encontrado' }),
@@ -150,6 +158,8 @@ __decorate([
 ], FinancesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Patch)('finances/:financeId'),
+    (0, decorators_1.RequirePermissions)('finances:update'),
+    (0, decorators_1.AuthorizationResource)({ type: 'finance', idParam: 'financeId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Actualizar movimiento' }),
     (0, swagger_1.ApiParam)({ name: 'financeId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Movimiento actualizado' }),
@@ -162,6 +172,8 @@ __decorate([
 ], FinancesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)('finances/:financeId'),
+    (0, decorators_1.RequirePermissions)('finances:delete'),
+    (0, decorators_1.AuthorizationResource)({ type: 'finance', idParam: 'financeId' }),
     (0, swagger_1.ApiOperation)({ summary: 'Desactivar movimiento' }),
     (0, swagger_1.ApiParam)({ name: 'financeId', type: Number }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Movimiento desactivado' }),
@@ -174,7 +186,7 @@ __decorate([
 exports.FinancesController = FinancesController = __decorate([
     (0, swagger_1.ApiTags)('finances'),
     (0, common_1.Controller)(),
-    (0, common_1.UseGuards)(guards_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.PermissionsGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [finances_service_1.FinancesService])
 ], FinancesController);

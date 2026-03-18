@@ -8,16 +8,26 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+var ClubsService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClubsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const dto_1 = require("./dto");
 const pagination_dto_1 = require("../common/dto/pagination.dto");
+const file_storage_service_1 = require("../common/services/file-storage.service");
 let ClubsService = class ClubsService {
+    static { ClubsService_1 = this; }
     prisma;
-    constructor(prisma) {
+    fileStorage;
+    logger = new common_1.Logger(ClubsService_1.name);
+    static PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+    constructor(prisma, fileStorage) {
         this.prisma = prisma;
+        this.fileStorage = fileStorage;
     }
     async findAll(filters, pagination) {
         const where = {
@@ -96,11 +106,55 @@ let ClubsService = class ClubsService {
         });
     }
     async getInstances(clubId) {
-        const club = await this.findOne(clubId);
+        await this.findOne(clubId);
+        const [adventurers, pathfinders, masterGuilds] = await Promise.all([
+            this.prisma.club_adventurers.findMany({
+                where: { main_club_id: clubId },
+                include: {
+                    club_types: {
+                        select: {
+                            name: true,
+                        },
+                    },
+                },
+                orderBy: { club_adv_id: 'asc' },
+            }),
+            this.prisma.club_pathfinders.findMany({
+                where: { main_club_id: clubId },
+                include: {
+                    club_types: {
+                        select: {
+                            name: true,
+                        },
+                    },
+                },
+                orderBy: { club_pathf_id: 'asc' },
+            }),
+            this.prisma.club_master_guilds.findMany({
+                where: { main_club_id: clubId },
+                include: {
+                    club_types: {
+                        select: {
+                            name: true,
+                        },
+                    },
+                },
+                orderBy: { club_mg_id: 'asc' },
+            }),
+        ]);
         return {
-            adventurers: club.club_adventurers,
-            pathfinders: club.club_pathfinders,
-            master_guilds: club.club_master_guild,
+            adventurers: adventurers.map(({ club_types, ...instance }) => ({
+                ...instance,
+                club_type_name: club_types?.name ?? null,
+            })),
+            pathfinders: pathfinders.map(({ club_types, ...instance }) => ({
+                ...instance,
+                club_type_name: club_types?.name ?? null,
+            })),
+            master_guilds: masterGuilds.map(({ club_types, ...instance }) => ({
+                ...instance,
+                club_type_name: club_types?.name ?? null,
+            })),
         };
     }
     async getInstance(clubId, type) {
@@ -206,7 +260,7 @@ let ClubsService = class ClubsService {
     }
     async getMembers(instanceId, type) {
         const whereClause = this.getInstanceWhereClause(instanceId, type);
-        return this.prisma.club_role_assignments.findMany({
+        const members = await this.prisma.club_role_assignments.findMany({
             where: {
                 ...whereClause,
                 active: true,
@@ -231,13 +285,30 @@ let ClubsService = class ClubsService {
             },
             orderBy: { start_date: 'desc' },
         });
+        return Promise.all(members.map(async (member) => ({
+            ...member,
+            users: member.users
+                ? {
+                    ...member.users,
+                    user_image: typeof member.users.user_image === 'string'
+                        ? await this.resolvePrivateProfileUrl(member.users.user_image)
+                        : member.users.user_image,
+                }
+                : member.users,
+        })));
     }
     async assignRole(dto) {
+        if (!dto.instance_type || !dto.instance_id) {
+            throw new common_1.BadRequestException('instance_type and instance_id are required');
+        }
+        const roleId = await this.resolveRoleId(dto);
+        const ecclesiasticalYearId = dto.ecclesiastical_year_id ?? (await this.getActiveEcclesiasticalYearId());
+        const startDate = dto.start_date ?? new Date();
         const assignment = {
             user_id: dto.user_id,
-            role_id: dto.role_id,
-            ecclesiastical_year_id: dto.ecclesiastical_year_id,
-            start_date: dto.start_date,
+            role_id: roleId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+            start_date: startDate,
             end_date: dto.end_date,
             active: true,
             status: 'active',
@@ -260,12 +331,27 @@ let ClubsService = class ClubsService {
         });
     }
     async updateRoleAssignment(assignmentId, dto) {
+        const updateData = {
+            modified_at: new Date(),
+        };
+        if (dto.role_id || dto.role) {
+            updateData.role_id = await this.resolveRoleId(dto);
+        }
+        if (dto.ecclesiastical_year_id !== undefined) {
+            updateData.ecclesiastical_year_id = dto.ecclesiastical_year_id;
+        }
+        if (dto.start_date !== undefined) {
+            updateData.start_date = dto.start_date;
+        }
+        if (dto.end_date !== undefined) {
+            updateData.end_date = dto.end_date;
+        }
+        if (dto.status !== undefined) {
+            updateData.status = dto.status;
+        }
         return this.prisma.club_role_assignments.update({
             where: { assignment_id: assignmentId },
-            data: {
-                ...dto,
-                modified_at: new Date(),
-            },
+            data: updateData,
         });
     }
     async removeRoleAssignment(assignmentId) {
@@ -303,10 +389,61 @@ let ClubsService = class ClubsService {
                 throw new common_1.BadRequestException(`Invalid instance type: ${type}`);
         }
     }
+    async getActiveEcclesiasticalYearId() {
+        const currentYear = await this.prisma.ecclesiastical_years.findFirst({
+            where: {
+                start_date: { lte: new Date() },
+                end_date: { gte: new Date() },
+            },
+            select: { year_id: true },
+        });
+        if (!currentYear) {
+            throw new common_1.BadRequestException('No active ecclesiastical year configured');
+        }
+        return currentYear.year_id;
+    }
+    async resolveRoleId(dto) {
+        if (dto.role_id) {
+            return dto.role_id;
+        }
+        if (!dto.role) {
+            throw new common_1.BadRequestException('role_id or role is required');
+        }
+        const normalizedRoleName = dto.role.trim().toLowerCase();
+        if (!normalizedRoleName) {
+            throw new common_1.BadRequestException('role is empty');
+        }
+        const role = await this.prisma.roles.findFirst({
+            where: {
+                role_name: normalizedRoleName,
+                role_category: 'CLUB',
+                active: true,
+            },
+            select: { role_id: true },
+        });
+        if (!role) {
+            throw new common_1.BadRequestException(`Role "${normalizedRoleName}" not found in CLUB category`);
+        }
+        return role.role_id;
+    }
+    async resolvePrivateProfileUrl(value) {
+        if (!value)
+            return null;
+        try {
+            return await this.fileStorage.getSignedDownloadUrl(file_storage_service_1.StorageBucketAlias.USER_PROFILES, value, {
+                expiresInSeconds: ClubsService_1.PRIVATE_ASSET_URL_TTL_SECONDS,
+            });
+        }
+        catch (error) {
+            this.logger.warn('Failed to generate signed URL for club member profile. Returning original value.', error);
+            return value;
+        }
+    }
 };
 exports.ClubsService = ClubsService;
-exports.ClubsService = ClubsService = __decorate([
+exports.ClubsService = ClubsService = ClubsService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __param(1, (0, common_1.Inject)(file_storage_service_1.FILE_STORAGE_SERVICE)),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object])
 ], ClubsService);
 //# sourceMappingURL=clubs.service.js.map

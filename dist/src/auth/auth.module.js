@@ -13,7 +13,10 @@ const passport_1 = require("@nestjs/passport");
 const config_1 = require("@nestjs/config");
 const auth_controller_1 = require("./auth.controller");
 const auth_service_1 = require("./auth.service");
+const oauth_controller_1 = require("./oauth.controller");
+const oauth_service_1 = require("./oauth.service");
 const jwt_strategy_1 = require("./strategies/jwt.strategy");
+const authorization_context_service_1 = require("../common/services/authorization-context.service");
 const supabase_service_1 = require("../common/supabase.service");
 const mfa_controller_1 = require("./mfa.controller");
 const sessions_controller_1 = require("./sessions.controller");
@@ -34,9 +37,26 @@ exports.AuthModule = AuthModule = __decorate([
                 }),
             }),
         ],
-        controllers: [auth_controller_1.AuthController, mfa_controller_1.MfaController, sessions_controller_1.SessionsController],
-        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy, supabase_service_1.SupabaseService],
-        exports: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy, passport_1.PassportModule],
+        controllers: [
+            auth_controller_1.AuthController,
+            mfa_controller_1.MfaController,
+            sessions_controller_1.SessionsController,
+            oauth_controller_1.OAuthController,
+        ],
+        providers: [
+            auth_service_1.AuthService,
+            oauth_service_1.OAuthService,
+            jwt_strategy_1.JwtStrategy,
+            supabase_service_1.SupabaseService,
+            authorization_context_service_1.AuthorizationContextService,
+        ],
+        exports: [
+            auth_service_1.AuthService,
+            oauth_service_1.OAuthService,
+            jwt_strategy_1.JwtStrategy,
+            passport_1.PassportModule,
+            authorization_context_service_1.AuthorizationContextService,
+        ],
     })
 ], AuthModule);
 //# sourceMappingURL=auth.module.js.map
