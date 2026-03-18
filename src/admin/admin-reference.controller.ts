@@ -200,6 +200,14 @@ export class AdminReferenceController {
     return { status: 'success', data };
   }
 
+  @Get('club-ideals')
+  @RequirePermissions('catalogs:read')
+  @ApiOperation({ summary: 'List club ideals for admin' })
+  async listClubIdeals() {
+    const data = await this.referenceService.listClubIdeals();
+    return { status: 'success', data };
+  }
+
   @Get('honor-categories')
   @RequirePermissions('honor_categories:read')
   @ApiOperation({ summary: 'List honor categories for admin management' })
