@@ -23,6 +23,7 @@ import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
+import { UpdatePasswordDto } from './dto/update-password.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -166,6 +167,22 @@ export class AuthController {
   })
   async requestPasswordReset(@Body() dto: ResetPasswordRequestDto) {
     return this.authService.requestPasswordReset(dto);
+  }
+
+  @Post('update-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update authenticated user password' })
+  @ApiResponse({
+    status: 200,
+    description: 'Password updated',
+  })
+  async updatePassword(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: UpdatePasswordDto,
+  ) {
+    await this.authService.updatePassword(user.userId, dto.password);
+    return { status: 'success', message: 'Password updated' };
   }
 
   @Get('me')

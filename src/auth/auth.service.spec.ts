@@ -54,6 +54,7 @@ describe('AuthService', () => {
           createUser: jest.fn(),
           deleteUser: jest.fn(),
           signOut: jest.fn(),
+          updateUserById: jest.fn(),
         },
         signInWithPassword: jest.fn(),
         resetPasswordForEmail: jest.fn(),
@@ -570,6 +571,32 @@ describe('AuthService', () => {
       await expect(
         service.requestPasswordReset({ email: 'juan.garcia@example.com' }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updatePassword', () => {
+    it('should call Supabase Admin with the authenticated user id', async () => {
+      mockSupabaseService.admin.auth.admin.updateUserById.mockResolvedValue({
+        error: null,
+      });
+
+      await service.updatePassword('user-123', 'NewPassword123!');
+
+      expect(
+        mockSupabaseService.admin.auth.admin.updateUserById,
+      ).toHaveBeenCalledWith('user-123', {
+        password: 'NewPassword123!',
+      });
+    });
+
+    it('should throw InternalServerErrorException when Supabase update fails', async () => {
+      mockSupabaseService.admin.auth.admin.updateUserById.mockResolvedValue({
+        error: { message: 'Cannot update password' },
+      });
+
+      await expect(
+        service.updatePassword('user-123', 'NewPassword123!'),
+      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 
