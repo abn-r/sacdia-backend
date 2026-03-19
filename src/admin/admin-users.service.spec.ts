@@ -124,15 +124,13 @@ describe('AdminUsersService', () => {
     unions: { union_id: 2, name: 'UMS' },
     local_fields: { local_field_id: 3, union_id: 2, name: 'Campo Sur' },
     users_roles: [{ role_id: 'r1', roles: { role_name: 'user' } }],
-    users_pr: [
-      {
-        complete: false,
-        profile_picture_complete: true,
-        personal_info_complete: false,
-        club_selection_complete: false,
-        date_completed: null,
-      },
-    ],
+    users_pr: {
+      complete: false,
+      profile_picture_complete: true,
+      personal_info_complete: false,
+      club_selection_complete: false,
+      date_completed: null,
+    },
     users_classes: [],
     club_role_assignments: [],
     emergency_contact: [

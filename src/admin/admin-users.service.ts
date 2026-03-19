@@ -114,8 +114,6 @@ const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
     },
   },
   users_pr: {
-    orderBy: { created_at: 'desc' },
-    take: 1,
     select: {
       complete: true,
       profile_picture_complete: true,
@@ -151,8 +149,6 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
     },
   },
   users_pr: {
-    orderBy: { created_at: 'desc' },
-    take: 1,
     select: {
       complete: true,
       profile_picture_complete: true,
@@ -618,7 +614,7 @@ export class AdminUsersService {
     return {
       blood: user.blood,
       allergies: (user.users_allergies ?? [])
-        .filter((item) => item.allergy_id !== null)
+        .filter((item): item is typeof item & { allergy_id: number } => item.allergy_id !== null)
         .map((item) => ({
           allergy_id: item.allergy_id,
           name: item.allergies?.name ?? null,
@@ -637,7 +633,7 @@ export class AdminUsersService {
   private buildMinimalPostRegistrationBlock(
     user: AdminUserDetailRecord,
   ): MinimalPostRegistrationBlock | null {
-    const latestPostRegistration = user.users_pr?.[0];
+    const latestPostRegistration = user.users_pr ?? null;
 
     if (!latestPostRegistration) {
       return null;
@@ -826,12 +822,12 @@ export class AdminUsersService {
     const roles = this.extractRoleNames(user.users_roles).sort((a, b) =>
       a.localeCompare(b),
     );
-    const postRegistration = user.users_pr[0]
+    const postRegistration = user.users_pr
       ? {
-          complete: user.users_pr[0].complete,
-          profile_picture_complete: user.users_pr[0].profile_picture_complete,
-          personal_info_complete: user.users_pr[0].personal_info_complete,
-          club_selection_complete: user.users_pr[0].club_selection_complete,
+          complete: user.users_pr.complete,
+          profile_picture_complete: user.users_pr.profile_picture_complete,
+          personal_info_complete: user.users_pr.personal_info_complete,
+          club_selection_complete: user.users_pr.club_selection_complete,
         }
       : null;
 

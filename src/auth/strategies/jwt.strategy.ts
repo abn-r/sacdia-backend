@@ -34,32 +34,37 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ? `${supabaseUrl}/auth/v1/.well-known/jwks.json`
       : null;
 
-    super({
+    const strategyOptions: Record<string, unknown> = {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      // JWKS (ES256) with HS256 fallback for transition period
-      ...(jwksUri
-        ? {
-            secretOrKeyProvider: passportJwtSecret({
-              jwksUri,
-              cache: true,
-              cacheMaxAge: 600_000, // 10 min
-              rateLimit: true,
-              jwksRequestsPerMinute: 5,
-              handleSigningKeyError: (err, cb) => {
-                // Fallback to legacy HS256 if JWKS verification fails
-                if (jwtSecret) {
-                  cb(null, jwtSecret);
-                } else {
-                  cb(err);
-                }
-              },
-            }),
-            algorithms: ['ES256', 'HS256'],
-          }
-        : { secretOrKey: jwtSecret, algorithms: ['HS256'] }),
       passReqToCallback: true,
-    });
+    };
+
+    if (jwksUri) {
+      // JWKS (ES256) with HS256 fallback for transition period
+      strategyOptions.secretOrKeyProvider = passportJwtSecret({
+        jwksUri,
+        cache: true,
+        cacheMaxAge: 600_000, // 10 min
+        rateLimit: true,
+        jwksRequestsPerMinute: 5,
+        handleSigningKeyError: (err, cb) => {
+          // Fallback to legacy HS256 if JWKS verification fails
+          if (jwtSecret) {
+            (cb as (err: Error | null, key?: string) => void)(null, jwtSecret);
+          } else {
+            cb(err);
+          }
+        },
+      });
+      strategyOptions.algorithms = ['ES256', 'HS256'];
+    } else {
+      strategyOptions.secretOrKey = jwtSecret;
+      strategyOptions.algorithms = ['HS256'];
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    super(strategyOptions as any);
 
     if (jwksUri) {
       this.logger.log(`JWT verification via JWKS: ${jwksUri}`);

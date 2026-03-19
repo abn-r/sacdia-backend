@@ -239,8 +239,8 @@ describe('Classes E2E Tests', () => {
       const transactionSpy = jest
         .spyOn(prisma, '$transaction')
         .mockImplementation(
-          (callback: (tx: ProgressTransactionMock) => Promise<unknown>) =>
-            callback(txMock),
+          ((callback: (tx: ProgressTransactionMock) => Promise<unknown>) =>
+            callback(txMock)) as any,
         );
 
       await request(app.getHttpServer())

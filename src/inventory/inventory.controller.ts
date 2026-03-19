@@ -82,7 +82,6 @@ export class InventoryController {
   ) {
     const result = await this.inventoryService.findAllByClub(
       clubId,
-      instanceType,
       categoryId,
     );
     return {

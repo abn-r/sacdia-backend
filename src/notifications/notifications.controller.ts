@@ -102,7 +102,6 @@ export class NotificationsController {
   ) {
     return this.notificationsService.sendToClubMembers(
       parseInt(instanceId),
-      instanceType,
       dto,
     );
   }

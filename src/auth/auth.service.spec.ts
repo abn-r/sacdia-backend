@@ -293,14 +293,12 @@ describe('AuthService', () => {
         paternal_last_name: 'Garcia',
         maternal_last_name: 'Lopez',
         user_image: 'https://avatar.test/user-123.png',
-        users_pr: [
-          {
-            complete: false,
-            profile_picture_complete: false,
-            personal_info_complete: false,
-            club_selection_complete: false,
-          },
-        ],
+        users_pr: {
+          complete: false,
+          profile_picture_complete: false,
+          personal_info_complete: false,
+          club_selection_complete: false,
+        },
         users_roles: [
           {
             roles: {

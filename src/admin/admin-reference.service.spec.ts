@@ -60,7 +60,7 @@ describe('AdminReferenceService', () => {
         page: 2,
         limit: 10,
         search: 'nature',
-      });
+      } as unknown as Parameters<typeof service.listHonorCategories>[0]);
 
       expect(result).toEqual({
         items,

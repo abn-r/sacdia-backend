@@ -7,9 +7,9 @@ import {
 } from '@nestjs/common';
 import {
   FILE_STORAGE_SERVICE,
-  FileStorageService,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 type InsuranceMutationInput = {
@@ -113,7 +113,7 @@ export class InsuranceService {
     });
 
     const uniqueMembers = this.uniqueMembers(assignments);
-    const result = [];
+    const result: Record<string, any>[] = [];
 
     for (const member of uniqueMembers) {
       const insurance = await this.loadLatestActiveInsurance(member.user_id);

@@ -25,7 +25,7 @@ describe('PostRegistrationController', () => {
   it('should pass owner-aware context to status reads', async () => {
     const request = {
       user: { sub: 'owner-user-1' },
-    } as Request;
+    } as unknown as Request;
 
     mockPostRegistrationService.getStatus.mockResolvedValue({
       status: 'success',
@@ -45,7 +45,7 @@ describe('PostRegistrationController', () => {
   it('should pass third-party context to completion writes', async () => {
     const request = {
       user: { sub: 'admin-user-1' },
-    } as Request;
+    } as unknown as Request;
     const dto = {
       country_id: 1,
       union_id: 2,
@@ -73,7 +73,7 @@ describe('PostRegistrationController', () => {
   it('should pass third-party context to step 1 completion writes', async () => {
     const request = {
       user: { sub: 'admin-user-1' },
-    } as Request;
+    } as unknown as Request;
 
     mockPostRegistrationService.completeStep1.mockResolvedValue({
       status: 'success',
@@ -93,7 +93,7 @@ describe('PostRegistrationController', () => {
   it('should pass third-party context to step 2 completion writes', async () => {
     const request = {
       user: { sub: 'admin-user-1' },
-    } as Request;
+    } as unknown as Request;
 
     mockPostRegistrationService.completeStep2.mockResolvedValue({
       status: 'success',

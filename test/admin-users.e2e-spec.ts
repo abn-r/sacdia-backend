@@ -249,10 +249,10 @@ describe('Admin Users Detail E2E', () => {
   function mockScopedDetailLookup() {
     jest
       .spyOn(prisma.users, 'findUnique')
-      .mockResolvedValue(actorRecord as UsersFindUniqueResult);
+      .mockResolvedValue(actorRecord as unknown as UsersFindUniqueResult);
     jest
       .spyOn(prisma.users, 'findFirst')
-      .mockResolvedValue(userDetailRecord as UsersFindFirstResult);
+      .mockResolvedValue(userDetailRecord as unknown as UsersFindFirstResult);
     jest
       .spyOn(prisma.ecclesiastical_years, 'findFirst')
       .mockResolvedValue(null);
@@ -356,7 +356,7 @@ describe('Admin Users Detail E2E', () => {
       .spyOn(prisma.enrollments, 'findMany')
       .mockResolvedValue([
         buildEnrollmentCandidate(9001),
-      ] as EnrollmentsFindManyResult);
+      ] as unknown as EnrollmentsFindManyResult);
     jest
       .spyOn(AuthorizationContextService.prototype, 'resolveUserAuthorization')
       .mockResolvedValue(buildResolvedAuthorization(['users:read_detail']));
@@ -364,7 +364,7 @@ describe('Admin Users Detail E2E', () => {
     jest.spyOn(prisma.users, 'findFirst').mockResolvedValue({
       ...userDetailRecord,
       users_classes: [buildTrajectoryClass()],
-    } as UsersFindFirstResult);
+    } as unknown as UsersFindFirstResult);
 
     const response = await request(getHttpServer())
       .get('/api/v1/admin/users/user-1')
@@ -416,7 +416,7 @@ describe('Admin Users Detail E2E', () => {
     jest.spyOn(prisma.users, 'findFirst').mockResolvedValue({
       ...userDetailRecord,
       users_classes: [buildTrajectoryClass()],
-    } as UsersFindFirstResult);
+    } as unknown as UsersFindFirstResult);
     const findYearSpy = jest.spyOn(prisma.ecclesiastical_years, 'findFirst');
     const findEnrollmentsSpy = jest.spyOn(prisma.enrollments, 'findMany');
 
@@ -456,7 +456,7 @@ describe('Admin Users Detail E2E', () => {
     jest.spyOn(prisma.users, 'findFirst').mockResolvedValue({
       ...userDetailRecord,
       users_classes: [buildTrajectoryClass()],
-    } as UsersFindFirstResult);
+    } as unknown as UsersFindFirstResult);
     jest.spyOn(prisma.ecclesiastical_years, 'findFirst').mockResolvedValue({
       year_id: 2026,
     } as EcclesiasticalYearFindFirstResult);
@@ -465,7 +465,7 @@ describe('Admin Users Detail E2E', () => {
       .mockResolvedValue([
         buildEnrollmentCandidate(9001),
         buildEnrollmentCandidate(9002),
-      ] as EnrollmentsFindManyResult);
+      ] as unknown as EnrollmentsFindManyResult);
 
     const response = await request(getHttpServer())
       .get('/api/v1/admin/users/user-1')

@@ -188,8 +188,8 @@ export class AuthService {
       throw new UnauthorizedException('Usuario no encontrado');
     }
 
-    const needsPostRegistration = user.users_pr[0]
-      ? !user.users_pr[0].complete
+    const needsPostRegistration = user.users_pr
+      ? !user.users_pr.complete
       : true;
 
     // Extraer roles como array plano de strings
@@ -214,7 +214,7 @@ export class AuthService {
           roles,
         },
         needsPostRegistration,
-        postRegistrationStatus: user.users_pr[0] || null,
+        postRegistrationStatus: user.users_pr ?? null,
       },
     };
   }

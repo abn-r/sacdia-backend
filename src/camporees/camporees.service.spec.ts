@@ -97,7 +97,7 @@ describe('CamporeesService', () => {
       );
       mockPrismaService.local_camporees.count.mockResolvedValue(1);
 
-      const result = await service.findAll({}, { page: 1, limit: 20 });
+      const result = await service.findAll({}, { page: 1, limit: 20 } as unknown as import('../common/dto/pagination.dto').PaginationDto);
 
       expect(result.data).toEqual(mockCamporees);
       expect(result.meta.total).toBe(1);

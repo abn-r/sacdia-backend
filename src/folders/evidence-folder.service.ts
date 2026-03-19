@@ -8,9 +8,9 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import {
   FILE_STORAGE_SERVICE,
-  FileStorageService,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 type UserNameRecord = {
   name?: string | null;
@@ -87,7 +87,7 @@ export class EvidenceFolderService {
       folder.folder_id,
       clubSectionId,
     );
-    const recordsBySectionId = new Map(
+    const recordsBySectionId = new Map<number, SectionRecord>(
       sectionRecords.map((record: SectionRecord) => [
         record.section_id,
         record,

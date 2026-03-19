@@ -486,7 +486,7 @@ export class AdminReferenceService {
     return year;
   }
 
-  async listHonorCategories(query: HonorCategoryListQueryDto = {}) {
+  async listHonorCategories(query: HonorCategoryListQueryDto = new HonorCategoryListQueryDto()) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const search = query.search?.trim();
