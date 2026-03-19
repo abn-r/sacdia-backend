@@ -56,15 +56,6 @@ type InsuranceSnapshot = {
   modified_by_name?: string | null;
 };
 
-const INSURANCE_EVIDENCE_BUCKET_ALIAS = resolveInsuranceEvidenceBucketAlias();
-
-function resolveInsuranceEvidenceBucketAlias(): StorageBucketAlias {
-  const alias = (
-    StorageBucketAlias as Record<string, StorageBucketAlias | undefined>
-  ).INSURANCE_EVIDENCE;
-  return alias ?? ('INSURANCE_EVIDENCE' as StorageBucketAlias);
-}
-
 @Injectable()
 export class InsuranceService {
   private readonly logger = new Logger(InsuranceService.name);
@@ -457,7 +448,7 @@ export class InsuranceService {
     const extension = this.resolveFileExtension(file);
     const key = `insurance-${memberId}-${Date.now()}.${extension}`;
     const uploaded = await this.fileStorage.upload(
-      INSURANCE_EVIDENCE_BUCKET_ALIAS,
+      StorageBucketAlias.INSURANCE_EVIDENCE,
       key,
       file.buffer,
       { contentType: file.mimetype },
