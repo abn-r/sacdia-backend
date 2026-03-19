@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { user_approval_status } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -178,4 +180,56 @@ export class AdminCurrentOperationalEnrollmentDto {
 
   @ApiProperty({ example: true })
   active!: boolean;
+}
+
+export class UpdateUserApprovalDto {
+  @ApiProperty({
+    description: 'true para aprobar al usuario, false para rechazarlo',
+    example: true,
+  })
+  @IsBoolean()
+  approved!: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Motivo del rechazo cuando corresponda',
+    example: 'Falta documentación',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  rejection_reason?: string;
+}
+
+export class UpdateAdminUserDto {
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  access_app?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  access_panel?: boolean;
+
+  @ApiPropertyOptional({
+    enum: user_approval_status,
+    example: user_approval_status.approved,
+  })
+  @IsOptional()
+  @IsEnum(user_approval_status)
+  approval_status?: user_approval_status;
+
+  @ApiPropertyOptional({
+    description: 'Motivo de rechazo administrativo',
+    example: 'Perfil incompleto',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  rejection_reason?: string;
 }

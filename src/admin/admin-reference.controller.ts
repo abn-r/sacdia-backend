@@ -8,10 +8,11 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
@@ -20,11 +21,14 @@ import {
   CreateAllergyDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
+  CreateHonorCategoryDto,
+  HonorCategoryListQueryDto,
   CreateMedicineDto,
   CreateRelationshipTypeDto,
   UpdateAllergyDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
+  UpdateHonorCategoryDto,
   UpdateMedicineDto,
   UpdateRelationshipTypeDto,
 } from './dto';
@@ -36,7 +40,7 @@ import {
 export class AdminReferenceController {
   constructor(private readonly referenceService: AdminReferenceService) {}
 
-  private getActorId(request: Request & { user: { sub: string } }) {
+  private getActorId(request: ExpressRequest & { user: { sub: string } }) {
     return request.user.sub;
   }
 
@@ -53,7 +57,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Create relationship type' })
   async createRelationshipType(
     @Body() dto: CreateRelationshipTypeDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.createRelationshipType(
       dto,
@@ -68,7 +72,7 @@ export class AdminReferenceController {
   async updateRelationshipType(
     @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
     @Body() dto: UpdateRelationshipTypeDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateRelationshipType(
       relationshipTypeId,
@@ -83,7 +87,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete relationship type' })
   async deleteRelationshipType(
     @Param('relationshipTypeId', ParseUUIDPipe) relationshipTypeId: string,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteRelationshipType(
       relationshipTypeId,
@@ -105,7 +109,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Create allergy' })
   async createAllergy(
     @Body() dto: CreateAllergyDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.createAllergy(
       dto,
@@ -120,7 +124,7 @@ export class AdminReferenceController {
   async updateAllergy(
     @Param('allergyId', ParseIntPipe) allergyId: number,
     @Body() dto: UpdateAllergyDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateAllergy(
       allergyId,
@@ -135,7 +139,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete allergy' })
   async deleteAllergy(
     @Param('allergyId', ParseIntPipe) allergyId: number,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteAllergy(
       allergyId,
@@ -157,7 +161,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Create disease' })
   async createDisease(
     @Body() dto: CreateDiseaseDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.createDisease(
       dto,
@@ -172,7 +176,7 @@ export class AdminReferenceController {
   async updateDisease(
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
     @Body() dto: UpdateDiseaseDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateDisease(
       diseaseId,
@@ -187,10 +191,78 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete disease' })
   async deleteDisease(
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteDisease(
       diseaseId,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('club-ideals')
+  @RequirePermissions('catalogs:read')
+  @ApiOperation({ summary: 'List club ideals for admin' })
+  async listClubIdeals() {
+    const data = await this.referenceService.listClubIdeals();
+    return { status: 'success', data };
+  }
+
+  @Get('honor-categories')
+  @RequirePermissions('honor_categories:read')
+  @ApiOperation({ summary: 'List honor categories for admin management' })
+  async listHonorCategories(@Query() query: HonorCategoryListQueryDto) {
+    const data = await this.referenceService.listHonorCategories(query);
+    return { status: 'success', data };
+  }
+
+  @Post('honor-categories')
+  @RequirePermissions('honor_categories:create')
+  @ApiOperation({ summary: 'Create honor category' })
+  async createHonorCategory(
+    @Body() dto: CreateHonorCategoryDto,
+    @Request() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.createHonorCategory(
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Get('honor-categories/:id')
+  @RequirePermissions('honor_categories:read')
+  @ApiOperation({ summary: 'Get honor category by ID' })
+  async getHonorCategory(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.referenceService.getHonorCategory(id);
+    return { status: 'success', data };
+  }
+
+  @Patch('honor-categories/:id')
+  @RequirePermissions('honor_categories:update')
+  @ApiOperation({ summary: 'Update honor category' })
+  async updateHonorCategory(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateHonorCategoryDto,
+    @Request() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.updateHonorCategory(
+      id,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('honor-categories/:id')
+  @RequirePermissions('honor_categories:delete')
+  @ApiOperation({ summary: 'Soft delete honor category' })
+  async deleteHonorCategory(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.deleteHonorCategory(
+      id,
       this.getActorId(req),
     );
     return { status: 'success', data };
@@ -209,7 +281,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Create medicine' })
   async createMedicine(
     @Body() dto: CreateMedicineDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.createMedicine(
       dto,
@@ -224,7 +296,7 @@ export class AdminReferenceController {
   async updateMedicine(
     @Param('medicineId', ParseIntPipe) medicineId: number,
     @Body() dto: UpdateMedicineDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateMedicine(
       medicineId,
@@ -239,7 +311,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete medicine' })
   async deleteMedicine(
     @Param('medicineId', ParseIntPipe) medicineId: number,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteMedicine(
       medicineId,
@@ -261,7 +333,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Create ecclesiastical year' })
   async createEcclesiasticalYear(
     @Body() dto: CreateEcclesiasticalYearDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.createEcclesiasticalYear(
       dto,
@@ -276,7 +348,7 @@ export class AdminReferenceController {
   async updateEcclesiasticalYear(
     @Param('yearId', ParseIntPipe) yearId: number,
     @Body() dto: UpdateEcclesiasticalYearDto,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.updateEcclesiasticalYear(
       yearId,
@@ -291,7 +363,7 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'Soft delete ecclesiastical year' })
   async deleteEcclesiasticalYear(
     @Param('yearId', ParseIntPipe) yearId: number,
-    @Request() req: Request & { user: { sub: string } },
+    @Request() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.referenceService.deleteEcclesiasticalYear(
       yearId,

@@ -11,6 +11,7 @@ describe('AuthController', () => {
     refreshSession: jest.fn(),
     logout: jest.fn(),
     requestPasswordReset: jest.fn(),
+    updatePassword: jest.fn(),
     getProfile: jest.fn(),
     getCompletionStatus: jest.fn(),
     setActiveClubContext: jest.fn(),
@@ -116,6 +117,25 @@ describe('AuthController', () => {
 
       expect(mockAuthService.requestPasswordReset).toHaveBeenCalledWith(dto);
       expect(result).toEqual(expected);
+    });
+  });
+
+  describe('updatePassword', () => {
+    it('should delegate to authService.updatePassword and return success message', async () => {
+      const currentUser = { userId: 'user-123' };
+      const dto = { password: 'NewPassword123!' };
+      mockAuthService.updatePassword.mockResolvedValue(undefined);
+
+      const result = await controller.updatePassword(currentUser, dto);
+
+      expect(mockAuthService.updatePassword).toHaveBeenCalledWith(
+        'user-123',
+        'NewPassword123!',
+      );
+      expect(result).toEqual({
+        status: 'success',
+        message: 'Password updated',
+      });
     });
   });
 
