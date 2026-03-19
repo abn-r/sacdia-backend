@@ -26,6 +26,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { RbacModule } from './rbac/rbac.module';
 import { HealthController } from './health/health.controller';
 import { AdminModule } from './admin/admin.module';
+import { InsuranceModule } from './insurance/insurance.module';
 
 @Module({
   imports: [
@@ -121,6 +122,7 @@ import { AdminModule } from './admin/admin.module';
     InventoryModule,
     RbacModule,
     AdminModule,
+    InsuranceModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
