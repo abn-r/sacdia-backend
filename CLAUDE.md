@@ -43,7 +43,7 @@ src/
 
 - NestJS 11 + TypeScript
 - Prisma 7 + PostgreSQL (Supabase)
-- JWT con `SUPABASE_JWT_SECRET`
+- JWT via JWKS (ES256) usando `SUPABASE_URL` — `SUPABASE_JWT_SECRET` solo como fallback HS256 legacy (opcional)
 - Redis (opcional) con fallback a in-memory
 - Firebase FCM
 - Sentry

@@ -107,7 +107,7 @@ pnpm run migrate:storage-urls:r2
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_JWT_SECRET`
+- `SUPABASE_JWT_SECRET` _(opcional — legacy HS256 fallback, no requerido cuando se usa JWKS via `SUPABASE_URL`)_
 
 ### Recomendadas para producción
 

@@ -26,7 +26,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!supabaseUrl && !jwtSecret) {
       throw new Error(
-        'Either SUPABASE_URL (for JWKS) or SUPABASE_JWT_SECRET (legacy) is required.',
+        'SUPABASE_URL is required for JWT verification via JWKS. ' +
+          'SUPABASE_JWT_SECRET is optional and only used as a legacy HS256 fallback.',
       );
     }
 
