@@ -307,6 +307,15 @@ export class R2FileStorageService implements FileStorageService {
           keyPrefix: this.getOptionalEnv('R2_KEY_PREFIX_EVIDENCE_FILES'),
           isPublic: false,
         };
+      case StorageBucketAlias.INSURANCE_EVIDENCE:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_INSURANCE_EVIDENCE'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_INSURANCE_EVIDENCE',
+          ),
+          keyPrefix: this.getOptionalEnv('R2_KEY_PREFIX_INSURANCE_EVIDENCE'),
+          isPublic: false,
+        };
       default:
         throw new InternalServerErrorException(
           `Unsupported storage bucket alias: ${bucketAlias}`,
