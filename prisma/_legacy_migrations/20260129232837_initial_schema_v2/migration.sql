@@ -48,7 +48,7 @@ CREATE TABLE "activities" (
 );
 
 -- CreateTable
-CREATE TABLE "assignments_folders" (
+CREATE TABLE "folder_assignments" (
     "assignment_folder_id" SERIAL NOT NULL,
     "folder_id" INTEGER,
     "active" BOOLEAN NOT NULL DEFAULT true,
@@ -56,12 +56,15 @@ CREATE TABLE "assignments_folders" (
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "modified_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
     "user_id" UUID,
+    "club_adv_id" INTEGER,
+    "club_pathf_id" INTEGER,
+    "club_mg_id" INTEGER,
 
-    CONSTRAINT "assignments_folders_pkey" PRIMARY KEY ("assignment_folder_id")
+    CONSTRAINT "folder_assignments_pkey" PRIMARY KEY ("assignment_folder_id")
 );
 
 -- CreateTable
-CREATE TABLE "attending_clubs_camporees" (
+CREATE TABLE "camporee_clubs" (
     "attending_clubs_id" SERIAL NOT NULL,
     "camporee_id" INTEGER NOT NULL,
     "camporee_type" VARCHAR(50) NOT NULL,
@@ -74,7 +77,7 @@ CREATE TABLE "attending_clubs_camporees" (
     "club_mg_id" INTEGER,
     "club_pathf_id" INTEGER,
 
-    CONSTRAINT "attending_clubs_camporees_pkey" PRIMARY KEY ("attending_clubs_id")
+    CONSTRAINT "camporee_clubs_pkey" PRIMARY KEY ("attending_clubs_id")
 );
 
 -- CreateTable
@@ -270,7 +273,7 @@ CREATE TABLE "club_pathfinders" (
 );
 
 -- CreateTable
-CREATE TABLE "club_master_guild" (
+CREATE TABLE "club_master_guilds" (
     "club_mg_id" SERIAL NOT NULL,
     "active" BOOLEAN NOT NULL DEFAULT false,
     "souls_target" INTEGER NOT NULL DEFAULT 1,
@@ -282,12 +285,12 @@ CREATE TABLE "club_master_guild" (
     "modified_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "main_club_id" INTEGER,
 
-    CONSTRAINT "club_master_guild_pkey" PRIMARY KEY ("club_mg_id")
+    CONSTRAINT "club_master_guilds_pkey" PRIMARY KEY ("club_mg_id")
 );
 
 -- CreateTable
 CREATE TABLE "club_role_assignments" (
-    "assignment_id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "assignment_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "role_id" UUID NOT NULL,
     "club_adv_id" INTEGER,
@@ -588,7 +591,7 @@ CREATE TABLE "master_honors" (
 
 -- CreateTable
 CREATE TABLE "permissions" (
-    "permission_id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "permission_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "permission_name" VARCHAR(255) NOT NULL,
     "description" TEXT,
     "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
@@ -600,7 +603,7 @@ CREATE TABLE "permissions" (
 
 -- CreateTable
 CREATE TABLE "role_permissions" (
-    "role_permission_id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "role_permission_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "role_id" UUID NOT NULL,
     "permission_id" UUID NOT NULL,
     "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
@@ -612,7 +615,7 @@ CREATE TABLE "role_permissions" (
 
 -- CreateTable
 CREATE TABLE "roles" (
-    "role_id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "role_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "role_name" VARCHAR(255) NOT NULL,
     "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
     "modified_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
@@ -700,7 +703,7 @@ CREATE TABLE "units" (
 
 -- CreateTable
 CREATE TABLE "users" (
-    "user_id" UUID NOT NULL DEFAULT auth.uid(),
+    "user_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" VARCHAR(50),
     "paternal_last_name" VARCHAR(50),
     "maternal_last_name" VARCHAR(50),
@@ -995,7 +998,7 @@ CREATE TABLE "users_honors" (
 
 -- CreateTable
 CREATE TABLE "users_permissions" (
-    "user_permission_id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "user_permission_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "permission_id" UUID NOT NULL,
     "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
@@ -1007,7 +1010,7 @@ CREATE TABLE "users_permissions" (
 
 -- CreateTable
 CREATE TABLE "users_roles" (
-    "user_role_id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "user_role_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "role_id" UUID NOT NULL,
     "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
@@ -1031,7 +1034,7 @@ CREATE TABLE "medicines" (
 
 -- CreateTable
 CREATE TABLE "relationship_types" (
-    "relationship_type_id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "relationship_type_id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" VARCHAR(50) NOT NULL,
     "description" TEXT,
     "active" BOOLEAN NOT NULL DEFAULT true,
@@ -1043,7 +1046,7 @@ CREATE TABLE "relationship_types" (
 
 -- CreateTable
 CREATE TABLE "legal_representatives" (
-    "id" UUID NOT NULL DEFAULT extensions.uuid_generate_v4(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "representative_user_id" UUID,
     "name" VARCHAR(100),
@@ -1247,7 +1250,7 @@ CREATE INDEX "idx_legal_reps_representative" ON "legal_representatives"("represe
 ALTER TABLE "activities" ADD CONSTRAINT "activities_club_adv_id_fkey" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "activities" ADD CONSTRAINT "activities_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "activities" ADD CONSTRAINT "activities_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "activities" ADD CONSTRAINT "activities_club_pathf_id_fkey" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
@@ -1259,25 +1262,25 @@ ALTER TABLE "activities" ADD CONSTRAINT "activities_club_type_id_fkey" FOREIGN K
 ALTER TABLE "activities" ADD CONSTRAINT "activities_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "assignments_folders" ADD CONSTRAINT "assignments_folders_folder_id_fkey" FOREIGN KEY ("folder_id") REFERENCES "folders"("folder_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "folder_assignments" ADD CONSTRAINT "folder_assignments_folder_id_fkey" FOREIGN KEY ("folder_id") REFERENCES "folders"("folder_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "assignments_folders" ADD CONSTRAINT "fk_assignments_folders_users_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "folder_assignments" ADD CONSTRAINT "fk_folder_assignments_users_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "attending_clubs_camporees" ADD CONSTRAINT "attending_clubs_camporees_camporee_id_fkey" FOREIGN KEY ("camporee_id") REFERENCES "local_camporees"("local_camporee_id") ON DELETE CASCADE ON UPDATE NO ACTION;
+ALTER TABLE "camporee_clubs" ADD CONSTRAINT "camporee_clubs_camporee_id_fkey" FOREIGN KEY ("camporee_id") REFERENCES "local_camporees"("local_camporee_id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "attending_clubs_camporees" ADD CONSTRAINT "attending_clubs_camporees_club_adv_id_fkey" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "camporee_clubs" ADD CONSTRAINT "camporee_clubs_club_adv_id_fkey" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "attending_clubs_camporees" ADD CONSTRAINT "attending_clubs_camporees_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "camporee_clubs" ADD CONSTRAINT "camporee_clubs_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "attending_clubs_camporees" ADD CONSTRAINT "attending_clubs_camporees_club_pathf_id_fkey" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "camporee_clubs" ADD CONSTRAINT "camporee_clubs_club_pathf_id_fkey" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "attending_clubs_camporees" ADD CONSTRAINT "attending_clubs_camporees_local_field_id_fkey" FOREIGN KEY ("local_field_id") REFERENCES "local_fields"("local_field_id") ON DELETE CASCADE ON UPDATE NO ACTION;
+ALTER TABLE "camporee_clubs" ADD CONSTRAINT "camporee_clubs_local_field_id_fkey" FOREIGN KEY ("local_field_id") REFERENCES "local_fields"("local_field_id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "attending_members_camporees" ADD CONSTRAINT "attending_members_camporees_camporee_id_fkey" FOREIGN KEY ("camporee_id") REFERENCES "local_camporees"("local_camporee_id") ON DELETE CASCADE ON UPDATE NO ACTION;
@@ -1322,7 +1325,7 @@ ALTER TABLE "club_ideals" ADD CONSTRAINT "club_ideals_club_type_id_fkey" FOREIGN
 ALTER TABLE "club_inventory" ADD CONSTRAINT "club_inventory_club_adv_id_fkey" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "club_inventory" ADD CONSTRAINT "club_inventory_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "club_inventory" ADD CONSTRAINT "club_inventory_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "club_inventory" ADD CONSTRAINT "club_inventory_club_pathf_id_fkey" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1349,16 +1352,16 @@ ALTER TABLE "club_pathfinders" ADD CONSTRAINT "club_pathfinders_club_type_id_fke
 ALTER TABLE "club_pathfinders" ADD CONSTRAINT "club_pathfinders_main_club_id_fkey" FOREIGN KEY ("main_club_id") REFERENCES "clubs"("club_id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "club_master_guild" ADD CONSTRAINT "club_master_guild_club_type_id_fkey" FOREIGN KEY ("club_type_id") REFERENCES "club_types"("ct_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "club_master_guilds" ADD CONSTRAINT "club_master_guilds_club_type_id_fkey" FOREIGN KEY ("club_type_id") REFERENCES "club_types"("ct_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "club_master_guild" ADD CONSTRAINT "club_master_guild_main_club_id_fkey" FOREIGN KEY ("main_club_id") REFERENCES "clubs"("club_id") ON DELETE CASCADE ON UPDATE NO ACTION;
+ALTER TABLE "club_master_guilds" ADD CONSTRAINT "club_master_guilds_main_club_id_fkey" FOREIGN KEY ("main_club_id") REFERENCES "clubs"("club_id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "club_role_assignments" ADD CONSTRAINT "club_role_assignments_club_adv_id_fkey" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "club_role_assignments" ADD CONSTRAINT "club_role_assignments_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE CASCADE ON UPDATE NO ACTION;
+ALTER TABLE "club_role_assignments" ADD CONSTRAINT "club_role_assignments_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "club_role_assignments" ADD CONSTRAINT "club_role_assignments_club_pathf_id_fkey" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE CASCADE ON UPDATE NO ACTION;
@@ -1391,7 +1394,7 @@ ALTER TABLE "enrollments" ADD CONSTRAINT "enrollments_validated_by_fkey" FOREIGN
 ALTER TABLE "finances" ADD CONSTRAINT "finances_club_adv_id_fkey" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "finances" ADD CONSTRAINT "finances_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "finances" ADD CONSTRAINT "finances_club_mg_id_fkey" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "finances" ADD CONSTRAINT "finances_club_pathf_id_fkey" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1418,7 +1421,7 @@ ALTER TABLE "folders_modules" ADD CONSTRAINT "folders_modules_folder_id_fkey" FO
 ALTER TABLE "folders_modules_records" ADD CONSTRAINT "fk_act_club_adventurers" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "folders_modules_records" ADD CONSTRAINT "fk_act_club_master_guild" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "folders_modules_records" ADD CONSTRAINT "fk_act_club_master_guilds" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "folders_modules_records" ADD CONSTRAINT "fk_act_club_pathfinders" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
@@ -1433,7 +1436,7 @@ ALTER TABLE "folders_modules_records" ADD CONSTRAINT "folders_modules_records_mo
 ALTER TABLE "folders_section_records" ADD CONSTRAINT "fk_act_club_adventurers" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "folders_section_records" ADD CONSTRAINT "fk_act_club_master_guild" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "folders_section_records" ADD CONSTRAINT "fk_act_club_master_guilds" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "folders_section_records" ADD CONSTRAINT "fk_act_club_pathfinders" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
@@ -1499,7 +1502,7 @@ ALTER TABLE "unit_members" ADD CONSTRAINT "unit_members_user_id_fkey" FOREIGN KE
 ALTER TABLE "units" ADD CONSTRAINT "fk_act_club_adventurers" FOREIGN KEY ("club_adv_id") REFERENCES "club_adventurers"("club_adv_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "units" ADD CONSTRAINT "fk_act_club_master_guild" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guild"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "units" ADD CONSTRAINT "fk_act_club_master_guilds" FOREIGN KEY ("club_mg_id") REFERENCES "club_master_guilds"("club_mg_id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "units" ADD CONSTRAINT "fk_act_club_pathfinders" FOREIGN KEY ("club_pathf_id") REFERENCES "club_pathfinders"("club_pathf_id") ON DELETE NO ACTION ON UPDATE NO ACTION;

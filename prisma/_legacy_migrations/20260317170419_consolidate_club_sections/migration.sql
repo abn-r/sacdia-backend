@@ -26,7 +26,7 @@ CREATE TABLE "club_sections" (
   "modified_at"     TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
   CONSTRAINT "club_sections_club_type_id_fkey"
     FOREIGN KEY ("club_type_id")
-    REFERENCES "club_types"("club_type_id")
+    REFERENCES "club_types"("ct_id")
     ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT "club_sections_main_club_id_fkey"
     FOREIGN KEY ("main_club_id")

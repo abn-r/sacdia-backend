@@ -1,6 +1,6 @@
 -- Add user_fcm_tokens table for Firebase Cloud Messaging support
 CREATE TABLE IF NOT EXISTS "user_fcm_tokens" (
-  "fcm_token_id" UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
+  "fcm_token_id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "user_id" UUID NOT NULL,
   "token" VARCHAR(255) UNIQUE NOT NULL,
   "device_type" VARCHAR(50),
