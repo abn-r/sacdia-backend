@@ -121,10 +121,10 @@ export class FcmTokensController {
     return this.fcmTokensService.registerToken(req.user.sub, dto);
   }
 
-  @Delete(':token')
-  @ApiOperation({ summary: 'Unregister FCM token' })
-  async unregisterToken(@Param('token') token: string, @Request() req) {
-    return this.fcmTokensService.unregisterToken(token, req.user.sub);
+  @Delete(':id')
+  @ApiOperation({ summary: 'Unregister FCM token by record ID' })
+  async unregisterToken(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+    return this.fcmTokensService.unregisterTokenById(id, req.user.sub);
   }
 
   @Get()

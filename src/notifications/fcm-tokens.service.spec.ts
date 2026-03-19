@@ -57,6 +57,7 @@ describe('FcmTokensService', () => {
           user_id: 'new-user',
           active: true,
         }),
+        select: expect.any(Object),
       });
       expect(result.user_id).toBe('new-user');
     });

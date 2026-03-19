@@ -16,6 +16,19 @@ export class FcmTokensService {
   constructor(private prisma: PrismaService) {}
 
   /**
+   * Campos seguros a devolver — nunca incluir el campo `token`
+   */
+  private readonly safeSelect = {
+    fcm_token_id: true,
+    user_id: true,
+    device_type: true,
+    device_name: true,
+    last_used: true,
+    active: true,
+    created_at: true,
+  } as const;
+
+  /**
    * Registrar o actualizar token FCM
    */
   async registerToken(userId: string, dto: RegisterFcmTokenDto) {
@@ -35,6 +48,7 @@ export class FcmTokensService {
           device_type: dto.device_type,
           device_name: dto.device_name,
         },
+        select: this.safeSelect,
       });
     }
 
@@ -47,11 +61,40 @@ export class FcmTokensService {
         device_name: dto.device_name,
         active: true,
       },
+      select: this.safeSelect,
     });
   }
 
   /**
-   * Desactivar token FCM (logout o desinstalación)
+   * Desactivar token FCM por ID de registro (método seguro — no expone el token en la URL)
+   */
+  async unregisterTokenById(fcmTokenId: string, userId: string) {
+    const existing = await this.prisma.user_fcm_tokens.findUnique({
+      where: { fcm_token_id: fcmTokenId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('FCM token not found');
+    }
+
+    if (existing.user_id !== userId) {
+      throw new ForbiddenException('You can only unregister your own tokens');
+    }
+
+    await this.prisma.user_fcm_tokens.update({
+      where: { fcm_token_id: fcmTokenId },
+      data: { active: false },
+    });
+
+    return {
+      success: true,
+      message: 'FCM token unregistered successfully',
+    };
+  }
+
+  /**
+   * Desactivar token FCM por valor de token (uso interno — no exponer en API)
+   * @internal
    */
   async unregisterToken(token: string, userId: string) {
     const existing = await this.prisma.user_fcm_tokens.findFirst({
@@ -78,7 +121,7 @@ export class FcmTokensService {
   }
 
   /**
-   * Obtener tokens activos de un usuario
+   * Obtener tokens activos de un usuario — sin exponer el valor del token
    */
   async getUserTokens(userId: string) {
     return this.prisma.user_fcm_tokens.findMany({
@@ -86,6 +129,7 @@ export class FcmTokensService {
         user_id: userId,
         active: true,
       },
+      select: this.safeSelect,
     });
   }
 
