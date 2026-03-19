@@ -49,6 +49,7 @@
     "dotenv": "^17.2.3",
     "firebase-admin": "^13.7.0",
     "helmet": "^8.1.0",
+    "jwks-rsa": "^4.0.1",
     "multer": "^2.1.1",
     "nestjs-pino": "^4.6.0",
     "passport": "^0.7.0",
@@ -108,6 +109,9 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "node_modules/"
+    ]
   }
 }

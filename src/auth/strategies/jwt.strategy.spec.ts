@@ -1,11 +1,20 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
+jest.mock('jwks-rsa', () => ({
+  passportJwtSecret: jest.fn(() => jest.fn()),
+}));
+
 import { JwtStrategy } from './jwt.strategy';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 
 describe('JwtStrategy', () => {
   const mockConfigService = {
-    get: jest.fn().mockReturnValue('test-secret'),
+    get: jest.fn((key: string) => {
+      if (key === 'SUPABASE_JWT_SECRET') return 'test-secret';
+      if (key === 'SUPABASE_URL') return null; // use legacy HS256 in tests
+      return null;
+    }),
   } as unknown as ConfigService;
 
   const mockTokenBlacklistService = {

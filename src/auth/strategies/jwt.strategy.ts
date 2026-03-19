@@ -2,6 +2,7 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
+import { passportJwtSecret } from 'jwks-rsa';
 import type { Request } from 'express';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 
@@ -20,19 +21,51 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private readonly tokenBlacklistService: TokenBlacklistService,
   ) {
+    const supabaseUrl = configService.get<string>('SUPABASE_URL');
     const jwtSecret = configService.get<string>('SUPABASE_JWT_SECRET');
-    if (!jwtSecret) {
+
+    if (!supabaseUrl && !jwtSecret) {
       throw new Error(
-        'SUPABASE_JWT_SECRET is missing. JWT validation cannot be initialized.',
+        'Either SUPABASE_URL (for JWKS) or SUPABASE_JWT_SECRET (legacy) is required.',
       );
     }
+
+    const jwksUri = supabaseUrl
+      ? `${supabaseUrl}/auth/v1/.well-known/jwks.json`
+      : null;
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: jwtSecret,
+      // JWKS (ES256) with HS256 fallback for transition period
+      ...(jwksUri
+        ? {
+            secretOrKeyProvider: passportJwtSecret({
+              jwksUri,
+              cache: true,
+              cacheMaxAge: 600_000, // 10 min
+              rateLimit: true,
+              jwksRequestsPerMinute: 5,
+              handleSigningKeyError: (err, cb) => {
+                // Fallback to legacy HS256 if JWKS verification fails
+                if (jwtSecret) {
+                  cb(null, jwtSecret);
+                } else {
+                  cb(err);
+                }
+              },
+            }),
+            algorithms: ['ES256', 'HS256'],
+          }
+        : { secretOrKey: jwtSecret, algorithms: ['HS256'] }),
       passReqToCallback: true,
     });
+
+    if (jwksUri) {
+      this.logger.log(`JWT verification via JWKS: ${jwksUri}`);
+    } else {
+      this.logger.warn('JWT verification via legacy HS256 shared secret');
+    }
   }
 
   async validate(req: Request, payload: JwtPayload) {
