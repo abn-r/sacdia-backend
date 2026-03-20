@@ -157,18 +157,27 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
       date_completed: true,
     },
   },
-  users_classes: {
+  enrollments: {
     where: { active: true },
-    orderBy: { created_at: 'desc' },
+    orderBy: { ecclesiastical_year_id: 'desc' },
     select: {
-      user_class_id: true,
+      enrollment_id: true,
       class_id: true,
-      advanced: true,
-      certificate: true,
-      current_class: true,
+      ecclesiastical_year_id: true,
+      advanced_status: true,
+      active: true,
+      enrollment_date: true,
+      investiture_status: true,
+      investiture_date: true,
       classes: {
         select: {
           name: true,
+        },
+      },
+      ecclesiastical_year: {
+        select: {
+          start_date: true,
+          end_date: true,
         },
       },
     },
@@ -470,7 +479,7 @@ export class AdminUsersService {
     const formativeReadModel = buildFormativeReadModel({
       activeEcclesiasticalYearId,
       enrollments: enrollmentCandidates,
-      trajectoryClasses: user.users_classes,
+      trajectoryClasses: user.enrollments,
     });
 
     if (formativeReadModel.conflictEnrollmentIds.length > 0) {

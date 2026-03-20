@@ -1,10 +1,12 @@
 export interface TrajectoryClassDto {
-  user_class_id: number;
+  enrollment_id: number;
   class_id: number;
   class_name: string | null;
-  advanced: boolean;
-  certificate: string | null;
+  ecclesiastical_year_id: number;
+  advanced: boolean | null;
   current_class: boolean;
+  investiture_status: string | null;
+  enrollment_date: Date;
 }
 
 export interface CurrentOperationalEnrollmentDto {
@@ -27,14 +29,15 @@ export interface CurrentOperationalEnrollmentDto {
 }
 
 export interface TrajectoryClassSource {
-  user_class_id: number;
+  enrollment_id: number;
   class_id: number;
-  advanced: boolean;
-  certificate: string | null;
-  current_class: boolean;
-  classes: {
-    name: string;
-  } | null;
+  ecclesiastical_year_id: number;
+  advanced_status: boolean | null;
+  active: boolean;
+  enrollment_date: Date;
+  investiture_status: string | null;
+  investiture_date?: Date | null;
+  classes?: { name?: string | null } | null;
 }
 
 export interface OperationalEnrollmentSource {
@@ -73,14 +76,20 @@ export interface FormativeReadModel {
 
 function mapTrajectoryClasses(
   trajectoryClasses: TrajectoryClassSource[],
+  activeEcclesiasticalYearId: number | null,
 ): TrajectoryClassDto[] {
   return trajectoryClasses.map((item) => ({
-    user_class_id: item.user_class_id,
+    enrollment_id: item.enrollment_id,
     class_id: item.class_id,
     class_name: item.classes?.name ?? null,
-    advanced: item.advanced,
-    certificate: item.certificate ?? null,
-    current_class: item.current_class,
+    ecclesiastical_year_id: item.ecclesiastical_year_id,
+    advanced: item.advanced_status ?? null,
+    current_class:
+      item.active &&
+      activeEcclesiasticalYearId !== null &&
+      item.ecclesiastical_year_id === activeEcclesiasticalYearId,
+    investiture_status: item.investiture_status ?? null,
+    enrollment_date: item.enrollment_date,
   }));
 }
 
@@ -121,7 +130,10 @@ function mapCurrentOperationalEnrollment(
 export function buildFormativeReadModel(
   input: FormativeReadModelInput,
 ): FormativeReadModel {
-  const trajectory = mapTrajectoryClasses(input.trajectoryClasses);
+  const trajectory = mapTrajectoryClasses(
+    input.trajectoryClasses,
+    input.activeEcclesiasticalYearId,
+  );
 
   return {
     current_operational_enrollment: mapCurrentOperationalEnrollment(

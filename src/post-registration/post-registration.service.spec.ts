@@ -30,12 +30,6 @@ describe('PostRegistrationService', () => {
     classes: {
       findUnique: jest.fn().mockResolvedValue({ class_id: 5, active: true }),
     },
-    users_classes: {
-      findUnique: jest.fn().mockResolvedValue(null),
-      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-      update: jest.fn().mockResolvedValue({ user_class_id: 99 }),
-      create: jest.fn().mockResolvedValue({ user_class_id: 1 }),
-    },
     enrollments: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findUnique: jest.fn().mockResolvedValue(null),
@@ -234,13 +228,6 @@ describe('PostRegistrationService', () => {
       transactionMock.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-existing',
       });
-      transactionMock.users_classes.findUnique.mockResolvedValue({
-        user_class_id: 77,
-        user_id: userId,
-        class_id: dto.class_id,
-        active: true,
-        current_class: false,
-      });
       transactionMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 501,
         active: true,
@@ -254,22 +241,6 @@ describe('PostRegistrationService', () => {
       ).not.toHaveBeenCalled();
       expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
       expect(transactionMock.enrollments.update).not.toHaveBeenCalled();
-      expect(transactionMock.users_classes.create).not.toHaveBeenCalled();
-      expect(transactionMock.users_classes.updateMany).toHaveBeenCalledWith({
-        where: {
-          user_id: userId,
-          current_class: true,
-          NOT: { class_id: dto.class_id },
-        },
-        data: { current_class: false },
-      });
-      expect(transactionMock.users_classes.update).toHaveBeenCalledWith({
-        where: { user_class_id: 77 },
-        data: {
-          active: true,
-          current_class: true,
-        },
-      });
     });
 
     it('should create enrollment-first operational truth on first completion', async () => {
@@ -293,8 +264,6 @@ describe('PostRegistrationService', () => {
           ecclesiastical_year_id: 2026,
         },
       });
-      expect(transactionMock.users_classes.updateMany).toHaveBeenCalled();
-      expect(transactionMock.users_classes.create).toHaveBeenCalled();
       expect(transactionMock.users_pr.update).toHaveBeenCalled();
     });
 
@@ -383,16 +352,6 @@ describe('PostRegistrationService', () => {
           active: false,
         },
       });
-      expect(transactionMock.users_classes.updateMany).toHaveBeenCalledWith({
-        where: {
-          user_id: userId,
-          current_class: true,
-          NOT: { class_id: dto.class_id },
-        },
-        data: {
-          current_class: false,
-        },
-      });
     });
 
     it('should fail atomically when no active ecclesiastical year exists', async () => {
@@ -403,7 +362,6 @@ describe('PostRegistrationService', () => {
       ).rejects.toThrow('No hay año eclesiástico activo configurado');
 
       expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
-      expect(transactionMock.users_classes.create).not.toHaveBeenCalled();
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
     });
 
@@ -414,7 +372,6 @@ describe('PostRegistrationService', () => {
         service.completeStep3(userId, dto, ownerActor),
       ).rejects.toThrow(BadRequestException);
 
-      expect(transactionMock.users_classes.create).not.toHaveBeenCalled();
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
     });
 

@@ -131,7 +131,7 @@ describe('AdminUsersService', () => {
       club_selection_complete: false,
       date_completed: null,
     },
-    users_classes: [],
+    enrollments: [],
     club_role_assignments: [],
     emergency_contact: [
       {
@@ -172,13 +172,20 @@ describe('AdminUsersService', () => {
   });
 
   const buildTrajectoryClass = () => ({
-    user_class_id: 55,
+    enrollment_id: 55,
     class_id: 9,
-    advanced: false,
-    certificate: 'CERT-9',
-    current_class: true,
+    ecclesiastical_year_id: 2026,
+    advanced_status: false,
+    active: true,
+    enrollment_date: new Date('2026-01-10T00:00:00.000Z'),
+    investiture_status: 'IN_PROGRESS',
+    investiture_date: null,
     classes: {
       name: 'Explorador',
+    },
+    ecclesiastical_year: {
+      start_date: new Date('2026-01-01'),
+      end_date: new Date('2026-12-31'),
     },
   });
 
@@ -412,7 +419,7 @@ describe('AdminUsersService', () => {
             date_completed: null,
           },
         ],
-        users_classes: [],
+        enrollments: [],
         club_role_assignments: [],
         emergency_contact: [],
         legal_representative: null,
@@ -563,7 +570,7 @@ describe('AdminUsersService', () => {
       );
 
       const userRecord = buildAdminDetailRecord();
-      userRecord.users_classes = [buildTrajectoryClass()];
+      userRecord.enrollments = [buildTrajectoryClass()];
       mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
 
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
@@ -585,12 +592,14 @@ describe('AdminUsersService', () => {
       );
       expect(result.trajectory_classes).toEqual([
         {
-          user_class_id: 55,
+          enrollment_id: 55,
           class_id: 9,
           class_name: 'Explorador',
+          ecclesiastical_year_id: 2026,
           advanced: false,
-          certificate: 'CERT-9',
           current_class: true,
+          investiture_status: 'IN_PROGRESS',
+          enrollment_date: new Date('2026-01-10T00:00:00.000Z'),
         },
       ]);
       expect(result.classes).toEqual(result.trajectory_classes);
@@ -608,7 +617,7 @@ describe('AdminUsersService', () => {
       );
 
       const userRecord = buildAdminDetailRecord();
-      userRecord.users_classes = [buildTrajectoryClass()];
+      userRecord.enrollments = [buildTrajectoryClass()];
       mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
 
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
@@ -635,7 +644,7 @@ describe('AdminUsersService', () => {
       );
 
       const userRecord = buildAdminDetailRecord();
-      userRecord.users_classes = [
+      userRecord.enrollments = [
         {
           ...buildTrajectoryClass(),
           classes: null,
@@ -666,7 +675,7 @@ describe('AdminUsersService', () => {
       );
 
       const userRecord = buildAdminDetailRecord();
-      userRecord.users_classes = [buildTrajectoryClass()];
+      userRecord.enrollments = [buildTrajectoryClass()];
       mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
 
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({

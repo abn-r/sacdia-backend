@@ -247,11 +247,6 @@ export class PostRegistrationService {
           ecclesiasticalYearId: currentYear.year_id,
         });
 
-        await this.syncLegacyCurrentClassProjection(tx, {
-          userId,
-          classId: dto.class_id,
-        });
-
         await tx.users_pr.update({
           where: { user_id: userId },
           data: {
@@ -522,59 +517,6 @@ export class PostRegistrationService {
         );
       }
     }
-  }
-
-  private async syncLegacyCurrentClassProjection(
-    tx: Prisma.TransactionClient,
-    params: {
-      userId: string;
-      classId: number;
-    },
-  ) {
-    await tx.users_classes.updateMany({
-      where: {
-        user_id: params.userId,
-        current_class: true,
-        NOT: { class_id: params.classId },
-      },
-      data: {
-        current_class: false,
-      },
-    });
-
-    const existingUserClass = await tx.users_classes.findUnique({
-      where: {
-        user_id_class_id: {
-          user_id: params.userId,
-          class_id: params.classId,
-        },
-      },
-      select: {
-        user_class_id: true,
-      },
-    });
-
-    if (existingUserClass) {
-      await tx.users_classes.update({
-        where: {
-          user_class_id: existingUserClass.user_class_id,
-        },
-        data: {
-          active: true,
-          current_class: true,
-        },
-      });
-
-      return;
-    }
-
-    await tx.users_classes.create({
-      data: {
-        user_id: params.userId,
-        class_id: params.classId,
-        current_class: true,
-      },
-    });
   }
 
   private isUniqueConstraintError(error: unknown): boolean {
