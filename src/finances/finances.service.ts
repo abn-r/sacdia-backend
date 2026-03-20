@@ -180,11 +180,12 @@ export class FinancesService {
     });
   }
 
-  async update(financeId: number, dto: UpdateFinanceDto) {
+  async update(financeId: number, dto: UpdateFinanceDto, modifiedBy?: string) {
     await this.findOne(financeId);
 
     const updateData: any = {
       modified_at: new Date(),
+      ...(modifiedBy && { modified_by_id: modifiedBy }),
     };
 
     if (dto.amount !== undefined) updateData.amount = dto.amount;
@@ -203,7 +204,7 @@ export class FinancesService {
     });
   }
 
-  async remove(financeId: number) {
+  async remove(financeId: number, modifiedBy?: string) {
     await this.findOne(financeId);
 
     return this.prisma.finances.update({
@@ -211,6 +212,7 @@ export class FinancesService {
       data: {
         active: false,
         modified_at: new Date(),
+        ...(modifiedBy && { modified_by_id: modifiedBy }),
       },
     });
   }

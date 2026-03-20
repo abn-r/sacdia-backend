@@ -166,8 +166,9 @@ export class FinancesController {
   async update(
     @Param('financeId', ParseIntPipe) financeId: number,
     @Body() dto: UpdateFinanceDto,
+    @Request() req: any,
   ) {
-    return this.financesService.update(financeId, dto);
+    return this.financesService.update(financeId, dto, req.user.sub);
   }
 
   @Delete('finances/:financeId')
@@ -176,7 +177,10 @@ export class FinancesController {
   @ApiOperation({ summary: 'Desactivar movimiento' })
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento desactivado' })
-  async remove(@Param('financeId', ParseIntPipe) financeId: number) {
-    return this.financesService.remove(financeId);
+  async remove(
+    @Param('financeId', ParseIntPipe) financeId: number,
+    @Request() req: any,
+  ) {
+    return this.financesService.remove(financeId, req.user.sub);
   }
 }

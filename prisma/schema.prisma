@@ -417,12 +417,14 @@ model finances {
   finance_date        DateTime            @db.Date
   active              Boolean             @default(false)
   created_by          String              @db.Uuid
+  modified_by_id      String?             @db.Uuid
   created_at          DateTime?           @default(now()) @db.Timestamptz(6)
   modified_at         DateTime?           @default(now()) @db.Timestamptz(6)
   club_section_id     Int?
   club_sections       club_sections?      @relation(fields: [club_section_id], references: [club_section_id], onUpdate: NoAction)
   club_types          club_types          @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   users               users               @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  modified_by         users?              @relation("finances_modified_by", fields: [modified_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   finances_categories finances_categories @relation(fields: [finance_category_id], references: [finance_category_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([club_section_id], map: "idx_finances_club_section_id")
@@ -807,6 +809,7 @@ model users {
   validator_enrollments          enrollments[]                    @relation("enrollment_validator")
   evidence_files_uploaded        evidence_files[]
   finances                       finances[]
+  finances_modified              finances[]                       @relation("finances_modified_by")
   assignments_folders            folder_assignments[]
   evidence_files_submitted       folders_section_records[]        @relation("evidence_files_submitted_by")
   evidence_files_validated       folders_section_records[]        @relation("evidence_files_validated_by")
