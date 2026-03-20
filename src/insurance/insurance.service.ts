@@ -22,8 +22,8 @@ type InsuranceMutationInput = {
   active?: boolean | string | null;
 };
 
-type UserClassSnapshot = {
-  current_class?: boolean;
+type EnrollmentSnapshot = {
+  ecclesiastical_year_id?: number;
   classes?: { name?: string | null } | null;
 };
 
@@ -33,7 +33,7 @@ type MemberSnapshot = {
   paternal_last_name?: string | null;
   maternal_last_name?: string | null;
   user_image?: string | null;
-  users_classes?: UserClassSnapshot[];
+  enrollments?: EnrollmentSnapshot[];
 };
 
 type InsuranceSnapshot = {
@@ -88,15 +88,16 @@ export class InsuranceService {
             paternal_last_name: true,
             maternal_last_name: true,
             user_image: true,
-            users_classes: {
+            enrollments: {
               where: {
                 active: true,
               },
               orderBy: {
-                created_at: 'desc',
+                ecclesiastical_year_id: 'desc',
               },
+              take: 1,
               select: {
-                current_class: true,
+                ecclesiastical_year_id: true,
                 classes: {
                   select: {
                     name: true,
@@ -267,15 +268,16 @@ export class InsuranceService {
         paternal_last_name: true,
         maternal_last_name: true,
         user_image: true,
-        users_classes: {
+        enrollments: {
           where: {
             active: true,
           },
           orderBy: {
-            created_at: 'desc',
+            ecclesiastical_year_id: 'desc',
           },
+          take: 1,
           select: {
-            current_class: true,
+            ecclesiastical_year_id: true,
             classes: {
               select: {
                 name: true,
@@ -331,7 +333,7 @@ export class InsuranceService {
     member: MemberSnapshot,
     insurance: InsuranceSnapshot | null,
   ) {
-    const currentClass = this.extractCurrentClass(member.users_classes);
+    const currentClass = this.extractCurrentClass(member.enrollments);
     const userImage = await this.resolvePrivateAssetUrl(
       StorageBucketAlias.USER_PROFILES,
       member.user_image ?? null,
@@ -357,7 +359,7 @@ export class InsuranceService {
     member: MemberSnapshot,
     insurance: InsuranceSnapshot | null,
   ) {
-    const currentClass = this.extractCurrentClass(member.users_classes);
+    const currentClass = this.extractCurrentClass(member.enrollments);
     const userImage = await this.resolvePrivateAssetUrl(
       StorageBucketAlias.USER_PROFILES,
       member.user_image ?? null,
@@ -406,9 +408,8 @@ export class InsuranceService {
     };
   }
 
-  private extractCurrentClass(classes?: UserClassSnapshot[] | null) {
-    const current = classes?.find((item) => item.current_class);
-    const className = current?.classes?.name ?? null;
+  private extractCurrentClass(enrollments?: EnrollmentSnapshot[] | null) {
+    const className = enrollments?.[0]?.classes?.name ?? null;
     if (!className) return null;
     return { name: className };
   }
@@ -430,7 +431,7 @@ export class InsuranceService {
         paternal_last_name: member?.paternal_last_name ?? null,
         maternal_last_name: member?.maternal_last_name ?? null,
         user_image: member?.user_image ?? null,
-        users_classes: member?.users_classes ?? [],
+        enrollments: member?.enrollments ?? [],
       });
     }
 

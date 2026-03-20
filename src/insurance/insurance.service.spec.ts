@@ -65,9 +65,9 @@ describe('InsuranceService', () => {
           paternal_last_name: 'García',
           maternal_last_name: 'López',
           user_image: 'user-profiles/member-1.jpg',
-          users_classes: [
+          enrollments: [
             {
-              current_class: true,
+              ecclesiastical_year_id: 2025,
               classes: { name: 'Explorador' },
             },
           ],
@@ -147,9 +147,9 @@ describe('InsuranceService', () => {
       paternal_last_name: 'Pérez',
       maternal_last_name: null,
       user_image: 'user-profiles/member-2.jpg',
-      users_classes: [
+      enrollments: [
         {
-          current_class: true,
+          ecclesiastical_year_id: 2025,
           classes: { name: 'Explorador' },
         },
       ],
@@ -185,7 +185,7 @@ describe('InsuranceService', () => {
       paternal_last_name: 'Ramírez',
       maternal_last_name: 'Sosa',
       user_image: null,
-      users_classes: [],
+      enrollments: [],
     });
     mockPrismaService.member_insurances.create.mockResolvedValue({
       insurance_id: 12,
@@ -278,7 +278,7 @@ describe('InsuranceService', () => {
       paternal_last_name: 'Mora',
       maternal_last_name: 'Vega',
       user_image: null,
-      users_classes: [],
+      enrollments: [],
     });
     mockPrismaService.member_insurances.findFirst.mockResolvedValue({
       insurance_id: 44,
