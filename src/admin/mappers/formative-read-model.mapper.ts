@@ -2,8 +2,6 @@ export interface TrajectoryClassDto {
   user_class_id: number;
   class_id: number;
   class_name: string | null;
-  investiture: boolean;
-  date_investiture: Date | null;
   advanced: boolean;
   certificate: string | null;
   current_class: boolean;
@@ -31,8 +29,6 @@ export interface CurrentOperationalEnrollmentDto {
 export interface TrajectoryClassSource {
   user_class_id: number;
   class_id: number;
-  investiture: boolean;
-  date_investiture: Date | null;
   advanced: boolean;
   certificate: string | null;
   current_class: boolean;
@@ -82,8 +78,6 @@ function mapTrajectoryClasses(
     user_class_id: item.user_class_id,
     class_id: item.class_id,
     class_name: item.classes?.name ?? null,
-    investiture: item.investiture,
-    date_investiture: item.date_investiture,
     advanced: item.advanced,
     certificate: item.certificate ?? null,
     current_class: item.current_class,

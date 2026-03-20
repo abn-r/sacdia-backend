@@ -163,8 +163,6 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
     select: {
       user_class_id: true,
       class_id: true,
-      investiture: true,
-      date_investiture: true,
       advanced: true,
       certificate: true,
       current_class: true,

@@ -174,8 +174,6 @@ describe('AdminUsersService', () => {
   const buildTrajectoryClass = () => ({
     user_class_id: 55,
     class_id: 9,
-    investiture: true,
-    date_investiture: new Date('2025-11-10'),
     advanced: false,
     certificate: 'CERT-9',
     current_class: true,
@@ -590,8 +588,6 @@ describe('AdminUsersService', () => {
           user_class_id: 55,
           class_id: 9,
           class_name: 'Explorador',
-          investiture: true,
-          date_investiture: new Date('2025-11-10'),
           advanced: false,
           certificate: 'CERT-9',
           current_class: true,

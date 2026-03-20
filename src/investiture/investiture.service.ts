@@ -246,7 +246,6 @@ export class InvestitureService {
 
   /**
    * Registrar la investidura formal de un enrollment en estado APPROVED.
-   * Hace auto-sync de users_classes con investiture = true.
    */
   async markInvestido(
     enrollmentId: number,
@@ -256,7 +255,6 @@ export class InvestitureService {
     enrollment_id: number;
     investiture_status: string;
     investiture_date: Date | null;
-    users_classes_synced: boolean;
   }> {
     // Step 1: Find enrollment with user relation for local_field_id resolution
     const enrollment = await this.prisma.enrollments.findUnique({
@@ -318,29 +316,6 @@ export class InvestitureService {
         },
       });
 
-      // 5c. Auto-sync users_classes (backwards compatibility with Flutter app)
-      // TODO: Migrar lecturas de Flutter a enrollments.investiture_status y deprecar users_classes.investiture
-      await tx.users_classes.upsert({
-        where: {
-          user_id_class_id: {
-            user_id: enrollment.user_id,
-            class_id: enrollment.class_id,
-          },
-        },
-        update: {
-          investiture: true,
-          date_investiture: investitureConfig.investiture_date,
-        },
-        create: {
-          user_id: enrollment.user_id,
-          class_id: enrollment.class_id,
-          investiture: true,
-          date_investiture: investitureConfig.investiture_date,
-          current_class: true,
-          active: true,
-        },
-      });
-
       return updatedEnrollment;
     });
 
@@ -349,7 +324,6 @@ export class InvestitureService {
       enrollment_id: updated.enrollment_id,
       investiture_status: updated.investiture_status,
       investiture_date: updated.investiture_date,
-      users_classes_synced: true,
     };
   }
 

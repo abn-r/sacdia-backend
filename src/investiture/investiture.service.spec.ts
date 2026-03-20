@@ -24,9 +24,6 @@ describe('InvestitureService', () => {
     investiture_validation_history: {
       create: jest.fn(),
     },
-    users_classes: {
-      upsert: jest.fn(),
-    },
   });
 
   let txMock: ReturnType<typeof createTxMock>;
@@ -353,18 +350,16 @@ describe('InvestitureService', () => {
 
     const dto: MarkInvestidoDto = { comments: 'Investidura primavera 2026' };
 
-    it('TC14 - happy path: APPROVED → INVESTIDO + users_classes synced', async () => {
+    it('TC14 - happy path: APPROVED → INVESTIDO', async () => {
       mockPrismaService.enrollments.findUnique.mockResolvedValue(approvedEnrollment);
       mockPrismaService.investiture_config.findFirst.mockResolvedValue(baseConfig);
       txMock.enrollments.update.mockResolvedValue(investidoResult);
       txMock.investiture_validation_history.create.mockResolvedValue({});
-      txMock.users_classes.upsert.mockResolvedValue({});
 
       const result = await service.markInvestido(1, 'admin-xyz', dto);
 
       expect(result.investiture_status).toBe('INVESTIDO');
-      expect(result.users_classes_synced).toBe(true);
-      expect(txMock.users_classes.upsert).toHaveBeenCalledTimes(1);
+      expect(result.investiture_date).toEqual(baseConfig.investiture_date);
     });
 
     it('TC15 - error: enrollment not found → NotFoundException', async () => {
