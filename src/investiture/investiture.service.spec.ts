@@ -1,0 +1,521 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { InvestitureService } from './investiture.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
+import { ValidateEnrollmentDto, InvestitureValidationAction } from './dto/validate-enrollment.dto';
+import { MarkInvestidoDto } from './dto/mark-investido.dto';
+
+describe('InvestitureService', () => {
+  let service: InvestitureService;
+
+  // ---- transaction mock helpers ----
+
+  const createTxMock = () => ({
+    enrollments: {
+      update: jest.fn(),
+    },
+    investiture_validation_history: {
+      create: jest.fn(),
+    },
+    users_classes: {
+      upsert: jest.fn(),
+    },
+  });
+
+  let txMock: ReturnType<typeof createTxMock>;
+
+  const mockPrismaService = {
+    $transaction: jest.fn(),
+    enrollments: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      update: jest.fn(),
+    },
+    investiture_config: {
+      findFirst: jest.fn(),
+    },
+    investiture_validation_history: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
+    users: {
+      findUnique: jest.fn(),
+    },
+    club_role_assignments: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
+  };
+
+  const mockAuthorizationContext = {
+    hasAnyGlobalRole: jest.fn(),
+  };
+
+  // ---- shared fixtures ----
+
+  const pastDate = new Date('2024-01-01T00:00:00.000Z');
+  const futureDate = new Date('2099-12-31T00:00:00.000Z');
+
+  const baseEnrollment = {
+    enrollment_id: 1,
+    user_id: 'user-abc',
+    class_id: 7,
+    ecclesiastical_year_id: 2026,
+    investiture_status: 'IN_PROGRESS',
+    locked_for_validation: false,
+    active: true,
+    users: { local_field_id: 3 },
+  };
+
+  const baseConfig = {
+    config_id: 10,
+    local_field_id: 3,
+    ecclesiastical_year_id: 2026,
+    submission_deadline: futureDate,
+    investiture_date: new Date('2026-06-01'),
+    active: true,
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    txMock = createTxMock();
+
+    // Default: interactive $transaction calls the callback with txMock
+    // Array form: resolve each element (Prisma query builders behave like thenables)
+    mockPrismaService.$transaction.mockImplementation(
+      (arg: unknown) => {
+        if (typeof arg === 'function') {
+          return (arg as (tx: typeof txMock) => Promise<unknown>)(txMock);
+        }
+        return Promise.all(arg as Array<Promise<unknown>>);
+      },
+    );
+
+    // Default return values for direct prisma model calls used in array-form transactions
+    mockPrismaService.enrollments.update.mockResolvedValue({
+      enrollment_id: 1,
+      investiture_status: 'SUBMITTED_FOR_VALIDATION',
+      submitted_at: new Date(),
+    });
+    mockPrismaService.investiture_validation_history.create.mockResolvedValue({
+      history_id: 1,
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        InvestitureService,
+        { provide: PrismaService, useValue: mockPrismaService },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContext,
+        },
+      ],
+    }).compile();
+
+    service = module.get<InvestitureService>(InvestitureService);
+  });
+
+  // ============================================================
+  // submitForValidation
+  // ============================================================
+
+  describe('submitForValidation', () => {
+    const dto: SubmitForValidationDto = { club_id: 1, comments: 'Todo listo' };
+
+    it('TC01 - happy path: IN_PROGRESS → SUBMITTED_FOR_VALIDATION', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(baseConfig);
+
+      const result = await service.submitForValidation(1, 'user-abc', dto);
+
+      expect(result.investiture_status).toBe('SUBMITTED_FOR_VALIDATION');
+      expect(result.is_late).toBe(false);
+      expect(result.enrollment_id).toBe(1);
+    });
+
+    it('TC02 - happy path: REJECTED → SUBMITTED_FOR_VALIDATION (re-submit)', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'REJECTED',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(baseConfig);
+
+      const result = await service.submitForValidation(1, 'user-abc', dto);
+
+      expect(result.investiture_status).toBe('SUBMITTED_FOR_VALIDATION');
+      expect(result.is_late).toBe(false);
+    });
+
+    it('TC03 - error: enrollment not found → NotFoundException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.submitForValidation(999, 'user-abc', dto),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('TC04 - error: enrollment inactive → NotFoundException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        active: false,
+      });
+
+      await expect(
+        service.submitForValidation(1, 'user-abc', dto),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('TC05 - error: wrong state (APPROVED) → BadRequestException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'APPROVED',
+      });
+
+      await expect(
+        service.submitForValidation(1, 'user-abc', dto),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('TC06 - error: no investiture_config → NotFoundException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.submitForValidation(1, 'user-abc', dto),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('TC07 - soft deadline: past deadline returns is_late=true but succeeds', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+      });
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue({
+        ...baseConfig,
+        submission_deadline: pastDate,
+      });
+
+      const result = await service.submitForValidation(1, 'user-abc', dto);
+
+      expect(result.is_late).toBe(true);
+      expect(result.investiture_status).toBe('SUBMITTED_FOR_VALIDATION');
+    });
+  });
+
+  // ============================================================
+  // validateEnrollment
+  // ============================================================
+
+  describe('validateEnrollment', () => {
+    const submittedEnrollment = {
+      enrollment_id: 1,
+      investiture_status: 'SUBMITTED_FOR_VALIDATION',
+    };
+
+    const approvedResult = {
+      enrollment_id: 1,
+      investiture_status: 'APPROVED',
+      validated_by: 'admin-xyz',
+      validated_at: new Date(),
+      rejection_reason: null,
+    };
+
+    const rejectedResult = {
+      enrollment_id: 1,
+      investiture_status: 'REJECTED',
+      validated_by: 'admin-xyz',
+      validated_at: new Date(),
+      rejection_reason: 'Falta evidencia',
+    };
+
+    it('TC08 - happy path: APPROVED', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue(submittedEnrollment);
+      txMock.enrollments.update.mockResolvedValue(approvedResult);
+      txMock.investiture_validation_history.create.mockResolvedValue({});
+
+      const dto: ValidateEnrollmentDto = { action: InvestitureValidationAction.APPROVED };
+
+      const result = await service.validateEnrollment(1, 'admin-xyz', dto);
+
+      expect(result.investiture_status).toBe('APPROVED');
+      expect(result.rejection_reason).toBeNull();
+    });
+
+    it('TC09 - happy path: REJECTED with comments', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue(submittedEnrollment);
+      txMock.enrollments.update.mockResolvedValue(rejectedResult);
+      txMock.investiture_validation_history.create.mockResolvedValue({});
+
+      const dto: ValidateEnrollmentDto = {
+        action: InvestitureValidationAction.REJECTED,
+        comments: 'Falta evidencia',
+      };
+
+      const result = await service.validateEnrollment(1, 'admin-xyz', dto);
+
+      expect(result.investiture_status).toBe('REJECTED');
+      expect(result.rejection_reason).toBe('Falta evidencia');
+    });
+
+    it('TC10 - error: enrollment not found → NotFoundException', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+
+      const dto: ValidateEnrollmentDto = { action: InvestitureValidationAction.APPROVED };
+
+      await expect(
+        service.validateEnrollment(999, 'admin-xyz', dto),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('TC11 - error: wrong state (IN_PROGRESS) → ConflictException', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'IN_PROGRESS',
+      });
+
+      const dto: ValidateEnrollmentDto = { action: InvestitureValidationAction.APPROVED };
+
+      await expect(
+        service.validateEnrollment(1, 'admin-xyz', dto),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('TC12 - error: REJECTED without comments → BadRequestException', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue(submittedEnrollment);
+
+      const dto: ValidateEnrollmentDto = {
+        action: InvestitureValidationAction.REJECTED,
+        comments: '',
+      };
+
+      await expect(
+        service.validateEnrollment(1, 'admin-xyz', dto),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('TC13 - verify: REJECTED unlocks enrollment (locked_for_validation=false, submitted_for_validation=false)', async () => {
+      mockPrismaService.enrollments.findFirst.mockResolvedValue(submittedEnrollment);
+
+      const unlockedResult = {
+        ...rejectedResult,
+        locked_for_validation: false,
+        submitted_for_validation: false,
+      };
+      txMock.enrollments.update.mockResolvedValue(unlockedResult);
+      txMock.investiture_validation_history.create.mockResolvedValue({});
+
+      const dto: ValidateEnrollmentDto = {
+        action: InvestitureValidationAction.REJECTED,
+        comments: 'Falta evidencia',
+      };
+
+      await service.validateEnrollment(1, 'admin-xyz', dto);
+
+      const updateCall = txMock.enrollments.update.mock.calls[0][0] as {
+        data: { locked_for_validation: boolean; submitted_for_validation: boolean };
+      };
+      expect(updateCall.data.locked_for_validation).toBe(false);
+      expect(updateCall.data.submitted_for_validation).toBe(false);
+    });
+  });
+
+  // ============================================================
+  // markInvestido
+  // ============================================================
+
+  describe('markInvestido', () => {
+    const approvedEnrollment = {
+      ...baseEnrollment,
+      investiture_status: 'APPROVED',
+    };
+
+    const investidoResult = {
+      enrollment_id: 1,
+      investiture_status: 'INVESTIDO',
+      investiture_date: baseConfig.investiture_date,
+    };
+
+    const dto: MarkInvestidoDto = { comments: 'Investidura primavera 2026' };
+
+    it('TC14 - happy path: APPROVED → INVESTIDO + users_classes synced', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue(approvedEnrollment);
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(baseConfig);
+      txMock.enrollments.update.mockResolvedValue(investidoResult);
+      txMock.investiture_validation_history.create.mockResolvedValue({});
+      txMock.users_classes.upsert.mockResolvedValue({});
+
+      const result = await service.markInvestido(1, 'admin-xyz', dto);
+
+      expect(result.investiture_status).toBe('INVESTIDO');
+      expect(result.users_classes_synced).toBe(true);
+      expect(txMock.users_classes.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('TC15 - error: enrollment not found → NotFoundException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue(null);
+
+      await expect(service.markInvestido(999, 'admin-xyz', dto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('TC16 - error: already INVESTIDO → ConflictException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'INVESTIDO',
+      });
+
+      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('TC17 - error: wrong state (SUBMITTED_FOR_VALIDATION) → BadRequestException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'SUBMITTED_FOR_VALIDATION',
+      });
+
+      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('TC18 - error: no investiture_config → NotFoundException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue(approvedEnrollment);
+      mockPrismaService.investiture_config.findFirst.mockResolvedValue(null);
+
+      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ============================================================
+  // getPending
+  // ============================================================
+
+  describe('getPending', () => {
+    const pendingEnrollments = [
+      {
+        enrollment_id: 1,
+        investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        users: {
+          name: 'Juan',
+          paternal_last_name: 'Garcia',
+          maternal_last_name: 'Lopez',
+          email: 'juan@example.com',
+        },
+        classes: { name: 'Conquistador' },
+        ecclesiastical_year: { start_date: new Date('2026-01-01'), end_date: new Date('2026-12-31') },
+      },
+    ];
+
+    it('TC19 - happy path: returns paginated list filtered by local_field', async () => {
+      mockPrismaService.enrollments.findMany.mockResolvedValue(pendingEnrollments);
+      mockPrismaService.enrollments.count.mockResolvedValue(1);
+
+      const result = await service.getPending('admin-xyz', 3);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+      expect(mockPrismaService.users.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('TC20 - auto-scoping: resolves actor local_field when not provided', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ local_field_id: 5 });
+      mockPrismaService.enrollments.findMany.mockResolvedValue(pendingEnrollments);
+      mockPrismaService.enrollments.count.mockResolvedValue(1);
+
+      const result = await service.getPending('admin-xyz');
+
+      expect(mockPrismaService.users.findUnique).toHaveBeenCalledWith({
+        where: { user_id: 'admin-xyz' },
+        select: { local_field_id: true },
+      });
+      expect(result.data).toHaveLength(1);
+    });
+  });
+
+  // ============================================================
+  // getHistory
+  // ============================================================
+
+  describe('getHistory', () => {
+    const historyEntries = [
+      {
+        history_id: 1,
+        action: 'SUBMITTED',
+        performed_by: 'user-abc',
+        comments: null,
+        created_at: new Date('2026-03-01'),
+        users: { name: 'Juan', paternal_last_name: 'Garcia' },
+      },
+      {
+        history_id: 2,
+        action: 'APPROVED',
+        performed_by: 'admin-xyz',
+        comments: 'Todo correcto',
+        created_at: new Date('2026-03-02'),
+        users: { name: 'Admin', paternal_last_name: 'Root' },
+      },
+    ];
+
+    const enrollmentRecord = { enrollment_id: 1, user_id: 'user-abc' };
+
+    it('TC21 - happy path: admin gets full history', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue(enrollmentRecord);
+      mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(true);
+      mockPrismaService.investiture_validation_history.findMany.mockResolvedValue(historyEntries);
+
+      const result = await service.getHistory(1, 'admin-xyz');
+
+      expect(result.enrollment_id).toBe(1);
+      expect(result.history).toHaveLength(2);
+      expect(result.history[0].action).toBe('SUBMITTED');
+      expect(result.history[1].action).toBe('APPROVED');
+    });
+
+    it('TC22 - happy path: enrollment owner gets own history', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue(enrollmentRecord);
+      mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(false);
+      // No club sections found → falls through to owner check
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+      mockPrismaService.investiture_validation_history.findMany.mockResolvedValue(historyEntries);
+
+      // actor IS the enrollment owner
+      const result = await service.getHistory(1, 'user-abc');
+
+      expect(result.enrollment_id).toBe(1);
+      expect(result.history).toHaveLength(2);
+    });
+
+    it('TC23 - error: non-owner non-admin → ForbiddenException', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue(enrollmentRecord);
+      mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValue(false);
+      // No club sections found → falls through to owner check → actor is not owner
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+      // actor is neither owner nor admin
+      await expect(service.getHistory(1, 'other-user')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+});

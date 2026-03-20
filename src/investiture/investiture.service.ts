@@ -307,12 +307,10 @@ export class InvestitureService {
       });
 
       // 5b. Create history entry
-      // NOTE: investiture_action_enum has no INVESTIDO value. Reusing APPROVED with a
-      // contextual comment until the enum is extended via migration.
       await tx.investiture_validation_history.create({
         data: {
           enrollment_id: enrollmentId,
-          action: 'APPROVED',
+          action: 'INVESTIDO',
           performed_by: actorId,
           comments: dto.comments ?? 'Marcado como investido',
         },
@@ -471,11 +469,42 @@ export class InvestitureService {
     );
 
     if (!hasGlobalAccess) {
-      // Simplified MVP: allow if the actor is the enrollment owner
-      if (actorId !== enrollment.user_id) {
-        throw new ForbiddenException(
-          'Sin acceso al historial de este enrollment',
+      // Club-role check: allow if actor is an active director or counselor
+      // in any club_section where the enrollment's user also has an active assignment.
+      const enrollmentUserSections = await this.prisma.club_role_assignments
+        .findMany({
+          where: { user_id: enrollment.user_id, active: true },
+          select: { club_section_id: true },
+        })
+        .then((rows) =>
+          rows
+            .map((r) => r.club_section_id)
+            .filter((id): id is number => id !== null),
         );
+
+      const isClubStaff =
+        enrollmentUserSections.length > 0
+          ? await this.prisma.club_role_assignments.findFirst({
+              where: {
+                user_id: actorId,
+                active: true,
+                status: 'active',
+                roles: {
+                  role_name: { in: ['director', 'counselor'] },
+                },
+                club_section_id: { in: enrollmentUserSections },
+              },
+              select: { assignment_id: true },
+            })
+          : null;
+
+      if (!isClubStaff) {
+        // Fall through to enrollment owner check
+        if (actorId !== enrollment.user_id) {
+          throw new ForbiddenException(
+            'Sin acceso al historial de este enrollment',
+          );
+        }
       }
     }
 

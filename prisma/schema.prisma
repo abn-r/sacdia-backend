@@ -1260,6 +1260,7 @@ enum investiture_action_enum {
   APPROVED
   REJECTED
   REINVESTITURE_REQUESTED
+  INVESTIDO
 }
 
 enum insurance_type_enum {
