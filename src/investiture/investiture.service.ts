@@ -16,6 +16,8 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import { ValidateEnrollmentDto } from './dto/validate-enrollment.dto';
 import { MarkInvestidoDto } from './dto/mark-investido.dto';
+import { CreateInvestitureConfigDto } from './dto/create-investiture-config.dto';
+import { UpdateInvestitureConfigDto } from './dto/update-investiture-config.dto';
 
 @Injectable()
 export class InvestitureService {
@@ -536,6 +538,123 @@ export class InvestitureService {
         created_at: entry.created_at,
       })),
     };
+  }
+
+  // ========================================
+  // INVESTITURE CONFIG CRUD
+  // ========================================
+
+  /**
+   * Listar todas las configuraciones de investidura.
+   * Filtrado opcional por campo local.
+   */
+  async getConfigs(localFieldId?: number) {
+    const where: Prisma.investiture_configWhereInput = {};
+    if (localFieldId) {
+      where.local_field_id = localFieldId;
+    }
+
+    return this.prisma.investiture_config.findMany({
+      where,
+      include: {
+        local_fields: { select: { name: true } },
+        ecclesiastical_year: { select: { start_date: true, end_date: true } },
+      },
+      orderBy: [{ ecclesiastical_year_id: 'desc' }, { local_field_id: 'asc' }],
+    });
+  }
+
+  /**
+   * Obtener una configuración de investidura por su ID.
+   */
+  async getConfig(configId: number) {
+    const config = await this.prisma.investiture_config.findUnique({
+      where: { config_id: configId },
+      include: {
+        local_fields: { select: { name: true } },
+        ecclesiastical_year: { select: { start_date: true, end_date: true } },
+      },
+    });
+
+    if (!config) {
+      throw new NotFoundException(
+        `Configuración de investidura con ID ${configId} no encontrada`,
+      );
+    }
+
+    return config;
+  }
+
+  /**
+   * Crear una nueva configuración de investidura.
+   * Fuerza UNIQUE(local_field_id, ecclesiastical_year_id).
+   */
+  async createConfig(dto: CreateInvestitureConfigDto) {
+    try {
+      return await this.prisma.investiture_config.create({
+        data: {
+          local_field_id: dto.local_field_id,
+          ecclesiastical_year_id: dto.ecclesiastical_year_id,
+          submission_deadline: new Date(dto.submission_deadline),
+          investiture_date: new Date(dto.investiture_date),
+        },
+        include: {
+          local_fields: { select: { name: true } },
+          ecclesiastical_year: { select: { start_date: true, end_date: true } },
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Ya existe una configuración de investidura para este campo local y año eclesiástico',
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Actualizar deadline, fecha de investidura y/o estado activo de una config.
+   */
+  async updateConfig(configId: number, dto: UpdateInvestitureConfigDto) {
+    await this.getConfig(configId);
+
+    const data: Prisma.investiture_configUpdateInput = {};
+    if (dto.submission_deadline !== undefined) {
+      data.submission_deadline = new Date(dto.submission_deadline);
+    }
+    if (dto.investiture_date !== undefined) {
+      data.investiture_date = new Date(dto.investiture_date);
+    }
+    if (dto.active !== undefined) {
+      data.active = dto.active;
+    }
+
+    return this.prisma.investiture_config.update({
+      where: { config_id: configId },
+      data,
+      include: {
+        local_fields: { select: { name: true } },
+        ecclesiastical_year: { select: { start_date: true, end_date: true } },
+      },
+    });
+  }
+
+  /**
+   * Soft-delete: marcar una config como inactiva (active = false).
+   */
+  async deleteConfig(configId: number) {
+    await this.getConfig(configId);
+
+    const updated = await this.prisma.investiture_config.update({
+      where: { config_id: configId },
+      data: { active: false },
+    });
+
+    return { config_id: updated.config_id, active: updated.active };
   }
 
   // ========================================

@@ -2,6 +2,8 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -22,6 +24,8 @@ import {
   SubmitForValidationDto,
   ValidateEnrollmentDto,
   MarkInvestidoDto,
+  CreateInvestitureConfigDto,
+  UpdateInvestitureConfigDto,
 } from './dto';
 import {
   JwtAuthGuard,
@@ -173,6 +177,100 @@ export class InvestitureController {
       enrollmentId,
       actorId,
     );
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // GET /admin/investiture/config
+  // ========================================
+
+  @Get('admin/investiture/config')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'coordinator')
+  @ApiOperation({ summary: 'Listar configuraciones de investidura' })
+  @ApiQuery({ name: 'local_field_id', required: false, type: Number, description: 'Filtrar por campo local' })
+  @ApiResponse({ status: 200, description: 'Lista de configuraciones de investidura' })
+  @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
+  async getConfigs(
+    @Query('local_field_id', new ParseIntPipe({ optional: true })) localFieldId?: number,
+  ) {
+    const data = await this.investitureService.getConfigs(localFieldId);
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // GET /admin/investiture/config/:configId
+  // ========================================
+
+  @Get('admin/investiture/config/:configId')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'coordinator')
+  @ApiOperation({ summary: 'Obtener configuración de investidura por ID' })
+  @ApiParam({ name: 'configId', type: Number, description: 'ID de la configuración' })
+  @ApiResponse({ status: 200, description: 'Configuración de investidura' })
+  @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
+  @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
+  async getConfig(
+    @Param('configId', ParseIntPipe) configId: number,
+  ) {
+    const data = await this.investitureService.getConfig(configId);
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // POST /admin/investiture/config
+  // ========================================
+
+  @Post('admin/investiture/config')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin')
+  @ApiOperation({ summary: 'Crear configuración de investidura' })
+  @ApiResponse({ status: 201, description: 'Configuración creada' })
+  @ApiResponse({ status: 403, description: 'Sin rol de admin' })
+  @ApiResponse({ status: 409, description: 'Ya existe configuración para este campo local y año' })
+  async createConfig(
+    @Body() dto: CreateInvestitureConfigDto,
+  ) {
+    const data = await this.investitureService.createConfig(dto);
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // PATCH /admin/investiture/config/:configId
+  // ========================================
+
+  @Patch('admin/investiture/config/:configId')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin')
+  @ApiOperation({ summary: 'Actualizar configuración de investidura' })
+  @ApiParam({ name: 'configId', type: Number, description: 'ID de la configuración' })
+  @ApiResponse({ status: 200, description: 'Configuración actualizada' })
+  @ApiResponse({ status: 403, description: 'Sin rol de admin' })
+  @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
+  async updateConfig(
+    @Param('configId', ParseIntPipe) configId: number,
+    @Body() dto: UpdateInvestitureConfigDto,
+  ) {
+    const data = await this.investitureService.updateConfig(configId, dto);
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // DELETE /admin/investiture/config/:configId
+  // ========================================
+
+  @Delete('admin/investiture/config/:configId')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin')
+  @ApiOperation({ summary: 'Soft-delete de configuración de investidura (active = false)' })
+  @ApiParam({ name: 'configId', type: Number, description: 'ID de la configuración' })
+  @ApiResponse({ status: 200, description: 'Configuración desactivada' })
+  @ApiResponse({ status: 403, description: 'Sin rol de admin' })
+  @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
+  async deleteConfig(
+    @Param('configId', ParseIntPipe) configId: number,
+  ) {
+    const data = await this.investitureService.deleteConfig(configId);
     return { status: 'success', data };
   }
 }
