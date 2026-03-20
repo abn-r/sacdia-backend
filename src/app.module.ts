@@ -27,6 +27,7 @@ import { RbacModule } from './rbac/rbac.module';
 import { HealthController } from './health/health.controller';
 import { AdminModule } from './admin/admin.module';
 import { InsuranceModule } from './insurance/insurance.module';
+import { InvestitureModule } from './investiture/investiture.module';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { InsuranceModule } from './insurance/insurance.module';
     RbacModule,
     AdminModule,
     InsuranceModule,
+    InvestitureModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
