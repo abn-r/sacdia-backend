@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClassesService } from './classes.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
 describe('ClassesService', () => {
   let service: ClassesService;
@@ -58,10 +59,18 @@ describe('ClassesService', () => {
       ],
     });
 
+    const mockFileStorageService = {
+      upload: jest.fn(),
+      deleteMany: jest.fn(),
+      extractKeyFromPublicUrl: jest.fn(),
+      getSignedDownloadUrl: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClassesService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();
 

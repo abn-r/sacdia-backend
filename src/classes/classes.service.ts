@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,10 +12,26 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 
 @Injectable()
 export class ClassesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   private async resolveProgressEnrollment(params: {
     userId: string;
@@ -410,5 +428,206 @@ export class ClassesService {
         enrollment_id: resolvedEnrollment.enrollmentId,
       };
     });
+  }
+
+  // ========================================
+  // CLASS SECTION FILE EVIDENCE
+  // ========================================
+
+  async uploadSectionFile(
+    userId: string,
+    classId: number,
+    sectionProgressId: number,
+    file: Express.Multer.File,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('File is required');
+    }
+
+    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException(
+        'Invalid file type. Allowed: PDF, JPG, PNG, WEBP',
+      );
+    }
+
+    // Validate that the section_progress_id belongs to userId and classId
+    const sectionProgress = await this.prisma.class_section_progress.findFirst({
+      where: {
+        section_progress_id: sectionProgressId,
+        user_id: userId,
+        class_id: classId,
+        active: true,
+      },
+    });
+
+    if (!sectionProgress) {
+      throw new NotFoundException(
+        `Section progress ${sectionProgressId} not found for user ${userId} in class ${classId}`,
+      );
+    }
+
+    const extension = this.resolveFileExtension(file);
+    const objectKey = `${sectionProgressId}-${Date.now()}.${extension}`;
+
+    const uploaded = await this.fileStorage.upload(
+      StorageBucketAlias.CLASS_EVIDENCE,
+      objectKey,
+      file.buffer,
+      { contentType: file.mimetype },
+    );
+
+    const created = await (this.prisma as any).evidence_files.create({
+      data: {
+        section_progress_id: sectionProgressId,
+        file_url: uploaded.url,
+        file_name: file.originalname || objectKey,
+        file_type: this.resolveEvidenceFileType(file),
+        uploaded_by_id: userId,
+        active: true,
+      },
+      include: {
+        uploaded_by: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
+
+    return this.mapEvidenceFile(created);
+  }
+
+  async deleteSectionFile(
+    userId: string,
+    classId: number,
+    sectionProgressId: number,
+    fileId: number,
+  ) {
+    const fileRecord = await (this.prisma as any).evidence_files.findFirst({
+      where: {
+        evidence_file_id: fileId,
+        section_progress_id: sectionProgressId,
+        active: true,
+      },
+      include: {
+        class_section_progress: {
+          select: {
+            user_id: true,
+            class_id: true,
+            active: true,
+          },
+        },
+        uploaded_by: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !fileRecord ||
+      !fileRecord.class_section_progress ||
+      fileRecord.class_section_progress.user_id !== userId ||
+      fileRecord.class_section_progress.class_id !== classId
+    ) {
+      throw new NotFoundException('Evidence file not found');
+    }
+
+    const r2Key = this.fileStorage.extractKeyFromPublicUrl(
+      StorageBucketAlias.CLASS_EVIDENCE,
+      fileRecord.file_url,
+    );
+
+    if (r2Key) {
+      try {
+        await this.fileStorage.deleteMany(StorageBucketAlias.CLASS_EVIDENCE, [
+          r2Key,
+        ]);
+      } catch {
+        // Best-effort delete from R2; soft-delete in DB is the source of truth.
+      }
+    }
+
+    const updated = await (this.prisma as any).evidence_files.update({
+      where: { evidence_file_id: fileId },
+      data: { active: false },
+      include: {
+        uploaded_by: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
+
+    return this.mapEvidenceFile(updated);
+  }
+
+  private mapEvidenceFile(file: {
+    evidence_file_id: number;
+    file_url: string;
+    file_name: string;
+    file_type: string;
+    uploaded_at: Date;
+    uploaded_by?: {
+      name?: string | null;
+      paternal_last_name?: string | null;
+      maternal_last_name?: string | null;
+    } | null;
+  }) {
+    return {
+      id: String(file.evidence_file_id),
+      file_id: file.evidence_file_id,
+      url: file.file_url,
+      file_url: file.file_url,
+      file_name: file.file_name,
+      file_type: file.file_type,
+      uploaded_by_name: this.formatUserName(file.uploaded_by ?? null),
+      uploaded_at: file.uploaded_at.toISOString(),
+    };
+  }
+
+  private formatUserName(
+    user?: {
+      name?: string | null;
+      paternal_last_name?: string | null;
+      maternal_last_name?: string | null;
+    } | null,
+  ) {
+    if (!user) return null;
+    const parts = [user.name, user.paternal_last_name, user.maternal_last_name]
+      .map((p) => p?.trim())
+      .filter((p): p is string => Boolean(p));
+    return parts.join(' ').trim() || null;
+  }
+
+  private resolveEvidenceFileType(file: Express.Multer.File) {
+    return file.mimetype === 'application/pdf' ||
+      file.originalname?.toLowerCase().endsWith('.pdf')
+      ? 'pdf'
+      : 'image';
+  }
+
+  private resolveFileExtension(file: Express.Multer.File) {
+    const original = file.originalname ?? '';
+    const ext = original.includes('.')
+      ? original.split('.').pop()?.toLowerCase()
+      : null;
+
+    if (ext) return ext;
+
+    if (file.mimetype === 'application/pdf') return 'pdf';
+    if (file.mimetype === 'image/png') return 'png';
+    if (file.mimetype === 'image/webp') return 'webp';
+    if (file.mimetype === 'image/jpeg') return 'jpg';
+
+    return 'bin';
   }
 }
