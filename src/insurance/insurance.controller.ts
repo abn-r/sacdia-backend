@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -17,11 +18,12 @@ import {
   ApiConsumes,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../common/decorators';
-import { JwtAuthGuard } from '../common/guards';
+import { CurrentUser, GlobalRoles } from '../common/decorators';
+import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import { CreateInsuranceDto } from './dto/create-insurance.dto';
 import { UpdateInsuranceDto } from './dto/update-insurance.dto';
 import { InsuranceService } from './insurance.service';
@@ -49,6 +51,48 @@ export class InsuranceController {
     @Param('sectionId', ParseIntPipe) sectionId: number,
   ) {
     const data = await this.service.listMembersInsurance(clubId, sectionId);
+    return { status: 'success', data };
+  }
+
+  @Get('insurance/expiring')
+  @UseGuards(GlobalRolesGuard)
+  @GlobalRoles('admin', 'coordinator')
+  @ApiOperation({
+    summary: 'Listar seguros próximos a vencer',
+    description:
+      'Devuelve seguros activos cuyo end_date cae dentro de los próximos `days_ahead` días. ' +
+      'Requiere rol global admin o coordinator.',
+  })
+  @ApiQuery({
+    name: 'days_ahead',
+    required: false,
+    type: Number,
+    description: 'Días hacia adelante para buscar vencimientos (default: 30)',
+  })
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description: 'Filtrar por campo local del usuario',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de seguros próximos a vencer, ordenados por end_date ASC',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — requiere rol admin o coordinator' })
+  async getExpiringInsurances(
+    @Query('days_ahead') daysAhead?: string,
+    @Query('local_field_id') localFieldId?: string,
+  ) {
+    const daysAheadNum = daysAhead !== undefined ? parseInt(daysAhead, 10) : 30;
+    const localFieldIdNum =
+      localFieldId !== undefined ? parseInt(localFieldId, 10) : undefined;
+    const data = await this.service.getExpiringInsurances(
+      isNaN(daysAheadNum) ? 30 : daysAheadNum,
+      localFieldIdNum !== undefined && isNaN(localFieldIdNum)
+        ? undefined
+        : localFieldIdNum,
+    );
     return { status: 'success', data };
   }
 

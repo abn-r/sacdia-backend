@@ -20,6 +20,7 @@ describe('CamporeesService', () => {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
     member_insurances: {
       findUnique: jest.fn(),
@@ -629,6 +630,304 @@ describe('CamporeesService', () => {
 
       expect(result.data).toEqual(mockMembers);
       expect(result.meta.total).toBe(1);
+    });
+  });
+
+  describe('removeMember', () => {
+    const mockCamporee = {
+      local_camporee_id: 1,
+      name: 'Test Camporee',
+      active: true,
+      local_fields: {},
+      ecclesiastical_year_relation: {},
+      attending_members_camporees: [],
+    };
+
+    const mockRegistration = {
+      camporee_member_id: 42,
+      camporee_id: 1,
+      user_id: 'user-uuid-1',
+      active: true,
+    };
+
+    it('should soft delete the member registration', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(mockCamporee);
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue(mockRegistration);
+      mockPrismaService.camporee_members.update.mockResolvedValue({
+        ...mockRegistration,
+        active: false,
+      });
+
+      const result = await service.removeMember(1, 'user-uuid-1');
+
+      expect(result.active).toBe(false);
+      expect(mockPrismaService.camporee_members.update).toHaveBeenCalledWith({
+        where: { camporee_member_id: 42 },
+        data: expect.objectContaining({ active: false }),
+      });
+    });
+
+    it('should throw NotFoundException if camporee does not exist', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(null);
+
+      await expect(service.removeMember(999, 'user-uuid-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException if member is not registered in camporee', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(mockCamporee);
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue(null);
+
+      await expect(service.removeMember(1, 'nonexistent-user')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should search registration with correct filter (active: true)', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(mockCamporee);
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue(mockRegistration);
+      mockPrismaService.camporee_members.update.mockResolvedValue({
+        ...mockRegistration,
+        active: false,
+      });
+
+      await service.removeMember(1, 'user-uuid-1');
+
+      expect(mockPrismaService.camporee_members.findFirst).toHaveBeenCalledWith({
+        where: {
+          camporee_id: 1,
+          user_id: 'user-uuid-1',
+          active: true,
+        },
+      });
+    });
+  });
+
+  describe('registerMember - additional insurance validations', () => {
+    it('should throw BadRequestException if user not found', async () => {
+      const registerDto = {
+        user_id: 'nonexistent-user',
+        camporee_type: 'local' as const,
+        club_name: 'Test Club',
+      };
+
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        const tx = {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue({
+              local_camporee_id: 1,
+              active: true,
+              end_date: new Date('2026-06-03'),
+            }),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue(null),
+          },
+        };
+        return callback(tx);
+      });
+
+      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException if user is already registered', async () => {
+      const registerDto = {
+        user_id: 'user-uuid',
+        camporee_type: 'local' as const,
+        club_name: 'Test Club',
+      };
+
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        const tx = {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue({
+              local_camporee_id: 1,
+              active: true,
+              end_date: new Date('2026-06-03'),
+            }),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue({ user_id: 'user-uuid' }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue({
+              camporee_member_id: 1,
+              camporee_id: 1,
+              user_id: 'user-uuid',
+              active: true,
+            }),
+          },
+        };
+        return callback(tx);
+      });
+
+      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException if insurance not found', async () => {
+      const registerDto = {
+        user_id: 'user-uuid',
+        camporee_type: 'local' as const,
+        club_name: 'Test Club',
+        insurance_id: 999,
+      };
+
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        const tx = {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue({
+              local_camporee_id: 1,
+              active: true,
+              end_date: new Date('2026-06-03'),
+            }),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue({ user_id: 'user-uuid' }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+          },
+          member_insurances: {
+            findUnique: jest.fn().mockResolvedValue(null),
+          },
+        };
+        return callback(tx);
+      });
+
+      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException if insurance belongs to a different user', async () => {
+      const registerDto = {
+        user_id: 'user-uuid',
+        camporee_type: 'local' as const,
+        club_name: 'Test Club',
+        insurance_id: 1,
+      };
+
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        const tx = {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue({
+              local_camporee_id: 1,
+              active: true,
+              end_date: new Date('2026-06-03'),
+            }),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue({ user_id: 'user-uuid' }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+          },
+          member_insurances: {
+            findUnique: jest.fn().mockResolvedValue({
+              insurance_id: 1,
+              user_id: 'other-user',
+              insurance_type: 'CAMPOREE',
+              end_date: new Date('2026-12-31'),
+              active: true,
+            }),
+          },
+        };
+        return callback(tx);
+      });
+
+      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException if insurance is not active', async () => {
+      const registerDto = {
+        user_id: 'user-uuid',
+        camporee_type: 'local' as const,
+        club_name: 'Test Club',
+        insurance_id: 1,
+      };
+
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        const tx = {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue({
+              local_camporee_id: 1,
+              active: true,
+              end_date: new Date('2026-06-03'),
+            }),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue({ user_id: 'user-uuid' }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+          },
+          member_insurances: {
+            findUnique: jest.fn().mockResolvedValue({
+              insurance_id: 1,
+              user_id: 'user-uuid',
+              insurance_type: 'CAMPOREE',
+              end_date: new Date('2026-12-31'),
+              active: false,
+            }),
+          },
+        };
+        return callback(tx);
+      });
+
+      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should register member without insurance when insurance_id is not provided', async () => {
+      const registerDto = {
+        user_id: 'user-uuid',
+        camporee_type: 'local' as const,
+        club_name: 'Test Club',
+      };
+
+      const mockMember = {
+        camporee_member_id: 5,
+        camporee_id: 1,
+        user_id: 'user-uuid',
+        insurance_verified: false,
+        insurance_id: null,
+        active: true,
+        users: { user_id: 'user-uuid', name: 'Test User', user_image: null },
+        insurance: null,
+      };
+
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        const tx = {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue({
+              local_camporee_id: 1,
+              active: true,
+              end_date: new Date('2026-06-03'),
+            }),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue({ user_id: 'user-uuid' }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue(mockMember),
+          },
+        };
+        return callback(tx);
+      });
+
+      const result = await service.registerMember(1, registerDto);
+
+      expect(result.insurance_verified).toBe(false);
+      expect(result.insurance_id).toBeNull();
     });
   });
 });

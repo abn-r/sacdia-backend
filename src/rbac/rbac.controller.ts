@@ -133,4 +133,38 @@ export class RbacController {
   ) {
     return this.rbacService.removePermissionFromRole(id, permissionId);
   }
+
+  // ─── Permisos directos de usuario ───────────────────────────
+
+  @Get('users/:userId/permissions')
+  @RequirePermissions('permissions:read')
+  @ApiOperation({ summary: 'Listar permisos directos de un usuario' })
+  @ApiResponse({ status: 200, description: 'Permisos directos del usuario' })
+  async getUserPermissions(@Param('userId', ParseUUIDPipe) userId: string) {
+    const data = await this.rbacService.getUserPermissions(userId);
+    return { status: 'success', data };
+  }
+
+  @Post('users/:userId/permissions')
+  @RequirePermissions('permissions:assign')
+  @ApiOperation({ summary: 'Asignar un permiso directo a un usuario' })
+  @ApiResponse({ status: 200, description: 'Permiso asignado al usuario' })
+  async assignPermissionToUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: AssignPermissionsDto,
+  ) {
+    const permissionId = dto.permission_ids[0];
+    return this.rbacService.assignPermissionToUser(userId, permissionId);
+  }
+
+  @Delete('users/:userId/permissions/:permissionId')
+  @RequirePermissions('permissions:assign')
+  @ApiOperation({ summary: 'Remover un permiso directo de un usuario' })
+  @ApiResponse({ status: 200, description: 'Permiso removido del usuario' })
+  async removePermissionFromUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('permissionId', ParseUUIDPipe) permissionId: string,
+  ) {
+    return this.rbacService.removePermissionFromUser(userId, permissionId);
+  }
 }

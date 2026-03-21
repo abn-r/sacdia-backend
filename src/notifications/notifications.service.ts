@@ -26,7 +26,7 @@ export class NotificationsService {
   /**
    * Enviar notificación a un usuario específico
    */
-  async sendToUser(dto: SendNotificationDto) {
+  async sendToUser(dto: SendNotificationDto, sentBy: string) {
     if (!this.isFcmConfigured()) {
       return {
         success: false,
@@ -73,6 +73,20 @@ export class NotificationsService {
       }
     }
 
+    // Registrar log
+    await this.prisma.notification_logs.create({
+      data: {
+        title: dto.title,
+        body: dto.body,
+        type: 'USER',
+        target_type: 'user',
+        target_id: dto.userId,
+        sent_by: sentBy,
+        tokens_sent: response.successCount,
+        tokens_failed: response.failureCount,
+      },
+    });
+
     return {
       success: true,
       successCount: response.successCount,
@@ -83,7 +97,7 @@ export class NotificationsService {
   /**
    * Enviar notificación a todos los usuarios activos
    */
-  async broadcast(dto: BroadcastNotificationDto) {
+  async broadcast(dto: BroadcastNotificationDto, sentBy: string) {
     if (!this.isFcmConfigured()) {
       return {
         success: false,
@@ -121,6 +135,20 @@ export class NotificationsService {
       totalFailure += response.failureCount;
     }
 
+    // Registrar log
+    await this.prisma.notification_logs.create({
+      data: {
+        title: dto.title,
+        body: dto.body,
+        type: 'BROADCAST',
+        target_type: 'all',
+        target_id: null,
+        sent_by: sentBy,
+        tokens_sent: totalSuccess,
+        tokens_failed: totalFailure,
+      },
+    });
+
     return {
       success: true,
       successCount: totalSuccess,
@@ -134,6 +162,7 @@ export class NotificationsService {
   async sendToClubMembers(
     clubSectionId: number,
     dto: Omit<BroadcastNotificationDto, 'userId'>,
+    sentBy: string,
   ) {
     if (!this.isFcmConfigured()) {
       return {
@@ -189,11 +218,59 @@ export class NotificationsService {
       totalFailure += response.failureCount;
     }
 
+    // Registrar log
+    await this.prisma.notification_logs.create({
+      data: {
+        title: dto.title,
+        body: dto.body,
+        type: 'CLUB',
+        target_type: 'club_section',
+        target_id: String(clubSectionId),
+        sent_by: sentBy,
+        tokens_sent: totalSuccess,
+        tokens_failed: totalFailure,
+      },
+    });
+
     return {
       success: true,
       successCount: totalSuccess,
       failureCount: totalFailure,
       memberCount: userIds.length,
+    };
+  }
+
+  /**
+   * Obtener historial paginado de notificaciones enviadas
+   */
+  async getNotificationHistory(page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.prisma.notification_logs.findMany({
+        skip,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      this.prisma.notification_logs.count(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

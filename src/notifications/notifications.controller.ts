@@ -8,16 +8,21 @@ import {
   Request,
   UseGuards,
   ParseUUIDPipe,
+  Query,
+  ParseIntPipe,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
+import { GlobalRoles } from '../common/decorators';
 import { RequirePermissions } from '../common/decorators';
 import {
   JwtAuthGuard,
   OwnerOrAdminGuard,
   PermissionsGuard,
+  GlobalRolesGuard,
 } from '../common/guards';
 
 // DTOs
@@ -80,15 +85,15 @@ export class NotificationsController {
   @Post('send')
   @RequirePermissions('notifications:send')
   @ApiOperation({ summary: 'Send notification to specific user' })
-  async sendToUser(@Body() dto: SendNotificationDto) {
-    return this.notificationsService.sendToUser(dto);
+  async sendToUser(@Body() dto: SendNotificationDto, @Request() req) {
+    return this.notificationsService.sendToUser(dto, req.user.sub);
   }
 
   @Post('broadcast')
   @RequirePermissions('notifications:broadcast')
   @ApiOperation({ summary: 'Send notification to all users' })
-  async broadcast(@Body() dto: BroadcastNotificationDto) {
-    return this.notificationsService.broadcast(dto);
+  async broadcast(@Body() dto: BroadcastNotificationDto, @Request() req) {
+    return this.notificationsService.broadcast(dto, req.user.sub);
   }
 
   @Post('club/:instanceType/:instanceId')
@@ -99,11 +104,24 @@ export class NotificationsController {
     instanceType: 'adventurers' | 'pathfinders' | 'master_guilds',
     @Param('instanceId') instanceId: string,
     @Body() dto: BroadcastNotificationDto,
+    @Request() req,
   ) {
     return this.notificationsService.sendToClubMembers(
       parseInt(instanceId),
       dto,
+      req.user.sub,
     );
+  }
+
+  @Get('history')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'super_admin')
+  @ApiOperation({ summary: 'Get paginated notification history' })
+  async getHistory(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    return this.notificationsService.getNotificationHistory(page, limit);
   }
 }
 

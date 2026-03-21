@@ -235,8 +235,26 @@ model club_inventory {
   club_section_id       Int?
   club_sections         club_sections?        @relation(fields: [club_section_id], references: [club_section_id], onUpdate: NoAction)
   inventory_categories  inventory_categories? @relation(fields: [inventory_category_id], references: [inventory_category_id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_history     inventory_history[]
 
   @@index([club_section_id], map: "idx_club_inventory_club_section_id")
+}
+
+model inventory_history {
+  history_id        Int            @id @default(autoincrement())
+  inventory_id      Int
+  action            String         @db.VarChar(20)
+  field_changed     String?        @db.VarChar(100)
+  old_value         String?
+  new_value         String?
+  performed_by      String         @db.Uuid
+  created_at        DateTime       @default(now()) @db.Timestamptz()
+
+  club_inventory    club_inventory @relation(fields: [inventory_id], references: [club_inventory_id], onDelete: Cascade)
+  users             users          @relation("inventory_history_performer", fields: [performed_by], references: [user_id])
+
+  @@index([inventory_id], map: "idx_inventory_history_inventory")
+  @@index([performed_by], map: "idx_inventory_history_performer")
 }
 
 model club_types {
@@ -817,6 +835,7 @@ model users {
   evidence_files_submitted       folders_section_records[]        @relation("evidence_files_submitted_by")
   evidence_files_validated       folders_section_records[]        @relation("evidence_files_validated_by")
   investiture_validation_history investiture_validation_history[]
+  inventory_history_performed    inventory_history[]              @relation("inventory_history_performer")
   as_legal_representative        legal_representatives[]          @relation("representative")
   legal_representative           legal_representatives?           @relation("user_legal_rep")
   member_insurances_created      member_insurances[]              @relation("member_insurances_created_by")
@@ -827,6 +846,7 @@ model users {
   units_captain_id               units[]                          @relation("units_captain_idTousers")
   units_secretary_id             units[]                          @relation("units_secretary_idTousers")
   units_as_substitute_advisor    units[]                          @relation("units_substitute_advisor_idTousers")
+  notification_logs_sent         notification_logs[]              @relation("notification_logs_sender")
   user_fcm_tokens                user_fcm_tokens[]
   countries                      countries?                       @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields                   local_fields?                    @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
@@ -840,6 +860,24 @@ model users {
   users_pr                       users_pr?
   users_roles                    users_roles[]
   weekly_records                 weekly_records[]
+}
+
+model notification_logs {
+  log_id        Int      @id @default(autoincrement())
+  title         String   @db.VarChar(255)
+  body          String
+  type          String   @db.VarChar(50)
+  target_type   String   @db.VarChar(50)
+  target_id     String?  @db.VarChar(255)
+  sent_by       String   @db.Uuid
+  tokens_sent   Int      @default(0)
+  tokens_failed Int      @default(0)
+  created_at    DateTime @default(now()) @db.Timestamptz()
+
+  users users @relation("notification_logs_sender", fields: [sent_by], references: [user_id])
+
+  @@index([sent_by], map: "idx_notification_logs_sender")
+  @@index([created_at], map: "idx_notification_logs_created")
 }
 
 model user_fcm_tokens {

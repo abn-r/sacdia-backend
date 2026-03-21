@@ -9,6 +9,7 @@ import {
   Query,
   ParseIntPipe,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -116,6 +117,31 @@ export class InventoryController {
     };
   }
 
+  @Get('inventory/:inventoryId/history')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'inventoryId' })
+  @ApiOperation({
+    summary: 'Obtener historial de cambios de un item del inventario',
+    description: 'Retorna el historial de acciones realizadas sobre un item de inventario, ordenado por fecha descendente.',
+  })
+  @ApiParam({
+    name: 'inventoryId',
+    description: 'ID del item de inventario',
+    example: 1,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Historial de cambios del item',
+  })
+  @ApiResponse({ status: 404, description: 'Item no encontrado' })
+  async getHistory(@Param('inventoryId', ParseIntPipe) inventoryId: number) {
+    const data = await this.inventoryService.getInventoryHistory(inventoryId);
+    return {
+      status: 'success',
+      data,
+    };
+  }
+
   @Post('clubs/:clubId/inventory')
   @RequirePermissions('inventory:create')
   @AuthorizationResource({
@@ -144,8 +170,9 @@ export class InventoryController {
   async create(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Body() dto: CreateItemDto,
+    @Req() req: any,
   ) {
-    const data = await this.inventoryService.create(clubId, dto);
+    const data = await this.inventoryService.create(clubId, dto, req.user.sub);
     return {
       status: 'success',
       data,
@@ -174,8 +201,9 @@ export class InventoryController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateItemDto,
+    @Req() req: any,
   ) {
-    const data = await this.inventoryService.update(id, dto);
+    const data = await this.inventoryService.update(id, dto, req.user.sub);
     return {
       status: 'success',
       data,
@@ -201,8 +229,8 @@ export class InventoryController {
     status: 403,
     description: 'No tiene permisos para eliminar items',
   })
-  async delete(@Param('id', ParseIntPipe) id: number) {
-    const data = await this.inventoryService.delete(id);
+  async delete(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const data = await this.inventoryService.delete(id, req.user.sub);
     return {
       status: 'success',
       ...data,

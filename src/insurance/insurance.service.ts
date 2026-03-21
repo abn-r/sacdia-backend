@@ -131,7 +131,111 @@ export class InsuranceService {
     }
 
     const insurance = await this.loadLatestActiveInsurance(memberId);
-    return this.mapMemberInsuranceDetail(member, insurance);
+    return this.mapMemberInsuranceDetail(member, insurance, true);
+  }
+
+  async getExpiringInsurances(daysAhead: number, localFieldId?: number) {
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() + daysAhead);
+
+    const whereClause: Record<string, any> = {
+      active: true,
+      end_date: {
+        gte: now,
+        lte: cutoff,
+      },
+    };
+
+    if (localFieldId !== undefined) {
+      whereClause.users = {
+        local_field_id: localFieldId,
+      };
+    }
+
+    const insurances = await this.db.member_insurances.findMany({
+      where: whereClause,
+      orderBy: {
+        end_date: 'asc',
+      },
+      select: {
+        insurance_id: true,
+        user_id: true,
+        insurance_type: true,
+        policy_number: true,
+        provider: true,
+        start_date: true,
+        end_date: true,
+        coverage_amount: true,
+        active: true,
+        users: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+            local_field_id: true,
+            club_role_assignments: {
+              where: { active: true },
+              take: 1,
+              select: {
+                club_sections: {
+                  select: {
+                    club_section_id: true,
+                    name: true,
+                    clubs: {
+                      select: {
+                        club_id: true,
+                        name: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return insurances.map((ins: Record<string, any>) => {
+      const endDate = new Date(ins.end_date);
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const daysRemaining = Math.ceil(
+        (endDate.getTime() - now.getTime()) / msPerDay,
+      );
+
+      const user = ins.users as Record<string, any>;
+      const assignment = user?.club_role_assignments?.[0];
+      const section = assignment?.club_sections ?? null;
+      const club = section?.clubs ?? null;
+
+      return {
+        insurance_id: ins.insurance_id,
+        user_id: ins.user_id,
+        user_name: [user?.name, user?.paternal_last_name, user?.maternal_last_name]
+          .filter(Boolean)
+          .join(' ') || null,
+        name: user?.name ?? null,
+        paternal_last_name: user?.paternal_last_name ?? null,
+        maternal_last_name: user?.maternal_last_name ?? null,
+        local_field_id: user?.local_field_id ?? null,
+        club: club
+          ? { club_id: club.club_id, name: club.name }
+          : null,
+        club_section: section
+          ? { club_section_id: section.club_section_id, name: section.name }
+          : null,
+        insurance_type: ins.insurance_type ?? null,
+        policy_number: ins.policy_number ?? null,
+        provider: ins.provider ?? null,
+        start_date: ins.start_date ?? null,
+        end_date: ins.end_date ?? null,
+        coverage_amount: this.normalizeCoverageAmount(ins.coverage_amount),
+        days_remaining: daysRemaining,
+        is_expiring_soon: daysRemaining <= 30,
+      };
+    });
   }
 
   async createInsurance(
@@ -358,6 +462,7 @@ export class InsuranceService {
   private async mapMemberInsuranceDetail(
     member: MemberSnapshot,
     insurance: InsuranceSnapshot | null,
+    includeExpiryInfo = false,
   ) {
     const currentClass = this.extractCurrentClass(member.enrollments);
     const userImage = await this.resolvePrivateAssetUrl(
@@ -373,10 +478,25 @@ export class InsuranceService {
       user_image: userImage,
     };
 
+    let mappedInsurance: Record<string, any> | null = null;
+    if (insurance) {
+      mappedInsurance = this.mapInsurance(insurance);
+      if (includeExpiryInfo && insurance.end_date) {
+        const now = new Date();
+        const endDate = new Date(insurance.end_date);
+        const msPerDay = 1000 * 60 * 60 * 24;
+        const daysRemaining = Math.ceil(
+          (endDate.getTime() - now.getTime()) / msPerDay,
+        );
+        mappedInsurance.days_remaining = daysRemaining;
+        mappedInsurance.is_expiring_soon = daysRemaining <= 30;
+      }
+    }
+
     const response: Record<string, any> = {
       user_id: member.user_id,
       user,
-      insurance: insurance ? this.mapInsurance(insurance) : null,
+      insurance: mappedInsurance,
     };
 
     if (currentClass) {

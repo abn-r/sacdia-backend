@@ -235,6 +235,78 @@ export class RbacService {
     return { success: true, message: 'Permiso removido del rol' };
   }
 
+  // ─── Permisos directos de usuario ───────────────────────────
+
+  async getUserPermissions(userId: string) {
+    return this.prisma.users_permissions.findMany({
+      where: { user_id: userId, active: true },
+      include: {
+        permissions: {
+          select: {
+            permission_id: true,
+            permission_name: true,
+            description: true,
+            active: true,
+          },
+        },
+      },
+      orderBy: { permissions: { permission_name: 'asc' } },
+    });
+  }
+
+  async assignPermissionToUser(userId: string, permissionId: string) {
+    const existing = await this.prisma.users_permissions.findFirst({
+      where: { user_id: userId, permission_id: permissionId },
+    });
+
+    if (existing) {
+      if (!existing.active) {
+        await this.prisma.users_permissions.update({
+          where: { user_permission_id: existing.user_permission_id },
+          data: { active: true, modified_at: new Date() },
+        });
+        this.logger.log(
+          `Permiso ${permissionId} reactivado para usuario ${userId}`,
+        );
+        return { success: true, message: 'Permiso reactivado' };
+      }
+      throw new ConflictException(
+        'El usuario ya tiene este permiso asignado',
+      );
+    }
+
+    await this.prisma.users_permissions.create({
+      data: { user_id: userId, permission_id: permissionId },
+    });
+
+    this.logger.log(
+      `Permiso ${permissionId} asignado a usuario ${userId}`,
+    );
+    return { success: true, message: 'Permiso asignado' };
+  }
+
+  async removePermissionFromUser(userId: string, permissionId: string) {
+    const assignment = await this.prisma.users_permissions.findFirst({
+      where: { user_id: userId, permission_id: permissionId, active: true },
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(
+        'Asignación de permiso a usuario no encontrada',
+      );
+    }
+
+    await this.prisma.users_permissions.update({
+      where: { user_permission_id: assignment.user_permission_id },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    this.logger.log(
+      `Permiso ${permissionId} removido del usuario ${userId}`,
+    );
+    return { success: true, message: 'Permiso removido del usuario' };
+  }
+
   async syncRolePermissions(roleId: string, permissionIds: string[]) {
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },
