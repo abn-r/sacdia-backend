@@ -806,9 +806,7 @@ model users {
   blood                          blood_type?
   baptism                        Boolean                          @default(false)
   baptism_date                   DateTime?                        @db.Date
-  apple_connected                Boolean                          @default(false)
-  fb_connected                   Boolean                          @default(false)
-  google_connected               Boolean                          @default(false)
+  email_verified                 Boolean                          @default(false)
   user_image                     String?
   country_id                     Int?
   union_id                       Int?
@@ -862,6 +860,8 @@ model users {
   users_pr                       users_pr?
   users_roles                    users_roles[]
   weekly_records                 weekly_records[]
+  sessions                       sessions[]
+  accounts                       accounts[]
 }
 
 model notification_logs {
@@ -1297,4 +1297,45 @@ enum evidence_validation_enum {
   PENDING
   VALIDATED
   REJECTED
+}
+
+// Better Auth tables (usePlural: true — model names match BA's expected table names)
+model sessions {
+  id        String   @id
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id") @db.Uuid
+  user      users    @relation(fields: [userId], references: [user_id], onDelete: Cascade)
+}
+
+model accounts {
+  id                    String    @id
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id") @db.Uuid
+  accessToken           String?   @map("access_token") @db.Text
+  refreshToken          String?   @map("refresh_token") @db.Text
+  idToken               String?   @map("id_token") @db.Text
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(6)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user                  users     @relation(fields: [userId], references: [user_id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+}
+
+model verifications {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
 }
