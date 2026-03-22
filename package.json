@@ -113,6 +113,10 @@
     "testEnvironment": "node",
     "transformIgnorePatterns": [
       "node_modules/"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^better-auth$": "<rootDir>/../test/mocks/better-auth.mock.ts",
+      "^better-auth/(.*)$": "<rootDir>/../test/mocks/better-auth.mock.ts"
+    }
   }
 }
