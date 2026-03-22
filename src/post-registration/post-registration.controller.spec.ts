@@ -6,6 +6,7 @@ describe('PostRegistrationController', () => {
   let controller: PostRegistrationController;
 
   const mockPostRegistrationService = {
+    getPhotoStatus: jest.fn(),
     getStatus: jest.fn(),
     completeStep1: jest.fn(),
     completeStep2: jest.fn(),
@@ -20,6 +21,19 @@ describe('PostRegistrationController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('should delegate photo-status check to the service', async () => {
+    mockPostRegistrationService.getPhotoStatus.mockResolvedValue({
+      has_photo: true,
+    });
+
+    const result = await controller.getPhotoStatus('owner-user-1');
+
+    expect(mockPostRegistrationService.getPhotoStatus).toHaveBeenCalledWith(
+      'owner-user-1',
+    );
+    expect(result).toEqual({ has_photo: true });
   });
 
   it('should pass owner-aware context to status reads', async () => {

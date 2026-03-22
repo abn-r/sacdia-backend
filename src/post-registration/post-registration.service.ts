@@ -76,6 +76,17 @@ export class PostRegistrationService {
     };
   }
 
+  async getPhotoStatus(userId: string) {
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { user_image: true },
+    });
+
+    return {
+      has_photo: !!(user?.user_image),
+    };
+  }
+
   async completeStep1(
     userId: string,
     actor: PostRegistrationActorContext = this.createOwnerContext(userId),

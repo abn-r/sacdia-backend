@@ -105,6 +105,36 @@ describe('PostRegistrationService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('getPhotoStatus', () => {
+    it('should return has_photo true when user_image is set', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_image: 'https://cdn.example.com/photo.jpg',
+      });
+
+      const result = await service.getPhotoStatus('target-user-1');
+
+      expect(result).toEqual({ has_photo: true });
+    });
+
+    it('should return has_photo false when user_image is null', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_image: null,
+      });
+
+      const result = await service.getPhotoStatus('target-user-1');
+
+      expect(result).toEqual({ has_photo: false });
+    });
+
+    it('should return has_photo false when user does not exist', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
+
+      const result = await service.getPhotoStatus('unknown-user');
+
+      expect(result).toEqual({ has_photo: false });
+    });
+  });
+
   describe('getStatus', () => {
     it('should omit guided nextStep details for third-party reads', async () => {
       mockPrismaService.users_pr.findUnique.mockResolvedValue({
