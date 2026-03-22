@@ -39,6 +39,6 @@ import { PrismaService } from '../prisma/prisma.service';
     },
     BetterAuthService,
   ],
-  exports: [BetterAuthService],
+  exports: [BetterAuthService, 'BETTER_AUTH_INSTANCE'],
 })
 export class BetterAuthModule {}

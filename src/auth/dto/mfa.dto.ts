@@ -1,14 +1,17 @@
 import { IsString, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class VerifyMfaDto {
+export class EnrollMfaDto {
   @ApiProperty({
-    example: 'abc123-factor-id',
-    description: 'ID del factor MFA a verificar',
+    example: 'mySecretPassword123',
+    description:
+      'Contraseña actual del usuario. Better Auth requiere la contraseña para habilitar 2FA.',
   })
   @IsString()
-  factorId: string;
+  password: string;
+}
 
+export class VerifyMfaDto {
   @ApiProperty({
     example: '123456',
     description: 'Código TOTP de 6 dígitos de tu app de autenticación',
@@ -18,11 +21,12 @@ export class VerifyMfaDto {
   code: string;
 }
 
-export class UnenrollMfaDto {
+export class DisableMfaDto {
   @ApiProperty({
-    example: 'abc123-factor-id',
-    description: 'ID del factor MFA a eliminar',
+    example: 'mySecretPassword123',
+    description:
+      'Contraseña actual del usuario. Better Auth requiere la contraseña para deshabilitar 2FA.',
   })
   @IsString()
-  factorId: string;
+  password: string;
 }

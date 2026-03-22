@@ -8,6 +8,7 @@ import { IpWhitelistGuard } from './guards/ip-whitelist.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { R2FileStorageService } from './services/r2-file-storage.service';
 import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
+import { BetterAuthModule } from '../better-auth/better-auth.module';
 
 function isPlaceholderRedisUrl(value: string): boolean {
   return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
@@ -100,6 +101,8 @@ function isPlaceholderRedisUrl(value: string): boolean {
         };
       },
     }),
+    // BetterAuthModule provides 'BETTER_AUTH_INSTANCE' needed by MfaService.
+    BetterAuthModule,
   ],
   providers: [
     // ==========================================

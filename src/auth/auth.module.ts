@@ -11,22 +11,26 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { SupabaseService } from '../common/supabase.service';
 import { MfaController } from './mfa.controller';
 import { SessionsController } from './sessions.controller';
+import { BetterAuthModule } from '../better-auth/better-auth.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    // JwtModule is registered here only for test helpers that use jwtService.sign().
-    // Production auth uses JWKS (ES256) via jwt.strategy.ts — this secret is not used at runtime.
-    // SUPABASE_JWT_SECRET is optional; falls back to empty string when not set.
+    // JwtModule here is registered for JwtStrategy and any helpers that need
+    // token verification. Production auth uses BETTER_AUTH_SECRET (HS256) via
+    // JwtStrategy — aligned with BetterAuthService.signJwt().
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('SUPABASE_JWT_SECRET') ?? '',
+        secret: configService.get<string>('BETTER_AUTH_SECRET') ?? '',
         signOptions: {
-          expiresIn: '7d',
+          expiresIn: '1h',
+          algorithm: 'HS256',
         },
       }),
     }),
+    // BetterAuthModule provides BetterAuthService (Option C JWT signing + BA ops)
+    BetterAuthModule,
   ],
   controllers: [
     AuthController,
@@ -38,6 +42,8 @@ import { SessionsController } from './sessions.controller';
     AuthService,
     OAuthService,
     JwtStrategy,
+    // SupabaseService: kept for any remaining Supabase-dependent operations.
+    // OAuthService fully migrated to BetterAuthService (W3-008 Part 3).
     SupabaseService,
     AuthorizationContextService,
   ],
