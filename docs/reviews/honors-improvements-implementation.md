@@ -1,5 +1,9 @@
 # Honors Module Improvements - Implementation Summary
 
+> [!NOTE]
+> Resumen de implementación del 2026-02-05.
+> Trátalo como registro histórico; el estado vigente puede haber cambiado.
+
 **Date**: 2026-02-05
 **Status**: ✅ Completed
 **Based on**: `docs/reviews/honors-reviews.md`

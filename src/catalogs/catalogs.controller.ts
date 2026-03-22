@@ -1,14 +1,17 @@
-import { Controller, Get, Query, ParseIntPipe } from '@nestjs/common';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiQuery,
-} from '@nestjs/swagger';
+  Controller,
+  Get,
+  Query,
+  ParseIntPipe,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { CatalogsService } from './catalogs.service';
+import { OptionalJwtAuthGuard } from '../common/guards';
 
 @ApiTags('catalogs')
 @Controller('catalogs')
+@UseGuards(OptionalJwtAuthGuard)
 export class CatalogsController {
   constructor(private readonly catalogsService: CatalogsService) {}
 
@@ -18,11 +21,34 @@ export class CatalogsController {
   @Get('club-types')
   @ApiOperation({
     summary: 'Obtener tipos de club',
-    description: 'Lista los tipos de club disponibles (Aventureros, Conquistadores, Guías Mayores)',
+    description:
+      'Lista los tipos de club disponibles (Aventureros, Conquistadores, Guías Mayores)',
   })
   @ApiResponse({ status: 200, description: 'Lista de tipos de club' })
   async getClubTypes() {
     return this.catalogsService.getClubTypes();
+  }
+
+  @Get('activity-types')
+  @ApiOperation({
+    summary: 'Obtener tipos de actividad',
+    description:
+      'Lista los tipos de actividad disponibles para registrar actividades',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de tipos de actividad' })
+  async getActivityTypes() {
+    return this.catalogsService.getActivityTypes();
+  }
+
+  @Get('relationship-types')
+  @ApiOperation({
+    summary: 'Obtener tipos de relación',
+    description:
+      'Lista tipos de relación activos para formularios (padre, madre, tutor, etc.)',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de tipos de relación' })
+  async getRelationshipTypes() {
+    return this.catalogsService.getRelationshipTypes();
   }
 
   // ========================================
@@ -44,7 +70,8 @@ export class CatalogsController {
   @Get('unions')
   @ApiOperation({
     summary: 'Obtener uniones',
-    description: 'Lista uniones de la organización, opcionalmente filtradas por país',
+    description:
+      'Lista uniones de la organización, opcionalmente filtradas por país',
   })
   @ApiQuery({
     name: 'countryId',
@@ -132,7 +159,8 @@ export class CatalogsController {
   @Get('roles')
   @ApiOperation({
     summary: 'Obtener roles disponibles',
-    description: 'Lista roles del sistema, opcionalmente filtrados por categoría (GLOBAL o CLUB)',
+    description:
+      'Lista roles del sistema, opcionalmente filtrados por categoría (GLOBAL o CLUB)',
   })
   @ApiQuery({
     name: 'category',
@@ -162,7 +190,8 @@ export class CatalogsController {
   @Get('ecclesiastical-years/current')
   @ApiOperation({
     summary: 'Obtener año eclesiástico actual',
-    description: 'Retorna el año eclesiástico vigente basado en la fecha actual',
+    description:
+      'Retorna el año eclesiástico vigente basado en la fecha actual',
   })
   @ApiResponse({ status: 200, description: 'Año eclesiástico actual' })
   async getCurrentEcclesiasticalYear() {
@@ -189,5 +218,31 @@ export class CatalogsController {
     clubTypeId?: number,
   ) {
     return this.catalogsService.getClubIdeals(clubTypeId);
+  }
+
+  // ========================================
+  // ALLERGIES
+  // ========================================
+  @Get('allergies')
+  @ApiOperation({
+    summary: 'Obtener catálogo de alergias',
+    description: 'Lista alergias activas para selección en formularios',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de alergias' })
+  async getAllergies() {
+    return this.catalogsService.getAllergies();
+  }
+
+  // ========================================
+  // DISEASES
+  // ========================================
+  @Get('diseases')
+  @ApiOperation({
+    summary: 'Obtener catálogo de enfermedades',
+    description: 'Lista enfermedades activas para selección en formularios',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de enfermedades' })
+  async getDiseases() {
+    return this.catalogsService.getDiseases();
   }
 }

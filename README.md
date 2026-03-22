@@ -1,98 +1,431 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# SACDIA Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+> Documentacion oficial del proyecto: `/Users/abner/Documents/development/sacdia/docs` (repositorio padre).
+> Este README es una vista operativa del backend y debe mantenerse sincronizado con esa fuente.
 
-## Description
+## Estado actual (2026-03-04)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Endpoints admin para catálogos habilitados bajo `/api/v1/admin/*`.
+- Endpoints públicos de catálogo de salud habilitados:
+  - `GET /api/v1/catalogs/allergies`
+  - `GET /api/v1/catalogs/diseases`
+- Endpoints de usuario para persistir salud habilitados:
+  - `PUT /api/v1/users/:userId/allergies`
+  - `PUT /api/v1/users/:userId/diseases`
+  - `DELETE /api/v1/users/:userId/allergies/:allergyId` (borrado lógico)
+  - `DELETE /api/v1/users/:userId/diseases/:diseaseId` (borrado lógico)
+- `PATCH /api/v1/users/:userId` ampliado para aceptar también:
+  - `country_id`
+  - `union_id`
+  - `local_field_id`
+- Migración aplicada: `emergency_contacts.relationship_type_id` ahora referencia
+  `relationship_types.relationship_type_id` (UUID).
+- Notificaciones y FCM tokens endurecidos con JWT + roles.
+- Health check extendido con estado de dependencias (`db`, `cache`, `fcm`, `sentry`).
+- Script de verificación de migración FCM disponible (`pnpm run verify:fcm-migration`).
+- Sesiones Auth estabilizadas:
+  - `POST /api/v1/auth/login` retorna `accessToken`, `refreshToken`, `expiresAt`, `tokenType`.
+  - `POST /api/v1/auth/refresh` mantiene `refreshToken` como contrato oficial.
+  - Ventana temporal legacy activa: `refresh_token` permitido del **2026-03-04** al **2026-03-18**.
+  - `POST /api/v1/auth/logout` en modo fail-safe (best effort) para evitar bloqueo con access token expirado.
 
-## Project setup
+## Stack
 
-```bash
-$ pnpm install
+- NestJS 11
+- Prisma 7 (`@prisma/adapter-pg`)
+- PostgreSQL (Supabase)
+- Auth JWT con Supabase
+- Cache con Redis (fallback a in-memory)
+- Firebase Admin (FCM)
+- Sentry
+
+## Estructura principal
+
+```text
+src/
+├── auth/
+├── users/
+├── catalogs/
+├── clubs/
+├── classes/
+├── honors/
+├── activities/
+├── finances/
+├── notifications/
+├── admin/
+├── rbac/
+├── common/
+├── prisma/
+└── main.ts
 ```
 
-## Compile and run the project
+## Requisitos
+
+- Node.js 20+
+- pnpm
+- Acceso a PostgreSQL (Supabase)
+
+## Setup rápido
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm install
+cp .env.example .env
+pnpm run build
+pnpm run start:dev
 ```
 
-## Run tests
+## Scripts
 
 ```bash
-# unit tests
-$ pnpm run test
+# App
+pnpm run start:dev
+pnpm run build
+pnpm run start:prod
 
-# e2e tests
-$ pnpm run test:e2e
+# Tests
+pnpm run test
+pnpm run test:e2e
+pnpm run test:cov
 
-# test coverage
-$ pnpm run test:cov
+# Prisma
+pnpm prisma migrate deploy
+pnpm run verify:fcm-migration
+
+# Utilidades
+pnpm run generate:spec
+pnpm run load-test
+pnpm run migrate:storage-urls:r2
 ```
 
-## Deployment
+## Variables de entorno
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### Requeridas
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+- `DATABASE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_JWT_SECRET` _(opcional — legacy HS256 fallback, no requerido cuando se usa JWKS via `SUPABASE_URL`)_
+
+### Recomendadas para producción
+
+- `REDIS_URL`
+- `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` (recomendada para FCM)
+- `FIREBASE_SERVICE_ACCOUNT_JSON` (alternativa)
+- `FIREBASE_PROJECT_ID` + `FIREBASE_PRIVATE_KEY` + `FIREBASE_CLIENT_EMAIL` (legacy)
+- `SENTRY_DSN`
+- `ALLOWED_ORIGINS`
+- `AUTH_REJECT_SNAKE_CASE` (default general: `true`; ventana temporal: `false`)
+
+## Migración de URLs a R2
+
+El script `migrate:storage-urls:r2` normaliza URLs legacy en BD hacia los valores actuales de `R2_PUBLIC_URL_*` y `R2_KEY_PREFIX_*`.
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+# 1) Simulación (sin escribir en BD)
+pnpm run migrate:storage-urls:r2
+
+# 2) Simulación de tablas específicas
+pnpm run migrate:storage-urls:r2 -- --only users,users_honors --limit 200
+
+# 3) Aplicar cambios reales
+pnpm run migrate:storage-urls:r2 -- --apply
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Notas:
+- Si `REDIS_URL` falla, el backend usa cache in-memory (no recomendado para prod).
+- Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
+- Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
+- Ventana de compatibilidad temporal: **2026-03-04 a 2026-03-18** con `AUTH_REJECT_SNAKE_CASE=false`.
+- Fecha objetivo de retorno a estricto: **2026-03-18** (`AUTH_REJECT_SNAKE_CASE=true`).
 
-## Resources
+### Configuración rápida Redis + FCM
 
-Check out a few resources that may come in handy when working with NestJS:
+1. Redis
+   - Local: `REDIS_URL=redis://localhost:6379`
+   - Upstash: `REDIS_URL=redis://default:<PASSWORD>@<HOST>:<PORT>`
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+2. FCM (recomendado)
+   - Crea/descarga el Service Account JSON en Firebase Console.
+   - Convierte a Base64:
+     ```bash
+     base64 -i service-account.json | tr -d '\n'
+     ```
+   - Asigna el resultado a `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`.
 
-## Support
+3. Verificación
+   - Levanta backend y revisa:
+     - `✅ Redis cache connected successfully`
+     - `✅ Firebase Admin initialized successfully`
+   - Healthcheck:
+     - `GET /api/v1/health`
+     - Esperado: `dependencies.cache.ok=true`, `dependencies.fcm.initialized=true`.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Monitoreo Auth post-cutover (14 días)
 
-## Stay in touch
+Eventos estructurados emitidos:
+- `auth_refresh_legacy_rejected`
+- `auth_refresh_legacy_allowed`
+- `auth_refresh_success`
+- `auth_refresh_failed`
+- `auth_logout_best_effort`
+- `auth_logout_revoke_failed`
+- `auth_guard_unauthorized`
+- `auth_jwt_revoked_token`
+- `auth_jwt_user_blacklisted`
+- `mfa_session_bind_failed`
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Consultas sugeridas (Sentry/Logs):
+- Tasa de legacy rechazado: `event:auth_refresh_legacy_rejected`
+- Éxito de refresh: `event:auth_refresh_success`
+- Fallos de refresh: `event:auth_refresh_failed`
+- Logout best effort (ruta y resultado): `event:auth_logout_best_effort`
+- Fallo al revocar en logout: `event:auth_logout_revoke_failed`
+- 401 en `/api/v1/auth/me`: `event:auth_guard_unauthorized url:/api/v1/auth/me`
+- Revocaciones efectivas: `event:auth_jwt_revoked_token OR event:auth_jwt_user_blacklisted`
 
-## License
+### Contrato Auth de sesiones (estado actual)
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- `POST /api/v1/auth/login`
+  - Respuesta de tokens:
+  ```json
+  {
+    "accessToken": "eyJ...",
+    "refreshToken": "v1....",
+    "expiresAt": 1900000000,
+    "tokenType": "bearer"
+  }
+  ```
+- `POST /api/v1/auth/refresh`
+  - Contrato oficial: body con `refreshToken`.
+  - Compatibilidad temporal: acepta `refresh_token` solo mientras `AUTH_REJECT_SNAKE_CASE=false`.
+- `POST /api/v1/auth/logout`
+  - No bloquea UX por expiración de access token.
+  - Acepta `Authorization: Bearer ...` opcional y `refreshToken` opcional.
+  - Respuesta incluye:
+  ```json
+  {
+    "success": true,
+    "revocationAttempted": true,
+    "revocationSucceeded": true,
+    "path": "access"
+  }
+  ```
+
+## API
+
+- Base URL: `/api/v1`
+- Swagger: `/api`
+- Health: `GET /api/v1/health`
+
+### Referencia rápida: catálogos de salud (lectura para app/usuarios)
+
+- `GET /api/v1/catalogs/allergies`
+- `GET /api/v1/catalogs/diseases`
+
+Estructura de respuesta:
+
+```json
+[
+  {
+    "allergy_id": 1,
+    "name": "Polen",
+    "description": "Alergia al polen"
+  }
+]
+```
+
+```json
+[
+  {
+    "disease_id": 10,
+    "name": "Asma",
+    "description": "Asma controlada"
+  }
+]
+```
+
+Estos IDs (`allergy_id`, `disease_id`) se usan para guardar selección de salud del usuario con:
+
+- `PUT /api/v1/users/:userId/allergies`
+- `PUT /api/v1/users/:userId/diseases`
+- `DELETE /api/v1/users/:userId/allergies/:allergyId`
+- `DELETE /api/v1/users/:userId/diseases/:diseaseId`
+
+### Referencia rápida: salud del usuario (escritura en tablas pivote)
+
+- `PUT /api/v1/users/:userId/allergies`
+  - Body:
+  ```json
+  {
+    "allergy_ids": [1, 2, 3]
+  }
+  ```
+- `PUT /api/v1/users/:userId/diseases`
+  - Body:
+  ```json
+  {
+    "disease_ids": [10, 12]
+  }
+  ```
+- `DELETE /api/v1/users/:userId/allergies/:allergyId`
+  - Sin body (desactiva el registro en `users_allergies`).
+- `DELETE /api/v1/users/:userId/diseases/:diseaseId`
+  - Sin body (desactiva el registro en `users_diseases`).
+
+Comportamiento de ambos endpoints:
+
+1. Permiten múltiples IDs en una sola request.
+2. Reemplazan el conjunto activo completo del usuario.
+3. Si un ID ya existe inactivo, se reactiva.
+4. Si un ID no existe para el usuario, se crea.
+5. IDs activos no enviados en la lista se desactivan (`active=false`).
+6. Lista vacía (`[]`) deja al usuario sin registros activos en ese tipo.
+7. Validan que usuario exista y que IDs pertenezcan a catálogos activos.
+8. Para desactivar solo un registro puntual sin reemplazar lista completa, usar `DELETE` por `allergyId` o `diseaseId`.
+
+### Referencia rápida: actualización de perfil de usuario
+
+- `PATCH /api/v1/users/:userId`
+
+Campos soportados:
+
+- `gender`, `birthday`, `baptism`, `baptism_date`, `blood`
+- `country_id`, `union_id`, `local_field_id`
+
+Reglas de validación relevantes:
+
+1. `baptism_date` no puede enviarse si `baptism=false`.
+2. `country_id`, `union_id`, `local_field_id` deben existir y estar activos.
+3. `union_id` debe pertenecer a `country_id`.
+4. `local_field_id` debe pertenecer a `union_id`.
+
+### Referencia rápida: representante legal por usuario
+
+- `GET /api/v1/users/:userId/legal-representative`
+
+Contrato de respuesta:
+
+1. Usuario existente con representante:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": "uuid-del-usuario",
+    "relationship_type_id": "uuid-relacion"
+  },
+  "hasLegalRepresentative": true
+}
+```
+
+2. Usuario existente sin representante:
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "hasLegalRepresentative": false,
+  "message": "Usuario sin representante legal registrado"
+}
+```
+
+3. Usuario inexistente:
+
+```json
+{
+  "statusCode": 404,
+  "message": "Usuario no encontrado"
+}
+```
+
+## Seguridad implementada
+
+- `JwtAuthGuard` para endpoints protegidos.
+- `GlobalRolesGuard` para rutas administrativas.
+- `OwnerOrAdminGuard` para recursos por usuario cuando aplica.
+- Hardening de notificaciones:
+  - `/api/v1/notifications/*` requiere JWT.
+  - `/api/v1/fcm-tokens/*` requiere JWT.
+  - `POST /api/v1/notifications/broadcast` restringido a `admin|super_admin`.
+  - `POST /api/v1/notifications/club/:instanceType/:instanceId` restringido a `admin|super_admin`.
+
+## Contrato FCM actualizado
+
+- Registro de token:
+  - `POST /api/v1/fcm-tokens`
+  - El `userId` se toma del JWT autenticado (ya no se envía en body).
+- Listado propio:
+  - `GET /api/v1/fcm-tokens`
+- Desregistro propio:
+  - `DELETE /api/v1/fcm-tokens/:token`
+- Compatibilidad:
+  - `GET /api/v1/fcm-tokens/user/:userId` (owner/admin)
+
+## Endpoints admin (Fase 3 mínima)
+
+Rutas bajo `/api/v1/admin/*` con JWT + roles `admin|super_admin`.
+
+### Geografía
+
+- `GET|POST /countries`
+- `PATCH|DELETE /countries/:countryId`
+- `GET|POST /unions`
+- `PATCH|DELETE /unions/:unionId`
+- `GET|POST /local-fields`
+- `PATCH|DELETE /local-fields/:localFieldId`
+- `GET|POST /districts`
+- `PATCH|DELETE /districts/:districtId`
+- `GET|POST /churches`
+- `PATCH|DELETE /churches/:churchId`
+
+### Referencia
+
+- `GET|POST /relationship-types`
+- `PATCH|DELETE /relationship-types/:relationshipTypeId`
+- `GET|POST /allergies`
+- `PATCH|DELETE /allergies/:allergyId`
+- `GET|POST /diseases`
+- `PATCH|DELETE /diseases/:diseaseId`
+- `GET|POST /ecclesiastical-years`
+- `PATCH|DELETE /ecclesiastical-years/:yearId`
+
+## OAuth
+
+- `POST /api/v1/auth/oauth/google`
+- `POST /api/v1/auth/oauth/apple`
+- `GET /api/v1/auth/oauth/callback`
+- `GET /api/v1/auth/oauth/providers`
+- `DELETE /api/v1/auth/oauth/:provider`
+
+## Verificación recomendada antes de release
+
+```bash
+pnpm run build
+pnpm run test -- src/notifications/fcm-tokens.service.spec.ts
+pnpm run test:e2e -- test/notifications-security.e2e-spec.ts test/admin-catalogs.e2e-spec.ts
+pnpm prisma migrate deploy
+pnpm run verify:fcm-migration
+```
+
+## Documentación del proyecto
+
+- Índice local de documentos: `docs/README.md`
+- Sesión de implementación de salud/geografía de usuario:
+  `docs/IMPLEMENTATION-SESSION-2026-02-21-user-medical-and-geography.md`
+- Sesión de estabilización de sesiones/auth:
+  `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
+- Panorama global del backend:
+  `docs/BACKEND-PANORAMA-2026-03-04.md`
+- Nota de migración UUID en contactos de emergencia:
+  `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
+- Sesión de implementación de admin/notificaciones:
+  `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
+- Histórico de cutover auth del 2026-03-01:
+  `docs/IMPLEMENTATION-SESSION-2026-03-01-auth-cutover-monitoring.md`
+- Referencia histórica de implementación previa: `docs/IMPLEMENTATION-SESSION-2026-02-05.md`
+- Referencia de baseline DB: `docs/migrations/2026-02-05-db-push-sync.md`
+
+Nota: la documentación funcional oficial del producto vive en el repositorio padre (`../../docs`).

@@ -1,33 +1,45 @@
-import { IsString, IsDate, IsOptional, IsUUID } from 'class-validator';
+import { IsDate, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ClubInstanceType } from './instance.dto';
 
 export class AssignRoleDto {
   @ApiProperty({ description: 'ID del usuario' })
   @IsUUID()
   user_id: string;
 
-  @ApiProperty({ description: 'ID del rol a asignar' })
-  @IsUUID()
-  role_id: string;
-
-  @ApiProperty({
-    enum: ClubInstanceType,
-    description: 'Tipo de instancia de club',
+  @ApiPropertyOptional({
+    description: 'ID del rol a asignar (preferido, formato UUID)',
   })
-  instance_type: ClubInstanceType;
+  @IsOptional()
+  @IsUUID()
+  role_id?: string;
 
-  @ApiProperty({ description: 'ID de la instancia de club' })
-  instance_id: number;
+  @ApiPropertyOptional({
+    description:
+      'Compatibilidad temporal: nombre del rol (ej. member, director).',
+  })
+  @IsOptional()
+  @IsString()
+  role?: string;
 
-  @ApiProperty({ description: 'ID del año eclesiástico' })
-  ecclesiastical_year_id: number;
+  @ApiPropertyOptional({
+    description: 'ID de la sección del club (FK a club_sections).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  club_section_id?: number;
 
-  @ApiProperty({ description: 'Fecha de inicio del rol' })
+  @ApiPropertyOptional({ description: 'ID del año eclesiástico' })
+  @IsOptional()
+  @IsInt()
+  ecclesiastical_year_id?: number;
+
+  @ApiPropertyOptional({ description: 'Fecha de inicio del rol' })
+  @IsOptional()
   @IsDate()
   @Type(() => Date)
-  start_date: Date;
+  start_date?: Date;
 
   @ApiPropertyOptional({ description: 'Fecha de fin del rol' })
   @IsOptional()
@@ -37,6 +49,32 @@ export class AssignRoleDto {
 }
 
 export class UpdateRoleAssignmentDto {
+  @ApiPropertyOptional({
+    description: 'Nuevo ID del rol asignado (preferido, formato UUID)',
+  })
+  @IsOptional()
+  @IsUUID()
+  role_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Compatibilidad temporal: nombre del rol a asignar (ej. member, director).',
+  })
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @ApiPropertyOptional({ description: 'ID del año eclesiástico' })
+  @IsOptional()
+  @IsInt()
+  ecclesiastical_year_id?: number;
+
+  @ApiPropertyOptional({ description: 'Fecha de inicio del rol' })
+  @IsOptional()
+  @IsDate()
+  @Type(() => Date)
+  start_date?: Date;
+
   @ApiPropertyOptional({ description: 'Fecha de fin del rol' })
   @IsOptional()
   @IsDate()

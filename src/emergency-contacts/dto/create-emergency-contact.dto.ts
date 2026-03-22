@@ -1,4 +1,10 @@
-import { IsString, IsInt, IsBoolean, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsUUID,
+  IsBoolean,
+  IsOptional,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateEmergencyContactDto {
@@ -7,19 +13,22 @@ export class CreateEmergencyContactDto {
   @MaxLength(100)
   name: string;
 
-  @ApiProperty({ 
-    example: 1, 
-    description: 'ID del tipo de relación (actualmente Int, pendiente migración a UUID)' 
+  @ApiProperty({
+    example: '11111111-1111-1111-1111-111111111111',
+    description: 'UUID del tipo de relación',
   })
-  @IsInt()
-  relationship_type: number;
+  @IsUUID()
+  relationship_type_id: string;
 
   @ApiProperty({ example: '+52 55 1234 5678' })
   @IsString()
   @MaxLength(20)
   phone: string;
 
-  @ApiPropertyOptional({ example: true, description: 'Si es el contacto principal' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Si es el contacto principal',
+  })
   @IsOptional()
   @IsBoolean()
   primary?: boolean;

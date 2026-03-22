@@ -4,6 +4,6 @@ import { EmergencyContactsController } from './emergency-contacts.controller';
 
 @Module({
   providers: [EmergencyContactsService],
-  controllers: [EmergencyContactsController]
+  controllers: [EmergencyContactsController],
 })
 export class EmergencyContactsModule {}

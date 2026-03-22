@@ -21,11 +21,15 @@ import {
 import { FoldersService } from './folders.service';
 import { UpdateSectionRecordDto } from './dto/update-section-record.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('folders')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('folders')
 export class FoldersController {
   constructor(private readonly foldersService: FoldersService) {}
@@ -43,7 +47,8 @@ export class FoldersController {
   @ApiQuery({
     name: 'club_type',
     required: false,
-    description: 'Filtrar por tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
+    description:
+      'Filtrar por tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
     example: 2,
   })
   @ApiQuery({
@@ -87,7 +92,10 @@ export class FoldersController {
     status: 200,
     description: 'Detalles del template con módulos y secciones',
   })
-  @ApiResponse({ status: 404, description: 'Template de carpeta no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Template de carpeta no encontrado',
+  })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const data = await this.foldersService.findOne(id);
     return {
@@ -101,6 +109,8 @@ export class FoldersController {
   // ========================================
 
   @Post('users/:userId/folders/:folderId/enroll')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribirse en una carpeta',
     description:
@@ -121,7 +131,10 @@ export class FoldersController {
     status: 400,
     description: 'Usuario no pertenece a un club del tipo requerido',
   })
-  @ApiResponse({ status: 404, description: 'Template de carpeta no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Template de carpeta no encontrado',
+  })
   @ApiResponse({
     status: 409,
     description: 'Usuario ya tiene una asignación activa para esta carpeta',
@@ -138,6 +151,8 @@ export class FoldersController {
   }
 
   @Get('users/:userId/folders')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Listar carpetas asignadas del usuario',
     description:
@@ -161,6 +176,8 @@ export class FoldersController {
   }
 
   @Get('users/:userId/folders/:folderId/progress')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Ver progreso detallado de una carpeta',
     description:
@@ -195,7 +212,11 @@ export class FoldersController {
     };
   }
 
-  @Patch('users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId')
+  @Patch(
+    'users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId',
+  )
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
     description:
@@ -254,10 +275,11 @@ export class FoldersController {
   }
 
   @Delete('users/:userId/folders/:folderId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Abandonar una carpeta',
-    description:
-      'Desactiva la asignación de carpeta del usuario (soft delete)',
+    description: 'Desactiva la asignación de carpeta del usuario (soft delete)',
   })
   @ApiParam({
     name: 'userId',

@@ -1,6 +1,8 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -15,10 +17,53 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 @Injectable()
 export class ActivitiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
+
+  private readonly activityInclude = {
+    activity_types: {
+      select: { activity_type_id: true, code: true, name: true },
+    },
+    club_types: { select: { name: true } },
+    users: {
+      select: { name: true, paternal_last_name: true, user_image: true },
+    },
+    club_sections: {
+      select: {
+        club_section_id: true,
+        main_club_id: true,
+        club_types: { select: { name: true } },
+      },
+    },
+    activity_instances: {
+      where: { active: true },
+      orderBy: { activity_instance_id: 'asc' },
+      select: {
+        activity_instance_id: true,
+        club_section_id: true,
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_types: { select: { name: true } },
+          },
+        },
+      },
+    },
+  } as const;
 
   // ========================================
   // ACTIVIDADES
@@ -29,13 +74,12 @@ export class ActivitiesService {
     filters?: ActivityFiltersDto,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
-    // Obtener las instancias del club
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: {
-        club_adventurers: { select: { club_adv_id: true } },
-        club_pathfinders: { select: { club_pathf_id: true } },
-        club_master_guild: { select: { club_mg_id: true } },
+        club_sections: {
+          select: { club_section_id: true, club_type_id: true },
+        },
       },
     });
 
@@ -43,28 +87,33 @@ export class ActivitiesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const advIds = club.club_adventurers.map((a) => a.club_adv_id);
-    const pathfIds = club.club_pathfinders.map((p) => p.club_pathf_id);
-    const mgIds = club.club_master_guild.map((m) => m.club_mg_id);
+    const sectionIds = club.club_sections
+      .filter(
+        (section) => !filters?.clubTypeId || section.club_type_id === filters.clubTypeId,
+      )
+      .map((section) => section.club_section_id);
 
-    const where = {
-      OR: [
-        { club_adv_id: { in: advIds.length > 0 ? advIds : [-1] } },
-        { club_pathf_id: { in: pathfIds.length > 0 ? pathfIds : [-1] } },
-        { club_mg_id: { in: mgIds.length > 0 ? mgIds : [-1] } },
-      ],
-      ...(filters?.clubTypeId && { club_type_id: filters.clubTypeId }),
+    if (sectionIds.length === 0) {
+      return createPaginatedResult([], 0, pagination ?? new PaginationDto());
+    }
+
+    const where: Prisma.activitiesWhereInput = {
+      activity_instances: {
+        some: {
+          active: true,
+          club_section_id: { in: sectionIds },
+        },
+      },
       ...(filters?.active !== undefined && { active: filters.active }),
-      ...(filters?.activityType !== undefined && { activity_type: filters.activityType }),
+      ...(filters?.activityTypeId !== undefined && {
+        activity_type_id: filters.activityTypeId,
+      }),
     };
 
     const [data, total] = await Promise.all([
       this.prisma.activities.findMany({
         where,
-        include: {
-          club_types: { select: { name: true } },
-          users: { select: { name: true, paternal_last_name: true } },
-        },
+        include: this.activityInclude,
         orderBy: { created_at: 'desc' },
         skip: pagination?.skip ?? 0,
         take: pagination?.take ?? 20,
@@ -72,8 +121,14 @@ export class ActivitiesService {
       this.prisma.activities.count({ where }),
     ]);
 
+    const signedActivities = await Promise.all(
+      data.map((activity) =>
+        this.applySignedPrivateUrls(this.attachInstances(activity)),
+      ),
+    );
+
     return createPaginatedResult(
-      data,
+      signedActivities,
       total,
       pagination ?? new PaginationDto(),
     );
@@ -82,24 +137,20 @@ export class ActivitiesService {
   async findOne(activityId: number) {
     const activity = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
-      include: {
-        club_types: { select: { name: true } },
-        users: { select: { name: true, paternal_last_name: true, user_image: true } },
-        club_adv_i: { select: { club_adv_id: true, main_club_id: true } },
-        club_pathf: { select: { club_pathf_id: true, main_club_id: true } },
-        club_mg: { select: { club_mg_id: true, main_club_id: true } },
-      },
+      include: this.activityInclude,
     });
 
     if (!activity) {
       throw new NotFoundException(`Activity with ID ${activityId} not found`);
     }
 
-    return activity;
+    return this.applySignedPrivateUrls(this.attachInstances(activity));
   }
 
-  async create(dto: CreateActivityDto, createdBy: string) {
-    return this.prisma.activities.create({
+  async create(clubId: number, dto: CreateActivityDto, createdBy: string) {
+    const sectionId = await this.resolveAndValidateSection(clubId, dto.club_section_id);
+
+    const created = await this.prisma.activities.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -110,22 +161,32 @@ export class ActivitiesService {
         activity_place: dto.activity_place,
         image: dto.image,
         platform: dto.platform || 0,
-        activity_type: dto.activity_type || 0,
+        activity_type_id: dto.activity_type_id,
         link_meet: dto.link_meet,
         additional_data: dto.additional_data,
-        classes: dto.classes ? (dto.classes as Prisma.InputJsonValue) : Prisma.JsonNull,
+        classes: dto.classes
+          ? (dto.classes as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
         created_by: createdBy,
-        club_adv_id: dto.club_adv_id,
-        club_pathf_id: dto.club_pathf_id,
-        club_mg_id: dto.club_mg_id,
+        club_section_id: sectionId,
         active: true,
         created_at: new Date(),
         modified_at: new Date(),
+        activity_instances: {
+          create: [
+            {
+              club_section_id: sectionId,
+              active: true,
+              created_at: new Date(),
+              modified_at: new Date(),
+            },
+          ],
+        },
       },
-      include: {
-        club_types: { select: { name: true } },
-      },
+      include: this.activityInclude,
     });
+
+    return this.applySignedPrivateUrls(this.attachInstances(created));
   }
 
   async update(activityId: number, dto: UpdateActivityDto) {
@@ -139,22 +200,26 @@ export class ActivitiesService {
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.lat !== undefined) updateData.lat = dto.lat;
     if (dto.long !== undefined) updateData.long = dto.long;
-    if (dto.activity_time !== undefined) updateData.activity_time = dto.activity_time;
-    if (dto.activity_place !== undefined) updateData.activity_place = dto.activity_place;
+    if (dto.activity_time !== undefined)
+      updateData.activity_time = dto.activity_time;
+    if (dto.activity_place !== undefined)
+      updateData.activity_place = dto.activity_place;
     if (dto.image !== undefined) updateData.image = dto.image;
     if (dto.platform !== undefined) updateData.platform = dto.platform;
-    if (dto.activity_type !== undefined) updateData.activity_type = dto.activity_type;
+    if (dto.activity_type_id !== undefined)
+      updateData.activity_type_id = dto.activity_type_id;
     if (dto.link_meet !== undefined) updateData.link_meet = dto.link_meet;
     if (dto.active !== undefined) updateData.active = dto.active;
-    if (dto.classes !== undefined) updateData.classes = dto.classes as Prisma.InputJsonValue;
+    if (dto.classes !== undefined)
+      updateData.classes = dto.classes as Prisma.InputJsonValue;
 
-    return this.prisma.activities.update({
+    const updated = await this.prisma.activities.update({
       where: { activity_id: activityId },
       data: updateData,
-      include: {
-        club_types: { select: { name: true } },
-      },
+      include: this.activityInclude,
     });
+
+    return this.applySignedPrivateUrls(this.attachInstances(updated));
   }
 
   async remove(activityId: number) {
@@ -174,9 +239,8 @@ export class ActivitiesService {
   // ========================================
 
   async recordAttendance(activityId: number, dto: RecordAttendanceDto) {
-    const activity = await this.findOne(activityId);
+    await this.findOne(activityId);
 
-    // Almacenar los asistentes en el campo JSON
     const attendees = dto.user_ids;
 
     return this.prisma.activities.update({
@@ -210,11 +274,120 @@ export class ActivitiesService {
       },
     });
 
+    const signedAttendees = await Promise.all(
+      attendees.map(async (attendee) => ({
+        ...attendee,
+        user_image:
+          typeof attendee.user_image === 'string'
+            ? await this.resolvePrivateAssetUrl(
+                StorageBucketAlias.USER_PROFILES,
+                attendee.user_image,
+              )
+            : attendee.user_image,
+      })),
+    );
+
     return {
       activity_id: activityId,
       activity_name: activity.name,
-      total_attendees: attendees.length,
-      attendees,
+      total_attendees: signedAttendees.length,
+      attendees: signedAttendees,
     };
+  }
+
+  private attachInstances(activity: any) {
+    const instances = (activity.activity_instances ?? [])
+      .map((instance: any) => {
+        if (instance.club_sections) {
+          return {
+            section_id: instance.club_sections.club_section_id,
+            club_id: instance.club_sections.main_club_id,
+            club_type_name: instance.club_sections.club_types?.name ?? null,
+          };
+        }
+
+        return null;
+      })
+      .filter((instance: any) => Boolean(instance));
+
+    const { activity_instances: _ignored, ...rest } = activity;
+
+    return {
+      ...rest,
+      instances,
+    };
+  }
+
+  private async applySignedPrivateUrls(activity: any) {
+    const signedActivityImage =
+      typeof activity?.image === 'string'
+        ? await this.resolvePrivateAssetUrl(
+            StorageBucketAlias.ACTIVITIES_IMAGES,
+            activity.image,
+          )
+        : activity?.image;
+
+    const signedUserImage =
+      typeof activity?.users?.user_image === 'string'
+        ? await this.resolvePrivateAssetUrl(
+            StorageBucketAlias.USER_PROFILES,
+            activity.users.user_image,
+          )
+        : activity?.users?.user_image;
+
+    return {
+      ...activity,
+      image: signedActivityImage,
+      users: activity?.users
+        ? {
+            ...activity.users,
+            user_image: signedUserImage,
+          }
+        : activity?.users,
+    };
+  }
+
+  private async resolvePrivateAssetUrl(
+    bucketAlias: StorageBucketAlias,
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value) return null;
+
+    return this.fileStorage.getSignedDownloadUrl(bucketAlias, value, {
+      expiresInSeconds: ActivitiesService.PRIVATE_ASSET_URL_TTL_SECONDS,
+    });
+  }
+
+  private async resolveAndValidateSection(
+    clubId: number,
+    clubSectionId: number,
+  ): Promise<number> {
+    const clubExists = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: { club_id: true },
+    });
+
+    if (!clubExists) {
+      throw new NotFoundException(`Club with ID ${clubId} not found`);
+    }
+
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: clubSectionId },
+      select: { main_club_id: true, club_type_id: true },
+    });
+
+    if (!section) {
+      throw new BadRequestException(
+        `Sección ${clubSectionId} no existe`,
+      );
+    }
+
+    if (section.main_club_id !== clubId) {
+      throw new BadRequestException(
+        `Sección ${clubSectionId} no pertenece al clubId=${clubId}`,
+      );
+    }
+
+    return clubSectionId;
   }
 }

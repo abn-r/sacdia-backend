@@ -1,13 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  CreateFinanceDto,
-  UpdateFinanceDto,
-  FinanceFiltersDto,
-} from './dto';
+import { CreateFinanceDto, UpdateFinanceDto, FinanceFiltersDto } from './dto';
 import {
   PaginationDto,
   PaginatedResult,
@@ -48,13 +41,11 @@ export class FinancesService {
     filters?: FinanceFiltersDto,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
-    // Obtener las instancias del club
+    // Obtener las secciones del club
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: {
-        club_adventurers: { select: { club_adv_id: true } },
-        club_pathfinders: { select: { club_pathf_id: true } },
-        club_master_guild: { select: { club_mg_id: true } },
+        club_sections: { select: { club_section_id: true } },
       },
     });
 
@@ -62,16 +53,10 @@ export class FinancesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const advIds = club.club_adventurers.map((a) => a.club_adv_id);
-    const pathfIds = club.club_pathfinders.map((p) => p.club_pathf_id);
-    const mgIds = club.club_master_guild.map((m) => m.club_mg_id);
+    const sectionIds = club.club_sections.map((s) => s.club_section_id);
 
     const where = {
-      OR: [
-        { club_adv_id: { in: advIds.length > 0 ? advIds : [-1] } },
-        { club_pathf_id: { in: pathfIds.length > 0 ? pathfIds : [-1] } },
-        { club_mg_id: { in: mgIds.length > 0 ? mgIds : [-1] } },
-      ],
+      club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
       ...(filters?.year && { year: filters.year }),
       ...(filters?.month && { month: filters.month }),
       ...(filters?.clubTypeId && { club_type_id: filters.clubTypeId }),
@@ -101,13 +86,11 @@ export class FinancesService {
   }
 
   async getSummary(clubId: number, year?: number, month?: number) {
-    // Obtener las instancias del club
+    // Obtener las secciones del club
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: {
-        club_adventurers: { select: { club_adv_id: true } },
-        club_pathfinders: { select: { club_pathf_id: true } },
-        club_master_guild: { select: { club_mg_id: true } },
+        club_sections: { select: { club_section_id: true } },
       },
     });
 
@@ -115,17 +98,11 @@ export class FinancesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const advIds = club.club_adventurers.map((a) => a.club_adv_id);
-    const pathfIds = club.club_pathfinders.map((p) => p.club_pathf_id);
-    const mgIds = club.club_master_guild.map((m) => m.club_mg_id);
+    const sectionIds = club.club_sections.map((s) => s.club_section_id);
 
     const where = {
       active: true,
-      OR: [
-        { club_adv_id: { in: advIds.length > 0 ? advIds : [-1] } },
-        { club_pathf_id: { in: pathfIds.length > 0 ? pathfIds : [-1] } },
-        { club_mg_id: { in: mgIds.length > 0 ? mgIds : [-1] } },
-      ],
+      club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
       ...(year && { year }),
       ...(month && { month }),
     };
@@ -152,7 +129,9 @@ export class FinancesService {
 
     return {
       club_id: clubId,
-      period: year ? `${year}${month ? `-${String(month).padStart(2, '0')}` : ''}` : 'all',
+      period: year
+        ? `${year}${month ? `-${String(month).padStart(2, '0')}` : ''}`
+        : 'all',
       total_income: totalIncome,
       total_expense: totalExpense,
       balance: totalIncome - totalExpense,
@@ -171,7 +150,9 @@ export class FinancesService {
     });
 
     if (!finance) {
-      throw new NotFoundException(`Finance record with ID ${financeId} not found`);
+      throw new NotFoundException(
+        `Finance record with ID ${financeId} not found`,
+      );
     }
 
     return finance;
@@ -187,9 +168,7 @@ export class FinancesService {
         club_type_id: dto.club_type_id,
         finance_category_id: dto.finance_category_id,
         finance_date: new Date(dto.finance_date),
-        club_adv_id: dto.club_adv_id,
-        club_pathf_id: dto.club_pathf_id,
-        club_mg_id: dto.club_mg_id,
+        club_section_id: dto.club_section_id,
         created_by: createdBy,
         active: true,
         created_at: new Date(),
@@ -201,17 +180,20 @@ export class FinancesService {
     });
   }
 
-  async update(financeId: number, dto: UpdateFinanceDto) {
+  async update(financeId: number, dto: UpdateFinanceDto, modifiedBy?: string) {
     await this.findOne(financeId);
 
     const updateData: any = {
       modified_at: new Date(),
+      ...(modifiedBy && { modified_by_id: modifiedBy }),
     };
 
     if (dto.amount !== undefined) updateData.amount = dto.amount;
     if (dto.description !== undefined) updateData.description = dto.description;
-    if (dto.finance_category_id !== undefined) updateData.finance_category_id = dto.finance_category_id;
-    if (dto.finance_date !== undefined) updateData.finance_date = new Date(dto.finance_date);
+    if (dto.finance_category_id !== undefined)
+      updateData.finance_category_id = dto.finance_category_id;
+    if (dto.finance_date !== undefined)
+      updateData.finance_date = new Date(dto.finance_date);
 
     return this.prisma.finances.update({
       where: { finance_id: financeId },
@@ -222,7 +204,7 @@ export class FinancesService {
     });
   }
 
-  async remove(financeId: number) {
+  async remove(financeId: number, modifiedBy?: string) {
     await this.findOne(financeId);
 
     return this.prisma.finances.update({
@@ -230,6 +212,7 @@ export class FinancesService {
       data: {
         active: false,
         modified_at: new Date(),
+        ...(modifiedBy && { modified_by_id: modifiedBy }),
       },
     });
   }

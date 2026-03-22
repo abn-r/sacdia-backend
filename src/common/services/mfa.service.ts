@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+const MFA_SESSION_BIND_FAILED = 'MFA_SESSION_BIND_FAILED';
+
 export interface MfaEnrollResponse {
   factorId: string;
   qrCode: string;
@@ -41,18 +43,13 @@ export class MfaService {
    * Iniciar el proceso de enrolamiento de 2FA para un usuario.
    * Genera un QR code y secret para configurar en app de autenticación.
    */
-  async enrollMfa(accessToken: string): Promise<MfaEnrollResponse> {
+  async enrollMfa(
+    accessToken: string,
+    refreshToken?: string,
+  ): Promise<MfaEnrollResponse> {
     try {
       // Establecer sesión del usuario
-      const { data: sessionData, error: sessionError } =
-        await this.supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: '', // No necesario para esta operación
-        });
-
-      if (sessionError) {
-        throw new BadRequestException('Invalid session');
-      }
+      await this.bindSession(accessToken, refreshToken);
 
       // Enrolar nuevo factor TOTP
       const { data, error } = await this.supabase.auth.mfa.enroll({
@@ -88,13 +85,11 @@ export class MfaService {
     accessToken: string,
     factorId: string,
     code: string,
+    refreshToken?: string,
   ): Promise<{ verified: boolean }> {
     try {
       // Establecer sesión
-      await this.supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: '',
-      });
+      await this.bindSession(accessToken, refreshToken);
 
       // Crear challenge
       const { data: challengeData, error: challengeError } =
@@ -137,12 +132,10 @@ export class MfaService {
     accessToken: string,
     factorId: string,
     code: string,
+    refreshToken?: string,
   ): Promise<boolean> {
     try {
-      await this.supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: '',
-      });
+      await this.bindSession(accessToken, refreshToken);
 
       const { data: challengeData, error: challengeError } =
         await this.supabase.auth.mfa.challenge({ factorId });
@@ -166,12 +159,12 @@ export class MfaService {
   /**
    * Obtener los factores MFA configurados para un usuario.
    */
-  async listFactors(accessToken: string): Promise<MfaFactor[]> {
+  async listFactors(
+    accessToken: string,
+    refreshToken?: string,
+  ): Promise<MfaFactor[]> {
     try {
-      await this.supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: '',
-      });
+      await this.bindSession(accessToken, refreshToken);
 
       const { data, error } = await this.supabase.auth.mfa.listFactors();
 
@@ -195,12 +188,13 @@ export class MfaService {
   /**
    * Eliminar un factor MFA (deshabilitar 2FA).
    */
-  async unenrollFactor(accessToken: string, factorId: string): Promise<void> {
+  async unenrollFactor(
+    accessToken: string,
+    factorId: string,
+    refreshToken?: string,
+  ): Promise<void> {
     try {
-      await this.supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: '',
-      });
+      await this.bindSession(accessToken, refreshToken);
 
       const { error } = await this.supabase.auth.mfa.unenroll({ factorId });
 
@@ -218,8 +212,11 @@ export class MfaService {
   /**
    * Verificar si el usuario tiene MFA habilitado.
    */
-  async hasMfaEnabled(accessToken: string): Promise<boolean> {
-    const factors = await this.listFactors(accessToken);
+  async hasMfaEnabled(
+    accessToken: string,
+    refreshToken?: string,
+  ): Promise<boolean> {
+    const factors = await this.listFactors(accessToken, refreshToken);
     return factors.some((f) => f.status === 'verified');
   }
 
@@ -229,12 +226,10 @@ export class MfaService {
    */
   async getAuthenticatorAssuranceLevel(
     accessToken: string,
+    refreshToken?: string,
   ): Promise<{ currentLevel: string; nextLevel: string | null }> {
     try {
-      await this.supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: '',
-      });
+      await this.bindSession(accessToken, refreshToken);
 
       const { data, error } =
         await this.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -251,5 +246,44 @@ export class MfaService {
       if (error instanceof BadRequestException) throw error;
       return { currentLevel: 'aal1', nextLevel: null };
     }
+  }
+
+  private async bindSession(
+    accessToken: string,
+    refreshToken?: string,
+  ): Promise<void> {
+    if (!accessToken?.trim()) {
+      throw new BadRequestException({
+        code: MFA_SESSION_BIND_FAILED,
+        message: 'No access token found for MFA operation.',
+      });
+    }
+
+    const normalizedRefreshToken = refreshToken?.trim() ?? '';
+    const { error } = await this.supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: normalizedRefreshToken,
+    });
+
+    if (!error) return;
+
+    if (!normalizedRefreshToken) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'mfa_session_bind_failed',
+          reason: 'missing_refresh_token',
+          detail: error.message,
+        }),
+      );
+
+      throw new BadRequestException({
+        code: MFA_SESSION_BIND_FAILED,
+        message:
+          'No se pudo ligar la sesión MFA. Proporcione x-refresh-token y reintente.',
+        use: 'x-refresh-token',
+      });
+    }
+
+    throw new BadRequestException('Invalid session');
   }
 }

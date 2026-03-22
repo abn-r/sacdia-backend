@@ -10,6 +10,12 @@ describe('CatalogsService', () => {
     club_types: {
       findMany: jest.fn(),
     },
+    activity_types: {
+      findMany: jest.fn(),
+    },
+    relationship_types: {
+      findMany: jest.fn(),
+    },
     countries: {
       findMany: jest.fn(),
     },
@@ -33,6 +39,12 @@ describe('CatalogsService', () => {
       findFirst: jest.fn(),
     },
     club_ideals: {
+      findMany: jest.fn(),
+    },
+    allergies: {
+      findMany: jest.fn(),
+    },
+    diseases: {
       findMany: jest.fn(),
     },
   };
@@ -81,11 +93,67 @@ describe('CatalogsService', () => {
     });
   });
 
+  describe('getActivityTypes', () => {
+    it('should return active activity types', async () => {
+      const mockActivityTypes = [
+        { activity_type_id: 1, code: 'regular', name: 'Regular' },
+        { activity_type_id: 2, code: 'special', name: 'Especial' },
+      ];
+
+      mockPrismaService.activity_types.findMany.mockResolvedValue(
+        mockActivityTypes,
+      );
+
+      const result = await service.getActivityTypes();
+
+      expect(result).toEqual(mockActivityTypes);
+      expect(mockPrismaService.activity_types.findMany).toHaveBeenCalledWith({
+        where: { active: true },
+        select: {
+          activity_type_id: true,
+          code: true,
+          name: true,
+          description: true,
+        },
+        orderBy: { activity_type_id: 'asc' },
+      });
+    });
+  });
+
+  describe('getRelationshipTypes', () => {
+    it('should return active relationship types', async () => {
+      const mockRelationshipTypes = [
+        {
+          relationship_type_id: '11111111-1111-1111-1111-111111111111',
+          name: 'Padre',
+          description: 'Padre del menor',
+        },
+      ];
+
+      mockPrismaService.relationship_types.findMany.mockResolvedValue(
+        mockRelationshipTypes,
+      );
+
+      const result = await service.getRelationshipTypes();
+
+      expect(result).toEqual(mockRelationshipTypes);
+      expect(
+        mockPrismaService.relationship_types.findMany,
+      ).toHaveBeenCalledWith({
+        where: { active: true },
+        select: {
+          relationship_type_id: true,
+          name: true,
+          description: true,
+        },
+        orderBy: { name: 'asc' },
+      });
+    });
+  });
+
   describe('getCountries', () => {
     it('should return active countries', async () => {
-      const mockCountries = [
-        { country_id: 1, name: 'México', active: true },
-      ];
+      const mockCountries = [{ country_id: 1, name: 'México', active: true }];
 
       mockPrismaService.countries.findMany.mockResolvedValue(mockCountries);
 
@@ -160,12 +228,16 @@ describe('CatalogsService', () => {
         active: true,
       };
 
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockYear,
+      );
 
       const result = await service.getCurrentEcclesiasticalYear();
 
       expect(result).toEqual(mockYear);
-      expect(mockPrismaService.ecclesiastical_years.findFirst).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.ecclesiastical_years.findFirst,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             start_date: expect.any(Object),
@@ -173,6 +245,52 @@ describe('CatalogsService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('getAllergies', () => {
+    it('should return active allergies', async () => {
+      const mockAllergies = [
+        { allergy_id: 1, name: 'Polen', description: 'Alergia al polen' },
+      ];
+
+      mockPrismaService.allergies.findMany.mockResolvedValue(mockAllergies);
+
+      const result = await service.getAllergies();
+
+      expect(result).toEqual(mockAllergies);
+      expect(mockPrismaService.allergies.findMany).toHaveBeenCalledWith({
+        where: { active: true },
+        select: {
+          allergy_id: true,
+          name: true,
+          description: true,
+        },
+        orderBy: { name: 'asc' },
+      });
+    });
+  });
+
+  describe('getDiseases', () => {
+    it('should return active diseases', async () => {
+      const mockDiseases = [
+        { disease_id: 10, name: 'Asma', description: 'Asma controlada' },
+      ];
+
+      mockPrismaService.diseases.findMany.mockResolvedValue(mockDiseases);
+
+      const result = await service.getDiseases();
+
+      expect(result).toEqual(mockDiseases);
+      expect(mockPrismaService.diseases.findMany).toHaveBeenCalledWith({
+        where: { active: true },
+        select: {
+          disease_id: true,
+          name: true,
+          description: true,
+        },
+        orderBy: { name: 'asc' },
+      });
     });
   });
 });

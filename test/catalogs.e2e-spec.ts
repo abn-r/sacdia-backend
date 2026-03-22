@@ -14,9 +14,11 @@ describe('Catalogs E2E Tests', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
-    
+
     prisma = app.get(PrismaService);
     await app.init();
   });
@@ -107,7 +109,9 @@ describe('Catalogs E2E Tests', () => {
       };
 
       // Spy on Prisma to avoid failure if DB has no active year for today
-      jest.spyOn(prisma.ecclesiastical_years, 'findFirst').mockResolvedValue(mockYear);
+      jest
+        .spyOn(prisma.ecclesiastical_years, 'findFirst')
+        .mockResolvedValue(mockYear);
 
       const response = await request(app.getHttpServer())
         .get('/api/v1/catalogs/ecclesiastical-years/current')
