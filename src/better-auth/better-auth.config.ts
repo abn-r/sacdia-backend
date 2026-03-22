@@ -1,6 +1,9 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
-import { totp } from 'better-auth/plugins';
+// NOTE: `totp` is NOT a valid export from `better-auth/plugins`.
+// The correct plugin is `twoFactor` which includes TOTP + OTP + backup codes.
+// See better-auth.service.ts for the TOTP API differences documented there.
+import { twoFactor } from 'better-auth/plugins';
 import { PrismaClient } from '@prisma/client';
 
 export function createBetterAuth(prisma: PrismaClient) {
@@ -18,7 +21,7 @@ export function createBetterAuth(prisma: PrismaClient) {
         updatedAt: 'modified_at',
       },
     },
-    plugins: [totp()],
+    plugins: [twoFactor()],
     emailAndPassword: { enabled: true },
     socialProviders: {
       google: {
