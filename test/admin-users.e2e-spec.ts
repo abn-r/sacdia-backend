@@ -172,7 +172,7 @@ describe('Admin Users Detail E2E', () => {
         date_completed: null,
       },
     ],
-    users_classes: [],
+    enrollments: [],
     club_role_assignments: [],
     emergency_contact: [
       {
@@ -212,16 +212,21 @@ describe('Admin Users Detail E2E', () => {
     ],
   };
 
-  const buildTrajectoryClass = () => ({
-    user_class_id: 55,
+  const buildTrajectoryEnrollment = () => ({
+    enrollment_id: 55,
     class_id: 9,
-    investiture: true,
-    date_investiture: new Date('2025-11-10T00:00:00.000Z'),
-    advanced: false,
-    certificate: 'CERT-9',
-    current_class: true,
+    ecclesiastical_year_id: 2025,
+    advanced_status: false,
+    active: true,
+    enrollment_date: new Date('2025-01-10T00:00:00.000Z'),
+    investiture_status: 'INVESTED',
+    investiture_date: new Date('2025-11-10T00:00:00.000Z'),
     classes: {
       name: 'Explorador',
+    },
+    ecclesiastical_year: {
+      start_date: new Date('2025-01-01T00:00:00.000Z'),
+      end_date: new Date('2025-12-31T00:00:00.000Z'),
     },
   });
 
@@ -363,7 +368,7 @@ describe('Admin Users Detail E2E', () => {
 
     jest.spyOn(prisma.users, 'findFirst').mockResolvedValue({
       ...userDetailRecord,
-      users_classes: [buildTrajectoryClass()],
+      enrollments: [buildTrajectoryEnrollment()],
     } as unknown as UsersFindFirstResult);
 
     const response = await request(getHttpServer())
@@ -392,14 +397,14 @@ describe('Admin Users Detail E2E', () => {
     });
     expect(body.data.trajectory_classes).toEqual([
       {
-        user_class_id: 55,
+        enrollment_id: 55,
         class_id: 9,
         class_name: 'Explorador',
-        investiture: true,
-        date_investiture: '2025-11-10T00:00:00.000Z',
+        ecclesiastical_year_id: 2025,
         advanced: false,
-        certificate: 'CERT-9',
-        current_class: true,
+        current_class: false,
+        investiture_status: 'INVESTED',
+        enrollment_date: '2025-01-10T00:00:00.000Z',
       },
     ]);
     expect(body.data.classes).toEqual(body.data.trajectory_classes);
@@ -415,7 +420,7 @@ describe('Admin Users Detail E2E', () => {
 
     jest.spyOn(prisma.users, 'findFirst').mockResolvedValue({
       ...userDetailRecord,
-      users_classes: [buildTrajectoryClass()],
+      enrollments: [buildTrajectoryEnrollment()],
     } as unknown as UsersFindFirstResult);
     const findYearSpy = jest.spyOn(prisma.ecclesiastical_years, 'findFirst');
     const findEnrollmentsSpy = jest.spyOn(prisma.enrollments, 'findMany');
@@ -431,14 +436,14 @@ describe('Admin Users Detail E2E', () => {
     expect(body.data.current_operational_enrollment).toBeNull();
     expect(body.data.trajectory_classes).toEqual([
       {
-        user_class_id: 55,
+        enrollment_id: 55,
         class_id: 9,
         class_name: 'Explorador',
-        investiture: true,
-        date_investiture: '2025-11-10T00:00:00.000Z',
+        ecclesiastical_year_id: 2025,
         advanced: false,
-        certificate: 'CERT-9',
-        current_class: true,
+        current_class: false,
+        investiture_status: 'INVESTED',
+        enrollment_date: '2025-01-10T00:00:00.000Z',
       },
     ]);
     expect(body.data.classes).toEqual(body.data.trajectory_classes);
@@ -455,7 +460,7 @@ describe('Admin Users Detail E2E', () => {
 
     jest.spyOn(prisma.users, 'findFirst').mockResolvedValue({
       ...userDetailRecord,
-      users_classes: [buildTrajectoryClass()],
+      enrollments: [buildTrajectoryEnrollment()],
     } as unknown as UsersFindFirstResult);
     jest.spyOn(prisma.ecclesiastical_years, 'findFirst').mockResolvedValue({
       year_id: 2026,
@@ -476,14 +481,14 @@ describe('Admin Users Detail E2E', () => {
     expect(body.data.current_operational_enrollment).toBeNull();
     expect(body.data.trajectory_classes).toEqual([
       {
-        user_class_id: 55,
+        enrollment_id: 55,
         class_id: 9,
         class_name: 'Explorador',
-        investiture: true,
-        date_investiture: '2025-11-10T00:00:00.000Z',
+        ecclesiastical_year_id: 2025,
         advanced: false,
-        certificate: 'CERT-9',
-        current_class: true,
+        current_class: false,
+        investiture_status: 'INVESTED',
+        enrollment_date: '2025-01-10T00:00:00.000Z',
       },
     ]);
     expect(body.data.classes).toEqual(body.data.trajectory_classes);

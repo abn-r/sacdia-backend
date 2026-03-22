@@ -29,6 +29,7 @@ import { AdminModule } from './admin/admin.module';
 import { InsuranceModule } from './insurance/insurance.module';
 import { InvestitureModule } from './investiture/investiture.module';
 import { UnitsModule } from './units/units.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -127,6 +128,7 @@ import { UnitsModule } from './units/units.module';
     InsuranceModule,
     InvestitureModule,
     UnitsModule,
+    DashboardModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

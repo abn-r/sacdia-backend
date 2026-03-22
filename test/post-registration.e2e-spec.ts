@@ -110,12 +110,6 @@ describe('Post-registration step 3 E2E', () => {
         create: jest.fn().mockResolvedValue({ enrollment_id: 1001 }),
         update: jest.fn(),
       },
-      users_classes: {
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ user_class_id: 1 }),
-        update: jest.fn(),
-      },
       users_pr: {
         update: jest.fn().mockResolvedValue({}),
       },
@@ -178,12 +172,6 @@ describe('Post-registration step 3 E2E', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
-      users_classes: {
-        updateMany: jest.fn(),
-        findUnique: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-      },
       users_pr: {
         update: jest.fn(),
       },
@@ -203,7 +191,6 @@ describe('Post-registration step 3 E2E', () => {
 
     expect(tx.enrollments.updateMany).not.toHaveBeenCalled();
     expect(tx.enrollments.create).not.toHaveBeenCalled();
-    expect(tx.users_classes.create).not.toHaveBeenCalled();
     expect(tx.users_pr.update).not.toHaveBeenCalled();
   });
 });
