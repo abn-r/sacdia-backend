@@ -1,6 +1,6 @@
 # SACDIA Backend - Contexto Rápido
 
-Backend NestJS para SACDIA con Prisma + Supabase.
+Backend NestJS para SACDIA con Prisma + Neon + Better Auth.
 
 ## Comandos clave
 
@@ -21,6 +21,7 @@ pnpm run verify:fcm-migration
 ```text
 src/
 ├── auth
+├── better-auth        # BetterAuthModule + BetterAuthService (Wave 3)
 ├── users
 ├── catalogs
 ├── clubs
@@ -42,8 +43,8 @@ src/
 ## Stack
 
 - NestJS 11 + TypeScript
-- Prisma 7 + PostgreSQL (Supabase)
-- JWT via JWKS (ES256) usando `SUPABASE_URL` — `SUPABASE_JWT_SECRET` solo como fallback HS256 legacy (opcional)
+- Prisma 7 + PostgreSQL (Neon)
+- JWT via HS256 usando `BETTER_AUTH_SECRET` (Option C: BA handles auth, SACDIA signs JWT)
 - Redis (opcional) con fallback a in-memory
 - Firebase FCM
 - Sentry
