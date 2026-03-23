@@ -50,7 +50,7 @@ describe('OAuthService', () => {
     users_pr: {
       findUnique: jest.fn(),
     },
-    accounts: {
+    account: {
       findMany: jest.fn(),
       deleteMany: jest.fn(),
     },
@@ -211,7 +211,7 @@ describe('OAuthService', () => {
         user_id: 'user-123',
         complete: false,
       });
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'google' },
       ]);
 
@@ -256,7 +256,7 @@ describe('OAuthService', () => {
         user_id: 'user-123',
         complete: false,
       });
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'google' },
         { providerId: 'credential' },
       ]);
@@ -276,7 +276,7 @@ describe('OAuthService', () => {
   // ---------------------------------------------------------------------------
   describe('getConnectedProviders', () => {
     it('should return OAuth provider list (excluding credential)', async () => {
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'google' },
         { providerId: 'credential' },
       ]);
@@ -287,7 +287,7 @@ describe('OAuthService', () => {
     });
 
     it('should return empty array when no OAuth providers connected', async () => {
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'credential' },
       ]);
 
@@ -297,7 +297,7 @@ describe('OAuthService', () => {
     });
 
     it('should return multiple providers when connected', async () => {
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'google' },
         { providerId: 'apple' },
         { providerId: 'credential' },
@@ -321,7 +321,7 @@ describe('OAuthService', () => {
 
     it('should throw BadRequestException when user would lose last auth method', async () => {
       // Only Google, no credential account
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'google' },
       ]);
 
@@ -331,15 +331,15 @@ describe('OAuthService', () => {
     });
 
     it('should delete the account row when user has credential fallback', async () => {
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'google' },
         { providerId: 'credential' },
       ]);
-      mockPrismaService.accounts.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.account.deleteMany.mockResolvedValue({ count: 1 });
 
       const result = await service.disconnectProvider('user-123', 'google');
 
-      expect(mockPrismaService.accounts.deleteMany).toHaveBeenCalledWith({
+      expect(mockPrismaService.account.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-123', providerId: 'google' },
       });
       expect(result).toEqual({
@@ -349,11 +349,11 @@ describe('OAuthService', () => {
     });
 
     it('should throw BadRequestException when provider was not connected', async () => {
-      mockPrismaService.accounts.findMany.mockResolvedValue([
+      mockPrismaService.account.findMany.mockResolvedValue([
         { providerId: 'credential' },
         { providerId: 'apple' },
       ]);
-      mockPrismaService.accounts.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrismaService.account.deleteMany.mockResolvedValue({ count: 0 });
 
       await expect(
         service.disconnectProvider('user-123', 'google'),

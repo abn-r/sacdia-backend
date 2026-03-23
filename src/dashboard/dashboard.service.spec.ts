@@ -66,7 +66,7 @@ describe('DashboardService', () => {
           club_types: { name: 'Conquistadores' },
           clubs: { name: 'Club Central' },
         },
-        roles: { name: 'member' },
+        roles: { role_name: 'member' },
       });
 
       mockPrismaService.class_section_progress.count.mockResolvedValue(4);
@@ -124,7 +124,7 @@ describe('DashboardService', () => {
           club_types: { name: 'Aventureros' },
           clubs: { name: 'Club Norte' },
         },
-        roles: { name: 'director' },
+        roles: { role_name: 'director' },
       });
 
       mockPrismaService.activities.findMany.mockResolvedValue([]);

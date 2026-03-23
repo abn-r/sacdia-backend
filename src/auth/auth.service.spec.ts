@@ -13,6 +13,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -72,6 +73,13 @@ describe('AuthService', () => {
     resolveUserAuthorization: jest.fn(),
   };
 
+  const mockTokenBlacklistService = {
+    blacklist: jest.fn(),
+    isBlacklisted: jest.fn(),
+    blacklistAllUserTokens: jest.fn(),
+    isUserBlacklisted: jest.fn(),
+  };
+
   beforeEach(async () => {
     mockPrismaService.$transaction.mockImplementation(
       async (callback: (tx: typeof mockTx) => Promise<unknown>) =>
@@ -87,6 +95,10 @@ describe('AuthService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContextService,
+        },
+        {
+          provide: TokenBlacklistService,
+          useValue: mockTokenBlacklistService,
         },
       ],
     }).compile();
