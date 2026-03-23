@@ -1,6 +1,5 @@
 import {
   Injectable,
-  NotImplementedException,
   Inject,
   Logger,
   ConflictException,
@@ -10,7 +9,8 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
+import { authenticator } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BetterAuthInstance } from './better-auth.config';
 
@@ -47,19 +47,10 @@ export interface BaAuthResult {
   accessToken: string;
 }
 
+/** Returned by enrollTotp — client generates QR from totpURI. */
 export interface BaTotpEnrollResult {
-  factorId: string;
-  qrCode: string;
-  secret: string;
-  uri: string;
-}
-
-export interface BaTotpFactor {
-  id: string;
-  friendlyName: string;
-  factorType: string;
-  status: string;
-  createdAt: string;
+  totpURI: string;
+  backupCodes: string[];
 }
 
 export interface BaAssuranceLevel {
@@ -90,20 +81,10 @@ export interface IBetterAuthService {
   updatePasswordById(userId: string, newPassword: string): Promise<void>;
 
   // -- TOTP / MFA -----------------------------------------------------------
-  enrollTotp(
-    sessionToken: string,
-    friendlyName?: string,
-  ): Promise<BaTotpEnrollResult>;
-  challengeTotp(sessionToken: string, factorId: string): Promise<string>;
-  verifyTotp(
-    sessionToken: string,
-    factorId: string,
-    challengeId: string,
-    code: string,
-  ): Promise<{ verified: boolean }>;
-  listTotpFactors(sessionToken: string): Promise<BaTotpFactor[]>;
-  unenrollFactor(sessionToken: string, factorId: string): Promise<void>;
-  getAssuranceLevel(sessionToken: string): Promise<BaAssuranceLevel>;
+  enrollTotp(userId: string, password: string): Promise<BaTotpEnrollResult>;
+  verifyTotp(userId: string, code: string): Promise<{ verified: boolean }>;
+  disableTotp(userId: string, password: string): Promise<void>;
+  hasTotpEnabled(userId: string): Promise<{ enabled: boolean }>;
 
   // -- OAuth ----------------------------------------------------------------
   getOAuthUrl(
@@ -472,72 +453,193 @@ export class BetterAuthService implements IBetterAuthService {
   // ---------------------------------------------------------------------------
 
   /**
-   * NOTE ON TOTP PLUGIN API MISMATCH:
+   * TOTP is implemented directly with Prisma + otplib (no BA twoFactor plugin).
    *
-   * The `twoFactor()` plugin provides:
-   *   - `auth.api.enableTwoFactor({ body: { password, issuer? }, headers })`
-   *   - `auth.api.getTOTPURI({ body: { password }, headers })`
-   *   - `auth.api.verifyTOTP({ body: { code, trustDevice? }, headers })`
-   *   - `auth.api.disableTwoFactor({ body: { password }, headers })`
+   * Storage: verification table with identifier = `totp:{userId}`.
+   *   value: JSON string — { secret: string, backupCodes: string[] }
+   *   where backupCodes is an array of bcrypt-hashed 8-char codes.
+   *   expiresAt: 2099-01-01 (effectively permanent).
    *
-   * The service interface uses Supabase-style MFA concepts (factorId, challengeId)
-   * that do NOT exist in BA's twoFactor plugin. These methods remain as stubs
-   * pending interface redesign.
+   * Password verification uses the credential account row (bcrypt.compare).
    */
 
-  async enrollTotp(
-    _sessionToken: string,
-    _friendlyName?: string,
-  ): Promise<BaTotpEnrollResult> {
-    throw new NotImplementedException(
-      'enrollTotp: interface redesign required. BA twoFactor uses enableTwoFactor' +
-        '({ body: { password } }) — no factorId, no qrCode, requires password not session token.',
-    );
+  // -- Private TOTP helpers --------------------------------------------------
+
+  private totpIdentifier(userId: string): string {
+    return `totp:${userId}`;
   }
 
-  challengeTotp(
-    _sessionToken: string,
-    _factorId: string,
-  ): Promise<string> {
-    throw new NotImplementedException(
-      'challengeTotp: BA twoFactor has no challenge step. Call verifyTotp() directly.',
-    );
+  /**
+   * Generates 10 random 8-character alphanumeric backup codes.
+   * Returns { plain, hashed } — plain shown once to user, hashed stored in DB.
+   */
+  private async generateBackupCodes(): Promise<{
+    plain: string[];
+    hashed: string[];
+  }> {
+    const plain: string[] = [];
+    const hashed: string[] = [];
+
+    for (let i = 0; i < 10; i++) {
+      // 6 random bytes → base64url → slice to 8 chars (URL-safe alphanumeric)
+      const code = randomBytes(6).toString('base64url').slice(0, 8).toUpperCase();
+      plain.push(code);
+      hashed.push(await bcrypt.hash(code, BCRYPT_ROUNDS));
+    }
+
+    return { plain, hashed };
   }
 
-  async verifyTotp(
-    _sessionToken: string,
-    _factorId: string,
-    _challengeId: string,
-    _code: string,
-  ): Promise<{ verified: boolean }> {
-    throw new NotImplementedException(
-      'verifyTotp: interface redesign required. BA uses verifyTOTP({ body: { code } })' +
-        ' — factorId and challengeId do not exist in BA twoFactor.',
-    );
-  }
-
-  async listTotpFactors(_sessionToken: string): Promise<BaTotpFactor[]> {
-    throw new NotImplementedException(
-      'listTotpFactors: BA twoFactor supports one TOTP per user, no list endpoint.' +
-        ' Check user.twoFactorEnabled via getSession.',
-    );
-  }
-
-  async unenrollFactor(
-    _sessionToken: string,
-    _factorId: string,
+  /**
+   * Verifies the user's credential account password.
+   * Throws UnauthorizedException if wrong or if no credential account exists.
+   */
+  private async verifyUserPassword(
+    userId: string,
+    password: string,
   ): Promise<void> {
-    throw new NotImplementedException(
-      'unenrollFactor: interface redesign required. BA uses disableTwoFactor' +
-        '({ body: { password } }) — requires password, factorId is not used.',
-    );
+    const dbAccount = await this.prisma.account.findFirst({
+      where: { userId, providerId: 'credential' },
+    });
+    if (!dbAccount || !dbAccount.password) {
+      throw new UnauthorizedException('No credential account found for user');
+    }
+
+    const isValid = await bcrypt.compare(password, dbAccount.password);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid password');
+    }
   }
 
-  async getAssuranceLevel(_sessionToken: string): Promise<BaAssuranceLevel> {
-    throw new NotImplementedException(
-      'getAssuranceLevel: pending interface redesign. Derive from' +
-        ' user.twoFactorEnabled and session.twoFactorVerified after twoFactor plugin is confirmed.',
-    );
+  // -- Public TOTP methods ---------------------------------------------------
+
+  /**
+   * Enrolls TOTP for a user.
+   *
+   * Flow:
+   *   1. Verify password
+   *   2. Check not already enrolled (upsert is fine, but we warn)
+   *   3. Generate TOTP secret via otplib.authenticator
+   *   4. Generate 10 backup codes (plain + hashed)
+   *   5. Store { secret, backupCodes: hashed[] } in verification table
+   *   6. Return { totpURI, backupCodes: plain[] }
+   */
+  async enrollTotp(
+    userId: string,
+    password: string,
+  ): Promise<BaTotpEnrollResult> {
+    await this.verifyUserPassword(userId, password);
+
+    // Load user email for TOTP URI label
+    const dbUser = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { email: true },
+    });
+    if (!dbUser) {
+      throw new NotFoundException(`enrollTotp: user ${userId} not found`);
+    }
+
+    const secret = authenticator.generateSecret();
+    const issuer = 'SACDIA';
+    const totpURI = authenticator.keyuri(dbUser.email, issuer, secret);
+
+    const { plain: plainCodes, hashed: hashedCodes } =
+      await this.generateBackupCodes();
+
+    const identifier = this.totpIdentifier(userId);
+    const value = JSON.stringify({ secret, backupCodes: hashedCodes });
+    const expiresAt = new Date('2099-01-01T00:00:00.000Z');
+    const now = new Date();
+
+    // Upsert: delete existing record (if any) then insert fresh
+    await this.prisma.verification.deleteMany({ where: { identifier } });
+    await this.prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier,
+        value,
+        expiresAt,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+
+    this.logger.log(`TOTP enrolled for user: ${userId}`);
+    return { totpURI, backupCodes: plainCodes };
+  }
+
+  /**
+   * Verifies a TOTP code (6-digit from authenticator app).
+   *
+   * Flow:
+   *   1. Load TOTP record from verification table
+   *   2. Verify code via otplib.authenticator.verify()
+   *   3. Return { verified: boolean }
+   *
+   * Does NOT check backup codes — see disableTotp for that concern.
+   */
+  async verifyTotp(
+    userId: string,
+    code: string,
+  ): Promise<{ verified: boolean }> {
+    const identifier = this.totpIdentifier(userId);
+    const record = await this.prisma.verification.findFirst({
+      where: { identifier },
+    });
+
+    if (!record) {
+      // No TOTP enrolled — cannot verify
+      return { verified: false };
+    }
+
+    let parsed: { secret: string; backupCodes: string[] };
+    try {
+      parsed = JSON.parse(record.value);
+    } catch {
+      throw new InternalServerErrorException(
+        'verifyTotp: stored TOTP data is malformed',
+      );
+    }
+
+    const verified = authenticator.verify({
+      token: code,
+      secret: parsed.secret,
+    });
+
+    if (verified) {
+      this.logger.log(`TOTP verified for user: ${userId}`);
+    }
+
+    return { verified };
+  }
+
+  /**
+   * Disables TOTP for a user.
+   *
+   * Flow:
+   *   1. Verify password
+   *   2. Delete the totp:{userId} record from verification table
+   */
+  async disableTotp(userId: string, password: string): Promise<void> {
+    await this.verifyUserPassword(userId, password);
+
+    const identifier = this.totpIdentifier(userId);
+    await this.prisma.verification.deleteMany({ where: { identifier } });
+
+    this.logger.log(`TOTP disabled for user: ${userId}`);
+  }
+
+  /**
+   * Returns whether the user has TOTP enrolled.
+   * Checks for existence of the totp:{userId} record in the verification table.
+   */
+  async hasTotpEnabled(userId: string): Promise<{ enabled: boolean }> {
+    const identifier = this.totpIdentifier(userId);
+    const record = await this.prisma.verification.findFirst({
+      where: { identifier },
+      select: { id: true },
+    });
+    return { enabled: !!record };
   }
 
   // ---------------------------------------------------------------------------

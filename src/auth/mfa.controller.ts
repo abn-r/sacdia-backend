@@ -5,16 +5,15 @@ import {
   Delete,
   Body,
   UseGuards,
-  Headers,
-  UnauthorizedException,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiHeader,
 } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { MfaService } from '../common/services/mfa.service';
 import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
@@ -22,32 +21,26 @@ import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
 /**
  * MfaController — Two-Factor Authentication endpoints.
  *
- * ## Session token vs. JWT
+ * ## Authentication
  *
- * The `Authorization: Bearer <jwt>` header carries the SACDIA HS256 JWT used
- * by JwtAuthGuard for route protection.  That JWT does NOT contain the opaque
- * Better Auth session token needed for MFA operations.
+ * All endpoints are protected by JwtAuthGuard.  The user's UUID (`userId`) is
+ * extracted from the SACDIA HS256 JWT payload (`sub` field) — no separate
+ * session token is required.
  *
- * Clients MUST also send the opaque BA session token via `x-session-token`.
- * This is the value returned by the sign-in/sign-up response in
- * `session.token`.  Without it, all MFA operations will fail with 401.
+ * ## Storage
  *
- * ## Why a separate header?
- * Better Auth's twoFactor plugin requires a live session cookie to authorize
- * enroll/verify/disable.  The SACDIA JWT is a short-lived (1h) wrapper token
- * — it does not grant access to BA's internal session middleware.
+ * TOTP secrets are stored in the `verification` table with identifier
+ * `totp:{userId}` and effectively never expire (expiresAt = 2099-01-01).
+ *
+ * ## One TOTP per user
+ *
+ * There is a single TOTP factor per user.  Re-enrolling overwrites the previous
+ * secret and generates new backup codes.
  */
 @ApiTags('auth')
 @Controller('auth/mfa')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@ApiHeader({
-  name: 'x-session-token',
-  required: true,
-  description:
-    'Opaque Better Auth session token (returned in session.token after sign-in). ' +
-    'Required for all MFA operations.',
-})
 export class MfaController {
   constructor(private readonly mfaService: MfaService) {}
 
@@ -61,8 +54,9 @@ export class MfaController {
     description:
       'Activa la autenticación de dos factores para la cuenta. ' +
       'Retorna un `totpURI` desde el cual el cliente genera el QR code. ' +
-      'También retorna `backupCodes` de un solo uso. ' +
-      'Requiere la contraseña actual del usuario.',
+      'También retorna `backupCodes` de un solo uso (mostrados una sola vez). ' +
+      'Requiere la contraseña actual del usuario. ' +
+      'Re-enrolar sobreescribe el secreto anterior.',
   })
   @ApiResponse({
     status: 201,
@@ -71,23 +65,23 @@ export class MfaController {
       properties: {
         totpURI: {
           type: 'string',
+          example: 'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
           description: 'URI otpauth:// para generar el QR code en el cliente',
         },
         backupCodes: {
           type: 'array',
-          items: { type: 'string' },
-          description: 'Códigos de respaldo de un solo uso',
+          items: { type: 'string', example: 'AB3XYZ12' },
+          description:
+            'Códigos de respaldo de un solo uso (10 códigos de 8 chars). ' +
+            'Almacenados hasheados — estos son los únicos valores en claro.',
         },
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'Contraseña inválida o sesión expirada' })
-  async enrollMfa(
-    @Headers('x-session-token') sessionToken: string,
-    @Body() dto: EnrollMfaDto,
-  ) {
-    this.requireSessionToken(sessionToken);
-    return this.mfaService.enrollMfa(sessionToken, dto.password);
+  @ApiResponse({ status: 401, description: 'Contraseña inválida o JWT expirado' })
+  async enrollMfa(@Req() req: Request, @Body() dto: EnrollMfaDto) {
+    const userId = (req.user as any).userId as string;
+    return this.mfaService.enrollMfa(userId, dto.password);
   }
 
   // ---------------------------------------------------------------------------
@@ -99,46 +93,50 @@ export class MfaController {
     summary: 'Verificar código TOTP',
     description:
       'Verifica un código de 6 dígitos de la app de autenticación. ' +
-      'Úsalo para activar 2FA después del enrolamiento o para elevar ' +
-      'la sesión de aal1 a aal2 durante el login.',
+      'Retorna { verified: true } si el código es válido. ' +
+      'Falla con 401 si TOTP no está enrolado.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Código verificado exitosamente',
+    description: 'Resultado de la verificación',
     schema: {
       properties: {
         verified: { type: 'boolean', example: true },
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'Código TOTP inválido' })
-  async verifyMfa(
-    @Headers('x-session-token') sessionToken: string,
-    @Body() dto: VerifyMfaDto,
-  ) {
-    this.requireSessionToken(sessionToken);
-    return this.mfaService.verifyMfa(sessionToken, dto.code);
+  @ApiResponse({ status: 401, description: 'TOTP no enrolado o código inválido' })
+  async verifyMfa(@Req() req: Request, @Body() dto: VerifyMfaDto) {
+    const userId = (req.user as any).userId as string;
+    return this.mfaService.verifyMfa(userId, dto.code);
   }
 
   // ---------------------------------------------------------------------------
-  // Disable / unenroll
+  // Disable
   // ---------------------------------------------------------------------------
 
-  @Delete('unenroll')
+  @Delete('disable')
   @ApiOperation({
     summary: 'Deshabilitar 2FA',
     description:
       'Desactiva la autenticación de dos factores para la cuenta. ' +
+      'Elimina el secreto TOTP y los backup codes. ' +
       'Requiere la contraseña actual del usuario para confirmar la operación.',
   })
-  @ApiResponse({ status: 200, description: '2FA deshabilitado exitosamente' })
-  @ApiResponse({ status: 401, description: 'Contraseña inválida o sesión expirada' })
-  async disableMfa(
-    @Headers('x-session-token') sessionToken: string,
-    @Body() dto: DisableMfaDto,
-  ) {
-    this.requireSessionToken(sessionToken);
-    await this.mfaService.disableMfa(sessionToken, dto.password);
+  @ApiResponse({
+    status: 200,
+    description: '2FA deshabilitado exitosamente',
+    schema: {
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: '2FA disabled successfully' },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Contraseña inválida o JWT expirado' })
+  async disableMfa(@Req() req: Request, @Body() dto: DisableMfaDto) {
+    const userId = (req.user as any).userId as string;
+    await this.mfaService.disableMfa(userId, dto.password);
     return { success: true, message: '2FA disabled successfully' };
   }
 
@@ -148,57 +146,24 @@ export class MfaController {
 
   @Get('status')
   @ApiOperation({
-    summary: 'Estado de 2FA y nivel de autenticación',
+    summary: 'Estado de 2FA',
     description:
-      'Indica si el usuario tiene 2FA habilitado (enabled) y el nivel de ' +
-      'autenticación actual de la sesión (aal1 = solo password, aal2 = password + TOTP verificado).',
+      'Indica si el usuario tiene 2FA habilitado. ' +
+      'El campo `enabled` es true cuando hay un secreto TOTP enrolado.',
   })
   @ApiResponse({
     status: 200,
     schema: {
       properties: {
-        enabled: { type: 'boolean', description: 'true si 2FA está habilitado' },
-        currentLevel: {
-          type: 'string',
-          enum: ['aal1', 'aal2'],
-          description: 'aal1 = solo password, aal2 = password + MFA verificado',
-        },
-        nextLevel: {
-          type: 'string',
-          nullable: true,
-          description: 'aal2 si hay TOTP enrollado pero no verificado en esta sesión',
+        enabled: {
+          type: 'boolean',
+          description: 'true si TOTP está enrolado para este usuario',
         },
       },
     },
   })
-  async getMfaStatus(@Headers('x-session-token') sessionToken: string) {
-    this.requireSessionToken(sessionToken);
-    const [status, aal] = await Promise.all([
-      this.mfaService.getMfaStatus(sessionToken),
-      this.mfaService.getAssuranceLevel(sessionToken),
-    ]);
-
-    return {
-      enabled: status.enabled,
-      currentLevel: aal.currentLevel,
-      nextLevel: aal.nextLevel,
-    };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Guards against missing session token before calling MfaService.
-   * JwtAuthGuard already validates the JWT — this validates the BA session token.
-   */
-  private requireSessionToken(sessionToken: string | undefined): void {
-    if (!sessionToken?.trim()) {
-      throw new UnauthorizedException(
-        'Missing x-session-token header. Provide the opaque BA session token ' +
-          'returned in session.token after sign-in.',
-      );
-    }
+  async getMfaStatus(@Req() req: Request) {
+    const userId = (req.user as any).userId as string;
+    return this.mfaService.getMfaStatus(userId);
   }
 }

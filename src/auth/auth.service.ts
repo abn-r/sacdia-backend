@@ -7,6 +7,7 @@ import {
   NotImplementedException,
   Logger,
 } from '@nestjs/common';
+import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -14,6 +15,7 @@ import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { buildAuthTokenResponse } from './utils/auth-token-response.util';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
@@ -117,10 +119,19 @@ export class AuthService {
 
     this.logger.log(`User registered successfully: ${baResult.user.id}`);
 
+    // Auto-send verification email after successful registration.
+    // Fire-and-forget: a failure here does NOT block registration.
+    this.createAndLogVerificationToken(baResult.user.email).catch((e) =>
+      this.logger.warn(
+        `Failed to create verification token during registration for ${baResult.user.id}: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+
     return {
       success: true,
       userId: baResult.user.id,
       message: 'Usuario registrado exitosamente',
+      emailVerificationPending: true,
     };
   }
 
@@ -574,6 +585,106 @@ export class AuthService {
         dateCompleted: userPr.date_completed,
       },
     };
+  }
+
+  /**
+   * Sends a verification email to the authenticated user.
+   *
+   * Creates a token in the `verification` table (expires in 24h) and logs it.
+   * In production, replace the logger.log with an SMTP/SendGrid call.
+   */
+  async sendVerificationEmail(userId: string) {
+    const dbUser = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { email: true, email_verified: true },
+    });
+
+    if (!dbUser) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    if (dbUser.email_verified) {
+      return {
+        success: true,
+        message: 'El email ya está verificado',
+        alreadyVerified: true,
+      };
+    }
+
+    await this.createAndLogVerificationToken(dbUser.email);
+
+    return {
+      success: true,
+      message: 'Email de verificación enviado',
+    };
+  }
+
+  /**
+   * Confirms email ownership using a verification token.
+   *
+   * Validates the token against the `verification` table.
+   * If valid and not expired: sets `email_verified = true` and deletes the token.
+   */
+  async confirmEmailVerification(dto: VerifyEmailDto) {
+    const verification = await this.prisma.verification.findFirst({
+      where: { value: dto.token },
+    });
+
+    if (!verification) {
+      throw new BadRequestException('Token inválido o ya utilizado');
+    }
+
+    if (verification.expiresAt < new Date()) {
+      // Clean up expired token
+      await this.prisma.verification.delete({
+        where: { id: verification.id },
+      });
+      throw new BadRequestException('Token expirado. Solicitá uno nuevo');
+    }
+
+    // Mark user as verified and delete the token in a transaction
+    await this.prisma.$transaction([
+      this.prisma.users.update({
+        where: { email: verification.identifier },
+        data: { email_verified: true },
+      }),
+      this.prisma.verification.delete({
+        where: { id: verification.id },
+      }),
+    ]);
+
+    this.logger.log(
+      `Email verified for: ${verification.identifier}`,
+    );
+
+    return {
+      success: true,
+      message: 'Email verificado exitosamente',
+    };
+  }
+
+  /**
+   * Creates a 24h verification token in the `verification` table and logs it.
+   * In production: replace logger.log with an email delivery call.
+   */
+  private async createAndLogVerificationToken(email: string): Promise<void> {
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+
+    await this.prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier: email,
+        value: token,
+        expiresAt,
+      },
+    });
+
+    // TODO(production): send email with verification link containing the token.
+    // SECURITY: This logs the raw token — remove or replace with masked version in production.
+    this.logger.log(
+      `[DEV] Email verification token for ${email} (expires ${expiresAt.toISOString()}): ${token}`,
+    );
   }
 
   private normalizeToken(token?: string | null): string | undefined {

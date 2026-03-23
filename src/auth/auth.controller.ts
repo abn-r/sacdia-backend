@@ -25,6 +25,7 @@ import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -172,6 +173,50 @@ export class AuthController {
   })
   async requestPasswordReset(@Body() dto: ResetPasswordRequestDto) {
     return this.authService.requestPasswordReset(dto);
+  }
+
+  @Post('verify-email/send')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  // Rate limit: max 3 sends per minute to prevent token farming
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @ApiOperation({ summary: 'Enviar email de verificación al usuario autenticado' })
+  @ApiResponse({
+    status: 200,
+    description: 'Email de verificación enviado (o ya verificado)',
+    schema: {
+      example: {
+        success: true,
+        message: 'Email de verificación enviado',
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'No autenticado' })
+  async sendVerificationEmail(@CurrentUser() user: { userId: string }) {
+    return this.authService.sendVerificationEmail(user.userId);
+  }
+
+  @Post('verify-email/confirm')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirmar verificación de email con token' })
+  @ApiBody({ type: VerifyEmailDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Email verificado exitosamente',
+    schema: {
+      example: {
+        success: true,
+        message: 'Email verificado exitosamente',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Token inválido, ya utilizado, o expirado',
+  })
+  async confirmEmailVerification(@Body() dto: VerifyEmailDto) {
+    return this.authService.confirmEmailVerification(dto);
   }
 
   @Post('update-password')

@@ -6,7 +6,6 @@ export type {
   BaSession,
   BaAuthResult,
   BaTotpEnrollResult,
-  BaTotpFactor,
   BaAssuranceLevel,
   BaOAuthUrlResult,
 } from './better-auth.service';

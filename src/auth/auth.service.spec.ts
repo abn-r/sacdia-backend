@@ -40,6 +40,7 @@ describe('AuthService', () => {
     $transaction: jest.fn(),
     users: {
       findUnique: jest.fn(),
+      update: jest.fn(),
     },
     users_pr: {
       findUnique: jest.fn(),
@@ -47,6 +48,11 @@ describe('AuthService', () => {
     },
     club_role_assignments: {
       findFirst: jest.fn(),
+    },
+    verification: {
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      delete: jest.fn(),
     },
   };
 
@@ -139,6 +145,7 @@ describe('AuthService', () => {
       mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
       mockTx.roles.findFirst.mockResolvedValue({ role_id: 1, role_name: 'user' });
       mockTx.users_roles.create.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+      mockPrismaService.verification.create.mockResolvedValue({});
 
       const result = await service.register(registerDto);
 
@@ -153,6 +160,7 @@ describe('AuthService', () => {
         success: true,
         userId: 'user-123',
         message: 'Usuario registrado exitosamente',
+        emailVerificationPending: true,
       });
     });
 
@@ -1048,6 +1056,156 @@ describe('AuthService', () => {
           dateCompleted: completionDate,
         },
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // sendVerificationEmail()
+  // ---------------------------------------------------------------------------
+  describe('sendVerificationEmail', () => {
+    it('should throw BadRequestException when user is not found', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(null);
+
+      await expect(service.sendVerificationEmail('missing-user')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should return alreadyVerified=true when email is already verified', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        email: 'juan.garcia@example.com',
+        email_verified: true,
+      });
+
+      const result = await service.sendVerificationEmail('user-123');
+
+      expect(result).toEqual({
+        success: true,
+        message: 'El email ya está verificado',
+        alreadyVerified: true,
+      });
+      expect(mockPrismaService.verification.create).not.toHaveBeenCalled();
+    });
+
+    it('should create a verification token and return success when email is unverified', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        email: 'juan.garcia@example.com',
+        email_verified: false,
+      });
+      mockPrismaService.verification.create.mockResolvedValue({});
+
+      const result = await service.sendVerificationEmail('user-123');
+
+      expect(mockPrismaService.verification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            identifier: 'juan.garcia@example.com',
+          }),
+        }),
+      );
+      expect(result).toEqual({
+        success: true,
+        message: 'Email de verificación enviado',
+      });
+    });
+
+    it('should set token expiry to approximately 24h from now', async () => {
+      const before = Date.now();
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        email: 'juan.garcia@example.com',
+        email_verified: false,
+      });
+      mockPrismaService.verification.create.mockResolvedValue({});
+
+      await service.sendVerificationEmail('user-123');
+
+      const createCall = mockPrismaService.verification.create.mock.calls[0][0];
+      const expiresAt: Date = createCall.data.expiresAt;
+      const expectedExpiry = before + 24 * 60 * 60 * 1000;
+
+      // Allow 5 second tolerance
+      expect(expiresAt.getTime()).toBeGreaterThanOrEqual(expectedExpiry - 5000);
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(expectedExpiry + 5000);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // confirmEmailVerification()
+  // ---------------------------------------------------------------------------
+  describe('confirmEmailVerification', () => {
+    const validToken = 'valid-base64url-token';
+    const futureDate = new Date(Date.now() + 60 * 60 * 1000); // 1h from now
+
+    it('should throw BadRequestException when token does not exist', async () => {
+      mockPrismaService.verification.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.confirmEmailVerification({ token: 'nonexistent-token' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException and delete token when token is expired', async () => {
+      const expiredDate = new Date(Date.now() - 1000); // 1 second in the past
+      mockPrismaService.verification.findFirst.mockResolvedValue({
+        id: 'verification-id-1',
+        identifier: 'juan.garcia@example.com',
+        value: validToken,
+        expiresAt: expiredDate,
+      });
+      mockPrismaService.verification.delete.mockResolvedValue({});
+
+      await expect(
+        service.confirmEmailVerification({ token: validToken }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrismaService.verification.delete).toHaveBeenCalledWith({
+        where: { id: 'verification-id-1' },
+      });
+    });
+
+    it('should verify email and delete token when token is valid', async () => {
+      mockPrismaService.verification.findFirst.mockResolvedValue({
+        id: 'verification-id-1',
+        identifier: 'juan.garcia@example.com',
+        value: validToken,
+        expiresAt: futureDate,
+      });
+      // $transaction with array of promises
+      mockPrismaService.$transaction.mockImplementation(
+        async (ops: Promise<unknown>[]) => Promise.all(ops),
+      );
+      mockPrismaService.users.update.mockResolvedValue({});
+      mockPrismaService.verification.delete.mockResolvedValue({});
+
+      const result = await service.confirmEmailVerification({ token: validToken });
+
+      expect(result).toEqual({
+        success: true,
+        message: 'Email verificado exitosamente',
+      });
+    });
+
+    it('should update email_verified to true for the correct user email', async () => {
+      mockPrismaService.verification.findFirst.mockResolvedValue({
+        id: 'verification-id-1',
+        identifier: 'juan.garcia@example.com',
+        value: validToken,
+        expiresAt: futureDate,
+      });
+      mockPrismaService.$transaction.mockImplementation(
+        async (ops: Promise<unknown>[]) => Promise.all(ops),
+      );
+      mockPrismaService.users.update.mockResolvedValue({});
+      mockPrismaService.verification.delete.mockResolvedValue({});
+
+      await service.confirmEmailVerification({ token: validToken });
+
+      expect(mockPrismaService.users.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { email: 'juan.garcia@example.com' },
+          data: { email_verified: true },
+        }),
+      );
     });
   });
 });

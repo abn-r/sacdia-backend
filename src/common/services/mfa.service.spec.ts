@@ -1,36 +1,35 @@
-import { UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
 import { MfaService } from './mfa.service';
 
 /**
- * MfaService unit tests — Better Auth twoFactor plugin.
+ * MfaService unit tests.
  *
- * The BA instance is fully mocked.  We test the service's orchestration logic,
- * error mapping, and AAL derivation without hitting a real BA server.
+ * BetterAuthService is fully mocked.  We test the service's orchestration logic
+ * — password verification, enrollment, code verification, disable — without
+ * touching a real DB or TOTP library.
  */
 describe('MfaService', () => {
   let service: MfaService;
 
-  // -- BA API mocks ----------------------------------------------------------
-  const mockGetSession = jest.fn();
-  const mockEnableTwoFactor = jest.fn();
-  const mockVerifyTOTP = jest.fn();
-  const mockDisableTwoFactor = jest.fn();
+  // -- BetterAuthService mocks -----------------------------------------------
+  const mockEnrollTotp = jest.fn();
+  const mockVerifyTotp = jest.fn();
+  const mockDisableTotp = jest.fn();
+  const mockHasTotpEnabled = jest.fn();
 
-  const mockBaInstance = {
-    api: {
-      getSession: mockGetSession,
-      enableTwoFactor: mockEnableTwoFactor,
-      verifyTOTP: mockVerifyTOTP,
-      disableTwoFactor: mockDisableTwoFactor,
-    },
+  const mockBetterAuthService = {
+    enrollTotp: mockEnrollTotp,
+    verifyTotp: mockVerifyTotp,
+    disableTotp: mockDisableTotp,
+    hasTotpEnabled: mockHasTotpEnabled,
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.BETTER_AUTH_SECRET = 'test-secret-32-bytes-long-for-hmac';
-    // MfaService constructor only takes 'BETTER_AUTH_INSTANCE'
-    service = new MfaService(mockBaInstance as any);
+    service = new MfaService(mockBetterAuthService as any);
   });
+
+  const USER_ID = 'test-user-uuid-1234';
 
   // ---------------------------------------------------------------------------
   // enrollMfa
@@ -38,36 +37,25 @@ describe('MfaService', () => {
 
   describe('enrollMfa', () => {
     it('should return totpURI and backupCodes on success', async () => {
-      mockEnableTwoFactor.mockResolvedValue({
-        totpURI: 'otpauth://totp/SACDIA?secret=BASE32SECRET',
-        backupCodes: ['code1', 'code2'],
+      mockEnrollTotp.mockResolvedValue({
+        totpURI: 'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
+        backupCodes: ['AB3XYZ12', 'CD4MNO56'],
       });
 
-      const result = await service.enrollMfa('raw-session-token', 'userPassword1');
+      const result = await service.enrollMfa(USER_ID, 'userPassword1');
 
       expect(result).toEqual({
-        totpURI: 'otpauth://totp/SACDIA?secret=BASE32SECRET',
-        backupCodes: ['code1', 'code2'],
+        totpURI: 'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
+        backupCodes: ['AB3XYZ12', 'CD4MNO56'],
       });
-      expect(mockEnableTwoFactor).toHaveBeenCalledWith(
-        expect.objectContaining({ body: { password: 'userPassword1' } }),
-      );
+      expect(mockEnrollTotp).toHaveBeenCalledWith(USER_ID, 'userPassword1');
     });
 
-    it('should return empty backupCodes when BA omits them', async () => {
-      mockEnableTwoFactor.mockResolvedValue({
-        totpURI: 'otpauth://totp/SACDIA?secret=ABC',
-      });
+    it('should propagate UnauthorizedException from BetterAuthService (wrong password)', async () => {
+      mockEnrollTotp.mockRejectedValue(new UnauthorizedException('Invalid password'));
 
-      const result = await service.enrollMfa('token', 'pass');
-      expect(result.backupCodes).toEqual([]);
-    });
-
-    it('should throw InternalServerErrorException when BA returns no totpURI', async () => {
-      mockEnableTwoFactor.mockResolvedValue({});
-
-      await expect(service.enrollMfa('token', 'pass')).rejects.toThrow(
-        InternalServerErrorException,
+      await expect(service.enrollMfa(USER_ID, 'wrongPass')).rejects.toThrow(
+        UnauthorizedException,
       );
     });
   });
@@ -77,23 +65,32 @@ describe('MfaService', () => {
   // ---------------------------------------------------------------------------
 
   describe('verifyMfa', () => {
-    it('should return { verified: true } on successful verification', async () => {
-      mockVerifyTOTP.mockResolvedValue({});
+    it('should return { verified: true } when code is valid', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: true });
+      mockVerifyTotp.mockResolvedValue({ verified: true });
 
-      const result = await service.verifyMfa('session-token', '123456');
+      const result = await service.verifyMfa(USER_ID, '123456');
 
       expect(result).toEqual({ verified: true });
-      expect(mockVerifyTOTP).toHaveBeenCalledWith(
-        expect.objectContaining({ body: { code: '123456' } }),
-      );
+      expect(mockVerifyTotp).toHaveBeenCalledWith(USER_ID, '123456');
     });
 
-    it('should throw UnauthorizedException when BA returns 401', async () => {
-      mockVerifyTOTP.mockRejectedValue({ statusCode: 401, status: 'Unauthorized' });
+    it('should return { verified: false } when code is invalid', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: true });
+      mockVerifyTotp.mockResolvedValue({ verified: false });
 
-      await expect(service.verifyMfa('session-token', '000000')).rejects.toThrow(
+      const result = await service.verifyMfa(USER_ID, '000000');
+
+      expect(result).toEqual({ verified: false });
+    });
+
+    it('should throw UnauthorizedException when TOTP is not enrolled', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: false });
+
+      await expect(service.verifyMfa(USER_ID, '123456')).rejects.toThrow(
         UnauthorizedException,
       );
+      expect(mockVerifyTotp).not.toHaveBeenCalled();
     });
   });
 
@@ -103,18 +100,16 @@ describe('MfaService', () => {
 
   describe('disableMfa', () => {
     it('should resolve without error on success', async () => {
-      mockDisableTwoFactor.mockResolvedValue({});
+      mockDisableTotp.mockResolvedValue(undefined);
 
-      await expect(service.disableMfa('session-token', 'myPassword')).resolves.toBeUndefined();
-      expect(mockDisableTwoFactor).toHaveBeenCalledWith(
-        expect.objectContaining({ body: { password: 'myPassword' } }),
-      );
+      await expect(service.disableMfa(USER_ID, 'myPassword')).resolves.toBeUndefined();
+      expect(mockDisableTotp).toHaveBeenCalledWith(USER_ID, 'myPassword');
     });
 
-    it('should throw UnauthorizedException when BA returns 401', async () => {
-      mockDisableTwoFactor.mockRejectedValue({ statusCode: 401, status: 'Unauthorized' });
+    it('should propagate UnauthorizedException for wrong password', async () => {
+      mockDisableTotp.mockRejectedValue(new UnauthorizedException('Invalid password'));
 
-      await expect(service.disableMfa('session-token', 'wrongPass')).rejects.toThrow(
+      await expect(service.disableMfa(USER_ID, 'wrongPass')).rejects.toThrow(
         UnauthorizedException,
       );
     });
@@ -125,82 +120,18 @@ describe('MfaService', () => {
   // ---------------------------------------------------------------------------
 
   describe('getMfaStatus', () => {
-    it('should return { enabled: true } when twoFactorEnabled is true', async () => {
-      mockGetSession.mockResolvedValue({
-        user: { twoFactorEnabled: true },
-        session: {},
-      });
+    it('should return { enabled: true } when TOTP is enrolled', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: true });
 
-      const result = await service.getMfaStatus('session-token');
+      const result = await service.getMfaStatus(USER_ID);
       expect(result).toEqual({ enabled: true });
     });
 
-    it('should return { enabled: false } when twoFactorEnabled is false', async () => {
-      mockGetSession.mockResolvedValue({
-        user: { twoFactorEnabled: false },
-        session: {},
-      });
+    it('should return { enabled: false } when TOTP is not enrolled', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: false });
 
-      const result = await service.getMfaStatus('session-token');
+      const result = await service.getMfaStatus(USER_ID);
       expect(result).toEqual({ enabled: false });
-    });
-
-    it('should throw UnauthorizedException when session is null', async () => {
-      mockGetSession.mockResolvedValue(null);
-
-      await expect(service.getMfaStatus('bad-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // getAssuranceLevel
-  // ---------------------------------------------------------------------------
-
-  describe('getAssuranceLevel', () => {
-    it('should return aal2 when TOTP enrolled and verified in session', async () => {
-      mockGetSession.mockResolvedValue({
-        user: { twoFactorEnabled: true },
-        session: { twoFactorVerified: true },
-      });
-
-      const result = await service.getAssuranceLevel('session-token');
-      expect(result).toEqual({ currentLevel: 'aal2', nextLevel: null });
-    });
-
-    it('should return aal1+nextLevel=aal2 when enrolled but not verified', async () => {
-      mockGetSession.mockResolvedValue({
-        user: { twoFactorEnabled: true },
-        session: { twoFactorVerified: false },
-      });
-
-      const result = await service.getAssuranceLevel('session-token');
-      expect(result).toEqual({ currentLevel: 'aal1', nextLevel: 'aal2' });
-    });
-
-    it('should return aal1+nextLevel=null when no TOTP enrolled', async () => {
-      mockGetSession.mockResolvedValue({
-        user: { twoFactorEnabled: false },
-        session: { twoFactorVerified: false },
-      });
-
-      const result = await service.getAssuranceLevel('session-token');
-      expect(result).toEqual({ currentLevel: 'aal1', nextLevel: null });
-    });
-
-    it('should degrade gracefully to aal1 on unexpected errors', async () => {
-      mockGetSession.mockRejectedValue(new Error('network error'));
-
-      const result = await service.getAssuranceLevel('session-token');
-      expect(result).toEqual({ currentLevel: 'aal1', nextLevel: null });
-    });
-
-    it('should return aal1 when session result is null', async () => {
-      mockGetSession.mockResolvedValue(null);
-
-      const result = await service.getAssuranceLevel('session-token');
-      expect(result).toEqual({ currentLevel: 'aal1', nextLevel: null });
     });
   });
 });
