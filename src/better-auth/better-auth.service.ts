@@ -10,7 +10,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID, randomBytes } from 'crypto';
-import { authenticator } from 'otplib';
+import { generateSecret, generateURI, verifySync } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BetterAuthInstance } from './better-auth.config';
 
@@ -539,9 +539,9 @@ export class BetterAuthService implements IBetterAuthService {
       throw new NotFoundException(`enrollTotp: user ${userId} not found`);
     }
 
-    const secret = authenticator.generateSecret();
+    const secret = generateSecret();
     const issuer = 'SACDIA';
-    const totpURI = authenticator.keyuri(dbUser.email, issuer, secret);
+    const totpURI = generateURI({ label: dbUser.email, issuer, secret });
 
     const { plain: plainCodes, hashed: hashedCodes } =
       await this.generateBackupCodes();
@@ -601,10 +601,11 @@ export class BetterAuthService implements IBetterAuthService {
       );
     }
 
-    const verified = authenticator.verify({
+    const result = verifySync({
       token: code,
       secret: parsed.secret,
     });
+    const verified = result.valid;
 
     if (verified) {
       this.logger.log(`TOTP verified for user: ${userId}`);
