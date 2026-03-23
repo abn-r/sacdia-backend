@@ -359,7 +359,7 @@ export class AdminReferenceController {
   }
 
   @Delete('ecclesiastical-years/:yearId')
-  @RequirePermissions('ecclesiastical_years:update')
+  @RequirePermissions('ecclesiastical_years:delete')
   @ApiOperation({ summary: 'Soft delete ecclesiastical year' })
   async deleteEcclesiasticalYear(
     @Param('yearId', ParseIntPipe) yearId: number,

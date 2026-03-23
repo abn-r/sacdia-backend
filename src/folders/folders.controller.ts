@@ -25,18 +25,21 @@ import {
   AuthorizationResource,
   RequirePermissions,
 } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import {
+  JwtAuthGuard,
+  OptionalJwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
+
+// ========================================
+// CATÁLOGO DE CARPETAS (Público)
+// ========================================
 
 @ApiTags('folders')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('folders')
+@UseGuards(OptionalJwtAuthGuard)
 export class FoldersController {
   constructor(private readonly foldersService: FoldersService) {}
-
-  // ========================================
-  // FOLDER TEMPLATES
-  // ========================================
 
   @Get('folders')
   @ApiOperation({
@@ -64,7 +67,6 @@ export class FoldersController {
     example: 50,
   })
   @ApiResponse({ status: 200, description: 'Lista de templates de carpetas' })
-  @ApiResponse({ status: 401, description: 'No autenticado' })
   async findAll(
     @Query('club_type', ParseIntPipe) clubTypeId?: number,
     @Query() paginationDto?: PaginationDto,
@@ -103,10 +105,18 @@ export class FoldersController {
       data,
     };
   }
+}
 
-  // ========================================
-  // USER FOLDER ASSIGNMENTS
-  // ========================================
+// ========================================
+// CARPETAS DE USUARIO (Autenticado)
+// ========================================
+
+@ApiTags('folders')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Controller('folders')
+export class UserFoldersController {
+  constructor(private readonly foldersService: FoldersService) {}
 
   @Post('users/:userId/folders/:folderId/enroll')
   @RequirePermissions('users:update')

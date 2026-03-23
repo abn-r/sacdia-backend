@@ -21,8 +21,8 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../common/decorators';
-import { JwtAuthGuard } from '../common/guards';
+import { CurrentUser, RequirePermissions } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { EvidenceFolderService } from './evidence-folder.service';
 
 type CurrentUserPayload = {
@@ -31,7 +31,7 @@ type CurrentUserPayload = {
 
 @ApiTags('Evidence Folder')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('club-sections/:sectionId/evidence-folder')
 export class EvidenceFolderController {
   constructor(
@@ -39,6 +39,7 @@ export class EvidenceFolderController {
   ) {}
 
   @Get()
+  @RequirePermissions('evidence_folders:read')
   @ApiOperation({ summary: 'Get evidence folder for club section' })
   @ApiParam({
     name: 'sectionId',
@@ -54,6 +55,7 @@ export class EvidenceFolderController {
   }
 
   @Post('sections/:efSectionId/submit')
+  @RequirePermissions('evidence_folders:update')
   @ApiOperation({ summary: 'Submit evidence folder section' })
   @ApiParam({
     name: 'sectionId',
@@ -79,6 +81,7 @@ export class EvidenceFolderController {
   }
 
   @Post('sections/:efSectionId/files')
+  @RequirePermissions('evidence_folders:update')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload evidence file' })
@@ -129,6 +132,7 @@ export class EvidenceFolderController {
   }
 
   @Delete('sections/:efSectionId/files/:fileId')
+  @RequirePermissions('evidence_folders:update')
   @ApiOperation({ summary: 'Delete evidence file' })
   @ApiParam({
     name: 'sectionId',

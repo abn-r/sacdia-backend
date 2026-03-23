@@ -26,18 +26,21 @@ import {
   AuthorizationResource,
   RequirePermissions,
 } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import {
+  JwtAuthGuard,
+  OptionalJwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
+
+// ========================================
+// CATÁLOGO DE CERTIFICACIONES (Público)
+// ========================================
 
 @ApiTags('certifications')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('certifications')
+@UseGuards(OptionalJwtAuthGuard)
 export class CertificationsController {
   constructor(private readonly certificationsService: CertificationsService) {}
-
-  // ========================================
-  // CERTIFICATIONS
-  // ========================================
 
   @Get('certifications')
   @ApiOperation({
@@ -58,7 +61,6 @@ export class CertificationsController {
     example: 50,
   })
   @ApiResponse({ status: 200, description: 'Lista de certificaciones' })
-  @ApiResponse({ status: 401, description: 'No autenticado' })
   async findAll(@Query() paginationDto: PaginationDto) {
     const result = await this.certificationsService.findAll(paginationDto);
     return {
@@ -91,10 +93,18 @@ export class CertificationsController {
       data,
     };
   }
+}
 
-  // ========================================
-  // USER CERTIFICATIONS
-  // ========================================
+// ========================================
+// CERTIFICACIONES DE USUARIO (Autenticado)
+// ========================================
+
+@ApiTags('certifications')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Controller('certifications')
+export class UserCertificationsController {
+  constructor(private readonly certificationsService: CertificationsService) {}
 
   @Post('users/:userId/certifications/enroll')
   @RequirePermissions('users:update')

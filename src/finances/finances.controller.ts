@@ -45,6 +45,7 @@ export class FinancesController {
   // ========================================
 
   @Get('finances/categories')
+  @RequirePermissions('finances:read')
   @ApiOperation({
     summary: 'Listar categorías financieras',
     description: 'Lista todas las categorías de ingresos y egresos',

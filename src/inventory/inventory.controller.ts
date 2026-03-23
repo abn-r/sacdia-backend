@@ -242,6 +242,7 @@ export class InventoryController {
   // ========================================
 
   @Get('catalogs/inventory-categories')
+  @RequirePermissions('inventory:read')
   @ApiOperation({
     summary: 'Listar categorías de inventario',
     description:

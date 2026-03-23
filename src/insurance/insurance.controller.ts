@@ -25,7 +25,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser, GlobalRoles } from '../common/decorators';
+import { CurrentUser, GlobalRoles, RequirePermissions } from '../common/decorators';
 import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
 import { CreateInsuranceDto } from './dto/create-insurance.dto';
 import { UpdateInsuranceDto } from './dto/update-insurance.dto';
@@ -45,6 +45,7 @@ export class InsuranceController {
   constructor(private readonly service: InsuranceService) {}
 
   @Get('clubs/:clubId/sections/:sectionId/members/insurance')
+  @RequirePermissions('insurance:read')
   @ApiOperation({ summary: 'Listar seguros de miembros por sección' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
@@ -100,6 +101,7 @@ export class InsuranceController {
   }
 
   @Get('users/:memberId/insurance')
+  @RequirePermissions('insurance:read')
   @ApiOperation({ summary: 'Obtener seguro activo del miembro' })
   @ApiParam({ name: 'memberId', type: String })
   @ApiResponse({ status: 200, description: 'Seguro del miembro' })
@@ -109,6 +111,7 @@ export class InsuranceController {
   }
 
   @Post('users/:memberId/insurance')
+  @RequirePermissions('insurance:create')
   @UseInterceptors(FileInterceptor('evidence'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Crear seguro para un miembro' })
@@ -156,6 +159,7 @@ export class InsuranceController {
   }
 
   @Patch('insurance/:insuranceId')
+  @RequirePermissions('insurance:update')
   @UseInterceptors(FileInterceptor('evidence'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Actualizar seguro' })
