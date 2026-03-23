@@ -52,11 +52,10 @@ export class ClubsController {
   // ========================================
 
   @Get()
-  @RequirePermissions('clubs:read')
   @ApiOperation({
     summary: 'Listar clubs',
     description:
-      'Obtiene la lista de clubs con filtros opcionales y paginación',
+      'Obtiene la lista de clubs con filtros opcionales y paginación. No requiere permiso clubs:read para permitir selección de club durante post-registro.',
   })
   @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'districtId', required: false, type: Number })
@@ -156,11 +155,10 @@ export class ClubsController {
   // ========================================
 
   @Get(':clubId/sections')
-  @RequirePermissions('club_sections:read')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Obtener secciones del club',
-    description: 'Lista todas las secciones (Aventureros, Conquistadores, GM)',
+    description:
+      'Lista todas las secciones (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read para permitir selección de sección durante post-registro.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Secciones del club' })
