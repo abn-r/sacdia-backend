@@ -134,11 +134,11 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Only allow requests from explicitly listed origins.
-      // Requests without an Origin header (e.g., server-to-server, curl) are
-      // rejected at the CORS level — they should use direct API calls with
-      // auth tokens instead. Mobile clients send an Origin header.
-      if (origin && allowedOrigins.includes(origin)) {
+      // Allow requests without an Origin header (health checks, server-to-server,
+      // curl, mobile clients). CORS is a browser-only mechanism — non-browser
+      // requests never send Origin, so blocking them here only breaks health
+      // checks and legitimate API consumers. Auth is enforced by JWT guards.
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));

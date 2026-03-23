@@ -36,7 +36,7 @@ import { GlobalRoles, ClubRoles } from '../common/decorators';
 
 @ApiTags('investiture')
 @ApiBearerAuth()
-@Controller('api/v1')
+@Controller()
 export class InvestitureController {
   constructor(private readonly investitureService: InvestitureService) {}
 

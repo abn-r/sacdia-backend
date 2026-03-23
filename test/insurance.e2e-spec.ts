@@ -57,6 +57,7 @@ describe('Insurance E2E', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api/v1');
     await app.init();
   });
 

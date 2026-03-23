@@ -38,7 +38,7 @@ type CurrentUserPayload = {
 };
 
 @ApiTags('insurance')
-@Controller('api/v1')
+@Controller()
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class InsuranceController {
