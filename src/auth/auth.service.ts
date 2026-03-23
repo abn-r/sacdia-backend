@@ -71,7 +71,16 @@ export class AuthService {
     //    If this fails we roll back by revoking the BA session (soft cleanup).
     try {
       await this.prisma.$transaction(async (tx) => {
-        // 2a. Create users_pr with granular tracking
+        // 2a. Persist last names (BA only stores name; SACDIA needs granular fields)
+        await tx.users.update({
+          where: { user_id: baResult.user.id },
+          data: {
+            paternal_last_name: dto.paternal_last_name,
+            maternal_last_name: dto.maternal_last_name,
+          },
+        });
+
+        // 2b. Create users_pr with granular tracking
         await tx.users_pr.create({
           data: {
             user_id: baResult.user.id,
@@ -82,7 +91,7 @@ export class AuthService {
           },
         });
 
-        // 2b. Assign global "user" role
+        // 2c. Assign global "user" role
         const userRole = await tx.roles.findFirst({
           where: {
             role_name: 'user',
@@ -127,11 +136,41 @@ export class AuthService {
       ),
     );
 
+    // Build token response for auto-login (same structure as login())
+    const expiresAtSeconds = Math.floor(
+      baResult.session.expiresAt.getTime() / 1000,
+    );
+
     return {
       success: true,
       userId: baResult.user.id,
       message: 'Usuario registrado exitosamente',
       emailVerificationPending: true,
+      status: 'success',
+      data: {
+        ...buildAuthTokenResponse({
+          accessToken: baResult.accessToken,
+          refreshToken: baResult.session.token,
+          expiresAt: expiresAtSeconds,
+          tokenType: 'bearer',
+        }),
+        user: {
+          id: baResult.user.id,
+          email: baResult.user.email,
+          name: baResult.user.name,
+          paternal_last_name: dto.paternal_last_name,
+          maternal_last_name: dto.maternal_last_name,
+          avatar: null,
+          roles: ['user'],
+        },
+        needsPostRegistration: true,
+        postRegistrationStatus: {
+          complete: false,
+          profile_picture_complete: false,
+          personal_info_complete: false,
+          club_selection_complete: false,
+        },
+      },
     };
   }
 
