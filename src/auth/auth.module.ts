@@ -8,7 +8,6 @@ import { OAuthController } from './oauth.controller';
 import { OAuthService } from './oauth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { SupabaseService } from '../common/supabase.service';
 import { MfaController } from './mfa.controller';
 import { SessionsController } from './sessions.controller';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
@@ -42,9 +41,6 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
     AuthService,
     OAuthService,
     JwtStrategy,
-    // SupabaseService: kept for any remaining Supabase-dependent operations.
-    // OAuthService fully migrated to BetterAuthService (W3-008 Part 3).
-    SupabaseService,
     AuthorizationContextService,
   ],
   exports: [

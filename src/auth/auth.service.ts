@@ -16,6 +16,7 @@ import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
 import { buildAuthTokenResponse } from './utils/auth-token-response.util';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -42,10 +43,14 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
 
+  // JWT access tokens are 1h (3600 s) — used as the blacklist TTL.
+  private static readonly JWT_TTL_SECONDS = 3600;
+
   constructor(
     private prisma: PrismaService,
     private betterAuthService: BetterAuthService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly tokenBlacklist: TokenBlacklistService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -370,6 +375,25 @@ export class AuthService {
           userAgent,
         }),
       );
+    }
+
+    // Blacklist the SACDIA JWT access token so it is rejected immediately
+    // by JwtStrategy even if the client reuses it before the 1h natural expiry.
+    if (accessToken) {
+      try {
+        await this.tokenBlacklist.blacklistToken(
+          accessToken,
+          AuthService.JWT_TTL_SECONDS,
+        );
+      } catch (error) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_logout_blacklist_failed',
+            reason: error instanceof Error ? error.message : String(error),
+            userAgent,
+          }),
+        );
+      }
     }
 
     this.logger.log(
