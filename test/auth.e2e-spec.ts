@@ -104,7 +104,7 @@ describe('Auth E2E Tests', () => {
         name: 'Test',
         paternal_last_name: 'User',
         maternal_last_name: 'E2E',
-        users_pr: [],
+        users_pr: null,
         users_roles: [
           { roles: { role_name: 'user', role_category: 'GLOBAL' } },
         ],
@@ -189,7 +189,7 @@ describe('Auth E2E Tests', () => {
         union_id: null,
         local_field_id: null,
         created_at: new Date(),
-        users_pr: [{ complete: true }],
+        users_pr: { complete: true },
         users_roles: [
           {
             roles: {

@@ -299,7 +299,7 @@ export class AuthorizationContextService {
       );
 
     const persistedActiveAssignmentId =
-      user.users_pr?.[0]?.active_club_assignment_id ?? null;
+      user.users_pr?.active_club_assignment_id ?? null;
     const activeClubGrant =
       clubGrants.find(
         (assignment) =>
@@ -337,7 +337,7 @@ export class AuthorizationContextService {
         local_field_id: user.local_field_id,
         created_at: user.created_at,
       },
-      post_register_complete: user.users_pr?.[0]?.complete ?? false,
+      post_register_complete: user.users_pr?.complete ?? false,
       authorization: {
         grants: {
           global_roles: globalGrants,

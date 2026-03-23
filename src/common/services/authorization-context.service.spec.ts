@@ -56,12 +56,10 @@ describe('AuthorizationContextService', () => {
       countries: { country_id: 1, name: 'México' },
       unions: { union_id: 2, name: 'Unión Norte' },
       local_fields: { local_field_id: 3, name: 'Campo Centro' },
-      users_pr: [
-        {
-          complete: true,
-          active_club_assignment_id: 'assignment-2',
-        },
-      ],
+      users_pr: {
+        complete: true,
+        active_club_assignment_id: 'assignment-2',
+      },
       users_roles: [
         {
           roles: {
@@ -204,12 +202,10 @@ describe('AuthorizationContextService', () => {
       countries: null,
       unions: null,
       local_fields: null,
-      users_pr: [
-        {
-          complete: false,
-          active_club_assignment_id: 'missing-assignment',
-        },
-      ],
+      users_pr: {
+        complete: false,
+        active_club_assignment_id: 'missing-assignment',
+      },
       users_roles: [],
       club_role_assignments: [
         {
