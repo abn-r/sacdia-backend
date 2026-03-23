@@ -1,6 +1,8 @@
 import {
   Inject,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -26,6 +28,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 @Injectable()
 export class ActivitiesService {
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+  private readonly logger = new Logger(ActivitiesService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -356,6 +359,93 @@ export class ActivitiesService {
     return this.fileStorage.getSignedDownloadUrl(bucketAlias, value, {
       expiresInSeconds: ActivitiesService.PRIVATE_ASSET_URL_TTL_SECONDS,
     });
+  }
+
+  async uploadImage(activityId: number, file: Express.Multer.File) {
+    // Validate mime type
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Formato no válido. Solo se permiten JPG, PNG, WEBP',
+      );
+    }
+
+    // Validate size (max 5MB)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException('Archivo muy grande. Tamaño máximo: 5MB');
+    }
+
+    const activity = await this.prisma.activities.findUnique({
+      where: { activity_id: activityId },
+      select: { activity_id: true, image: true },
+    });
+
+    if (!activity) {
+      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+    }
+
+    const extension = file.mimetype.split('/')[1];
+    const fileName = `activities/${activityId}/image-${Date.now()}.${extension}`;
+
+    let uploaded: { key: string; url: string };
+
+    try {
+      uploaded = await this.fileStorage.upload(
+        StorageBucketAlias.ACTIVITIES_IMAGES,
+        fileName,
+        file.buffer,
+        { contentType: file.mimetype, overwrite: true },
+      );
+    } catch (error) {
+      this.logger.error('R2 upload error:', error);
+      throw new InternalServerErrorException('Error al subir la imagen');
+    }
+
+    try {
+      await this.prisma.activities.update({
+        where: { activity_id: activityId },
+        data: { image: uploaded.url, modified_at: new Date() },
+      });
+    } catch (error) {
+      this.logger.error('Database update failed after upload:', error);
+      await this.fileStorage.deleteMany(StorageBucketAlias.ACTIVITIES_IMAGES, [
+        uploaded.key,
+      ]);
+      throw new InternalServerErrorException('Error al actualizar la imagen');
+    }
+
+    // Delete previous image if it existed and is different
+    if (
+      activity.image &&
+      typeof activity.image === 'string' &&
+      activity.image !== uploaded.url
+    ) {
+      const oldKey = this.fileStorage.extractKeyFromPublicUrl(
+        StorageBucketAlias.ACTIVITIES_IMAGES,
+        activity.image,
+      );
+      if (oldKey && oldKey !== uploaded.key) {
+        await this.fileStorage
+          .deleteMany(StorageBucketAlias.ACTIVITIES_IMAGES, [oldKey])
+          .catch((err) =>
+            this.logger.warn('Failed to delete old activity image:', err),
+          );
+      }
+    }
+
+    this.logger.log(`Activity image uploaded for activity: ${activityId}`);
+
+    const signedUrl = await this.resolvePrivateAssetUrl(
+      StorageBucketAlias.ACTIVITIES_IMAGES,
+      uploaded.url,
+    );
+
+    return {
+      status: 'success',
+      data: { url: signedUrl },
+      message: 'Imagen de actividad actualizada exitosamente',
+    };
   }
 
   private async resolveAndValidateSection(

@@ -9,8 +9,14 @@ import {
   Body,
   ParseIntPipe,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
   Request,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
@@ -18,6 +24,8 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { ActivitiesService } from './activities.service';
 import {
@@ -149,6 +157,39 @@ export class ActivitiesController {
   @ApiResponse({ status: 200, description: 'Actividad desactivada' })
   async remove(@Param('activityId', ParseIntPipe) activityId: number) {
     return this.activitiesService.remove(activityId);
+  }
+
+  @Post('activities/:activityId/image')
+  @RequirePermissions('activities:update')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Subir imagen de actividad' })
+  @ApiParam({ name: 'activityId', type: Number })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Imagen subida exitosamente' })
+  @ApiResponse({ status: 400, description: 'Formato o tamaño inválido' })
+  @ApiResponse({ status: 404, description: 'Actividad no encontrada' })
+  async uploadImage(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.activitiesService.uploadImage(activityId, file);
   }
 
   // ========================================
