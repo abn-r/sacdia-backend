@@ -858,8 +858,8 @@ model users {
   users_pr                       users_pr?
   users_roles                    users_roles[]
   weekly_records                 weekly_records[]
-  sessions                       sessions[]
-  accounts                       accounts[]
+  session                        session[]
+  account                        account[]
 }
 
 model notification_logs {
@@ -1297,8 +1297,8 @@ enum evidence_validation_enum {
   REJECTED
 }
 
-// Better Auth tables (usePlural: true — model names match BA's expected table names)
-model sessions {
+// Better Auth tables — model names are singular (BA default), @@map to plural SQL tables
+model session {
   id        String   @id
   expiresAt DateTime @map("expires_at")
   token     String   @unique
@@ -1308,9 +1308,11 @@ model sessions {
   userAgent String?  @map("user_agent")
   userId    String   @map("user_id") @db.Uuid
   user      users    @relation(fields: [userId], references: [user_id], onDelete: Cascade)
+
+  @@map("sessions")
 }
 
-model accounts {
+model account {
   id                    String    @id
   accountId             String    @map("account_id")
   providerId            String    @map("provider_id")
@@ -1327,13 +1329,16 @@ model accounts {
   user                  users     @relation(fields: [userId], references: [user_id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
+  @@map("accounts")
 }
 
-model verifications {
+model verification {
   id         String    @id
   identifier String
   value      String
   expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
   createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("verifications")
 }

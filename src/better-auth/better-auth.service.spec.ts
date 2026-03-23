@@ -1,6 +1,7 @@
 import {
   ConflictException,
   InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -9,62 +10,85 @@ import { BetterAuthService } from './better-auth.service';
 /**
  * BetterAuthService unit tests — Option C custom HS256 JWT.
  *
- * The BA instance is fully mocked via the 'BETTER_AUTH_INSTANCE' injection token.
- * JwtService is also mocked to control signJwt output.
- * We test orchestration logic, error mapping, and JWT structure without
- * hitting a real BA server or signing with a real key.
+ * BetterAuthService now bypasses BA's adapter for user CRUD and writes directly
+ * to Prisma. PrismaService and the BA instance are both mocked. We test the
+ * orchestration logic, error mapping, and JWT structure without hitting a real
+ * database or BA server.
  */
 describe('BetterAuthService', () => {
-  let service: BetterAuthService;
+  // -- Prisma method mocks ---------------------------------------------------
+  const mockUsersFindUnique = jest.fn();
+  const mockUsersCreate = jest.fn();
+  const mockAccountFindFirst = jest.fn();
+  const mockAccountCreate = jest.fn();
+  const mockAccountUpdate = jest.fn();
+  const mockSessionCreate = jest.fn();
+  const mockSessionFindFirst = jest.fn();
+  const mockSessionDeleteMany = jest.fn();
+  const mockSessionUpdate = jest.fn();
+  const mockVerificationCreate = jest.fn();
 
-  // -- BA API mocks ----------------------------------------------------------
-  const mockSignUpEmail = jest.fn();
-  const mockSignInEmail = jest.fn();
-  const mockGetSession = jest.fn();
-  const mockRevokeSession = jest.fn();
-  const mockRequestPasswordReset = jest.fn();
+  const mockPrisma = {
+    users: {
+      findUnique: mockUsersFindUnique,
+      create: mockUsersCreate,
+    },
+    account: {
+      findFirst: mockAccountFindFirst,
+      create: mockAccountCreate,
+      update: mockAccountUpdate,
+    },
+    session: {
+      create: mockSessionCreate,
+      findFirst: mockSessionFindFirst,
+      deleteMany: mockSessionDeleteMany,
+      update: mockSessionUpdate,
+    },
+    verification: {
+      create: mockVerificationCreate,
+    },
+  };
 
+  // -- BA instance mock (kept for OAuth/TOTP stubs) --------------------------
   const mockBaInstance = {
     api: {
-      signUpEmail: mockSignUpEmail,
-      signInEmail: mockSignInEmail,
-      getSession: mockGetSession,
-      revokeSession: mockRevokeSession,
-      requestPasswordReset: mockRequestPasswordReset,
+      signInSocial: jest.fn(),
+      callbackOAuth: jest.fn(),
     },
   };
 
   // -- Shared fixtures -------------------------------------------------------
-  const mockUser = {
+  const mockDbUser = {
     user_id: 'user-uuid-123',
-    id: 'user-uuid-123',
     email: 'test@example.com',
     name: 'Test User',
-    emailVerified: true,
+    email_verified: false,
     user_image: null,
     created_at: new Date('2026-01-01'),
-    createdAt: new Date('2026-01-01'),
-    updatedAt: new Date('2026-01-01'),
+    modified_at: new Date('2026-01-01'),
   };
 
-  const mockSession = {
+  const mockDbSession = {
     id: 'session-id-abc',
     userId: 'user-uuid-123',
     token: 'raw-opaque-session-token',
     expiresAt: new Date(Date.now() + 7 * 86400 * 1000),
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
+    ipAddress: null,
+    userAgent: null,
   };
 
-  // This is what BA's getSession returns — the service casts it to BaUser/BaSession
-  const mockGetSessionResult = {
-    user: mockUser,
-    session: mockSession,
+  const mockDbAccount = {
+    id: 'account-id-xyz',
+    accountId: 'user-uuid-123',
+    providerId: 'credential',
+    userId: 'user-uuid-123',
+    password: '$2a$12$hashedpassword', // bcrypt hash placeholder
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.BETTER_AUTH_SECRET = 'test-secret-min-32-chars-for-hs256-hmac';
   });
 
   // ---------------------------------------------------------------------------
@@ -73,15 +97,17 @@ describe('BetterAuthService', () => {
 
   describe('signJwt', () => {
     it('should return a valid 3-part JWT string', () => {
-      // Use real JwtService with a known secret to verify JWT structure
       const realJwtService = new JwtService({
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
         signOptions: { expiresIn: '1h', algorithm: 'HS256' },
       });
-      service = new BetterAuthService(realJwtService, mockBaInstance as any);
+      const service = new BetterAuthService(
+        realJwtService,
+        mockPrisma as any,
+        mockBaInstance as any,
+      );
 
       const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
-
       const parts = token.split('.');
       expect(parts).toHaveLength(3);
     });
@@ -91,11 +117,14 @@ describe('BetterAuthService', () => {
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
         signOptions: { expiresIn: '1h', algorithm: 'HS256' },
       });
-      service = new BetterAuthService(realJwtService, mockBaInstance as any);
+      const service = new BetterAuthService(
+        realJwtService,
+        mockPrisma as any,
+        mockBaInstance as any,
+      );
 
       const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
       const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString());
-
       expect(header.alg).toBe('HS256');
     });
 
@@ -104,11 +133,14 @@ describe('BetterAuthService', () => {
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
         signOptions: { expiresIn: '1h', algorithm: 'HS256' },
       });
-      service = new BetterAuthService(realJwtService, mockBaInstance as any);
+      const service = new BetterAuthService(
+        realJwtService,
+        mockPrisma as any,
+        mockBaInstance as any,
+      );
 
       const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
-
       expect(payload.sub).toBe('user-uuid-123');
     });
 
@@ -117,11 +149,14 @@ describe('BetterAuthService', () => {
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
         signOptions: { expiresIn: '1h', algorithm: 'HS256' },
       });
-      service = new BetterAuthService(realJwtService, mockBaInstance as any);
+      const service = new BetterAuthService(
+        realJwtService,
+        mockPrisma as any,
+        mockBaInstance as any,
+      );
 
       const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
-
       expect(payload.email).toBe('test@example.com');
     });
 
@@ -130,7 +165,11 @@ describe('BetterAuthService', () => {
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
         signOptions: { expiresIn: '1h', algorithm: 'HS256' },
       });
-      service = new BetterAuthService(realJwtService, mockBaInstance as any);
+      const service = new BetterAuthService(
+        realJwtService,
+        mockPrisma as any,
+        mockBaInstance as any,
+      );
 
       const before = Math.floor(Date.now() / 1000);
       const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
@@ -139,11 +178,8 @@ describe('BetterAuthService', () => {
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
       const duration = payload.exp - payload.iat;
 
-      // Allow a 1-second tolerance for test execution time
       expect(duration).toBeGreaterThanOrEqual(3599);
       expect(duration).toBeLessThanOrEqual(3600);
-
-      // iat should be within the test window
       expect(payload.iat).toBeGreaterThanOrEqual(before);
       expect(payload.iat).toBeLessThanOrEqual(after);
     });
@@ -157,7 +193,11 @@ describe('BetterAuthService', () => {
     const mockJwtService = {
       sign: jest.fn().mockReturnValue('mocked-sacdia-jwt'),
     } as unknown as JwtService;
-    const svc = new BetterAuthService(mockJwtService, mockBaInstance as any);
+    const svc = new BetterAuthService(
+      mockJwtService,
+      mockPrisma as any,
+      mockBaInstance as any,
+    );
     return { svc, mockJwtService };
   }
 
@@ -169,82 +209,86 @@ describe('BetterAuthService', () => {
     it('should return BaAuthResult with user, session, and accessToken on success', async () => {
       const { svc } = buildService();
 
-      mockSignUpEmail.mockResolvedValue({ token: 'raw-opaque-session-token', user: mockUser });
-      mockGetSession.mockResolvedValue(mockGetSessionResult);
+      mockUsersFindUnique.mockResolvedValue(null); // no existing user
+      mockUsersCreate.mockResolvedValue(mockDbUser);
+      mockAccountCreate.mockResolvedValue(mockDbAccount);
+      mockSessionCreate.mockResolvedValue(mockDbSession);
 
       const result = await svc.createUser('test@example.com', 'Password123!', 'Test User');
 
       expect(result).toMatchObject({
-        user: expect.objectContaining({ email: 'test@example.com' }),
-        session: expect.objectContaining({ token: 'raw-opaque-session-token' }),
+        user: expect.objectContaining({
+          id: 'user-uuid-123',
+          email: 'test@example.com',
+          name: 'Test User',
+          emailVerified: false,
+        }),
+        session: expect.objectContaining({
+          token: 'raw-opaque-session-token',
+          userId: 'user-uuid-123',
+        }),
         accessToken: 'mocked-sacdia-jwt',
       });
-      expect(mockSignUpEmail).toHaveBeenCalledWith({
-        body: { email: 'test@example.com', password: 'Password123!', name: 'Test User' },
-      });
     });
 
-    it('should throw ConflictException when BA returns 409 (duplicate email)', async () => {
+    it('should create the users row with snake_case fields', async () => {
       const { svc } = buildService();
 
-      mockSignUpEmail.mockRejectedValue({
-        statusCode: 409,
-        status: 'CONFLICT',
-        body: { message: 'Email already in use' },
-      });
+      mockUsersFindUnique.mockResolvedValue(null);
+      mockUsersCreate.mockResolvedValue(mockDbUser);
+      mockAccountCreate.mockResolvedValue(mockDbAccount);
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.createUser('test@example.com', 'Password123!', 'Test User');
+
+      // Verify prisma.users.create was called with snake_case fields
+      expect(mockUsersCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            email: 'test@example.com',
+            name: 'Test User',
+            email_verified: false,
+          }),
+        }),
+      );
+      // Must NOT use camelCase field names
+      const createCall = mockUsersCreate.mock.calls[0][0];
+      expect(createCall.data).not.toHaveProperty('emailVerified');
+      expect(createCall.data).not.toHaveProperty('id');
+    });
+
+    it('should create the account row with credential providerId', async () => {
+      const { svc } = buildService();
+
+      mockUsersFindUnique.mockResolvedValue(null);
+      mockUsersCreate.mockResolvedValue(mockDbUser);
+      mockAccountCreate.mockResolvedValue(mockDbAccount);
+      mockSessionCreate.mockResolvedValue(mockDbSession);
+
+      await svc.createUser('test@example.com', 'Password123!', 'Test User');
+
+      expect(mockAccountCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            providerId: 'credential',
+            // userId is a randomUUID generated at runtime — just verify it's a string
+            userId: expect.any(String),
+            password: expect.stringMatching(/^\$2[ab]\$12\$/), // bcrypt format
+          }),
+        }),
+      );
+    });
+
+    it('should throw ConflictException when email is already in use', async () => {
+      const { svc } = buildService();
+
+      mockUsersFindUnique.mockResolvedValue(mockDbUser); // existing user
 
       await expect(
         svc.createUser('test@example.com', 'Password123!', 'Test User'),
       ).rejects.toThrow(ConflictException);
-    });
 
-    it('should throw ConflictException when BA returns 422 (unprocessable entity for duplicate)', async () => {
-      const { svc } = buildService();
-
-      mockSignUpEmail.mockRejectedValue({
-        statusCode: 422,
-        status: 'UNPROCESSABLE_ENTITY',
-        body: { message: 'Email already registered' },
-      });
-
-      await expect(
-        svc.createUser('test@example.com', 'Password123!', 'Test User'),
-      ).rejects.toThrow(ConflictException);
-    });
-
-    it('should throw InternalServerErrorException when BA returns null token', async () => {
-      const { svc } = buildService();
-
-      mockSignUpEmail.mockResolvedValue({ token: null, user: mockUser });
-
-      await expect(
-        svc.createUser('test@example.com', 'Password123!', 'Test User'),
-      ).rejects.toThrow(InternalServerErrorException);
-    });
-
-    it('should throw InternalServerErrorException for generic BA errors', async () => {
-      const { svc } = buildService();
-
-      mockSignUpEmail.mockRejectedValue({
-        statusCode: 500,
-        status: 'INTERNAL_SERVER_ERROR',
-        body: { message: 'Unexpected error' },
-      });
-
-      await expect(
-        svc.createUser('test@example.com', 'Password123!', 'Test User'),
-      ).rejects.toThrow(InternalServerErrorException);
-    });
-
-    it('should throw InternalServerErrorException when BETTER_AUTH_SECRET is not set', async () => {
-      const { svc } = buildService();
-      delete process.env.BETTER_AUTH_SECRET;
-
-      mockSignUpEmail.mockResolvedValue({ token: 'raw-token', user: mockUser });
-
-      await expect(
-        svc.createUser('test@example.com', 'Password123!', 'Test User'),
-      ).rejects.toThrow(InternalServerErrorException);
+      expect(mockUsersCreate).not.toHaveBeenCalled();
     });
   });
 
@@ -256,8 +300,14 @@ describe('BetterAuthService', () => {
     it('should return BaAuthResult on successful login', async () => {
       const { svc } = buildService();
 
-      mockSignInEmail.mockResolvedValue({ token: 'raw-opaque-session-token', user: mockUser });
-      mockGetSession.mockResolvedValue(mockGetSessionResult);
+      // Use a real bcrypt hash for the password check
+      const bcrypt = require('bcryptjs');
+      const realHash = await bcrypt.hash('Password123!', 12);
+      const accountWithRealHash = { ...mockDbAccount, password: realHash };
+
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(accountWithRealHash);
+      mockSessionCreate.mockResolvedValue(mockDbSession);
 
       const result = await svc.signInWithPassword('test@example.com', 'Password123!');
 
@@ -266,34 +316,41 @@ describe('BetterAuthService', () => {
         session: expect.objectContaining({ token: 'raw-opaque-session-token' }),
         accessToken: 'mocked-sacdia-jwt',
       });
-      expect(mockSignInEmail).toHaveBeenCalledWith({
-        body: { email: 'test@example.com', password: 'Password123!' },
-      });
     });
 
-    it('should throw UnauthorizedException when credentials are invalid (BA 401)', async () => {
+    it('should throw UnauthorizedException when user is not found', async () => {
       const { svc } = buildService();
 
-      mockSignInEmail.mockRejectedValue({
-        statusCode: 401,
-        status: 'UNAUTHORIZED',
-        body: { message: 'Invalid credentials' },
-      });
+      mockUsersFindUnique.mockResolvedValue(null);
 
       await expect(
-        svc.signInWithPassword('test@example.com', 'WrongPass!'),
+        svc.signInWithPassword('unknown@example.com', 'Password123!'),
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should rethrow UnauthorizedException thrown by getSessionFromToken', async () => {
+    it('should throw UnauthorizedException when account is not found', async () => {
       const { svc } = buildService();
 
-      mockSignInEmail.mockResolvedValue({ token: 'raw-token', user: mockUser });
-      // Simulate session already expired after sign-in (edge case)
-      mockGetSession.mockResolvedValue(null);
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(null);
 
       await expect(
         svc.signInWithPassword('test@example.com', 'Password123!'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException when password is wrong', async () => {
+      const { svc } = buildService();
+
+      const bcrypt = require('bcryptjs');
+      const realHash = await bcrypt.hash('CorrectPassword!', 12);
+      const accountWithRealHash = { ...mockDbAccount, password: realHash };
+
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockAccountFindFirst.mockResolvedValue(accountWithRealHash);
+
+      await expect(
+        svc.signInWithPassword('test@example.com', 'WrongPassword!'),
       ).rejects.toThrow(UnauthorizedException);
     });
   });
@@ -303,33 +360,21 @@ describe('BetterAuthService', () => {
   // ---------------------------------------------------------------------------
 
   describe('signOut', () => {
-    it('should complete without error on successful revocation', async () => {
+    it('should delete the session on successful sign-out', async () => {
       const { svc } = buildService();
 
-      mockRevokeSession.mockResolvedValue({});
+      mockSessionDeleteMany.mockResolvedValue({ count: 1 });
 
       await expect(svc.signOut('raw-opaque-session-token')).resolves.toBeUndefined();
-      expect(mockRevokeSession).toHaveBeenCalledWith(
-        expect.objectContaining({ body: { token: 'raw-opaque-session-token' } }),
-      );
-    });
-
-    it('should NOT throw when revokeSession fails (best-effort)', async () => {
-      const { svc } = buildService();
-
-      mockRevokeSession.mockRejectedValue(new Error('Network timeout'));
-
-      // Must not throw — best-effort semantics
-      await expect(svc.signOut('raw-opaque-session-token')).resolves.toBeUndefined();
-    });
-
-    it('should NOT throw for BA 5xx errors during revocation (best-effort)', async () => {
-      const { svc } = buildService();
-
-      mockRevokeSession.mockRejectedValue({
-        statusCode: 500,
-        status: 'INTERNAL_SERVER_ERROR',
+      expect(mockSessionDeleteMany).toHaveBeenCalledWith({
+        where: { token: 'raw-opaque-session-token' },
       });
+    });
+
+    it('should NOT throw when session deletion fails (best-effort)', async () => {
+      const { svc } = buildService();
+
+      mockSessionDeleteMany.mockRejectedValue(new Error('DB connection lost'));
 
       await expect(svc.signOut('raw-opaque-session-token')).resolves.toBeUndefined();
     });
@@ -343,46 +388,58 @@ describe('BetterAuthService', () => {
     it('should return a new BaAuthResult with a fresh SACDIA JWT on success', async () => {
       const { svc } = buildService();
 
-      mockGetSession.mockResolvedValue(mockGetSessionResult);
+      const futureExpiry = new Date(Date.now() + 7 * 86400 * 1000);
+      const validSession = { ...mockDbSession, expiresAt: futureExpiry };
+      mockSessionFindFirst.mockResolvedValue(validSession);
+      mockSessionUpdate.mockResolvedValue({ ...validSession, expiresAt: new Date(Date.now() + 7 * 86400 * 1000) });
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
 
       const result = await svc.refreshSession('raw-opaque-session-token');
 
       expect(result).toMatchObject({
         user: expect.objectContaining({ email: 'test@example.com' }),
-        session: expect.objectContaining({ token: 'raw-opaque-session-token' }),
+        session: expect.objectContaining({ userId: 'user-uuid-123' }),
         accessToken: 'mocked-sacdia-jwt',
       });
     });
 
-    it('should throw UnauthorizedException when session is expired or not found (null result)', async () => {
+    it('should throw UnauthorizedException when session is not found', async () => {
       const { svc } = buildService();
 
-      mockGetSession.mockResolvedValue(null);
+      mockSessionFindFirst.mockResolvedValue(null);
 
-      await expect(svc.refreshSession('expired-session-token')).rejects.toThrow(
+      await expect(svc.refreshSession('non-existent-token')).rejects.toThrow(
         UnauthorizedException,
       );
     });
 
-    it('should throw UnauthorizedException when BA returns 401 for getSession', async () => {
+    it('should throw UnauthorizedException and delete the session when it is expired', async () => {
       const { svc } = buildService();
 
-      mockGetSession.mockRejectedValue({
-        statusCode: 401,
-        status: 'UNAUTHORIZED',
-        body: { message: 'Session expired' },
+      const expiredSession = {
+        ...mockDbSession,
+        expiresAt: new Date(Date.now() - 1000), // 1 second ago
+      };
+      mockSessionFindFirst.mockResolvedValue(expiredSession);
+      mockSessionDeleteMany.mockResolvedValue({ count: 1 });
+
+      await expect(svc.refreshSession('expired-session-token')).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mockSessionDeleteMany).toHaveBeenCalledWith({
+        where: { token: 'expired-session-token' },
       });
-
-      await expect(svc.refreshSession('expired-session-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
     });
 
-    it('should throw InternalServerErrorException when BETTER_AUTH_SECRET is not set', async () => {
+    it('should throw InternalServerErrorException when user is not found for a valid session', async () => {
       const { svc } = buildService();
-      delete process.env.BETTER_AUTH_SECRET;
 
-      await expect(svc.refreshSession('any-token')).rejects.toThrow(
+      const futureExpiry = new Date(Date.now() + 7 * 86400 * 1000);
+      mockSessionFindFirst.mockResolvedValue({ ...mockDbSession, expiresAt: futureExpiry });
+      mockSessionUpdate.mockResolvedValue({ ...mockDbSession, expiresAt: futureExpiry });
+      mockUsersFindUnique.mockResolvedValue(null); // user deleted
+
+      await expect(svc.refreshSession('raw-opaque-session-token')).rejects.toThrow(
         InternalServerErrorException,
       );
     });
@@ -393,55 +450,73 @@ describe('BetterAuthService', () => {
   // ---------------------------------------------------------------------------
 
   describe('resetPasswordForEmail', () => {
-    it('should complete without error on happy path', async () => {
+    it('should create a verification token when email exists', async () => {
       const { svc } = buildService();
 
-      mockRequestPasswordReset.mockResolvedValue({ status: true });
+      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockVerificationCreate.mockResolvedValue({});
 
       await expect(
         svc.resetPasswordForEmail('test@example.com'),
       ).resolves.toBeUndefined();
 
-      expect(mockRequestPasswordReset).toHaveBeenCalledWith({
-        body: { email: 'test@example.com' },
-      });
+      expect(mockVerificationCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            identifier: 'test@example.com',
+            value: expect.any(String),
+            expiresAt: expect.any(Date),
+          }),
+        }),
+      );
     });
 
-    it('should pass redirectTo when provided', async () => {
+    it('should complete silently for unknown emails (enumeration-safe)', async () => {
       const { svc } = buildService();
 
-      mockRequestPasswordReset.mockResolvedValue({ status: true });
-
-      await svc.resetPasswordForEmail('test@example.com', 'https://sacdia.app/reset');
-
-      expect(mockRequestPasswordReset).toHaveBeenCalledWith({
-        body: { email: 'test@example.com', redirectTo: 'https://sacdia.app/reset' },
-      });
-    });
-
-    it('should still complete for unknown emails (enumeration-safe — BA always returns status:true)', async () => {
-      const { svc } = buildService();
-
-      // BA returns status:true even for unknown emails
-      mockRequestPasswordReset.mockResolvedValue({ status: true });
+      mockUsersFindUnique.mockResolvedValue(null);
 
       await expect(
         svc.resetPasswordForEmail('unknown@example.com'),
       ).resolves.toBeUndefined();
-    });
 
-    it('should propagate InternalServerErrorException on unexpected BA errors', async () => {
+      expect(mockVerificationCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // updatePasswordById
+  // ---------------------------------------------------------------------------
+
+  describe('updatePasswordById', () => {
+    it('should update the hashed password on the credential account', async () => {
       const { svc } = buildService();
 
-      mockRequestPasswordReset.mockRejectedValue({
-        statusCode: 500,
-        status: 'INTERNAL_SERVER_ERROR',
-        body: { message: 'Mailer failure' },
-      });
+      mockAccountFindFirst.mockResolvedValue(mockDbAccount);
+      mockAccountUpdate.mockResolvedValue({});
 
       await expect(
-        svc.resetPasswordForEmail('test@example.com'),
-      ).rejects.toThrow(InternalServerErrorException);
+        svc.updatePasswordById('user-uuid-123', 'NewPassword123!'),
+      ).resolves.toBeUndefined();
+
+      expect(mockAccountUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockDbAccount.id },
+          data: expect.objectContaining({
+            password: expect.stringMatching(/^\$2[ab]\$12\$/),
+          }),
+        }),
+      );
+    });
+
+    it('should throw NotFoundException when no credential account exists', async () => {
+      const { svc } = buildService();
+
+      mockAccountFindFirst.mockResolvedValue(null);
+
+      await expect(
+        svc.updatePasswordById('user-uuid-123', 'NewPassword123!'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

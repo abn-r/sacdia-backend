@@ -7,7 +7,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { createHmac } from 'crypto';
-import { BetterAuthInstance } from '../../better-auth/better-auth.config';
+import type { BetterAuthInstance } from '../../better-auth/better-auth.config';
 
 // ---------------------------------------------------------------------------
 // Response types aligned with Better Auth twoFactor plugin

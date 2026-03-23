@@ -9,8 +9,10 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { createHmac } from 'crypto';
-import { BetterAuthInstance } from './better-auth.config';
+import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
+import { PrismaService } from '../prisma/prisma.service';
+import type { BetterAuthInstance } from './better-auth.config';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -29,7 +31,7 @@ export interface BaUser {
 export interface BaSession {
   id: string;
   userId: string;
-  token: string; // opaque 32-byte BA session token
+  token: string; // opaque 32-byte session token
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -37,7 +39,7 @@ export interface BaSession {
   userAgent?: string | null;
 }
 
-/** SACDIA-issued HS256 JWT wrapping a successful BA auth operation (Option C). */
+/** SACDIA-issued HS256 JWT wrapping a successful auth operation (Option C). */
 export interface BaAuthResult {
   user: BaUser;
   session: BaSession;
@@ -123,66 +125,65 @@ export interface IBetterAuthService {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Constructs a Headers object that carries a signed Better Auth session cookie.
- *
- * Better Auth session cookies are HMAC-SHA-256 signed with the app secret
- * before being stored.  The cookie value format (from better-call source) is:
- *
- *   `<rawToken>.<base64_HMAC_signature>` — URL-encoded
- *
- * To make server-side `auth.api.*` calls that require an authenticated
- * session we reproduce that signed cookie so BA's session middleware can
- * verify and load the session from the DB.
- *
- * Signing algorithm verified against better-call source:
- *   signature = HMAC-SHA-256(secret, rawToken).digest('base64')
- *   cookieValue = encodeURIComponent(`${rawToken}.${signature}`)
- *
- * Cookie name: `better-auth.session_token`
- */
-function buildSessionHeaders(rawToken: string, secret: string): Headers {
-  const signature = createHmac('sha256', secret)
-    .update(rawToken)
-    .digest('base64');
-  const signedValue = encodeURIComponent(`${rawToken}.${signature}`);
-  return new Headers({
-    cookie: `better-auth.session_token=${signedValue}`,
-  });
+/** Session duration: 7 days in ms */
+const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Bcrypt cost factor */
+const BCRYPT_ROUNDS = 12;
+
+/** Generate a URL-safe random token (32 bytes = 43 base64url chars). */
+function generateToken(): string {
+  const { randomBytes } = require('crypto') as typeof import('crypto');
+  return randomBytes(32).toString('base64url');
 }
 
-/** Maps a Better Auth APIError (or any error) to the appropriate NestJS HTTP exception. */
-function mapBaError(error: unknown, context: string): never {
-  if (
-    error !== null &&
-    typeof error === 'object' &&
-    'statusCode' in error &&
-    'status' in error
-  ) {
-    const apiErr = error as { statusCode: number; status: string; body?: { message?: string } };
-    const msg = apiErr.body?.message ?? apiErr.status;
+/**
+ * Maps a Prisma `users` record to the `BaUser` shape used across the service.
+ * Uses our schema field names: user_id, email_verified, user_image, created_at, modified_at.
+ */
+function mapDbUserToBaUser(dbUser: {
+  user_id: string;
+  email: string;
+  name: string | null;
+  email_verified: boolean;
+  user_image?: string | null;
+  created_at: Date;
+  modified_at: Date;
+}): BaUser {
+  return {
+    id: dbUser.user_id,
+    email: dbUser.email,
+    name: dbUser.name ?? '',
+    emailVerified: dbUser.email_verified,
+    image: dbUser.user_image ?? null,
+    createdAt: dbUser.created_at,
+    updatedAt: dbUser.modified_at,
+  };
+}
 
-    switch (apiErr.statusCode) {
-      case 401:
-        throw new UnauthorizedException(msg);
-      case 404:
-        throw new NotFoundException(msg);
-      case 409:
-        throw new ConflictException(msg);
-      case 422:
-        // Treat unprocessable entity as conflict for duplicate email
-        throw new ConflictException(msg);
-      default:
-        throw new InternalServerErrorException(
-          `${context}: ${msg ?? 'unexpected BA error'}`,
-        );
-    }
-  }
-
-  // Unknown error
-  const message =
-    error instanceof Error ? error.message : String(error);
-  throw new InternalServerErrorException(`${context}: ${message}`);
+/**
+ * Maps a Prisma `session` record to the `BaSession` shape used across the service.
+ */
+function mapDbSessionToBaSession(dbSession: {
+  id: string;
+  userId: string;
+  token: string;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): BaSession {
+  return {
+    id: dbSession.id,
+    userId: dbSession.userId,
+    token: dbSession.token,
+    expiresAt: dbSession.expiresAt,
+    createdAt: dbSession.createdAt,
+    updatedAt: dbSession.updatedAt,
+    ipAddress: dbSession.ipAddress ?? null,
+    userAgent: dbSession.userAgent ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -195,51 +196,32 @@ export class BetterAuthService implements IBetterAuthService {
 
   constructor(
     private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    // Keep the BA instance injected for OAuth and TOTP (future use)
     @Inject('BETTER_AUTH_INSTANCE')
     private readonly ba: BetterAuthInstance,
   ) {}
 
   // ---------------------------------------------------------------------------
-  // Private: session cookie helper
+  // Private helpers
   // ---------------------------------------------------------------------------
 
   /**
-   * Resolves the BA app secret from the context and builds signed session
-   * headers for server-side API calls that require an authenticated session.
-   *
-   * The secret is read from BETTER_AUTH_SECRET env var — same value BA uses
-   * internally to sign cookies, so we can reproduce the same HMAC.
+   * Creates a new session row in the DB for the given userId.
+   * Returns the session record mapped to BaSession.
    */
-  private sessionHeaders(rawToken: string): Headers {
-    const secret = process.env.BETTER_AUTH_SECRET;
-    if (!secret) {
-      throw new InternalServerErrorException(
-        'BETTER_AUTH_SECRET is not configured',
-      );
-    }
-    return buildSessionHeaders(rawToken, secret);
-  }
-
-  /**
-   * Retrieves the full session object from BA for a given opaque session token.
-   * Used by `refreshSession` and any method that needs `{ user, session }`.
-   */
-  private async getSessionFromToken(
-    rawToken: string,
-  ): Promise<{ user: BaUser; session: BaSession }> {
-    const headers = this.sessionHeaders(rawToken);
-    const result = await this.ba.api.getSession({ headers }).catch((e) => {
-      mapBaError(e, 'getSession');
+  private async createSession(userId: string): Promise<BaSession> {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SESSION_DURATION_MS);
+    const dbSession = await this.prisma.session.create({
+      data: {
+        id: randomUUID(),
+        token: generateToken(),
+        userId,
+        expiresAt,
+      },
     });
-
-    if (!result) {
-      throw new UnauthorizedException('Session not found or expired');
-    }
-
-    return {
-      user: result.user as unknown as BaUser,
-      session: result.session as unknown as BaSession,
-    };
+    return mapDbSessionToBaSession(dbSession);
   }
 
   // ---------------------------------------------------------------------------
@@ -247,194 +229,234 @@ export class BetterAuthService implements IBetterAuthService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Creates a new user via BA email+password sign-up.
+   * Creates a new user via direct Prisma writes — bypasses BA's Prisma adapter
+   * which does NOT correctly map field names for WRITE operations (e.g. sends
+   * `id` instead of `user_id`, `emailVerified` instead of `email_verified`).
    *
-   * BA call: `auth.api.signUpEmail({ body: { email, password, name } })`
-   * Returns: `{ token: string | null, user }` — token is null when email
-   * verification is required; since we set `emailAndPassword.enabled: true`
-   * without a verification step the token is returned immediately.
+   * Flow:
+   *   1. Check for duplicate email → ConflictException
+   *   2. Hash password with bcrypt (cost 12)
+   *   3. Insert `users` row with proper snake_case fields
+   *   4. Insert `account` row (credential provider)
+   *   5. Insert `session` row
+   *   6. Sign SACDIA JWT
    */
   async createUser(
     email: string,
     password: string,
     name: string,
   ): Promise<BaAuthResult> {
-    try {
-      const result = await this.ba.api.signUpEmail({
-        body: { email, password, name },
-      });
-
-      if (!result.token) {
-        // Token is null only when email verification is pending.
-        // This shouldn't happen with our config but handle it defensively.
-        throw new InternalServerErrorException(
-          'createUser: BA returned null token — email verification may be required',
-        );
-      }
-
-      const { user, session } = await this.getSessionFromToken(result.token);
-      const accessToken = this.signJwt(user);
-
-      this.logger.log(`User created: ${user.id}`);
-      return { user, session, accessToken };
-    } catch (error) {
-      if (
-        error instanceof ConflictException ||
-        error instanceof UnauthorizedException ||
-        error instanceof InternalServerErrorException
-      ) {
-        throw error;
-      }
-      mapBaError(error, 'createUser');
+    // 1. Duplicate email check
+    const existing = await this.prisma.users.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException('Email already in use');
     }
+
+    // 2. Hash password
+    const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+    // 3. Create user — use crypto.randomUUID() to generate proper UUID v4
+    const userId = randomUUID();
+    const dbUser = await this.prisma.users.create({
+      data: {
+        user_id: userId,
+        email,
+        name,
+        email_verified: false,
+      },
+    });
+
+    // 4. Create credential account
+    await this.prisma.account.create({
+      data: {
+        id: randomUUID(),
+        accountId: userId,
+        providerId: 'credential',
+        userId,
+        password: hashedPassword,
+      },
+    });
+
+    // 5. Create session
+    const session = await this.createSession(userId);
+
+    const user = mapDbUserToBaUser(dbUser);
+    const accessToken = this.signJwt(user);
+
+    this.logger.log(`User created: ${user.id}`);
+    return { user, session, accessToken };
   }
 
   /**
-   * Authenticates a user via email+password.
+   * Authenticates a user via email+password — direct Prisma lookup.
    *
-   * BA call: `auth.api.signInEmail({ body: { email, password } })`
-   * Returns: `{ token, user }` — token is the opaque BA session token.
+   * Flow:
+   *   1. Find user by email → NotFoundException if missing
+   *   2. Find credential account → UnauthorizedException if missing
+   *   3. bcrypt.compare → UnauthorizedException if mismatch
+   *   4. Create session → sign JWT → return BaAuthResult
    */
   async signInWithPassword(
     email: string,
     password: string,
   ): Promise<BaAuthResult> {
-    try {
-      const result = await this.ba.api.signInEmail({
-        body: { email, password },
-      });
-
-      const { user, session } = await this.getSessionFromToken(result.token);
-      const accessToken = this.signJwt(user);
-
-      this.logger.log(`User signed in: ${user.id}`);
-      return { user, session, accessToken };
-    } catch (error) {
-      if (
-        error instanceof ConflictException ||
-        error instanceof UnauthorizedException ||
-        error instanceof NotFoundException ||
-        error instanceof InternalServerErrorException
-      ) {
-        throw error;
-      }
-      mapBaError(error, 'signInWithPassword');
+    // 1. Find user
+    const dbUser = await this.prisma.users.findUnique({ where: { email } });
+    if (!dbUser) {
+      throw new UnauthorizedException('Invalid credentials');
     }
+
+    // 2. Find credential account
+    const dbAccount = await this.prisma.account.findFirst({
+      where: { userId: dbUser.user_id, providerId: 'credential' },
+    });
+    if (!dbAccount || !dbAccount.password) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // 3. Verify password
+    const isValid = await bcrypt.compare(password, dbAccount.password);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // 4. Create session + sign JWT
+    const session = await this.createSession(dbUser.user_id);
+    const user = mapDbUserToBaUser(dbUser);
+    const accessToken = this.signJwt(user);
+
+    this.logger.log(`User signed in: ${user.id}`);
+    return { user, session, accessToken };
   }
 
   /**
    * Refreshes a session by looking it up via the opaque session token.
    *
-   * Better Auth does not have a dedicated "refresh session" endpoint for
-   * opaque token flows (there is no refresh token — the opaque session token
-   * IS the long-lived credential, valid for 7 days with a 1-day slide).
-   * We call `getSession` which will slide the expiry on the DB side, then
-   * re-issue a new SACDIA JWT.
-   *
-   * BA call: `auth.api.getSession({ headers })` with signed session cookie.
+   * Flow:
+   *   1. Find session by token → UnauthorizedException if missing
+   *   2. Check expiry → delete + UnauthorizedException if expired
+   *   3. Slide expiry forward by SESSION_DURATION_MS
+   *   4. Load user → sign new SACDIA JWT
    */
   async refreshSession(sessionToken: string): Promise<BaAuthResult> {
-    try {
-      const { user, session } = await this.getSessionFromToken(sessionToken);
-      const accessToken = this.signJwt(user);
-
-      this.logger.log(`Session refreshed for user: ${user.id}`);
-      return { user, session, accessToken };
-    } catch (error) {
-      if (
-        error instanceof UnauthorizedException ||
-        error instanceof InternalServerErrorException
-      ) {
-        throw error;
-      }
-      mapBaError(error, 'refreshSession');
+    // 1. Find session
+    const dbSession = await this.prisma.session.findFirst({
+      where: { token: sessionToken },
+    });
+    if (!dbSession) {
+      throw new UnauthorizedException('Session not found or expired');
     }
+
+    // 2. Check expiry
+    if (dbSession.expiresAt < new Date()) {
+      await this.prisma.session.deleteMany({ where: { token: sessionToken } });
+      throw new UnauthorizedException('Session expired');
+    }
+
+    // 3. Slide expiry
+    const newExpiresAt = new Date(Date.now() + SESSION_DURATION_MS);
+    const updatedSession = await this.prisma.session.update({
+      where: { id: dbSession.id },
+      data: { expiresAt: newExpiresAt },
+    });
+
+    // 4. Load user
+    const dbUser = await this.prisma.users.findUnique({
+      where: { user_id: dbSession.userId },
+    });
+    if (!dbUser) {
+      throw new InternalServerErrorException(
+        'refreshSession: user not found for session',
+      );
+    }
+
+    const user = mapDbUserToBaUser(dbUser);
+    const session = mapDbSessionToBaSession(updatedSession);
+    const accessToken = this.signJwt(user);
+
+    this.logger.log(`Session refreshed for user: ${user.id}`);
+    return { user, session, accessToken };
   }
 
   /**
-   * Revokes a BA session (sign out).
+   * Revokes a session (sign out) by deleting it from the DB.
    *
-   * BA call: `auth.api.revokeSession({ body: { token }, headers })`
-   * The caller must be authenticated (session cookie required by the
-   * `sessionMiddleware` guard on `revokeSession`).
+   * Best-effort: never throws — a failed revocation does not block the client.
    */
   async signOut(sessionToken: string): Promise<void> {
     try {
-      const headers = this.sessionHeaders(sessionToken);
-      await this.ba.api.revokeSession({
-        body: { token: sessionToken },
-        headers,
-      });
+      await this.prisma.session.deleteMany({ where: { token: sessionToken } });
       this.logger.log('Session revoked');
     } catch (error) {
-      if (error instanceof UnauthorizedException) throw error;
-      // Best-effort: log but do not throw for sign-out failures
       this.logger.warn(
-        `signOut: best-effort revocation failed — ${error instanceof Error ? error.message : String(error)}`,
+        `signOut: session deletion failed — ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
 
   /**
-   * Sends a password-reset email via BA.
+   * Creates a password-reset verification token and logs it.
    *
-   * BA call: `auth.api.requestPasswordReset({ body: { email, redirectTo? } })`
-   * BA always returns `{ status: true }` regardless of whether the email
-   * exists (to prevent user enumeration).
+   * In production this should send an email with the token.
+   * BA's requestPasswordReset is NOT used here to avoid BA adapter write issues.
+   *
+   * Always succeeds silently for unknown emails (enumeration-safe).
    */
   async resetPasswordForEmail(
     email: string,
-    redirectTo?: string,
+    _redirectTo?: string,
   ): Promise<void> {
-    try {
-      await this.ba.api.requestPasswordReset({
-        body: { email, ...(redirectTo ? { redirectTo } : {}) },
-      });
-      this.logger.log(`Password reset requested for: ${email}`);
-    } catch (error) {
-      mapBaError(error, 'resetPasswordForEmail');
+    const dbUser = await this.prisma.users.findUnique({ where: { email } });
+    if (!dbUser) {
+      // Silent — do not reveal whether the email exists
+      this.logger.log(`Password reset requested for unknown email: ${email}`);
+      return;
     }
+
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier: email,
+        value: token,
+        expiresAt,
+      },
+    });
+
+    // TODO(production): send email with token. For now, log it.
+    this.logger.log(
+      `Password reset token for ${email}: ${token} (expires ${expiresAt.toISOString()})`,
+    );
   }
 
   /**
    * Updates a user's password by their userId without requiring the current password.
    *
-   * DESIGN NOTE: Better Auth's `changePassword` endpoint requires the current
-   * password (it is user-facing, not admin-facing).  `setPassword` also
-   * requires a session.  There is no unauthenticated admin "set password by
-   * userId" in the base BA package without the admin plugin.
-   *
-   * Since the admin plugin is NOT currently included in `better-auth.config.ts`,
-   * this implementation uses `setPassword` which requires a valid session for
-   * the target user.  If a sessionless admin password override is needed in
-   * the future, add the `admin` plugin to the config and call
-   * `auth.api.setUserPassword({ body: { userId, password } })`.
-   *
-   * Current implementation: requires a session token belonging to the user.
-   * The `userId` parameter is validated against the session to prevent IDOR.
-   *
-   * BA call: `auth.api.setPassword({ body: { newPassword }, headers })`
-   *
-   * @param userId  - The user ID (used for validation, not passed to BA directly).
-   * @param newPassword - The new password to set.
-   *
-   * NOTE: This method signature is kept for interface compatibility.
-   * The caller must supply the session token separately — see the
-   * `updatePasswordBySession` companion below for the preferred path.
+   * DESIGN NOTE: This is an admin/internal operation. It finds the credential
+   * account for the user and updates the hashed password directly.
    */
   async updatePasswordById(
-    _userId: string,
-    _newPassword: string,
+    userId: string,
+    newPassword: string,
   ): Promise<void> {
-    // BA's base API does not support admin password reset by userId without
-    // the admin plugin.  This stub is intentionally left as not-implemented
-    // so callers are forced to use the proper reset flow (resetPasswordForEmail)
-    // or the session-based setPassword path.
-    throw new NotImplementedException(
-      'updatePasswordById requires the BA admin plugin (not configured).' +
-        ' Use resetPasswordForEmail() for the reset flow, or add the admin' +
-        ' plugin to better-auth.config.ts and call auth.api.setUserPassword().',
-    );
+    const dbAccount = await this.prisma.account.findFirst({
+      where: { userId, providerId: 'credential' },
+    });
+    if (!dbAccount) {
+      throw new NotFoundException(
+        `updatePasswordById: no credential account for user ${userId}`,
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.account.update({
+      where: { id: dbAccount.id },
+      data: { password: hashedPassword },
+    });
+
+    this.logger.log(`Password updated for user: ${userId}`);
   }
 
   // ---------------------------------------------------------------------------
@@ -444,43 +466,17 @@ export class BetterAuthService implements IBetterAuthService {
   /**
    * NOTE ON TOTP PLUGIN API MISMATCH:
    *
-   * better-auth.config.ts now correctly uses `twoFactor()` from `better-auth/plugins`
-   * (the previous config used the non-existent `totp` export — fixed in W3-007).
+   * The `twoFactor()` plugin provides:
+   *   - `auth.api.enableTwoFactor({ body: { password, issuer? }, headers })`
+   *   - `auth.api.getTOTPURI({ body: { password }, headers })`
+   *   - `auth.api.verifyTOTP({ body: { code, trustDevice? }, headers })`
+   *   - `auth.api.disableTwoFactor({ body: { password }, headers })`
    *
-   * The `twoFactor()` plugin provides the following TOTP API:
-   *   - `auth.api.enableTwoFactor({ body: { password, issuer? }, headers })`  → enroll
-   *   - `auth.api.getTOTPURI({ body: { password }, headers })`                → get URI
-   *   - `auth.api.verifyTOTP({ body: { code, trustDevice? }, headers })`      → verify
-   *   - `auth.api.disableTwoFactor({ body: { password }, headers })`          → unenroll
-   *
-   * INTERFACE MISMATCH (not resolvable without redesign):
    * The service interface uses Supabase-style MFA concepts (factorId, challengeId)
-   * that do NOT exist in BA's twoFactor plugin:
-   * - BA has ONE TOTP per user — no factorId concept
-   * - BA has NO challenge step — verification is done directly
-   * - BA requires the user's PASSWORD for enable/disable, not a session token alone
-   * - BA does not return a QR code image (only a totpURI — QR generated client-side)
-   *
-   * THESE METHODS REMAIN AS STUBS pending interface redesign.
-   * The interface (IBetterAuthService + all callers) needs to be updated to
-   * match BA's twoFactor model before these can be implemented.
+   * that do NOT exist in BA's twoFactor plugin. These methods remain as stubs
+   * pending interface redesign.
    */
 
-  /**
-   * Enrolls TOTP for a user (enables two-factor authentication).
-   *
-   * BA call: `auth.api.enableTwoFactor({ body: { password }, headers })`
-   * Returns: `{ totpURI, backupCodes }`
-   *
-   * PENDING INTERFACE REDESIGN:
-   * The current interface expects `{ factorId, qrCode, secret, uri }` but
-   * BA's twoFactor plugin only returns `{ totpURI, backupCodes }`.
-   * - No factorId in BA (single TOTP per user)
-   * - No qrCode (generate from totpURI client-side)
-   * - enableTwoFactor requires user's PASSWORD, not just session token
-   *
-   * IBetterAuthService must be updated before this can be implemented.
-   */
   async enrollTotp(
     _sessionToken: string,
     _friendlyName?: string,
@@ -491,13 +487,6 @@ export class BetterAuthService implements IBetterAuthService {
     );
   }
 
-  /**
-   * Creates a TOTP challenge.
-   *
-   * CANNOT BE IMPLEMENTED: BA's twoFactor plugin has NO separate challenge step.
-   * Verification is done directly via `auth.api.verifyTOTP({ body: { code } })`.
-   * Remove this method from the interface or mark as deprecated.
-   */
   challengeTotp(
     _sessionToken: string,
     _factorId: string,
@@ -507,15 +496,6 @@ export class BetterAuthService implements IBetterAuthService {
     );
   }
 
-  /**
-   * Verifies a TOTP code.
-   *
-   * BA call: `auth.api.verifyTOTP({ body: { code }, headers })`
-   *
-   * PENDING INTERFACE REDESIGN:
-   * - `factorId` and `challengeId` parameters are not used by BA
-   * - Interface should be simplified to `verifyTotp(sessionToken, code)`
-   */
   async verifyTotp(
     _sessionToken: string,
     _factorId: string,
@@ -528,14 +508,6 @@ export class BetterAuthService implements IBetterAuthService {
     );
   }
 
-  /**
-   * Lists TOTP factors for a user.
-   *
-   * CANNOT BE FULLY IMPLEMENTED: BA's twoFactor plugin supports ONE TOTP per user.
-   * There is no list endpoint — check user.twoFactorEnabled via getSession instead.
-   *
-   * PENDING INTERFACE REDESIGN: replace with a `getMfaStatus(sessionToken)` call.
-   */
   async listTotpFactors(_sessionToken: string): Promise<BaTotpFactor[]> {
     throw new NotImplementedException(
       'listTotpFactors: BA twoFactor supports one TOTP per user, no list endpoint.' +
@@ -543,16 +515,6 @@ export class BetterAuthService implements IBetterAuthService {
     );
   }
 
-  /**
-   * Unenrolls TOTP (disables two-factor authentication).
-   *
-   * BA call: `auth.api.disableTwoFactor({ body: { password }, headers })`
-   *
-   * PENDING INTERFACE REDESIGN:
-   * - `factorId` not used (BA has one TOTP per user)
-   * - BA requires the user's PASSWORD to disable 2FA, not just a session token
-   * - Interface must be updated to accept a password parameter
-   */
   async unenrollFactor(
     _sessionToken: string,
     _factorId: string,
@@ -563,19 +525,6 @@ export class BetterAuthService implements IBetterAuthService {
     );
   }
 
-  /**
-   * Determines the current MFA assurance level for a session.
-   *
-   * BA does not expose an AAL endpoint directly.  Derive from:
-   * - `user.twoFactorEnabled` — whether TOTP is enrolled
-   * - `session.twoFactorVerified` — whether this session completed TOTP
-   *
-   * PENDING INTERFACE REDESIGN: once the session fields are confirmed,
-   * this can be implemented as:
-   *   const { user, session } = await getSessionFromToken(sessionToken);
-   *   const aal2 = user.twoFactorEnabled && session.twoFactorVerified;
-   *   return { currentLevel: aal2 ? 'aal2' : 'aal1', nextLevel: ... };
-   */
   async getAssuranceLevel(_sessionToken: string): Promise<BaAssuranceLevel> {
     throw new NotImplementedException(
       'getAssuranceLevel: pending interface redesign. Derive from' +
@@ -590,15 +539,8 @@ export class BetterAuthService implements IBetterAuthService {
   /**
    * Generates an OAuth authorization URL for the given provider.
    *
-   * BA call: `auth.api.signInSocial({ body: { provider, callbackURL, disableRedirect: true } })`
-   *
-   * When `disableRedirect: true` is set, BA returns `{ url, redirect: false }`
-   * instead of issuing an HTTP redirect.  The state is embedded in the URL's
-   * query parameters (BA generates and stores it internally).
-   *
-   * NOTE: The `BaOAuthUrlResult.state` field cannot be extracted from the URL
-   * in a structured way — it is part of the redirect URL that BA constructs.
-   * Callers should use the full `url` and parse `state` from it if needed.
+   * BA handles OAuth flows natively — we keep using BA's API here since the
+   * adapter write issue only affects user CRUD operations.
    */
   async getOAuthUrl(
     provider: 'google' | 'apple',
@@ -619,7 +561,6 @@ export class BetterAuthService implements IBetterAuthService {
         );
       }
 
-      // Extract state from the URL query parameters
       const urlObj = new URL(result.url);
       const state = urlObj.searchParams.get('state') ?? '';
 
@@ -627,31 +568,19 @@ export class BetterAuthService implements IBetterAuthService {
       return { url: result.url, state };
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
-      mapBaError(error, 'getOAuthUrl');
+      const message =
+        error instanceof Error ? error.message : String(error);
+      throw new InternalServerErrorException(`getOAuthUrl: ${message}`);
     }
   }
 
   /**
    * Handles the OAuth callback after the provider redirects back.
    *
-   * BA call: `auth.api.callbackOAuth({ query: { code, state }, body: { ... } })`
-   *
-   * NOTE: BA's `callbackOAuth` is a GET endpoint that processes the provider
-   * callback.  In a server-side context it can be called with query parameters.
-   * The response from BA after a successful OAuth callback is an HTTP redirect
-   * to the `callbackURL` with the session cookie set.
-   *
-   * DESIGN MISMATCH: The assumed interface (`code`, `state`, `redirectUri`) maps
-   * to the standard OAuth2 PKCE flow, but BA's internal callback handler is
-   * designed to be hit by the browser (not called server-to-server).  For a
-   * proper server-side OAuth exchange, the caller should:
-   * 1. Redirect the user's browser to the `getOAuthUrl` result.
-   * 2. BA handles the callback at `{BASE_URL}/api/auth/callback/{provider}`.
-   * 3. BA sets the session cookie and redirects to `callbackURL`.
-   * 4. The frontend reads the session token from the cookie and calls SACDIA.
-   *
-   * This server-side stub is provided for completeness but will not work in
-   * a browser-redirect OAuth flow without additional infrastructure.
+   * NOTE: BA's callbackOAuth is a browser-facing GET endpoint. For a proper
+   * server-side OAuth flow, the browser hits BA's callback URL directly and BA
+   * sets the session cookie, then redirects to callbackURL where the frontend
+   * reads the session token and calls SACDIA.
    */
   async handleOAuthCallback(
     provider: 'google' | 'apple',
@@ -660,9 +589,6 @@ export class BetterAuthService implements IBetterAuthService {
     _redirectUri: string,
   ): Promise<BaAuthResult> {
     try {
-      // callbackOAuth processes the provider redirect and creates/updates the user.
-      // It is designed as a browser-facing GET endpoint.
-      // We invoke it server-side by passing query params directly.
       const result = await (this.ba.api as any).callbackOAuth({
         query: { code, state },
         method: 'GET',
@@ -674,7 +600,27 @@ export class BetterAuthService implements IBetterAuthService {
         );
       }
 
-      const { user, session } = await this.getSessionFromToken(result.token);
+      // For OAuth, find the session BA created and load the user directly
+      const dbSession = await this.prisma.session.findFirst({
+        where: { token: result.token },
+      });
+      if (!dbSession) {
+        throw new UnauthorizedException(
+          'handleOAuthCallback: session not found after OAuth callback',
+        );
+      }
+
+      const dbUser = await this.prisma.users.findUnique({
+        where: { user_id: dbSession.userId },
+      });
+      if (!dbUser) {
+        throw new InternalServerErrorException(
+          'handleOAuthCallback: user not found for OAuth session',
+        );
+      }
+
+      const user = mapDbUserToBaUser(dbUser);
+      const session = mapDbSessionToBaSession(dbSession);
       const accessToken = this.signJwt(user);
 
       this.logger.log(`OAuth callback handled for provider: ${provider}, user: ${user.id}`);
@@ -686,7 +632,9 @@ export class BetterAuthService implements IBetterAuthService {
       ) {
         throw error;
       }
-      mapBaError(error, 'handleOAuthCallback');
+      const message =
+        error instanceof Error ? error.message : String(error);
+      throw new InternalServerErrorException(`handleOAuthCallback: ${message}`);
     }
   }
 
@@ -694,10 +642,6 @@ export class BetterAuthService implements IBetterAuthService {
 
   /**
    * Signs a SACDIA HS256 JWT for API consumers.
-   *
-   * Better Auth emits opaque 32-byte session tokens (not JWTs).
-   * After every successful BA auth operation we sign our own short-lived
-   * JWT so downstream API guards have a standard bearer token to verify.
    *
    * Payload: { sub: user.id, email: user.email }
    * Algorithm: HS256 (via BETTER_AUTH_SECRET in JwtModule config)

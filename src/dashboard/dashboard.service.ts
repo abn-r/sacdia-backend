@@ -62,7 +62,7 @@ export class DashboardService {
               clubs: { select: { name: true } },
             },
           },
-          roles: { select: { name: true } },
+          roles: { select: { role_name: true } },
         },
       }),
     ]);
@@ -129,7 +129,7 @@ export class DashboardService {
       const section = clubAssignment.club_sections;
       clubName = section?.clubs?.name ?? null;
       clubType = section?.club_types?.name ?? null;
-      userRole = clubAssignment.roles?.name ?? null;
+      userRole = clubAssignment.roles?.role_name ?? null;
       clubSectionId = section?.club_section_id ?? null;
     }
 

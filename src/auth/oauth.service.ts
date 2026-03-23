@@ -168,7 +168,7 @@ export class OAuthService {
    * when the user authenticates via a social provider.
    */
   async getConnectedProviders(userId: string): Promise<string[]> {
-    const accounts = await this.prisma.accounts.findMany({
+    const accounts = await this.prisma.account.findMany({
       where: { userId },
       select: { providerId: true },
     });
@@ -198,7 +198,7 @@ export class OAuthService {
     }
 
     // Safety check: ensure the user retains at least one authentication method
-    const allAccounts = await this.prisma.accounts.findMany({
+    const allAccounts = await this.prisma.account.findMany({
       where: { userId },
       select: { providerId: true },
     });
@@ -215,7 +215,7 @@ export class OAuthService {
       );
     }
 
-    const deleted = await this.prisma.accounts.deleteMany({
+    const deleted = await this.prisma.account.deleteMany({
       where: { userId, providerId: provider },
     });
 

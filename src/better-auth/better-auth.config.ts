@@ -6,15 +6,37 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { twoFactor } from 'better-auth/plugins';
 import { PrismaClient } from '@prisma/client';
 
+/**
+ * Creates the Better Auth instance.
+ *
+ * IMPORTANT: BA's Prisma adapter does NOT correctly map field names for WRITE
+ * operations. Specifically, when creating a user BA sends camelCase field names
+ * (id, emailVerified) instead of our schema's snake_case names (user_id,
+ * email_verified), causing PrismaClientValidationError.
+ *
+ * For this reason, BetterAuthService bypasses BA for ALL user CRUD operations
+ * (createUser, signInWithPassword, refreshSession, signOut, resetPasswordForEmail)
+ * and writes directly to Prisma.
+ *
+ * The BA instance is kept for:
+ *   - OAuth (signInSocial, callbackOAuth)
+ *   - TOTP / MFA (future — pending interface redesign)
+ *   - Reading sessions after OAuth callbacks
+ *
+ * The user.fields mapping below is intentionally minimal — we only keep the
+ * fields BA needs internally for READ operations during OAuth flows.
+ */
 export function createBetterAuth(prisma: PrismaClient) {
   return betterAuth({
     database: prismaAdapter(prisma, {
       provider: 'postgresql',
-      usePlural: true,
     }),
     user: {
       modelName: 'users',
       fields: {
+        // BA uses these field mappings for READ operations in OAuth flows.
+        // NOTE: BA does NOT correctly apply these mappings for WRITE operations —
+        // that is why BetterAuthService handles user creation directly via Prisma.
         id: 'user_id',
         image: 'user_image',
         createdAt: 'created_at',
