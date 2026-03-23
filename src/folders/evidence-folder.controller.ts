@@ -8,6 +8,9 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -103,7 +106,17 @@ export class EvidenceFolderController {
   async uploadFile(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('efSectionId', ParseIntPipe) efSectionId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new FileTypeValidator({
+            fileType: /^(image\/(jpeg|png|webp)|application\/pdf)$/,
+          }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.evidenceFolderService.uploadFile(

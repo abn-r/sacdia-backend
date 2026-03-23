@@ -370,6 +370,13 @@ export class BetterAuthService implements IBetterAuthService {
       );
     }
 
+    // SECURITY NOTE — JWT blacklisting:
+    // refreshSession issues a new HS256 JWT but cannot blacklist the previous one
+    // because the old access token is not sent to this endpoint (clients send only
+    // the opaque session token). Mitigation: JWTs are short-lived (1h). A proper
+    // blacklist would require a Redis store keyed by jti or token hash — defer to
+    // a future hardening pass if the 1h window is deemed insufficient.
+
     const user = mapDbUserToBaUser(dbUser);
     const session = mapDbSessionToBaSession(updatedSession);
     const accessToken = this.signJwt(user);
@@ -425,9 +432,10 @@ export class BetterAuthService implements IBetterAuthService {
       },
     });
 
-    // TODO(production): send email with token. For now, log it.
+    // TODO(production): send email with reset link containing the token.
+    // SECURITY: Never log the raw token — it is a credential.
     this.logger.log(
-      `Password reset token for ${email}: ${token} (expires ${expiresAt.toISOString()})`,
+      `Password reset token generated for ${email} (expires ${expiresAt.toISOString()})`,
     );
   }
 

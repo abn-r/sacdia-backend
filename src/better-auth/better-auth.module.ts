@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { BetterAuthService } from './better-auth.service';
@@ -29,13 +29,25 @@ import { PrismaService } from '../prisma/prisma.service';
   imports: [
     JwtModule.registerAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('BETTER_AUTH_SECRET'),
-        signOptions: {
-          expiresIn: '1h',
-          algorithm: 'HS256',
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const secret = configService.get<string>('BETTER_AUTH_SECRET');
+        if (!secret || secret.length < 32) {
+          const logger = new Logger('BetterAuthModule');
+          logger.error(
+            'BETTER_AUTH_SECRET must be at least 32 characters',
+          );
+          throw new Error(
+            'BETTER_AUTH_SECRET must be at least 32 characters',
+          );
+        }
+        return {
+          secret,
+          signOptions: {
+            expiresIn: '1h',
+            algorithm: 'HS256',
+          },
+        };
+      },
     }),
   ],
   providers: [

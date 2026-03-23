@@ -10,6 +10,9 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -128,7 +131,18 @@ export class InsuranceController {
   async createInsurance(
     @Param('memberId') memberId: string,
     @Body() dto: CreateInsuranceDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new FileTypeValidator({
+            fileType: /^(image\/(jpeg|png)|application\/pdf)$/,
+          }),
+        ],
+        fileIsRequired: false,
+      }),
+    )
+    file?: Express.Multer.File,
     @CurrentUser() user?: CurrentUserPayload,
   ) {
     const currentUserId = this.extractCurrentUserId(user);
@@ -164,7 +178,18 @@ export class InsuranceController {
   async updateInsurance(
     @Param('insuranceId', ParseIntPipe) insuranceId: number,
     @Body() dto: UpdateInsuranceDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new FileTypeValidator({
+            fileType: /^(image\/(jpeg|png)|application\/pdf)$/,
+          }),
+        ],
+        fileIsRequired: false,
+      }),
+    )
+    file?: Express.Multer.File,
     @CurrentUser() user?: CurrentUserPayload,
   ) {
     const currentUserId = this.extractCurrentUserId(user);

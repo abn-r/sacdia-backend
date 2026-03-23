@@ -19,11 +19,53 @@ async function bootstrap() {
   // ==========================================
   let sentryEnabled = false;
   if (process.env.SENTRY_DSN) {
+    const SENSITIVE_HEADERS = new Set([
+      'authorization',
+      'x-session-token',
+      'x-refresh-token',
+    ]);
+    const SENSITIVE_BODY_FIELDS = new Set([
+      'password',
+      'refresh_token',
+      'refreshToken',
+      'access_token',
+      'accessToken',
+      'blood',
+      'birthday',
+      'allergies',
+      'diseases',
+      'medicines',
+    ]);
+
     Sentry.init({
       dsn: process.env.SENTRY_DSN,
       environment: process.env.NODE_ENV || 'development',
       tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
       profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+      beforeSend(event) {
+        // Strip sensitive request headers
+        if (event.request?.headers) {
+          const cleaned: Record<string, string> = {};
+          for (const [key, value] of Object.entries(event.request.headers)) {
+            cleaned[key] = SENSITIVE_HEADERS.has(key.toLowerCase())
+              ? '[REDACTED]'
+              : (value as string);
+          }
+          event.request.headers = cleaned;
+        }
+
+        // Strip sensitive request body fields
+        if (event.request?.data && typeof event.request.data === 'object') {
+          const body = event.request.data as Record<string, unknown>;
+          for (const field of SENSITIVE_BODY_FIELDS) {
+            if (field in body) {
+              body[field] = '[REDACTED]';
+            }
+          }
+        }
+
+        return event;
+      },
     });
     sentryEnabled = true;
     console.log('✅ Sentry monitoring initialized');
@@ -92,8 +134,11 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Permitir requests sin origin (e.g., Postman, curl)
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Only allow requests from explicitly listed origins.
+      // Requests without an Origin header (e.g., server-to-server, curl) are
+      // rejected at the CORS level — they should use direct API calls with
+      // auth tokens instead. Mobile clients send an Origin header.
+      if (origin && allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));

@@ -12,6 +12,9 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -271,7 +274,17 @@ export class UserClassesController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Param('sectionProgressId', ParseIntPipe) sectionProgressId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new FileTypeValidator({
+            fileType: /^(image\/(jpeg|png|webp)|application\/pdf)$/,
+          }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.uploadSectionFile(
