@@ -4,9 +4,7 @@ import { AuthorizationContextService } from './services/authorization-context.se
 import { TokenBlacklistService } from './services/token-blacklist.service';
 import { SessionManagementService } from './services/session-management.service';
 import { MfaService } from './services/mfa.service';
-import { IpWhitelistGuard } from './guards/ip-whitelist.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
-import { EmailVerifiedGuard } from './guards/email-verified.guard';
 import { R2FileStorageService } from './services/r2-file-storage.service';
 import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
@@ -113,9 +111,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     SessionManagementService,
     MfaService,
     AuthorizationContextService,
-    IpWhitelistGuard,
     PermissionsGuard,
-    EmailVerifiedGuard,
     R2FileStorageService,
     {
       provide: FILE_STORAGE_SERVICE,
@@ -128,9 +124,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     SessionManagementService,
     MfaService,
     AuthorizationContextService,
-    IpWhitelistGuard,
     PermissionsGuard,
-    EmailVerifiedGuard,
     FILE_STORAGE_SERVICE,
   ],
 })

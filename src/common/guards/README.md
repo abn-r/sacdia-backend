@@ -94,13 +94,6 @@ getUserHonors(@Param('userId') userId: string) { ... }
 
 ---
 
-### 5. IpWhitelistGuard
-**Purpose**: Restrict access to whitelisted IP addresses
-
-**Usage**: Typically applied globally or to admin routes
-
----
-
 ## Guard Combinations
 
 ### Public Endpoint
