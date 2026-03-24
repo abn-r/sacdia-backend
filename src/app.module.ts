@@ -31,6 +31,7 @@ import { InvestitureModule } from './investiture/investiture.module';
 import { UnitsModule } from './units/units.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ClubEnrollmentsModule } from './club-enrollments/club-enrollments.module';
+import { ValidationModule } from './validation/validation.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -136,6 +137,7 @@ import { envValidationSchema } from './config/env.validation';
     UnitsModule,
     DashboardModule,
     ClubEnrollmentsModule,
+    ValidationModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
