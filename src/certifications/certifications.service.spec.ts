@@ -527,8 +527,8 @@ describe('CertificationsService', () => {
         (s: { section_id: number }) => s.section_id === SECTION_ID + 1,
       );
 
-      expect(section1.completed).toBe(true);
-      expect(section2.completed).toBe(false);
+      expect(section1!.completed).toBe(true);
+      expect(section2!.completed).toBe(false);
     });
 
     it('TC21 - not enrolled → NotFoundException', async () => {

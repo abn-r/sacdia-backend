@@ -187,7 +187,7 @@ describe('OAuthService', () => {
       );
 
       await expect(
-        service.handleCallback({ session_token: 'bad-token' }),
+        service.handleCallback({ session_token: 'bad-token', provider: 'google' }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -215,7 +215,7 @@ describe('OAuthService', () => {
         { providerId: 'google' },
       ]);
 
-      const result = await service.handleCallback({ session_token: 'ba-session-token' });
+      const result = await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
 
       expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith('ba-session-token');
       expect(result).toEqual({
@@ -261,7 +261,7 @@ describe('OAuthService', () => {
         { providerId: 'credential' },
       ]);
 
-      const result = await service.handleCallback({ session_token: 'ba-session-token' });
+      const result = await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
 
       expect(mockTx.users_pr.create).toHaveBeenCalled();
       expect(mockTx.users_roles.create).toHaveBeenCalled();

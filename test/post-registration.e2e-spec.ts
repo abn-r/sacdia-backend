@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PermissionsGuard } from '../src/common/guards';
-import { SupabaseService } from '../src/common/supabase.service';
+import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -17,15 +17,20 @@ describe('Post-registration step 3 E2E', () => {
   let prisma: PrismaService;
   let jwtService: JwtService;
 
-  const mockSupabaseService = {
-    admin: {
-      auth: {
-        getUser: jest.fn().mockResolvedValue({
-          data: { user: { id: 'owner-user-1' } },
-          error: null,
-        }),
-      },
-    },
+  const mockBetterAuthService = {
+    signInWithPassword: jest.fn(),
+    refreshSession: jest.fn(),
+    signOut: jest.fn(),
+    createUser: jest.fn(),
+    signJwt: jest.fn().mockReturnValue('fake-jwt'),
+    resetPasswordForEmail: jest.fn(),
+    updatePasswordById: jest.fn(),
+    getOAuthUrl: jest.fn(),
+    handleOAuthCallback: jest.fn(),
+    enrollTotp: jest.fn(),
+    verifyTotp: jest.fn(),
+    disableTotp: jest.fn(),
+    hasTotpEnabled: jest.fn().mockResolvedValue({ enabled: false }),
   };
 
   const mockPermissionsGuard = {
@@ -57,8 +62,8 @@ describe('Post-registration step 3 E2E', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideProvider(SupabaseService)
-      .useValue(mockSupabaseService)
+      .overrideProvider(BetterAuthService)
+      .useValue(mockBetterAuthService)
       .overrideGuard(PermissionsGuard)
       .useValue(mockPermissionsGuard)
       .compile();

@@ -3,61 +3,51 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { createHmac } from 'crypto';
 import { AppModule } from '../src/app.module';
-import { SupabaseService } from '../src/common/supabase.service';
+import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Auth E2E Tests', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
-  const mockSupabaseService = {
-    admin: {
-      auth: {
-        admin: {
-          createUser: jest.fn().mockResolvedValue({
-            data: { user: { id: 'test-user-id' } },
-            error: null,
-          }),
-          deleteUser: jest.fn().mockResolvedValue({ error: null }),
-          signOut: jest.fn().mockResolvedValue({ error: null }),
-        },
-        signInWithPassword: jest.fn().mockResolvedValue({
-          data: {
-            user: { id: 'test-user-id' },
-            session: {
-              access_token: 'fake-jwt',
-              refresh_token: 'fake-refresh',
-              expires_at: 1900000000,
-              token_type: 'bearer',
-            },
-          },
-          error: null,
-        }),
-      },
-    },
-    anon: {
-      auth: {
-        refreshSession: jest.fn().mockResolvedValue({
-          data: {
-            session: {
-              access_token: 'fake-refreshed-jwt',
-              refresh_token: 'fake-refreshed-refresh',
-              expires_at: 1900000000,
-              token_type: 'bearer',
-            },
-          },
-          error: null,
-        }),
-      },
-    },
+  const mockBetterAuthService = {
+    signInWithPassword: jest.fn().mockResolvedValue({
+      user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
+      session: { token: 'fake-session-token', expiresAt: new Date(1900000000000) },
+      accessToken: 'fake-jwt',
+    }),
+    refreshSession: jest.fn().mockResolvedValue({
+      user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
+      session: { token: 'fake-refreshed-session', expiresAt: new Date(1900000000000) },
+      accessToken: 'fake-refreshed-jwt',
+    }),
+    signOut: jest.fn().mockResolvedValue(undefined),
+    createUser: jest.fn().mockResolvedValue({
+      user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
+      session: { token: 'fake-session-token', expiresAt: new Date(1900000000000) },
+      accessToken: 'fake-jwt',
+    }),
+    signJwt: jest.fn().mockReturnValue('fake-jwt'),
+    resetPasswordForEmail: jest.fn().mockResolvedValue(undefined),
+    updatePasswordById: jest.fn().mockResolvedValue(undefined),
+    getOAuthUrl: jest.fn().mockResolvedValue({ url: 'https://oauth.test', state: 'xyz' }),
+    handleOAuthCallback: jest.fn().mockResolvedValue({
+      user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
+      session: { token: 'fake-session-token', expiresAt: new Date(1900000000000) },
+      accessToken: 'fake-jwt',
+    }),
+    enrollTotp: jest.fn(),
+    verifyTotp: jest.fn(),
+    disableTotp: jest.fn(),
+    hasTotpEnabled: jest.fn().mockResolvedValue({ enabled: false }),
   };
 
   const bootstrapApp = async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideProvider(SupabaseService)
-      .useValue(mockSupabaseService)
+      .overrideProvider(BetterAuthService)
+      .useValue(mockBetterAuthService)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -124,10 +114,9 @@ describe('Auth E2E Tests', () => {
     });
 
     it('should fail with invalid credentials', async () => {
-      mockSupabaseService.admin.auth.signInWithPassword.mockResolvedValueOnce({
-        data: { user: null, session: null },
-        error: { message: 'Invalid login credentials' },
-      });
+      mockBetterAuthService.signInWithPassword.mockRejectedValueOnce(
+        new Error('Invalid login credentials'),
+      );
 
       return request(app.getHttpServer())
         .post('/api/v1/auth/login')
@@ -162,16 +151,10 @@ describe('Auth E2E Tests', () => {
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
 
-      mockSupabaseService.anon.auth.refreshSession.mockResolvedValueOnce({
-        data: {
-          session: {
-            access_token: refreshedAccessToken,
-            refresh_token: 'new-refresh-token',
-            expires_at: Math.floor(Date.now() / 1000) + 3600,
-            token_type: 'bearer',
-          },
-        },
-        error: null,
+      mockBetterAuthService.refreshSession.mockResolvedValueOnce({
+        user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
+        session: { token: 'new-refresh-token', expiresAt: new Date(Date.now() + 3600000) },
+        accessToken: refreshedAccessToken,
       });
 
       jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
@@ -223,16 +206,10 @@ describe('Auth E2E Tests', () => {
     it('should allow legacy snake_case payload when rollback flag is disabled', async () => {
       process.env.AUTH_REJECT_SNAKE_CASE = 'false';
 
-      mockSupabaseService.anon.auth.refreshSession.mockResolvedValueOnce({
-        data: {
-          session: {
-            access_token: 'legacy-access-token',
-            refresh_token: 'legacy-refresh-token',
-            expires_at: Math.floor(Date.now() / 1000) + 3600,
-            token_type: 'bearer',
-          },
-        },
-        error: null,
+      mockBetterAuthService.refreshSession.mockResolvedValueOnce({
+        user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
+        session: { token: 'legacy-refresh-token', expiresAt: new Date(Date.now() + 3600000) },
+        accessToken: 'legacy-access-token',
       });
 
       await request(app.getHttpServer())
