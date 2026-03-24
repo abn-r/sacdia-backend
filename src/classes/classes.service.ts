@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -192,30 +194,117 @@ export class ClassesService {
     classId: number,
     ecclesiasticalYearId: number,
   ) {
-    // Check if already enrolled
-    const existing = await this.prisma.enrollments.findFirst({
-      where: {
-        user_id: userId,
-        class_id: classId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Resolve club type IDs by name
+      const clubTypes = await tx.club_types.findMany({
+        where: { name: { in: ['Aventureros', 'Conquistadores', 'Guías Mayores'] } },
+      });
+      if (clubTypes.length !== 3) {
+        throw new InternalServerErrorException(
+          'No se pudieron resolver los tipos de club requeridos',
+        );
+      }
+      const aventurerosId = clubTypes.find((ct) => ct.name === 'Aventureros')!.club_type_id;
+      const conquistadoresId = clubTypes.find((ct) => ct.name === 'Conquistadores')!.club_type_id;
+      const gmId = clubTypes.find((ct) => ct.name === 'Guías Mayores')!.club_type_id;
 
-    if (existing) {
-      return existing;
-    }
+      // 2. Get target class
+      const targetClass = await tx.classes.findUnique({
+        where: { class_id: classId },
+      });
+      if (!targetClass) {
+        throw new NotFoundException('Clase no encontrada');
+      }
 
-    return this.prisma.enrollments.create({
-      data: {
-        user_id: userId,
-        class_id: classId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-        enrollment_date: new Date(),
-      },
-      include: {
-        classes: { select: { name: true } },
-        ecclesiastical_year: { select: { start_date: true, end_date: true } },
-      },
+      // 3. Check GM investiture pre-condition
+      if (targetClass.requires_invested_gm) {
+        const hasInvestiture = await tx.enrollments.findFirst({
+          where: {
+            user_id: userId,
+            investiture_status: 'INVESTIDO',
+            classes: { club_type_id: gmId },
+          },
+        });
+        if (!hasInvestiture) {
+          throw new ForbiddenException(
+            'Necesitás haber sido investido en al menos una clase de Guías Mayores',
+          );
+        }
+      }
+
+      // 4. Enrollment limit by club type
+      const { club_type_id } = targetClass;
+
+      if ([aventurerosId, conquistadoresId].includes(club_type_id)) {
+        const activeCount = await tx.enrollments.count({
+          where: {
+            user_id: userId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+            active: true,
+            classes: { club_type_id: { in: [aventurerosId, conquistadoresId] } },
+          },
+        });
+        if (activeCount >= 1) {
+          throw new ConflictException(
+            'Ya tenés una inscripción activa en Aventureros/Conquistadores',
+          );
+        }
+      } else if (club_type_id === gmId) {
+        const activeCount = await tx.enrollments.count({
+          where: {
+            user_id: userId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+            active: true,
+            classes: { club_type_id: gmId },
+          },
+        });
+        if (activeCount >= 2) {
+          throw new ConflictException(
+            'Ya tenés 2 inscripciones activas en Guías Mayores',
+          );
+        }
+      }
+
+      // 5. Duplicate check + create/reactivate
+      const existing = await tx.enrollments.findUnique({
+        where: {
+          user_id_class_id_ecclesiastical_year_id: {
+            user_id: userId,
+            class_id: classId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+      });
+
+      if (existing) {
+        if (existing.active) {
+          throw new ConflictException(
+            'El usuario ya tiene una inscripción activa para esta clase en el año eclesiástico indicado',
+          );
+        }
+
+        return tx.enrollments.update({
+          where: { enrollment_id: existing.enrollment_id },
+          data: { active: true },
+          include: {
+            classes: { select: { name: true } },
+            ecclesiastical_year: { select: { start_date: true, end_date: true } },
+          },
+        });
+      }
+
+      return tx.enrollments.create({
+        data: {
+          user_id: userId,
+          class_id: classId,
+          ecclesiastical_year_id: ecclesiasticalYearId,
+          enrollment_date: new Date(),
+        },
+        include: {
+          classes: { select: { name: true } },
+          ecclesiastical_year: { select: { start_date: true, end_date: true } },
+        },
+      });
     });
   }
 
