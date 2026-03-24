@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   investiture_status_enum,
   investiture_action_enum,
@@ -13,7 +15,12 @@ type EntityType = 'class' | 'honor';
 
 @Injectable()
 export class ValidationService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ValidationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // ========================================
   // SUBMIT FOR REVIEW
@@ -53,7 +60,7 @@ export class ValidationService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
@@ -88,6 +95,28 @@ export class ValidationService {
 
       return updated;
     });
+
+    // Notify coordinators/directors of the member's section
+    try {
+      const memberSection = await this.prisma.club_role_assignments.findFirst({
+        where: { user_id: userId, active: true },
+        select: { club_section_id: true },
+      });
+
+      if (memberSection?.club_section_id) {
+        this.notifications.sendToSectionRole(
+          memberSection.club_section_id,
+          ['coordinator', 'director'],
+          'Nueva clase enviada a revisión',
+          'Un miembro ha enviado una clase para validación',
+          { type: 'validation', entity_type: 'class', entity_id: String(enrollmentId) },
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Notification failed for class submission ${enrollmentId}: ${error.message}`);
+    }
+
+    return result;
   }
 
   private async submitHonorForReview(userHonorId: number, userId: string) {
@@ -119,7 +148,7 @@ export class ValidationService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.users_honors.update({
         where: { user_honor_id: userHonorId },
         data: {
@@ -142,6 +171,28 @@ export class ValidationService {
 
       return updated;
     });
+
+    // Notify coordinators/directors of the member's section
+    try {
+      const memberSection = await this.prisma.club_role_assignments.findFirst({
+        where: { user_id: userId, active: true },
+        select: { club_section_id: true },
+      });
+
+      if (memberSection?.club_section_id) {
+        this.notifications.sendToSectionRole(
+          memberSection.club_section_id,
+          ['coordinator', 'director'],
+          'Nuevo honor enviado a revisión',
+          'Un miembro ha enviado un honor para validación',
+          { type: 'validation', entity_type: 'honor', entity_id: String(userHonorId) },
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Notification failed for honor submission ${userHonorId}: ${error.message}`);
+    }
+
+    return result;
   }
 
   // ========================================
@@ -202,7 +253,7 @@ export class ValidationService {
         ? investiture_action_enum.APPROVED
         : investiture_action_enum.REJECTED;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
@@ -239,6 +290,27 @@ export class ValidationService {
 
       return updated;
     });
+
+    // Notify the member about approval/rejection
+    try {
+      const title = action === 'approved'
+        ? 'Clase aprobada'
+        : 'Clase rechazada';
+      const body = action === 'approved'
+        ? 'Tu clase ha sido aprobada por el revisor'
+        : `Tu clase ha sido rechazada: ${comment}`;
+
+      this.notifications.notifySafe(
+        enrollment.user_id,
+        title,
+        body,
+        { type: 'validation', entity_type: 'class', entity_id: String(enrollmentId), action },
+      );
+    } catch (error) {
+      this.logger.warn(`Notification failed for class review ${enrollmentId}: ${error.message}`);
+    }
+
+    return result;
   }
 
   private async reviewHonor(
@@ -257,7 +329,7 @@ export class ValidationService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Update validation_status + backward-compat boolean
       // On reject: transition to 'rejected' momentarily, then 'in_progress'
       // so the member can re-submit. We store 'in_progress' directly.
@@ -287,6 +359,27 @@ export class ValidationService {
 
       return updated;
     });
+
+    // Notify the member about approval/rejection
+    try {
+      const title = action === 'approved'
+        ? 'Honor aprobado'
+        : 'Honor rechazado';
+      const body = action === 'approved'
+        ? 'Tu honor ha sido aprobado por el revisor'
+        : `Tu honor ha sido rechazado: ${comment}`;
+
+      this.notifications.notifySafe(
+        userHonor.user_id,
+        title,
+        body,
+        { type: 'validation', entity_type: 'honor', entity_id: String(userHonorId), action },
+      );
+    } catch (error) {
+      this.logger.warn(`Notification failed for honor review ${userHonorId}: ${error.message}`);
+    }
+
+    return result;
   }
 
   // ========================================

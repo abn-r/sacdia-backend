@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -17,6 +17,8 @@ export interface BroadcastNotificationDto {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(private prisma: PrismaService) {}
 
   private isFcmConfigured(): boolean {
@@ -272,6 +274,109 @@ export class NotificationsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  // ========================================
+  // ROLE-BASED NOTIFICATION HELPERS
+  // ========================================
+
+  /**
+   * Send notification to all users with a specific club role in a given section.
+   * Useful for notifying directors, coordinators, counselors of a section.
+   */
+  async sendToSectionRole(
+    clubSectionId: number,
+    roleNames: string[],
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ): Promise<void> {
+    try {
+      const assignments = await this.prisma.club_role_assignments.findMany({
+        where: {
+          club_section_id: clubSectionId,
+          active: true,
+          status: 'active',
+          roles: { role_name: { in: roleNames } },
+        },
+        select: { user_id: true },
+      });
+
+      const userIds = [...new Set(assignments.map((a) => a.user_id))];
+      for (const userId of userIds) {
+        await this.sendToUser(
+          { userId, title, body, data },
+          'system',
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send section-role notification: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Send notification to all users with a specific global role (optionally scoped to a local field).
+   * Useful for notifying coordinators, admins, assistant_admins of a local field.
+   */
+  async sendToGlobalRole(
+    roleNames: string[],
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+    localFieldId?: number,
+  ): Promise<void> {
+    try {
+      const where: Record<string, unknown> = {
+        active: true,
+        roles: {
+          role_name: { in: roleNames },
+          role_category: 'GLOBAL',
+          active: true,
+        },
+      };
+
+      if (localFieldId) {
+        where.users = { local_field_id: localFieldId };
+      }
+
+      const userRoles = await this.prisma.users_roles.findMany({
+        where,
+        select: { user_id: true },
+      });
+
+      const userIds = [...new Set(userRoles.map((ur) => ur.user_id))];
+      for (const userId of userIds) {
+        await this.sendToUser(
+          { userId, title, body, data },
+          'system',
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send global-role notification: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Fire-and-forget wrapper: sends notification without blocking the caller.
+   * Logs errors but never throws.
+   */
+  async notifySafe(
+    userId: string,
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ): Promise<void> {
+    try {
+      await this.sendToUser({ userId, title, body, data }, 'system');
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send notification to user ${userId}: ${error.message}`,
+      );
+    }
   }
 
   /**

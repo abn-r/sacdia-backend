@@ -17,6 +17,7 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import { ApproveInvestitureDto } from './dto/approve-investiture.dto';
@@ -69,6 +70,7 @@ export class InvestitureService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ========================================
@@ -156,6 +158,26 @@ export class InvestitureService {
     this.logger.log(
       `Enrollment ${enrollmentId} submitted for validation by ${actorId}`,
     );
+
+    // Notify director of the member's section
+    try {
+      const memberSection = await this.prisma.club_role_assignments.findFirst({
+        where: { user_id: enrollment.user_id, active: true },
+        select: { club_section_id: true },
+      });
+
+      if (memberSection?.club_section_id) {
+        this.notifications.sendToSectionRole(
+          memberSection.club_section_id,
+          ['director'],
+          'Investidura enviada a validación',
+          'Un consejero ha enviado un enrollment para aprobación',
+          { type: 'investiture', entity_id: String(enrollmentId), status: 'submitted' },
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Notification failed for investiture submission ${enrollmentId}: ${error.message}`);
+    }
 
     // Step 7: Return result
     return {
@@ -255,6 +277,7 @@ export class InvestitureService {
       where: { enrollment_id: enrollmentId, active: true },
       select: {
         enrollment_id: true,
+        user_id: true,
         investiture_status: true,
       },
     });
@@ -301,6 +324,30 @@ export class InvestitureService {
     this.logger.log(
       `Enrollment ${enrollmentId} rejected by ${actorId} from status ${enrollment.investiture_status}`,
     );
+
+    // Notify the submitter (counselor) who originally submitted the enrollment
+    try {
+      const submittedEntry = await this.prisma.investiture_validation_history.findFirst({
+        where: {
+          enrollment_id: enrollmentId,
+          action: investiture_action_enum.SUBMITTED,
+        },
+        orderBy: { created_at: 'desc' },
+        select: { performed_by: true },
+      });
+
+      const submitterId = submittedEntry?.performed_by;
+      if (submitterId) {
+        this.notifications.notifySafe(
+          submitterId,
+          'Investidura rechazada',
+          `El enrollment ha sido rechazado: ${dto.reason}`,
+          { type: 'investiture', entity_id: String(enrollmentId), status: 'rejected' },
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Notification failed for investiture rejection ${enrollmentId}: ${error.message}`);
+    }
 
     return {
       enrollment_id: updatedEnrollment.enrollment_id,
@@ -393,6 +440,18 @@ export class InvestitureService {
     this.logger.log(
       `Enrollment ${enrollmentId} marked as invested by ${actorId}`,
     );
+
+    // Notify the member that they have been invested
+    try {
+      this.notifications.notifySafe(
+        enrollment.user_id,
+        'Felicidades, has sido investido',
+        'Tu investidura ha sido completada oficialmente.',
+        { type: 'investiture', entity_id: String(enrollmentId), status: 'invested' },
+      );
+    } catch (error) {
+      this.logger.warn(`Notification failed for investiture completion ${enrollmentId}: ${error.message}`);
+    }
 
     // Step 6: Return result
     return {
@@ -865,7 +924,11 @@ export class InvestitureService {
       where: { enrollment_id: enrollmentId, active: true },
       select: {
         enrollment_id: true,
+        user_id: true,
         investiture_status: true,
+        users: {
+          select: { local_field_id: true },
+        },
       },
     });
 
@@ -918,6 +981,51 @@ export class InvestitureService {
     this.logger.log(
       `Enrollment ${enrollmentId} transitioned ${expectedSourceStatus} → ${transition.target} by ${actorId}`,
     );
+
+    // 5. Send notifications based on the new status
+    try {
+      const notifData = { type: 'investiture', entity_id: String(enrollmentId), status: transition.target };
+
+      switch (transition.target) {
+        case investiture_status_enum.CLUB_APPROVED:
+          // Club approved → notify coordinator (global role scoped to local field)
+          if (enrollment.users.local_field_id) {
+            this.notifications.sendToGlobalRole(
+              ['coordinator'],
+              'Investidura aprobada por el club',
+              'Un enrollment ha sido aprobado por el director y requiere revisión del coordinador',
+              notifData,
+              enrollment.users.local_field_id,
+            );
+          }
+          break;
+
+        case investiture_status_enum.COORDINATOR_APPROVED:
+          // Coordinator approved → notify field (assistant_admin)
+          if (enrollment.users.local_field_id) {
+            this.notifications.sendToGlobalRole(
+              ['assistant_admin', 'admin'],
+              'Investidura aprobada por coordinador',
+              'Un enrollment ha sido aprobado por el coordinador y requiere aprobación del campo',
+              notifData,
+              enrollment.users.local_field_id,
+            );
+          }
+          break;
+
+        case investiture_status_enum.FIELD_APPROVED:
+          // Field approved → notify the member
+          this.notifications.notifySafe(
+            enrollment.user_id,
+            'Investidura aprobada por el campo',
+            'Tu investidura ha sido aprobada a nivel de campo. Pronto serás investido.',
+            notifData,
+          );
+          break;
+      }
+    } catch (error) {
+      this.logger.warn(`Notification failed for investiture transition ${enrollmentId}: ${error.message}`);
+    }
 
     return {
       enrollment_id: updatedEnrollment.enrollment_id,

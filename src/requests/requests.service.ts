@@ -6,12 +6,16 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RequestsService {
   private readonly logger = new Logger(RequestsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // ========================================
   // CLUB TRANSFERS
@@ -71,7 +75,7 @@ export class RequestsService {
       );
     }
 
-    return this.prisma.club_transfer_requests.create({
+    const result = await this.prisma.club_transfer_requests.create({
       data: {
         user_id: userId,
         from_section_id: fromSectionId,
@@ -94,6 +98,21 @@ export class RequestsService {
         },
       },
     });
+
+    // Notify director of from_section about the transfer request
+    try {
+      this.notifications.sendToSectionRole(
+        fromSectionId,
+        ['director'],
+        'Nueva solicitud de traslado',
+        `${result.user.name} ${result.user.paternal_last_name} ha solicitado un traslado`,
+        { type: 'transfer', entity_id: result.transfer_request_id, status: 'pending' },
+      );
+    } catch (error) {
+      this.logger.warn(`Notification failed for transfer request ${result.transfer_request_id}: ${error.message}`);
+    }
+
+    return result;
   }
 
   async reviewTransfer(
@@ -122,9 +141,11 @@ export class RequestsService {
       );
     }
 
+    let result;
+
     if (action === 'approved') {
       // Move user's club_role_assignments from old section to new section in a transaction
-      return this.prisma.$transaction(async (tx) => {
+      result = await this.prisma.$transaction(async (tx) => {
         // Update all active role assignments from old section to new section
         await tx.club_role_assignments.updateMany({
           where: {
@@ -177,40 +198,61 @@ export class RequestsService {
 
         return updated;
       });
+    } else {
+      // Rejected
+      result = await this.prisma.club_transfer_requests.update({
+        where: { transfer_request_id: requestId },
+        data: {
+          status: 'rejected',
+          reviewed_by: reviewerId,
+          review_comment: comment,
+          reviewed_at: new Date(),
+        },
+        include: {
+          user: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+          from_section: {
+            include: { club_types: { select: { name: true } } },
+          },
+          to_section: {
+            include: { club_types: { select: { name: true } } },
+          },
+          reviewer: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+        },
+      });
     }
 
-    // Rejected
-    return this.prisma.club_transfer_requests.update({
-      where: { transfer_request_id: requestId },
-      data: {
-        status: 'rejected',
-        reviewed_by: reviewerId,
-        review_comment: comment,
-        reviewed_at: new Date(),
-      },
-      include: {
-        user: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-          },
-        },
-        from_section: {
-          include: { club_types: { select: { name: true } } },
-        },
-        to_section: {
-          include: { club_types: { select: { name: true } } },
-        },
-        reviewer: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-          },
-        },
-      },
-    });
+    // Notify the member about the transfer decision
+    try {
+      const title = action === 'approved'
+        ? 'Traslado aprobado'
+        : 'Traslado rechazado';
+      const body = action === 'approved'
+        ? 'Tu solicitud de traslado ha sido aprobada'
+        : `Tu solicitud de traslado ha sido rechazada${comment ? ': ' + comment : ''}`;
+
+      this.notifications.notifySafe(
+        request.user_id,
+        title,
+        body,
+        { type: 'transfer', entity_id: requestId, action },
+      );
+    } catch (error) {
+      this.logger.warn(`Notification failed for transfer review ${requestId}: ${error.message}`);
+    }
+
+    return result;
   }
 
   async getTransferRequests(filters?: {
@@ -369,7 +411,7 @@ export class RequestsService {
       );
     }
 
-    return this.prisma.role_assignment_requests.create({
+    const result = await this.prisma.role_assignment_requests.create({
       data: {
         club_section_id: sectionId,
         user_id: userId,
@@ -397,6 +439,22 @@ export class RequestsService {
         },
       },
     });
+
+    // Notify directors (approvers) of the section about the new assignment request
+    try {
+      const userName = `${result.user.name} ${result.user.paternal_last_name}`;
+      this.notifications.sendToSectionRole(
+        sectionId,
+        ['director'],
+        'Nueva solicitud de asignación de rol',
+        `Se ha solicitado asignar el rol ${result.role.role_name} a ${userName}`,
+        { type: 'assignment', entity_id: result.request_id, status: 'pending' },
+      );
+    } catch (error) {
+      this.logger.warn(`Notification failed for assignment request ${result.request_id}: ${error.message}`);
+    }
+
+    return result;
   }
 
   async reviewAssignment(
@@ -425,8 +483,10 @@ export class RequestsService {
       );
     }
 
+    let result;
+
     if (action === 'approved') {
-      return this.prisma.$transaction(async (tx) => {
+      result = await this.prisma.$transaction(async (tx) => {
         // Re-validate role_slot_limits at approval time (in case things changed)
         const slotLimit = await tx.role_slot_limits.findUnique({
           where: { role_id: request.role_id },
@@ -509,45 +569,69 @@ export class RequestsService {
 
         return updated;
       });
+    } else {
+      // Rejected
+      result = await this.prisma.role_assignment_requests.update({
+        where: { request_id: requestId },
+        data: {
+          status: 'rejected',
+          approved_by: approverId,
+          comment,
+          reviewed_at: new Date(),
+        },
+        include: {
+          user: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+          role: { select: { role_id: true, role_name: true } },
+          requester: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+          approver: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+          club_section: {
+            include: { club_types: { select: { name: true } } },
+          },
+        },
+      });
     }
 
-    // Rejected
-    return this.prisma.role_assignment_requests.update({
-      where: { request_id: requestId },
-      data: {
-        status: 'rejected',
-        approved_by: approverId,
-        comment,
-        reviewed_at: new Date(),
-      },
-      include: {
-        user: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-          },
-        },
-        role: { select: { role_id: true, role_name: true } },
-        requester: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-          },
-        },
-        approver: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-          },
-        },
-        club_section: {
-          include: { club_types: { select: { name: true } } },
-        },
-      },
-    });
+    // Notify the requester and the target user about the decision
+    try {
+      const roleName = request.role.role_name;
+      const title = action === 'approved'
+        ? 'Asignación de rol aprobada'
+        : 'Asignación de rol rechazada';
+      const body = action === 'approved'
+        ? `La asignación del rol ${roleName} ha sido aprobada`
+        : `La asignación del rol ${roleName} ha sido rechazada${comment ? ': ' + comment : ''}`;
+      const notifData = { type: 'assignment', entity_id: requestId, action };
+
+      // Notify the requester (assistant-lf or whoever requested)
+      this.notifications.notifySafe(request.requested_by, title, body, notifData);
+
+      // Notify the target user (the person being assigned)
+      if (request.user_id !== request.requested_by) {
+        this.notifications.notifySafe(request.user_id, title, body, notifData);
+      }
+    } catch (error) {
+      this.logger.warn(`Notification failed for assignment review ${requestId}: ${error.message}`);
+    }
+
+    return result;
   }
 
   async getAssignmentRequests(filters?: {
