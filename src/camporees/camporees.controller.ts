@@ -8,6 +8,7 @@ import {
   Query,
   Body,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
   Request,
 } from '@nestjs/common';
@@ -26,7 +27,14 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { CreateCamporeeDto, UpdateCamporeeDto, RegisterMemberDto } from './dto';
+import {
+  CreateCamporeeDto,
+  UpdateCamporeeDto,
+  RegisterMemberDto,
+  EnrollClubDto,
+  CreatePaymentDto,
+  UpdatePaymentDto,
+} from './dto';
 
 @ApiTags('camporees')
 @Controller('camporees')
@@ -172,5 +180,151 @@ export class CamporeesController {
     @Param('userId') userId: string,
   ) {
     return this.camporeesService.removeMember(camporeeId, userId);
+  }
+
+  // ========================================
+  // CLUB ENROLLMENT
+  // ========================================
+
+  @Post(':camporeeId/clubs')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Inscribir club en camporee',
+    description:
+      'Inscribe una sección de club en el camporee (requiere permisos de registro)',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({ status: 201, description: 'Club inscrito exitosamente' })
+  @ApiResponse({ status: 400, description: 'Error de validación' })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async enrollClub(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Body() dto: EnrollClubDto,
+    @Request() req: any,
+  ) {
+    return this.camporeesService.enrollClub(camporeeId, dto, req.user.sub);
+  }
+
+  @Get(':camporeeId/clubs')
+  @RequirePermissions('attendance:read')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Listar clubes inscritos en camporee',
+    description:
+      'Obtiene la lista de secciones de club inscritas en el camporee',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({ status: 200, description: 'Lista de clubes inscritos' })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async getEnrolledClubs(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+  ) {
+    return this.camporeesService.getEnrolledClubs(camporeeId);
+  }
+
+  @Delete(':camporeeId/clubs/:camporeeClubId')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Cancelar inscripción de club',
+    description:
+      'Cancela la inscripción de una sección de club en el camporee',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'camporeeClubId', type: Number })
+  @ApiResponse({ status: 200, description: 'Inscripción cancelada' })
+  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  async cancelClubEnrollment(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('camporeeClubId', ParseIntPipe) camporeeClubId: number,
+  ) {
+    return this.camporeesService.cancelClubEnrollment(
+      camporeeId,
+      camporeeClubId,
+    );
+  }
+
+  // ========================================
+  // PAYMENTS
+  // ========================================
+
+  @Post(':camporeeId/members/:memberId/payments')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Registrar pago de miembro',
+    description:
+      'Registra un pago para un miembro inscrito en el camporee',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'memberId', type: Number })
+  @ApiResponse({ status: 201, description: 'Pago registrado exitosamente' })
+  @ApiResponse({ status: 400, description: 'Error de validación' })
+  @ApiResponse({ status: 404, description: 'Miembro o camporee no encontrado' })
+  async createPayment(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('memberId', ParseIntPipe) memberId: number,
+    @Body() dto: CreatePaymentDto,
+    @Request() req: any,
+  ) {
+    return this.camporeesService.createPayment(
+      camporeeId,
+      memberId,
+      dto,
+      req.user.sub,
+    );
+  }
+
+  @Get(':camporeeId/members/:memberId/payments')
+  @RequirePermissions('attendance:read')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Listar pagos de un miembro',
+    description:
+      'Obtiene la lista de pagos realizados por un miembro del camporee',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'memberId', type: Number })
+  @ApiResponse({ status: 200, description: 'Lista de pagos del miembro' })
+  @ApiResponse({ status: 404, description: 'Miembro o camporee no encontrado' })
+  async getMemberPayments(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('memberId', ParseIntPipe) memberId: number,
+  ) {
+    return this.camporeesService.getMemberPayments(camporeeId, memberId);
+  }
+
+  @Get(':camporeeId/payments')
+  @RequirePermissions('attendance:read')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Listar todos los pagos del camporee',
+    description:
+      'Obtiene un resumen de todos los pagos del camporee',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({ status: 200, description: 'Lista de pagos del camporee' })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async getCamporeePayments(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+  ) {
+    return this.camporeesService.getCamporeePayments(camporeeId);
+  }
+
+  @Patch('payments/:paymentId')
+  @RequirePermissions('attendance:manage')
+  @ApiOperation({
+    summary: 'Actualizar pago',
+    description: 'Actualiza los datos de un pago registrado',
+  })
+  @ApiParam({ name: 'paymentId', type: String })
+  @ApiResponse({ status: 200, description: 'Pago actualizado' })
+  @ApiResponse({ status: 404, description: 'Pago no encontrado' })
+  async updatePayment(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Body() dto: UpdatePaymentDto,
+  ) {
+    return this.camporeesService.updatePayment(paymentId, dto);
   }
 }

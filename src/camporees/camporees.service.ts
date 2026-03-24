@@ -15,6 +15,9 @@ import {
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { RegisterMemberDto } from './dto/register-member.dto';
+import { EnrollClubDto } from './dto/enroll-club.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
+import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { buildPartialUpdate } from '../common/utils/dto.utils';
 import {
   FILE_STORAGE_SERVICE,
@@ -456,6 +459,374 @@ export class CamporeesService {
       data: {
         active: false,
         modified_at: new Date(),
+      },
+    });
+  }
+
+  // ========================================
+  // CLUB ENROLLMENT
+  // ========================================
+
+  /**
+   * Enroll a club section in a camporee
+   * @param camporeeId - The local_camporee_id
+   * @param dto - Enroll club DTO
+   * @param registeredBy - User ID performing the enrollment
+   */
+  async enrollClub(
+    camporeeId: number,
+    dto: EnrollClubDto,
+    registeredBy: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Validate camporee exists and is active
+      const camporee = await tx.local_camporees.findUnique({
+        where: { local_camporee_id: camporeeId },
+      });
+
+      if (!camporee) {
+        throw new NotFoundException('Camporee not found');
+      }
+
+      if (!camporee.active) {
+        throw new BadRequestException('Camporee is not active');
+      }
+
+      // 2. Validate club section exists
+      const clubSection = await tx.club_sections.findUnique({
+        where: { club_section_id: dto.club_section_id },
+        include: {
+          club_types: { select: { club_type_id: true, name: true } },
+          clubs: { select: { club_id: true, name: true } },
+        },
+      });
+
+      if (!clubSection) {
+        throw new BadRequestException(
+          `Club section with ID ${dto.club_section_id} not found`,
+        );
+      }
+
+      // 3. Check for duplicate enrollment
+      const existingEnrollment = await tx.camporee_clubs.findFirst({
+        where: {
+          camporee_id: camporeeId,
+          club_section_id: dto.club_section_id,
+          active: true,
+        },
+      });
+
+      if (existingEnrollment) {
+        throw new BadRequestException(
+          'This club section is already enrolled in this camporee',
+        );
+      }
+
+      // 4. Create enrollment
+      return tx.camporee_clubs.create({
+        data: {
+          camporee_id: camporeeId,
+          camporee_type: 'local',
+          club_section_id: dto.club_section_id,
+          club_id: clubSection.main_club_id,
+          status: 'registered',
+          registered_by: registeredBy,
+          active: true,
+        },
+        include: {
+          club_sections: {
+            include: {
+              club_types: { select: { club_type_id: true, name: true } },
+              clubs: { select: { club_id: true, name: true } },
+            },
+          },
+          registrar: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Get all enrolled clubs for a camporee
+   * @param camporeeId - The local_camporee_id
+   */
+  async getEnrolledClubs(camporeeId: number) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    return this.prisma.camporee_clubs.findMany({
+      where: {
+        camporee_id: camporeeId,
+        active: true,
+      },
+      include: {
+        club_sections: {
+          include: {
+            club_types: { select: { club_type_id: true, name: true } },
+            clubs: { select: { club_id: true, name: true } },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  /**
+   * Cancel a club enrollment (soft delete)
+   * @param camporeeId - The local_camporee_id
+   * @param camporeeClubId - The camporee_club_id to cancel
+   */
+  async cancelClubEnrollment(camporeeId: number, camporeeClubId: number) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    const enrollment = await this.prisma.camporee_clubs.findFirst({
+      where: {
+        camporee_club_id: camporeeClubId,
+        camporee_id: camporeeId,
+        active: true,
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException(
+        `Club enrollment with ID ${camporeeClubId} not found in camporee ${camporeeId}`,
+      );
+    }
+
+    return this.prisma.camporee_clubs.update({
+      where: { camporee_club_id: camporeeClubId },
+      data: {
+        active: false,
+        status: 'cancelled',
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  // ========================================
+  // PAYMENTS
+  // ========================================
+
+  /**
+   * Register a payment for a camporee member
+   * @param camporeeId - The local_camporee_id
+   * @param memberId - The camporee_member_id
+   * @param dto - Create payment DTO
+   * @param registeredBy - User ID performing the registration
+   */
+  async createPayment(
+    camporeeId: number,
+    memberId: number,
+    dto: CreatePaymentDto,
+    registeredBy: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Validate camporee exists
+      const camporee = await tx.local_camporees.findUnique({
+        where: { local_camporee_id: camporeeId },
+      });
+
+      if (!camporee) {
+        throw new NotFoundException('Camporee not found');
+      }
+
+      // 2. Validate member is registered in this camporee
+      const member = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: memberId,
+          camporee_id: camporeeId,
+          active: true,
+        },
+      });
+
+      if (!member) {
+        throw new NotFoundException(
+          `Member with ID ${memberId} not found in camporee ${camporeeId}`,
+        );
+      }
+
+      // 3. Create payment
+      return tx.camporee_payments.create({
+        data: {
+          camporee_member_id: memberId,
+          amount: dto.amount,
+          payment_type: dto.payment_type,
+          reference: dto.reference,
+          notes: dto.notes,
+          registered_by: registeredBy,
+          paid_at: new Date(dto.paid_at),
+        },
+        include: {
+          camporee_member: {
+            select: {
+              camporee_member_id: true,
+              user_id: true,
+              users: {
+                select: {
+                  name: true,
+                  paternal_last_name: true,
+                  maternal_last_name: true,
+                },
+              },
+            },
+          },
+          registrar: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Get all payments for a specific camporee member
+   * @param camporeeId - The local_camporee_id
+   * @param memberId - The camporee_member_id
+   */
+  async getMemberPayments(camporeeId: number, memberId: number) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    // Validate member belongs to this camporee
+    const member = await this.prisma.camporee_members.findFirst({
+      where: {
+        camporee_member_id: memberId,
+        camporee_id: camporeeId,
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException(
+        `Member with ID ${memberId} not found in camporee ${camporeeId}`,
+      );
+    }
+
+    return this.prisma.camporee_payments.findMany({
+      where: { camporee_member_id: memberId },
+      include: {
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { paid_at: 'desc' },
+    });
+  }
+
+  /**
+   * Get all payments for a camporee (summary)
+   * @param camporeeId - The local_camporee_id
+   */
+  async getCamporeePayments(camporeeId: number) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    return this.prisma.camporee_payments.findMany({
+      where: {
+        camporee_member: {
+          camporee_id: camporeeId,
+        },
+      },
+      include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            user_id: true,
+            club_name: true,
+            users: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { paid_at: 'desc' },
+    });
+  }
+
+  /**
+   * Update an existing payment
+   * @param paymentId - The camporee_payment_id (UUID)
+   * @param dto - Update payment DTO
+   */
+  async updatePayment(paymentId: string, dto: UpdatePaymentDto) {
+    const payment = await this.prisma.camporee_payments.findUnique({
+      where: { camporee_payment_id: paymentId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException(`Payment with ID ${paymentId} not found`);
+    }
+
+    const updateData: Record<string, any> = {};
+
+    if (dto.amount !== undefined) updateData.amount = dto.amount;
+    if (dto.payment_type !== undefined) updateData.payment_type = dto.payment_type;
+    if (dto.reference !== undefined) updateData.reference = dto.reference;
+    if (dto.notes !== undefined) updateData.notes = dto.notes;
+    if (dto.paid_at !== undefined) updateData.paid_at = new Date(dto.paid_at);
+
+    return this.prisma.camporee_payments.update({
+      where: { camporee_payment_id: paymentId },
+      data: updateData,
+      include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            user_id: true,
+            users: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
       },
     });
   }
