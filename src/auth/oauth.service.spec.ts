@@ -25,6 +25,7 @@ describe('OAuthService', () => {
     users: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
     users_pr: {
       findUnique: jest.fn(),
@@ -268,6 +269,133 @@ describe('OAuthService', () => {
       // credential is filtered out from connectedProviders
       expect(result.user.connectedProviders).toEqual(['google']);
       expect(result.needsPostRegistration).toBe(true);
+    });
+
+    it('should sync user_image when OAuth returns an image and stored value differs', async () => {
+      const baResultWithImage = {
+        user: {
+          id: 'user-123',
+          email: 'juan@example.com',
+          name: 'Juan',
+          image: 'https://lh3.googleusercontent.com/new-photo.jpg',
+        },
+        session: { token: 'ba-session-token', expiresAt: new Date() },
+        accessToken: 'sacdia-hs256-jwt',
+      };
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResultWithImage);
+
+      // User row exists but with a stale (or null) image
+      mockTx.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        user_image: null,
+      });
+      mockTx.users.update.mockResolvedValue({ user_id: 'user-123' });
+      mockTx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-123', complete: true });
+      mockTx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        name: 'Juan',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: 'https://lh3.googleusercontent.com/new-photo.jpg',
+      });
+      mockPrismaService.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+      ]);
+
+      await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
+
+      expect(mockTx.users.update).toHaveBeenCalledWith({
+        where: { user_id: 'user-123' },
+        data: { user_image: 'https://lh3.googleusercontent.com/new-photo.jpg' },
+      });
+    });
+
+    it('should NOT update user_image when stored value already matches OAuth image', async () => {
+      const existingImage = 'https://lh3.googleusercontent.com/same-photo.jpg';
+      const baResultWithImage = {
+        user: {
+          id: 'user-123',
+          email: 'juan@example.com',
+          name: 'Juan',
+          image: existingImage,
+        },
+        session: { token: 'ba-session-token', expiresAt: new Date() },
+        accessToken: 'sacdia-hs256-jwt',
+      };
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResultWithImage);
+
+      // User row already has the same image
+      mockTx.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        user_image: existingImage,
+      });
+      mockTx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-123', complete: true });
+      mockTx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        name: 'Juan',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: existingImage,
+      });
+      mockPrismaService.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+      ]);
+
+      await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
+
+      expect(mockTx.users.update).not.toHaveBeenCalled();
+    });
+
+    it('should NOT update user_image when OAuth returns no image', async () => {
+      const baResultNoImage = {
+        user: {
+          id: 'user-123',
+          email: 'tim@example.com',
+          name: 'Tim',
+          image: null,
+        },
+        session: { token: 'ba-session-token', expiresAt: new Date() },
+        accessToken: 'sacdia-hs256-jwt',
+      };
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResultNoImage);
+
+      mockTx.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        user_image: null,
+      });
+      mockTx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-123', complete: true });
+      mockTx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        name: 'Tim',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: null,
+      });
+      mockPrismaService.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'apple' },
+      ]);
+
+      await service.handleCallback({ session_token: 'ba-session-token', provider: 'apple' });
+
+      expect(mockTx.users.update).not.toHaveBeenCalled();
     });
   });
 

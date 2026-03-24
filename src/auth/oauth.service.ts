@@ -277,6 +277,19 @@ export class OAuthService {
             user_image: image ?? null,
           },
         });
+      } else if (image && image !== user.user_image) {
+        // BA's Prisma adapter does NOT reliably write user_image on OAuth user
+        // creation (field mapping only applies to READs, not WRITEs — see
+        // better-auth.config.ts). Sync the OAuth profile photo on every login
+        // so the column is always up-to-date, even when the user updates their
+        // Google/Apple profile picture.
+        this.logger.log(
+          `Syncing OAuth profile image for user: ${userId}`,
+        );
+        await tx.users.update({
+          where: { user_id: userId },
+          data: { user_image: image },
+        });
       }
 
       // Ensure users_pr row exists
