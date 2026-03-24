@@ -8,6 +8,7 @@ import {
   Body,
   UseGuards,
   Req,
+  Res,
   ParseIntPipe,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -18,8 +19,11 @@ import {
   ApiBearerAuth,
   ApiQuery,
   ApiParam,
+  ApiProduces,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { MonthlyReportsService } from './monthly-reports.service';
+import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { UpdateManualDataDto } from './dto';
 import { RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
@@ -31,6 +35,7 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 export class MonthlyReportsController {
   constructor(
     private readonly monthlyReportsService: MonthlyReportsService,
+    private readonly monthlyReportsPdfService: MonthlyReportsPdfService,
   ) {}
 
   // ========================================
@@ -237,6 +242,46 @@ export class MonthlyReportsController {
       status,
     );
     return { status: 'success', data };
+  }
+
+  // ========================================
+  // DOWNLOAD PDF
+  // ========================================
+
+  @Get(':reportId/pdf')
+  @RequirePermissions('reports:download')
+  @ApiOperation({
+    summary: 'Descargar informe mensual en PDF',
+    description:
+      'Genera y descarga el informe mensual en formato PDF. Solo disponible para informes con estado "generated" o "submitted".',
+  })
+  @ApiParam({
+    name: 'reportId',
+    description: 'ID del informe mensual',
+    type: 'string',
+    format: 'uuid',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'Archivo PDF del informe' })
+  @ApiResponse({
+    status: 400,
+    description: 'Solo se pueden descargar informes generados o enviados',
+  })
+  @ApiResponse({ status: 404, description: 'Informe no encontrado' })
+  async downloadPdf(
+    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Res() res: Response,
+  ) {
+    const pdfBuffer =
+      await this.monthlyReportsPdfService.generatePdf(reportId);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="informe-mensual-${reportId}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    res.end(pdfBuffer);
   }
 
   // ========================================
