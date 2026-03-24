@@ -267,14 +267,15 @@ model club_types {
   created_at    DateTime?       @default(now()) @db.Timestamptz(6)
   modified_at   DateTime?       @default(now()) @db.Timestamptz(6)
   club_type_id  Int             @id @default(autoincrement())
-  activities    activities[]
-  classes       classes[]
-  club_ideals   club_ideals[]
-  club_sections club_sections[]
-  finances      finances[]
-  folders       folders[]
-  honors        honors[]
-  units         units[]
+  activities       activities[]
+  classes          classes[]
+  club_ideals      club_ideals[]
+  club_sections    club_sections[]
+  finances         finances[]
+  folders          folders[]
+  honors           honors[]
+  units            units[]
+  folder_templates folder_templates[]
 }
 
 model clubs {
@@ -386,6 +387,7 @@ model ecclesiastical_years {
   local_camporees_relation local_camporees[]       @relation("local_camporees_ecclesiastical_yearToecclesiastical_year")
   union_camporees_relation union_camporees[]       @relation("union_camporees_ecclesiastical_yearToecclesiastical_year")
   club_enrollments         club_enrollments[]
+  folder_templates         folder_templates[]
 }
 
 model enrollments {
@@ -870,6 +872,8 @@ model users {
   club_enrollments_created       club_enrollments[]               @relation("enrollment_creator")
   camporee_clubs_registered      camporee_clubs[]                 @relation("camporee_clubs_registered_by")
   camporee_payments_registered   camporee_payments[]              @relation("camporee_payments_registered_by")
+  annual_folder_evidences        annual_folder_evidences[]        @relation("annual_folder_evidences_uploader")
+  monthly_reports_submitted      monthly_reports[]                @relation("monthly_report_submitter")
 }
 
 model notification_logs {
@@ -1374,6 +1378,8 @@ model club_enrollments {
   club_section           club_sections        @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
   ecclesiastical_year    ecclesiastical_years  @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   creator                users                @relation("enrollment_creator", fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  annual_folder          annual_folders?
+  monthly_reports        monthly_reports[]
 
   @@unique([club_section_id, ecclesiastical_year_id])
   @@index([club_section_id], map: "idx_club_enrollments_club_section")
@@ -1416,4 +1422,135 @@ model camporee_payments {
   registrar           users            @relation("camporee_payments_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([camporee_member_id], map: "idx_camporee_payments_member_id")
+}
+
+// ========================================
+// ANNUAL FOLDERS (Phase 5)
+// ========================================
+
+model folder_templates {
+  folder_template_id     String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  name                   String   @db.VarChar(200)
+  club_type_id           Int
+  ecclesiastical_year_id Int
+  active                 Boolean  @default(true)
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  club_type              club_types           @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  ecclesiastical_year    ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  sections               folder_template_sections[]
+  annual_folders         annual_folders[]
+
+  @@unique([club_type_id, ecclesiastical_year_id])
+  @@index([club_type_id], map: "idx_folder_templates_club_type")
+  @@index([ecclesiastical_year_id], map: "idx_folder_templates_year")
+}
+
+model folder_template_sections {
+  section_id           String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  folder_template_id   String   @db.Uuid
+  name                 String   @db.VarChar(200)
+  description          String?
+  order                Int
+  required             Boolean  @default(true)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  folder_template      folder_templates          @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: Cascade, onUpdate: NoAction)
+  evidences            annual_folder_evidences[]
+
+  @@index([folder_template_id], map: "idx_folder_template_sections_template")
+}
+
+model annual_folders {
+  annual_folder_id     String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  club_enrollment_id   String    @db.Uuid
+  folder_template_id   String    @db.Uuid
+  status               String    @default("open") @db.VarChar(20)
+  submitted_at         DateTime? @db.Timestamptz(6)
+  closed_at            DateTime? @db.Timestamptz(6)
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  club_enrollment      club_enrollments        @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
+  folder_template      folder_templates        @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: NoAction, onUpdate: NoAction)
+  evidences            annual_folder_evidences[]
+
+  @@unique([club_enrollment_id])
+  @@index([folder_template_id], map: "idx_annual_folders_template")
+}
+
+model annual_folder_evidences {
+  evidence_id          String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  annual_folder_id     String   @db.Uuid
+  section_id           String   @db.Uuid
+  file_url             String
+  file_name            String   @db.VarChar(255)
+  uploaded_by          String   @db.Uuid
+  notes                String?
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  annual_folder        annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
+  section              folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
+  uploader             users                    @relation("annual_folder_evidences_uploader", fields: [uploaded_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([annual_folder_id], map: "idx_annual_folder_evidences_folder")
+  @@index([section_id], map: "idx_annual_folder_evidences_section")
+  @@index([uploaded_by], map: "idx_annual_folder_evidences_uploader")
+}
+
+// ========================================
+// MONTHLY REPORTS (Phase 6)
+// ========================================
+
+model monthly_reports {
+  monthly_report_id  String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  club_enrollment_id String    @db.Uuid
+  month              Int
+  year               Int
+  status             String    @default("draft")
+  generated_at       DateTime? @db.Timestamptz(6)
+  submitted_at       DateTime? @db.Timestamptz(6)
+  submitted_by       String?   @db.Uuid
+  snapshot_data      Json?
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  club_enrollment    club_enrollments              @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
+  submitter          users?                        @relation("monthly_report_submitter", fields: [submitted_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  manual_data        monthly_report_manual_data?
+
+  @@unique([club_enrollment_id, month, year])
+  @@index([club_enrollment_id], map: "idx_monthly_reports_enrollment")
+  @@index([status], map: "idx_monthly_reports_status")
+}
+
+model monthly_report_manual_data {
+  manual_data_id                String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  monthly_report_id             String   @unique @db.Uuid
+  planning_meetings             Int      @default(0)
+  parent_meetings               Int      @default(0)
+  youth_council_attendance      Int      @default(0)
+  church_board_attendance       Int      @default(0)
+  soul_target                   Int      @default(0)
+  unbaptized_members            Int      @default(0)
+  bible_studies_receiving       Int      @default(0)
+  has_weekly_bible_instruction  Boolean  @default(false)
+  bible_studies_given           Boolean  @default(false)
+  literature_distributed        Boolean  @default(false)
+  baptized_this_month           Int      @default(0)
+  total_baptized                Int      @default(0)
+  club_participation_description String?
+  community_service_description  String?
+  certificates_delivered        Boolean  @default(false)
+  members_have_booklet          Boolean  @default(false)
+  booklet_requirements_signed   Boolean  @default(false)
+  created_at                    DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  monthly_report                monthly_reports @relation(fields: [monthly_report_id], references: [monthly_report_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([monthly_report_id], map: "idx_monthly_report_manual_data_report")
 }
