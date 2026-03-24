@@ -4,6 +4,7 @@ import { Job } from 'bullmq';
 import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
+import { NotificationPreferencesService } from './notification-preferences.service';
 
 export const NOTIFICATIONS_QUEUE = 'notifications';
 
@@ -54,6 +55,17 @@ export type NotificationJobData =
   | SendToGlobalRoleJobData
   | BroadcastJobData;
 
+/**
+ * FCM error codes that indicate a token is permanently invalid and should be
+ * deactivated. Transient errors (rate limits, server errors, etc.) are NOT
+ * included — those tokens should be retried, not discarded.
+ */
+const PERMANENT_FCM_ERROR_CODES = new Set([
+  'messaging/invalid-registration-token',
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-argument',
+]);
+
 @Processor(NOTIFICATIONS_QUEUE)
 export class NotificationsProcessor extends WorkerHost {
   private readonly logger = new Logger(NotificationsProcessor.name);
@@ -61,6 +73,7 @@ export class NotificationsProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fcmTokensService: FcmTokensService,
+    private readonly preferencesService: NotificationPreferencesService,
   ) {
     super();
   }
@@ -88,6 +101,14 @@ export class NotificationsProcessor extends WorkerHost {
 
   private async handleSendToUser(job: Job<SendToUserJobData>) {
     const { userId, title, body, data, sentBy, source } = job.data;
+
+    const allowed = await this.preferencesService.isAllowedForUser(userId, source);
+    if (!allowed) {
+      this.logger.debug(
+        `Notification to user ${userId} skipped — opted out of source "${source}" (job ${job.id})`,
+      );
+      return { skipped: true, reason: 'user_preference' };
+    }
 
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: userId, active: true },
@@ -143,13 +164,20 @@ export class NotificationsProcessor extends WorkerHost {
       select: { user_id: true },
     });
 
-    const userIds = [...new Set(assignments.map((a) => a.user_id))];
+    const rawUserIds = [...new Set(assignments.map((a) => a.user_id))];
 
-    if (userIds.length === 0) {
+    if (rawUserIds.length === 0) {
       this.logger.debug(
         `No users found for section-role notification (sectionId=${clubSectionId}, roles=${roleNames.join(',')}) — job ${job.id}`,
       );
       return { skipped: true, reason: 'no-users' };
+    }
+
+    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const userIds = rawUserIds.filter((id) => allowedSet.has(id));
+
+    if (userIds.length === 0) {
+      return { skipped: true, reason: 'all-opted-out' };
     }
 
     const tokens = await this.prisma.user_fcm_tokens.findMany({
@@ -163,13 +191,22 @@ export class NotificationsProcessor extends WorkerHost {
 
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) => this.sendMulticast(batch, title, body, data)),
+    );
+
     let totalSuccess = 0;
     let totalFailure = 0;
-
-    for (const batch of batches) {
-      const result = await this.sendMulticast(batch, title, body, data);
-      totalSuccess += result.successCount;
-      totalFailure += result.failureCount;
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        totalSuccess += result.value.successCount;
+        totalFailure += result.value.failureCount;
+      } else {
+        this.logger.warn(
+          `handleSendToSectionRole batch failed: ${result.reason?.message ?? result.reason}`,
+        );
+      }
     }
 
     await this.prisma.notification_logs.create({
@@ -214,13 +251,20 @@ export class NotificationsProcessor extends WorkerHost {
       select: { user_id: true },
     });
 
-    const userIds = [...new Set(userRoles.map((ur) => ur.user_id))];
+    const rawUserIds = [...new Set(userRoles.map((ur) => ur.user_id))];
 
-    if (userIds.length === 0) {
+    if (rawUserIds.length === 0) {
       this.logger.debug(
         `No users found for global-role notification (roles=${roleNames.join(',')}) — job ${job.id}`,
       );
       return { skipped: true, reason: 'no-users' };
+    }
+
+    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const userIds = rawUserIds.filter((id) => allowedSet.has(id));
+
+    if (userIds.length === 0) {
+      return { skipped: true, reason: 'all-opted-out' };
     }
 
     const tokens = await this.prisma.user_fcm_tokens.findMany({
@@ -234,13 +278,22 @@ export class NotificationsProcessor extends WorkerHost {
 
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) => this.sendMulticast(batch, title, body, data)),
+    );
+
     let totalSuccess = 0;
     let totalFailure = 0;
-
-    for (const batch of batches) {
-      const result = await this.sendMulticast(batch, title, body, data);
-      totalSuccess += result.successCount;
-      totalFailure += result.failureCount;
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        totalSuccess += result.value.successCount;
+        totalFailure += result.value.failureCount;
+      } else {
+        this.logger.warn(
+          `handleSendToGlobalRole batch failed: ${result.reason?.message ?? result.reason}`,
+        );
+      }
     }
 
     await this.prisma.notification_logs.create({
@@ -269,7 +322,7 @@ export class NotificationsProcessor extends WorkerHost {
 
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { active: true },
-      select: { token: true },
+      select: { token: true, user_id: true },
     });
 
     if (tokens.length === 0) {
@@ -279,7 +332,18 @@ export class NotificationsProcessor extends WorkerHost {
       return { skipped: true, reason: 'no-tokens' };
     }
 
-    const tokenStrings = tokens.map((t) => t.token);
+    const uniqueUserIds = [...new Set(tokens.map((t) => t.user_id))];
+    const allowedSet = await this.preferencesService.filterAllowedUsers(uniqueUserIds, source);
+    const filteredTokens = tokens.filter((t) => allowedSet.has(t.user_id));
+
+    if (filteredTokens.length === 0) {
+      this.logger.debug(
+        `All users opted out of broadcast source "${source}" — job ${job.id}`,
+      );
+      return { skipped: true, reason: 'all-opted-out' };
+    }
+
+    const tokenStrings = filteredTokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
     let totalSuccess = 0;
     let totalFailure = 0;
@@ -313,7 +377,8 @@ export class NotificationsProcessor extends WorkerHost {
 
   /**
    * Sends a multicast FCM message to the given tokens.
-   * Automatically marks invalid tokens as inactive.
+   * Only marks tokens with permanent FCM error codes as inactive.
+   * Transient errors (rate limits, server errors) are logged but do not deactivate the token.
    * Returns success/failure counts.
    */
   async sendMulticast(
@@ -329,14 +394,24 @@ export class NotificationsProcessor extends WorkerHost {
     });
 
     if (response.failureCount > 0) {
-      const failedTokens = response.responses
-        .map((resp, idx) => (resp.success ? null : tokens[idx]))
-        .filter((token): token is string => token !== null);
+      const permanentlyFailedTokens: string[] = [];
 
-      if (failedTokens.length > 0) {
+      response.responses.forEach((resp, idx) => {
+        if (resp.success) return;
+        const code = resp.error?.code;
+        if (PERMANENT_FCM_ERROR_CODES.has(code ?? '')) {
+          permanentlyFailedTokens.push(tokens[idx]);
+        } else {
+          this.logger.warn(
+            `Transient FCM error for token ${tokens[idx]}: ${code ?? 'unknown'} — not deactivating`,
+          );
+        }
+      });
+
+      if (permanentlyFailedTokens.length > 0) {
         await this.prisma.user_fcm_tokens
           .updateMany({
-            where: { token: { in: failedTokens } },
+            where: { token: { in: permanentlyFailedTokens } },
             data: { active: false },
           })
           .catch((err: Error) => {

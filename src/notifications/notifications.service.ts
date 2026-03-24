@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
+import { NotificationPreferencesService } from './notification-preferences.service';
 import {
   NOTIFICATIONS_QUEUE,
   SendToUserJobData,
@@ -48,6 +49,17 @@ function isUuid(value: string): boolean {
   );
 }
 
+/**
+ * FCM error codes that indicate a token is permanently invalid and should be
+ * deactivated. Transient errors (rate limits, server errors, etc.) are NOT
+ * included — those tokens should be retried, not discarded.
+ */
+const PERMANENT_FCM_ERROR_CODES = new Set([
+  'messaging/invalid-registration-token',
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-argument',
+]);
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -60,6 +72,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fcmTokensService: FcmTokensService,
+    private readonly preferencesService: NotificationPreferencesService,
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
     private readonly queue: Queue | undefined,
@@ -352,6 +365,14 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
+    const allowed = await this.preferencesService.isAllowedForUser(dto.userId, source);
+    if (!allowed) {
+      this.logger.debug(
+        `Notification to user ${dto.userId} skipped — opted out of source "${source}"`,
+      );
+      return { success: false, skipped: true, reason: 'user_preference' };
+    }
+
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { user_id: dto.userId, active: true },
       select: { token: true },
@@ -393,14 +414,22 @@ export class NotificationsService {
   ) {
     const tokens = await this.prisma.user_fcm_tokens.findMany({
       where: { active: true },
-      select: { token: true },
+      select: { token: true, user_id: true },
     });
 
     if (tokens.length === 0) {
       return { success: false, message: 'No active tokens' };
     }
 
-    const tokenStrings = tokens.map((t) => t.token);
+    const uniqueUserIds = [...new Set(tokens.map((t) => t.user_id))];
+    const allowedSet = await this.preferencesService.filterAllowedUsers(uniqueUserIds, source);
+    const filteredTokens = tokens.filter((t) => allowedSet.has(t.user_id));
+
+    if (filteredTokens.length === 0) {
+      return { success: false, message: 'All users opted out' };
+    }
+
+    const tokenStrings = filteredTokens.map((t) => t.token);
     const batches = this.chunkArray(tokenStrings, 500);
     let totalSuccess = 0;
     let totalFailure = 0;
@@ -444,7 +473,16 @@ export class NotificationsService {
       select: { user_id: true },
     });
 
-    const userIds = members.map((m) => m.user_id);
+    const rawUserIds = [...new Set(members.map((m) => m.user_id))];
+    if (rawUserIds.length === 0) {
+      return { success: false, message: 'No members found' };
+    }
+
+    const allowedUserIds = [
+      ...(await this.preferencesService.filterAllowedUsers(rawUserIds, source)),
+    ];
+    const userIds = allowedUserIds;
+
     if (userIds.length === 0) {
       return { success: false, message: 'No members found' };
     }
@@ -492,7 +530,7 @@ export class NotificationsService {
       success: true,
       successCount: totalSuccess,
       failureCount: totalFailure,
-      memberCount: userIds.length,
+      memberCount: rawUserIds.length,
     };
   }
 
@@ -514,7 +552,14 @@ export class NotificationsService {
       select: { user_id: true },
     });
 
-    const userIds = [...new Set(assignments.map((a) => a.user_id))];
+    const rawUserIds = [...new Set(assignments.map((a) => a.user_id))];
+
+    if (rawUserIds.length === 0) {
+      return;
+    }
+
+    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const userIds = rawUserIds.filter((id) => allowedSet.has(id));
 
     if (userIds.length === 0) {
       return;
@@ -531,13 +576,22 @@ export class NotificationsService {
 
     const tokenStrings = tokens.map((t) => t.token);
     const batches = this.chunkArray(tokenStrings, 500);
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) => this.sendMulticastDirect(batch, title, body, data)),
+    );
+
     let totalSuccess = 0;
     let totalFailure = 0;
-
-    for (const batch of batches) {
-      const result = await this.sendMulticastDirect(batch, title, body, data);
-      totalSuccess += result.successCount;
-      totalFailure += result.failureCount;
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        totalSuccess += result.value.successCount;
+        totalFailure += result.value.failureCount;
+      } else {
+        this.logger.warn(
+          `sendToSectionRoleSync batch failed: ${result.reason?.message ?? result.reason}`,
+        );
+      }
     }
 
     await this.prisma.notification_logs.create({
@@ -581,7 +635,14 @@ export class NotificationsService {
       select: { user_id: true },
     });
 
-    const userIds = [...new Set(userRoles.map((ur) => ur.user_id))];
+    const rawUserIds = [...new Set(userRoles.map((ur) => ur.user_id))];
+
+    if (rawUserIds.length === 0) {
+      return;
+    }
+
+    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const userIds = rawUserIds.filter((id) => allowedSet.has(id));
 
     if (userIds.length === 0) {
       return;
@@ -598,13 +659,22 @@ export class NotificationsService {
 
     const tokenStrings = tokens.map((t) => t.token);
     const batches = this.chunkArray(tokenStrings, 500);
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) => this.sendMulticastDirect(batch, title, body, data)),
+    );
+
     let totalSuccess = 0;
     let totalFailure = 0;
-
-    for (const batch of batches) {
-      const result = await this.sendMulticastDirect(batch, title, body, data);
-      totalSuccess += result.successCount;
-      totalFailure += result.failureCount;
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        totalSuccess += result.value.successCount;
+        totalFailure += result.value.failureCount;
+      } else {
+        this.logger.warn(
+          `sendToGlobalRoleSync batch failed: ${result.reason?.message ?? result.reason}`,
+        );
+      }
     }
 
     await this.prisma.notification_logs.create({
@@ -628,6 +698,8 @@ export class NotificationsService {
 
   /**
    * Direct FCM multicast — used by the synchronous fallback methods.
+   * Only marks tokens with permanent FCM error codes as inactive.
+   * Transient errors (rate limits, server errors, etc.) are logged but do not deactivate the token.
    * The processor exposes its own equivalent `sendMulticast` method for the
    * async path.
    */
@@ -644,13 +716,23 @@ export class NotificationsService {
     });
 
     if (response.failureCount > 0) {
-      const failedTokens = response.responses
-        .map((resp, idx) => (resp.success ? null : tokens[idx]))
-        .filter((token): token is string => token !== null);
+      const permanentlyFailedTokens: string[] = [];
 
-      if (failedTokens.length > 0) {
+      response.responses.forEach((resp, idx) => {
+        if (resp.success) return;
+        const code = resp.error?.code;
+        if (PERMANENT_FCM_ERROR_CODES.has(code ?? '')) {
+          permanentlyFailedTokens.push(tokens[idx]);
+        } else {
+          this.logger.warn(
+            `Transient FCM error for token ${tokens[idx]}: ${code ?? 'unknown'} — not deactivating`,
+          );
+        }
+      });
+
+      if (permanentlyFailedTokens.length > 0) {
         await this.prisma.user_fcm_tokens.updateMany({
-          where: { token: { in: failedTokens } },
+          where: { token: { in: permanentlyFailedTokens } },
           data: { active: false },
         });
       }
