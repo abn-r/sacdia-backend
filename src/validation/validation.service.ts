@@ -74,6 +74,18 @@ export class ValidationService {
         },
       });
 
+      // Generic validation log
+      await tx.validation_logs.create({
+        data: {
+          entity_type: 'class',
+          entity_id: String(enrollmentId),
+          user_id: userId,
+          action: 'submitted',
+          performed_by: userId,
+          comment: 'Enviado a revision por el miembro',
+        },
+      });
+
       return updated;
     });
   }
@@ -95,16 +107,41 @@ export class ValidationService {
       );
     }
 
-    if (userHonor.validate === true) {
+    if (userHonor.validate === true || userHonor.validation_status === 'approved') {
       throw new BadRequestException(
         'El honor ya se encuentra validado',
       );
     }
 
-    // For honors, "submitting for review" means the user considers it ready.
-    // Since the schema only has a boolean `validate`, we return as-is.
-    // The coordinator will set validate=true via the review endpoint.
-    return userHonor;
+    if (userHonor.validation_status === 'pending_review') {
+      throw new BadRequestException(
+        'El honor ya se encuentra pendiente de revision',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.users_honors.update({
+        where: { user_honor_id: userHonorId },
+        data: {
+          validation_status: 'pending_review',
+          modified_at: new Date(),
+        },
+      });
+
+      // Generic validation log
+      await tx.validation_logs.create({
+        data: {
+          entity_type: 'honor',
+          entity_id: String(userHonorId),
+          user_id: userId,
+          action: 'submitted',
+          performed_by: userId,
+          comment: 'Honor enviado a revision por el miembro',
+        },
+      });
+
+      return updated;
+    });
   }
 
   // ========================================
@@ -188,6 +225,18 @@ export class ValidationService {
         },
       });
 
+      // Generic validation log
+      await tx.validation_logs.create({
+        data: {
+          entity_type: 'class',
+          entity_id: String(enrollmentId),
+          user_id: enrollment.user_id,
+          action,
+          performed_by: performedBy,
+          comment: comment ?? null,
+        },
+      });
+
       return updated;
     });
   }
@@ -208,16 +257,36 @@ export class ValidationService {
       );
     }
 
-    // For honors we only toggle the validate boolean
-    const updated = await this.prisma.users_honors.update({
-      where: { user_honor_id: userHonorId },
-      data: {
-        validate: action === 'approved',
-        modified_at: new Date(),
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // Update validation_status + backward-compat boolean
+      // On reject: transition to 'rejected' momentarily, then 'in_progress'
+      // so the member can re-submit. We store 'in_progress' directly.
+      const newValidationStatus =
+        action === 'approved' ? 'approved' : 'in_progress';
 
-    return updated;
+      const updated = await tx.users_honors.update({
+        where: { user_honor_id: userHonorId },
+        data: {
+          validate: action === 'approved',
+          validation_status: newValidationStatus,
+          modified_at: new Date(),
+        },
+      });
+
+      // Generic validation log
+      await tx.validation_logs.create({
+        data: {
+          entity_type: 'honor',
+          entity_id: String(userHonorId),
+          user_id: userHonor.user_id,
+          action,
+          performed_by: performedBy,
+          comment: comment ?? null,
+        },
+      });
+
+      return updated;
+    });
   }
 
   // ========================================
@@ -282,7 +351,7 @@ export class ValidationService {
     if (shouldIncludeHonors) {
       results.honors = await this.prisma.users_honors.findMany({
         where: {
-          validate: false,
+          validation_status: 'pending_review',
           active: true,
           ...(filters?.club_section_id
             ? {
@@ -326,61 +395,24 @@ export class ValidationService {
   // ========================================
 
   async getValidationHistory(entityType: EntityType, entityId: number) {
-    if (entityType === 'class') {
-      const enrollment = await this.prisma.enrollments.findUnique({
-        where: { enrollment_id: entityId },
-      });
-
-      if (!enrollment) {
-        throw new NotFoundException(
-          `Inscripcion con ID ${entityId} no encontrada`,
-        );
-      }
-
-      return this.prisma.investiture_validation_history.findMany({
-        where: { enrollment_id: entityId },
-        include: {
-          users: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              maternal_last_name: true,
-            },
-          },
-        },
-        orderBy: { created_at: 'desc' },
-      });
-    }
-
-    // For honors there is no history table yet — return the current state
-    const userHonor = await this.prisma.users_honors.findUnique({
-      where: { user_honor_id: entityId },
+    // Use the generic validation_logs table for both classes and honors
+    return this.prisma.validation_logs.findMany({
+      where: {
+        entity_type: entityType,
+        entity_id: String(entityId),
+      },
       include: {
-        honors: {
+        performer: {
           select: {
-            honor_id: true,
+            user_id: true,
             name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
           },
         },
       },
+      orderBy: { created_at: 'desc' },
     });
-
-    if (!userHonor) {
-      throw new NotFoundException(
-        `Honor de usuario con ID ${entityId} no encontrado`,
-      );
-    }
-
-    return [
-      {
-        entity_type: 'honor' as const,
-        entity_id: userHonor.user_honor_id,
-        current_status: userHonor.validate ? 'approved' : 'in_progress',
-        honor: userHonor.honors,
-        modified_at: userHonor.modified_at,
-      },
-    ];
   }
 
   // ========================================

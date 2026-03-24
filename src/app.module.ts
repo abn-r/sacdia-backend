@@ -36,6 +36,7 @@ import { ValidationModule } from './validation/validation.module';
 import { AnnualFoldersModule } from './annual-folders/annual-folders.module';
 import { MonthlyReportsModule } from './monthly-reports/monthly-reports.module';
 import { RequestsModule } from './requests/requests.module';
+import { SystemConfigModule } from './system-config/system-config.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -150,6 +151,7 @@ import { envValidationSchema } from './config/env.validation';
     AnnualFoldersModule,
     MonthlyReportsModule,
     RequestsModule,
+    SystemConfigModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

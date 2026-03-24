@@ -883,6 +883,8 @@ model users {
   assignment_requests_target     role_assignment_requests[]        @relation("assignment_target")
   assignment_requests_made       role_assignment_requests[]        @relation("assignment_requester")
   assignment_requests_approved   role_assignment_requests[]        @relation("assignment_approver")
+  validation_logs_as_user        validation_logs[]                 @relation("validation_log_user")
+  validation_logs_as_performer   validation_logs[]                 @relation("validation_log_performer")
 }
 
 model notification_logs {
@@ -1181,9 +1183,10 @@ model users_honors {
   user_honor_id Int       @id(map: "user_honors_pkey") @default(autoincrement())
   user_id       String    @db.Uuid
   honor_id      Int
-  active        Boolean   @default(true)
-  validate      Boolean   @default(false)
-  certificate   String    @db.VarChar
+  active            Boolean   @default(true)
+  validate          Boolean   @default(false)
+  validation_status String    @default("in_progress") @db.VarChar(20)
+  certificate       String    @db.VarChar
   images        Json      @default("[]")
   document      String?   @db.VarChar
   date          DateTime  @db.Date
@@ -1615,4 +1618,25 @@ model role_assignment_requests {
   @@index([user_id], map: "idx_assignment_requests_user")
   @@index([role_id], map: "idx_assignment_requests_role")
   @@index([status], map: "idx_assignment_requests_status")
+}
+
+// ========================================
+// VALIDATION LOGS (Generic audit trail)
+// ========================================
+
+model validation_logs {
+  validation_log_id String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  entity_type       String   @db.VarChar(20)
+  entity_id         String   @db.VarChar(50)
+  user_id           String   @db.Uuid
+  action            String   @db.VarChar(20)
+  performed_by      String   @db.Uuid
+  comment           String?
+  created_at        DateTime @default(now()) @db.Timestamptz()
+
+  user      users @relation("validation_log_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  performer users @relation("validation_log_performer", fields: [performed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([entity_type, entity_id])
+  @@index([user_id])
 }
