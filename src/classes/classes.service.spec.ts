@@ -1,4 +1,9 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClassesService } from './classes.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -218,6 +223,187 @@ describe('ClassesService', () => {
         enrollment_id: 901,
         score: 80,
       });
+    });
+  });
+
+  describe('enrollUser', () => {
+    // Reusable mock for prisma.$transaction
+    const setupTransactionMock = (mocks: {
+      clubTypes?: any[];
+      targetClass?: any;
+      investitureCheck?: any;
+      activeCount?: number;
+      existingEnrollment?: any;
+      createResult?: any;
+      updateResult?: any;
+    }) => {
+      const txMock = {
+        club_types: {
+          findMany: jest.fn().mockResolvedValue(
+            mocks.clubTypes ?? [
+              { club_type_id: 1, name: 'Aventureros' },
+              { club_type_id: 2, name: 'Conquistadores' },
+              { club_type_id: 3, name: 'Guías Mayores' },
+            ],
+          ),
+        },
+        classes: {
+          findUnique: jest.fn().mockResolvedValue(mocks.targetClass ?? null),
+        },
+        enrollments: {
+          findFirst: jest.fn().mockResolvedValue(mocks.investitureCheck ?? null),
+          count: jest.fn().mockResolvedValue(mocks.activeCount ?? 0),
+          findUnique: jest.fn().mockResolvedValue(mocks.existingEnrollment ?? null),
+          create: jest.fn().mockResolvedValue(mocks.createResult ?? { enrollment_id: 1 }),
+          update: jest.fn().mockResolvedValue(mocks.updateResult ?? { enrollment_id: 1 }),
+        },
+      };
+
+      // Note: mockPrismaService.$transaction is already defined in the module setup (jest.fn())
+      (mockPrismaService.$transaction as jest.Mock).mockImplementation(
+        async (callback: (tx: any) => Promise<any>) => callback(txMock),
+      );
+
+      return txMock;
+    };
+
+    const userId = 'test-user-uuid';
+    const classId = 10;
+    const yearId = 1;
+
+    it('should allow first enrollment in Aventureros when no active enrollments exist', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false },
+        activeCount: 0,
+        createResult: { enrollment_id: 1, class_id: 10 },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 1, class_id: 10 });
+    });
+
+    it('should block Conquistadores enrollment when 1 active Aventureros enrollment exists', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 2, requires_invested_gm: false },
+        activeCount: 1,
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should block Aventureros enrollment when 1 active Conquistadores enrollment exists', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false },
+        activeCount: 1,
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should block GM class with requires_invested_gm when no prior investiture', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: true },
+        investitureCheck: null,
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('should allow GM class with requires_invested_gm when INVESTIDO exists', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: true },
+        investitureCheck: { enrollment_id: 99, investiture_status: 'INVESTIDO' },
+        activeCount: 0,
+        createResult: { enrollment_id: 2, class_id: 10 },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 2, class_id: 10 });
+    });
+
+    it('should allow GM class without requires_invested_gm (no investiture needed)', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: false },
+        activeCount: 0,
+        createResult: { enrollment_id: 3, class_id: 10 },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 3, class_id: 10 });
+    });
+
+    it('should block GM enrollment when 2 active GM enrollments exist', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: false },
+        activeCount: 2,
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should block reactivation when enrollment limit is reached', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false },
+        activeCount: 1,
+        existingEnrollment: { enrollment_id: 5, active: false },
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should allow reactivation when under enrollment limit', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false },
+        activeCount: 0,
+        existingEnrollment: { enrollment_id: 5, active: false },
+        updateResult: { enrollment_id: 5, active: true },
+      });
+
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 5, active: true });
+    });
+
+    it('should throw InternalServerErrorException when club types not fully resolved', async () => {
+      setupTransactionMock({
+        clubTypes: [{ club_type_id: 1, name: 'Aventureros' }],
+        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false },
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
+
+    it('should throw NotFoundException when target class does not exist', async () => {
+      setupTransactionMock({
+        targetClass: null,
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw ConflictException when enrollment already exists and is active (regression)', async () => {
+      setupTransactionMock({
+        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false },
+        activeCount: 0,
+        existingEnrollment: { enrollment_id: 7, active: true },
+      });
+
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 });
