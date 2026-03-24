@@ -307,6 +307,156 @@ export class RbacService {
     return { success: true, message: 'Permiso removido del usuario' };
   }
 
+  // ─── Roles de usuario ──────────────────────────────────────
+
+  async getUserRoles(userId: string) {
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { user_id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+    }
+
+    return this.prisma.users_roles.findMany({
+      where: { user_id: userId, active: true },
+      include: {
+        roles: {
+          select: {
+            role_id: true,
+            role_name: true,
+            role_category: true,
+            active: true,
+          },
+        },
+      },
+      orderBy: { roles: { role_name: 'asc' } },
+    });
+  }
+
+  async assignRoleToUser(userId: string, roleId: string) {
+    const [user, role] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: { user_id: true },
+      }),
+      this.prisma.roles.findUnique({
+        where: { role_id: roleId },
+        select: { role_id: true, role_name: true },
+      }),
+    ]);
+
+    if (!user) {
+      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+    }
+
+    if (!role) {
+      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+    }
+
+    const existing = await this.prisma.users_roles.findFirst({
+      where: { user_id: userId, role_id: roleId },
+    });
+
+    if (existing) {
+      if (!existing.active) {
+        await this.prisma.users_roles.update({
+          where: { user_role_id: existing.user_role_id },
+          data: { active: true, modified_at: new Date() },
+        });
+        this.logger.log(
+          `Rol ${role.role_name} reactivado para usuario ${userId}`,
+        );
+        return { success: true, message: 'Rol reactivado' };
+      }
+      throw new ConflictException('El usuario ya tiene este rol asignado');
+    }
+
+    await this.prisma.users_roles.create({
+      data: { user_id: userId, role_id: roleId },
+    });
+
+    this.logger.log(`Rol ${role.role_name} asignado a usuario ${userId}`);
+    return { success: true, message: 'Rol asignado' };
+  }
+
+  async removeRoleFromUser(userId: string, roleId: string) {
+    const assignment = await this.prisma.users_roles.findFirst({
+      where: { user_id: userId, role_id: roleId, active: true },
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(
+        'Asignación de rol a usuario no encontrada',
+      );
+    }
+
+    await this.prisma.users_roles.update({
+      where: { user_role_id: assignment.user_role_id },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    this.logger.log(`Rol ${roleId} removido del usuario ${userId}`);
+    return { success: true, message: 'Rol removido del usuario' };
+  }
+
+  async bootstrapAdmin(userId: string) {
+    // Check if any super-admin already exists
+    const existingSuperAdmin = await this.prisma.users_roles.findFirst({
+      where: {
+        active: true,
+        roles: {
+          role_name: 'super-admin',
+          active: true,
+        },
+      },
+    });
+
+    if (existingSuperAdmin) {
+      throw new ConflictException(
+        'Ya existe un super-admin. Este endpoint solo funciona cuando no hay ninguno.',
+      );
+    }
+
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { user_id: true, email: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+    }
+
+    const superAdminRole = await this.prisma.roles.findFirst({
+      where: { role_name: 'super-admin', active: true },
+    });
+
+    if (!superAdminRole) {
+      throw new NotFoundException(
+        'Rol super-admin no encontrado en la base de datos. Ejecutá el seed primero.',
+      );
+    }
+
+    await this.prisma.users_roles.create({
+      data: {
+        user_id: userId,
+        role_id: superAdminRole.role_id,
+      },
+    });
+
+    this.logger.warn(
+      `BOOTSTRAP: Usuario ${user.email} (${userId}) asignado como primer super-admin`,
+    );
+
+    return {
+      success: true,
+      message: `Usuario ${user.email} es ahora super-admin`,
+      user_id: userId,
+      role: 'super-admin',
+    };
+  }
+
   async syncRolePermissions(roleId: string, permissionIds: string[]) {
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },

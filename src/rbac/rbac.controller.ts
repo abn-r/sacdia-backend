@@ -16,12 +16,18 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { RequirePermissions } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import {
+  JwtAuthGuard,
+  PermissionsGuard,
+  GlobalRolesGuard,
+} from '../common/guards';
 import { RbacService } from './rbac.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
+import { AssignRoleDto } from './dto/assign-role.dto';
+import { BootstrapAdminDto } from './dto/bootstrap-admin.dto';
 
 @ApiTags('rbac')
 @ApiBearerAuth()
@@ -166,5 +172,63 @@ export class RbacController {
     @Param('permissionId', ParseUUIDPipe) permissionId: string,
   ) {
     return this.rbacService.removePermissionFromUser(userId, permissionId);
+  }
+
+  // ─── Roles de usuario ─────────────────────────────────────
+
+  @Get('users/:userId/roles')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'super_admin')
+  @ApiOperation({ summary: 'Listar roles asignados a un usuario' })
+  @ApiResponse({ status: 200, description: 'Lista de roles del usuario' })
+  async getUserRoles(@Param('userId', ParseUUIDPipe) userId: string) {
+    const data = await this.rbacService.getUserRoles(userId);
+    return { status: 'success', data };
+  }
+
+  @Post('users/:userId/roles')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'super_admin')
+  @ApiOperation({ summary: 'Asignar un rol a un usuario' })
+  @ApiResponse({ status: 201, description: 'Rol asignado al usuario' })
+  async assignRoleToUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: AssignRoleDto,
+  ) {
+    return this.rbacService.assignRoleToUser(userId, dto.role_id);
+  }
+
+  @Delete('users/:userId/roles/:roleId')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'super_admin')
+  @ApiOperation({ summary: 'Remover un rol de un usuario' })
+  @ApiResponse({ status: 200, description: 'Rol removido del usuario' })
+  async removeRoleFromUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('roleId', ParseUUIDPipe) roleId: string,
+  ) {
+    return this.rbacService.removeRoleFromUser(userId, roleId);
+  }
+}
+
+// ─── Bootstrap Controller (sin auth) ────────────────────────
+
+@ApiTags('rbac-bootstrap')
+@Controller('admin/rbac')
+export class RbacBootstrapController {
+  constructor(private readonly rbacService: RbacService) {}
+
+  @Post('bootstrap-admin')
+  @ApiOperation({
+    summary:
+      'Crear el primer super_admin (solo funciona si no existe ninguno)',
+  })
+  @ApiResponse({ status: 201, description: 'Primer super_admin creado' })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe un super_admin',
+  })
+  async bootstrapAdmin(@Body() dto: BootstrapAdminDto) {
+    return this.rbacService.bootstrapAdmin(dto.user_id);
   }
 }
