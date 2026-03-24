@@ -30,6 +30,8 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 import {
   CreateCamporeeDto,
   UpdateCamporeeDto,
+  CreateUnionCamporeeDto,
+  UpdateUnionCamporeeDto,
   RegisterMemberDto,
   EnrollClubDto,
   CreatePaymentDto,
@@ -77,6 +79,127 @@ export class CamporeesController {
       req.authorization,
     );
   }
+
+  // ========================================
+  // UNION CAMPOREES
+  // ========================================
+
+  @Get('union')
+  @ApiOperation({
+    summary: 'Listar camporees de unión',
+    description: 'Obtiene todos los camporees a nivel de unión',
+  })
+  @ApiQuery({ name: 'union_id', required: false, type: Number })
+  @ApiQuery({ name: 'active', required: false, type: Boolean })
+  @ApiQuery({ name: 'year', required: false, type: Number })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de camporees de unión',
+  })
+  async findAllUnion(
+    @Request() req: any,
+    @Query('union_id', new ParseIntPipe({ optional: true })) unionId?: number,
+    @Query('active') active?: string,
+    @Query('year', new ParseIntPipe({ optional: true })) year?: number,
+    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    const pagination = new PaginationDto();
+    if (page) pagination.page = page;
+    if (limit) pagination.limit = Math.min(limit, 100);
+
+    return this.camporeesService.findAllUnion(
+      {
+        union_id: unionId,
+        active:
+          active === 'true' ? true : active === 'false' ? false : undefined,
+        year,
+      },
+      pagination,
+      req.authorization,
+    );
+  }
+
+  @Get('union/:camporeeId')
+  @ApiOperation({ summary: 'Obtener camporee de unión por ID' })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiResponse({ status: 200, description: 'Camporee de unión encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Camporee de unión no encontrado',
+  })
+  async findOneUnion(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+  ) {
+    return this.camporeesService.findOneUnion(camporeeId);
+  }
+
+  @Post('union')
+  @RequirePermissions('activities:create')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({
+    summary: 'Crear camporee de unión',
+    description:
+      'Crea un nuevo camporee a nivel de unión (requiere permisos de actividades)',
+  })
+  @ApiResponse({ status: 201, description: 'Camporee de unión creado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  async createUnion(
+    @Body() dto: CreateUnionCamporeeDto,
+    @Request() req: any,
+  ) {
+    return this.camporeesService.createUnion(
+      dto,
+      req.user.sub,
+      req.authorization,
+    );
+  }
+
+  @Patch('union/:camporeeId')
+  @RequirePermissions('activities:update')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({ summary: 'Actualizar camporee de unión' })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({ status: 200, description: 'Camporee de unión actualizado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Camporee de unión no encontrado',
+  })
+  async updateUnion(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Body() dto: UpdateUnionCamporeeDto,
+  ) {
+    return this.camporeesService.updateUnion(camporeeId, dto);
+  }
+
+  @Delete('union/:camporeeId')
+  @RequirePermissions('activities:delete')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({ summary: 'Desactivar camporee de unión' })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Camporee de unión desactivado',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Camporee de unión no encontrado',
+  })
+  async removeUnion(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+  ) {
+    return this.camporeesService.removeUnion(camporeeId);
+  }
+
+  // ========================================
+  // LOCAL CAMPOREES (detail)
+  // ========================================
 
   @Get(':camporeeId')
   @ApiOperation({ summary: 'Obtener camporee por ID' })

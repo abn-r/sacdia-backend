@@ -14,6 +14,8 @@ import {
 } from '../common/dto/pagination.dto';
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
+import { CreateUnionCamporeeDto } from './dto/create-union-camporee.dto';
+import { UpdateUnionCamporeeDto } from './dto/update-union-camporee.dto';
 import { RegisterMemberDto } from './dto/register-member.dto';
 import { EnrollClubDto } from './dto/enroll-club.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -249,6 +251,364 @@ export class CamporeesService {
 
     return this.prisma.local_camporees.update({
       where: { local_camporee_id: camporeeId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  // ========================================
+  // CRUD FOR UNION_CAMPOREES
+  // ========================================
+
+  /**
+   * Find all union camporees with pagination and filters
+   * @param filters - Filter by union_id, active status, or ecclesiastical year
+   * @param pagination - Pagination parameters
+   * @param authorization - Authorization snapshot for scoping
+   */
+  async findAllUnion(
+    filters?: { union_id?: number; active?: boolean; year?: number },
+    pagination?: PaginationDto,
+    authorization?: AuthorizationSnapshot,
+  ): Promise<PaginatedResult<any>> {
+    const where: any = {};
+
+    if (filters?.active !== undefined) {
+      where.active = filters.active;
+    }
+
+    if (filters?.union_id !== undefined) {
+      where.union_id = filters.union_id;
+    }
+
+    if (filters?.year !== undefined) {
+      where.ecclesiastical_year = filters.year;
+    }
+
+    this.applyUnionCamporeeScope(where, authorization);
+
+    const [data, total] = await Promise.all([
+      this.prisma.union_camporees.findMany({
+        where,
+        include: {
+          unions: {
+            select: {
+              union_id: true,
+              name: true,
+              abbreviation: true,
+            },
+          },
+          ecclesiastical_year_relation: {
+            select: {
+              year_id: true,
+              start_date: true,
+              end_date: true,
+            },
+          },
+          union_camporee_local_fields: {
+            where: { active: true },
+            include: {
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  abbreviation: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+        skip: pagination?.skip ?? 0,
+        take: pagination?.take ?? 20,
+      }),
+      this.prisma.union_camporees.count({ where }),
+    ]);
+
+    return createPaginatedResult(
+      data,
+      total,
+      pagination ?? new PaginationDto(),
+    );
+  }
+
+  /**
+   * Find a single union camporee by ID with local fields
+   * @param camporeeId - The union_camporee_id
+   */
+  async findOneUnion(camporeeId: number) {
+    const camporee = await this.prisma.union_camporees.findUnique({
+      where: { union_camporee_id: camporeeId },
+      include: {
+        unions: {
+          select: {
+            union_id: true,
+            name: true,
+            abbreviation: true,
+          },
+        },
+        ecclesiastical_year_relation: {
+          select: {
+            year_id: true,
+            start_date: true,
+            end_date: true,
+          },
+        },
+        union_camporee_local_fields: {
+          where: { active: true },
+          include: {
+            local_fields: {
+              select: {
+                local_field_id: true,
+                name: true,
+                abbreviation: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!camporee) {
+      throw new NotFoundException(
+        `Union camporee with ID ${camporeeId} not found`,
+      );
+    }
+
+    return camporee;
+  }
+
+  /**
+   * Create a new union camporee with optional local field associations
+   * @param dto - Create union camporee DTO
+   * @param createdBy - User ID creating the camporee
+   * @param authorization - Authorization snapshot for scope validation
+   */
+  async createUnion(
+    dto: CreateUnionCamporeeDto,
+    createdBy: string,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    await this.assertCanManageUnion(dto.union_id, authorization);
+
+    // Get the active ecclesiastical year
+    const activeYear = await this.prisma.ecclesiastical_years.findFirst({
+      where: { active: true },
+      orderBy: { start_date: 'desc' },
+    });
+
+    if (!activeYear) {
+      throw new BadRequestException(
+        'No active ecclesiastical year found. Please activate an ecclesiastical year first.',
+      );
+    }
+
+    // Validate union exists
+    const union = await this.prisma.unions.findUnique({
+      where: { union_id: dto.union_id },
+    });
+
+    if (!union) {
+      throw new BadRequestException(
+        `Union with ID ${dto.union_id} not found`,
+      );
+    }
+
+    // Validate local fields belong to the union (if provided)
+    if (dto.local_field_ids?.length) {
+      const localFields = await this.prisma.local_fields.findMany({
+        where: {
+          local_field_id: { in: dto.local_field_ids },
+          union_id: dto.union_id,
+        },
+      });
+
+      if (localFields.length !== dto.local_field_ids.length) {
+        throw new BadRequestException(
+          'Some local field IDs are invalid or do not belong to this union',
+        );
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Create the union camporee
+      const camporee = await tx.union_camporees.create({
+        data: {
+          name: dto.name,
+          description: dto.description,
+          start_date: new Date(dto.start_date),
+          end_date: new Date(dto.end_date),
+          union_id: dto.union_id,
+          includes_adventurers: dto.includes_adventurers,
+          includes_pathfinders: dto.includes_pathfinders,
+          includes_master_guides: dto.includes_master_guides,
+          union_camporee_place: dto.union_camporee_place,
+          registration_cost: dto.registration_cost,
+          ecclesiastical_year: activeYear.year_id,
+          active: true,
+        },
+      });
+
+      // Create local field associations if provided
+      if (dto.local_field_ids?.length) {
+        await tx.union_camporee_local_fields.createMany({
+          data: dto.local_field_ids.map((localFieldId) => ({
+            union_camporee_lf_id: camporee.union_camporee_id,
+            local_field_id: localFieldId,
+            active: true,
+          })),
+        });
+      }
+
+      // Return with relations
+      return tx.union_camporees.findUnique({
+        where: { union_camporee_id: camporee.union_camporee_id },
+        include: {
+          unions: {
+            select: {
+              union_id: true,
+              name: true,
+              abbreviation: true,
+            },
+          },
+          ecclesiastical_year_relation: {
+            select: {
+              year_id: true,
+              start_date: true,
+              end_date: true,
+            },
+          },
+          union_camporee_local_fields: {
+            where: { active: true },
+            include: {
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  abbreviation: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Update a union camporee
+   * @param camporeeId - The union_camporee_id
+   * @param dto - Update union camporee DTO
+   */
+  async updateUnion(camporeeId: number, dto: UpdateUnionCamporeeDto) {
+    await this.findOneUnion(camporeeId);
+
+    const { local_field_ids, ...fieldsToUpdate } = dto;
+
+    // Build update object with only defined fields, converting date fields
+    const updateData = {
+      ...buildPartialUpdate(fieldsToUpdate, ['start_date', 'end_date']),
+      modified_at: new Date(),
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      // Update the camporee itself
+      const camporee = await tx.union_camporees.update({
+        where: { union_camporee_id: camporeeId },
+        data: updateData,
+      });
+
+      // Update local field associations if provided
+      if (local_field_ids !== undefined) {
+        // Validate local fields belong to the union
+        if (local_field_ids.length) {
+          const localFields = await tx.local_fields.findMany({
+            where: {
+              local_field_id: { in: local_field_ids },
+              union_id: camporee.union_id,
+            },
+          });
+
+          if (localFields.length !== local_field_ids.length) {
+            throw new BadRequestException(
+              'Some local field IDs are invalid or do not belong to this union',
+            );
+          }
+        }
+
+        // Soft-delete existing associations
+        await tx.union_camporee_local_fields.updateMany({
+          where: { union_camporee_lf_id: camporeeId },
+          data: { active: false, modified_at: new Date() },
+        });
+
+        // Create new associations
+        if (local_field_ids.length) {
+          for (const localFieldId of local_field_ids) {
+            await tx.union_camporee_local_fields.upsert({
+              where: {
+                union_camporee_lf_id_local_field_id: {
+                  union_camporee_lf_id: camporeeId,
+                  local_field_id: localFieldId,
+                },
+              },
+              update: { active: true, modified_at: new Date() },
+              create: {
+                union_camporee_lf_id: camporeeId,
+                local_field_id: localFieldId,
+                active: true,
+              },
+            });
+          }
+        }
+      }
+
+      // Return with relations
+      return tx.union_camporees.findUnique({
+        where: { union_camporee_id: camporeeId },
+        include: {
+          unions: {
+            select: {
+              union_id: true,
+              name: true,
+              abbreviation: true,
+            },
+          },
+          ecclesiastical_year_relation: {
+            select: {
+              year_id: true,
+              start_date: true,
+              end_date: true,
+            },
+          },
+          union_camporee_local_fields: {
+            where: { active: true },
+            include: {
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  abbreviation: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Soft delete a union camporee (set active = false)
+   * @param camporeeId - The union_camporee_id
+   */
+  async removeUnion(camporeeId: number) {
+    await this.findOneUnion(camporeeId);
+
+    return this.prisma.union_camporees.update({
+      where: { union_camporee_id: camporeeId },
       data: {
         active: false,
         modified_at: new Date(),
@@ -927,6 +1287,49 @@ export class CamporeesService {
     where.local_fields = {
       union_id: scope.id,
     };
+  }
+
+  private applyUnionCamporeeScope(
+    where: Record<string, unknown>,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    const scope = this.resolveCamporeeAccessScope(authorization);
+    if (!scope) {
+      return;
+    }
+
+    if (scope.type === 'union') {
+      where.union_id = scope.id;
+      return;
+    }
+
+    // local_field scope: show union camporees where the local field participates
+    if (scope.type === 'local_field') {
+      where.union_camporee_local_fields = {
+        some: {
+          local_field_id: scope.id,
+          active: true,
+        },
+      };
+    }
+  }
+
+  private async assertCanManageUnion(
+    unionId: number,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    const scope = this.resolveCamporeeAccessScope(authorization);
+    if (!scope) {
+      return;
+    }
+
+    if (scope.type === 'union' && scope.id === unionId) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      'You do not have access to manage union camporees',
+    );
   }
 
   private async assertCanManageLocalField(
