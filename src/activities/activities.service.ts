@@ -24,6 +24,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ActivitiesService {
@@ -34,6 +35,7 @@ export class ActivitiesService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private readonly activityInclude = {
@@ -161,6 +163,10 @@ export class ActivitiesService {
         lat: dto.lat,
         long: dto.long,
         activity_time: dto.activity_time || '09:00',
+        activity_date: dto.activity_date ? new Date(dto.activity_date) : null,
+        activity_end_date: dto.activity_end_date
+          ? new Date(dto.activity_end_date)
+          : null,
         activity_place: dto.activity_place,
         image: dto.image,
         platform: dto.platform || 0,
@@ -189,6 +195,31 @@ export class ActivitiesService {
       include: this.activityInclude,
     });
 
+    // Fire-and-forget: notify section members about the new activity
+    const dateLabel = created.activity_date
+      ? ` - ${created.activity_date.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`
+      : '';
+    this.notificationsService
+      .sendToClubMembers(
+        sectionId,
+        {
+          title: 'Nueva actividad programada',
+          body: `${created.name}${dateLabel}`,
+          data: {
+            type: 'activity',
+            entity_id: String(created.activity_id),
+            action: 'created',
+          },
+        },
+        'system',
+        'activities:created',
+      )
+      .catch((err: Error) =>
+        this.logger.warn(
+          `Failed to send activity-created notification (activity=${created.activity_id}): ${err.message}`,
+        ),
+      );
+
     return this.applySignedPrivateUrls(this.attachInstances(created));
   }
 
@@ -203,8 +234,22 @@ export class ActivitiesService {
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.lat !== undefined) updateData.lat = dto.lat;
     if (dto.long !== undefined) updateData.long = dto.long;
-    if (dto.activity_time !== undefined)
+    if (dto.activity_time !== undefined) {
       updateData.activity_time = dto.activity_time;
+      // Reset reminder so cron re-evaluates with the new time
+      updateData.reminder_sent = false;
+    }
+    if (dto.activity_date !== undefined) {
+      updateData.activity_date = dto.activity_date
+        ? new Date(dto.activity_date)
+        : null;
+      // Reset reminder so cron re-evaluates with the new date
+      updateData.reminder_sent = false;
+    }
+    if (dto.activity_end_date !== undefined)
+      updateData.activity_end_date = dto.activity_end_date
+        ? new Date(dto.activity_end_date)
+        : null;
     if (dto.activity_place !== undefined)
       updateData.activity_place = dto.activity_place;
     if (dto.image !== undefined) updateData.image = dto.image;

@@ -39,6 +39,7 @@ import { RequestsModule } from './requests/requests.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { YearEndModule } from './year-end/year-end.module';
 import { envValidationSchema } from './config/env.validation';
+import { buildBullRootConfig } from './config/bullmq.config';
 
 @Module({
   imports: [
@@ -52,6 +53,12 @@ import { envValidationSchema } from './config/env.validation';
         abortEarly: false,
       },
     }),
+
+    // ==========================================
+    // QUEUE - BullMQ (async notifications)
+    // Registered only when REDIS_URL is valid.
+    // ==========================================
+    ...buildBullRootConfig(),
 
     // ==========================================
     // SCHEDULING - Cron jobs

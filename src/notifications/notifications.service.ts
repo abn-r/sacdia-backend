@@ -12,6 +12,7 @@ import {
   SendToGlobalRoleJobData,
   BroadcastJobData,
 } from './notifications.processor';
+import { isUuid, chunkArray } from '../common/utils/notification.utils';
 
 export interface SendNotificationDto {
   userId: string;
@@ -41,13 +42,6 @@ const DEFAULT_JOB_OPTIONS = {
   removeOnComplete: { count: 100 },
   removeOnFail: { count: 50 },
 };
-
-/** Returns true when the string looks like a valid UUID v4. */
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value,
-  );
-}
 
 /**
  * FCM error codes that indicate a token is permanently invalid and should be
@@ -430,7 +424,7 @@ export class NotificationsService {
     }
 
     const tokenStrings = filteredTokens.map((t) => t.token);
-    const batches = this.chunkArray(tokenStrings, 500);
+    const batches = chunkArray(tokenStrings, 500);
     let totalSuccess = 0;
     let totalFailure = 0;
 
@@ -497,7 +491,7 @@ export class NotificationsService {
     }
 
     const tokenStrings = tokens.map((t) => t.token);
-    const batches = this.chunkArray(tokenStrings, 500);
+    const batches = chunkArray(tokenStrings, 500);
     let totalSuccess = 0;
     let totalFailure = 0;
 
@@ -575,7 +569,7 @@ export class NotificationsService {
     }
 
     const tokenStrings = tokens.map((t) => t.token);
-    const batches = this.chunkArray(tokenStrings, 500);
+    const batches = chunkArray(tokenStrings, 500);
 
     const batchResults = await Promise.allSettled(
       batches.map((batch) => this.sendMulticastDirect(batch, title, body, data)),
@@ -658,7 +652,7 @@ export class NotificationsService {
     }
 
     const tokenStrings = tokens.map((t) => t.token);
-    const batches = this.chunkArray(tokenStrings, 500);
+    const batches = chunkArray(tokenStrings, 500);
 
     const batchResults = await Promise.allSettled(
       batches.map((batch) => this.sendMulticastDirect(batch, title, body, data)),
@@ -754,15 +748,4 @@ export class NotificationsService {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Utility
-  // ---------------------------------------------------------------------------
-
-  private chunkArray<T>(array: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-  }
 }

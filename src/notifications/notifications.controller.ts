@@ -5,17 +5,26 @@ import {
   Param,
   Delete,
   Get,
+  Put,
   Request,
   UseGuards,
   ParseUUIDPipe,
   Query,
   ParseIntPipe,
   DefaultValuePipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
+import { NotificationPreferencesService } from './notification-preferences.service';
 import { FcmTokensService } from './fcm-tokens.service';
-import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsObject,
+  IsBoolean,
+} from 'class-validator';
 import { GlobalRoles } from '../common/decorators';
 import { RequirePermissions } from '../common/decorators';
 import {
@@ -24,8 +33,17 @@ import {
   PermissionsGuard,
   GlobalRolesGuard,
 } from '../common/guards';
+import {
+  NOTIFICATION_CATEGORIES,
+  NotificationCategory,
+} from './notification-categories.constants';
 
 // DTOs
+class UpdatePreferenceDto {
+  @IsBoolean()
+  enabled: boolean;
+}
+
 class SendNotificationDto {
   @IsString()
   @IsNotEmpty()
@@ -80,6 +98,7 @@ export class NotificationsController {
   constructor(
     private notificationsService: NotificationsService,
     private fcmTokensService: FcmTokensService,
+    private preferencesService: NotificationPreferencesService,
   ) {}
 
   @Post('send')
@@ -123,6 +142,50 @@ export class NotificationsController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
     return this.notificationsService.getNotificationHistory(page, limit);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notification preferences (opt-out per category)
+  // ---------------------------------------------------------------------------
+
+  @Get('preferences')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Get current user notification preferences',
+    description:
+      'Returns all known categories with their enabled status. Missing rows default to enabled=true (opt-out model).',
+  })
+  async getPreferences(@Request() req) {
+    const preferences = await this.preferencesService.getUserPreferences(
+      req.user.sub,
+    );
+    return { preferences };
+  }
+
+  @Put('preferences/:category')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Update notification preference for a category',
+    description:
+      'Upserts the enabled status for the given category. admin:* notifications cannot be opted out.',
+  })
+  async setPreference(
+    @Param('category') category: string,
+    @Body() dto: UpdatePreferenceDto,
+    @Request() req,
+  ) {
+    const validCategory = NOTIFICATION_CATEGORIES.find((c) => c === category);
+    if (!validCategory) {
+      throw new BadRequestException(
+        `Unknown category "${category}". Valid categories: ${NOTIFICATION_CATEGORIES.join(', ')}`,
+      );
+    }
+    const preferences = await this.preferencesService.setPreference(
+      req.user.sub,
+      validCategory as NotificationCategory,
+      dto.enabled,
+    );
+    return { preferences };
   }
 }
 

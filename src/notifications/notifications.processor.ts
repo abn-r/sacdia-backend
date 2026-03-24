@@ -5,6 +5,7 @@ import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { isUuid, chunkArray } from '../common/utils/notification.utils';
 
 export const NOTIFICATIONS_QUEUE = 'notifications';
 
@@ -437,23 +438,4 @@ export class NotificationsProcessor extends WorkerHost {
       failureCount: response.failureCount,
     };
   }
-}
-
-// ---------------------------------------------------------------------------
-// Utility
-// ---------------------------------------------------------------------------
-
-function chunkArray<T>(array: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
-
-/** Returns true when the string looks like a valid UUID v4. */
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value,
-  );
 }

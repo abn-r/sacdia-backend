@@ -5,11 +5,43 @@ import {
   IsBoolean,
   IsNumber,
   IsArray,
+  IsDateString,
+  ValidateIf,
+  registerDecorator,
+  ValidationOptions,
+  ValidationArguments,
   Min,
   Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+function IsAfterOrEqualDate(
+  property: string,
+  validationOptions?: ValidationOptions,
+) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isAfterOrEqualDate',
+      target: (object as any).constructor,
+      propertyName,
+      options: validationOptions,
+      constraints: [property],
+      validator: {
+        validate(value: any, args: ValidationArguments) {
+          const [relatedPropertyName] = args.constraints as string[];
+          const relatedValue = (args.object as any)[relatedPropertyName];
+          if (!value || !relatedValue) return true;
+          return new Date(value) >= new Date(relatedValue);
+        },
+        defaultMessage(args: ValidationArguments) {
+          const [relatedPropertyName] = args.constraints as string[];
+          return `${args.property} must be greater than or equal to ${relatedPropertyName}`;
+        },
+      },
+    });
+  };
+}
 
 export class CreateActivityDto {
   @ApiProperty({ description: 'Nombre de la actividad' })
@@ -46,6 +78,27 @@ export class CreateActivityDto {
   @IsOptional()
   @IsString()
   activity_time?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha de la actividad (ISO date: YYYY-MM-DD)',
+    example: '2025-06-15',
+  })
+  @IsOptional()
+  @IsDateString()
+  activity_date?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha de fin de la actividad (ISO date: YYYY-MM-DD). Debe ser >= activity_date.',
+    example: '2025-06-17',
+  })
+  @IsOptional()
+  @ValidateIf((o) => o.activity_end_date !== undefined)
+  @IsDateString()
+  @IsAfterOrEqualDate('activity_date', {
+    message: 'activity_end_date debe ser mayor o igual a activity_date',
+  })
+  activity_end_date?: string;
 
   @ApiProperty({ description: 'Lugar de la actividad' })
   @IsString()
@@ -118,6 +171,27 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsString()
   activity_time?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha de la actividad (ISO date: YYYY-MM-DD)',
+    example: '2025-06-15',
+  })
+  @IsOptional()
+  @IsDateString()
+  activity_date?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha de fin de la actividad (ISO date: YYYY-MM-DD). Debe ser >= activity_date.',
+    example: '2025-06-17',
+  })
+  @IsOptional()
+  @ValidateIf((o) => o.activity_end_date !== undefined)
+  @IsDateString()
+  @IsAfterOrEqualDate('activity_date', {
+    message: 'activity_end_date debe ser mayor o igual a activity_date',
+  })
+  activity_end_date?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

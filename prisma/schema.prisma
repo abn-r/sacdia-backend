@@ -15,6 +15,8 @@ model activities {
   lat                Float
   long               Float
   activity_time      String               @default("09:00") @db.VarChar(10)
+  activity_date      DateTime?            @db.Date
+  activity_end_date  DateTime?            @db.Date
   activity_place     String               @default("place")
   image              String
   platform           Int                  @default(0)
@@ -22,6 +24,7 @@ model activities {
   additional_data    String?
   attendees          Json?                @db.Json
   classes            Json?                @db.Json
+  reminder_sent      Boolean              @default(false)
   created_by         String               @db.Uuid
   created_at         DateTime?            @db.Timestamptz(6)
   modified_at        DateTime?            @db.Timestamptz(6)
@@ -885,6 +888,22 @@ model users {
   assignment_requests_approved   role_assignment_requests[]        @relation("assignment_approver")
   validation_logs_as_user        validation_logs[]                 @relation("validation_log_user")
   validation_logs_as_performer   validation_logs[]                 @relation("validation_log_performer")
+  notification_preferences       notification_preferences[]
+}
+
+model notification_preferences {
+  preference_id String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String    @db.Uuid
+  category      String    @db.VarChar(50)
+  enabled       Boolean   @default(true)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  modified_at   DateTime? @updatedAt @db.Timestamptz(6)
+
+  users users @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@unique([user_id, category])
+  @@index([user_id])
+  @@index([category, enabled], map: "idx_notification_preferences_category_enabled")
 }
 
 model notification_logs {
@@ -904,6 +923,7 @@ model notification_logs {
 
   @@index([sent_by], map: "idx_notification_logs_sender")
   @@index([created_at], map: "idx_notification_logs_created")
+  @@index([source], map: "idx_notification_logs_source")
 }
 
 model user_fcm_tokens {
@@ -918,8 +938,6 @@ model user_fcm_tokens {
   modified_at  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
   users        users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([user_id])
-  @@index([active])
   @@index([active], map: "idx_user_fcm_tokens_active")
   @@index([user_id], map: "idx_user_fcm_tokens_user_id")
   @@map("user_fcm_tokens")
