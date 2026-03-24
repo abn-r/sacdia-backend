@@ -1,5 +1,6 @@
 import { Module, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
@@ -49,6 +50,11 @@ import { envValidationSchema } from './config/env.validation';
         abortEarly: false,
       },
     }),
+
+    // ==========================================
+    // SCHEDULING - Cron jobs
+    // ==========================================
+    ScheduleModule.forRoot(),
 
     // ==========================================
     // LOGGING - Pino (pretty en desarrollo, JSON en producción)
