@@ -319,7 +319,10 @@ model club_sections {
   folders_modules_records folders_modules_records[]
   folders_section_records folders_section_records[]
   units                   units[]
-  club_enrollments        club_enrollments[]
+  club_enrollments              club_enrollments[]
+  transfer_requests_from        club_transfer_requests[]   @relation("transfer_from")
+  transfer_requests_to          club_transfer_requests[]   @relation("transfer_to")
+  role_assignment_requests      role_assignment_requests[]
 
   @@unique([main_club_id, club_type_id])
 }
@@ -717,7 +720,8 @@ model roles {
   club_role_assignments club_role_assignments[]
   role_permissions      role_permissions[]
   users_roles           users_roles[]
-  role_slot_limits      role_slot_limits?
+  role_slot_limits            role_slot_limits?
+  role_assignment_requests    role_assignment_requests[]
 }
 
 model union_camporee_local_fields {
@@ -874,6 +878,11 @@ model users {
   camporee_payments_registered   camporee_payments[]              @relation("camporee_payments_registered_by")
   annual_folder_evidences        annual_folder_evidences[]        @relation("annual_folder_evidences_uploader")
   monthly_reports_submitted      monthly_reports[]                @relation("monthly_report_submitter")
+  transfer_requests_made         club_transfer_requests[]         @relation("transfer_requester")
+  transfer_requests_reviewed     club_transfer_requests[]         @relation("transfer_reviewer")
+  assignment_requests_target     role_assignment_requests[]        @relation("assignment_target")
+  assignment_requests_made       role_assignment_requests[]        @relation("assignment_requester")
+  assignment_requests_approved   role_assignment_requests[]        @relation("assignment_approver")
 }
 
 model notification_logs {
@@ -1553,4 +1562,57 @@ model monthly_report_manual_data {
   monthly_report                monthly_reports @relation(fields: [monthly_report_id], references: [monthly_report_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([monthly_report_id], map: "idx_monthly_report_manual_data_report")
+}
+
+// ========================================
+// TRANSFER & ASSIGNMENT REQUESTS (Phase 7)
+// ========================================
+
+model club_transfer_requests {
+  transfer_request_id String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  user_id             String    @db.Uuid
+  from_section_id     Int
+  to_section_id       Int
+  reason              String?
+  status              String    @default("pending")
+  reviewed_by         String?   @db.Uuid
+  review_comment      String?
+  reviewed_at         DateTime?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user                users         @relation("transfer_requester", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  from_section        club_sections @relation("transfer_from", fields: [from_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  to_section          club_sections @relation("transfer_to", fields: [to_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer            users?        @relation("transfer_reviewer", fields: [reviewed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_transfer_requests_user")
+  @@index([from_section_id], map: "idx_transfer_requests_from_section")
+  @@index([to_section_id], map: "idx_transfer_requests_to_section")
+  @@index([status], map: "idx_transfer_requests_status")
+}
+
+model role_assignment_requests {
+  request_id      String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  club_section_id Int
+  user_id         String    @db.Uuid
+  role_id         String    @db.Uuid
+  requested_by    String    @db.Uuid
+  status          String    @default("pending")
+  approved_by     String?   @db.Uuid
+  comment         String?
+  reviewed_at     DateTime?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  club_section    club_sections @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  user            users         @relation("assignment_target", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  role            roles         @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
+  requester       users         @relation("assignment_requester", fields: [requested_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  approver        users?        @relation("assignment_approver", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([club_section_id], map: "idx_assignment_requests_section")
+  @@index([user_id], map: "idx_assignment_requests_user")
+  @@index([role_id], map: "idx_assignment_requests_role")
+  @@index([status], map: "idx_assignment_requests_status")
 }

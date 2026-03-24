@@ -1,0 +1,715 @@
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class RequestsService {
+  private readonly logger = new Logger(RequestsService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ========================================
+  // CLUB TRANSFERS
+  // ========================================
+
+  async createTransferRequest(
+    userId: string,
+    fromSectionId: number,
+    toSectionId: number,
+    reason?: string,
+  ) {
+    if (fromSectionId === toSectionId) {
+      throw new BadRequestException(
+        'Origin and destination sections must be different',
+      );
+    }
+
+    // Validate user has an active role assignment in from_section
+    const userAssignment =
+      await this.prisma.club_role_assignments.findFirst({
+        where: {
+          user_id: userId,
+          club_section_id: fromSectionId,
+          active: true,
+        },
+      });
+
+    if (!userAssignment) {
+      throw new BadRequestException(
+        `User does not belong to section ${fromSectionId}`,
+      );
+    }
+
+    // Validate to_section exists
+    const toSection = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: toSectionId },
+    });
+
+    if (!toSection) {
+      throw new NotFoundException(
+        `Destination section with ID ${toSectionId} not found`,
+      );
+    }
+
+    // Check no pending request already exists for this user
+    const pendingRequest =
+      await this.prisma.club_transfer_requests.findFirst({
+        where: {
+          user_id: userId,
+          status: 'pending',
+        },
+      });
+
+    if (pendingRequest) {
+      throw new ConflictException(
+        'User already has a pending transfer request',
+      );
+    }
+
+    return this.prisma.club_transfer_requests.create({
+      data: {
+        user_id: userId,
+        from_section_id: fromSectionId,
+        to_section_id: toSectionId,
+        reason,
+      },
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        from_section: {
+          include: { club_types: { select: { name: true } } },
+        },
+        to_section: {
+          include: { club_types: { select: { name: true } } },
+        },
+      },
+    });
+  }
+
+  async reviewTransfer(
+    requestId: string,
+    reviewerId: string,
+    action: 'approved' | 'rejected',
+    comment?: string,
+  ) {
+    const request =
+      await this.prisma.club_transfer_requests.findUnique({
+        where: { transfer_request_id: requestId },
+        include: {
+          user: { select: { user_id: true, name: true } },
+        },
+      });
+
+    if (!request) {
+      throw new NotFoundException(
+        `Transfer request with ID ${requestId} not found`,
+      );
+    }
+
+    if (request.status !== 'pending') {
+      throw new ConflictException(
+        `Transfer request has already been ${request.status}`,
+      );
+    }
+
+    if (action === 'approved') {
+      // Move user's club_role_assignments from old section to new section in a transaction
+      return this.prisma.$transaction(async (tx) => {
+        // Update all active role assignments from old section to new section
+        await tx.club_role_assignments.updateMany({
+          where: {
+            user_id: request.user_id,
+            club_section_id: request.from_section_id,
+            active: true,
+          },
+          data: {
+            club_section_id: request.to_section_id,
+            modified_at: new Date(),
+          },
+        });
+
+        // Update the transfer request status
+        const updated = await tx.club_transfer_requests.update({
+          where: { transfer_request_id: requestId },
+          data: {
+            status: 'approved',
+            reviewed_by: reviewerId,
+            review_comment: comment,
+            reviewed_at: new Date(),
+          },
+          include: {
+            user: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+              },
+            },
+            from_section: {
+              include: { club_types: { select: { name: true } } },
+            },
+            to_section: {
+              include: { club_types: { select: { name: true } } },
+            },
+            reviewer: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+              },
+            },
+          },
+        });
+
+        this.logger.log(
+          `Transfer approved: user ${request.user_id} moved from section ${request.from_section_id} to ${request.to_section_id}`,
+        );
+
+        return updated;
+      });
+    }
+
+    // Rejected
+    return this.prisma.club_transfer_requests.update({
+      where: { transfer_request_id: requestId },
+      data: {
+        status: 'rejected',
+        reviewed_by: reviewerId,
+        review_comment: comment,
+        reviewed_at: new Date(),
+      },
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        from_section: {
+          include: { club_types: { select: { name: true } } },
+        },
+        to_section: {
+          include: { club_types: { select: { name: true } } },
+        },
+        reviewer: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getTransferRequests(filters?: {
+    status?: string;
+    sectionId?: number;
+  }) {
+    const where: Record<string, unknown> = {};
+
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+
+    if (filters?.sectionId) {
+      where.OR = [
+        { from_section_id: filters.sectionId },
+        { to_section_id: filters.sectionId },
+      ];
+    }
+
+    return this.prisma.club_transfer_requests.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        from_section: {
+          include: {
+            club_types: { select: { name: true } },
+            clubs: { select: { name: true } },
+          },
+        },
+        to_section: {
+          include: {
+            club_types: { select: { name: true } },
+            clubs: { select: { name: true } },
+          },
+        },
+        reviewer: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async getTransferRequest(requestId: string) {
+    const request =
+      await this.prisma.club_transfer_requests.findUnique({
+        where: { transfer_request_id: requestId },
+        include: {
+          user: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              email: true,
+            },
+          },
+          from_section: {
+            include: {
+              club_types: { select: { name: true } },
+              clubs: { select: { name: true } },
+            },
+          },
+          to_section: {
+            include: {
+              club_types: { select: { name: true } },
+              clubs: { select: { name: true } },
+            },
+          },
+          reviewer: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+        },
+      });
+
+    if (!request) {
+      throw new NotFoundException(
+        `Transfer request with ID ${requestId} not found`,
+      );
+    }
+
+    return request;
+  }
+
+  // ========================================
+  // ROLE ASSIGNMENTS
+  // ========================================
+
+  async createAssignmentRequest(
+    sectionId: number,
+    userId: string,
+    roleId: string,
+    requestedBy: string,
+  ) {
+    // Validate section exists
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+    });
+
+    if (!section) {
+      throw new NotFoundException(
+        `Club section with ID ${sectionId} not found`,
+      );
+    }
+
+    // Validate user exists
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { user_id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    // Validate role exists
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_id: true, role_name: true },
+    });
+
+    if (!role) {
+      throw new NotFoundException(`Role with ID ${roleId} not found`);
+    }
+
+    // Check role_slot_limits before creating request
+    await this.validateRoleSlotForRequest(sectionId, roleId);
+
+    // Check no pending request for same user + role + section
+    const pendingRequest =
+      await this.prisma.role_assignment_requests.findFirst({
+        where: {
+          club_section_id: sectionId,
+          user_id: userId,
+          role_id: roleId,
+          status: 'pending',
+        },
+      });
+
+    if (pendingRequest) {
+      throw new ConflictException(
+        `A pending assignment request already exists for this user and role in this section`,
+      );
+    }
+
+    return this.prisma.role_assignment_requests.create({
+      data: {
+        club_section_id: sectionId,
+        user_id: userId,
+        role_id: roleId,
+        requested_by: requestedBy,
+      },
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        role: { select: { role_id: true, role_name: true } },
+        requester: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        club_section: {
+          include: { club_types: { select: { name: true } } },
+        },
+      },
+    });
+  }
+
+  async reviewAssignment(
+    requestId: string,
+    approverId: string,
+    action: 'approved' | 'rejected',
+    comment?: string,
+  ) {
+    const request =
+      await this.prisma.role_assignment_requests.findUnique({
+        where: { request_id: requestId },
+        include: {
+          role: { select: { role_id: true, role_name: true } },
+        },
+      });
+
+    if (!request) {
+      throw new NotFoundException(
+        `Assignment request with ID ${requestId} not found`,
+      );
+    }
+
+    if (request.status !== 'pending') {
+      throw new ConflictException(
+        `Assignment request has already been ${request.status}`,
+      );
+    }
+
+    if (action === 'approved') {
+      return this.prisma.$transaction(async (tx) => {
+        // Re-validate role_slot_limits at approval time (in case things changed)
+        const slotLimit = await tx.role_slot_limits.findUnique({
+          where: { role_id: request.role_id },
+        });
+
+        if (slotLimit?.max_per_section != null) {
+          const currentCount = await tx.club_role_assignments.count({
+            where: {
+              club_section_id: request.club_section_id,
+              role_id: request.role_id,
+              active: true,
+            },
+          });
+
+          if (currentCount >= slotLimit.max_per_section) {
+            throw new ConflictException(
+              `Maximum ${slotLimit.max_per_section} "${request.role.role_name}" per section reached. Cannot approve this request.`,
+            );
+          }
+        }
+
+        // Get active ecclesiastical year
+        const ecclesiasticalYearId =
+          await this.getActiveEcclesiasticalYearId(tx);
+
+        // Create the club_role_assignment
+        await tx.club_role_assignments.create({
+          data: {
+            user_id: request.user_id,
+            role_id: request.role_id,
+            club_section_id: request.club_section_id,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+            start_date: new Date(),
+            active: true,
+            status: 'active',
+          },
+        });
+
+        // Update the request status
+        const updated = await tx.role_assignment_requests.update({
+          where: { request_id: requestId },
+          data: {
+            status: 'approved',
+            approved_by: approverId,
+            comment,
+            reviewed_at: new Date(),
+          },
+          include: {
+            user: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+              },
+            },
+            role: { select: { role_id: true, role_name: true } },
+            requester: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+              },
+            },
+            approver: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+              },
+            },
+            club_section: {
+              include: { club_types: { select: { name: true } } },
+            },
+          },
+        });
+
+        this.logger.log(
+          `Role assignment approved: user ${request.user_id} assigned role ${request.role_id} in section ${request.club_section_id}`,
+        );
+
+        return updated;
+      });
+    }
+
+    // Rejected
+    return this.prisma.role_assignment_requests.update({
+      where: { request_id: requestId },
+      data: {
+        status: 'rejected',
+        approved_by: approverId,
+        comment,
+        reviewed_at: new Date(),
+      },
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        role: { select: { role_id: true, role_name: true } },
+        requester: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        approver: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        club_section: {
+          include: { club_types: { select: { name: true } } },
+        },
+      },
+    });
+  }
+
+  async getAssignmentRequests(filters?: {
+    status?: string;
+    sectionId?: number;
+  }) {
+    const where: Record<string, unknown> = {};
+
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+
+    if (filters?.sectionId) {
+      where.club_section_id = filters.sectionId;
+    }
+
+    return this.prisma.role_assignment_requests.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        role: { select: { role_id: true, role_name: true } },
+        requester: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        approver: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        club_section: {
+          include: {
+            club_types: { select: { name: true } },
+            clubs: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async getAssignmentRequest(requestId: string) {
+    const request =
+      await this.prisma.role_assignment_requests.findUnique({
+        where: { request_id: requestId },
+        include: {
+          user: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              email: true,
+            },
+          },
+          role: { select: { role_id: true, role_name: true } },
+          requester: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+          approver: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+          club_section: {
+            include: {
+              club_types: { select: { name: true } },
+              clubs: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+    if (!request) {
+      throw new NotFoundException(
+        `Assignment request with ID ${requestId} not found`,
+      );
+    }
+
+    return request;
+  }
+
+  // ========================================
+  // HELPERS
+  // ========================================
+
+  private async validateRoleSlotForRequest(
+    sectionId: number,
+    roleId: string,
+  ): Promise<void> {
+    const slotLimit = await this.prisma.role_slot_limits.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (slotLimit?.max_per_section != null) {
+      // Count current active assignments
+      const currentCount =
+        await this.prisma.club_role_assignments.count({
+          where: {
+            club_section_id: sectionId,
+            role_id: roleId,
+            active: true,
+          },
+        });
+
+      // Also count pending requests for same role+section
+      const pendingCount =
+        await this.prisma.role_assignment_requests.count({
+          where: {
+            club_section_id: sectionId,
+            role_id: roleId,
+            status: 'pending',
+          },
+        });
+
+      if (currentCount + pendingCount >= slotLimit.max_per_section) {
+        const role = await this.prisma.roles.findUnique({
+          where: { role_id: roleId },
+          select: { role_name: true },
+        });
+        throw new ConflictException(
+          `Maximum ${slotLimit.max_per_section} "${role?.role_name ?? roleId}" per section reached (including pending requests)`,
+        );
+      }
+    }
+  }
+
+  private async getActiveEcclesiasticalYearId(
+    tx?: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+  ): Promise<number> {
+    const prisma = tx ?? this.prisma;
+    const currentYear =
+      await prisma.ecclesiastical_years.findFirst({
+        where: {
+          start_date: { lte: new Date() },
+          end_date: { gte: new Date() },
+        },
+        select: { year_id: true },
+      });
+
+    if (!currentYear) {
+      throw new BadRequestException(
+        'No active ecclesiastical year configured',
+      );
+    }
+
+    return currentYear.year_id;
+  }
+}

@@ -34,6 +34,7 @@ import { ClubEnrollmentsModule } from './club-enrollments/club-enrollments.modul
 import { ValidationModule } from './validation/validation.module';
 import { AnnualFoldersModule } from './annual-folders/annual-folders.module';
 import { MonthlyReportsModule } from './monthly-reports/monthly-reports.module';
+import { RequestsModule } from './requests/requests.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -142,6 +143,7 @@ import { envValidationSchema } from './config/env.validation';
     ValidationModule,
     AnnualFoldersModule,
     MonthlyReportsModule,
+    RequestsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
