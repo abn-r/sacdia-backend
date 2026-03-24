@@ -89,6 +89,8 @@ model camporee_clubs {
   camporee_type    String          @db.VarChar(50)
   club_id          Int?
   local_field_id   Int?
+  status           String          @default("registered") @db.VarChar(20)
+  registered_by    String?         @db.Uuid
   active           Boolean         @default(true)
   created_at       DateTime        @default(now()) @db.Timestamptz(6)
   modified_at      DateTime        @default(now()) @db.Timestamptz(6)
@@ -96,6 +98,7 @@ model camporee_clubs {
   local_camporees  local_camporees @relation(fields: [camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   club_sections    club_sections?  @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields     local_fields?   @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+  registrar        users?          @relation("camporee_clubs_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([club_section_id], map: "idx_camporee_clubs_club_section_id")
 }
@@ -116,6 +119,7 @@ model camporee_members {
   insurance          member_insurances? @relation(fields: [insurance_id], references: [insurance_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields       local_fields?      @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
   users              users              @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  camporee_payments  camporee_payments[]
 }
 
 model churches {
@@ -864,6 +868,8 @@ model users {
   session                        session[]
   account                        account[]
   club_enrollments_created       club_enrollments[]               @relation("enrollment_creator")
+  camporee_clubs_registered      camporee_clubs[]                 @relation("camporee_clubs_registered_by")
+  camporee_payments_registered   camporee_payments[]              @relation("camporee_payments_registered_by")
 }
 
 model notification_logs {
@@ -1276,6 +1282,9 @@ enum user_approval_status {
 enum investiture_status_enum {
   IN_PROGRESS
   SUBMITTED_FOR_VALIDATION
+  CLUB_APPROVED
+  COORDINATOR_APPROVED
+  FIELD_APPROVED
   APPROVED
   REJECTED
   INVESTIDO
@@ -1283,6 +1292,9 @@ enum investiture_status_enum {
 
 enum investiture_action_enum {
   SUBMITTED
+  CLUB_APPROVED
+  COORDINATOR_APPROVED
+  FIELD_APPROVED
   APPROVED
   REJECTED
   REINVESTITURE_REQUESTED
@@ -1386,4 +1398,22 @@ model system_config {
   description  String
   config_type  String   @default("string")
   updated_at   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+model camporee_payments {
+  camporee_payment_id String           @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  camporee_member_id  Int
+  amount              Decimal          @db.Decimal(10, 2)
+  payment_type        String           @db.VarChar(50)
+  reference           String?          @db.VarChar(100)
+  notes               String?
+  registered_by       String           @db.Uuid
+  paid_at             DateTime         @db.Date
+  created_at          DateTime         @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  camporee_member     camporee_members @relation(fields: [camporee_member_id], references: [camporee_member_id], onDelete: Cascade, onUpdate: NoAction)
+  registrar           users            @relation("camporee_payments_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([camporee_member_id], map: "idx_camporee_payments_member_id")
 }

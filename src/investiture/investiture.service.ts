@@ -3,9 +3,14 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  Prisma,
+  investiture_status_enum,
+  investiture_action_enum,
+} from '@prisma/client';
 import {
   PaginatedResult,
   PaginationDto,
@@ -14,20 +19,60 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
-import { ValidateEnrollmentDto } from './dto/validate-enrollment.dto';
+import { ApproveInvestitureDto } from './dto/approve-investiture.dto';
+import { RejectInvestitureDto } from './dto/reject-investiture.dto';
 import { MarkInvestidoDto } from './dto/mark-investido.dto';
 import { CreateInvestitureConfigDto } from './dto/create-investiture-config.dto';
 import { UpdateInvestitureConfigDto } from './dto/update-investiture-config.dto';
 
+// ─── Approval chain state machine ──────────────────────────────────
+// eligible (auto)  →  submitted  →  club_approved  →  coordinator_approved  →  field_approved  →  invested
+//                             ↕           ↕                  ↕                      ↕
+//                          rejected     rejected           rejected              rejected
+// ────────────────────────────────────────────────────────────────────
+
+/** Valid approval chain transitions: from → to */
+const APPROVAL_TRANSITIONS: Record<string, { target: investiture_status_enum; action: investiture_action_enum }> = {
+  SUBMITTED_FOR_VALIDATION: {
+    target: investiture_status_enum.CLUB_APPROVED,
+    action: investiture_action_enum.CLUB_APPROVED,
+  },
+  CLUB_APPROVED: {
+    target: investiture_status_enum.COORDINATOR_APPROVED,
+    action: investiture_action_enum.COORDINATOR_APPROVED,
+  },
+  COORDINATOR_APPROVED: {
+    target: investiture_status_enum.FIELD_APPROVED,
+    action: investiture_action_enum.FIELD_APPROVED,
+  },
+};
+
+/** Statuses from which rejection is possible */
+const REJECTABLE_STATUSES: investiture_status_enum[] = [
+  investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+  investiture_status_enum.CLUB_APPROVED,
+  investiture_status_enum.COORDINATOR_APPROVED,
+  investiture_status_enum.FIELD_APPROVED,
+];
+
+type ApprovalResult = {
+  enrollment_id: number;
+  investiture_status: string;
+  approved_by: string;
+  approved_at: Date;
+};
+
 @Injectable()
 export class InvestitureService {
+  private readonly logger = new Logger(InvestitureService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
   ) {}
 
   // ========================================
-  // SUBMIT FOR VALIDATION
+  // SUBMIT FOR VALIDATION (counselor submits)
   // ========================================
 
   /**
@@ -68,8 +113,11 @@ export class InvestitureService {
     }
 
     // Step 3: Validate state transition
-    const validSourceStatuses = ['IN_PROGRESS', 'REJECTED'];
-    if (!validSourceStatuses.includes(enrollment.investiture_status as string)) {
+    const validSourceStatuses: investiture_status_enum[] = [
+      investiture_status_enum.IN_PROGRESS,
+      investiture_status_enum.REJECTED,
+    ];
+    if (!validSourceStatuses.includes(enrollment.investiture_status)) {
       throw new BadRequestException(
         `Transición inválida. El enrollment está en estado ${enrollment.investiture_status}`,
       );
@@ -88,21 +136,26 @@ export class InvestitureService {
       this.prisma.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
-          investiture_status: 'SUBMITTED_FOR_VALIDATION',
+          investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
           submitted_for_validation: true,
           submitted_at: submittedAt,
           locked_for_validation: true,
+          rejection_reason: null,
         },
       }),
       this.prisma.investiture_validation_history.create({
         data: {
           enrollment_id: enrollmentId,
-          action: 'SUBMITTED',
+          action: investiture_action_enum.SUBMITTED,
           performed_by: actorId,
           comments: dto.comments ?? null,
         },
       }),
     ]);
+
+    this.logger.log(
+      `Enrollment ${enrollmentId} submitted for validation by ${actorId}`,
+    );
 
     // Step 7: Return result
     return {
@@ -114,24 +167,88 @@ export class InvestitureService {
   }
 
   // ========================================
-  // VALIDATE ENROLLMENT
+  // CLUB APPROVE (director of section)
   // ========================================
 
   /**
-   * Aprobar o rechazar un enrollment en estado SUBMITTED_FOR_VALIDATION.
-   * APPROVED mantiene locked_for_validation = true.
-   * REJECTED desbloquea el enrollment para corrección y re-envío.
+   * Director de sección aprueba el enrollment.
+   * Transición: SUBMITTED_FOR_VALIDATION → CLUB_APPROVED
    */
-  async validateEnrollment(
+  async clubApprove(
     enrollmentId: number,
     actorId: string,
-    dto: ValidateEnrollmentDto,
+    dto: ApproveInvestitureDto,
+  ): Promise<ApprovalResult> {
+    return this.transitionApprovalState(
+      enrollmentId,
+      actorId,
+      investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+      dto.comments,
+    );
+  }
+
+  // ========================================
+  // COORDINATOR APPROVE (zone/local field coordinator)
+  // ========================================
+
+  /**
+   * Coordinador aprueba el enrollment.
+   * Transición: CLUB_APPROVED → COORDINATOR_APPROVED
+   */
+  async coordinatorApprove(
+    enrollmentId: number,
+    actorId: string,
+    dto: ApproveInvestitureDto,
+  ): Promise<ApprovalResult> {
+    return this.transitionApprovalState(
+      enrollmentId,
+      actorId,
+      investiture_status_enum.CLUB_APPROVED,
+      dto.comments,
+    );
+  }
+
+  // ========================================
+  // FIELD APPROVE (local field director/assistant)
+  // ========================================
+
+  /**
+   * Director o asistente de campo local aprueba el enrollment.
+   * Transición: COORDINATOR_APPROVED → FIELD_APPROVED
+   */
+  async fieldApprove(
+    enrollmentId: number,
+    actorId: string,
+    dto: ApproveInvestitureDto,
+  ): Promise<ApprovalResult> {
+    return this.transitionApprovalState(
+      enrollmentId,
+      actorId,
+      investiture_status_enum.COORDINATOR_APPROVED,
+      dto.comments,
+    );
+  }
+
+  // ========================================
+  // REJECT (at any approval level)
+  // ========================================
+
+  /**
+   * Rechazar un enrollment en cualquier nivel del flujo de aprobación.
+   * Los estados rechazables son: SUBMITTED_FOR_VALIDATION, CLUB_APPROVED,
+   * COORDINATOR_APPROVED, FIELD_APPROVED.
+   * El rechazo desbloquea el enrollment para corrección y re-envío.
+   */
+  async reject(
+    enrollmentId: number,
+    actorId: string,
+    dto: RejectInvestitureDto,
   ): Promise<{
     enrollment_id: number;
     investiture_status: string;
-    validated_by: string | null;
-    validated_at: Date | null;
-    rejection_reason: string | null;
+    rejection_reason: string;
+    rejected_by: string;
+    rejected_at: Date;
   }> {
     // 1. Find enrollment
     const enrollment = await this.prisma.enrollments.findFirst({
@@ -146,97 +263,51 @@ export class InvestitureService {
       throw new NotFoundException('Enrollment no encontrado');
     }
 
-    // 2. Validate state
-    if (enrollment.investiture_status !== 'SUBMITTED_FOR_VALIDATION') {
-      throw new ConflictException(
-        `El enrollment no está en estado SUBMITTED_FOR_VALIDATION. Estado actual: ${enrollment.investiture_status}`,
-      );
-    }
-
-    // 3. Business validation: REJECTED requires comments
-    if (
-      dto.action === 'REJECTED' &&
-      (!dto.comments || dto.comments.trim() === '')
-    ) {
+    // 2. Validate that current status allows rejection
+    if (!REJECTABLE_STATUSES.includes(enrollment.investiture_status)) {
       throw new BadRequestException(
-        'El campo comments es requerido para rechazar un enrollment',
+        `No se puede rechazar un enrollment en estado ${enrollment.investiture_status}. ` +
+        `Estados rechazables: ${REJECTABLE_STATUSES.join(', ')}`,
       );
     }
 
-    // 4. Transaction
+    // 3. Transaction: update status + create history
     const now = new Date();
-
     const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
-      if (dto.action === 'APPROVED') {
-        const updated = await tx.enrollments.update({
-          where: { enrollment_id: enrollmentId },
-          data: {
-            investiture_status: 'APPROVED',
-            validated_by: actorId,
-            validated_at: now,
-            rejection_reason: null,
-            locked_for_validation: true,
-          },
-          select: {
-            enrollment_id: true,
-            investiture_status: true,
-            validated_by: true,
-            validated_at: true,
-            rejection_reason: true,
-          },
-        });
+      const updated = await tx.enrollments.update({
+        where: { enrollment_id: enrollmentId },
+        data: {
+          investiture_status: investiture_status_enum.REJECTED,
+          validated_by: actorId,
+          validated_at: now,
+          rejection_reason: dto.reason,
+          locked_for_validation: false,
+          submitted_for_validation: false,
+        },
+      });
 
-        await tx.investiture_validation_history.create({
-          data: {
-            enrollment_id: enrollmentId,
-            action: 'APPROVED',
-            performed_by: actorId,
-            comments: dto.comments ?? null,
-          },
-        });
+      await tx.investiture_validation_history.create({
+        data: {
+          enrollment_id: enrollmentId,
+          action: investiture_action_enum.REJECTED,
+          performed_by: actorId,
+          comments: dto.reason,
+        },
+      });
 
-        return updated;
-      } else {
-        // REJECTED
-        const updated = await tx.enrollments.update({
-          where: { enrollment_id: enrollmentId },
-          data: {
-            investiture_status: 'REJECTED',
-            validated_by: actorId,
-            validated_at: now,
-            rejection_reason: dto.comments,
-            locked_for_validation: false,
-            submitted_for_validation: false,
-          },
-          select: {
-            enrollment_id: true,
-            investiture_status: true,
-            validated_by: true,
-            validated_at: true,
-            rejection_reason: true,
-          },
-        });
-
-        await tx.investiture_validation_history.create({
-          data: {
-            enrollment_id: enrollmentId,
-            action: 'REJECTED',
-            performed_by: actorId,
-            comments: dto.comments,
-          },
-        });
-
-        return updated;
-      }
+      return updated;
     });
 
-    // 5. Return
+    this.logger.log(
+      `Enrollment ${enrollmentId} rejected by ${actorId} from status ${enrollment.investiture_status}`,
+    );
+
     return {
       enrollment_id: updatedEnrollment.enrollment_id,
-      investiture_status: updatedEnrollment.investiture_status,
-      validated_by: updatedEnrollment.validated_by,
-      validated_at: updatedEnrollment.validated_at,
-      rejection_reason: updatedEnrollment.rejection_reason,
+      investiture_status: updatedEnrollment.investiture_status as string,
+      rejection_reason: dto.reason,
+      rejected_by: actorId,
+      rejected_at: now,
     };
   }
 
@@ -245,7 +316,7 @@ export class InvestitureService {
   // ========================================
 
   /**
-   * Registrar la investidura formal de un enrollment en estado APPROVED.
+   * Registrar la investidura formal de un enrollment en estado FIELD_APPROVED.
    */
   async markInvestido(
     enrollmentId: number,
@@ -279,16 +350,16 @@ export class InvestitureService {
       throw new NotFoundException('Enrollment no encontrado');
     }
 
-    // Step 3: Validate state — must be APPROVED
+    // Step 3: Validate state — must be FIELD_APPROVED
     const currentStatus = enrollment.investiture_status;
 
-    if (currentStatus === 'INVESTIDO') {
+    if (currentStatus === investiture_status_enum.INVESTIDO) {
       throw new ConflictException('El enrollment ya fue investido');
     }
 
-    if (currentStatus !== 'APPROVED') {
+    if (currentStatus !== investiture_status_enum.FIELD_APPROVED) {
       throw new BadRequestException(
-        `El enrollment debe estar en estado APPROVED para ser investido. Estado actual: ${currentStatus}`,
+        `El enrollment debe estar en estado FIELD_APPROVED para ser investido. Estado actual: ${currentStatus}`,
       );
     }
 
@@ -301,7 +372,7 @@ export class InvestitureService {
       const updatedEnrollment = await tx.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
-          investiture_status: 'INVESTIDO',
+          investiture_status: investiture_status_enum.INVESTIDO,
           investiture_date: investitureConfig.investiture_date,
         },
       });
@@ -310,7 +381,7 @@ export class InvestitureService {
       await tx.investiture_validation_history.create({
         data: {
           enrollment_id: enrollmentId,
-          action: 'INVESTIDO',
+          action: investiture_action_enum.INVESTIDO,
           performed_by: actorId,
           comments: dto.comments ?? 'Marcado como investido',
         },
@@ -319,22 +390,26 @@ export class InvestitureService {
       return updatedEnrollment;
     });
 
+    this.logger.log(
+      `Enrollment ${enrollmentId} marked as invested by ${actorId}`,
+    );
+
     // Step 6: Return result
     return {
       enrollment_id: updated.enrollment_id,
-      investiture_status: updated.investiture_status,
+      investiture_status: updated.investiture_status as string,
       investiture_date: updated.investiture_date,
     };
   }
 
   // ========================================
-  // GET PENDING
+  // GET PENDING (filterable by approval level)
   // ========================================
 
   /**
-   * Listar enrollments en estado SUBMITTED_FOR_VALIDATION con paginación.
+   * Listar enrollments pendientes por nivel de aprobación con paginación.
    * Auto-scoping: si no se provee localFieldId, se usa el campo local del actor.
-   * Filtros opcionales: localFieldId, ecclesiasticalYearId.
+   * Filtros opcionales: status (approval level), localFieldId, ecclesiasticalYearId.
    */
   async getPending(
     actorId: string,
@@ -342,6 +417,7 @@ export class InvestitureService {
     ecclesiasticalYearId?: number,
     page?: number,
     limit?: number,
+    status?: investiture_status_enum,
   ): Promise<PaginatedResult<any>> {
     // Build pagination DTO from raw params
     const pagination = new PaginationDto();
@@ -358,9 +434,19 @@ export class InvestitureService {
       effectiveLocalFieldId = actor?.local_field_id ?? undefined;
     }
 
+    // Default to SUBMITTED_FOR_VALIDATION for backwards compatibility
+    const pendingStatuses: investiture_status_enum[] = status
+      ? [status]
+      : [
+          investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+          investiture_status_enum.CLUB_APPROVED,
+          investiture_status_enum.COORDINATOR_APPROVED,
+          investiture_status_enum.FIELD_APPROVED,
+        ];
+
     // Build where clause
     const where: Prisma.enrollmentsWhereInput = {
-      investiture_status: 'SUBMITTED_FOR_VALIDATION',
+      investiture_status: { in: pendingStatuses },
       active: true,
     };
 
@@ -515,6 +601,134 @@ export class InvestitureService {
   }
 
   // ========================================
+  // VALIDATE ENROLLMENT (legacy — kept for backwards compatibility)
+  // ========================================
+
+  /**
+   * @deprecated Use clubApprove/coordinatorApprove/fieldApprove/reject instead.
+   * Aprobar o rechazar un enrollment en estado SUBMITTED_FOR_VALIDATION.
+   * APPROVED mantiene locked_for_validation = true.
+   * REJECTED desbloquea el enrollment para corrección y re-envío.
+   */
+  async validateEnrollment(
+    enrollmentId: number,
+    actorId: string,
+    dto: { action: 'APPROVED' | 'REJECTED'; comments?: string },
+  ): Promise<{
+    enrollment_id: number;
+    investiture_status: string;
+    validated_by: string | null;
+    validated_at: Date | null;
+    rejection_reason: string | null;
+  }> {
+    // 1. Find enrollment
+    const enrollment = await this.prisma.enrollments.findFirst({
+      where: { enrollment_id: enrollmentId, active: true },
+      select: {
+        enrollment_id: true,
+        investiture_status: true,
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException('Enrollment no encontrado');
+    }
+
+    // 2. Validate state
+    if (enrollment.investiture_status !== investiture_status_enum.SUBMITTED_FOR_VALIDATION) {
+      throw new ConflictException(
+        `El enrollment no está en estado SUBMITTED_FOR_VALIDATION. Estado actual: ${enrollment.investiture_status}`,
+      );
+    }
+
+    // 3. Business validation: REJECTED requires comments
+    if (
+      dto.action === 'REJECTED' &&
+      (!dto.comments || dto.comments.trim() === '')
+    ) {
+      throw new BadRequestException(
+        'El campo comments es requerido para rechazar un enrollment',
+      );
+    }
+
+    // 4. Transaction
+    const now = new Date();
+
+    const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
+      if (dto.action === 'APPROVED') {
+        const updated = await tx.enrollments.update({
+          where: { enrollment_id: enrollmentId },
+          data: {
+            investiture_status: investiture_status_enum.CLUB_APPROVED,
+            validated_by: actorId,
+            validated_at: now,
+            rejection_reason: null,
+            locked_for_validation: true,
+          },
+          select: {
+            enrollment_id: true,
+            investiture_status: true,
+            validated_by: true,
+            validated_at: true,
+            rejection_reason: true,
+          },
+        });
+
+        await tx.investiture_validation_history.create({
+          data: {
+            enrollment_id: enrollmentId,
+            action: investiture_action_enum.CLUB_APPROVED,
+            performed_by: actorId,
+            comments: dto.comments ?? null,
+          },
+        });
+
+        return updated;
+      } else {
+        // REJECTED
+        const updated = await tx.enrollments.update({
+          where: { enrollment_id: enrollmentId },
+          data: {
+            investiture_status: investiture_status_enum.REJECTED,
+            validated_by: actorId,
+            validated_at: now,
+            rejection_reason: dto.comments,
+            locked_for_validation: false,
+            submitted_for_validation: false,
+          },
+          select: {
+            enrollment_id: true,
+            investiture_status: true,
+            validated_by: true,
+            validated_at: true,
+            rejection_reason: true,
+          },
+        });
+
+        await tx.investiture_validation_history.create({
+          data: {
+            enrollment_id: enrollmentId,
+            action: investiture_action_enum.REJECTED,
+            performed_by: actorId,
+            comments: dto.comments,
+          },
+        });
+
+        return updated;
+      }
+    });
+
+    // 5. Return
+    return {
+      enrollment_id: updatedEnrollment.enrollment_id,
+      investiture_status: updatedEnrollment.investiture_status as string,
+      validated_by: updatedEnrollment.validated_by,
+      validated_at: updatedEnrollment.validated_at,
+      rejection_reason: updatedEnrollment.rejection_reason,
+    };
+  }
+
+  // ========================================
   // INVESTITURE CONFIG CRUD
   // ========================================
 
@@ -634,6 +848,84 @@ export class InvestitureService {
   // ========================================
   // PRIVATE HELPERS
   // ========================================
+
+  /**
+   * Generic state transition for the approval chain.
+   * Validates that the enrollment is in the expected source status,
+   * transitions it to the next status, and creates a history entry.
+   */
+  private async transitionApprovalState(
+    enrollmentId: number,
+    actorId: string,
+    expectedSourceStatus: investiture_status_enum,
+    comments?: string,
+  ): Promise<ApprovalResult> {
+    // 1. Find enrollment
+    const enrollment = await this.prisma.enrollments.findFirst({
+      where: { enrollment_id: enrollmentId, active: true },
+      select: {
+        enrollment_id: true,
+        investiture_status: true,
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException('Enrollment no encontrado');
+    }
+
+    // 2. Validate current status matches expected
+    if (enrollment.investiture_status !== expectedSourceStatus) {
+      throw new ConflictException(
+        `El enrollment debe estar en estado ${expectedSourceStatus} para esta operación. ` +
+        `Estado actual: ${enrollment.investiture_status}`,
+      );
+    }
+
+    // 3. Look up the transition
+    const transition = APPROVAL_TRANSITIONS[expectedSourceStatus];
+    if (!transition) {
+      throw new BadRequestException(
+        `No existe transición de aprobación desde el estado ${expectedSourceStatus}`,
+      );
+    }
+
+    // 4. Transaction: update status + create history
+    const now = new Date();
+    const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.enrollments.update({
+        where: { enrollment_id: enrollmentId },
+        data: {
+          investiture_status: transition.target,
+          validated_by: actorId,
+          validated_at: now,
+          rejection_reason: null,
+          locked_for_validation: true,
+        },
+      });
+
+      await tx.investiture_validation_history.create({
+        data: {
+          enrollment_id: enrollmentId,
+          action: transition.action,
+          performed_by: actorId,
+          comments: comments ?? null,
+        },
+      });
+
+      return updated;
+    });
+
+    this.logger.log(
+      `Enrollment ${enrollmentId} transitioned ${expectedSourceStatus} → ${transition.target} by ${actorId}`,
+    );
+
+    return {
+      enrollment_id: updatedEnrollment.enrollment_id,
+      investiture_status: updatedEnrollment.investiture_status as string,
+      approved_by: actorId,
+      approved_at: now,
+    };
+  }
 
   /**
    * Resolver el investiture_config activo para un enrollment dado.
