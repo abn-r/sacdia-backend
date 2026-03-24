@@ -79,10 +79,10 @@ describe('Investiture E2E', () => {
     delete process.env.FIREBASE_PRIVATE_KEY;
     delete process.env.FIREBASE_CLIENT_EMAIL;
 
-    process.env.SUPABASE_JWT_SECRET =
-      process.env.SUPABASE_JWT_SECRET || 'test-secret';
+    process.env.BETTER_AUTH_SECRET =
+      process.env.BETTER_AUTH_SECRET || 'test-secret';
 
-    jwtService = new JwtService({ secret: process.env.SUPABASE_JWT_SECRET });
+    jwtService = new JwtService({ secret: process.env.BETTER_AUTH_SECRET });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],

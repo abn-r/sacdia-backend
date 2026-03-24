@@ -60,7 +60,7 @@ describe('Auth E2E Tests', () => {
   };
 
   const createSignedJwt = (payload: Record<string, unknown>): string => {
-    const secret = process.env.SUPABASE_JWT_SECRET || 'test-secret';
+    const secret = process.env.BETTER_AUTH_SECRET || 'test-secret';
     const header = { alg: 'HS256', typ: 'JWT' };
     const encode = (value: Record<string, unknown>) =>
       Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -75,8 +75,8 @@ describe('Auth E2E Tests', () => {
   };
 
   beforeAll(async () => {
-    process.env.SUPABASE_JWT_SECRET =
-      process.env.SUPABASE_JWT_SECRET || 'test-secret';
+    process.env.BETTER_AUTH_SECRET =
+      process.env.BETTER_AUTH_SECRET || 'test-secret';
     process.env.AUTH_REJECT_SNAKE_CASE = 'true';
     await bootstrapApp();
   });
