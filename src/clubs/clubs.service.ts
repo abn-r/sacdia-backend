@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -262,6 +263,8 @@ export class ClubsService {
       (await this.getActiveEcclesiasticalYearId());
     const startDate = dto.start_date ?? new Date();
 
+    await this.validateRoleSlot(dto.club_section_id, roleId);
+
     const assignment = {
       user_id: dto.user_id,
       role_id: roleId,
@@ -331,6 +334,98 @@ export class ClubsService {
   // ========================================
   // HELPERS
   // ========================================
+
+  private async validateRoleSlot(
+    sectionId: number,
+    roleId: string,
+  ): Promise<void> {
+    // 1. Check max_per_section from role_slot_limits
+    const slotLimit = await this.prisma.role_slot_limits.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (slotLimit?.max_per_section != null) {
+      const currentCount = await this.prisma.club_role_assignments.count({
+        where: {
+          club_section_id: sectionId,
+          role_id: roleId,
+          active: true,
+        },
+      });
+
+      if (currentCount >= slotLimit.max_per_section) {
+        const role = await this.prisma.roles.findUnique({
+          where: { role_id: roleId },
+          select: { role_name: true },
+        });
+        throw new ConflictException(
+          `Maximum ${slotLimit.max_per_section} "${role?.role_name ?? roleId}" per section reached`,
+        );
+      }
+    }
+
+    // 2. Mutual exclusivity: secretary / treasurer vs secretary-treasurer
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_name: true },
+    });
+
+    if (!role) return;
+
+    const roleName = role.role_name.toLowerCase();
+
+    if (roleName === 'secretary' || roleName === 'treasurer') {
+      const secTreasRole = await this.prisma.roles.findFirst({
+        where: { role_name: 'secretary-treasurer', active: true },
+        select: { role_id: true },
+      });
+
+      if (secTreasRole) {
+        const hasSecTreas =
+          await this.prisma.club_role_assignments.findFirst({
+            where: {
+              club_section_id: sectionId,
+              role_id: secTreasRole.role_id,
+              active: true,
+            },
+          });
+
+        if (hasSecTreas) {
+          throw new ConflictException(
+            `Cannot assign "${roleName}" when "secretary-treasurer" already exists in this section`,
+          );
+        }
+      }
+    }
+
+    if (roleName === 'secretary-treasurer') {
+      const conflictingRoles = await this.prisma.roles.findMany({
+        where: { role_name: { in: ['secretary', 'treasurer'] }, active: true },
+        select: { role_id: true, role_name: true },
+      });
+
+      if (conflictingRoles.length > 0) {
+        const conflictingIds = conflictingRoles.map((r) => r.role_id);
+        const existingConflict =
+          await this.prisma.club_role_assignments.findFirst({
+            where: {
+              club_section_id: sectionId,
+              role_id: { in: conflictingIds },
+              active: true,
+            },
+            include: {
+              roles: { select: { role_name: true } },
+            },
+          });
+
+        if (existingConflict) {
+          throw new ConflictException(
+            `Cannot assign "secretary-treasurer" when "${existingConflict.roles.role_name}" already exists in this section`,
+          );
+        }
+      }
+    }
+  }
 
   private async getActiveEcclesiasticalYearId(): Promise<number> {
     const currentYear = await this.prisma.ecclesiastical_years.findFirst({

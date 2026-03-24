@@ -30,6 +30,8 @@ import { InsuranceModule } from './insurance/insurance.module';
 import { InvestitureModule } from './investiture/investiture.module';
 import { UnitsModule } from './units/units.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { ClubEnrollmentsModule } from './club-enrollments/club-enrollments.module';
+import { envValidationSchema } from './config/env.validation';
 
 @Module({
   imports: [
@@ -38,6 +40,10 @@ import { DashboardModule } from './dashboard/dashboard.module';
     // ==========================================
     ConfigModule.forRoot({
       isGlobal: true,
+      validationSchema: envValidationSchema,
+      validationOptions: {
+        abortEarly: false,
+      },
     }),
 
     // ==========================================
@@ -72,8 +78,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
                   translateTime: 'SYS:standard',
                   ignore:
                     process.env.LOG_PRETTY_IGNORE ||
-                    'pid,hostname,req,res,responseTime',
-                  singleLine: false,
+                    'pid,hostname,req,res,responseTime,reqId,timestamp,ip',
+                  singleLine: true,
                 },
               },
             }
@@ -129,6 +135,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     InvestitureModule,
     UnitsModule,
     DashboardModule,
+    ClubEnrollmentsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
