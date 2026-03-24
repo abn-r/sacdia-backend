@@ -173,6 +173,7 @@ export class InvestitureService {
           'Investidura enviada a validación',
           'Un consejero ha enviado un enrollment para aprobación',
           { type: 'investiture', entity_id: String(enrollmentId), status: 'submitted' },
+          'investiture:submitted',
         );
       }
     } catch (error) {
@@ -343,6 +344,7 @@ export class InvestitureService {
           'Investidura rechazada',
           `El enrollment ha sido rechazado: ${dto.reason}`,
           { type: 'investiture', entity_id: String(enrollmentId), status: 'rejected' },
+          'investiture:rejected',
         );
       }
     } catch (error) {
@@ -448,6 +450,7 @@ export class InvestitureService {
         'Felicidades, has sido investido',
         'Tu investidura ha sido completada oficialmente.',
         { type: 'investiture', entity_id: String(enrollmentId), status: 'invested' },
+        'investiture:invested',
       );
     } catch (error) {
       this.logger.warn(`Notification failed for investiture completion ${enrollmentId}: ${error.message}`);
@@ -996,6 +999,7 @@ export class InvestitureService {
               'Un enrollment ha sido aprobado por el director y requiere revisión del coordinador',
               notifData,
               enrollment.users.local_field_id,
+              'investiture:club_approved',
             );
           }
           break;
@@ -1009,6 +1013,7 @@ export class InvestitureService {
               'Un enrollment ha sido aprobado por el coordinador y requiere aprobación del campo',
               notifData,
               enrollment.users.local_field_id,
+              'investiture:coordinator_approved',
             );
           }
           break;
@@ -1020,6 +1025,7 @@ export class InvestitureService {
             'Investidura aprobada por el campo',
             'Tu investidura ha sido aprobada a nivel de campo. Pronto serás investido.',
             notifData,
+            'investiture:field_approved',
           );
           break;
       }

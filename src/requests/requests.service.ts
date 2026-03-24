@@ -107,6 +107,7 @@ export class RequestsService {
         'Nueva solicitud de traslado',
         `${result.user.name} ${result.user.paternal_last_name} ha solicitado un traslado`,
         { type: 'transfer', entity_id: result.transfer_request_id, status: 'pending' },
+        'requests:transfer_created',
       );
     } catch (error) {
       this.logger.warn(`Notification failed for transfer request ${result.transfer_request_id}: ${error.message}`);
@@ -247,6 +248,7 @@ export class RequestsService {
         title,
         body,
         { type: 'transfer', entity_id: requestId, action },
+        `requests:transfer_${action}`,
       );
     } catch (error) {
       this.logger.warn(`Notification failed for transfer review ${requestId}: ${error.message}`);
@@ -449,6 +451,7 @@ export class RequestsService {
         'Nueva solicitud de asignación de rol',
         `Se ha solicitado asignar el rol ${result.role.role_name} a ${userName}`,
         { type: 'assignment', entity_id: result.request_id, status: 'pending' },
+        'requests:assignment_created',
       );
     } catch (error) {
       this.logger.warn(`Notification failed for assignment request ${result.request_id}: ${error.message}`);
@@ -620,12 +623,14 @@ export class RequestsService {
         : `La asignación del rol ${roleName} ha sido rechazada${comment ? ': ' + comment : ''}`;
       const notifData = { type: 'assignment', entity_id: requestId, action };
 
+      const assignmentSource = `requests:assignment_${action}`;
+
       // Notify the requester (assistant-lf or whoever requested)
-      this.notifications.notifySafe(request.requested_by, title, body, notifData);
+      this.notifications.notifySafe(request.requested_by, title, body, notifData, assignmentSource);
 
       // Notify the target user (the person being assigned)
       if (request.user_id !== request.requested_by) {
-        this.notifications.notifySafe(request.user_id, title, body, notifData);
+        this.notifications.notifySafe(request.user_id, title, body, notifData, assignmentSource);
       }
     } catch (error) {
       this.logger.warn(`Notification failed for assignment review ${requestId}: ${error.message}`);

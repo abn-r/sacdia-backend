@@ -894,12 +894,13 @@ model notification_logs {
   type          String   @db.VarChar(50)
   target_type   String   @db.VarChar(50)
   target_id     String?  @db.VarChar(255)
-  sent_by       String   @db.Uuid
+  sent_by       String?  @db.Uuid
+  source        String?  @db.VarChar(100)
   tokens_sent   Int      @default(0)
   tokens_failed Int      @default(0)
   created_at    DateTime @default(now()) @db.Timestamptz()
 
-  users users @relation("notification_logs_sender", fields: [sent_by], references: [user_id])
+  users users? @relation("notification_logs_sender", fields: [sent_by], references: [user_id])
 
   @@index([sent_by], map: "idx_notification_logs_sender")
   @@index([created_at], map: "idx_notification_logs_created")

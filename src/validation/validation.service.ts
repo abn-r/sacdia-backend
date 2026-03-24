@@ -110,6 +110,7 @@ export class ValidationService {
           'Nueva clase enviada a revisión',
           'Un miembro ha enviado una clase para validación',
           { type: 'validation', entity_type: 'class', entity_id: String(enrollmentId) },
+          'validation:class_submitted',
         );
       }
     } catch (error) {
@@ -186,6 +187,7 @@ export class ValidationService {
           'Nuevo honor enviado a revisión',
           'Un miembro ha enviado un honor para validación',
           { type: 'validation', entity_type: 'honor', entity_id: String(userHonorId) },
+          'validation:honor_submitted',
         );
       }
     } catch (error) {
@@ -305,6 +307,7 @@ export class ValidationService {
         title,
         body,
         { type: 'validation', entity_type: 'class', entity_id: String(enrollmentId), action },
+        `validation:class_${action}`,
       );
     } catch (error) {
       this.logger.warn(`Notification failed for class review ${enrollmentId}: ${error.message}`);
@@ -374,6 +377,7 @@ export class ValidationService {
         title,
         body,
         { type: 'validation', entity_type: 'honor', entity_id: String(userHonorId), action },
+        `validation:honor_${action}`,
       );
     } catch (error) {
       this.logger.warn(`Notification failed for honor review ${userHonorId}: ${error.message}`);

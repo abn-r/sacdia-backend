@@ -86,14 +86,14 @@ export class NotificationsController {
   @RequirePermissions('notifications:send')
   @ApiOperation({ summary: 'Send notification to specific user' })
   async sendToUser(@Body() dto: SendNotificationDto, @Request() req) {
-    return this.notificationsService.sendToUser(dto, req.user.sub);
+    return this.notificationsService.sendToUser(dto, req.user.sub, 'admin:manual_send');
   }
 
   @Post('broadcast')
   @RequirePermissions('notifications:broadcast')
   @ApiOperation({ summary: 'Send notification to all users' })
   async broadcast(@Body() dto: BroadcastNotificationDto, @Request() req) {
-    return this.notificationsService.broadcast(dto, req.user.sub);
+    return this.notificationsService.broadcast(dto, req.user.sub, 'admin:broadcast');
   }
 
   @Post('club/:instanceType/:instanceId')
@@ -110,6 +110,7 @@ export class NotificationsController {
       parseInt(instanceId),
       dto,
       req.user.sub,
+      'admin:club_send',
     );
   }
 
