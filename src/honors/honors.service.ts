@@ -255,9 +255,14 @@ export class HonorsService {
           active: true,
           date: dto?.date ? new Date(dto.date) : new Date(),
           validate: false,
+          validation_status: 'in_progress',
           certificate: '',
           images: [],
           document: null,
+          submitted_at: null,
+          validated_by_id: null,
+          validated_at: null,
+          rejection_reason: null,
           modified_at: new Date(),
         },
         include: {
@@ -281,6 +286,7 @@ export class HonorsService {
         honor_id: honorId,
         date: dto?.date ? new Date(dto.date) : new Date(),
         validate: false,
+        validation_status: 'in_progress',
         certificate: '',
         images: [],
         active: true,
@@ -750,22 +756,32 @@ export class HonorsService {
   // ========================================
 
   async getUserHonorStats(userId: string) {
-    const [total, validated, inProgress] = await Promise.all([
-      this.prisma.users_honors.count({
-        where: { user_id: userId, active: true },
-      }),
-      this.prisma.users_honors.count({
-        where: { user_id: userId, active: true, validate: true },
-      }),
-      this.prisma.users_honors.count({
-        where: { user_id: userId, active: true, validate: false },
-      }),
-    ]);
+    const where = { user_id: userId, active: true };
+
+    const [total, approved, pendingReview, rejected, inProgress] =
+      await Promise.all([
+        this.prisma.users_honors.count({ where }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'approved' },
+        }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'pending_review' },
+        }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'rejected' },
+        }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'in_progress' },
+        }),
+      ]);
 
     return {
       total,
-      validated,
+      validated: approved, // backward compat
       in_progress: inProgress,
+      pending_review: pendingReview,
+      rejected,
+      approved,
     };
   }
 

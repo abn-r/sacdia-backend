@@ -899,6 +899,7 @@ model users {
   notification_preferences       notification_preferences[]
   section_progress_submitted     class_section_progress[]          @relation("section_progress_submitted_by")
   section_progress_validated     class_section_progress[]          @relation("section_progress_validated_by")
+  honors_validated               users_honors[]                    @relation("honor_validator")
 }
 
 model notification_preferences {
@@ -1209,23 +1210,29 @@ model users_medicines {
 }
 
 model users_honors {
-  user_honor_id Int       @id(map: "user_honors_pkey") @default(autoincrement())
-  user_id       String    @db.Uuid
-  honor_id      Int
+  user_honor_id     Int       @id(map: "user_honors_pkey") @default(autoincrement())
+  user_id           String    @db.Uuid
+  honor_id          Int
   active            Boolean   @default(true)
   validate          Boolean   @default(false)
   validation_status String    @default("in_progress") @db.VarChar(20)
+  submitted_at      DateTime? @db.Timestamptz(6)
+  validated_by_id   String?   @db.Uuid
+  validated_at      DateTime? @db.Timestamptz(6)
+  rejection_reason  String?
   certificate       String    @db.VarChar
-  images        Json      @default("[]")
-  document      String?   @db.VarChar
-  date          DateTime  @db.Date
-  created_at    DateTime? @default(now()) @db.Timestamptz(6)
-  modified_at   DateTime? @default(now()) @db.Timestamptz(6)
-  honors        honors    @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_honor_id_fkey")
-  users         users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
+  images            Json      @default("[]")
+  document          String?   @db.VarChar
+  date              DateTime  @db.Date
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime? @default(now()) @db.Timestamptz(6)
+  honors            honors    @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_honor_id_fkey")
+  users             users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
+  validator         users?    @relation("honor_validator", fields: [validated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([user_id, honor_id])
   @@index([user_id], map: "idx_users_honors_user_id")
+  @@index([validation_status], map: "idx_users_honors_validation_status")
 }
 
 model users_permissions {

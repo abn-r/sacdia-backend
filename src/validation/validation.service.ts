@@ -149,11 +149,21 @@ export class ValidationService {
       );
     }
 
+    // Allow submission from: in_progress, rejected
+    const allowedStatuses = ['in_progress', 'rejected'];
+    if (!allowedStatuses.includes(userHonor.validation_status)) {
+      throw new BadRequestException(
+        `El honor debe estar en estado in_progress o rejected para enviar a revision. Estado actual: ${userHonor.validation_status}`,
+      );
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.users_honors.update({
         where: { user_honor_id: userHonorId },
         data: {
           validation_status: 'pending_review',
+          submitted_at: new Date(),
+          rejection_reason: null, // Clear any previous rejection
           modified_at: new Date(),
         },
       });
@@ -334,16 +344,17 @@ export class ValidationService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Update validation_status + backward-compat boolean
-      // On reject: transition to 'rejected' momentarily, then 'in_progress'
-      // so the member can re-submit. We store 'in_progress' directly.
       const newValidationStatus =
-        action === 'approved' ? 'approved' : 'in_progress';
+        action === 'approved' ? 'approved' : 'rejected';
 
       const updated = await tx.users_honors.update({
         where: { user_honor_id: userHonorId },
         data: {
           validate: action === 'approved',
           validation_status: newValidationStatus,
+          validated_by_id: performedBy,
+          validated_at: new Date(),
+          rejection_reason: action === 'rejected' ? comment : null,
           modified_at: new Date(),
         },
       });
