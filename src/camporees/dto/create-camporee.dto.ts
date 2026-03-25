@@ -93,4 +93,28 @@ export class CreateCamporeeDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   registration_cost?: number;
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite de inscripción de clubes (formato ISO 8601)',
+    example: '2024-05-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  club_registration_deadline?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite de inscripción de miembros (formato ISO 8601)',
+    example: '2024-05-05',
+  })
+  @IsOptional()
+  @IsDateString()
+  member_registration_deadline?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite de pago (formato ISO 8601)',
+    example: '2024-05-10',
+  })
+  @IsOptional()
+  @IsDateString()
+  payment_deadline?: string;
 }

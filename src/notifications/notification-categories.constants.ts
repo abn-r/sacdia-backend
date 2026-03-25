@@ -8,6 +8,7 @@ export const NOTIFICATION_CATEGORIES = [
   'validation',
   'requests',
   'activities',
+  'camporees',
 ] as const;
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];

@@ -21,6 +21,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { CamporeesService } from './camporees.service';
+import { CamporeeLateApprovalsService } from './camporee-late-approvals.service';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import {
   AuthorizationResource,
@@ -36,6 +37,8 @@ import {
   EnrollClubDto,
   CreatePaymentDto,
   UpdatePaymentDto,
+  RejectEnrollmentDto,
+  CamporeeStatusQueryDto,
 } from './dto';
 
 @ApiTags('camporees')
@@ -43,7 +46,10 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class CamporeesController {
-  constructor(private readonly camporeesService: CamporeesService) {}
+  constructor(
+    private readonly camporeesService: CamporeesService,
+    private readonly camporeeLateApprovalsService: CamporeeLateApprovalsService,
+  ) {}
 
   // ========================================
   // CAMPOREES
@@ -198,6 +204,107 @@ export class CamporeesController {
   }
 
   // ========================================
+  // LATE ENROLLMENT APPROVALS
+  // ========================================
+
+  @Get(':camporeeId/pending')
+  @RequirePermissions('attendance:approve_late')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Listar inscripciones pendientes de aprobación',
+    description:
+      'Obtiene todos los clubes, miembros y pagos con estado pending_approval en el camporee',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({ status: 200, description: 'Inscripciones pendientes' })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async listPendingApprovals(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+  ) {
+    return this.camporeeLateApprovalsService.listPending(camporeeId);
+  }
+
+  @Patch(':camporeeId/clubs/:camporeeClubId/approve')
+  @RequirePermissions('attendance:approve_late')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({ summary: 'Aprobar inscripción tardía de club' })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'camporeeClubId', type: Number })
+  @ApiResponse({ status: 200, description: 'Inscripción de club aprobada' })
+  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  async approveClubEnrollment(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('camporeeClubId', ParseIntPipe) camporeeClubId: number,
+    @Request() req: any,
+  ) {
+    return this.camporeeLateApprovalsService.approveClubEnrollment(
+      camporeeClubId,
+      req.user.sub,
+    );
+  }
+
+  @Patch(':camporeeId/clubs/:camporeeClubId/reject')
+  @RequirePermissions('attendance:approve_late')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({ summary: 'Rechazar inscripción tardía de club' })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'camporeeClubId', type: Number })
+  @ApiResponse({ status: 200, description: 'Inscripción de club rechazada' })
+  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  async rejectClubEnrollment(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('camporeeClubId', ParseIntPipe) camporeeClubId: number,
+    @Body() dto: RejectEnrollmentDto,
+    @Request() req: any,
+  ) {
+    return this.camporeeLateApprovalsService.rejectClubEnrollment(
+      camporeeClubId,
+      req.user.sub,
+      dto.rejection_reason,
+    );
+  }
+
+  @Patch(':camporeeId/members/:camporeeMemberId/approve')
+  @RequirePermissions('attendance:approve_late')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({ summary: 'Aprobar inscripción tardía de miembro' })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'camporeeMemberId', type: Number })
+  @ApiResponse({ status: 200, description: 'Inscripción de miembro aprobada' })
+  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  async approveMemberEnrollment(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('camporeeMemberId', ParseIntPipe) camporeeMemberId: number,
+    @Request() req: any,
+  ) {
+    return this.camporeeLateApprovalsService.approveMemberEnrollment(
+      camporeeMemberId,
+      req.user.sub,
+    );
+  }
+
+  @Patch(':camporeeId/members/:camporeeMemberId/reject')
+  @RequirePermissions('attendance:approve_late')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({ summary: 'Rechazar inscripción tardía de miembro' })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'camporeeMemberId', type: Number })
+  @ApiResponse({ status: 200, description: 'Inscripción de miembro rechazada' })
+  @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
+  async rejectMemberEnrollment(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('camporeeMemberId', ParseIntPipe) camporeeMemberId: number,
+    @Body() dto: RejectEnrollmentDto,
+    @Request() req: any,
+  ) {
+    return this.camporeeLateApprovalsService.rejectMemberEnrollment(
+      camporeeMemberId,
+      req.user.sub,
+      dto.rejection_reason,
+    );
+  }
+
+  // ========================================
   // LOCAL CAMPOREES (detail)
   // ========================================
 
@@ -281,10 +388,14 @@ export class CamporeesController {
     description: 'Obtiene la lista de miembros registrados en el camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected'] })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
-  async getMembers(@Param('camporeeId', ParseIntPipe) camporeeId: number) {
-    return this.camporeesService.getMembers(camporeeId);
+  async getMembers(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Query() query: CamporeeStatusQueryDto,
+  ) {
+    return this.camporeesService.getMembers(camporeeId, query.status);
   }
 
   @Delete(':camporeeId/members/:userId')
@@ -338,12 +449,14 @@ export class CamporeesController {
       'Obtiene la lista de secciones de club inscritas en el camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected'] })
   @ApiResponse({ status: 200, description: 'Lista de clubes inscritos' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getEnrolledClubs(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Query() query: CamporeeStatusQueryDto,
   ) {
-    return this.camporeesService.getEnrolledClubs(camporeeId);
+    return this.camporeesService.getEnrolledClubs(camporeeId, query.status);
   }
 
   @Delete(':camporeeId/clubs/:camporeeClubId')
@@ -409,13 +522,15 @@ export class CamporeesController {
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'memberId', type: Number })
+  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
   @ApiResponse({ status: 200, description: 'Lista de pagos del miembro' })
   @ApiResponse({ status: 404, description: 'Miembro o camporee no encontrado' })
   async getMemberPayments(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('memberId', ParseIntPipe) memberId: number,
+    @Query() query: CamporeeStatusQueryDto,
   ) {
-    return this.camporeesService.getMemberPayments(camporeeId, memberId);
+    return this.camporeesService.getMemberPayments(camporeeId, memberId, query.status);
   }
 
   @Get(':camporeeId/payments')
@@ -427,12 +542,14 @@ export class CamporeesController {
       'Obtiene un resumen de todos los pagos del camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
   @ApiResponse({ status: 200, description: 'Lista de pagos del camporee' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getCamporeePayments(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Query() query: CamporeeStatusQueryDto,
   ) {
-    return this.camporeesService.getCamporeePayments(camporeeId);
+    return this.camporeesService.getCamporeePayments(camporeeId, query.status);
   }
 
   @Patch('payments/:paymentId')
@@ -449,5 +566,39 @@ export class CamporeesController {
     @Body() dto: UpdatePaymentDto,
   ) {
     return this.camporeesService.updatePayment(paymentId, dto);
+  }
+
+  @Patch('payments/:camporeePaymentId/approve')
+  @RequirePermissions('attendance:approve_late')
+  @ApiOperation({ summary: 'Aprobar pago tardío de camporee' })
+  @ApiParam({ name: 'camporeePaymentId', type: String, description: 'UUID del pago' })
+  @ApiResponse({ status: 200, description: 'Pago aprobado' })
+  @ApiResponse({ status: 404, description: 'Pago no encontrado' })
+  async approvePayment(
+    @Param('camporeePaymentId', ParseUUIDPipe) camporeePaymentId: string,
+    @Request() req: any,
+  ) {
+    return this.camporeeLateApprovalsService.approvePayment(
+      camporeePaymentId,
+      req.user.sub,
+    );
+  }
+
+  @Patch('payments/:camporeePaymentId/reject')
+  @RequirePermissions('attendance:approve_late')
+  @ApiOperation({ summary: 'Rechazar pago tardío de camporee' })
+  @ApiParam({ name: 'camporeePaymentId', type: String, description: 'UUID del pago' })
+  @ApiResponse({ status: 200, description: 'Pago rechazado' })
+  @ApiResponse({ status: 404, description: 'Pago no encontrado' })
+  async rejectPayment(
+    @Param('camporeePaymentId', ParseUUIDPipe) camporeePaymentId: string,
+    @Body() dto: RejectEnrollmentDto,
+    @Request() req: any,
+  ) {
+    return this.camporeeLateApprovalsService.rejectPayment(
+      camporeePaymentId,
+      req.user.sub,
+      dto.rejection_reason,
+    );
   }
 }

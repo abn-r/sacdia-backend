@@ -101,4 +101,28 @@ export class CreateUnionCamporeeDto {
   @IsArray()
   @IsInt({ each: true })
   local_field_ids?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite de inscripción de clubes (formato ISO 8601)',
+    example: '2024-09-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  club_registration_deadline?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite de inscripción de miembros (formato ISO 8601)',
+    example: '2024-09-05',
+  })
+  @IsOptional()
+  @IsDateString()
+  member_registration_deadline?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite de pago (formato ISO 8601)',
+    example: '2024-09-10',
+  })
+  @IsOptional()
+  @IsDateString()
+  payment_deadline?: string;
 }

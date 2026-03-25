@@ -1238,6 +1238,21 @@ WHERE r.role_name = 'super-admin'
   AND p.active = true
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
+-- ============================
+-- attendance:approve_late — field/union directors and assistants
+-- ============================
+-- Grant to: director-lf, assistant-lf, director-union, assistant-union (all GLOBAL)
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'attendance:approve_late'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
 COMMIT;
 
 -- ============================================================================

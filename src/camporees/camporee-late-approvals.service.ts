@@ -1,0 +1,223 @@
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class CamporeeLateApprovalsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * List all pending enrollments for a camporee (clubs, members, payments).
+   */
+  async listPending(camporeeId: number) {
+    const [pendingClubs, pendingMembers, pendingPayments] = await Promise.all([
+      this.prisma.camporee_clubs.findMany({
+        where: { camporee_id: camporeeId, status: 'pending_approval', active: true },
+        include: { club_sections: true },
+        orderBy: { created_at: 'asc' },
+      }),
+      this.prisma.camporee_members.findMany({
+        where: { camporee_id: camporeeId, status: 'pending_approval', active: true },
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              email: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+              user_image: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'asc' },
+      }),
+      this.prisma.camporee_payments.findMany({
+        where: {
+          status: 'pending_approval',
+          camporee_member: { camporee_id: camporeeId },
+        },
+        include: {
+          camporee_member: {
+            include: {
+              users: {
+                select: {
+                  user_id: true,
+                  name: true,
+                  email: true,
+                  paternal_last_name: true,
+                  maternal_last_name: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { created_at: 'asc' },
+      }),
+    ]);
+
+    return { clubs: pendingClubs, members: pendingMembers, payments: pendingPayments };
+  }
+
+  // ============================================================
+  // CLUB ENROLLMENT
+  // ============================================================
+
+  /**
+   * Approve a pending club enrollment.
+   */
+  async approveClubEnrollment(camporeeClubId: number, approvedBy: string) {
+    const record = await this.prisma.camporee_clubs.findFirst({
+      where: { camporee_club_id: camporeeClubId, status: 'pending_approval' },
+    });
+
+    if (!record) {
+      throw new NotFoundException('Inscripción de club no encontrada');
+    }
+
+    return this.prisma.camporee_clubs.update({
+      where: { camporee_club_id: camporeeClubId },
+      data: {
+        status: 'approved',
+        approved_by: approvedBy,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Reject a pending club enrollment.
+   */
+  async rejectClubEnrollment(
+    camporeeClubId: number,
+    rejectedBy: string,
+    rejectionReason?: string,
+  ) {
+    const record = await this.prisma.camporee_clubs.findFirst({
+      where: { camporee_club_id: camporeeClubId, status: 'pending_approval' },
+    });
+
+    if (!record) {
+      throw new NotFoundException('Inscripción de club no encontrada');
+    }
+
+    return this.prisma.camporee_clubs.update({
+      where: { camporee_club_id: camporeeClubId },
+      data: {
+        status: 'rejected',
+        rejected_by: rejectedBy,
+        rejection_reason: rejectionReason ?? null,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  // ============================================================
+  // MEMBER ENROLLMENT
+  // ============================================================
+
+  /**
+   * Approve a pending member enrollment.
+   */
+  async approveMemberEnrollment(camporeeMemberId: number, approvedBy: string) {
+    const record = await this.prisma.camporee_members.findFirst({
+      where: { camporee_member_id: camporeeMemberId, status: 'pending_approval' },
+    });
+
+    if (!record) {
+      throw new NotFoundException('Inscripción de miembro no encontrada');
+    }
+
+    return this.prisma.camporee_members.update({
+      where: { camporee_member_id: camporeeMemberId },
+      data: {
+        status: 'approved',
+        approved_by: approvedBy,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Reject a pending member enrollment.
+   */
+  async rejectMemberEnrollment(
+    camporeeMemberId: number,
+    rejectedBy: string,
+    rejectionReason?: string,
+  ) {
+    const record = await this.prisma.camporee_members.findFirst({
+      where: { camporee_member_id: camporeeMemberId, status: 'pending_approval' },
+    });
+
+    if (!record) {
+      throw new NotFoundException('Inscripción de miembro no encontrada');
+    }
+
+    return this.prisma.camporee_members.update({
+      where: { camporee_member_id: camporeeMemberId },
+      data: {
+        status: 'rejected',
+        rejected_by: rejectedBy,
+        rejection_reason: rejectionReason ?? null,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  // ============================================================
+  // PAYMENT
+  // ============================================================
+
+  /**
+   * Approve a pending payment.
+   * NOTE: camporee_payment_id is a UUID string.
+   */
+  async approvePayment(camporeePaymentId: string, approvedBy: string) {
+    const record = await this.prisma.camporee_payments.findFirst({
+      where: { camporee_payment_id: camporeePaymentId, status: 'pending_approval' },
+    });
+
+    if (!record) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
+    return this.prisma.camporee_payments.update({
+      where: { camporee_payment_id: camporeePaymentId },
+      data: {
+        status: 'approved',
+        approved_by: approvedBy,
+      },
+    });
+  }
+
+  /**
+   * Reject a pending payment.
+   * NOTE: camporee_payment_id is a UUID string.
+   */
+  async rejectPayment(
+    camporeePaymentId: string,
+    rejectedBy: string,
+    rejectionReason?: string,
+  ) {
+    const record = await this.prisma.camporee_payments.findFirst({
+      where: { camporee_payment_id: camporeePaymentId, status: 'pending_approval' },
+    });
+
+    if (!record) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
+    return this.prisma.camporee_payments.update({
+      where: { camporee_payment_id: camporeePaymentId },
+      data: {
+        status: 'rejected',
+        rejected_by: rejectedBy,
+        rejection_reason: rejectionReason ?? null,
+      },
+    });
+  }
+}

@@ -251,6 +251,7 @@ export class NotificationsService {
     data?: Record<string, string>,
     localFieldId?: number,
     source?: string,
+    unionId?: number,
   ): Promise<void> {
     try {
       if (this.isQueueReady()) {
@@ -261,6 +262,7 @@ export class NotificationsService {
           data,
           localFieldId,
           source,
+          unionId,
         };
         await this.queue!.add(
           'send-to-global-role',
@@ -278,6 +280,7 @@ export class NotificationsService {
         data,
         localFieldId,
         source,
+        unionId,
       );
     } catch (error) {
       this.logger.warn(
@@ -610,6 +613,7 @@ export class NotificationsService {
     data?: Record<string, string>,
     localFieldId?: number,
     source?: string,
+    unionId?: number,
   ): Promise<void> {
     const where: Record<string, unknown> = {
       active: true,
@@ -620,7 +624,9 @@ export class NotificationsService {
       },
     };
 
-    if (localFieldId) {
+    if (unionId) {
+      where.users = { union_id: unionId };
+    } else if (localFieldId) {
       where.users = { local_field_id: localFieldId };
     }
 

@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   PaginationDto,
   PaginatedResult,
@@ -40,6 +41,7 @@ export class CamporeesService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ========================================
@@ -627,6 +629,9 @@ export class CamporeesService {
    * @param dto - Register member DTO
    */
   async registerMember(camporeeId: number, dto: RegisterMemberDto) {
+    let isLate = false;
+    let camporeeLocalFieldId: number | null = null;
+
     const member = await this.prisma.$transaction(async (tx) => {
       // 1. Validate camporee exists
       const camporee = await tx.local_camporees.findUnique({
@@ -641,6 +646,9 @@ export class CamporeesService {
       if (!camporee.active) {
         throw new BadRequestException('Camporee is not active');
       }
+
+      isLate = this.isAfterDeadline(camporee.member_registration_deadline);
+      camporeeLocalFieldId = camporee.local_field_id;
 
       // 2. Validate user exists
       const user = await tx.users.findUnique({
@@ -711,6 +719,7 @@ export class CamporeesService {
           club_name: dto.club_name,
           insurance_verified: !!dto.insurance_id,
           insurance_id: dto.insurance_id,
+          status: isLate ? 'pending_approval' : 'registered',
           active: true,
         },
         include: {
@@ -740,14 +749,28 @@ export class CamporeesService {
       return member;
     });
 
+    if (isLate && camporeeLocalFieldId) {
+      setImmediate(() => {
+        this.notificationsService.sendToGlobalRole(
+          ['director-lf', 'assistant-lf'],
+          'Inscripción tardía de miembro',
+          `Un miembro se inscribió fuera de plazo al camporee y requiere aprobación`,
+          { camporeeId: String(camporeeId), type: 'member_enrollment' },
+          camporeeLocalFieldId ?? undefined,
+          'camporees:late_enrollment',
+        );
+      });
+    }
+
     return this.applySignedPrivateUrls(member);
   }
 
   /**
    * Get all members registered for a camporee
    * @param camporeeId - The local_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
    */
-  async getMembers(camporeeId: number) {
+  async getMembers(camporeeId: number, status?: string) {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
@@ -755,6 +778,7 @@ export class CamporeesService {
       where: {
         camporee_id: camporeeId,
         active: true,
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
       },
       include: {
         users: {
@@ -838,7 +862,10 @@ export class CamporeesService {
     dto: EnrollClubDto,
     registeredBy: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    let isLate = false;
+    let camporeeLocalFieldId: number | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Validate camporee exists and is active
       const camporee = await tx.local_camporees.findUnique({
         where: { local_camporee_id: camporeeId },
@@ -851,6 +878,9 @@ export class CamporeesService {
       if (!camporee.active) {
         throw new BadRequestException('Camporee is not active');
       }
+
+      isLate = this.isAfterDeadline(camporee.club_registration_deadline);
+      camporeeLocalFieldId = camporee.local_field_id;
 
       // 2. Validate club section exists
       const clubSection = await tx.club_sections.findUnique({
@@ -889,7 +919,7 @@ export class CamporeesService {
           camporee_type: 'local',
           club_section_id: dto.club_section_id,
           club_id: clubSection.main_club_id,
-          status: 'registered',
+          status: isLate ? 'pending_approval' : 'registered',
           registered_by: registeredBy,
           active: true,
         },
@@ -911,13 +941,29 @@ export class CamporeesService {
         },
       });
     });
+
+    if (isLate && camporeeLocalFieldId) {
+      setImmediate(() => {
+        this.notificationsService.sendToGlobalRole(
+          ['director-lf', 'assistant-lf'],
+          'Inscripción tardía de club',
+          `Un club se inscribió fuera de plazo al camporee y requiere aprobación`,
+          { camporeeId: String(camporeeId), type: 'club_enrollment' },
+          camporeeLocalFieldId ?? undefined,
+          'camporees:late_enrollment',
+        );
+      });
+    }
+
+    return result;
   }
 
   /**
    * Get all enrolled clubs for a camporee
    * @param camporeeId - The local_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
    */
-  async getEnrolledClubs(camporeeId: number) {
+  async getEnrolledClubs(camporeeId: number, status?: string) {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
@@ -925,6 +971,7 @@ export class CamporeesService {
       where: {
         camporee_id: camporeeId,
         active: true,
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
       },
       include: {
         club_sections: {
@@ -996,7 +1043,10 @@ export class CamporeesService {
     dto: CreatePaymentDto,
     registeredBy: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    let isLate = false;
+    let camporeeLocalFieldId: number | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Validate camporee exists
       const camporee = await tx.local_camporees.findUnique({
         where: { local_camporee_id: camporeeId },
@@ -1005,6 +1055,9 @@ export class CamporeesService {
       if (!camporee) {
         throw new NotFoundException('Camporee not found');
       }
+
+      isLate = this.isAfterDeadline(camporee.payment_deadline);
+      camporeeLocalFieldId = camporee.local_field_id;
 
       // 2. Validate member is registered in this camporee
       const member = await tx.camporee_members.findFirst({
@@ -1031,6 +1084,7 @@ export class CamporeesService {
           notes: dto.notes,
           registered_by: registeredBy,
           paid_at: new Date(dto.paid_at),
+          status: isLate ? 'pending_approval' : 'registered',
         },
         include: {
           camporee_member: {
@@ -1057,14 +1111,30 @@ export class CamporeesService {
         },
       });
     });
+
+    if (isLate && camporeeLocalFieldId) {
+      setImmediate(() => {
+        this.notificationsService.sendToGlobalRole(
+          ['director-lf', 'assistant-lf'],
+          'Pago tardío de camporee',
+          `Se registró un pago fuera de plazo y requiere aprobación`,
+          { camporeeId: String(camporeeId), type: 'payment' },
+          camporeeLocalFieldId ?? undefined,
+          'camporees:late_payment',
+        );
+      });
+    }
+
+    return result;
   }
 
   /**
    * Get all payments for a specific camporee member
    * @param camporeeId - The local_camporee_id
    * @param memberId - The camporee_member_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
    */
-  async getMemberPayments(camporeeId: number, memberId: number) {
+  async getMemberPayments(camporeeId: number, memberId: number, status?: string) {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
@@ -1083,7 +1153,10 @@ export class CamporeesService {
     }
 
     return this.prisma.camporee_payments.findMany({
-      where: { camporee_member_id: memberId },
+      where: {
+        camporee_member_id: memberId,
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
+      },
       include: {
         registrar: {
           select: {
@@ -1101,8 +1174,9 @@ export class CamporeesService {
   /**
    * Get all payments for a camporee (summary)
    * @param camporeeId - The local_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
    */
-  async getCamporeePayments(camporeeId: number) {
+  async getCamporeePayments(camporeeId: number, status?: string) {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
@@ -1111,6 +1185,7 @@ export class CamporeesService {
         camporee_member: {
           camporee_id: camporeeId,
         },
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
       },
       include: {
         camporee_member: {
@@ -1424,5 +1499,10 @@ export class CamporeesService {
     return grants.some((grant) =>
       normalized.has(grant.role_name.toLowerCase()),
     );
+  }
+
+  private isAfterDeadline(deadline: Date | null | undefined): boolean {
+    if (!deadline) return false;
+    return new Date() > new Date(deadline);
   }
 }

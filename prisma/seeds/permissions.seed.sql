@@ -420,6 +420,16 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Camporee Late Enrollment
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('attendance:approve_late', 'Approve or reject late camporee enrollments', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

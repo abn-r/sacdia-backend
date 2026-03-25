@@ -40,6 +40,7 @@ export interface SendToGlobalRoleJobData {
   data?: Record<string, string>;
   localFieldId?: number;
   source?: string;
+  unionId?: number;
 }
 
 export interface BroadcastJobData {
@@ -232,7 +233,7 @@ export class NotificationsProcessor extends WorkerHost {
   // ---------------------------------------------------------------------------
 
   private async handleSendToGlobalRole(job: Job<SendToGlobalRoleJobData>) {
-    const { roleNames, title, body, data, localFieldId, source } = job.data;
+    const { roleNames, title, body, data, localFieldId, source, unionId } = job.data;
 
     const where: Record<string, unknown> = {
       active: true,
@@ -243,7 +244,9 @@ export class NotificationsProcessor extends WorkerHost {
       },
     };
 
-    if (localFieldId) {
+    if (unionId) {
+      where.users = { union_id: unionId };
+    } else if (localFieldId) {
       where.users = { local_field_id: localFieldId };
     }
 
