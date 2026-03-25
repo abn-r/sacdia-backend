@@ -243,7 +243,7 @@ export class BetterAuthService implements IBetterAuthService {
         user_id: userId,
         email,
         name,
-        email_verified: false,
+        email_verified: true,
       },
     });
 

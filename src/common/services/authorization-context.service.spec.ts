@@ -77,6 +77,7 @@ describe('AuthorizationContextService', () => {
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
+          expires_at: null,
           roles: {
             role_name: 'director',
             role_permissions: [
@@ -109,6 +110,7 @@ describe('AuthorizationContextService', () => {
           status: 'active',
           start_date: new Date('2026-02-01'),
           end_date: null,
+          expires_at: null,
           roles: {
             role_name: 'treasurer',
             role_permissions: [
@@ -213,6 +215,7 @@ describe('AuthorizationContextService', () => {
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
+          expires_at: null,
           roles: {
             role_name: 'director',
             role_permissions: [],

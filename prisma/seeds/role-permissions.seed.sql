@@ -11,7 +11,7 @@
 BEGIN;
 
 -- ============================
--- USER role (CLUB)
+-- USER role (GLOBAL)
 -- ============================
 -- Minimum permissions for a registered user NOT yet in a club (or between clubs).
 -- Can manage own profile, personal data, trajectory (honors/classes),
@@ -23,7 +23,7 @@ SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
 CROSS JOIN permissions p
 WHERE r.role_name = 'user'
-  AND r.role_category = 'CLUB'
+  AND r.role_category = 'GLOBAL'
   AND r.active = true
   AND p.active = true
   AND p.permission_name IN (
@@ -311,7 +311,11 @@ WHERE r.role_name = 'secretary'
     'inventory:read',
     'inventory:create',
     'inventory:update',
-    'inventory:delete'
+    'inventory:delete',
+    -- Membership approval
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -516,7 +520,12 @@ WHERE r.role_name = 'secretary-treasurer'
     'finances:read',
     'finances:create',
     'finances:update',
-    'finances:delete'
+    'finances:delete',
+
+    -- ===== Membership approval (3) =====
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -607,7 +616,11 @@ WHERE r.role_name = 'deputy-director'
     'activities:create',
     'activities:update',
     -- Financial read access (view only)
-    'finances:read'
+    'finances:read',
+    -- Membership approval
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -726,7 +739,11 @@ WHERE r.role_name = 'director'
     -- Assign roles to section members
     'club_roles:assign',
     -- Remove members from section / revoke roles
-    'club_roles:revoke'
+    'club_roles:revoke',
+    -- Membership approval
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1002,6 +1019,11 @@ WHERE r.role_name = 'assistant-lf'
     'classes:update',
     'club_roles:assign',
     'club_roles:revoke',
+
+    -- Membership approval (from director)
+    'club_members:approve',
+    'club_members:reject',
+    'club_members:list_pending',
 
     -- ===== Additional ASSISTANT-LF permissions (6) =====
     -- Mark members as invested (field-level authority)

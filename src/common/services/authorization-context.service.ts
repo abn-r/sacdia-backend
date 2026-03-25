@@ -34,6 +34,7 @@ export type ClubAuthorizationGrant = {
   status: string;
   start_date?: Date | null;
   end_date?: Date | null;
+  expires_at?: Date | null;
 };
 
 export type EffectiveClubAuthorization = {
@@ -138,6 +139,7 @@ type ClubAssignmentRecord = {
   status: string | null;
   start_date: Date | null;
   end_date: Date | null;
+  expires_at: Date | null;
   roles: {
     role_name: string;
     role_permissions: RolePermissionRecord[];
@@ -247,13 +249,14 @@ export class AuthorizationContextService {
           },
         },
         club_role_assignments: {
-          where: { active: true, status: 'active' },
+          where: { active: true },
           orderBy: { start_date: 'desc' },
           select: {
             assignment_id: true,
             status: true,
             start_date: true,
             end_date: true,
+            expires_at: true,
             roles: {
               select: {
                 role_name: true,
@@ -292,20 +295,26 @@ export class AuthorizationContextService {
       scope: globalScope,
     }));
 
+    // All grants (active + pending) — exposed in authorization.grants.club_assignments
     const clubGrants = (user.club_role_assignments ?? [])
       .map((assignment) => this.buildClubGrant(assignment))
       .filter((assignment): assignment is ClubAuthorizationGrant =>
         Boolean(assignment),
       );
 
+    // Only status:'active' grants are used for permission resolution and active context
+    const activeClubGrants = clubGrants.filter(
+      (grant) => grant.status === 'active',
+    );
+
     const persistedActiveAssignmentId =
       user.users_pr?.active_club_assignment_id ?? null;
     const activeClubGrant =
-      clubGrants.find(
+      activeClubGrants.find(
         (assignment) =>
           assignment.assignment_id === persistedActiveAssignmentId,
       ) ??
-      clubGrants[0] ??
+      activeClubGrants[0] ??
       null;
 
     const globalPermissions = this.uniqueSorted(
@@ -374,7 +383,7 @@ export class AuthorizationContextService {
         club_context: {
           active_assignment_id: activeClubGrant?.assignment_id ?? null,
           active: activeLegacyContext,
-          available: clubGrants.map((grant) =>
+          available: activeClubGrants.map((grant) =>
             this.toLegacyAssignmentContext(grant),
           ),
         },
@@ -502,6 +511,7 @@ export class AuthorizationContextService {
         status: assignment.status ?? 'active',
         start_date: assignment.start_date,
         end_date: assignment.end_date,
+        expires_at: assignment.expires_at,
       };
     }
 

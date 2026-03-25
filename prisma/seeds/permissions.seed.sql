@@ -398,6 +398,18 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Club Members (Membership Approval)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('club_members:approve', 'Aprobar solicitudes de membresía', true),
+  ('club_members:reject', 'Rechazar solicitudes de membresía', true),
+  ('club_members:list_pending', 'Ver solicitudes de membresía pendientes', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Camporees
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES

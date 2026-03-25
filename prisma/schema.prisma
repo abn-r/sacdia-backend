@@ -216,6 +216,7 @@ model classes {
   club_type_id           Int
   minimum_age            Int
   requires_invested_gm   Boolean                  @default(false)
+  display_order          Int                      @default(0)
   created_at             DateTime                 @default(now()) @db.Timestamptz(6)
   modified_at            DateTime                 @default(now()) @db.Timestamptz(6)
   material_url           String?                  @db.VarChar
@@ -347,6 +348,8 @@ model club_role_assignments {
   end_date               DateTime?            @db.Date
   active                 Boolean              @default(true)
   status                 String?              @default("active") @db.VarChar(20)
+  expires_at             DateTime?            @db.Timestamptz(6)
+  rejection_reason       String?              @db.VarChar(500)
   created_at             DateTime             @default(now()) @db.Timestamptz(6)
   modified_at            DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
   club_section_id        Int?

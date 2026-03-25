@@ -141,7 +141,7 @@ export class ClassesService {
           club_types: { select: { name: true } },
           _count: { select: { class_modules: true } },
         },
-        orderBy: [{ club_type_id: 'asc' }, { minimum_age: 'asc' }],
+        orderBy: [{ club_type_id: 'asc' }, { display_order: 'asc' }],
         skip: pagination?.skip ?? 0,
         take: pagination?.take ?? 50,
       }),
@@ -232,6 +232,17 @@ export class ClassesService {
         }
       }
 
+      // 3b. Display-order progression restriction
+      // Users can only enroll up to one class above their highest INVESTIDO class
+      // within the same club type. If no INVESTIDO exists, they can only enroll
+      // in their base class (the one selected during post-registration).
+      // Exception: if the ecclesiastical year has ended, allow the next class.
+      await this.validateDisplayOrderProgression(tx, {
+        userId,
+        targetClass,
+        ecclesiasticalYearId,
+      });
+
       // 4. Enrollment limit by club type
       const { club_type_id } = targetClass;
 
@@ -309,14 +320,28 @@ export class ClassesService {
   }
 
   async getUserEnrollments(userId: string, ecclesiasticalYearId?: number) {
-    return this.prisma.enrollments.findMany({
+    const enrollments = await this.prisma.enrollments.findMany({
       where: {
         user_id: userId,
         ...(ecclesiasticalYearId && {
           ecclesiastical_year_id: ecclesiasticalYearId,
         }),
       },
-      include: {
+      select: {
+        enrollment_id: true,
+        user_id: true,
+        class_id: true,
+        ecclesiastical_year_id: true,
+        enrollment_date: true,
+        investiture_status: true,
+        submitted_for_validation: true,
+        submitted_at: true,
+        validated_by: true,
+        validated_at: true,
+        locked_for_validation: true,
+        cross_type_enrollment: true,
+        created_at: true,
+        modified_at: true,
         classes: {
           select: {
             class_id: true,
@@ -328,6 +353,73 @@ export class ClassesService {
         ecclesiastical_year: { select: { start_date: true, end_date: true } },
       },
       orderBy: { enrollment_date: 'desc' },
+    });
+
+    if (enrollments.length === 0) {
+      return [];
+    }
+
+    const enrollmentIds = enrollments.map((e) => e.enrollment_id);
+    const classIds = [...new Set(enrollments.map((e) => e.class_id))];
+
+    // Batch: completed sections per enrollment (score >= 70, active = true)
+    const completedByEnrollment = await this.prisma.class_section_progress.groupBy({
+      by: ['enrollment_id'],
+      where: {
+        enrollment_id: { in: enrollmentIds },
+        active: true,
+        score: { gte: 70 },
+      },
+      _count: { section_progress_id: true },
+    });
+
+    // Batch: total active sections per class
+    const totalByClass = await this.prisma.class_sections.groupBy({
+      by: ['module_id'],
+      where: {
+        class_modules: { class_id: { in: classIds } },
+        active: true,
+      },
+      _count: { section_id: true },
+    });
+
+    // To map module_id -> class_id we need the modules
+    const modules = await this.prisma.class_modules.findMany({
+      where: { class_id: { in: classIds }, active: true },
+      select: { module_id: true, class_id: true },
+    });
+
+    const moduleToClass = new Map<number, number>(
+      modules.map((m) => [m.module_id, m.class_id]),
+    );
+
+    // Aggregate total sections per class_id
+    const totalSectionsPerClass = new Map<number, number>();
+    for (const row of totalByClass) {
+      const classId = moduleToClass.get(row.module_id);
+      if (classId !== undefined) {
+        totalSectionsPerClass.set(
+          classId,
+          (totalSectionsPerClass.get(classId) ?? 0) + row._count.section_id,
+        );
+      }
+    }
+
+    // Completed sections per enrollment_id
+    const completedPerEnrollment = new Map<number, number>(
+      completedByEnrollment.map((row) => [
+        row.enrollment_id!,
+        row._count.section_progress_id,
+      ]),
+    );
+
+    return enrollments.map((enrollment) => {
+      const total = totalSectionsPerClass.get(enrollment.class_id) ?? 0;
+      const completed = completedPerEnrollment.get(enrollment.enrollment_id) ?? 0;
+      const overall_progress =
+        total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      return { ...enrollment, overall_progress };
     });
   }
 
@@ -843,6 +935,87 @@ export class ClassesService {
       uploaded_by_name: this.formatUserName(file.uploaded_by ?? null),
       uploaded_at: file.uploaded_at.toISOString(),
     };
+  }
+
+  /**
+   * Validates that the user can enroll in the target class based on
+   * display_order progression rules:
+   *
+   * 1. Find the user's highest INVESTIDO class within the same club type.
+   *    If found, maxAllowedOrder = highestInvested.display_order + 1.
+   *
+   * 2. If no INVESTIDO class exists, find the user's base class (earliest
+   *    enrollment for the same club type — set during post-registration).
+   *    maxAllowedOrder = baseClass.display_order (they can only re-enroll
+   *    in the same class they originally picked).
+   *
+   * 3. Exception: if the ecclesiastical year has ended (end_date < today),
+   *    maxAllowedOrder is incremented by 1 (they can advance to the next).
+   *
+   * 4. If target display_order > maxAllowedOrder → throw BadRequestException.
+   */
+  private async validateDisplayOrderProgression(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      targetClass: { class_id: number; club_type_id: number; display_order: number };
+      ecclesiasticalYearId: number;
+    },
+  ): Promise<void> {
+    const { userId, targetClass, ecclesiasticalYearId } = params;
+
+    // Find the user's highest INVESTIDO class in the same club type
+    const highestInvested = await tx.enrollments.findFirst({
+      where: {
+        user_id: userId,
+        investiture_status: 'INVESTIDO',
+        active: true,
+        classes: { club_type_id: targetClass.club_type_id },
+      },
+      include: { classes: { select: { display_order: true } } },
+      orderBy: { classes: { display_order: 'desc' } },
+    });
+
+    let maxAllowedOrder: number;
+
+    if (highestInvested) {
+      // Can enroll in the next class after their highest invested one
+      maxAllowedOrder = highestInvested.classes.display_order + 1;
+    } else {
+      // No invested class — find their base class (earliest enrollment for this club type)
+      const baseEnrollment = await tx.enrollments.findFirst({
+        where: {
+          user_id: userId,
+          classes: { club_type_id: targetClass.club_type_id },
+        },
+        include: { classes: { select: { display_order: true } } },
+        orderBy: { enrollment_date: 'asc' },
+      });
+
+      if (!baseEnrollment) {
+        // First-ever enrollment in this club type — allow it (post-registration flow)
+        return;
+      }
+
+      // Can only enroll in the same class they started with
+      maxAllowedOrder = baseEnrollment.classes.display_order;
+    }
+
+    // Exception: if the ecclesiastical year has ended, allow advancing one more class
+    const year = await tx.ecclesiastical_years.findUnique({
+      where: { year_id: ecclesiasticalYearId },
+      select: { end_date: true },
+    });
+
+    if (year && year.end_date < new Date()) {
+      maxAllowedOrder += 1;
+    }
+
+    if (targetClass.display_order > maxAllowedOrder) {
+      throw new BadRequestException(
+        'No puedes inscribirte en una clase superior a tu nivel actual',
+      );
+    }
   }
 
   private formatUserName(
