@@ -94,19 +94,19 @@ export class ClubEnrollmentsController {
   @ApiOperation({
     summary: 'Obtener inscripción vigente',
     description:
-      'Retorna la inscripción activa de la sección para el año eclesiástico actual',
+      'Retorna la inscripción activa de la sección para el año eclesiástico actual, o null si no existe',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
-  @ApiResponse({ status: 200, description: 'Inscripción vigente' })
   @ApiResponse({
-    status: 404,
-    description: 'No hay inscripción activa para el año actual',
+    status: 200,
+    description: 'Inscripción vigente, o null si la sección no tiene inscripción en el año actual',
   })
   async findCurrent(
     @Param('sectionId', ParseIntPipe) sectionId: number,
   ) {
-    return this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
+    const data = await this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
+    return { status: 'success', data };
   }
 
   @Patch(':enrollmentId')

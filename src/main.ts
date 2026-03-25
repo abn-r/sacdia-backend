@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
+import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
@@ -117,6 +118,11 @@ async function bootstrap() {
   // PERFORMANCE - Compression
   // ==========================================
   app.use(compression());
+
+  // ==========================================
+  // SEGURIDAD - Request Timeout
+  // ==========================================
+  app.use(timeoutMiddleware);
 
   // ==========================================
   // SEGURIDAD - Request Size Limits

@@ -349,13 +349,48 @@ export class ClassesService {
     // Get all sections for this class
     const classData = await this.findOne(classId);
 
-    // Get user's section progress
+    // Get user's section progress including evidence files
     const sectionProgress = await this.prisma.class_section_progress.findMany({
       where: {
         enrollment_id: resolvedEnrollment.enrollmentId,
         active: true,
       },
+      include: {
+        evidence_files: {
+          where: { active: true },
+          select: {
+            evidence_file_id: true,
+            file_url: true,
+            file_name: true,
+            file_type: true,
+            uploaded_at: true,
+            uploaded_by: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+          orderBy: { uploaded_at: 'asc' },
+        },
+      },
     });
+
+    // Pre-sign all evidence file URLs in a single parallel batch
+    const allEvidenceFiles = sectionProgress.flatMap(
+      (sp) => sp.evidence_files,
+    );
+    const signedUrlMap = new Map<number, string>();
+    await Promise.all(
+      allEvidenceFiles.map(async (ef) => {
+        const signedUrl = await this.fileStorage.getSignedDownloadUrl(
+          StorageBucketAlias.CLASS_EVIDENCE,
+          ef.file_url,
+        );
+        signedUrlMap.set(ef.evidence_file_id, signedUrl);
+      }),
+    );
 
     // Calculate completion
     let totalSections = 0;
@@ -383,12 +418,30 @@ export class ClassesService {
           const progress = sectionProgress.find(
             (sp) => sp.section_id === section.section_id,
           );
+          const evidenceFiles = (progress?.evidence_files ?? []).map((ef) => ({
+            id: String(ef.evidence_file_id),
+            file_id: ef.evidence_file_id,
+            file_name: ef.file_name,
+            file_type: ef.file_type,
+            file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
+            uploaded_at: ef.uploaded_at.toISOString(),
+            uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
+          }));
           return {
             section_id: section.section_id,
             section_name: section.name,
             completed: progress ? progress.score >= 70 : false,
             score: progress?.score || 0,
             evidences: progress?.evidences || null,
+            evidence_files: evidenceFiles,
+            status: progress?.status || 'pendiente',
+            submitted_by_name: null,
+            submitted_at:
+              progress?.submitted_at?.toISOString() || null,
+            validated_by_name: null,
+            validated_at:
+              progress?.validated_at?.toISOString() || null,
+            rejection_reason: progress?.rejection_reason || null,
           };
         }),
       };
@@ -526,7 +579,7 @@ export class ClassesService {
   async uploadSectionFile(
     userId: string,
     classId: number,
-    sectionProgressId: number,
+    sectionId: number,
     file: Express.Multer.File,
   ) {
     if (!file?.buffer) {
@@ -539,24 +592,54 @@ export class ClassesService {
       );
     }
 
-    // Validate that the section_progress_id belongs to userId and classId
-    const sectionProgress = await this.prisma.class_section_progress.findFirst({
+    // Validate the section belongs to this class and get its module_id
+    const section = await this.prisma.class_sections.findFirst({
       where: {
-        section_progress_id: sectionProgressId,
+        section_id: sectionId,
+        class_modules: { class_id: classId },
+        active: true,
+      },
+      select: { section_id: true, module_id: true },
+    });
+
+    if (!section) {
+      throw new NotFoundException(
+        `Section ${sectionId} not found in class ${classId}`,
+      );
+    }
+
+    // Find or create section progress (upsert pattern)
+    let sectionProgress = await this.prisma.class_section_progress.findFirst({
+      where: {
         user_id: userId,
         class_id: classId,
+        section_id: sectionId,
         active: true,
       },
     });
 
     if (!sectionProgress) {
-      throw new NotFoundException(
-        `Section progress ${sectionProgressId} not found for user ${userId} in class ${classId}`,
-      );
+      const resolved = await this.resolveProgressEnrollment({
+        userId,
+        classId,
+      });
+
+      sectionProgress = await this.prisma.class_section_progress.create({
+        data: {
+          user_id: userId,
+          class_id: classId,
+          enrollment_id: resolved.enrollmentId,
+          module_id: section.module_id,
+          section_id: sectionId,
+          score: 0,
+          active: true,
+        },
+      });
     }
 
+    const progressId = sectionProgress.section_progress_id;
     const extension = this.resolveFileExtension(file);
-    const objectKey = `${sectionProgressId}-${Date.now()}.${extension}`;
+    const objectKey = `${progressId}-${Date.now()}.${extension}`;
 
     const uploaded = await this.fileStorage.upload(
       StorageBucketAlias.CLASS_EVIDENCE,
@@ -567,7 +650,7 @@ export class ClassesService {
 
     const created = await (this.prisma as any).evidence_files.create({
       data: {
-        section_progress_id: sectionProgressId,
+        section_progress_id: progressId,
         file_url: uploaded.url,
         file_name: file.originalname || objectKey,
         file_type: this.resolveEvidenceFileType(file),
@@ -585,29 +668,109 @@ export class ClassesService {
       },
     });
 
-    return this.mapEvidenceFile(created);
+    const signedUrl = await this.fileStorage.getSignedDownloadUrl(
+      StorageBucketAlias.CLASS_EVIDENCE,
+      uploaded.url,
+    );
+
+    return this.mapEvidenceFile(created, signedUrl);
+  }
+
+  async submitSection(
+    userId: string,
+    classId: number,
+    sectionId: number,
+  ) {
+    // Find the section progress
+    const sectionProgress =
+      await this.prisma.class_section_progress.findFirst({
+        where: {
+          user_id: userId,
+          class_id: classId,
+          section_id: sectionId,
+          active: true,
+        },
+        include: {
+          evidence_files: {
+            where: { active: true },
+          },
+        },
+      });
+
+    if (!sectionProgress) {
+      throw new NotFoundException(
+        `Section progress for section ${sectionId} not found for user ${userId} in class ${classId}`,
+      );
+    }
+
+    // Must be in pendiente or rechazado status to submit
+    if (
+      sectionProgress.status !== 'pendiente' &&
+      sectionProgress.status !== 'rechazado'
+    ) {
+      throw new BadRequestException(
+        `Section is already in status '${sectionProgress.status}' and cannot be submitted`,
+      );
+    }
+
+    // Must have at least one evidence file
+    if (
+      !sectionProgress.evidence_files ||
+      sectionProgress.evidence_files.length === 0
+    ) {
+      throw new BadRequestException(
+        'At least one evidence file is required to submit a section for validation',
+      );
+    }
+
+    const updated = await this.prisma.class_section_progress.update({
+      where: {
+        section_progress_id: sectionProgress.section_progress_id,
+      },
+      data: {
+        status: 'enviado',
+        submitted_by_id: userId,
+        submitted_at: new Date(),
+        modified_at: new Date(),
+      },
+    });
+
+    return {
+      section_progress_id: updated.section_progress_id,
+      section_id: updated.section_id,
+      status: updated.status,
+      submitted_at: updated.submitted_at?.toISOString() ?? null,
+    };
   }
 
   async deleteSectionFile(
     userId: string,
     classId: number,
-    sectionProgressId: number,
+    sectionId: number,
     fileId: number,
   ) {
+    // Resolve the section progress from sectionId
+    const sectionProgress = await this.prisma.class_section_progress.findFirst({
+      where: {
+        user_id: userId,
+        class_id: classId,
+        section_id: sectionId,
+        active: true,
+      },
+      select: { section_progress_id: true },
+    });
+
+    if (!sectionProgress) {
+      throw new NotFoundException('Evidence file not found');
+    }
+
     const fileRecord = await (this.prisma as any).evidence_files.findFirst({
       where: {
         evidence_file_id: fileId,
-        section_progress_id: sectionProgressId,
+        section_progress_id: sectionProgress.section_progress_id,
         active: true,
       },
       include: {
-        class_section_progress: {
-          select: {
-            user_id: true,
-            class_id: true,
-            active: true,
-          },
-        },
         uploaded_by: {
           select: {
             name: true,
@@ -618,12 +781,7 @@ export class ClassesService {
       },
     });
 
-    if (
-      !fileRecord ||
-      !fileRecord.class_section_progress ||
-      fileRecord.class_section_progress.user_id !== userId ||
-      fileRecord.class_section_progress.class_id !== classId
-    ) {
+    if (!fileRecord) {
       throw new NotFoundException('Evidence file not found');
     }
 
@@ -659,23 +817,27 @@ export class ClassesService {
     return this.mapEvidenceFile(updated);
   }
 
-  private mapEvidenceFile(file: {
-    evidence_file_id: number;
-    file_url: string;
-    file_name: string;
-    file_type: string;
-    uploaded_at: Date;
-    uploaded_by?: {
-      name?: string | null;
-      paternal_last_name?: string | null;
-      maternal_last_name?: string | null;
-    } | null;
-  }) {
+  private mapEvidenceFile(
+    file: {
+      evidence_file_id: number;
+      file_url: string;
+      file_name: string;
+      file_type: string;
+      uploaded_at: Date;
+      uploaded_by?: {
+        name?: string | null;
+        paternal_last_name?: string | null;
+        maternal_last_name?: string | null;
+      } | null;
+    },
+    signedUrl?: string,
+  ) {
+    const resolvedUrl = signedUrl ?? file.file_url;
     return {
       id: String(file.evidence_file_id),
       file_id: file.evidence_file_id,
-      url: file.file_url,
-      file_url: file.file_url,
+      url: resolvedUrl,
+      file_url: resolvedUrl,
       file_name: file.file_name,
       file_type: file.file_type,
       uploaded_by_name: this.formatUserName(file.uploaded_by ?? null),

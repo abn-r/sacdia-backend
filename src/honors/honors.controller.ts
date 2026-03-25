@@ -14,6 +14,10 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import {
+  FilesValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
+import {
   ApiTags,
   ApiOperation,
   ApiResponse,
@@ -37,7 +41,10 @@ import {
   OwnerOrAdminGuard,
   PermissionsGuard,
 } from '../common/guards';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 // ========================================
@@ -144,6 +151,7 @@ export class UserHonorsController {
   constructor(private readonly honorsService: HonorsService) {}
 
   @Get()
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:read')
   @ApiOperation({
     summary: 'Obtener honores del usuario',
@@ -163,6 +171,7 @@ export class UserHonorsController {
   }
 
   @Get('stats')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:read')
   @ApiOperation({ summary: 'Obtener estadísticas de honores del usuario' })
   @ApiParam({ name: 'userId', type: String })
@@ -172,6 +181,7 @@ export class UserHonorsController {
   }
 
   @Post()
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({
     summary: 'Registrar honor con datos iniciales',
@@ -188,6 +198,7 @@ export class UserHonorsController {
   }
 
   @Post('bulk')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({
     summary: 'Registrar honores de usuario de forma masiva',
@@ -207,6 +218,7 @@ export class UserHonorsController {
   }
 
   @Post(':honorId/files')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @UseInterceptors(
     FileFieldsInterceptor([
@@ -243,7 +255,13 @@ export class UserHonorsController {
   async uploadHonorFiles(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
-    @UploadedFiles()
+    @UploadedFiles(
+      new FilesValidationPipe({
+        certificate: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS },
+        document: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS },
+        images: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES },
+      }),
+    )
     files: {
       certificate?: Express.Multer.File[];
       document?: Express.Multer.File[];
@@ -254,6 +272,7 @@ export class UserHonorsController {
   }
 
   @Post(':honorId')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @ApiOperation({
     summary: 'Iniciar un honor',
@@ -272,6 +291,7 @@ export class UserHonorsController {
   }
 
   @Patch(':honorId')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:update')
   @ApiOperation({
     summary: 'Actualizar progreso de honor',
@@ -289,6 +309,7 @@ export class UserHonorsController {
   }
 
   @Delete(':honorId')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:delete')
   @ApiOperation({
     summary: 'Abandonar honor',

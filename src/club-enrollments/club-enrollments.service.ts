@@ -107,13 +107,7 @@ export class ClubEnrollmentsService {
       },
     });
 
-    if (!enrollment) {
-      throw new NotFoundException(
-        `No active enrollment found for section ${sectionId} in the current ecclesiastical year`,
-      );
-    }
-
-    return enrollment;
+    return enrollment ?? null;
   }
 
   async findBySectionId(sectionId: number, filters?: { year?: number }) {

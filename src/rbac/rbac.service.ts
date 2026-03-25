@@ -402,12 +402,12 @@ export class RbacService {
   }
 
   async bootstrapAdmin(userId: string) {
-    // Check if any super-admin already exists
+    // Check if any super_admin already exists
     const existingSuperAdmin = await this.prisma.users_roles.findFirst({
       where: {
         active: true,
         roles: {
-          role_name: 'super-admin',
+          role_name: 'super_admin',
           active: true,
         },
       },
@@ -415,7 +415,7 @@ export class RbacService {
 
     if (existingSuperAdmin) {
       throw new ConflictException(
-        'Ya existe un super-admin. Este endpoint solo funciona cuando no hay ninguno.',
+        'Ya existe un super_admin. Este endpoint solo funciona cuando no hay ninguno.',
       );
     }
 
@@ -429,12 +429,12 @@ export class RbacService {
     }
 
     const superAdminRole = await this.prisma.roles.findFirst({
-      where: { role_name: 'super-admin', active: true },
+      where: { role_name: 'super_admin', active: true },
     });
 
     if (!superAdminRole) {
       throw new NotFoundException(
-        'Rol super-admin no encontrado en la base de datos. Ejecutá el seed primero.',
+        'Rol super_admin no encontrado en la base de datos. Ejecutá el seed primero.',
       );
     }
 
@@ -446,14 +446,14 @@ export class RbacService {
     });
 
     this.logger.warn(
-      `BOOTSTRAP: Usuario ${user.email} (${userId}) asignado como primer super-admin`,
+      `BOOTSTRAP: Usuario ${user.email} (${userId}) asignado como primer super_admin`,
     );
 
     return {
       success: true,
-      message: `Usuario ${user.email} es ahora super-admin`,
+      message: `Usuario ${user.email} es ahora super_admin`,
       user_id: userId,
-      role: 'super-admin',
+      role: 'super_admin',
     };
   }
 

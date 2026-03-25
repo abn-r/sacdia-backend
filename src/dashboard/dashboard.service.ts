@@ -1,5 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 export interface UpcomingActivityDto {
   id: number;
@@ -21,11 +26,18 @@ export interface DashboardSummaryDto {
   upcoming_activities: UpcomingActivityDto[];
 }
 
+// Signed URL TTL matches the one used by AuthService (5 minutes).
+const AVATAR_SIGNED_URL_TTL_SECONDS = 300;
+
 @Injectable()
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   async getSummary(userId: string): Promise<DashboardSummaryDto> {
     const [user, enrollment, honors, clubAssignment] = await Promise.all([
@@ -87,11 +99,14 @@ export class DashboardService {
       currentClassName = enrollment.classes.name;
 
       const [completedSections, totalSections] = await Promise.all([
+        // A section is considered complete only when score >= 70,
+        // consistent with the business rule in ClassesService.
         this.prisma.class_section_progress.count({
           where: {
             enrollment_id: enrollment.enrollment_id,
             user_id: userId,
             active: true,
+            score: { gte: 70 },
           },
         }),
         this.prisma.class_sections.count({
@@ -170,7 +185,7 @@ export class DashboardService {
 
     return {
       user_name: userName,
-      user_avatar: user?.user_image ?? null,
+      user_avatar: await this.resolveAvatarUrl(user?.user_image),
       club_name: clubName,
       club_type: clubType,
       user_role: userRole,
@@ -180,5 +195,35 @@ export class DashboardService {
       honors_in_progress: honorsInProgress,
       upcoming_activities: upcomingActivities,
     };
+  }
+
+  // ----------------------------------------
+  // Private helpers
+  // ----------------------------------------
+
+  /**
+   * Generates a short-lived signed download URL for the user's profile picture
+   * stored in R2. Returns null when no image is set. Falls back to returning
+   * the stored value as-is if the signing step fails (avoids breaking the
+   * dashboard for a non-critical asset).
+   */
+  private async resolveAvatarUrl(
+    userImage: string | null | undefined,
+  ): Promise<string | null> {
+    if (!userImage) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        userImage,
+        { expiresInSeconds: AVATAR_SIGNED_URL_TTL_SECONDS },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for dashboard avatar. Returning stored value.',
+        error,
+      );
+      return userImage;
+    }
   }
 }

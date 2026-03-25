@@ -63,6 +63,15 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_CLASSES_DOCUMENTS: Joi.string().uri().optional(),
   R2_KEY_PREFIX_CLASSES_DOCUMENTS: Joi.string().allow('').optional(),
 
+  R2_BUCKET_EVIDENCE_FILES: Joi.string().optional(),
+  R2_PUBLIC_URL_EVIDENCE_FILES: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_EVIDENCE_FILES: Joi.string().allow('').optional(),
+  R2_KEY_PREFIX_CLASS_EVIDENCE: Joi.string().allow('').optional(),
+
+  R2_BUCKET_INSURANCE_EVIDENCE: Joi.string().optional(),
+  R2_PUBLIC_URL_INSURANCE_EVIDENCE: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_INSURANCE_EVIDENCE: Joi.string().allow('').optional(),
+
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().allow('').optional(),

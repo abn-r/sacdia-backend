@@ -10,12 +10,13 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
-  ParseFilePipe,
-  MaxFileSizeValidator,
-  FileTypeValidator,
   ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -225,11 +226,8 @@ export class UsersController {
   async uploadProfilePicture(
     @Param('userId') userId: string,
     @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
-          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp)$/ }),
-        ],
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES,
       }),
     )
     file: Express.Multer.File,

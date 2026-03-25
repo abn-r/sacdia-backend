@@ -12,11 +12,12 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  ParseFilePipe,
-  MaxFileSizeValidator,
-  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -242,10 +243,43 @@ export class UserClassesController {
   }
 
   // ========================================
+  // CLASS SECTION SUBMIT FOR VALIDATION
+  // ========================================
+
+  @Post(':classId/sections/:sectionId/submit')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('classes:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiOperation({
+    summary: 'Submit a class section for validation',
+    description:
+      'Marks a section as submitted for review. Requires at least one evidence file.',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiParam({ name: 'classId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Section submitted successfully' })
+  @ApiResponse({ status: 400, description: 'No evidence files to submit' })
+  @ApiResponse({ status: 404, description: 'Section progress not found' })
+  async submitSection(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('classId', ParseIntPipe) classId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ) {
+    const data = await this.classesService.submitSection(
+      currentUser.sub,
+      classId,
+      sectionId,
+    );
+    return { status: 'success', data };
+  }
+
+  // ========================================
   // CLASS SECTION FILE EVIDENCE
   // ========================================
 
-  @Post(':classId/sections/:sectionProgressId/files')
+  @Post(':classId/sections/:sectionId/files')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:update')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -254,11 +288,11 @@ export class UserClassesController {
   @ApiOperation({
     summary: 'Upload evidence file for a class section',
     description:
-      'Uploads a file (PDF, JPG, PNG, WEBP) as evidence for a specific class_section_progress record',
+      'Uploads a file (PDF, JPG, PNG, WEBP) as evidence for a class section. Auto-creates section progress if it does not exist.',
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'classId', type: Number })
-  @ApiParam({ name: 'sectionProgressId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
   @ApiBody({
     schema: {
       type: 'object',
@@ -269,19 +303,14 @@ export class UserClassesController {
   })
   @ApiResponse({ status: 201, description: 'File uploaded successfully' })
   @ApiResponse({ status: 400, description: 'Invalid file or missing file' })
-  @ApiResponse({ status: 404, description: 'Section progress not found' })
+  @ApiResponse({ status: 404, description: 'Section or enrollment not found' })
   async uploadSectionFile(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
-    @Param('sectionProgressId', ParseIntPipe) sectionProgressId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
     @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
-          new FileTypeValidator({
-            fileType: /^(image\/(jpeg|png|webp)|application\/pdf)$/,
-          }),
-        ],
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
       }),
     )
     file: Express.Multer.File,
@@ -290,13 +319,13 @@ export class UserClassesController {
     const data = await this.classesService.uploadSectionFile(
       currentUser.sub,
       classId,
-      sectionProgressId,
+      sectionId,
       file,
     );
     return { status: 'success', data };
   }
 
-  @Delete(':classId/sections/:sectionProgressId/files/:fileId')
+  @Delete(':classId/sections/:sectionId/files/:fileId')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:update')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
@@ -306,21 +335,21 @@ export class UserClassesController {
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'classId', type: Number })
-  @ApiParam({ name: 'sectionProgressId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
   @ApiParam({ name: 'fileId', type: Number })
   @ApiResponse({ status: 200, description: 'File deleted successfully' })
   @ApiResponse({ status: 404, description: 'Evidence file not found' })
   async deleteSectionFile(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
-    @Param('sectionProgressId', ParseIntPipe) sectionProgressId: number,
+    @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('fileId', ParseIntPipe) fileId: number,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.deleteSectionFile(
       currentUser.sub,
       classId,
-      sectionProgressId,
+      sectionId,
       fileId,
     );
     return { status: 'success', data };

@@ -8,11 +8,12 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  ParseFilePipe,
-  MaxFileSizeValidator,
-  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -110,13 +111,8 @@ export class EvidenceFolderController {
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('efSectionId', ParseIntPipe) efSectionId: number,
     @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
-          new FileTypeValidator({
-            fileType: /^(image\/(jpeg|png|webp)|application\/pdf)$/,
-          }),
-        ],
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
       }),
     )
     file: Express.Multer.File,

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DashboardService } from './dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
 describe('DashboardService', () => {
   let service: DashboardService;
@@ -15,11 +16,20 @@ describe('DashboardService', () => {
     activities: { findMany: jest.fn() },
   };
 
+  const mockFileStorageService = {
+    getSignedDownloadUrl: jest
+      .fn()
+      .mockImplementation((_bucket: unknown, key: string) =>
+        Promise.resolve(key),
+      ),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DashboardService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();
 
@@ -216,6 +226,50 @@ describe('DashboardService', () => {
       const result = await service.getSummary(userId);
 
       expect(result.class_progress).toBe(0);
+    });
+  });
+
+  // ----------------------------------------
+  // Scenario 5: progress record with score < 70 must NOT count as completed
+  // ----------------------------------------
+  describe('edge case: section progress record with score = 0', () => {
+    it('returns 0 progress when the only progress record has score < 70', async () => {
+      const userId = 'user-uuid-005';
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        name: 'Pedro',
+        paternal_last_name: 'Ruiz',
+        maternal_last_name: null,
+        user_image: null,
+      });
+
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        class_id: 13,
+        classes: { name: 'Guía Mayor' },
+      });
+
+      mockPrismaService.users_honors.findMany.mockResolvedValue([]);
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      // Simulates the real bug scenario: 1 progress record with score 0,
+      // but the count query with score >= 70 filter returns 0.
+      mockPrismaService.class_section_progress.count.mockResolvedValue(0);
+      mockPrismaService.class_sections.count.mockResolvedValue(71);
+
+      const result = await service.getSummary(userId);
+
+      expect(result.current_class_name).toBe('Guía Mayor');
+      expect(result.class_progress).toBe(0);
+
+      // Verify the count was called with the score >= 70 filter
+      expect(mockPrismaService.class_section_progress.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            score: { gte: 70 },
+          }),
+        }),
+      );
     });
   });
 });
