@@ -7,6 +7,7 @@ import {
   Query,
   Request,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import {
@@ -110,7 +111,7 @@ export class AdminUsersController {
   @ApiParam({ name: 'userId', type: String })
   async getUserById(
     @Request() req: ExpressRequest & { user: { sub: string } },
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<{
     status: string;
     data: Awaited<ReturnType<AdminUsersService['getUserById']>>;
@@ -126,7 +127,7 @@ export class AdminUsersController {
   @RequirePermissions('users:update')
   @ApiOperation({ summary: 'Approve or reject a user' })
   async updateUserApproval(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserApprovalDto,
   ) {
     const data = await this.adminUsersService.updateUserApproval(userId, dto);
@@ -137,7 +138,7 @@ export class AdminUsersController {
   @RequirePermissions('users:update')
   @ApiOperation({ summary: 'Update user administrative fields' })
   async updateUser(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateAdminUserDto,
   ) {
     const data = await this.adminUsersService.updateUser(userId, dto);

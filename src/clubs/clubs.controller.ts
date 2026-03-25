@@ -9,6 +9,7 @@ import {
   Query,
   Body,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -287,7 +288,7 @@ export class ClubRolesController {
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación actualizada' })
   async updateAssignment(
-    @Param('assignmentId') assignmentId: string,
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @Body() dto: UpdateRoleAssignmentDto,
   ) {
     return this.clubsService.updateRoleAssignment(assignmentId, dto);
@@ -299,7 +300,7 @@ export class ClubRolesController {
   @ApiOperation({ summary: 'Remover rol de miembro' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Rol removido' })
-  async removeAssignment(@Param('assignmentId') assignmentId: string) {
+  async removeAssignment(@Param('assignmentId', ParseUUIDPipe) assignmentId: string) {
     return this.clubsService.removeRoleAssignment(assignmentId);
   }
 }

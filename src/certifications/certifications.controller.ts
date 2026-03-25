@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -130,7 +131,7 @@ export class UserCertificationsController {
     description: 'Usuario ya inscrito en esta certificación',
   })
   async enrollUser(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: EnrollCertificationDto,
   ) {
     const data = await this.certificationsService.enrollUser(userId, dto);
@@ -157,7 +158,7 @@ export class UserCertificationsController {
     status: 200,
     description: 'Lista de certificaciones del usuario con progreso',
   })
-  async getUserCertifications(@Param('userId') userId: string) {
+  async getUserCertifications(@Param('userId', ParseUUIDPipe) userId: string) {
     const data = await this.certificationsService.getUserCertifications(userId);
     return {
       status: 'success',
@@ -192,7 +193,7 @@ export class UserCertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async getCertificationProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
   ) {
     const data = await this.certificationsService.getCertificationProgress(
@@ -236,7 +237,7 @@ export class UserCertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async updateProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
     @Body() dto: UpdateCertificationProgressDto,
   ) {
@@ -278,7 +279,7 @@ export class UserCertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async deleteCertification(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
   ) {
     const data = await this.certificationsService.deleteCertification(

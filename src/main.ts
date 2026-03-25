@@ -78,30 +78,32 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
 
   // ==========================================
+  // TRUST PROXY — Client IP detection behind reverse proxies
+  // ==========================================
+  // Must be set BEFORE any middleware that reads the client IP (helmet, throttler, etc.)
+  // Without this, ThrottlerGuard sees the proxy IP for all requests, making per-IP rate
+  // limiting completely ineffective when running behind Vercel / nginx / load balancers.
+  // Value 1 means: trust exactly one hop (the immediate upstream proxy).
+  app.set('trust proxy', 1);
+
+  // ==========================================
   // SEGURIDAD - Helmet (Security Headers)
   // ==========================================
   const isDevelopment = process.env.NODE_ENV !== 'production';
 
   app.use(
     helmet({
-      // Deshabilitar CSP en desarrollo para que Swagger UI funcione
+      // Development: disable CSP entirely so Swagger UI works
+      // Production: strict CSP — no 'unsafe-inline', no CDN sources (Swagger is disabled)
       contentSecurityPolicy: isDevelopment
         ? false
         : {
             directives: {
               defaultSrc: ["'self'"],
-              styleSrc: [
-                "'self'",
-                "'unsafe-inline'",
-                'https://cdn.jsdelivr.net',
-              ],
-              scriptSrc: [
-                "'self'",
-                "'unsafe-inline'",
-                'https://cdn.jsdelivr.net',
-              ],
+              styleSrc: ["'self'"],
+              scriptSrc: ["'self'"],
               imgSrc: ["'self'", 'data:', 'https:'],
-              fontSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+              fontSrc: ["'self'"],
             },
           },
       crossOriginEmbedderPolicy: false,

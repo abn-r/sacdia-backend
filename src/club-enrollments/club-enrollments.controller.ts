@@ -7,6 +7,7 @@ import {
   Query,
   Body,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -122,7 +123,7 @@ export class ClubEnrollmentsController {
   @ApiResponse({ status: 200, description: 'Inscripción actualizada' })
   @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
   async update(
-    @Param('enrollmentId') enrollmentId: string,
+    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
     @Body() dto: UpdateClubEnrollmentDto,
   ) {
     return this.clubEnrollmentsService.update(enrollmentId, dto);

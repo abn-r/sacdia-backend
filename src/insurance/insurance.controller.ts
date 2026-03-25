@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -27,7 +28,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser, GlobalRoles, RequirePermissions } from '../common/decorators';
-import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
+import { GlobalRolesGuard, JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { CreateInsuranceDto } from './dto/create-insurance.dto';
 import { UpdateInsuranceDto } from './dto/update-insurance.dto';
 import { InsuranceService } from './insurance.service';
@@ -40,7 +41,7 @@ type CurrentUserPayload = {
 
 @ApiTags('insurance')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class InsuranceController {
   constructor(private readonly service: InsuranceService) {}
@@ -106,7 +107,7 @@ export class InsuranceController {
   @ApiOperation({ summary: 'Obtener seguro activo del miembro' })
   @ApiParam({ name: 'memberId', type: String })
   @ApiResponse({ status: 200, description: 'Seguro del miembro' })
-  async getMemberInsurance(@Param('memberId') memberId: string) {
+  async getMemberInsurance(@Param('memberId', ParseUUIDPipe) memberId: string) {
     const data = await this.service.getMemberInsurance(memberId);
     return { status: 'success', data };
   }
@@ -133,7 +134,7 @@ export class InsuranceController {
   })
   @ApiResponse({ status: 201, description: 'Seguro creado' })
   async createInsurance(
-    @Param('memberId') memberId: string,
+    @Param('memberId', ParseUUIDPipe) memberId: string,
     @Body() dto: CreateInsuranceDto,
     @UploadedFile(
       new FileValidationPipe({

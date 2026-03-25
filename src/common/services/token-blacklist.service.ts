@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -86,8 +87,8 @@ export class TokenBlacklistService {
   }
 
   private hashToken(token: string): string {
-    // Usar últimos 32 caracteres del token como identificador
-    return token.slice(-32);
+    // SHA-256 hash truncado a 32 caracteres para evitar colisiones de cache key
+    return createHash('sha256').update(token).digest('hex').substring(0, 32);
   }
 
   private normalizeEpochSeconds(timestamp: number): number {

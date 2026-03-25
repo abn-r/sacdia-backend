@@ -719,11 +719,13 @@ export class AuthService {
       },
     });
 
-    // TODO(production): send email with verification link containing the token.
-    // SECURITY: This logs the raw token — remove or replace with masked version in production.
-    this.logger.log(
-      `[DEV] Email verification token for ${email} (expires ${expiresAt.toISOString()}): ${token}`,
-    );
+    // TODO(production): replace this block with an actual email delivery call.
+    // Raw token is only logged in development — never in production.
+    if (process.env.NODE_ENV === 'development') {
+      this.logger.debug(
+        `[DEV] Email verification token for ${email} (expires ${expiresAt.toISOString()}): ${token}`,
+      );
+    }
   }
 
   private normalizeToken(token?: string | null): string | undefined {

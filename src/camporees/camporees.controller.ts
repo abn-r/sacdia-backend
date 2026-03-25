@@ -300,7 +300,7 @@ export class CamporeesController {
   @ApiResponse({ status: 404, description: 'Registro no encontrado' })
   async removeMember(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
   ) {
     return this.camporeesService.removeMember(camporeeId, userId);
   }

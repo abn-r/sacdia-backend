@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -150,7 +151,7 @@ export class UserFoldersController {
     description: 'Usuario ya tiene una asignación activa para esta carpeta',
   })
   async enrollUser(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
   ) {
     const data = await this.foldersService.enrollUser(userId, folderId);
@@ -177,7 +178,7 @@ export class UserFoldersController {
     status: 200,
     description: 'Lista de carpetas del usuario con progreso',
   })
-  async getUserFolders(@Param('userId') userId: string) {
+  async getUserFolders(@Param('userId', ParseUUIDPipe) userId: string) {
     const data = await this.foldersService.getUserFolders(userId);
     return {
       status: 'success',
@@ -212,7 +213,7 @@ export class UserFoldersController {
     description: 'Asignación de carpeta no encontrada',
   })
   async getFolderProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
   ) {
     const data = await this.foldersService.getFolderProgress(userId, folderId);
@@ -265,7 +266,7 @@ export class UserFoldersController {
     description: 'Asignación de carpeta no encontrada',
   })
   async updateSectionProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
     @Param('moduleId', ParseIntPipe) moduleId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -310,7 +311,7 @@ export class UserFoldersController {
     description: 'Asignación de carpeta no encontrada',
   })
   async deleteAssignment(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
   ) {
     const data = await this.foldersService.deleteAssignment(userId, folderId);

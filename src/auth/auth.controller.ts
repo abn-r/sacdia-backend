@@ -166,6 +166,8 @@ export class AuthController {
 
   @Post('password/reset-request')
   @HttpCode(HttpStatus.OK)
+  // Strict rate limit: 3 requests per minute to prevent email enumeration
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @ApiOperation({ summary: 'Solicitar recuperación de contraseña' })
   @ApiResponse({
     status: 200,
@@ -197,6 +199,7 @@ export class AuthController {
     return this.authService.sendVerificationEmail(user.userId);
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('verify-email/confirm')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Confirmar verificación de email con token' })

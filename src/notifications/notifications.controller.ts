@@ -121,12 +121,12 @@ export class NotificationsController {
   async sendToClub(
     @Param('instanceType')
     instanceType: 'adventurers' | 'pathfinders' | 'master_guilds',
-    @Param('instanceId') instanceId: string,
+    @Param('instanceId', ParseIntPipe) instanceId: number,
     @Body() dto: BroadcastNotificationDto,
     @Request() req,
   ) {
     return this.notificationsService.sendToClubMembers(
-      parseInt(instanceId),
+      instanceId,
       dto,
       req.user.sub,
       'admin:club_send',

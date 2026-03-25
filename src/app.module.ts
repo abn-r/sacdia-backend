@@ -38,6 +38,7 @@ import { MonthlyReportsModule } from './monthly-reports/monthly-reports.module';
 import { RequestsModule } from './requests/requests.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { YearEndModule } from './year-end/year-end.module';
+import { MembershipRequestsModule } from './membership-requests/membership-requests.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 
@@ -84,6 +85,11 @@ import { buildBullRootConfig } from './config/bullmq.config';
             'req.body.refreshToken',
             'requestBody.password',
             'requestBody.refreshToken',
+            'req.body.birthday',
+            'req.body.blood',
+            'req.body.allergies',
+            'req.body.diseases',
+            'req.body.medicines',
           ],
           remove: true,
         },
@@ -161,6 +167,7 @@ import { buildBullRootConfig } from './config/bullmq.config';
     RequestsModule,
     SystemConfigModule,
     YearEndModule,
+    MembershipRequestsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

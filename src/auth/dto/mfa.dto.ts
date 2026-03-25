@@ -1,4 +1,4 @@
-import { IsString, Length } from 'class-validator';
+import { IsString, Length, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class EnrollMfaDto {
@@ -8,6 +8,7 @@ export class EnrollMfaDto {
       'Contraseña actual del usuario. Requerida para habilitar 2FA (evita enrolamiento no autorizado).',
   })
   @IsString()
+  @MaxLength(128)
   password: string;
 }
 
@@ -28,5 +29,6 @@ export class DisableMfaDto {
       'Contraseña actual del usuario. Requerida para deshabilitar 2FA (previene desactivación no autorizada).',
   })
   @IsString()
+  @MaxLength(128)
   password: string;
 }
