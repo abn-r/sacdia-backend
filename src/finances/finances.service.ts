@@ -181,7 +181,7 @@ export class FinancesService {
         active: true,
         created_at: new Date(),
         modified_at: new Date(),
-        post_closing_note: (dto as any).post_closing_note ?? null,
+        post_closing_note: dto.post_closing_note ?? null,
       },
       include: {
         finances_categories: { select: { name: true, type: true } },
@@ -216,8 +216,8 @@ export class FinancesService {
       updateData.finance_category_id = dto.finance_category_id;
     if (dto.finance_date !== undefined)
       updateData.finance_date = new Date(dto.finance_date);
-    if ((dto as any).post_closing_note !== undefined)
-      updateData.post_closing_note = (dto as any).post_closing_note;
+    if (dto.post_closing_note !== undefined)
+      updateData.post_closing_note = dto.post_closing_note;
 
     return this.prisma.finances.update({
       where: { finance_id: financeId },
