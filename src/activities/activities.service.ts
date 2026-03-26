@@ -168,7 +168,7 @@ export class ActivitiesService {
           ? new Date(dto.activity_end_date)
           : null,
         activity_place: dto.activity_place,
-        image: dto.image,
+        image: dto.image ?? '',
         platform: dto.platform || 0,
         activity_type_id: dto.activity_type_id,
         link_meet: dto.link_meet,
