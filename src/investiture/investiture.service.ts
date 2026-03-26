@@ -802,14 +802,19 @@ export class InvestitureService {
   /**
    * Aprobar múltiples enrollments en bloque.
    *
-   * Validación individual: cada enrollment debe estar en el estado correcto para
-   * la acción solicitada. Los que no cumplan se incluyen en `failed` con el motivo.
-   * Los que sí cumplan se actualizan dentro de una única transacción de Prisma.
+   * Seguridad: valida que el actor tenga el rol requerido para la acción
+   * solicitada antes de procesar. Los roles son evaluados en el servicio
+   * porque el bulk endpoint usa un único guard de nivel superior
+   * (GlobalRolesGuard admin|coordinator), y algunas acciones requieren
+   * restricciones adicionales (field-approve → solo admin).
+   *
+   * NOTA: club-approve NO está disponible en bulk. Los directores de club
+   * deben usar el endpoint individual /club-approve para preservar la
+   * validación de rol a nivel de club vía ClubRolesGuard.
    *
    * Mapa de acción → estado fuente requerido:
-   *   club-approve        → SUBMITTED_FOR_VALIDATION
    *   coordinator-approve → CLUB_APPROVED
-   *   field-approve       → COORDINATOR_APPROVED
+   *   field-approve       → COORDINATOR_APPROVED  (solo admin)
    *   invest              → FIELD_APPROVED
    */
   async bulkApproveEnrollments(
@@ -819,8 +824,26 @@ export class InvestitureService {
     succeeded: number[];
     failed: { id: number; reason: string }[];
   }> {
+    // C1 — Per-action role validation
+    // field-approve requires admin only (not coordinator).
+    // We query the actor's roles from DB because the JWT payload does not carry them.
+    if (dto.action === 'field-approve') {
+      const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
+        actorId,
+        ['admin', 'assistant_admin', 'super_admin'],
+      );
+      if (!isAdmin) {
+        throw new ForbiddenException(
+          'La acción field-approve en bloque requiere rol admin',
+        );
+      }
+    }
+
+    // coordinator-approve and invest require admin or coordinator — already
+    // guaranteed by the controller-level GlobalRolesGuard('admin', 'coordinator'),
+    // so no additional check needed here.
+
     const ACTION_SOURCE_MAP: Record<BulkApproveAction, investiture_status_enum> = {
-      'club-approve': investiture_status_enum.SUBMITTED_FOR_VALIDATION,
       'coordinator-approve': investiture_status_enum.CLUB_APPROVED,
       'field-approve': investiture_status_enum.COORDINATOR_APPROVED,
       'invest': investiture_status_enum.FIELD_APPROVED,
@@ -877,56 +900,177 @@ export class InvestitureService {
       return { succeeded, failed };
     }
 
-    // 5. Determine target status and action for eligible enrollments
-    let targetStatus: investiture_status_enum;
-    let historyAction: investiture_action_enum;
-
-    if (dto.action === 'invest') {
-      targetStatus = investiture_status_enum.INVESTIDO;
-      historyAction = investiture_action_enum.INVESTIDO;
-    } else {
-      const transition = APPROVAL_TRANSITIONS[expectedSourceStatus];
-      targetStatus = transition.target;
-      historyAction = transition.action;
-    }
-
     const now = new Date();
 
-    // 6. Atomic transaction: update all eligible enrollments + create history entries
-    await this.prisma.$transaction(async (tx) => {
-      // Batch-update all enrollments
-      await tx.enrollments.updateMany({
-        where: { enrollment_id: { in: succeeded } },
-        data:
-          dto.action === 'invest'
-            ? {
-                investiture_status: targetStatus,
-                validated_by: actorId,
-                validated_at: now,
-              }
-            : {
-                investiture_status: targetStatus,
-                validated_by: actorId,
-                validated_at: now,
-                rejection_reason: null,
-                locked_for_validation: true,
-              },
-      });
+    // 5. Atomic transaction — invest requires per-enrollment updates to resolve
+    //    investiture_config (ceremony date); other actions use efficient updateMany.
+    if (dto.action === 'invest') {
+      // C2 — Pre-resolve investiture_config for each enrollment before the transaction
+      //      to avoid I/O-heavy work inside the transaction loop (keeps the transaction short).
+      type ConfigResult =
+        | { status: 'ok'; investiture_date: Date }
+        | { status: 'missing' };
 
-      // Create one history entry per enrollment
-      await tx.investiture_validation_history.createMany({
-        data: succeeded.map((enrollmentId) => ({
-          enrollment_id: enrollmentId,
-          action: historyAction,
-          performed_by: actorId,
-          comments: dto.comments ?? null,
-        })),
+      const configResults = new Map<number, ConfigResult>();
+      await Promise.all(
+        succeeded.map(async (enrollmentId) => {
+          const enrollment = enrollmentMap.get(enrollmentId)!;
+          const config = await this.prisma.investiture_config.findFirst({
+            where: {
+              local_field_id: enrollment.users.local_field_id ?? undefined,
+              ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
+              active: true,
+            },
+            select: { investiture_date: true },
+          });
+          configResults.set(
+            enrollmentId,
+            config ? { status: 'ok', investiture_date: config.investiture_date } : { status: 'missing' },
+          );
+        }),
+      );
+
+      // Split into those with a valid config vs those without
+      const investable = succeeded.filter(
+        (id) => configResults.get(id)!.status === 'ok',
+      );
+      const noConfig = succeeded.filter(
+        (id) => configResults.get(id)!.status === 'missing',
+      );
+
+      noConfig.forEach((id) =>
+        failed.push({
+          id,
+          reason: 'No existe configuración de investidura para este campo local y año',
+        }),
+      );
+
+      if (investable.length > 0) {
+        await this.prisma.$transaction(async (tx) => {
+          // W3 — Per-row updateMany with status re-check for atomicity
+          for (const enrollmentId of investable) {
+            const cfg = configResults.get(enrollmentId) as { status: 'ok'; investiture_date: Date };
+            await tx.enrollments.updateMany({
+              where: {
+                enrollment_id: enrollmentId,
+                investiture_status: investiture_status_enum.FIELD_APPROVED,
+              },
+              data: {
+                investiture_status: investiture_status_enum.INVESTIDO,
+                investiture_date: cfg.investiture_date,
+                validated_by: actorId,
+                validated_at: now,
+              },
+            });
+          }
+
+          await tx.investiture_validation_history.createMany({
+            data: investable.map((enrollmentId) => ({
+              enrollment_id: enrollmentId,
+              action: investiture_action_enum.INVESTIDO,
+              performed_by: actorId,
+              comments: dto.comments ?? null,
+            })),
+          });
+        });
+      }
+
+      // Reflect final invest-eligible IDs in succeeded
+      succeeded.length = 0;
+      succeeded.push(...investable);
+    } else {
+      // Efficient batch path for coordinator-approve and field-approve
+      const transition = APPROVAL_TRANSITIONS[expectedSourceStatus];
+      const targetStatus = transition.target;
+      const historyAction = transition.action;
+
+      await this.prisma.$transaction(async (tx) => {
+        // W3 — Add expectedSourceStatus to WHERE clause to re-check atomically
+        const updateResult = await tx.enrollments.updateMany({
+          where: {
+            enrollment_id: { in: succeeded },
+            investiture_status: expectedSourceStatus,
+          },
+          data: {
+            investiture_status: targetStatus,
+            validated_by: actorId,
+            validated_at: now,
+            rejection_reason: null,
+            locked_for_validation: true,
+          },
+        });
+
+        // Detect concurrent modifications
+        if (updateResult.count !== succeeded.length) {
+          this.logger.warn(
+            `Bulk ${dto.action}: expected to update ${succeeded.length} rows but updated ${updateResult.count}. ` +
+            `Possible concurrent modification.`,
+          );
+        }
+
+        await tx.investiture_validation_history.createMany({
+          data: succeeded.map((enrollmentId) => ({
+            enrollment_id: enrollmentId,
+            action: historyAction,
+            performed_by: actorId,
+            comments: dto.comments ?? null,
+          })),
+        });
       });
-    });
+    }
 
     this.logger.log(
       `Bulk ${dto.action} by ${actorId}: ${succeeded.length} succeeded, ${failed.length} failed`,
     );
+
+    // W1 — Send notifications for each succeeded enrollment.
+    //      Use Promise.allSettled so one failure doesn't block the rest.
+    const succeededEnrollments = succeeded.map((id) => enrollmentMap.get(id)!);
+
+    if (dto.action === 'invest') {
+      await Promise.allSettled(
+        succeededEnrollments.map((enrollment) =>
+          this.notifications.notifySafe(
+            enrollment.user_id,
+            'Felicidades, has sido investido',
+            'Tu investidura ha sido completada oficialmente.',
+            { type: 'investiture', entity_id: String(enrollment.enrollment_id), status: 'invested' },
+            'investiture:invested',
+          ),
+        ),
+      );
+    } else {
+      const notifData = (id: number) => ({
+        type: 'investiture',
+        entity_id: String(id),
+        status: dto.action === 'field-approve' ? 'field_approved' : 'coordinator_approved',
+      });
+
+      await Promise.allSettled(
+        succeededEnrollments.map((enrollment) => {
+          if (dto.action === 'coordinator-approve') {
+            if (!enrollment.users.local_field_id) return Promise.resolve();
+            return this.notifications.sendToGlobalRole(
+              ['assistant_admin', 'admin'],
+              'Investidura aprobada por coordinador',
+              'Un enrollment ha sido aprobado por el coordinador y requiere aprobación del campo',
+              notifData(enrollment.enrollment_id),
+              enrollment.users.local_field_id,
+              'investiture:coordinator_approved',
+            );
+          } else {
+            // field-approve → notify the member
+            return this.notifications.notifySafe(
+              enrollment.user_id,
+              'Investidura aprobada por el campo',
+              'Tu investidura ha sido aprobada a nivel de campo. Pronto serás investido.',
+              notifData(enrollment.enrollment_id),
+              'investiture:field_approved',
+            );
+          }
+        }),
+      );
+    }
 
     return { succeeded, failed };
   }
@@ -959,6 +1103,7 @@ export class InvestitureService {
       select: {
         enrollment_id: true,
         investiture_status: true,
+        user_id: true,
       },
     });
 
@@ -999,8 +1144,13 @@ export class InvestitureService {
 
     // 5. Atomic transaction
     await this.prisma.$transaction(async (tx) => {
-      await tx.enrollments.updateMany({
-        where: { enrollment_id: { in: succeeded } },
+      // W3 — Re-check eligible statuses atomically to guard against concurrent modifications.
+      //      updateMany only touches rows still in a rejectable status.
+      const updateResult = await tx.enrollments.updateMany({
+        where: {
+          enrollment_id: { in: succeeded },
+          investiture_status: { in: REJECTABLE_STATUSES },
+        },
         data: {
           investiture_status: investiture_status_enum.REJECTED,
           validated_by: actorId,
@@ -1010,6 +1160,13 @@ export class InvestitureService {
           submitted_for_validation: false,
         },
       });
+
+      if (updateResult.count !== succeeded.length) {
+        this.logger.warn(
+          `Bulk reject: expected to update ${succeeded.length} rows but updated ${updateResult.count}. ` +
+          `Possible concurrent modification.`,
+        );
+      }
 
       await tx.investiture_validation_history.createMany({
         data: succeeded.map((enrollmentId) => ({
@@ -1023,6 +1180,20 @@ export class InvestitureService {
 
     this.logger.log(
       `Bulk reject by ${actorId}: ${succeeded.length} succeeded, ${failed.length} failed`,
+    );
+
+    // W1 — Notify each member of the rejection via Promise.allSettled
+    await Promise.allSettled(
+      succeeded.map((id) => {
+        const enrollment = enrollmentMap.get(id)!;
+        return this.notifications.notifySafe(
+          enrollment.user_id,
+          'Tu investidura ha sido rechazada',
+          `El enrollment ha sido rechazado: ${dto.comments}`,
+          { type: 'investiture', entity_id: String(id), status: 'rejected' },
+          'investiture:rejected',
+        );
+      }),
     );
 
     return { succeeded, failed };

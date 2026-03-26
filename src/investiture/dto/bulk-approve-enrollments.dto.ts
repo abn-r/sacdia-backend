@@ -11,8 +11,13 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * club-approve is intentionally excluded from bulk operations.
+ * Club directors must use the individual /club-approve endpoint which
+ * enforces ClubRolesGuard('director') — a club-scoped check that cannot
+ * be replicated efficiently in a bulk context.
+ */
 export type BulkApproveAction =
-  | 'club-approve'
   | 'coordinator-approve'
   | 'field-approve'
   | 'invest';
@@ -31,12 +36,12 @@ export class BulkApproveEnrollmentsDto {
   enrollmentIds: number[];
 
   @ApiProperty({
-    description: 'Acción de aprobación a aplicar',
-    enum: ['club-approve', 'coordinator-approve', 'field-approve', 'invest'],
+    description: 'Acción de aprobación a aplicar. club-approve no está disponible en bulk (usar endpoint individual).',
+    enum: ['coordinator-approve', 'field-approve', 'invest'],
     example: 'coordinator-approve',
   })
-  @IsEnum(['club-approve', 'coordinator-approve', 'field-approve', 'invest'], {
-    message: 'action debe ser uno de: club-approve, coordinator-approve, field-approve, invest',
+  @IsEnum(['coordinator-approve', 'field-approve', 'invest'], {
+    message: 'action debe ser uno de: coordinator-approve, field-approve, invest',
   })
   action: BulkApproveAction;
 
