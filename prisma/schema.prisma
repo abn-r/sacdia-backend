@@ -316,10 +316,11 @@ model clubs {
   created_at         DateTime?       @default(now()) @db.Timestamptz(6)
   modified_at        DateTime?       @default(now()) @db.Timestamptz(6)
   districlub_type_id Int
-  club_sections      club_sections[]
-  churches           churches        @relation(fields: [church_id], references: [church_id], onDelete: NoAction, onUpdate: NoAction)
-  districts          districts       @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: NoAction, onUpdate: NoAction)
-  local_fields       local_fields    @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  club_sections           club_sections[]
+  finance_period_closings FinancePeriodClosing[]
+  churches                churches        @relation(fields: [church_id], references: [church_id], onDelete: NoAction, onUpdate: NoAction)
+  districts               districts       @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: NoAction, onUpdate: NoAction)
+  local_fields            local_fields    @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model club_sections {
@@ -478,6 +479,7 @@ model finances {
   created_at          DateTime?           @default(now()) @db.Timestamptz(6)
   modified_at         DateTime?           @default(now()) @db.Timestamptz(6)
   club_section_id     Int?
+  post_closing_note   String?
   club_sections       club_sections?      @relation(fields: [club_section_id], references: [club_section_id], onUpdate: NoAction)
   club_types          club_types          @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   users               users               @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -485,6 +487,7 @@ model finances {
   finances_categories finances_categories @relation(fields: [finance_category_id], references: [finance_category_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([club_section_id], map: "idx_finances_club_section_id")
+  @@index([club_section_id, year, month, active])
 }
 
 model finances_categories {
@@ -499,6 +502,26 @@ model finances_categories {
   finances            finances[]
 
   @@unique([name, type], map: "unique_name_type")
+}
+
+model FinancePeriodClosing {
+  finance_period_closing_id Int       @id @default(autoincrement())
+  club_id                   Int
+  year                      Int
+  month                     Int
+  total_income              Int
+  total_expense             Int
+  balance                   Int
+  movement_count            Int
+  breakdown                 Json
+  closed_at                 DateTime
+  closed_by                 String?   @db.Uuid
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+
+  clubs                     clubs     @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([club_id, year, month])
+  @@map("finance_period_closings")
 }
 
 model folders {
