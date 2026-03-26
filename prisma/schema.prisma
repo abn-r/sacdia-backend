@@ -87,31 +87,35 @@ model folder_assignments {
 }
 
 model camporee_clubs {
-  camporee_club_id Int             @id @default(autoincrement())
-  camporee_id      Int
-  camporee_type    String          @db.VarChar(50)
-  club_id          Int?
-  local_field_id   Int?
-  status           String          @default("registered") @db.VarChar(20)
-  registered_by    String?         @db.Uuid
-  active           Boolean         @default(true)
-  created_at       DateTime        @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime        @default(now()) @db.Timestamptz(6)
-  club_section_id  Int?
-  rejection_reason String?
-  approved_by      String?         @db.Uuid
-  rejected_by      String?         @db.Uuid
-  local_camporees  local_camporees @relation(fields: [camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
-  club_sections    club_sections?  @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
-  local_fields     local_fields?   @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
-  registrar        users?          @relation("camporee_clubs_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  camporee_club_id   Int              @id @default(autoincrement())
+  camporee_id        Int?
+  union_camporee_id  Int?
+  camporee_type      String           @db.VarChar(50)
+  club_id            Int?
+  local_field_id     Int?
+  status             String           @default("registered") @db.VarChar(20)
+  registered_by      String?          @db.Uuid
+  active             Boolean          @default(true)
+  created_at         DateTime         @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime         @default(now()) @db.Timestamptz(6)
+  club_section_id    Int?
+  rejection_reason   String?
+  approved_by        String?          @db.Uuid
+  rejected_by        String?          @db.Uuid
+  local_camporees    local_camporees? @relation(fields: [camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  union_camporees    union_camporees? @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  club_sections      club_sections?   @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  local_fields       local_fields?    @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+  registrar          users?           @relation("camporee_clubs_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([club_section_id], map: "idx_camporee_clubs_club_section_id")
+  @@index([union_camporee_id], map: "idx_camporee_clubs_union_camporee_id")
 }
 
 model camporee_members {
   camporee_member_id Int                @id @default(autoincrement())
-  camporee_id        Int
+  camporee_id        Int?
+  union_camporee_id  Int?
   camporee_type      String             @db.VarChar(50)
   user_id            String             @db.Uuid
   club_name          String?            @db.VarChar(255)
@@ -125,11 +129,14 @@ model camporee_members {
   rejection_reason   String?
   approved_by        String?            @db.Uuid
   rejected_by        String?            @db.Uuid
-  local_camporees    local_camporees    @relation(fields: [camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  local_camporees    local_camporees?   @relation(fields: [camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  union_camporees    union_camporees?   @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   insurance          member_insurances? @relation(fields: [insurance_id], references: [insurance_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields       local_fields?      @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
   users              users              @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   camporee_payments  camporee_payments[]
+
+  @@index([union_camporee_id], map: "idx_camporee_members_union_camporee_id")
 }
 
 model churches {
@@ -780,6 +787,8 @@ model union_camporees {
   created_at                   DateTime                      @default(now()) @db.Timestamptz(6)
   modified_at                  DateTime                      @default(now()) @db.Timestamptz(6)
   union_camporee_local_fields  union_camporee_local_fields[]
+  attending_clubs_camporees    camporee_clubs[]
+  attending_members_camporees  camporee_members[]
   ecclesiastical_year_relation ecclesiastical_years          @relation("union_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   unions                       unions                        @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
 }

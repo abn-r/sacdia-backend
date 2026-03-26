@@ -39,6 +39,11 @@ type ResolvedTerritoryScope = {
   countryId?: number | null;
 };
 
+type ResolvedUnionCamporeeScope = {
+  unionId: number;
+  countryId: number | null;
+};
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -111,6 +116,11 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveCamporeeScope(request, resource),
           'You need an active assignment or global scope for this camporee',
+        );
+      case 'union_camporee':
+        return this.validateUnionCamporeeScope(
+          resolved,
+          await this.resolveUnionCamporeeScope(request, resource),
         );
       case 'activity':
         return this.validateInstanceScope(
@@ -437,6 +447,105 @@ export class PermissionsGuard implements CanActivate {
       unionId: camporee.local_fields?.union_id ?? null,
       countryId: camporee.local_fields?.unions?.country_id ?? null,
     };
+  }
+
+  private async resolveUnionCamporeeScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedUnionCamporeeScope> {
+    const camporeeId = this.getRequiredNumericValue(
+      this.getRequestValue(
+        request,
+        'param',
+        resource.idParam ?? 'unionCamporeeId',
+      ),
+      'Union camporee ID not found in request',
+    );
+
+    const camporee = await this.prisma.union_camporees.findUnique({
+      where: { union_camporee_id: camporeeId },
+      select: {
+        union_id: true,
+        unions: { select: { country_id: true } },
+      },
+    });
+
+    if (!camporee) {
+      throw new NotFoundException('Union camporee not found');
+    }
+
+    return {
+      unionId: camporee.union_id,
+      countryId: camporee.unions?.country_id ?? null,
+    };
+  }
+
+  private validateUnionCamporeeScope(
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: ResolvedUnionCamporeeScope,
+  ): boolean {
+    const globalRoleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (globalRoleNames.has('super_admin')) {
+      return true;
+    }
+
+    const globalScope = resolved.authorization.effective.scope.global;
+    const globalUnionId = globalScope.union?.id;
+    const globalCountryId = globalScope.country?.id;
+
+    if (
+      typeof globalUnionId === 'number' &&
+      globalUnionId === resourceScope.unionId &&
+      (globalRoleNames.has('admin') || globalRoleNames.has('assistant_admin'))
+    ) {
+      return true;
+    }
+
+    if (
+      typeof resourceScope.countryId === 'number' &&
+      typeof globalCountryId === 'number' &&
+      globalCountryId === resourceScope.countryId &&
+      globalRoleNames.has('admin')
+    ) {
+      return true;
+    }
+
+    // Local-field-level actors (admin, coordinator, director-lf, assistant-lf)
+    // and club-assignment actors with a local field are permitted through —
+    // the service layer enforces that the local field participates in this
+    // union camporee via union_camporee_local_fields.
+    const globalLocalFieldId = globalScope.local_field?.id;
+
+    if (
+      typeof globalLocalFieldId === 'number' &&
+      (globalRoleNames.has('admin') ||
+        globalRoleNames.has('assistant_admin') ||
+        globalRoleNames.has('coordinator') ||
+        globalRoleNames.has('director_lf') ||
+        globalRoleNames.has('assistant_lf'))
+    ) {
+      return true;
+    }
+
+    const activeAssignmentId =
+      resolved.authorization.active_assignment.assignment_id;
+    const activeGrant = resolved.authorization.grants.club_assignments.find(
+      (assignment) => assignment.assignment_id === activeAssignmentId,
+    );
+    const activeGrantLocalFieldId = activeGrant?.scope.local_field?.id;
+
+    if (typeof activeGrantLocalFieldId === 'number') {
+      return true;
+    }
+
+    throw new ForbiddenException(
+      'You need a union-level or higher assignment for this union camporee',
+    );
   }
 
   private async resolveFinanceScope(
