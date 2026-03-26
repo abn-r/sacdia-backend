@@ -140,7 +140,7 @@ export class FinancesController {
     @Body() dto: CreateFinanceDto,
     @Request() req: any,
   ) {
-    return this.financesService.create(dto, req.user.sub);
+    return this.financesService.create(dto, req.user.sub, clubId);
   }
 
   // ========================================
@@ -177,11 +177,18 @@ export class FinancesController {
   @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
   @ApiOperation({ summary: 'Desactivar movimiento' })
   @ApiParam({ name: 'financeId', type: Number })
+  @ApiQuery({
+    name: 'reason',
+    required: false,
+    type: String,
+    description: 'Justificación para eliminación en período cerrado (solo admin)',
+  })
   @ApiResponse({ status: 200, description: 'Movimiento desactivado' })
   async remove(
     @Param('financeId', ParseIntPipe) financeId: number,
     @Request() req: any,
+    @Query('reason') reason?: string,
   ) {
-    return this.financesService.remove(financeId, req.user.sub);
+    return this.financesService.remove(financeId, req.user.sub, reason);
   }
 }
