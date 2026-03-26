@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FinancePeriodService } from './finance-period.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { Logger } from '@nestjs/common';
+import { Logger, ForbiddenException } from '@nestjs/common';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 describe('FinancePeriodService', () => {
   let service: FinancePeriodService;
@@ -13,11 +14,16 @@ describe('FinancePeriodService', () => {
     financePeriodClosing: { findUnique: jest.fn(), create: jest.fn() },
   };
 
+  const mockAuthorizationContextService = {
+    hasAnyGlobalRole: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancePeriodService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: AuthorizationContextService, useValue: mockAuthorizationContextService },
       ],
     }).compile();
 
@@ -120,6 +126,49 @@ describe('FinancePeriodService', () => {
           expect.objectContaining({ club_section_id: 10, club_type_name: 'Conquistadores', income: 5000, expense: 1500, balance: 3500 }),
           expect.objectContaining({ club_section_id: 11, club_type_name: 'Aventureros', income: 2000, expense: 0, balance: 2000 }),
         ]),
+      );
+    });
+  });
+
+  describe('validatePeriodOpen', () => {
+    it('should allow when period is not closed', async () => {
+      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.validatePeriodOpen(1, 2026, 2, 'user-123'),
+      ).resolves.not.toThrow();
+
+      expect(mockAuthorizationContextService.hasAnyGlobalRole).not.toHaveBeenCalled();
+    });
+
+    it('should throw ForbiddenException when period is closed and user is not admin', async () => {
+      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
+        finance_period_closing_id: 1, club_id: 1, year: 2026, month: 2,
+      });
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
+
+      await expect(
+        service.validatePeriodOpen(1, 2026, 2, 'user-123'),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.validatePeriodOpen(1, 2026, 2, 'user-123'),
+      ).rejects.toThrow('El periodo 2/2026 está cerrado');
+    });
+
+    it('should allow when period is closed and user is admin', async () => {
+      mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
+        finance_period_closing_id: 1, club_id: 1, year: 2026, month: 2,
+      });
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+
+      await expect(
+        service.validatePeriodOpen(1, 2026, 2, 'admin-user-456'),
+      ).resolves.not.toThrow();
+
+      expect(mockAuthorizationContextService.hasAnyGlobalRole).toHaveBeenCalledWith(
+        'admin-user-456',
+        ['admin', 'super_admin'],
       );
     });
   });

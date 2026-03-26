@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 type CategoryBreakdownItem = { finance_category_id: number; name: string; type: number; total: number };
 type SectionBreakdownItem = { club_section_id: number; club_type_name: string; income: number; expense: number; balance: number };
@@ -10,7 +11,10 @@ type Breakdown = { by_category: CategoryBreakdownItem[]; by_section: SectionBrea
 export class FinancePeriodService {
   private readonly logger = new Logger(FinancePeriodService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   async closeMonthForClub(clubId: number, year: number, month: number, closedBy: string | null = null) {
     const existing = await this.prisma.financePeriodClosing.findUnique({
@@ -55,6 +59,30 @@ export class FinancePeriodService {
         breakdown: breakdown as any, closed_at: new Date(), closed_by: closedBy,
       },
     });
+  }
+
+  async validatePeriodOpen(
+    clubId: number,
+    year: number,
+    month: number,
+    userId: string,
+  ): Promise<void> {
+    const closing = await this.prisma.financePeriodClosing.findUnique({
+      where: { club_id_year_month: { club_id: clubId, year, month } },
+    });
+
+    if (!closing) return;
+
+    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
+      userId,
+      ['admin', 'super_admin'],
+    );
+
+    if (!isAdmin) {
+      throw new ForbiddenException(
+        `El periodo ${month}/${year} está cerrado`,
+      );
+    }
   }
 
   @Cron('0 0 1 * *', { name: 'finance-period-closing' })
