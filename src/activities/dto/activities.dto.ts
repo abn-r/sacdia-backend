@@ -104,9 +104,10 @@ export class CreateActivityDto {
   @IsString()
   activity_place: string;
 
-  @ApiProperty({ description: 'URL de la imagen de la actividad' })
+  @ApiPropertyOptional({ description: 'URL de la imagen de la actividad' })
+  @IsOptional()
   @IsString()
-  image: string;
+  image?: string;
 
   @ApiPropertyOptional({
     description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)',
