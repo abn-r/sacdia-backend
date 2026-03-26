@@ -39,6 +39,9 @@ import { RequestsModule } from './requests/requests.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { YearEndModule } from './year-end/year-end.module';
 import { MembershipRequestsModule } from './membership-requests/membership-requests.module';
+import { ResourcesModule } from './resources/resources.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { EvidenceReviewModule } from './evidence-review/evidence-review.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 
@@ -168,6 +171,9 @@ import { buildBullRootConfig } from './config/bullmq.config';
     SystemConfigModule,
     YearEndModule,
     MembershipRequestsModule,
+    ResourcesModule,
+    AnalyticsModule,
+    EvidenceReviewModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

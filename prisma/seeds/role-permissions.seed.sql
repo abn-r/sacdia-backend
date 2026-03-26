@@ -1253,6 +1253,49 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistan
   AND p.permission_name = 'attendance:approve_late'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
+-- ============================
+-- resources:* — field/union/dia directors and assistants
+-- ============================
+-- admin and super-admin pick these up automatically via their wildcard grants.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistant-union', 'director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resources:create', 'resources:read', 'resources:update', 'resources:delete')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- resource_categories:* — same roles for category management
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistant-union', 'director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resource_categories:create', 'resource_categories:read', 'resource_categories:update', 'resource_categories:delete')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- resources:read + resource_categories:read for coordinator role (read-only access)
+-- ============================
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'coordinator'
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resources:read', 'resource_categories:read')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
 COMMIT;
 
 -- ============================================================================

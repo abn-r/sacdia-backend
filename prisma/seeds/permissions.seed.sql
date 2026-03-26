@@ -430,6 +430,32 @@ ON CONFLICT (permission_name) DO UPDATE SET
   active = EXCLUDED.active,
   modified_at = now();
 
+-- ============================
+-- Resources
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('resources:create', 'Create resources', true),
+  ('resources:read', 'Read resources', true),
+  ('resources:update', 'Update resources', true),
+  ('resources:delete', 'Delete resources', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Resource Categories
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('resource_categories:create', 'Create resource categories', true),
+  ('resource_categories:read', 'Read resource categories', true),
+  ('resource_categories:update', 'Update resource categories', true),
+  ('resource_categories:delete', 'Delete resource categories', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

@@ -11,6 +11,7 @@ export enum StorageBucketAlias {
   EVIDENCE_FILES = 'EVIDENCE_FILES',
   INSURANCE_EVIDENCE = 'INSURANCE_EVIDENCE',
   CLASS_EVIDENCE = 'CLASS_EVIDENCE',
+  RESOURCES_FILES = 'RESOURCES_FILES',
 }
 
 export type UploadFileOptions = {

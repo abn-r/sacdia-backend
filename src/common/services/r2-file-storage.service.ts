@@ -326,6 +326,16 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.RESOURCES_FILES:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_RESOURCES_FILES'),
+          publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_RESOURCES_FILES'),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_RESOURCES_FILES',
+            'resources',
+          ),
+          isPublic: false,
+        };
       default:
         throw new InternalServerErrorException(
           `Unsupported storage bucket alias: ${bucketAlias}`,
