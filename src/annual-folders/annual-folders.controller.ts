@@ -245,10 +245,17 @@ export class AnnualFoldersController {
 
   @Post(':folderId/close')
   @RequirePermissions('evidence_folders:update')
-  @ApiOperation({ summary: 'Close folder (field-level action)' })
+  @ApiOperation({
+    summary: 'Close folder (field-level action)',
+    description:
+      "Closes an annual folder. Accepts folders in 'submitted' or 'evaluated' status.",
+  })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiResponse({ status: 200, description: 'Folder closed' })
-  @ApiResponse({ status: 400, description: 'Folder is not submitted' })
+  @ApiResponse({
+    status: 400,
+    description: "Folder is not in 'submitted' or 'evaluated' status",
+  })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async closeFolder(
     @Param('folderId', ParseUUIDPipe) folderId: string,

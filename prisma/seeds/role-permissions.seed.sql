@@ -743,7 +743,12 @@ WHERE r.role_name = 'director'
     -- Membership approval
     'club_members:approve',
     'club_members:reject',
-    'club_members:list_pending'
+    'club_members:list_pending',
+
+    -- Annual folders & rankings (read-only for club directors)
+    'annual_folder_templates:read',
+    'rankings:read',
+    'award_categories:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1033,7 +1038,20 @@ WHERE r.role_name = 'assistant-lf'
     'unions:read',
     'local_fields:read',
     'churches:read',
-    'districts:read'
+    'districts:read',
+
+    -- ===== Annual Folders Scoring (field-level) =====
+    'annual_folder_templates:create',
+    'annual_folder_templates:read',
+    'annual_folder_templates:update',
+    'annual_folder_templates:delete',
+    'annual_folders:evaluate',
+    'award_categories:create',
+    'award_categories:read',
+    'award_categories:update',
+    'award_categories:delete',
+    'rankings:read',
+    'rankings:recalculate'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 

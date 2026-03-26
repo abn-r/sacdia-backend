@@ -1676,7 +1676,7 @@ model club_annual_rankings {
   club_enrollment_id     String   @db.Uuid
   club_type_id           Int
   ecclesiastical_year_id Int
-  award_category_id      String?  @db.Uuid
+  award_category_id      String   @default("00000000-0000-0000-0000-000000000000") @db.Uuid
   total_earned_points    Int      @default(0)
   total_max_points       Int      @default(0)
   progress_percentage    Float    @default(0)
@@ -1688,7 +1688,7 @@ model club_annual_rankings {
   club_enrollment        club_enrollments         @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
   club_type              club_types               @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   ecclesiastical_year    ecclesiastical_years     @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
-  award_category         award_categories?        @relation(fields: [award_category_id], references: [award_category_id], onDelete: NoAction, onUpdate: NoAction)
+  award_category         award_categories         @relation(fields: [award_category_id], references: [award_category_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([club_enrollment_id, ecclesiastical_year_id, award_category_id])
   @@index([club_type_id], map: "idx_club_annual_rankings_club_type")

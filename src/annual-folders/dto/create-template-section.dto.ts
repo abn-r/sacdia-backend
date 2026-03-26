@@ -35,4 +35,19 @@ export class CreateTemplateSectionDto {
   @IsOptional()
   @IsBoolean()
   required?: boolean;
+
+  @ApiProperty({ description: 'Maximum points for this section', example: 100 })
+  @IsInt()
+  @Min(0)
+  max_points: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum points required',
+    example: 0,
+    default: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minimum_points?: number;
 }

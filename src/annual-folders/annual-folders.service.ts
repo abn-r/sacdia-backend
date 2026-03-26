@@ -103,6 +103,8 @@ export class AnnualFoldersService {
         description: dto.description,
         order: dto.order,
         required: dto.required ?? true,
+        max_points: dto.max_points,
+        minimum_points: dto.minimum_points ?? 0,
       },
     });
   }
@@ -131,6 +133,8 @@ export class AnnualFoldersService {
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.order !== undefined && { order: dto.order }),
         ...(dto.required !== undefined && { required: dto.required }),
+        ...(dto.max_points !== undefined && { max_points: dto.max_points }),
+        ...(dto.minimum_points !== undefined && { minimum_points: dto.minimum_points }),
       },
     });
   }
@@ -298,7 +302,7 @@ export class AnnualFoldersService {
   }
 
   /**
-   * Get an annual folder by ID with its template sections and evidences.
+   * Get an annual folder by ID with its template sections, evidences, and evaluations.
    */
   async getFolder(folderId: string) {
     const folder = await this.prisma.annual_folders.findUnique({
@@ -334,6 +338,17 @@ export class AnnualFoldersService {
           },
           orderBy: { created_at: 'asc' },
         },
+        evaluations: {
+          include: {
+            evaluated_by: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -347,7 +362,7 @@ export class AnnualFoldersService {
   }
 
   /**
-   * Get an annual folder by enrollment ID.
+   * Get an annual folder by enrollment ID with sections, evidences, and evaluations.
    */
   async getFolderByEnrollment(enrollmentId: string) {
     const folder = await this.prisma.annual_folders.findUnique({
@@ -382,6 +397,17 @@ export class AnnualFoldersService {
             },
           },
           orderBy: { created_at: 'asc' },
+        },
+        evaluations: {
+          include: {
+            evaluated_by: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
         },
       },
     });
@@ -568,6 +594,7 @@ export class AnnualFoldersService {
 
   /**
    * Close a folder (change status to 'closed'). Field-level action.
+   * Accepts folders in 'submitted' OR 'evaluated' status.
    */
   async closeFolder(folderId: string) {
     const folder = await this.prisma.annual_folders.findUnique({
@@ -580,9 +607,9 @@ export class AnnualFoldersService {
       );
     }
 
-    if (folder.status !== 'submitted') {
+    if (folder.status !== 'submitted' && folder.status !== 'evaluated') {
       throw new BadRequestException(
-        `Cannot close a folder with status '${folder.status}'. Folder must be 'submitted'.`,
+        `Cannot close a folder with status '${folder.status}'. Folder must be 'submitted' or 'evaluated'.`,
       );
     }
 
@@ -617,15 +644,31 @@ export class AnnualFoldersService {
       });
     }
 
-    // Build sections with their evidences
+    // Index evaluations by section_id for O(1) lookup
+    const evaluationBySection = new Map<string, any>();
+    for (const evaluation of (folder.evaluations ?? [])) {
+      evaluationBySection.set(evaluation.section_id, {
+        evaluation_id: evaluation.evaluation_id,
+        earned_points: evaluation.earned_points,
+        max_points: evaluation.max_points,
+        notes: evaluation.notes,
+        evaluator: this.formatUserName(evaluation.evaluated_by),
+        evaluated_at: evaluation.evaluated_at,
+      });
+    }
+
+    // Build sections with their evidences and evaluation (if present)
     const sections = folder.folder_template.sections.map((section: any) => ({
       section_id: section.section_id,
       name: section.name,
       description: section.description,
       order: section.order,
       required: section.required,
+      max_points: section.max_points,
+      minimum_points: section.minimum_points,
       evidences: evidencesBySection.get(section.section_id) ?? [],
       evidence_count: (evidencesBySection.get(section.section_id) ?? []).length,
+      evaluation: evaluationBySection.get(section.section_id) ?? null,
     }));
 
     return {
@@ -633,7 +676,11 @@ export class AnnualFoldersService {
       status: folder.status,
       submitted_at: folder.submitted_at,
       closed_at: folder.closed_at,
+      evaluated_at: folder.evaluated_at,
       created_at: folder.created_at,
+      total_earned_points: folder.total_earned_points,
+      total_max_points: folder.total_max_points,
+      progress_percentage: folder.progress_percentage,
       club_enrollment: folder.club_enrollment,
       template: {
         folder_template_id: folder.folder_template.folder_template_id,

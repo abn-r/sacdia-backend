@@ -274,6 +274,53 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Annual Folder Templates
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('annual_folder_templates:create', 'Create annual folder templates', true),
+  ('annual_folder_templates:read', 'Read annual folder templates', true),
+  ('annual_folder_templates:update', 'Update annual folder templates', true),
+  ('annual_folder_templates:delete', 'Delete annual folder templates', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Annual Folders Evaluation
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('annual_folders:evaluate', 'Evaluate annual folder sections (assign points)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Award Categories
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('award_categories:create', 'Create award categories', true),
+  ('award_categories:read', 'Read award categories', true),
+  ('award_categories:update', 'Update award categories', true),
+  ('award_categories:delete', 'Delete award categories', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Rankings
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('rankings:read', 'View club rankings and leaderboards', true),
+  ('rankings:recalculate', 'Trigger rankings recalculation', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Investiture
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
