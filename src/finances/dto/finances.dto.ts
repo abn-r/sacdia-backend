@@ -4,6 +4,8 @@ import {
   IsString,
   IsDateString,
   Min,
+  Max,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -16,6 +18,7 @@ export class CreateFinanceDto {
   @ApiProperty({ description: 'Mes del movimiento (1-12)' })
   @IsInt()
   @Min(1)
+  @Max(12)
   month: number;
 
   @ApiProperty({ description: 'Monto del movimiento (en centavos)' })
@@ -44,6 +47,15 @@ export class CreateFinanceDto {
   @ApiProperty({ description: 'ID de la sección del club (FK a club_sections)' })
   @IsInt()
   club_section_id: number;
+
+  @ApiPropertyOptional({
+    description: 'Justificación para movimiento en período cerrado (solo admin)',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  post_closing_note?: string;
 }
 
 export class UpdateFinanceDto {
@@ -66,6 +78,15 @@ export class UpdateFinanceDto {
   @IsOptional()
   @IsDateString()
   finance_date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Justificación para movimiento en período cerrado (solo admin)',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  post_closing_note?: string;
 }
 
 export class FinanceFiltersDto {
