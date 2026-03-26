@@ -36,6 +36,8 @@ src/
 ├── inventory
 ├── rbac
 ├── admin
+├── evidence-review    # EvidenceReviewModule — validación de evidencias (7 endpoints)
+├── analytics          # AnalyticsModule — SLA dashboard y métricas operacionales
 ├── common
 └── prisma
 ```
