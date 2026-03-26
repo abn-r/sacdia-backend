@@ -123,4 +123,52 @@ describe('FinancePeriodService', () => {
       );
     });
   });
+
+  describe('handleMonthlyClosing', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-04-01T12:00:00'));
+      jest.spyOn(service, 'closeMonthForClub').mockResolvedValue(null);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should process all active clubs for the previous month', async () => {
+      mockPrismaService.clubs.findMany
+        .mockResolvedValueOnce([
+          { club_id: 1, name: 'Club Alpha' },
+          { club_id: 2, name: 'Club Beta' },
+        ])
+        .mockResolvedValueOnce([]);
+
+      jest.spyOn(service, 'closeMonthForClub')
+        .mockResolvedValueOnce({ finance_period_closing_id: 1 } as any)
+        .mockResolvedValueOnce({ finance_period_closing_id: 2 } as any);
+
+      await service.handleMonthlyClosing();
+
+      expect(service.closeMonthForClub).toHaveBeenCalledWith(1, 2026, 3);
+      expect(service.closeMonthForClub).toHaveBeenCalledWith(2, 2026, 3);
+    });
+
+    it('should isolate errors per club and continue processing', async () => {
+      mockPrismaService.clubs.findMany
+        .mockResolvedValueOnce([
+          { club_id: 1, name: 'Club Alpha' },
+          { club_id: 2, name: 'Club Beta' },
+          { club_id: 3, name: 'Club Gamma' },
+        ])
+        .mockResolvedValueOnce([]);
+
+      jest.spyOn(service, 'closeMonthForClub')
+        .mockResolvedValueOnce({ finance_period_closing_id: 1 } as any)
+        .mockRejectedValueOnce(new Error('DB connection lost'))
+        .mockResolvedValueOnce({ finance_period_closing_id: 3 } as any);
+
+      await expect(service.handleMonthlyClosing()).resolves.not.toThrow();
+      expect(service.closeMonthForClub).toHaveBeenCalledTimes(3);
+    });
+  });
 });
