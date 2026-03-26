@@ -25,6 +25,11 @@ import { RejectInvestitureDto } from './dto/reject-investiture.dto';
 import { MarkInvestidoDto } from './dto/mark-investido.dto';
 import { CreateInvestitureConfigDto } from './dto/create-investiture-config.dto';
 import { UpdateInvestitureConfigDto } from './dto/update-investiture-config.dto';
+import {
+  BulkApproveEnrollmentsDto,
+  BulkApproveAction,
+} from './dto/bulk-approve-enrollments.dto';
+import { BulkRejectEnrollmentsDto } from './dto/bulk-reject-enrollments.dto';
 
 // ─── Approval chain state machine ──────────────────────────────────
 // eligible (auto)  →  submitted  →  club_approved  →  coordinator_approved  →  field_approved  →  invested
@@ -788,6 +793,239 @@ export class InvestitureService {
       validated_at: updatedEnrollment.validated_at,
       rejection_reason: updatedEnrollment.rejection_reason,
     };
+  }
+
+  // ========================================
+  // BULK APPROVE
+  // ========================================
+
+  /**
+   * Aprobar múltiples enrollments en bloque.
+   *
+   * Validación individual: cada enrollment debe estar en el estado correcto para
+   * la acción solicitada. Los que no cumplan se incluyen en `failed` con el motivo.
+   * Los que sí cumplan se actualizan dentro de una única transacción de Prisma.
+   *
+   * Mapa de acción → estado fuente requerido:
+   *   club-approve        → SUBMITTED_FOR_VALIDATION
+   *   coordinator-approve → CLUB_APPROVED
+   *   field-approve       → COORDINATOR_APPROVED
+   *   invest              → FIELD_APPROVED
+   */
+  async bulkApproveEnrollments(
+    actorId: string,
+    dto: BulkApproveEnrollmentsDto,
+  ): Promise<{
+    succeeded: number[];
+    failed: { id: number; reason: string }[];
+  }> {
+    const ACTION_SOURCE_MAP: Record<BulkApproveAction, investiture_status_enum> = {
+      'club-approve': investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+      'coordinator-approve': investiture_status_enum.CLUB_APPROVED,
+      'field-approve': investiture_status_enum.COORDINATOR_APPROVED,
+      'invest': investiture_status_enum.FIELD_APPROVED,
+    };
+
+    const expectedSourceStatus = ACTION_SOURCE_MAP[dto.action];
+
+    // 1. Fetch all requested enrollments in one query
+    const enrollments = await this.prisma.enrollments.findMany({
+      where: {
+        enrollment_id: { in: dto.enrollmentIds },
+        active: true,
+      },
+      select: {
+        enrollment_id: true,
+        investiture_status: true,
+        user_id: true,
+        class_id: true,
+        ecclesiastical_year_id: true,
+        users: { select: { local_field_id: true } },
+      },
+    });
+
+    // 2. Build a lookup map for fast access
+    const enrollmentMap = new Map(
+      enrollments.map((e) => [e.enrollment_id, e]),
+    );
+
+    const succeeded: number[] = [];
+    const failed: { id: number; reason: string }[] = [];
+
+    // 3. Classify each requested ID as eligible or failed
+    for (const id of dto.enrollmentIds) {
+      const enrollment = enrollmentMap.get(id);
+
+      if (!enrollment) {
+        failed.push({ id, reason: 'Enrollment no encontrado o inactivo' });
+        continue;
+      }
+
+      if (enrollment.investiture_status !== expectedSourceStatus) {
+        failed.push({
+          id,
+          reason: `Estado inválido para esta acción: ${enrollment.investiture_status} (se requiere ${expectedSourceStatus})`,
+        });
+        continue;
+      }
+
+      succeeded.push(id);
+    }
+
+    // 4. If nothing to process, return early
+    if (succeeded.length === 0) {
+      return { succeeded, failed };
+    }
+
+    // 5. Determine target status and action for eligible enrollments
+    let targetStatus: investiture_status_enum;
+    let historyAction: investiture_action_enum;
+
+    if (dto.action === 'invest') {
+      targetStatus = investiture_status_enum.INVESTIDO;
+      historyAction = investiture_action_enum.INVESTIDO;
+    } else {
+      const transition = APPROVAL_TRANSITIONS[expectedSourceStatus];
+      targetStatus = transition.target;
+      historyAction = transition.action;
+    }
+
+    const now = new Date();
+
+    // 6. Atomic transaction: update all eligible enrollments + create history entries
+    await this.prisma.$transaction(async (tx) => {
+      // Batch-update all enrollments
+      await tx.enrollments.updateMany({
+        where: { enrollment_id: { in: succeeded } },
+        data:
+          dto.action === 'invest'
+            ? {
+                investiture_status: targetStatus,
+                validated_by: actorId,
+                validated_at: now,
+              }
+            : {
+                investiture_status: targetStatus,
+                validated_by: actorId,
+                validated_at: now,
+                rejection_reason: null,
+                locked_for_validation: true,
+              },
+      });
+
+      // Create one history entry per enrollment
+      await tx.investiture_validation_history.createMany({
+        data: succeeded.map((enrollmentId) => ({
+          enrollment_id: enrollmentId,
+          action: historyAction,
+          performed_by: actorId,
+          comments: dto.comments ?? null,
+        })),
+      });
+    });
+
+    this.logger.log(
+      `Bulk ${dto.action} by ${actorId}: ${succeeded.length} succeeded, ${failed.length} failed`,
+    );
+
+    return { succeeded, failed };
+  }
+
+  // ========================================
+  // BULK REJECT
+  // ========================================
+
+  /**
+   * Rechazar múltiples enrollments en bloque.
+   *
+   * Validación individual: solo se pueden rechazar enrollments en estados
+   * rechazables (SUBMITTED_FOR_VALIDATION, CLUB_APPROVED, COORDINATOR_APPROVED,
+   * FIELD_APPROVED). Los demás se incluyen en `failed`.
+   * Los elegibles se actualizan en una única transacción de Prisma.
+   */
+  async bulkRejectEnrollments(
+    actorId: string,
+    dto: BulkRejectEnrollmentsDto,
+  ): Promise<{
+    succeeded: number[];
+    failed: { id: number; reason: string }[];
+  }> {
+    // 1. Fetch all requested enrollments in one query
+    const enrollments = await this.prisma.enrollments.findMany({
+      where: {
+        enrollment_id: { in: dto.enrollmentIds },
+        active: true,
+      },
+      select: {
+        enrollment_id: true,
+        investiture_status: true,
+      },
+    });
+
+    // 2. Build lookup map
+    const enrollmentMap = new Map(
+      enrollments.map((e) => [e.enrollment_id, e]),
+    );
+
+    const succeeded: number[] = [];
+    const failed: { id: number; reason: string }[] = [];
+
+    // 3. Classify each requested ID
+    for (const id of dto.enrollmentIds) {
+      const enrollment = enrollmentMap.get(id);
+
+      if (!enrollment) {
+        failed.push({ id, reason: 'Enrollment no encontrado o inactivo' });
+        continue;
+      }
+
+      if (!REJECTABLE_STATUSES.includes(enrollment.investiture_status)) {
+        failed.push({
+          id,
+          reason: `No se puede rechazar un enrollment en estado ${enrollment.investiture_status}`,
+        });
+        continue;
+      }
+
+      succeeded.push(id);
+    }
+
+    // 4. Early exit if nothing to process
+    if (succeeded.length === 0) {
+      return { succeeded, failed };
+    }
+
+    const now = new Date();
+
+    // 5. Atomic transaction
+    await this.prisma.$transaction(async (tx) => {
+      await tx.enrollments.updateMany({
+        where: { enrollment_id: { in: succeeded } },
+        data: {
+          investiture_status: investiture_status_enum.REJECTED,
+          validated_by: actorId,
+          validated_at: now,
+          rejection_reason: dto.comments,
+          locked_for_validation: false,
+          submitted_for_validation: false,
+        },
+      });
+
+      await tx.investiture_validation_history.createMany({
+        data: succeeded.map((enrollmentId) => ({
+          enrollment_id: enrollmentId,
+          action: investiture_action_enum.REJECTED,
+          performed_by: actorId,
+          comments: dto.comments,
+        })),
+      });
+    });
+
+    this.logger.log(
+      `Bulk reject by ${actorId}: ${succeeded.length} succeeded, ${failed.length} failed`,
+    );
+
+    return { succeeded, failed };
   }
 
   // ========================================

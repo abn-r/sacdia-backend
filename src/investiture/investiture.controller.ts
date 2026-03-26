@@ -29,6 +29,8 @@ import {
   RejectInvestitureDto,
   CreateInvestitureConfigDto,
   UpdateInvestitureConfigDto,
+  BulkApproveEnrollmentsDto,
+  BulkRejectEnrollmentsDto,
 } from './dto';
 import {
   JwtAuthGuard,
@@ -210,6 +212,84 @@ export class InvestitureController {
       actorId,
       dto,
     );
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // POST /investiture/enrollments/bulk-approve
+  // Bulk approval at any stage — role guards same as single operations
+  // ========================================
+
+  @Post('investiture/enrollments/bulk-approve')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'coordinator')
+  @ApiOperation({
+    summary: 'Aprobar múltiples enrollments en bloque',
+    description:
+      'Cada enrollment se valida individualmente. Los que no cumplan el estado requerido ' +
+      'para la acción se incluyen en `failed` con el motivo. Los elegibles se actualizan ' +
+      'atómicamente. Máximo 200 IDs por petición.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado parcial o total de la operación en bloque',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          succeeded: [1, 2, 3],
+          failed: [{ id: 4, reason: 'Estado inválido para esta acción: INVESTIDO (se requiere CLUB_APPROVED)' }],
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'DTO inválido (array vacío, acción desconocida, etc.)' })
+  @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
+  async bulkApprove(
+    @Body() dto: BulkApproveEnrollmentsDto,
+    @Request() req,
+  ) {
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.bulkApproveEnrollments(actorId, dto);
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // POST /investiture/enrollments/bulk-reject
+  // Bulk rejection — comments required
+  // ========================================
+
+  @Post('investiture/enrollments/bulk-reject')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'coordinator')
+  @ApiOperation({
+    summary: 'Rechazar múltiples enrollments en bloque',
+    description:
+      'El campo `comments` es obligatorio. Cada enrollment se valida individualmente; ' +
+      'los que no estén en un estado rechazable se incluyen en `failed`. ' +
+      'Máximo 200 IDs por petición.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado parcial o total del rechazo en bloque',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          succeeded: [1, 2],
+          failed: [{ id: 3, reason: 'No se puede rechazar un enrollment en estado INVESTIDO' }],
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'DTO inválido (sin motivo, array vacío, etc.)' })
+  @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
+  async bulkReject(
+    @Body() dto: BulkRejectEnrollmentsDto,
+    @Request() req,
+  ) {
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.bulkRejectEnrollments(actorId, dto);
     return { status: 'success', data };
   }
 
