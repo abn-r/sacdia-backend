@@ -6,10 +6,14 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import { FinancePeriodService } from './finance-period.service';
 
 @Injectable()
 export class FinancesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly financePeriodService: FinancePeriodService,
+  ) {}
 
   // ========================================
   // CATEGORÍAS
@@ -158,7 +162,11 @@ export class FinancesService {
     return finance;
   }
 
-  async create(dto: CreateFinanceDto, createdBy: string) {
+  async create(dto: CreateFinanceDto, createdBy: string, clubId?: number) {
+    if (clubId != null) {
+      await this.financePeriodService.validatePeriodOpen(clubId, dto.year, dto.month, createdBy);
+    }
+
     return this.prisma.finances.create({
       data: {
         year: dto.year,
@@ -173,6 +181,7 @@ export class FinancesService {
         active: true,
         created_at: new Date(),
         modified_at: new Date(),
+        post_closing_note: (dto as any).post_closing_note ?? null,
       },
       include: {
         finances_categories: { select: { name: true, type: true } },
@@ -181,7 +190,20 @@ export class FinancesService {
   }
 
   async update(financeId: number, dto: UpdateFinanceDto, modifiedBy?: string) {
-    await this.findOne(financeId);
+    const existing = await this.findOne(financeId);
+
+    // Period validation: resolve clubId from movement's club_section
+    if (existing.club_section_id && modifiedBy) {
+      const section = await this.prisma.club_sections.findUnique({
+        where: { club_section_id: existing.club_section_id },
+        select: { main_club_id: true },
+      });
+      if (section?.main_club_id) {
+        await this.financePeriodService.validatePeriodOpen(
+          section.main_club_id, existing.year, existing.month, modifiedBy,
+        );
+      }
+    }
 
     const updateData: any = {
       modified_at: new Date(),
@@ -194,6 +216,8 @@ export class FinancesService {
       updateData.finance_category_id = dto.finance_category_id;
     if (dto.finance_date !== undefined)
       updateData.finance_date = new Date(dto.finance_date);
+    if ((dto as any).post_closing_note !== undefined)
+      updateData.post_closing_note = (dto as any).post_closing_note;
 
     return this.prisma.finances.update({
       where: { finance_id: financeId },
@@ -204,8 +228,21 @@ export class FinancesService {
     });
   }
 
-  async remove(financeId: number, modifiedBy?: string) {
-    await this.findOne(financeId);
+  async remove(financeId: number, modifiedBy?: string, reason?: string) {
+    const existing = await this.findOne(financeId);
+
+    // Period validation: resolve clubId from movement's club_section
+    if (existing.club_section_id && modifiedBy) {
+      const section = await this.prisma.club_sections.findUnique({
+        where: { club_section_id: existing.club_section_id },
+        select: { main_club_id: true },
+      });
+      if (section?.main_club_id) {
+        await this.financePeriodService.validatePeriodOpen(
+          section.main_club_id, existing.year, existing.month, modifiedBy,
+        );
+      }
+    }
 
     return this.prisma.finances.update({
       where: { finance_id: financeId },
@@ -213,6 +250,7 @@ export class FinancesService {
         active: false,
         modified_at: new Date(),
         ...(modifiedBy && { modified_by_id: modifiedBy }),
+        ...(reason && { post_closing_note: reason }),
       },
     });
   }
