@@ -631,7 +631,7 @@ model evidence_files {
   evidence_file_id    Int                      @id @default(autoincrement())
   section_record_id   Int?
   section_progress_id Int?                     @map("section_progress_id")
-  honor_id            Int?
+  user_honor_id       Int?
   file_url            String                   @db.VarChar(500)
   file_name           String                   @db.VarChar(255)
   file_type           String                   @db.VarChar(50)
@@ -640,13 +640,13 @@ model evidence_files {
   active              Boolean                  @default(true)
   section_record      folders_section_records? @relation(fields: [section_record_id], references: [folder_section_record_id], onDelete: Cascade, onUpdate: NoAction)
   class_section_progress class_section_progress? @relation(fields: [section_progress_id], references: [section_progress_id], onDelete: Cascade, onUpdate: NoAction)
-  honor               honors?                  @relation(fields: [honor_id], references: [honor_id], onDelete: Cascade, onUpdate: NoAction)
+  users_honors        users_honors?            @relation(fields: [user_honor_id], references: [user_honor_id], onDelete: Cascade, onUpdate: NoAction)
   uploaded_by         users                    @relation(fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([section_record_id], map: "idx_evidence_files_section_record")
   @@index([section_progress_id], map: "idx_evidence_files_section_progress")
   @@index([uploaded_by_id], map: "idx_evidence_files_uploaded_by")
-  @@index([honor_id], map: "idx_evidence_files_honor_id")
+  @@index([user_honor_id], map: "idx_evidence_files_user_honor_id")
 }
 
 model honors {
@@ -668,7 +668,6 @@ model honors {
   honors_categories  honors_categories @relation(fields: [honors_category_id], references: [honor_category_id], onDelete: NoAction, onUpdate: NoAction)
   master_honors      master_honors?    @relation(fields: [master_honors_id], references: [master_honor_id], onDelete: NoAction, onUpdate: NoAction)
   users_honors       users_honors[]
-  evidence_files     evidence_files[]
 }
 
 model honors_categories {
@@ -1285,9 +1284,10 @@ model users_honors {
   date              DateTime  @db.Date
   created_at        DateTime? @default(now()) @db.Timestamptz(6)
   modified_at       DateTime? @default(now()) @db.Timestamptz(6)
-  honors            honors    @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_honor_id_fkey")
-  users             users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
-  validator         users?    @relation("honor_validator", fields: [validated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  honors            honors           @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_honor_id_fkey")
+  users             users            @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_honors_user_id_fkey")
+  validator         users?           @relation("honor_validator", fields: [validated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  evidence_files    evidence_files[]
 
   @@unique([user_id, honor_id])
   @@index([user_id], map: "idx_users_honors_user_id")

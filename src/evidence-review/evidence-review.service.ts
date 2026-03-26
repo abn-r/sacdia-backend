@@ -1,10 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApproveEvidenceDto } from './dto/approve-evidence.dto';
 import { RejectEvidenceDto } from './dto/reject-evidence.dto';
@@ -12,6 +12,15 @@ import { BulkApproveEvidenceDto, EvidenceType } from './dto/bulk-approve-evidenc
 import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
+//
+// NOTE (C2 — enum deviation): The schema defines an `evidence_validation_enum`
+// (PENDING / VALIDATED / REJECTED), but the actual database columns for
+// folders and classes store Spanish strings ('pendiente', 'validado',
+// 'rechazado'), while users_honors uses English strings ('in_progress',
+// 'validated', 'rejected'). Changing these values requires a data migration
+// (ALTER COLUMN + UPDATE) which must be done as a separate PR.
+// TODO: migrate folder/class columns to use the enum values (or a unified set)
+// once a data migration is planned and coordinated with the mobile app.
 
 const FOLDER_STATUS_PENDING = 'pendiente';
 const FOLDER_STATUS_VALIDATED = 'validado';
@@ -232,6 +241,8 @@ export class EvidenceReviewService {
         return this.getClassDetail(id);
       case 'honor':
         return this.getHonorDetail(id);
+      default:
+        throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
     }
   }
 
@@ -390,6 +401,8 @@ export class EvidenceReviewService {
         return this.approveClass(id, actorId, dto.comments);
       case 'honor':
         return this.approveHonor(id, actorId, dto.comments);
+      default:
+        throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
     }
   }
 
@@ -416,6 +429,7 @@ export class EvidenceReviewService {
           status: FOLDER_STATUS_VALIDATED,
           validated_by_id: actorId,
           validated_at: now,
+          rejection_reason: null,
         },
       });
 
@@ -542,6 +556,8 @@ export class EvidenceReviewService {
         return this.rejectClass(id, actorId, dto.reason);
       case 'honor':
         return this.rejectHonor(id, actorId, dto.reason);
+      default:
+        throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
     }
   }
 
@@ -558,9 +574,12 @@ export class EvidenceReviewService {
       throw new BadRequestException(`El registro ya está rechazado`);
     }
 
+    if (record.status === FOLDER_STATUS_VALIDATED) {
+      throw new ConflictException(`El registro ya fue validado`);
+    }
+
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Prisma type includes rejection_reason after schema update
       const result = await tx.folders_section_records.update({
         where: { folder_section_record_id: id },
         data: {
@@ -568,7 +587,7 @@ export class EvidenceReviewService {
           validated_by_id: actorId,
           validated_at: now,
           rejection_reason: reason,
-        } as Prisma.folders_section_recordsUpdateInput,
+        },
       });
 
       await tx.validation_logs.create({
@@ -588,7 +607,7 @@ export class EvidenceReviewService {
     return {
       id: updated.folder_section_record_id,
       type: 'folder' as EvidenceType,
-      status: (updated as { status?: string | null }).status ?? FOLDER_STATUS_REJECTED,
+      status: updated.status ?? FOLDER_STATUS_REJECTED,
     };
   }
 
@@ -603,6 +622,10 @@ export class EvidenceReviewService {
 
     if (record.status === CLASS_STATUS_REJECTED) {
       throw new BadRequestException(`El registro ya está rechazado`);
+    }
+
+    if (record.status === CLASS_STATUS_VALIDATED) {
+      throw new ConflictException(`El registro ya fue validado`);
     }
 
     const now = new Date();
@@ -645,6 +668,10 @@ export class EvidenceReviewService {
 
     if (record.validation_status === HONOR_STATUS_REJECTED) {
       throw new BadRequestException(`El honor ya está rechazado`);
+    }
+
+    if (record.validation_status === HONOR_STATUS_VALIDATED) {
+      throw new ConflictException(`El registro ya fue validado`);
     }
 
     const now = new Date();
@@ -729,6 +756,11 @@ export class EvidenceReviewService {
   // ============================================================
 
   async getHistory(type: EvidenceType, id: number): Promise<HistoryEntry[]> {
+    const validTypes: EvidenceType[] = ['folder', 'class', 'honor'];
+    if (!validTypes.includes(type)) {
+      throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
+    }
+
     const logs = await this.prisma.validation_logs.findMany({
       where: {
         entity_type: type,

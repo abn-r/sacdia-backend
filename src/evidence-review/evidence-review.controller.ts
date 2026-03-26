@@ -32,7 +32,7 @@ import { GlobalRoles } from '../common/decorators';
 @ApiBearerAuth()
 @Controller('evidence-review')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('admin', 'coordinator')
+@GlobalRoles('admin', 'super_admin', 'coordinator')
 export class EvidenceReviewController {
   constructor(private readonly evidenceReviewService: EvidenceReviewService) {}
 
