@@ -288,7 +288,7 @@ export class UsersService {
       status: 'success',
       data: data.map((row) => ({
         allergy_id: row.allergy_id,
-        name: row.allergies?.name ?? null,
+        name: row.allergies ? row.allergies.name : null,
       })),
     };
   }
