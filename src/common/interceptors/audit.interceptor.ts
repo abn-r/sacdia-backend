@@ -79,7 +79,7 @@ export class AuditInterceptor implements NestInterceptor {
     return path
       .split('/')
       .map((segment) =>
-        /^[A-Za-z0-9_\-]{30,}$/.test(segment) ? '[REDACTED]' : segment,
+        /^[A-Za-z0-9_-]{30,}$/.test(segment) ? '[REDACTED]' : segment,
       )
       .join('/');
   }

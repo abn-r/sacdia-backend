@@ -87,7 +87,11 @@ describe('LegalRepresentativesService', () => {
     });
 
     it('should return representative data when it exists', async () => {
-      const rep = { user_id: userId, name: 'María', relationship_types: { name: 'Madre' } };
+      const rep = {
+        user_id: userId,
+        name: 'María',
+        relationship_types: { name: 'Madre' },
+      };
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: userId });
       mockPrismaService.legal_representatives.findUnique.mockResolvedValue(rep);
 
@@ -113,7 +117,12 @@ describe('LegalRepresentativesService', () => {
       mockUsersService.requiresLegalRepresentative.mockResolvedValue(false);
 
       await expect(
-        service.create(userId, { ...baseDto, name: 'Ana', paternal_last_name: 'López', phone: '1234567890' }),
+        service.create(userId, {
+          ...baseDto,
+          name: 'Ana',
+          paternal_last_name: 'López',
+          phone: '1234567890',
+        }),
       ).rejects.toThrow(
         new BadRequestException(
           'Usuario mayor de 18 años no requiere representante legal',
@@ -128,7 +137,12 @@ describe('LegalRepresentativesService', () => {
       });
 
       await expect(
-        service.create(userId, { ...baseDto, name: 'Ana', paternal_last_name: 'López', phone: '1234567890' }),
+        service.create(userId, {
+          ...baseDto,
+          name: 'Ana',
+          paternal_last_name: 'López',
+          phone: '1234567890',
+        }),
       ).rejects.toThrow(
         new ConflictException('El usuario ya tiene un representante legal'),
       );
@@ -136,7 +150,9 @@ describe('LegalRepresentativesService', () => {
 
     it('should throw BadRequestException when neither representative_user_id nor manual data is provided', async () => {
       mockUsersService.requiresLegalRepresentative.mockResolvedValue(true);
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
 
       // No representative_user_id, no name, no paternal_last_name, no phone
       await expect(
@@ -146,7 +162,9 @@ describe('LegalRepresentativesService', () => {
 
     it('should throw BadRequestException when manual data is incomplete (missing phone)', async () => {
       mockUsersService.requiresLegalRepresentative.mockResolvedValue(true);
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
 
       await expect(
         service.create(userId, {
@@ -160,7 +178,9 @@ describe('LegalRepresentativesService', () => {
 
     it('should throw NotFoundException when representative_user_id does not exist', async () => {
       mockUsersService.requiresLegalRepresentative.mockResolvedValue(true);
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
       mockPrismaService.users.findUnique.mockResolvedValue(null); // rep user not found
 
       await expect(
@@ -175,8 +195,12 @@ describe('LegalRepresentativesService', () => {
 
     it('should throw NotFoundException when relationship_type_id does not exist', async () => {
       mockUsersService.requiresLegalRepresentative.mockResolvedValue(true);
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
-      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: repUserId });
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: repUserId,
+      });
       mockPrismaService.relationship_types.findUnique.mockResolvedValue(null);
 
       await expect(
@@ -184,7 +208,9 @@ describe('LegalRepresentativesService', () => {
           relationship_type_id: relTypeId,
           representative_user_id: repUserId,
         }),
-      ).rejects.toThrow(new NotFoundException('Tipo de relación no encontrado'));
+      ).rejects.toThrow(
+        new NotFoundException('Tipo de relación no encontrado'),
+      );
     });
 
     it('should create representative with a registered user (representative_user_id path)', async () => {
@@ -196,8 +222,12 @@ describe('LegalRepresentativesService', () => {
       };
 
       mockUsersService.requiresLegalRepresentative.mockResolvedValue(true);
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
-      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: repUserId });
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: repUserId,
+      });
       mockPrismaService.relationship_types.findUnique.mockResolvedValue({
         relationship_type_id: relTypeId,
         name: 'Padre',
@@ -214,7 +244,9 @@ describe('LegalRepresentativesService', () => {
         data: created,
         message: 'Representante legal registrado exitosamente',
       });
-      expect(mockPrismaService.legal_representatives.create).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.legal_representatives.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             user_id: userId,
@@ -239,7 +271,9 @@ describe('LegalRepresentativesService', () => {
       };
 
       mockUsersService.requiresLegalRepresentative.mockResolvedValue(true);
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
       // No representative_user_id check needed for this path
       mockPrismaService.relationship_types.findUnique.mockResolvedValue({
         relationship_type_id: relTypeId,
@@ -250,8 +284,12 @@ describe('LegalRepresentativesService', () => {
       const result = await service.create(userId, dto);
 
       expect(result.status).toBe('success');
-      expect(result.message).toBe('Representante legal registrado exitosamente');
-      expect(mockPrismaService.legal_representatives.create).toHaveBeenCalledWith(
+      expect(result.message).toBe(
+        'Representante legal registrado exitosamente',
+      );
+      expect(
+        mockPrismaService.legal_representatives.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             user_id: userId,
@@ -269,7 +307,9 @@ describe('LegalRepresentativesService', () => {
   // ---------------------------------------------------------------------------
   describe('update', () => {
     it('should throw NotFoundException when representative does not exist', async () => {
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
 
       await expect(
         service.update(userId, { name: 'Nuevo nombre' }),
@@ -323,7 +363,9 @@ describe('LegalRepresentativesService', () => {
         data: updated,
         message: 'Representante legal actualizado exitosamente',
       });
-      expect(mockPrismaService.legal_representatives.update).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.legal_representatives.update,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { user_id: userId },
           data: { name: 'Nuevo Nombre' },
@@ -342,7 +384,9 @@ describe('LegalRepresentativesService', () => {
       mockPrismaService.legal_representatives.findUnique.mockResolvedValue({
         user_id: userId,
       });
-      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: repUserId });
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: repUserId,
+      });
       mockPrismaService.relationship_types.findUnique.mockResolvedValue({
         relationship_type_id: relTypeId,
       });
@@ -357,7 +401,9 @@ describe('LegalRepresentativesService', () => {
       expect(mockPrismaService.users.findUnique).toHaveBeenCalledWith({
         where: { user_id: repUserId },
       });
-      expect(mockPrismaService.relationship_types.findUnique).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.relationship_types.findUnique,
+      ).toHaveBeenCalledWith({
         where: { relationship_type_id: relTypeId },
       });
     });
@@ -368,7 +414,9 @@ describe('LegalRepresentativesService', () => {
   // ---------------------------------------------------------------------------
   describe('remove', () => {
     it('should throw NotFoundException when representative does not exist', async () => {
-      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(null);
+      mockPrismaService.legal_representatives.findUnique.mockResolvedValue(
+        null,
+      );
 
       await expect(service.remove(userId)).rejects.toThrow(
         new NotFoundException('Representante legal no encontrado'),
@@ -389,7 +437,9 @@ describe('LegalRepresentativesService', () => {
         status: 'success',
         message: 'Representante legal eliminado exitosamente',
       });
-      expect(mockPrismaService.legal_representatives.delete).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.legal_representatives.delete,
+      ).toHaveBeenCalledWith({
         where: { user_id: userId },
       });
     });

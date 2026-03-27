@@ -8,7 +8,7 @@ describe('RankingsService', () => {
   let service: RankingsService;
 
   // Forward-declare so we can reference it inside $transaction
-  // eslint-disable-next-line prefer-const
+
   let mockPrismaService: {
     $transaction: jest.Mock;
     ecclesiastical_years: { findUnique: jest.Mock; findFirst: jest.Mock };
@@ -80,7 +80,14 @@ describe('RankingsService', () => {
   // ================================================================
 
   describe('recalculateRankings', () => {
-    const buildFolder = (id: string, clubEnrollmentId: string, earned: number, max: number, pct: number, clubTypeId = 2) => ({
+    const buildFolder = (
+      id: string,
+      clubEnrollmentId: string,
+      earned: number,
+      max: number,
+      pct: number,
+      clubTypeId = 2,
+    ) => ({
       annual_folder_id: id,
       club_enrollment_id: clubEnrollmentId,
       total_earned_points: earned,
@@ -93,23 +100,31 @@ describe('RankingsService', () => {
     });
 
     it('should use current active year when yearId not provided', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([]);
 
       await service.recalculateRankings();
 
-      expect(mockPrismaService.ecclesiastical_years.findFirst).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.ecclesiastical_years.findFirst,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({ where: { active: true } }),
       );
     });
 
     it('should use provided yearId when given', async () => {
-      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([]);
 
       await service.recalculateRankings(2026);
 
-      expect(mockPrismaService.ecclesiastical_years.findUnique).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.ecclesiastical_years.findUnique,
+      ).toHaveBeenCalledWith({
         where: { year_id: 2026 },
       });
     });
@@ -117,30 +132,40 @@ describe('RankingsService', () => {
     it('should throw NotFoundException when provided yearId does not exist', async () => {
       mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(null);
 
-      await expect(service.recalculateRankings(9999)).rejects.toThrow(NotFoundException);
+      await expect(service.recalculateRankings(9999)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw NotFoundException when no active year exists', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
 
-      await expect(service.recalculateRankings()).rejects.toThrow(NotFoundException);
+      await expect(service.recalculateRankings()).rejects.toThrow(
+        NotFoundException,
+      );
       await expect(service.recalculateRankings()).rejects.toThrow(
         'No active ecclesiastical year found',
       );
     });
 
     it('should return { updated: 0 } when no evaluated/closed folders exist', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([]);
 
       const result = await service.recalculateRankings();
 
       expect(result).toEqual({ updated: 0 });
-      expect(mockPrismaService.club_annual_rankings.upsert).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).not.toHaveBeenCalled();
     });
 
     it('should create general ranking (no category) for each evaluated folder', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 90, 100, 90),
       ]);
@@ -151,9 +176,13 @@ describe('RankingsService', () => {
       const result = await service.recalculateRankings();
 
       // One general ranking upsert
-      expect(mockPrismaService.club_annual_rankings.upsert).toHaveBeenCalledTimes(1);
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).toHaveBeenCalledTimes(1);
       // General rankings now use the sentinel UUID instead of NULL
-      expect(mockPrismaService.club_annual_rankings.upsert).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             club_enrollment_id_ecclesiastical_year_id_award_category_id:
@@ -171,7 +200,9 @@ describe('RankingsService', () => {
     });
 
     it('should create category-specific rankings when points qualify', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
       ]);
@@ -190,16 +221,21 @@ describe('RankingsService', () => {
       const result = await service.recalculateRankings();
 
       // 1 general + 1 category = 2 upserts
-      expect(mockPrismaService.club_annual_rankings.upsert).toHaveBeenCalledTimes(2);
-      const categoryUpsert = mockPrismaService.club_annual_rankings.upsert.mock.calls.find(
-        ([call]) => call.create?.award_category_id === 'cat-gold',
-      );
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).toHaveBeenCalledTimes(2);
+      const categoryUpsert =
+        mockPrismaService.club_annual_rankings.upsert.mock.calls.find(
+          ([call]) => call.create?.award_category_id === 'cat-gold',
+        );
       expect(categoryUpsert).toBeDefined();
       expect(result.updated).toBe(2);
     });
 
     it('should delete category rankings when points no longer qualify (idempotent)', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 50, 100, 50, 2), // 50 points — below min_points=80
       ]);
@@ -213,13 +249,17 @@ describe('RankingsService', () => {
         },
       ]);
       mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
-      mockPrismaService.club_annual_rankings.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrismaService.club_annual_rankings.deleteMany.mockResolvedValue({
+        count: 0,
+      });
       mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
 
       await service.recalculateRankings();
 
       // Should deleteMany stale category ranking
-      expect(mockPrismaService.club_annual_rankings.deleteMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.club_annual_rankings.deleteMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             club_enrollment_id: 'enroll-1',
@@ -230,7 +270,9 @@ describe('RankingsService', () => {
     });
 
     it('should NOT create category ranking when club_type_id does not match category', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2), // club type = 2
       ]);
@@ -244,18 +286,24 @@ describe('RankingsService', () => {
         },
       ]);
       mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
-      mockPrismaService.club_annual_rankings.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrismaService.club_annual_rankings.deleteMany.mockResolvedValue({
+        count: 0,
+      });
       mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
 
       const result = await service.recalculateRankings();
 
       // Only 1 upsert: the general ranking; category is filtered out
-      expect(mockPrismaService.club_annual_rankings.upsert).toHaveBeenCalledTimes(1);
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).toHaveBeenCalledTimes(1);
       expect(result.updated).toBe(1);
     });
 
     it('should assign dense rank positions (ties get same rank)', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
         buildFolder('folder-2', 'enroll-2', 90, 100, 90, 2), // tied with folder-1
@@ -266,20 +314,41 @@ describe('RankingsService', () => {
 
       // assignRankPositions fetches all records for the year
       mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([
-        { ranking_id: 'r-1', club_type_id: 2, award_category_id: GENERAL_CATEGORY_ID, total_earned_points: 90 },
-        { ranking_id: 'r-2', club_type_id: 2, award_category_id: GENERAL_CATEGORY_ID, total_earned_points: 90 },
-        { ranking_id: 'r-3', club_type_id: 2, award_category_id: GENERAL_CATEGORY_ID, total_earned_points: 70 },
+        {
+          ranking_id: 'r-1',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          total_earned_points: 90,
+        },
+        {
+          ranking_id: 'r-2',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          total_earned_points: 90,
+        },
+        {
+          ranking_id: 'r-3',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          total_earned_points: 70,
+        },
       ]);
       mockPrismaService.club_annual_rankings.update.mockResolvedValue({});
 
       await service.recalculateRankings();
 
       // All three ranking records should be updated with rank positions
-      expect(mockPrismaService.club_annual_rankings.update).toHaveBeenCalledTimes(3);
+      expect(
+        mockPrismaService.club_annual_rankings.update,
+      ).toHaveBeenCalledTimes(3);
 
-      const updateCalls = mockPrismaService.club_annual_rankings.update.mock.calls.map(
-        ([call]) => ({ ranking_id: call.where.ranking_id, rank_position: call.data.rank_position }),
-      );
+      const updateCalls =
+        mockPrismaService.club_annual_rankings.update.mock.calls.map(
+          ([call]) => ({
+            ranking_id: call.where.ranking_id,
+            rank_position: call.data.rank_position,
+          }),
+        );
 
       // Dense ranking: r-1 and r-2 tied → both rank 1; r-3 is next → rank 2 (not 3)
       // Dense:       [90, 90, 70] → [1, 1, 2]
@@ -294,7 +363,9 @@ describe('RankingsService', () => {
     });
 
     it('should handle max_points boundary (points equal to max_points still qualify)', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 100, 100, 100, 2), // exactly at max
       ]);
@@ -317,7 +388,9 @@ describe('RankingsService', () => {
     });
 
     it('should NOT qualify when points exceed max_points boundary', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 110, 100, 110, 2), // above max
       ]);
@@ -331,14 +404,18 @@ describe('RankingsService', () => {
         },
       ]);
       mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
-      mockPrismaService.club_annual_rankings.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrismaService.club_annual_rankings.deleteMany.mockResolvedValue({
+        count: 0,
+      });
       mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
 
       const result = await service.recalculateRankings();
 
       // Only 1 upsert: general ranking; category deleted because out of range
       expect(result.updated).toBe(1);
-      expect(mockPrismaService.club_annual_rankings.deleteMany).toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_annual_rankings.deleteMany,
+      ).toHaveBeenCalled();
     });
   });
 
@@ -383,7 +460,9 @@ describe('RankingsService', () => {
     ];
 
     it('should return ranked clubs ordered by rank_position', async () => {
-      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(mockRankingRecords);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
 
       const result = await service.getRankings(2, 2026);
 
@@ -394,11 +473,15 @@ describe('RankingsService', () => {
     });
 
     it('should filter by club_type_id and year_id', async () => {
-      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(mockRankingRecords);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
 
       await service.getRankings(2, 2026);
 
-      expect(mockPrismaService.club_annual_rankings.findMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.club_annual_rankings.findMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             club_type_id: 2,
@@ -409,14 +492,20 @@ describe('RankingsService', () => {
     });
 
     it('should return general rankings when no category_id provided (uses sentinel UUID)', async () => {
-      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(mockRankingRecords);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
 
       await service.getRankings(2, 2026);
 
       // No categoryId → resolves to GENERAL_CATEGORY_ID sentinel, never NULL
-      expect(mockPrismaService.club_annual_rankings.findMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.club_annual_rankings.findMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ award_category_id: GENERAL_CATEGORY_ID }),
+          where: expect.objectContaining({
+            award_category_id: GENERAL_CATEGORY_ID,
+          }),
         }),
       );
     });
@@ -429,11 +518,15 @@ describe('RankingsService', () => {
           award_category: { name: 'Oro' },
         },
       ];
-      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(categoryRecords);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        categoryRecords,
+      );
 
       await service.getRankings(2, 2026, 'cat-gold');
 
-      expect(mockPrismaService.club_annual_rankings.findMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.club_annual_rankings.findMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ award_category_id: 'cat-gold' }),
         }),
@@ -448,7 +541,9 @@ describe('RankingsService', () => {
           award_category: { name: 'Oro' },
         },
       ];
-      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(recordsWithCategory);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        recordsWithCategory,
+      );
 
       const result = await service.getRankings(2, 2026, 'cat-gold');
 
@@ -554,12 +649,12 @@ describe('RankingsService', () => {
     it('should throw NotFoundException when enrollment does not exist', async () => {
       mockPrismaService.club_enrollments.findUnique.mockResolvedValue(null);
 
-      await expect(service.getRankingForClub('non-existent', 2026)).rejects.toThrow(
-        NotFoundException,
-      );
-      await expect(service.getRankingForClub('non-existent', 2026)).rejects.toThrow(
-        'Club enrollment with ID non-existent not found',
-      );
+      await expect(
+        service.getRankingForClub('non-existent', 2026),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getRankingForClub('non-existent', 2026),
+      ).rejects.toThrow('Club enrollment with ID non-existent not found');
     });
 
     it('should return both general and empty by_category when no rankings at all', async () => {
