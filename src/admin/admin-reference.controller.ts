@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -17,6 +19,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { AdminReferenceService } from './admin-reference.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import {
   CreateAllergyDto,
   CreateDiseaseDto,
@@ -38,10 +41,30 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('admin')
 export class AdminReferenceController {
-  constructor(private readonly referenceService: AdminReferenceService) {}
+  constructor(
+    private readonly referenceService: AdminReferenceService,
+    private readonly catalogCache: CatalogCacheService,
+  ) {}
 
   private getActorId(request: ExpressRequest & { user: { sub: string } }) {
     return request.user.sub;
+  }
+
+  // ========================================
+  // CACHE MANAGEMENT
+  // ========================================
+  @Post('catalogs/cache/invalidate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('catalogs:update')
+  @ApiOperation({
+    summary: 'Invalidate all catalog caches',
+    description:
+      'Forces a full cache purge for all catalog entities. ' +
+      'Use this after bulk SQL seeds or imports that bypass the API layer.',
+  })
+  async invalidateCatalogCache() {
+    await this.catalogCache.invalidateAll();
+    return { status: 'success', message: 'Caché de catálogos invalidado' };
   }
 
   @Get('relationship-types')

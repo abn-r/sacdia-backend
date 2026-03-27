@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CatalogsService } from './catalogs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CatalogCacheService } from './catalog-cache.service';
 
 describe('CatalogsService', () => {
   let service: CatalogsService;
@@ -49,11 +50,20 @@ describe('CatalogsService', () => {
     },
   };
 
+  // Simulate a permanent cache miss so all existing Prisma assertions
+  // continue to work: getOrSet always calls the loader (DB query).
+  const mockCatalogCacheService: Partial<CatalogCacheService> = {
+    getOrSet: jest.fn().mockImplementation((_key, loader) => loader()),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    invalidateMany: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CatalogsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CatalogCacheService, useValue: mockCatalogCacheService },
       ],
     }).compile();
 

@@ -8,6 +8,10 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+} from '../catalogs/catalog-cache.service';
+import {
   CreateAllergyDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
@@ -31,7 +35,10 @@ type HonorCategoryRecord = Prisma.honors_categoriesGetPayload<{
 export class AdminReferenceService {
   private readonly logger = new Logger(AdminReferenceService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly catalogCache: CatalogCacheService,
+  ) {}
 
   private normalizeName(value: string): string {
     return value.trim().replace(/\s+/g, ' ');
@@ -81,6 +88,9 @@ export class AdminReferenceService {
       relationshipType.relationship_type_id,
       actorId,
     );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.RELATIONSHIP_TYPES);
+
     return relationshipType;
   }
 
@@ -114,6 +124,9 @@ export class AdminReferenceService {
       relationshipTypeId,
       actorId,
     );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.RELATIONSHIP_TYPES);
+
     return relationshipType;
   }
 
@@ -144,6 +157,9 @@ export class AdminReferenceService {
       relationshipTypeId,
       actorId,
     );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.RELATIONSHIP_TYPES);
+
     return relationshipType;
   }
 
@@ -166,6 +182,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('create', 'allergies', allergy.allergy_id, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ALLERGIES);
+
     return allergy;
   }
 
@@ -194,6 +213,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('update', 'allergies', allergyId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ALLERGIES);
+
     return allergy;
   }
 
@@ -222,6 +244,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('delete', 'allergies', allergyId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ALLERGIES);
+
     return allergy;
   }
 
@@ -244,6 +269,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('create', 'diseases', disease.disease_id, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DISEASES);
+
     return disease;
   }
 
@@ -272,6 +300,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('update', 'diseases', diseaseId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DISEASES);
+
     return disease;
   }
 
@@ -300,6 +331,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('delete', 'diseases', diseaseId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DISEASES);
+
     return disease;
   }
 
@@ -419,6 +453,12 @@ export class AdminReferenceService {
     });
 
     this.logMutation('create', 'ecclesiastical_years', year.year_id, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
+    ]);
+
     return year;
   }
 
@@ -455,6 +495,12 @@ export class AdminReferenceService {
     });
 
     this.logMutation('update', 'ecclesiastical_years', yearId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
+    ]);
+
     return year;
   }
 
@@ -483,6 +529,12 @@ export class AdminReferenceService {
     });
 
     this.logMutation('delete', 'ecclesiastical_years', yearId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
+    ]);
+
     return year;
   }
 

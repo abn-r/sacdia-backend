@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CatalogsModule } from '../catalogs/catalogs.module';
 import { AdminGeographyController } from './admin-geography.controller';
 import { AdminReferenceController } from './admin-reference.controller';
 import { AdminUsersController } from './admin-users.controller';
@@ -8,7 +9,12 @@ import { AdminReferenceService } from './admin-reference.service';
 import { AdminUsersService } from './admin-users.service';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    // CatalogsModule exports CatalogCacheService — needed for cache
+    // invalidation in AdminGeographyService and AdminReferenceService.
+    CatalogsModule,
+  ],
   controllers: [
     AdminGeographyController,
     AdminReferenceController,

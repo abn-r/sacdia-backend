@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminReferenceService } from './admin-reference.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 
 describe('AdminReferenceService', () => {
   let service: AdminReferenceService;
@@ -24,11 +25,18 @@ describe('AdminReferenceService', () => {
     },
   };
 
+  const mockCatalogCacheService: Partial<CatalogCacheService> = {
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    invalidateMany: jest.fn().mockResolvedValue(undefined),
+    invalidateAll: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminReferenceService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CatalogCacheService, useValue: mockCatalogCacheService },
       ],
     }).compile();
 
