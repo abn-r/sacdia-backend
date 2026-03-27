@@ -121,7 +121,7 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "transformIgnorePatterns": [
-      "node_modules/"
+      "node_modules/(?!(@scure|@otplib|otplib)/)"
     ],
     "moduleNameMapper": {
       "^better-auth$": "<rootDir>/../test/mocks/better-auth.mock.ts",
