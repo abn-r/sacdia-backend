@@ -33,6 +33,11 @@ type ResolvedInstanceScope = {
   instanceId: number;
 };
 
+type ResolvedJointActivityScope = {
+  mainClubId: number;
+  participatingSectionIds: number[];
+};
+
 type ResolvedTerritoryScope = {
   localFieldId: number;
   unionId?: number | null;
@@ -122,12 +127,17 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveUnionCamporeeScope(request, resource),
         );
-      case 'activity':
-        return this.validateInstanceScope(
-          userId,
-          resolved,
-          await this.resolveActivityScope(request, resource),
-        );
+      case 'activity': {
+        const activityScopeResult = await this.resolveActivityScope(request, resource);
+        if ('participatingSectionIds' in activityScopeResult) {
+          return this.validateJointActivityScope(
+            userId,
+            resolved,
+            activityScopeResult,
+          );
+        }
+        return this.validateInstanceScope(userId, resolved, activityScopeResult);
+      }
       case 'finance':
         return this.validateInstanceScope(
           userId,
@@ -308,6 +318,48 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 
+  /**
+   * Authorization check for joint activities.
+   * The user is authorized if they have a club-level admin override OR
+   * if their active section assignment is ANY of the participating sections.
+   * This enables directors of any participating section to manage the joint activity.
+   */
+  private async validateJointActivityScope(
+    userId: string,
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: ResolvedJointActivityScope,
+  ): Promise<boolean> {
+    if (
+      await this.authorizationContext.canManageClub(
+        userId,
+        resourceScope.mainClubId,
+      )
+    ) {
+      return true;
+    }
+
+    const activeClubScope = resolved.authorization.effective.scope.club;
+
+    if (
+      !activeClubScope ||
+      activeClubScope.club.club_id !== resourceScope.mainClubId
+    ) {
+      throw new ForbiddenException(
+        'You need an active club assignment for this club',
+      );
+    }
+
+    const activeSectionId = activeClubScope.section.club_section_id;
+
+    if (!resourceScope.participatingSectionIds.includes(activeSectionId)) {
+      throw new ForbiddenException(
+        'You need an active club assignment in one of the participating sections of this joint activity',
+      );
+    }
+
+    return true;
+  }
+
   private validateTerritoryScope(
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedTerritoryScope,
@@ -385,7 +437,7 @@ export class PermissionsGuard implements CanActivate {
   private async resolveActivityScope(
     request: any,
     resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
+  ): Promise<ResolvedInstanceScope | ResolvedJointActivityScope> {
     const activityId = this.getRequiredNumericValue(
       this.getRequestValue(request, 'param', resource.idParam ?? 'activityId'),
       'Activity ID not found in request',
@@ -394,6 +446,7 @@ export class PermissionsGuard implements CanActivate {
     const activity = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
       select: {
+        is_joint: true,
         club_section_id: true,
         club_sections: {
           select: {
@@ -402,11 +455,43 @@ export class PermissionsGuard implements CanActivate {
             club_type_id: true,
           },
         },
+        activity_instances: {
+          where: { active: true },
+          select: {
+            club_section_id: true,
+            club_sections: {
+              select: {
+                club_section_id: true,
+                main_club_id: true,
+              },
+            },
+          },
+        },
       },
     });
 
     if (!activity) {
       throw new NotFoundException('Activity not found');
+    }
+
+    // For joint activities, resolve authorization using all participating sections
+    if (activity.is_joint) {
+      const mainClubId = activity.club_sections?.main_club_id;
+
+      if (!mainClubId) {
+        throw new ForbiddenException(
+          'Unable to resolve the club for this joint activity',
+        );
+      }
+
+      const participatingSectionIds = activity.activity_instances
+        .map((instance) => instance.club_section_id)
+        .filter((id): id is number => id !== null);
+
+      return {
+        mainClubId,
+        participatingSectionIds,
+      };
     }
 
     return this.buildInstanceScopeFromSection(activity.club_sections);

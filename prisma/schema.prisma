@@ -30,6 +30,7 @@ model activities {
   modified_at        DateTime?            @db.Timestamptz(6)
   activity_type_id   Int
   club_section_id    Int?
+  is_joint           Boolean              @default(false)
   activity_types     activity_types       @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: NoAction, onUpdate: NoAction)
   club_sections      club_sections?       @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
   club_types         club_types           @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)

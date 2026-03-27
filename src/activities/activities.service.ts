@@ -153,13 +153,27 @@ export class ActivitiesService {
   }
 
   async create(clubId: number, dto: CreateActivityDto, createdBy: string) {
-    const sectionId = await this.resolveAndValidateSection(clubId, dto.club_section_id);
+    const isJoint = Boolean(dto.club_section_ids && dto.club_section_ids.length >= 2);
+
+    if (isJoint) {
+      return this.createJointActivity(clubId, dto, createdBy);
+    }
+
+    // Single-section activity (existing path)
+    if (!dto.club_section_id) {
+      throw new BadRequestException(
+        'club_section_id es requerido para actividades de una sola sección',
+      );
+    }
+
+    const section = await this.resolveAndValidateSectionRecord(clubId, dto.club_section_id);
+    const clubTypeId = dto.club_type_id ?? section.club_type_id;
 
     const created = await this.prisma.activities.create({
       data: {
         name: dto.name,
         description: dto.description,
-        club_type_id: dto.club_type_id,
+        club_type_id: clubTypeId,
         lat: dto.lat,
         long: dto.long,
         activity_time: dto.activity_time || '09:00',
@@ -177,14 +191,15 @@ export class ActivitiesService {
           ? (dto.classes as Prisma.InputJsonValue)
           : Prisma.JsonNull,
         created_by: createdBy,
-        club_section_id: sectionId,
+        club_section_id: section.club_section_id,
+        is_joint: false,
         active: true,
         created_at: new Date(),
         modified_at: new Date(),
         activity_instances: {
           create: [
             {
-              club_section_id: sectionId,
+              club_section_id: section.club_section_id,
               active: true,
               created_at: new Date(),
               modified_at: new Date(),
@@ -196,18 +211,88 @@ export class ActivitiesService {
     });
 
     // Fire-and-forget: notify section members about the new activity
-    const dateLabel = created.activity_date
-      ? ` - ${created.activity_date.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`
+    this.sendActivityCreatedNotification(created, section.club_section_id);
+
+    return this.applySignedPrivateUrls(this.attachInstances(created));
+  }
+
+  private async createJointActivity(
+    clubId: number,
+    dto: CreateActivityDto,
+    createdBy: string,
+  ) {
+    const sections = await this.resolveAndValidateMultipleSections(
+      clubId,
+      dto.club_section_ids!,
+    );
+
+    // Use the first section as the primary section (club_section_id on the activity row)
+    // and derive club_type_id from it if not explicitly provided.
+    const primarySection = sections[0];
+    const clubTypeId = dto.club_type_id ?? primarySection.club_type_id;
+
+    const now = new Date();
+
+    const created = await this.prisma.activities.create({
+      data: {
+        name: dto.name,
+        description: dto.description,
+        club_type_id: clubTypeId,
+        lat: dto.lat,
+        long: dto.long,
+        activity_time: dto.activity_time || '09:00',
+        activity_date: dto.activity_date ? new Date(dto.activity_date) : null,
+        activity_end_date: dto.activity_end_date
+          ? new Date(dto.activity_end_date)
+          : null,
+        activity_place: dto.activity_place,
+        image: dto.image ?? '',
+        platform: dto.platform || 0,
+        activity_type_id: dto.activity_type_id,
+        link_meet: dto.link_meet,
+        additional_data: dto.additional_data,
+        classes: dto.classes
+          ? (dto.classes as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        created_by: createdBy,
+        club_section_id: primarySection.club_section_id,
+        is_joint: true,
+        active: true,
+        created_at: now,
+        modified_at: now,
+        activity_instances: {
+          create: sections.map((section) => ({
+            club_section_id: section.club_section_id,
+            active: true,
+            created_at: now,
+            modified_at: now,
+          })),
+        },
+      },
+      include: this.activityInclude,
+    });
+
+    // Fire-and-forget: notify ALL participating sections
+    for (const section of sections) {
+      this.sendActivityCreatedNotification(created, section.club_section_id);
+    }
+
+    return this.applySignedPrivateUrls(this.attachInstances(created));
+  }
+
+  private sendActivityCreatedNotification(activity: any, sectionId: number): void {
+    const dateLabel = activity.activity_date
+      ? ` - ${activity.activity_date.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`
       : '';
     this.notificationsService
       .sendToClubMembers(
         sectionId,
         {
           title: 'Nueva actividad programada',
-          body: `${created.name}${dateLabel}`,
+          body: `${activity.name}${dateLabel}`,
           data: {
             type: 'activity',
-            entity_id: String(created.activity_id),
+            entity_id: String(activity.activity_id),
             action: 'created',
           },
         },
@@ -216,11 +301,9 @@ export class ActivitiesService {
       )
       .catch((err: Error) =>
         this.logger.warn(
-          `Failed to send activity-created notification (activity=${created.activity_id}): ${err.message}`,
+          `Failed to send activity-created notification (activity=${activity.activity_id}, section=${sectionId}): ${err.message}`,
         ),
       );
-
-    return this.applySignedPrivateUrls(this.attachInstances(created));
   }
 
   async update(activityId: number, dto: UpdateActivityDto) {
@@ -493,10 +576,13 @@ export class ActivitiesService {
     };
   }
 
-  private async resolveAndValidateSection(
+  /**
+   * Validates a single section belongs to the given club and returns the full record.
+   */
+  private async resolveAndValidateSectionRecord(
     clubId: number,
     clubSectionId: number,
-  ): Promise<number> {
+  ): Promise<{ club_section_id: number; main_club_id: number; club_type_id: number }> {
     const clubExists = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: { club_id: true },
@@ -508,13 +594,11 @@ export class ActivitiesService {
 
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: clubSectionId },
-      select: { main_club_id: true, club_type_id: true },
+      select: { club_section_id: true, main_club_id: true, club_type_id: true },
     });
 
     if (!section) {
-      throw new BadRequestException(
-        `Sección ${clubSectionId} no existe`,
-      );
+      throw new BadRequestException(`Sección ${clubSectionId} no existe`);
     }
 
     if (section.main_club_id !== clubId) {
@@ -523,6 +607,55 @@ export class ActivitiesService {
       );
     }
 
-    return clubSectionId;
+    return section as { club_section_id: number; main_club_id: number; club_type_id: number };
+  }
+
+  /**
+   * Validates that all provided section IDs belong to the same club and returns their records.
+   * Used for joint activities where multiple sections participate.
+   */
+  async resolveAndValidateMultipleSections(
+    clubId: number,
+    sectionIds: number[],
+  ): Promise<Array<{ club_section_id: number; main_club_id: number; club_type_id: number }>> {
+    const clubExists = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: { club_id: true },
+    });
+
+    if (!clubExists) {
+      throw new NotFoundException(`Club with ID ${clubId} not found`);
+    }
+
+    const sections = await this.prisma.club_sections.findMany({
+      where: { club_section_id: { in: sectionIds } },
+      select: { club_section_id: true, main_club_id: true, club_type_id: true },
+    });
+
+    // Verify all requested sections were found
+    if (sections.length !== sectionIds.length) {
+      const foundIds = new Set(sections.map((s) => s.club_section_id));
+      const missing = sectionIds.filter((id) => !foundIds.has(id));
+      throw new BadRequestException(
+        `Las siguientes secciones no existen: ${missing.join(', ')}`,
+      );
+    }
+
+    // Verify all sections belong to the given club
+    const wrongSections = sections.filter((s) => s.main_club_id !== clubId);
+    if (wrongSections.length > 0) {
+      const wrongIds = wrongSections.map((s) => s.club_section_id).join(', ');
+      throw new BadRequestException(
+        `Las siguientes secciones no pertenecen al clubId=${clubId}: ${wrongIds}`,
+      );
+    }
+
+    // Preserve the original order from the request
+    const sectionMap = new Map(sections.map((s) => [s.club_section_id, s]));
+    return sectionIds.map((id) => sectionMap.get(id)!) as Array<{
+      club_section_id: number;
+      main_club_id: number;
+      club_type_id: number;
+    }>;
   }
 }

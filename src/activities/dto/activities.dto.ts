@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsNumber,
   IsArray,
+  ArrayMinSize,
   IsDateString,
   ValidateIf,
   registerDecorator,
@@ -53,11 +54,13 @@ export class CreateActivityDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({
-    description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+  @ApiPropertyOptional({
+    description:
+      'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM). Opcional: si se omite se deriva de la sección.',
   })
+  @IsOptional()
   @IsInt()
-  club_type_id: number;
+  club_type_id?: number;
 
   @ApiProperty({ description: 'Latitud del lugar' })
   @IsNumber()
@@ -139,12 +142,36 @@ export class CreateActivityDto {
   @IsArray()
   classes?: number[];
 
-  @ApiProperty({
-    description: 'ID de la sección del club (FK a club_sections)',
+  @ApiPropertyOptional({
+    description:
+      'ID de la sección del club (FK a club_sections). Requerido para actividades de una sola sección.',
   })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  club_section_id: number;
+  club_section_id?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'IDs de las secciones participantes en la actividad conjunta (mínimo 2). Cuando se envía, crea una actividad joint con is_joint=true.',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2, {
+    message: 'club_section_ids debe tener al menos 2 secciones para una actividad conjunta',
+  })
+  @IsInt({ each: true })
+  club_section_ids?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'Indica si la actividad es conjunta entre múltiples secciones. Se establece automáticamente en true cuando se provee club_section_ids.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  is_joint?: boolean;
 }
 
 export class UpdateActivityDto {
