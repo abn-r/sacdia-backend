@@ -14,6 +14,25 @@ import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
+// ==========================================
+// PROCESS-LEVEL SAFETY NET
+// Prevents unhandled Redis / BullMQ 'error' events from killing the process.
+// Individual modules should handle errors themselves (see NotificationsProcessor),
+// but this guard catches anything that slips through.
+// ==========================================
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection at:', promise, 'reason:', reason);
+  // Do NOT call process.exit() — let the app keep running unless it's truly fatal.
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message, err.stack);
+  // Only exit on truly unrecoverable errors (not Redis blips).
+  if (err.message?.includes('ENOMEM') || err.message?.includes('ENOSPC')) {
+    process.exit(1);
+  }
+});
+
 async function bootstrap() {
   // ==========================================
   // SENTRY - Error Monitoring

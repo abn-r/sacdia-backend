@@ -42,11 +42,19 @@ function isPlaceholderRedisUrl(value: string): boolean {
               const { createClient } = await import('redis');
               console.log('🔄 Attempting to connect to Redis...');
 
+              const isDev = process.env.NODE_ENV !== 'production';
               const redisOptions: any = {
                 url: rawRedisUrl,
                 socket: {
-                  connectTimeout: 5000, // 5 segundos timeout
-                  reconnectStrategy: () => false, // No reintentar en desarrollo
+                  connectTimeout: 5000,
+                  // In development: retry once after 500 ms, then give up so
+                  // the app starts without blocking. In production: use the
+                  // default exponential back-off so transient drops self-heal.
+                  // Returning `false` permanently kills the connection and causes
+                  // an unhandled 'error' event that can crash the process.
+                  reconnectStrategy: isDev
+                    ? (retries: number) => (retries >= 1 ? false : 500)
+                    : undefined, // default: exponential back-off
                 },
               };
 

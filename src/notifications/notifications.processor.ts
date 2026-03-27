@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,7 +69,7 @@ const PERMANENT_FCM_ERROR_CODES = new Set([
 ]);
 
 @Processor(NOTIFICATIONS_QUEUE)
-export class NotificationsProcessor extends WorkerHost {
+export class NotificationsProcessor extends WorkerHost implements OnApplicationBootstrap {
   private readonly logger = new Logger(NotificationsProcessor.name);
 
   constructor(
@@ -78,6 +78,27 @@ export class NotificationsProcessor extends WorkerHost {
     private readonly preferencesService: NotificationPreferencesService,
   ) {
     super();
+  }
+
+  /**
+   * Attach error/stalled event listeners to the BullMQ worker so that
+   * Redis connection drops and job failures never emit an unhandled 'error'
+   * event, which would crash the Node process.
+   *
+   * Must be in onApplicationBootstrap (not onModuleInit) — the WorkerHost
+   * internal _worker instance is only available after all modules are
+   * initialized and BullRegistrar has run.
+   */
+  onApplicationBootstrap() {
+    this.worker.on('error', (err: Error) => {
+      this.logger.error(`BullMQ worker error: ${err.message}`, err.stack);
+    });
+
+    this.worker.on('failed', (job: Job | undefined, err: Error) => {
+      this.logger.error(
+        `Job ${job?.id ?? 'unknown'} (${job?.name ?? 'unknown'}) failed: ${err.message}`,
+      );
+    });
   }
 
   async process(job: Job<NotificationJobData, unknown, NotificationJobType>) {
