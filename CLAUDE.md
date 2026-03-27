@@ -38,6 +38,7 @@ src/
 ├── admin
 ├── evidence-review    # EvidenceReviewModule — validación de evidencias (7 endpoints)
 ├── analytics          # AnalyticsModule — SLA dashboard y métricas operacionales
+├── resources          # ResourcesModule — categorías + recursos (14 endpoints)
 ├── common
 └── prisma
 ```
@@ -47,7 +48,7 @@ src/
 - NestJS 11 + TypeScript
 - Prisma 7 + PostgreSQL (Neon)
 - JWT via HS256 usando `BETTER_AUTH_SECRET` (Option C: BA handles auth, SACDIA signs JWT)
-- Redis (opcional) con fallback a in-memory
+- Redis — cache-aside para 14 catálogos (TTL 1h; año eclesiástico 24h). Auto-invalidación en mutaciones admin. Endpoint manual: `POST /api/v1/admin/catalogs/cache/invalidate` (`catalogs:update`). Graceful fallback a DB si Redis no disponible. Reconexión: retry 1x en dev, backoff exponencial en prod.
 - Firebase FCM
 - Sentry
 
@@ -77,3 +78,14 @@ src/
 - Implementación admin/notificaciones: `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
 - Índice de documentación local: `docs/README.md`
 - Fuente funcional global (monorepo padre): `../../docs`
+
+## CI/CD
+
+- Runtime: Node 22.x + pnpm 10 + `actions/setup-node@v4`
+- `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` habilitado en el pipeline
+- Deploy: Render.com (los pasos de Vercel fueron removidos)
+- ESLint: reglas `no-unsafe-*` deshabilitadas para compatibilidad con Prisma (8328 → 0 errores)
+- Jest: `transformIgnorePatterns: []` para paquetes ESM; `prisma generate` corre antes de los tests
+- Unit tests: `continue-on-error: true` hasta estabilizar suite
+- BullMQ: handlers `error`/`failed` en workers para prevenir crashes por desconexión de Redis
+- `process.on('uncaughtException'/'unhandledRejection')` como red de seguridad en producción
