@@ -159,7 +159,8 @@ export class CreateActivityDto {
   @IsOptional()
   @IsArray()
   @ArrayMinSize(2, {
-    message: 'club_section_ids debe tener al menos 2 secciones para una actividad conjunta',
+    message:
+      'club_section_ids debe tener al menos 2 secciones para una actividad conjunta',
   })
   @IsInt({ each: true })
   club_section_ids?: number[];
@@ -255,6 +256,28 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsArray()
   classes?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'IDs de las secciones participantes en la actividad conjunta (mínimo 2). Reemplaza las instancias actuales de forma atómica.',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2, {
+    message:
+      'club_section_ids debe tener al menos 2 secciones para una actividad conjunta',
+  })
+  @IsInt({ each: true })
+  club_section_ids?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'Indica si la actividad es conjunta. Enviar false para convertir una actividad conjunta en actividad de sección única (se desactivan las instancias extra).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  is_joint?: boolean;
 }
 
 export class RecordAttendanceDto {

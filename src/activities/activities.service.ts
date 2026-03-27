@@ -94,7 +94,8 @@ export class ActivitiesService {
 
     const sectionIds = club.club_sections
       .filter(
-        (section) => !filters?.clubTypeId || section.club_type_id === filters.clubTypeId,
+        (section) =>
+          !filters?.clubTypeId || section.club_type_id === filters.clubTypeId,
       )
       .map((section) => section.club_section_id);
 
@@ -153,7 +154,9 @@ export class ActivitiesService {
   }
 
   async create(clubId: number, dto: CreateActivityDto, createdBy: string) {
-    const isJoint = Boolean(dto.club_section_ids && dto.club_section_ids.length >= 2);
+    const isJoint = Boolean(
+      dto.club_section_ids && dto.club_section_ids.length >= 2,
+    );
 
     if (isJoint) {
       return this.createJointActivity(clubId, dto, createdBy);
@@ -166,7 +169,10 @@ export class ActivitiesService {
       );
     }
 
-    const section = await this.resolveAndValidateSectionRecord(clubId, dto.club_section_id);
+    const section = await this.resolveAndValidateSectionRecord(
+      clubId,
+      dto.club_section_id,
+    );
     const clubTypeId = dto.club_type_id ?? section.club_type_id;
 
     const created = await this.prisma.activities.create({
@@ -231,7 +237,10 @@ export class ActivitiesService {
     }
 
     // W1: Ensure the creator's own section is always present in the instances list
-    if (dto.club_section_id && !uniqueSectionIds.includes(dto.club_section_id)) {
+    if (
+      dto.club_section_id &&
+      !uniqueSectionIds.includes(dto.club_section_id)
+    ) {
       uniqueSectionIds.push(dto.club_section_id);
     }
 
@@ -253,7 +262,10 @@ export class ActivitiesService {
     }
 
     // W2: If club_type_id is explicitly provided, verify it matches the owner section
-    if (dto.club_type_id && dto.club_type_id !== primarySectionRecord.club_type_id) {
+    if (
+      dto.club_type_id &&
+      dto.club_type_id !== primarySectionRecord.club_type_id
+    ) {
       throw new BadRequestException(
         `club_type_id=${dto.club_type_id} no coincide con el tipo de la sección propietaria (club_type_id=${primarySectionRecord.club_type_id})`,
       );
@@ -304,7 +316,11 @@ export class ActivitiesService {
 
     // Fire-and-forget: notify ALL participating sections
     for (const section of sections) {
-      this.sendActivityCreatedNotification(created, section.club_section_id, true);
+      this.sendActivityCreatedNotification(
+        created,
+        section.club_section_id,
+        true,
+      );
     }
 
     return this.applySignedPrivateUrls(this.attachInstances(created));
@@ -318,7 +334,9 @@ export class ActivitiesService {
     const dateLabel = activity.activity_date
       ? ` - ${activity.activity_date.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`
       : '';
-    const title = isJoint ? 'Nueva actividad conjunta' : 'Nueva actividad programada';
+    const title = isJoint
+      ? 'Nueva actividad conjunta'
+      : 'Nueva actividad programada';
     this.notificationsService
       .sendToClubMembers(
         sectionId,
@@ -342,8 +360,40 @@ export class ActivitiesService {
   }
 
   async update(activityId: number, dto: UpdateActivityDto) {
-    await this.findOne(activityId);
+    // Fetch the current record with its owner section so we can derive the club
+    const existing = await this.prisma.activities.findUnique({
+      where: { activity_id: activityId },
+      select: {
+        activity_id: true,
+        club_section_id: true,
+        is_joint: true,
+        club_sections: {
+          select: { main_club_id: true },
+        },
+      },
+    });
 
+    if (!existing) {
+      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+    }
+
+    // -----------------------------------------------------------------------
+    // Branch A: caller explicitly converts back to non-joint (is_joint: false)
+    // -----------------------------------------------------------------------
+    if (dto.is_joint === false && !dto.club_section_ids) {
+      return this.convertToSingleSection(activityId, existing, dto);
+    }
+
+    // -----------------------------------------------------------------------
+    // Branch B: caller provides new section list — replace instances atomically
+    // -----------------------------------------------------------------------
+    if (dto.club_section_ids && dto.club_section_ids.length >= 2) {
+      return this.updateJointSections(activityId, existing, dto);
+    }
+
+    // -----------------------------------------------------------------------
+    // Branch C: plain field update — no instance changes
+    // -----------------------------------------------------------------------
     const updateData: any = {
       modified_at: new Date(),
     };
@@ -382,6 +432,217 @@ export class ActivitiesService {
     const updated = await this.prisma.activities.update({
       where: { activity_id: activityId },
       data: updateData,
+      include: this.activityInclude,
+    });
+
+    return this.applySignedPrivateUrls(this.attachInstances(updated));
+  }
+
+  /**
+   * Replaces participating sections for a joint activity.
+   * Uses a Prisma transaction to soft-delete existing active instances and
+   * create the new ones, then updates the activity's is_joint flag.
+   * The unique constraint (activity_id, club_section_id) is avoided because
+   * we soft-delete (active=false) before inserting new rows — but old
+   * inactive rows keep their unique slot. To handle that, we upsert instead:
+   * reactivate a pre-existing inactive instance or create a fresh one.
+   */
+  private async updateJointSections(
+    activityId: number,
+    existing: {
+      club_section_id: number | null;
+      is_joint: boolean;
+      club_sections: { main_club_id: number } | null;
+    },
+    dto: UpdateActivityDto,
+  ) {
+    const clubId = existing.club_sections?.main_club_id;
+
+    if (!clubId) {
+      throw new BadRequestException(
+        'La actividad no tiene sección propietaria; no se puede validar club_section_ids',
+      );
+    }
+
+    // Deduplicate
+    const rawIds = dto.club_section_ids!;
+    const uniqueSectionIds = [...new Set(rawIds)];
+    if (uniqueSectionIds.length !== rawIds.length) {
+      throw new BadRequestException(
+        'club_section_ids contiene secciones duplicadas',
+      );
+    }
+
+    // Validate all sections belong to the same club
+    await this.resolveAndValidateMultipleSections(clubId, uniqueSectionIds);
+
+    const now = new Date();
+
+    // Build scalar update fields (same fields as Branch C but filtered)
+    const scalarUpdateData: any = { modified_at: now, is_joint: true };
+    if (dto.name !== undefined) scalarUpdateData.name = dto.name;
+    if (dto.description !== undefined)
+      scalarUpdateData.description = dto.description;
+    if (dto.lat !== undefined) scalarUpdateData.lat = dto.lat;
+    if (dto.long !== undefined) scalarUpdateData.long = dto.long;
+    if (dto.activity_time !== undefined) {
+      scalarUpdateData.activity_time = dto.activity_time;
+      scalarUpdateData.reminder_sent = false;
+    }
+    if (dto.activity_date !== undefined) {
+      scalarUpdateData.activity_date = dto.activity_date
+        ? new Date(dto.activity_date)
+        : null;
+      scalarUpdateData.reminder_sent = false;
+    }
+    if (dto.activity_end_date !== undefined)
+      scalarUpdateData.activity_end_date = dto.activity_end_date
+        ? new Date(dto.activity_end_date)
+        : null;
+    if (dto.activity_place !== undefined)
+      scalarUpdateData.activity_place = dto.activity_place;
+    if (dto.image !== undefined) scalarUpdateData.image = dto.image;
+    if (dto.platform !== undefined) scalarUpdateData.platform = dto.platform;
+    if (dto.activity_type_id !== undefined)
+      scalarUpdateData.activity_type_id = dto.activity_type_id;
+    if (dto.link_meet !== undefined) scalarUpdateData.link_meet = dto.link_meet;
+    if (dto.active !== undefined) scalarUpdateData.active = dto.active;
+    if (dto.classes !== undefined)
+      scalarUpdateData.classes = dto.classes as Prisma.InputJsonValue;
+
+    await this.prisma.$transaction([
+      // 1. Soft-delete all currently active instances for this activity
+      this.prisma.activity_instances.updateMany({
+        where: { activity_id: activityId, active: true },
+        data: { active: false, modified_at: now },
+      }),
+      // 2. Update the activity's scalar fields
+      this.prisma.activities.update({
+        where: { activity_id: activityId },
+        data: scalarUpdateData,
+      }),
+    ]);
+
+    // 3. Upsert each new instance outside the batch transaction so that
+    //    Prisma can handle the unique-constraint conflict gracefully.
+    //    We do this sequentially to avoid concurrent unique-constraint races.
+    for (const sectionId of uniqueSectionIds) {
+      const existingInstance = await this.prisma.activity_instances.findUnique({
+        where: {
+          activity_instances_unique_instance_per_activity: {
+            activity_id: activityId,
+            club_section_id: sectionId,
+          },
+        },
+        select: { activity_instance_id: true },
+      });
+
+      if (existingInstance) {
+        await this.prisma.activity_instances.update({
+          where: {
+            activity_instance_id: existingInstance.activity_instance_id,
+          },
+          data: { active: true, modified_at: now },
+        });
+      } else {
+        await this.prisma.activity_instances.create({
+          data: {
+            activity_id: activityId,
+            club_section_id: sectionId,
+            active: true,
+            created_at: now,
+            modified_at: now,
+          },
+        });
+      }
+    }
+
+    const updated = await this.prisma.activities.findUnique({
+      where: { activity_id: activityId },
+      include: this.activityInclude,
+    });
+
+    return this.applySignedPrivateUrls(this.attachInstances(updated));
+  }
+
+  /**
+   * Converts a joint activity back to a single-section activity.
+   * Deactivates all instances except the owner's, sets is_joint=false.
+   */
+  private async convertToSingleSection(
+    activityId: number,
+    existing: {
+      club_section_id: number | null;
+      is_joint: boolean;
+      club_sections: { main_club_id: number } | null;
+    },
+    dto: UpdateActivityDto,
+  ) {
+    const ownerSectionId = existing.club_section_id;
+
+    if (!ownerSectionId) {
+      throw new BadRequestException(
+        'La actividad no tiene sección propietaria; no se puede convertir a sección única',
+      );
+    }
+
+    const now = new Date();
+
+    const scalarUpdateData: any = { modified_at: now, is_joint: false };
+    if (dto.name !== undefined) scalarUpdateData.name = dto.name;
+    if (dto.description !== undefined)
+      scalarUpdateData.description = dto.description;
+    if (dto.lat !== undefined) scalarUpdateData.lat = dto.lat;
+    if (dto.long !== undefined) scalarUpdateData.long = dto.long;
+    if (dto.activity_time !== undefined) {
+      scalarUpdateData.activity_time = dto.activity_time;
+      scalarUpdateData.reminder_sent = false;
+    }
+    if (dto.activity_date !== undefined) {
+      scalarUpdateData.activity_date = dto.activity_date
+        ? new Date(dto.activity_date)
+        : null;
+      scalarUpdateData.reminder_sent = false;
+    }
+    if (dto.activity_end_date !== undefined)
+      scalarUpdateData.activity_end_date = dto.activity_end_date
+        ? new Date(dto.activity_end_date)
+        : null;
+    if (dto.activity_place !== undefined)
+      scalarUpdateData.activity_place = dto.activity_place;
+    if (dto.image !== undefined) scalarUpdateData.image = dto.image;
+    if (dto.platform !== undefined) scalarUpdateData.platform = dto.platform;
+    if (dto.activity_type_id !== undefined)
+      scalarUpdateData.activity_type_id = dto.activity_type_id;
+    if (dto.link_meet !== undefined) scalarUpdateData.link_meet = dto.link_meet;
+    if (dto.active !== undefined) scalarUpdateData.active = dto.active;
+    if (dto.classes !== undefined)
+      scalarUpdateData.classes = dto.classes as Prisma.InputJsonValue;
+
+    await this.prisma.$transaction([
+      // Deactivate all instances except the owner's
+      this.prisma.activity_instances.updateMany({
+        where: {
+          activity_id: activityId,
+          active: true,
+          NOT: { club_section_id: ownerSectionId },
+        },
+        data: { active: false, modified_at: now },
+      }),
+      // Ensure the owner's instance is active
+      this.prisma.activity_instances.updateMany({
+        where: { activity_id: activityId, club_section_id: ownerSectionId },
+        data: { active: true, modified_at: now },
+      }),
+      // Update the activity record
+      this.prisma.activities.update({
+        where: { activity_id: activityId },
+        data: scalarUpdateData,
+      }),
+    ]);
+
+    const updated = await this.prisma.activities.findUnique({
+      where: { activity_id: activityId },
       include: this.activityInclude,
     });
 
@@ -617,7 +878,11 @@ export class ActivitiesService {
   private async resolveAndValidateSectionRecord(
     clubId: number,
     clubSectionId: number,
-  ): Promise<{ club_section_id: number; main_club_id: number; club_type_id: number }> {
+  ): Promise<{
+    club_section_id: number;
+    main_club_id: number;
+    club_type_id: number;
+  }> {
     const clubExists = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: { club_id: true },
@@ -642,7 +907,11 @@ export class ActivitiesService {
       );
     }
 
-    return section as { club_section_id: number; main_club_id: number; club_type_id: number };
+    return section as {
+      club_section_id: number;
+      main_club_id: number;
+      club_type_id: number;
+    };
   }
 
   /**
@@ -652,7 +921,13 @@ export class ActivitiesService {
   private async resolveAndValidateMultipleSections(
     clubId: number,
     sectionIds: number[],
-  ): Promise<Array<{ club_section_id: number; main_club_id: number; club_type_id: number }>> {
+  ): Promise<
+    Array<{
+      club_section_id: number;
+      main_club_id: number;
+      club_type_id: number;
+    }>
+  > {
     const clubExists = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
       select: { club_id: true },
