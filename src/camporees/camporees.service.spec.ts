@@ -6,7 +6,7 @@ import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
-  let prisma: PrismaService;
+  let _prisma: PrismaService;
 
   const mockPrismaService = {
     local_camporees: {
@@ -59,7 +59,7 @@ describe('CamporeesService', () => {
     }).compile();
 
     service = module.get<CamporeesService>(CamporeesService);
-    prisma = module.get<PrismaService>(PrismaService);
+    _prisma = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
@@ -98,7 +98,10 @@ describe('CamporeesService', () => {
       );
       mockPrismaService.local_camporees.count.mockResolvedValue(1);
 
-      const result = await service.findAll({}, { page: 1, limit: 20 } as unknown as import('../common/dto/pagination.dto').PaginationDto);
+      const result = await service.findAll({}, {
+        page: 1,
+        limit: 20,
+      } as unknown as import('../common/dto/pagination.dto').PaginationDto);
 
       expect(result.data).toEqual(mockCamporees);
       expect(result.meta.total).toBe(1);
@@ -651,8 +654,12 @@ describe('CamporeesService', () => {
     };
 
     it('should soft delete the member registration', async () => {
-      mockPrismaService.local_camporees.findUnique.mockResolvedValue(mockCamporee);
-      mockPrismaService.camporee_members.findFirst.mockResolvedValue(mockRegistration);
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(
+        mockCamporee,
+      );
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue(
+        mockRegistration,
+      );
       mockPrismaService.camporee_members.update.mockResolvedValue({
         ...mockRegistration,
         active: false,
@@ -676,7 +683,9 @@ describe('CamporeesService', () => {
     });
 
     it('should throw NotFoundException if member is not registered in camporee', async () => {
-      mockPrismaService.local_camporees.findUnique.mockResolvedValue(mockCamporee);
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(
+        mockCamporee,
+      );
       mockPrismaService.camporee_members.findFirst.mockResolvedValue(null);
 
       await expect(service.removeMember(1, 'nonexistent-user')).rejects.toThrow(
@@ -685,8 +694,12 @@ describe('CamporeesService', () => {
     });
 
     it('should search registration with correct filter (active: true)', async () => {
-      mockPrismaService.local_camporees.findUnique.mockResolvedValue(mockCamporee);
-      mockPrismaService.camporee_members.findFirst.mockResolvedValue(mockRegistration);
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(
+        mockCamporee,
+      );
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue(
+        mockRegistration,
+      );
       mockPrismaService.camporee_members.update.mockResolvedValue({
         ...mockRegistration,
         active: false,
@@ -694,13 +707,15 @@ describe('CamporeesService', () => {
 
       await service.removeMember(1, 'user-uuid-1');
 
-      expect(mockPrismaService.camporee_members.findFirst).toHaveBeenCalledWith({
-        where: {
-          camporee_id: 1,
-          user_id: 'user-uuid-1',
-          active: true,
+      expect(mockPrismaService.camporee_members.findFirst).toHaveBeenCalledWith(
+        {
+          where: {
+            camporee_id: 1,
+            user_id: 'user-uuid-1',
+            active: true,
+          },
         },
-      });
+      );
     });
   });
 

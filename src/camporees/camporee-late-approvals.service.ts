@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -15,12 +11,20 @@ export class CamporeeLateApprovalsService {
   async listPending(camporeeId: number) {
     const [pendingClubs, pendingMembers, pendingPayments] = await Promise.all([
       this.prisma.camporee_clubs.findMany({
-        where: { camporee_id: camporeeId, status: 'pending_approval', active: true },
+        where: {
+          camporee_id: camporeeId,
+          status: 'pending_approval',
+          active: true,
+        },
         include: { club_sections: true },
         orderBy: { created_at: 'asc' },
       }),
       this.prisma.camporee_members.findMany({
-        where: { camporee_id: camporeeId, status: 'pending_approval', active: true },
+        where: {
+          camporee_id: camporeeId,
+          status: 'pending_approval',
+          active: true,
+        },
         include: {
           users: {
             select: {
@@ -59,7 +63,11 @@ export class CamporeeLateApprovalsService {
       }),
     ]);
 
-    return { clubs: pendingClubs, members: pendingMembers, payments: pendingPayments };
+    return {
+      clubs: pendingClubs,
+      members: pendingMembers,
+      payments: pendingPayments,
+    };
   }
 
   /**
@@ -68,12 +76,20 @@ export class CamporeeLateApprovalsService {
   async listUnionPending(unionCamporeeId: number) {
     const [pendingClubs, pendingMembers, pendingPayments] = await Promise.all([
       this.prisma.camporee_clubs.findMany({
-        where: { union_camporee_id: unionCamporeeId, status: 'pending_approval', active: true },
+        where: {
+          union_camporee_id: unionCamporeeId,
+          status: 'pending_approval',
+          active: true,
+        },
         include: { club_sections: true },
         orderBy: { created_at: 'asc' },
       }),
       this.prisma.camporee_members.findMany({
-        where: { union_camporee_id: unionCamporeeId, status: 'pending_approval', active: true },
+        where: {
+          union_camporee_id: unionCamporeeId,
+          status: 'pending_approval',
+          active: true,
+        },
         include: {
           users: {
             select: {
@@ -112,7 +128,11 @@ export class CamporeeLateApprovalsService {
       }),
     ]);
 
-    return { clubs: pendingClubs, members: pendingMembers, payments: pendingPayments };
+    return {
+      clubs: pendingClubs,
+      members: pendingMembers,
+      payments: pendingPayments,
+    };
   }
 
   // ============================================================
@@ -177,7 +197,10 @@ export class CamporeeLateApprovalsService {
    */
   async approveMemberEnrollment(camporeeMemberId: number, approvedBy: string) {
     const record = await this.prisma.camporee_members.findFirst({
-      where: { camporee_member_id: camporeeMemberId, status: 'pending_approval' },
+      where: {
+        camporee_member_id: camporeeMemberId,
+        status: 'pending_approval',
+      },
     });
 
     if (!record) {
@@ -203,7 +226,10 @@ export class CamporeeLateApprovalsService {
     rejectionReason?: string,
   ) {
     const record = await this.prisma.camporee_members.findFirst({
-      where: { camporee_member_id: camporeeMemberId, status: 'pending_approval' },
+      where: {
+        camporee_member_id: camporeeMemberId,
+        status: 'pending_approval',
+      },
     });
 
     if (!record) {
@@ -247,7 +273,11 @@ export class CamporeeLateApprovalsService {
     }
     return this.prisma.camporee_clubs.update({
       where: { camporee_club_id: camporeeClubId },
-      data: { status: 'approved', approved_by: approvedBy, modified_at: new Date() },
+      data: {
+        status: 'approved',
+        approved_by: approvedBy,
+        modified_at: new Date(),
+      },
     });
   }
 
@@ -309,7 +339,11 @@ export class CamporeeLateApprovalsService {
     }
     return this.prisma.camporee_members.update({
       where: { camporee_member_id: camporeeMemberId },
-      data: { status: 'approved', approved_by: approvedBy, modified_at: new Date() },
+      data: {
+        status: 'approved',
+        approved_by: approvedBy,
+        modified_at: new Date(),
+      },
     });
   }
 
@@ -371,7 +405,11 @@ export class CamporeeLateApprovalsService {
     }
     return this.prisma.camporee_clubs.update({
       where: { camporee_club_id: camporeeClubId },
-      data: { status: 'approved', approved_by: approvedBy, modified_at: new Date() },
+      data: {
+        status: 'approved',
+        approved_by: approvedBy,
+        modified_at: new Date(),
+      },
     });
   }
 
@@ -433,7 +471,11 @@ export class CamporeeLateApprovalsService {
     }
     return this.prisma.camporee_members.update({
       where: { camporee_member_id: camporeeMemberId },
-      data: { status: 'approved', approved_by: approvedBy, modified_at: new Date() },
+      data: {
+        status: 'approved',
+        approved_by: approvedBy,
+        modified_at: new Date(),
+      },
     });
   }
 
@@ -479,7 +521,10 @@ export class CamporeeLateApprovalsService {
    */
   async approvePayment(camporeePaymentId: string, approvedBy: string) {
     const record = await this.prisma.camporee_payments.findFirst({
-      where: { camporee_payment_id: camporeePaymentId, status: 'pending_approval' },
+      where: {
+        camporee_payment_id: camporeePaymentId,
+        status: 'pending_approval',
+      },
     });
 
     if (!record) {
@@ -505,7 +550,10 @@ export class CamporeeLateApprovalsService {
     rejectionReason?: string,
   ) {
     const record = await this.prisma.camporee_payments.findFirst({
-      where: { camporee_payment_id: camporeePaymentId, status: 'pending_approval' },
+      where: {
+        camporee_payment_id: camporeePaymentId,
+        status: 'pending_approval',
+      },
     });
 
     if (!record) {

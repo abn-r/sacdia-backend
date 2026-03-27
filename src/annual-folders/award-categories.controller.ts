@@ -4,8 +4,6 @@ import {
   Delete,
   Get,
   Param,
-  ParseBoolPipe,
-  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -71,8 +69,7 @@ export class AwardCategoriesController {
   ) {
     const clubTypeIdParsed =
       clubTypeId !== undefined ? parseInt(clubTypeId, 10) : undefined;
-    const activeParsed =
-      active !== undefined ? active === 'true' : undefined;
+    const activeParsed = active !== undefined ? active === 'true' : undefined;
 
     const data = await this.service.findAll(clubTypeIdParsed, activeParsed);
     return { status: 'success', data };
@@ -94,7 +91,10 @@ export class AwardCategoriesController {
   @ApiOperation({ summary: 'Update an award category' })
   @ApiParam({ name: 'categoryId', description: 'Award category UUID' })
   @ApiResponse({ status: 200, description: 'Award category updated' })
-  @ApiResponse({ status: 404, description: 'Award category or club type not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Award category or club type not found',
+  })
   async update(
     @Param('categoryId', ParseUUIDPipe) categoryId: string,
     @Body() dto: UpdateAwardCategoryDto,

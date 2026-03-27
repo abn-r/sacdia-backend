@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Param,
-  UseGuards,
-  Req,
-  ParseUUIDPipe,
-} from '@nestjs/common';
+import { Controller, Get, Delete, Param, UseGuards, Req } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,

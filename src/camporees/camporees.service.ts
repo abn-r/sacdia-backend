@@ -413,9 +413,7 @@ export class CamporeesService {
     });
 
     if (!union) {
-      throw new BadRequestException(
-        `Union with ID ${dto.union_id} not found`,
-      );
+      throw new BadRequestException(`Union with ID ${dto.union_id} not found`);
     }
 
     // Validate local fields belong to the union (if provided)
@@ -751,7 +749,7 @@ export class CamporeesService {
 
     if (isLate && camporeeLocalFieldId) {
       setImmediate(() => {
-        this.notificationsService.sendToGlobalRole(
+        void this.notificationsService.sendToGlobalRole(
           ['director-lf', 'assistant-lf'],
           'Inscripción tardía de miembro',
           `Un miembro se inscribió fuera de plazo al camporee y requiere aprobación`,
@@ -944,7 +942,7 @@ export class CamporeesService {
 
     if (isLate && camporeeLocalFieldId) {
       setImmediate(() => {
-        this.notificationsService.sendToGlobalRole(
+        void this.notificationsService.sendToGlobalRole(
           ['director-lf', 'assistant-lf'],
           'Inscripción tardía de club',
           `Un club se inscribió fuera de plazo al camporee y requiere aprobación`,
@@ -1114,7 +1112,7 @@ export class CamporeesService {
 
     if (isLate && camporeeLocalFieldId) {
       setImmediate(() => {
-        this.notificationsService.sendToGlobalRole(
+        void this.notificationsService.sendToGlobalRole(
           ['director-lf', 'assistant-lf'],
           'Pago tardío de camporee',
           `Se registró un pago fuera de plazo y requiere aprobación`,
@@ -1134,7 +1132,11 @@ export class CamporeesService {
    * @param memberId - The camporee_member_id
    * @param status - Optional status filter. Defaults to excluding pending_approval
    */
-  async getMemberPayments(camporeeId: number, memberId: number, status?: string) {
+  async getMemberPayments(
+    camporeeId: number,
+    memberId: number,
+    status?: string,
+  ) {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
@@ -1232,7 +1234,8 @@ export class CamporeesService {
     const updateData: Record<string, any> = {};
 
     if (dto.amount !== undefined) updateData.amount = dto.amount;
-    if (dto.payment_type !== undefined) updateData.payment_type = dto.payment_type;
+    if (dto.payment_type !== undefined)
+      updateData.payment_type = dto.payment_type;
     if (dto.reference !== undefined) updateData.reference = dto.reference;
     if (dto.notes !== undefined) updateData.notes = dto.notes;
     if (dto.paid_at !== undefined) updateData.paid_at = new Date(dto.paid_at);
@@ -1317,20 +1320,19 @@ export class CamporeesService {
 
       // 3. Ensure we can determine the club's local field
       if (clubSection.clubs?.local_field_id == null) {
-        throw new BadRequestException(
-          "Cannot determine club's local field",
-        );
+        throw new BadRequestException("Cannot determine club's local field");
       }
 
       // 4. Validate that the club's local field participates in this union camporee
-      const fieldParticipation =
-        await tx.union_camporee_local_fields.findFirst({
+      const fieldParticipation = await tx.union_camporee_local_fields.findFirst(
+        {
           where: {
             union_camporee_lf_id: unionCamporeeId,
             local_field_id: clubSection.clubs.local_field_id,
             active: true,
           },
-        });
+        },
+      );
 
       if (!fieldParticipation) {
         throw new ForbiddenException(
@@ -1386,7 +1388,7 @@ export class CamporeesService {
 
     if (isLate && camporeeUnionId) {
       setImmediate(() => {
-        this.notificationsService.sendToGlobalRole(
+        void this.notificationsService.sendToGlobalRole(
           ['director-union', 'assistant-union'],
           'Inscripción tardía de club (camporee unión)',
           'Un club se inscribió fuera de plazo al camporee de unión y requiere aprobación',
@@ -1529,7 +1531,7 @@ export class CamporeesService {
 
     if (isLate && camporeeUnionId) {
       setImmediate(() => {
-        this.notificationsService.sendToGlobalRole(
+        void this.notificationsService.sendToGlobalRole(
           ['director-union', 'assistant-union'],
           'Inscripción tardía de miembro (camporee unión)',
           'Un miembro se inscribió fuera de plazo al camporee de unión y requiere aprobación',
@@ -1628,7 +1630,7 @@ export class CamporeesService {
 
     if (isLate && camporeeUnionId) {
       setImmediate(() => {
-        this.notificationsService.sendToGlobalRole(
+        void this.notificationsService.sendToGlobalRole(
           ['director-union', 'assistant-union'],
           'Pago tardío de camporee unión',
           'Se registró un pago fuera de plazo y requiere aprobación',
