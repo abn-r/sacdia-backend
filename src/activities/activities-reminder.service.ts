@@ -103,7 +103,7 @@ export class ActivitiesReminderService {
         try {
           // 5. Send notification to section members
           await this.notificationsService.sendToClubMembers(
-            activity.club_section_id!,
+            activity.club_section_id!, // non-null: filtered by { club_section_id: { not: null } }
             {
               title: 'Recordatorio de actividad',
               body: `${activity.name} comienza a las ${activity.activity_time}`,
