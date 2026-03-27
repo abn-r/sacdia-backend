@@ -452,7 +452,7 @@ export class ActivitiesService {
     existing: {
       club_section_id: number | null;
       is_joint: boolean;
-      club_sections: { main_club_id: number } | null;
+      club_sections: { main_club_id: number | null } | null;
     },
     dto: UpdateActivityDto,
   ) {
@@ -529,7 +529,7 @@ export class ActivitiesService {
     for (const sectionId of uniqueSectionIds) {
       const existingInstance = await this.prisma.activity_instances.findUnique({
         where: {
-          activity_instances_unique_instance_per_activity: {
+          activity_id_club_section_id: {
             activity_id: activityId,
             club_section_id: sectionId,
           },
@@ -574,7 +574,7 @@ export class ActivitiesService {
     existing: {
       club_section_id: number | null;
       is_joint: boolean;
-      club_sections: { main_club_id: number } | null;
+      club_sections: { main_club_id: number | null } | null;
     },
     dto: UpdateActivityDto,
   ) {
