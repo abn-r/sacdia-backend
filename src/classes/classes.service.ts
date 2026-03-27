@@ -825,7 +825,7 @@ export class ClassesService {
         section_progress_id: sectionProgress.section_progress_id,
       },
       data: {
-        status: 'enviado',
+        status: 'PENDING',
         submitted_by_id: userId,
         submitted_at: new Date(),
         modified_at: new Date(),

@@ -33,9 +33,7 @@ export class ActivitiesReminderService {
         where: { config_key: 'activity_reminder_minutes_before' },
       });
 
-      const reminderMinutes = config
-        ? parseInt(config.config_value, 10)
-        : 60;
+      const reminderMinutes = config ? parseInt(config.config_value, 10) : 60;
 
       const effectiveMinutes =
         isNaN(reminderMinutes) || reminderMinutes < 0 ? 60 : reminderMinutes;
@@ -130,7 +128,8 @@ export class ActivitiesReminderService {
             `Reminder sent for activity ${activity.activity_id} "${activity.name}" at ${activity.activity_time}`,
           );
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           this.logger.error(
             `Failed to process reminder for activity ${activity.activity_id}: ${message}`,
           );
