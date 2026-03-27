@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { investiture_status_enum, investiture_action_enum } from '@prisma/client';
+import {
+  investiture_status_enum,
+  investiture_action_enum,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   SlaDashboardDto,
@@ -96,7 +99,9 @@ export class AnalyticsService {
   // COMPUTATION
   // ──────────────────────────────────────────────────────────────────────────
 
-  private async computeSlaDashboard(localFieldId?: number): Promise<SlaDashboardDto> {
+  private async computeSlaDashboard(
+    localFieldId?: number,
+  ): Promise<SlaDashboardDto> {
     const now = new Date();
     // 90-day window for approval rate and overdue detection
     const cutoff90d = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -161,7 +166,7 @@ export class AnalyticsService {
       // 2a. Class section progress pending validation
       this.prisma.class_section_progress.count({
         where: {
-          status: 'pendiente',
+          status: 'PENDING',
           active: true,
           ...(scopedClubSectionIds
             ? {
@@ -251,11 +256,13 @@ export class AnalyticsService {
       pipelineMap.set(group.investiture_status, group._count.enrollment_id);
     }
 
-    const pipeline: InvestiturePipelineItemDto[] = PENDING_STATUSES.map((status) => ({
-      status,
-      label: STATUS_LABELS[status] ?? status,
-      count: pipelineMap.get(status) ?? 0,
-    }));
+    const pipeline: InvestiturePipelineItemDto[] = PENDING_STATUSES.map(
+      (status) => ({
+        status,
+        label: STATUS_LABELS[status] ?? status,
+        count: pipelineMap.get(status) ?? 0,
+      }),
+    );
 
     const totalPending = pipeline.reduce((sum, p) => sum + p.count, 0);
     const inReview = IN_REVIEW_STATUSES.reduce(
@@ -311,7 +318,8 @@ export class AnalyticsService {
         avg_days_total: string | null;
       };
 
-      const toNum = (v: string | null) => (v != null ? Math.round(parseFloat(v) * 10) / 10 : null);
+      const toNum = (v: string | null) =>
+        v != null ? Math.round(parseFloat(v) * 10) / 10 : null;
 
       if (localFieldId !== undefined) {
         // Parameterized path with localFieldId
@@ -376,8 +384,12 @@ export class AnalyticsService {
         return {
           avg_days_to_submit: toNum(stage?.avg_days_to_submit ?? null),
           avg_days_club_approval: toNum(stage?.avg_days_club_approval ?? null),
-          avg_days_coordinator_approval: toNum(stage?.avg_days_coordinator_approval ?? null),
-          avg_days_field_approval: toNum(stage?.avg_days_field_approval ?? null),
+          avg_days_coordinator_approval: toNum(
+            stage?.avg_days_coordinator_approval ?? null,
+          ),
+          avg_days_field_approval: toNum(
+            stage?.avg_days_field_approval ?? null,
+          ),
           avg_days_total: toNum(total?.avg_days_total ?? null),
         };
       }
@@ -432,7 +444,9 @@ export class AnalyticsService {
       return {
         avg_days_to_submit: toNum(stage?.avg_days_to_submit ?? null),
         avg_days_club_approval: toNum(stage?.avg_days_club_approval ?? null),
-        avg_days_coordinator_approval: toNum(stage?.avg_days_coordinator_approval ?? null),
+        avg_days_coordinator_approval: toNum(
+          stage?.avg_days_coordinator_approval ?? null,
+        ),
         avg_days_field_approval: toNum(stage?.avg_days_field_approval ?? null),
         avg_days_total: toNum(total?.avg_days_total ?? null),
       };
@@ -568,7 +582,8 @@ export class AnalyticsService {
       ]);
 
       const resolved = approvedCount + rejectedCount;
-      const rate = resolved > 0 ? Math.round((approvedCount / resolved) * 1000) / 10 : 0;
+      const rate =
+        resolved > 0 ? Math.round((approvedCount / resolved) * 1000) / 10 : 0;
 
       return { resolved, approved: approvedCount, rate };
     } catch (error) {

@@ -194,7 +194,7 @@ model class_section_progress {
   created_at          DateTime         @default(now()) @db.Timestamptz(6)
   modified_at         DateTime         @default(now()) @db.Timestamptz(6)
   enrollment_id       Int?
-  status              String           @default("pendiente") @db.VarChar(20)
+  status              evidence_validation_enum @default(PENDING)
   submitted_by_id     String?          @db.Uuid
   submitted_at        DateTime?        @db.Timestamptz(6)
   validated_by_id     String?          @db.Uuid
@@ -595,7 +595,7 @@ model folders_section_records {
   evidences                Json?
   active                   Boolean           @default(true)
   club_section_id          Int?
-  status                   String?           @default("pendiente") @db.VarChar(20)
+  status                   evidence_validation_enum? @default(PENDING)
   submitted_by_id          String?           @db.Uuid
   submitted_at             DateTime?         @db.Timestamptz(6)
   validated_by_id          String?           @db.Uuid

@@ -197,16 +197,24 @@ export class ClassesService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Resolve club type IDs by name
       const clubTypes = await tx.club_types.findMany({
-        where: { name: { in: ['Aventureros', 'Conquistadores', 'Guías Mayores'] } },
+        where: {
+          name: { in: ['Aventureros', 'Conquistadores', 'Guías Mayores'] },
+        },
       });
       if (clubTypes.length !== 3) {
         throw new InternalServerErrorException(
           'No se pudieron resolver los tipos de club requeridos',
         );
       }
-      const aventurerosId = clubTypes.find((ct) => ct.name === 'Aventureros')!.club_type_id;
-      const conquistadoresId = clubTypes.find((ct) => ct.name === 'Conquistadores')!.club_type_id;
-      const gmId = clubTypes.find((ct) => ct.name === 'Guías Mayores')!.club_type_id;
+      const aventurerosId = clubTypes.find(
+        (ct) => ct.name === 'Aventureros',
+      )!.club_type_id;
+      const conquistadoresId = clubTypes.find(
+        (ct) => ct.name === 'Conquistadores',
+      )!.club_type_id;
+      const gmId = clubTypes.find(
+        (ct) => ct.name === 'Guías Mayores',
+      )!.club_type_id;
 
       // 2. Get target class
       const targetClass = await tx.classes.findUnique({
@@ -252,7 +260,9 @@ export class ClassesService {
             user_id: userId,
             ecclesiastical_year_id: ecclesiasticalYearId,
             active: true,
-            classes: { club_type_id: { in: [aventurerosId, conquistadoresId] } },
+            classes: {
+              club_type_id: { in: [aventurerosId, conquistadoresId] },
+            },
           },
         });
         if (activeCount >= 1) {
@@ -299,7 +309,9 @@ export class ClassesService {
           data: { active: true },
           include: {
             classes: { select: { name: true } },
-            ecclesiastical_year: { select: { start_date: true, end_date: true } },
+            ecclesiastical_year: {
+              select: { start_date: true, end_date: true },
+            },
           },
         });
       }
@@ -363,15 +375,16 @@ export class ClassesService {
     const classIds = [...new Set(enrollments.map((e) => e.class_id))];
 
     // Batch: completed sections per enrollment (score >= 70, active = true)
-    const completedByEnrollment = await this.prisma.class_section_progress.groupBy({
-      by: ['enrollment_id'],
-      where: {
-        enrollment_id: { in: enrollmentIds },
-        active: true,
-        score: { gte: 70 },
-      },
-      _count: { section_progress_id: true },
-    });
+    const completedByEnrollment =
+      await this.prisma.class_section_progress.groupBy({
+        by: ['enrollment_id'],
+        where: {
+          enrollment_id: { in: enrollmentIds },
+          active: true,
+          score: { gte: 70 },
+        },
+        _count: { section_progress_id: true },
+      });
 
     // Batch: total active sections per class
     const totalByClass = await this.prisma.class_sections.groupBy({
@@ -415,7 +428,8 @@ export class ClassesService {
 
     return enrollments.map((enrollment) => {
       const total = totalSectionsPerClass.get(enrollment.class_id) ?? 0;
-      const completed = completedPerEnrollment.get(enrollment.enrollment_id) ?? 0;
+      const completed =
+        completedPerEnrollment.get(enrollment.enrollment_id) ?? 0;
       const overall_progress =
         total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -470,9 +484,7 @@ export class ClassesService {
     });
 
     // Pre-sign all evidence file URLs in a single parallel batch
-    const allEvidenceFiles = sectionProgress.flatMap(
-      (sp) => sp.evidence_files,
-    );
+    const allEvidenceFiles = sectionProgress.flatMap((sp) => sp.evidence_files);
     const signedUrlMap = new Map<number, string>();
     await Promise.all(
       allEvidenceFiles.map(async (ef) => {
@@ -526,13 +538,11 @@ export class ClassesService {
             score: progress?.score || 0,
             evidences: progress?.evidences || null,
             evidence_files: evidenceFiles,
-            status: progress?.status || 'pendiente',
+            status: progress?.status || 'PENDING',
             submitted_by_name: null,
-            submitted_at:
-              progress?.submitted_at?.toISOString() || null,
+            submitted_at: progress?.submitted_at?.toISOString() || null,
             validated_by_name: null,
-            validated_at:
-              progress?.validated_at?.toISOString() || null,
+            validated_at: progress?.validated_at?.toISOString() || null,
             rejection_reason: progress?.rejection_reason || null,
           };
         }),
@@ -768,26 +778,21 @@ export class ClassesService {
     return this.mapEvidenceFile(created, signedUrl);
   }
 
-  async submitSection(
-    userId: string,
-    classId: number,
-    sectionId: number,
-  ) {
+  async submitSection(userId: string, classId: number, sectionId: number) {
     // Find the section progress
-    const sectionProgress =
-      await this.prisma.class_section_progress.findFirst({
-        where: {
-          user_id: userId,
-          class_id: classId,
-          section_id: sectionId,
-          active: true,
+    const sectionProgress = await this.prisma.class_section_progress.findFirst({
+      where: {
+        user_id: userId,
+        class_id: classId,
+        section_id: sectionId,
+        active: true,
+      },
+      include: {
+        evidence_files: {
+          where: { active: true },
         },
-        include: {
-          evidence_files: {
-            where: { active: true },
-          },
-        },
-      });
+      },
+    });
 
     if (!sectionProgress) {
       throw new NotFoundException(
@@ -795,10 +800,10 @@ export class ClassesService {
       );
     }
 
-    // Must be in pendiente or rechazado status to submit
+    // Must be in PENDING or REJECTED status to submit
     if (
-      sectionProgress.status !== 'pendiente' &&
-      sectionProgress.status !== 'rechazado'
+      sectionProgress.status !== 'PENDING' &&
+      sectionProgress.status !== 'REJECTED'
     ) {
       throw new BadRequestException(
         `Section is already in status '${sectionProgress.status}' and cannot be submitted`,
@@ -958,7 +963,11 @@ export class ClassesService {
     tx: Prisma.TransactionClient,
     params: {
       userId: string;
-      targetClass: { class_id: number; club_type_id: number; display_order: number };
+      targetClass: {
+        class_id: number;
+        club_type_id: number;
+        display_order: number;
+      };
       ecclesiasticalYearId: number;
     },
   ): Promise<void> {

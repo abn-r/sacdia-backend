@@ -8,27 +8,26 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ApproveEvidenceDto } from './dto/approve-evidence.dto';
 import { RejectEvidenceDto } from './dto/reject-evidence.dto';
-import { BulkApproveEvidenceDto, EvidenceType } from './dto/bulk-approve-evidence.dto';
+import {
+  BulkApproveEvidenceDto,
+  EvidenceType,
+} from './dto/bulk-approve-evidence.dto';
 import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
 //
-// NOTE (C2 — enum deviation): The schema defines an `evidence_validation_enum`
-// (PENDING / VALIDATED / REJECTED), but the actual database columns for
-// folders and classes store Spanish strings ('pendiente', 'validado',
-// 'rechazado'), while users_honors uses English strings ('in_progress',
-// 'validated', 'rejected'). Changing these values requires a data migration
-// (ALTER COLUMN + UPDATE) which must be done as a separate PR.
-// TODO: migrate folder/class columns to use the enum values (or a unified set)
-// once a data migration is planned and coordinated with the mobile app.
+// folders_section_records.status and class_section_progress.status now use
+// evidence_validation_enum (PENDING / VALIDATED / REJECTED) after the
+// 20260327200000_migrate_evidence_status_to_enum migration.
+// users_honors.validation_status remains a separate VARCHAR field.
 
-const FOLDER_STATUS_PENDING = 'pendiente';
-const FOLDER_STATUS_VALIDATED = 'validado';
-const FOLDER_STATUS_REJECTED = 'rechazado';
+const FOLDER_STATUS_PENDING = 'PENDING';
+const FOLDER_STATUS_VALIDATED = 'VALIDATED';
+const FOLDER_STATUS_REJECTED = 'REJECTED';
 
-const CLASS_STATUS_PENDING = 'pendiente';
-const CLASS_STATUS_VALIDATED = 'validado';
-const CLASS_STATUS_REJECTED = 'rechazado';
+const CLASS_STATUS_PENDING = 'PENDING';
+const CLASS_STATUS_VALIDATED = 'VALIDATED';
+const CLASS_STATUS_REJECTED = 'REJECTED';
 
 const HONOR_STATUS_PENDING = 'in_progress';
 const HONOR_STATUS_VALIDATED = 'validated';
@@ -36,9 +35,14 @@ const HONOR_STATUS_REJECTED = 'rejected';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildMemberName(user: { name?: string | null; paternal_last_name?: string | null } | null): string {
+function buildMemberName(
+  user: { name?: string | null; paternal_last_name?: string | null } | null,
+): string {
   if (!user) return 'Miembro desconocido';
-  return [user.name, user.paternal_last_name].filter(Boolean).join(' ') || 'Miembro desconocido';
+  return (
+    [user.name, user.paternal_last_name].filter(Boolean).join(' ') ||
+    'Miembro desconocido'
+  );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -103,13 +107,20 @@ export class EvidenceReviewService {
     type?: EvidenceType,
     page = 1,
     limit = 20,
-  ): Promise<{ data: EvidenceItem[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: EvidenceItem[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const skip = (page - 1) * limit;
 
     const [folderItems, classItems, honorItems] = await Promise.all([
-      (!type || type === 'folder') ? this.getFolderPending() : Promise.resolve([]),
-      (!type || type === 'class') ? this.getClassPending() : Promise.resolve([]),
-      (!type || type === 'honor') ? this.getHonorPending() : Promise.resolve([]),
+      !type || type === 'folder'
+        ? this.getFolderPending()
+        : Promise.resolve([]),
+      !type || type === 'class' ? this.getClassPending() : Promise.resolve([]),
+      !type || type === 'honor' ? this.getHonorPending() : Promise.resolve([]),
     ]);
 
     const all: EvidenceItem[] = [
@@ -211,22 +222,38 @@ export class EvidenceReviewService {
         honors: {
           select: { honor_id: true, name: true },
         },
+        // Prefer normalized evidence_files; fall back to JSON images count below.
+        evidence_files: {
+          where: { active: true },
+          select: { evidence_file_id: true },
+        },
       },
       orderBy: { submitted_at: 'asc' },
     });
 
-    return records.map((r) => ({
-      id: r.user_honor_id,
-      type: 'honor' as EvidenceType,
-      status: r.validation_status,
-      member_name: buildMemberName(r.users),
-      member_id: r.user_id,
-      section_name: r.honors?.name ?? `Honor #${r.honor_id}`,
-      file_count: Array.isArray(r.images) ? (r.images as unknown[]).length : 0,
-      submitted_at: r.submitted_at,
-      validated_at: r.validated_at,
-      rejection_reason: r.rejection_reason,
-    }));
+    return records.map((r) => {
+      // Use evidence_files count when available (post-migration); fall back to
+      // the legacy JSON array count for records not yet migrated.
+      const fileCount =
+        r.evidence_files.length > 0
+          ? r.evidence_files.length
+          : Array.isArray(r.images)
+            ? (r.images as unknown[]).length
+            : 0;
+
+      return {
+        id: r.user_honor_id,
+        type: 'honor' as EvidenceType,
+        status: r.validation_status,
+        member_name: buildMemberName(r.users),
+        member_id: r.user_id,
+        section_name: r.honors?.name ?? `Honor #${r.honor_id}`,
+        file_count: fileCount,
+        submitted_at: r.submitted_at,
+        validated_at: r.validated_at,
+        rejection_reason: r.rejection_reason,
+      };
+    });
   }
 
   // ============================================================
@@ -276,7 +303,8 @@ export class EvidenceReviewService {
       status: record.status ?? FOLDER_STATUS_PENDING,
       member_name: buildMemberName(record.submitted_by),
       member_id: record.submitted_by?.user_id ?? record.submitted_by_id ?? '',
-      section_name: record.folders_sections?.name ?? `Sección #${record.section_id}`,
+      section_name:
+        record.folders_sections?.name ?? `Sección #${record.section_id}`,
       file_count: record.evidence_files.length,
       submitted_at: record.submitted_at,
       validated_at: record.validated_at,
@@ -288,7 +316,9 @@ export class EvidenceReviewService {
         file_type: f.file_type,
         uploaded_at: f.uploaded_at,
       })),
-      validated_by_name: record.validated_by ? buildMemberName(record.validated_by) : null,
+      validated_by_name: record.validated_by
+        ? buildMemberName(record.validated_by)
+        : null,
     };
   }
 
@@ -310,7 +340,9 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Progreso de sección de clase #${id} no encontrado`);
+      throw new NotFoundException(
+        `Progreso de sección de clase #${id} no encontrado`,
+      );
     }
 
     return {
@@ -331,7 +363,9 @@ export class EvidenceReviewService {
         file_type: f.file_type,
         uploaded_at: f.uploaded_at,
       })),
-      validated_by_name: record.validated_by_user ? buildMemberName(record.validated_by_user) : null,
+      validated_by_name: record.validated_by_user
+        ? buildMemberName(record.validated_by_user)
+        : null,
     };
   }
 
@@ -348,6 +382,11 @@ export class EvidenceReviewService {
         validator: {
           select: { name: true, paternal_last_name: true },
         },
+        // Load normalized evidence files (populated after migration).
+        evidence_files: {
+          where: { active: true },
+          orderBy: { uploaded_at: 'asc' },
+        },
       },
     });
 
@@ -355,18 +394,46 @@ export class EvidenceReviewService {
       throw new NotFoundException(`Honor de usuario #${id} no encontrado`);
     }
 
-    // Images for honors are stored as JSON array in users_honors.images
-    const images = Array.isArray(record.images) ? (record.images as unknown[]) : [];
-    const files: EvidenceFile[] = images.map((img, idx) => {
-      const url = typeof img === 'string' ? img : (img as { url?: string }).url ?? '';
-      return {
-        evidence_file_id: idx + 1,
-        file_url: url,
-        file_name: `imagen-${idx + 1}`,
-        file_type: 'image',
-        uploaded_at: record.created_at ?? new Date(),
-      };
-    });
+    let files: EvidenceFile[];
+
+    if (record.evidence_files.length > 0) {
+      // Post-migration path: use normalized evidence_files rows.
+      files = record.evidence_files.map((f) => ({
+        evidence_file_id: f.evidence_file_id,
+        file_url: f.file_url,
+        file_name: f.file_name,
+        file_type: f.file_type,
+        uploaded_at: f.uploaded_at,
+      }));
+    } else {
+      // Legacy fallback: read from the JSON images array for records that
+      // were not yet covered by the migration script.
+      const images = Array.isArray(record.images)
+        ? (record.images as unknown[])
+        : [];
+      files = images.map((img, idx) => {
+        const url =
+          typeof img === 'string' ? img : ((img as { url?: string }).url ?? '');
+        const rawName = url.split('/').pop()?.split('?')[0] ?? '';
+        const fileName = rawName.length > 0 ? rawName : `imagen-${idx + 1}`;
+        const fileType = /\.(jpe?g)$/i.test(fileName)
+          ? 'image/jpeg'
+          : /\.png$/i.test(fileName)
+            ? 'image/png'
+            : /\.gif$/i.test(fileName)
+              ? 'image/gif'
+              : /\.webp$/i.test(fileName)
+                ? 'image/webp'
+                : 'image/jpeg';
+        return {
+          evidence_file_id: idx + 1,
+          file_url: url,
+          file_name: fileName,
+          file_type: fileType,
+          uploaded_at: record.created_at ?? new Date(),
+        };
+      });
+    }
 
     return {
       id: record.user_honor_id,
@@ -380,7 +447,9 @@ export class EvidenceReviewService {
       validated_at: record.validated_at,
       rejection_reason: record.rejection_reason,
       files,
-      validated_by_name: record.validator ? buildMemberName(record.validator) : null,
+      validated_by_name: record.validator
+        ? buildMemberName(record.validator)
+        : null,
     };
   }
 
@@ -447,7 +516,11 @@ export class EvidenceReviewService {
       return result;
     });
 
-    return { id: updated.folder_section_record_id, type: 'folder' as EvidenceType, status: updated.status ?? FOLDER_STATUS_VALIDATED };
+    return {
+      id: updated.folder_section_record_id,
+      type: 'folder' as EvidenceType,
+      status: updated.status ?? FOLDER_STATUS_VALIDATED,
+    };
   }
 
   private async approveClass(id: number, actorId: string, comments?: string) {
@@ -456,7 +529,9 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Progreso de sección de clase #${id} no encontrado`);
+      throw new NotFoundException(
+        `Progreso de sección de clase #${id} no encontrado`,
+      );
     }
 
     if (record.status !== CLASS_STATUS_PENDING) {
@@ -491,7 +566,11 @@ export class EvidenceReviewService {
       return result;
     });
 
-    return { id: updated.section_progress_id, type: 'class' as EvidenceType, status: updated.status };
+    return {
+      id: updated.section_progress_id,
+      type: 'class' as EvidenceType,
+      status: updated.status,
+    };
   }
 
   private async approveHonor(id: number, actorId: string, comments?: string) {
@@ -536,7 +615,11 @@ export class EvidenceReviewService {
       return result;
     });
 
-    return { id: updated.user_honor_id, type: 'honor' as EvidenceType, status: updated.validation_status };
+    return {
+      id: updated.user_honor_id,
+      type: 'honor' as EvidenceType,
+      status: updated.validation_status,
+    };
   }
 
   // ============================================================
@@ -617,7 +700,9 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Progreso de sección de clase #${id} no encontrado`);
+      throw new NotFoundException(
+        `Progreso de sección de clase #${id} no encontrado`,
+      );
     }
 
     if (record.status === CLASS_STATUS_REJECTED) {
@@ -654,7 +739,11 @@ export class EvidenceReviewService {
       return result;
     });
 
-    return { id: updated.section_progress_id, type: 'class' as EvidenceType, status: updated.status };
+    return {
+      id: updated.section_progress_id,
+      type: 'class' as EvidenceType,
+      status: updated.status,
+    };
   }
 
   private async rejectHonor(id: number, actorId: string, reason: string) {
@@ -700,7 +789,11 @@ export class EvidenceReviewService {
       return result;
     });
 
-    return { id: updated.user_honor_id, type: 'honor' as EvidenceType, status: updated.validation_status };
+    return {
+      id: updated.user_honor_id,
+      type: 'honor' as EvidenceType,
+      status: updated.validation_status,
+    };
   }
 
   // ============================================================
@@ -719,7 +812,8 @@ export class EvidenceReviewService {
         await this.approve(dto.type, id, actorId, { comments: dto.comments });
         succeeded.push(id);
       } catch (error) {
-        const reason = error instanceof Error ? error.message : 'Error desconocido';
+        const reason =
+          error instanceof Error ? error.message : 'Error desconocido';
         failed.push({ id, reason });
       }
     }
@@ -743,7 +837,8 @@ export class EvidenceReviewService {
         await this.reject(dto.type, id, actorId, { reason: dto.reason });
         succeeded.push(id);
       } catch (error) {
-        const reason = error instanceof Error ? error.message : 'Error desconocido';
+        const reason =
+          error instanceof Error ? error.message : 'Error desconocido';
         failed.push({ id, reason });
       }
     }

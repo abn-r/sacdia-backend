@@ -96,7 +96,11 @@ export class EvidenceFolderService {
 
     const sections = folder.folders_modules.flatMap((module) =>
       module.folders_sections.map((section) =>
-        this.mapSection(section, recordsBySectionId.get(section.folder_section_id), folderMaxPoints),
+        this.mapSection(
+          section,
+          recordsBySectionId.get(section.folder_section_id),
+          folderMaxPoints,
+        ),
       ),
     );
 
@@ -140,7 +144,7 @@ export class EvidenceFolderService {
       throw new NotFoundException('Evidence section record not found');
     }
 
-    if ((sectionRecord.status ?? 'pendiente') !== 'pendiente') {
+    if ((sectionRecord.status ?? 'PENDING') !== 'PENDING') {
       throw new ConflictException('Section is not pending');
     }
 
@@ -155,7 +159,9 @@ export class EvidenceFolderService {
     }
 
     return this.db.folders_section_records.update({
-      where: { folder_section_record_id: sectionRecord.folder_section_record_id },
+      where: {
+        folder_section_record_id: sectionRecord.folder_section_record_id,
+      },
       data: {
         status: 'enviado',
         submitted_by_id: userId,
@@ -184,7 +190,7 @@ export class EvidenceFolderService {
       userId,
     });
 
-    if ((sectionRecord.status ?? 'pendiente') !== 'pendiente') {
+    if ((sectionRecord.status ?? 'PENDING') !== 'PENDING') {
       throw new ConflictException('Section is not pending');
     }
 
@@ -283,7 +289,7 @@ export class EvidenceFolderService {
       throw new NotFoundException('Evidence file not found');
     }
 
-    if ((fileRecord.section_record.status ?? 'pendiente') !== 'pendiente') {
+    if ((fileRecord.section_record.status ?? 'PENDING') !== 'PENDING') {
       throw new ConflictException('Section is not pending');
     }
 
@@ -448,7 +454,7 @@ export class EvidenceFolderService {
         club_section_id: clubSectionId,
         points: 0,
         earned_points: 0,
-        status: 'pendiente',
+        status: 'PENDING',
         active: true,
       },
       include: {
@@ -507,7 +513,7 @@ export class EvidenceFolderService {
       percentage,
       weight_percentage: percentage,
       max_files: 10,
-      status: record?.status ?? 'pendiente',
+      status: record?.status ?? 'PENDING',
       files,
       evidence_files: files,
       submitted_by_name: this.formatUserName(record?.submitted_by ?? null),
