@@ -141,7 +141,7 @@ export class HonorRequirementsService {
       },
       update: {
         completed: dto.completed,
-        notes: dto.notes ?? null,
+        ...(dto.notes !== undefined && { notes: dto.notes }),
         completed_at: dto.completed ? new Date() : null,
         modified_at: new Date(),
       },
@@ -209,7 +209,7 @@ export class HonorRequirementsService {
           },
           update: {
             completed: item.completed,
-            notes: item.notes ?? null,
+            ...(item.notes !== undefined && { notes: item.notes }),
             completed_at: item.completed ? new Date() : null,
             modified_at: new Date(),
           },

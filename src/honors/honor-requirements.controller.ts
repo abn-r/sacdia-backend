@@ -102,7 +102,11 @@ export class UserHonorRequirementsController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
   ) {
-    return this.honorRequirementsService.getUserProgress(userId, honorId);
+    const data = await this.honorRequirementsService.getUserProgress(
+      userId,
+      honorId,
+    );
+    return { status: 'success', data };
   }
 
   @Patch(':honorId/requirements/:requirementId/progress')
@@ -128,7 +132,12 @@ export class UserHonorRequirementsController {
     @Param('requirementId', ParseIntPipe) _requirementId: number,
     @Body() dto: UpdateRequirementProgressDto,
   ) {
-    return this.honorRequirementsService.updateProgress(userId, honorId, dto);
+    const data = await this.honorRequirementsService.updateProgress(
+      userId,
+      honorId,
+      dto,
+    );
+    return { status: 'success', data };
   }
 
   @Patch(':honorId/requirements/progress/batch')
@@ -156,10 +165,11 @@ export class UserHonorRequirementsController {
     @Param('honorId', ParseIntPipe) honorId: number,
     @Body() dto: BulkUpdateRequirementProgressDto,
   ) {
-    return this.honorRequirementsService.bulkUpdateProgress(
+    const data = await this.honorRequirementsService.bulkUpdateProgress(
       userId,
       honorId,
       dto,
     );
+    return { status: 'success', data };
   }
 }
