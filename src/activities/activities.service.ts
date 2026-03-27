@@ -221,15 +221,45 @@ export class ActivitiesService {
     dto: CreateActivityDto,
     createdBy: string,
   ) {
+    // W4: Reject duplicate section IDs early
+    const rawSectionIds = dto.club_section_ids!;
+    const uniqueSectionIds = [...new Set(rawSectionIds)];
+    if (uniqueSectionIds.length !== rawSectionIds.length) {
+      throw new BadRequestException(
+        'club_section_ids contiene secciones duplicadas',
+      );
+    }
+
+    // W1: Ensure the creator's own section is always present in the instances list
+    if (dto.club_section_id && !uniqueSectionIds.includes(dto.club_section_id)) {
+      uniqueSectionIds.push(dto.club_section_id);
+    }
+
     const sections = await this.resolveAndValidateMultipleSections(
       clubId,
-      dto.club_section_ids!,
+      uniqueSectionIds,
     );
 
-    // Use the first section as the primary section (club_section_id on the activity row)
-    // and derive club_type_id from it if not explicitly provided.
-    const primarySection = sections[0];
-    const clubTypeId = dto.club_type_id ?? primarySection.club_type_id;
+    // W1: Use dto.club_section_id as the primary/owner section.
+    // Fall back to the first validated section only if club_section_id was not provided.
+    const primarySectionRecord = dto.club_section_id
+      ? sections.find((s) => s.club_section_id === dto.club_section_id)
+      : sections[0];
+
+    if (!primarySectionRecord) {
+      throw new BadRequestException(
+        `La sección propietaria (club_section_id=${dto.club_section_id}) no está en la lista de secciones validadas`,
+      );
+    }
+
+    // W2: If club_type_id is explicitly provided, verify it matches the owner section
+    if (dto.club_type_id && dto.club_type_id !== primarySectionRecord.club_type_id) {
+      throw new BadRequestException(
+        `club_type_id=${dto.club_type_id} no coincide con el tipo de la sección propietaria (club_type_id=${primarySectionRecord.club_type_id})`,
+      );
+    }
+
+    const clubTypeId = dto.club_type_id ?? primarySectionRecord.club_type_id;
 
     const now = new Date();
 
@@ -255,7 +285,7 @@ export class ActivitiesService {
           ? (dto.classes as Prisma.InputJsonValue)
           : Prisma.JsonNull,
         created_by: createdBy,
-        club_section_id: primarySection.club_section_id,
+        club_section_id: primarySectionRecord.club_section_id,
         is_joint: true,
         active: true,
         created_at: now,
@@ -274,21 +304,26 @@ export class ActivitiesService {
 
     // Fire-and-forget: notify ALL participating sections
     for (const section of sections) {
-      this.sendActivityCreatedNotification(created, section.club_section_id);
+      this.sendActivityCreatedNotification(created, section.club_section_id, true);
     }
 
     return this.applySignedPrivateUrls(this.attachInstances(created));
   }
 
-  private sendActivityCreatedNotification(activity: any, sectionId: number): void {
+  private sendActivityCreatedNotification(
+    activity: any,
+    sectionId: number,
+    isJoint = false,
+  ): void {
     const dateLabel = activity.activity_date
       ? ` - ${activity.activity_date.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`
       : '';
+    const title = isJoint ? 'Nueva actividad conjunta' : 'Nueva actividad programada';
     this.notificationsService
       .sendToClubMembers(
         sectionId,
         {
-          title: 'Nueva actividad programada',
+          title,
           body: `${activity.name}${dateLabel}`,
           data: {
             type: 'activity',
@@ -614,7 +649,7 @@ export class ActivitiesService {
    * Validates that all provided section IDs belong to the same club and returns their records.
    * Used for joint activities where multiple sections participate.
    */
-  async resolveAndValidateMultipleSections(
+  private async resolveAndValidateMultipleSections(
     clubId: number,
     sectionIds: number[],
   ): Promise<Array<{ club_section_id: number; main_club_id: number; club_type_id: number }>> {
