@@ -44,37 +44,40 @@ export class ClubEnrollmentsService {
     // Get current ecclesiastical year
     const currentYear = await this.getActiveEcclesiasticalYear();
 
-    // Check for existing active enrollment for this section + year
-    const existing = await this.prisma.club_enrollments.findUnique({
-      where: {
-        club_section_id_ecclesiastical_year_id: {
+    // Wrap the existence check + create in a transaction to prevent duplicate
+    // enrollments under concurrent requests (check-then-create race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.club_enrollments.findUnique({
+        where: {
+          club_section_id_ecclesiastical_year_id: {
+            club_section_id: sectionId,
+            ecclesiastical_year_id: currentYear.year_id,
+          },
+        },
+      });
+
+      if (existing) {
+        throw new ConflictException(
+          `An enrollment already exists for section ${sectionId} in the current ecclesiastical year`,
+        );
+      }
+
+      return tx.club_enrollments.create({
+        data: {
           club_section_id: sectionId,
           ecclesiastical_year_id: currentYear.year_id,
+          status: 'active',
+          address: dto.address,
+          meeting_days: dto.meeting_days,
+          created_by: userId,
         },
-      },
-    });
-
-    if (existing) {
-      throw new ConflictException(
-        `An enrollment already exists for section ${sectionId} in the current ecclesiastical year`,
-      );
-    }
-
-    return this.prisma.club_enrollments.create({
-      data: {
-        club_section_id: sectionId,
-        ecclesiastical_year_id: currentYear.year_id,
-        status: 'active',
-        address: dto.address,
-        meeting_days: dto.meeting_days,
-        created_by: userId,
-      },
-      include: {
-        club_section: {
-          include: { club_types: { select: { name: true } } },
+        include: {
+          club_section: {
+            include: { club_types: { select: { name: true } } },
+          },
+          ecclesiastical_year: true,
         },
-        ecclesiastical_year: true,
-      },
+      });
     });
   }
 
@@ -197,9 +200,7 @@ export class ClubEnrollmentsService {
     });
 
     if (!currentYear) {
-      throw new BadRequestException(
-        'No active ecclesiastical year configured',
-      );
+      throw new BadRequestException('No active ecclesiastical year configured');
     }
 
     return currentYear;

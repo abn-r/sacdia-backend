@@ -38,7 +38,10 @@ import { BulkRejectEnrollmentsDto } from './dto/bulk-reject-enrollments.dto';
 // ────────────────────────────────────────────────────────────────────
 
 /** Valid approval chain transitions: from → to */
-const APPROVAL_TRANSITIONS: Record<string, { target: investiture_status_enum; action: investiture_action_enum }> = {
+const APPROVAL_TRANSITIONS: Record<
+  string,
+  { target: investiture_status_enum; action: investiture_action_enum }
+> = {
   SUBMITTED_FOR_VALIDATION: {
     target: investiture_status_enum.CLUB_APPROVED,
     action: investiture_action_enum.CLUB_APPROVED,
@@ -177,12 +180,18 @@ export class InvestitureService {
           ['director'],
           'Investidura enviada a validación',
           'Un consejero ha enviado un enrollment para aprobación',
-          { type: 'investiture', entity_id: String(enrollmentId), status: 'submitted' },
+          {
+            type: 'investiture',
+            entity_id: String(enrollmentId),
+            status: 'submitted',
+          },
           'investiture:submitted',
         );
       }
     } catch (error) {
-      this.logger.warn(`Notification failed for investiture submission ${enrollmentId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for investiture submission ${enrollmentId}: ${error.message}`,
+      );
     }
 
     // Step 7: Return result
@@ -296,7 +305,7 @@ export class InvestitureService {
     if (!REJECTABLE_STATUSES.includes(enrollment.investiture_status)) {
       throw new BadRequestException(
         `No se puede rechazar un enrollment en estado ${enrollment.investiture_status}. ` +
-        `Estados rechazables: ${REJECTABLE_STATUSES.join(', ')}`,
+          `Estados rechazables: ${REJECTABLE_STATUSES.join(', ')}`,
       );
     }
 
@@ -333,14 +342,15 @@ export class InvestitureService {
 
     // Notify the submitter (counselor) who originally submitted the enrollment
     try {
-      const submittedEntry = await this.prisma.investiture_validation_history.findFirst({
-        where: {
-          enrollment_id: enrollmentId,
-          action: investiture_action_enum.SUBMITTED,
-        },
-        orderBy: { created_at: 'desc' },
-        select: { performed_by: true },
-      });
+      const submittedEntry =
+        await this.prisma.investiture_validation_history.findFirst({
+          where: {
+            enrollment_id: enrollmentId,
+            action: investiture_action_enum.SUBMITTED,
+          },
+          orderBy: { created_at: 'desc' },
+          select: { performed_by: true },
+        });
 
       const submitterId = submittedEntry?.performed_by;
       if (submitterId) {
@@ -348,12 +358,18 @@ export class InvestitureService {
           submitterId,
           'Investidura rechazada',
           `El enrollment ha sido rechazado: ${dto.reason}`,
-          { type: 'investiture', entity_id: String(enrollmentId), status: 'rejected' },
+          {
+            type: 'investiture',
+            entity_id: String(enrollmentId),
+            status: 'rejected',
+          },
           'investiture:rejected',
         );
       }
     } catch (error) {
-      this.logger.warn(`Notification failed for investiture rejection ${enrollmentId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for investiture rejection ${enrollmentId}: ${error.message}`,
+      );
     }
 
     return {
@@ -454,11 +470,17 @@ export class InvestitureService {
         enrollment.user_id,
         'Felicidades, has sido investido',
         'Tu investidura ha sido completada oficialmente.',
-        { type: 'investiture', entity_id: String(enrollmentId), status: 'invested' },
+        {
+          type: 'investiture',
+          entity_id: String(enrollmentId),
+          status: 'invested',
+        },
         'investiture:invested',
       );
     } catch (error) {
-      this.logger.warn(`Notification failed for investiture completion ${enrollmentId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for investiture completion ${enrollmentId}: ${error.message}`,
+      );
     }
 
     // Step 6: Return result
@@ -702,7 +724,10 @@ export class InvestitureService {
     }
 
     // 2. Validate state
-    if (enrollment.investiture_status !== investiture_status_enum.SUBMITTED_FOR_VALIDATION) {
+    if (
+      enrollment.investiture_status !==
+      investiture_status_enum.SUBMITTED_FOR_VALIDATION
+    ) {
       throw new ConflictException(
         `El enrollment no está en estado SUBMITTED_FOR_VALIDATION. Estado actual: ${enrollment.investiture_status}`,
       );
@@ -843,10 +868,13 @@ export class InvestitureService {
     // guaranteed by the controller-level GlobalRolesGuard('admin', 'coordinator'),
     // so no additional check needed here.
 
-    const ACTION_SOURCE_MAP: Record<BulkApproveAction, investiture_status_enum> = {
+    const ACTION_SOURCE_MAP: Record<
+      BulkApproveAction,
+      investiture_status_enum
+    > = {
       'coordinator-approve': investiture_status_enum.CLUB_APPROVED,
       'field-approve': investiture_status_enum.COORDINATOR_APPROVED,
-      'invest': investiture_status_enum.FIELD_APPROVED,
+      invest: investiture_status_enum.FIELD_APPROVED,
     };
 
     const expectedSourceStatus = ACTION_SOURCE_MAP[dto.action];
@@ -868,9 +896,7 @@ export class InvestitureService {
     });
 
     // 2. Build a lookup map for fast access
-    const enrollmentMap = new Map(
-      enrollments.map((e) => [e.enrollment_id, e]),
-    );
+    const enrollmentMap = new Map(enrollments.map((e) => [e.enrollment_id, e]));
 
     const succeeded: number[] = [];
     const failed: { id: number; reason: string }[] = [];
@@ -925,7 +951,9 @@ export class InvestitureService {
           });
           configResults.set(
             enrollmentId,
-            config ? { status: 'ok', investiture_date: config.investiture_date } : { status: 'missing' },
+            config
+              ? { status: 'ok', investiture_date: config.investiture_date }
+              : { status: 'missing' },
           );
         }),
       );
@@ -941,7 +969,8 @@ export class InvestitureService {
       noConfig.forEach((id) =>
         failed.push({
           id,
-          reason: 'No existe configuración de investidura para este campo local y año',
+          reason:
+            'No existe configuración de investidura para este campo local y año',
         }),
       );
 
@@ -949,7 +978,10 @@ export class InvestitureService {
         await this.prisma.$transaction(async (tx) => {
           // W3 — Per-row updateMany with status re-check for atomicity
           for (const enrollmentId of investable) {
-            const cfg = configResults.get(enrollmentId) as { status: 'ok'; investiture_date: Date };
+            const cfg = configResults.get(enrollmentId) as {
+              status: 'ok';
+              investiture_date: Date;
+            };
             await tx.enrollments.updateMany({
               where: {
                 enrollment_id: enrollmentId,
@@ -1004,7 +1036,7 @@ export class InvestitureService {
         if (updateResult.count !== succeeded.length) {
           this.logger.warn(
             `Bulk ${dto.action}: expected to update ${succeeded.length} rows but updated ${updateResult.count}. ` +
-            `Possible concurrent modification.`,
+              `Possible concurrent modification.`,
           );
         }
 
@@ -1034,7 +1066,11 @@ export class InvestitureService {
             enrollment.user_id,
             'Felicidades, has sido investido',
             'Tu investidura ha sido completada oficialmente.',
-            { type: 'investiture', entity_id: String(enrollment.enrollment_id), status: 'invested' },
+            {
+              type: 'investiture',
+              entity_id: String(enrollment.enrollment_id),
+              status: 'invested',
+            },
             'investiture:invested',
           ),
         ),
@@ -1043,7 +1079,10 @@ export class InvestitureService {
       const notifData = (id: number) => ({
         type: 'investiture',
         entity_id: String(id),
-        status: dto.action === 'field-approve' ? 'field_approved' : 'coordinator_approved',
+        status:
+          dto.action === 'field-approve'
+            ? 'field_approved'
+            : 'coordinator_approved',
       });
 
       await Promise.allSettled(
@@ -1108,9 +1147,7 @@ export class InvestitureService {
     });
 
     // 2. Build lookup map
-    const enrollmentMap = new Map(
-      enrollments.map((e) => [e.enrollment_id, e]),
-    );
+    const enrollmentMap = new Map(enrollments.map((e) => [e.enrollment_id, e]));
 
     const succeeded: number[] = [];
     const failed: { id: number; reason: string }[] = [];
@@ -1164,7 +1201,7 @@ export class InvestitureService {
       if (updateResult.count !== succeeded.length) {
         this.logger.warn(
           `Bulk reject: expected to update ${succeeded.length} rows but updated ${updateResult.count}. ` +
-          `Possible concurrent modification.`,
+            `Possible concurrent modification.`,
         );
       }
 
@@ -1352,7 +1389,7 @@ export class InvestitureService {
     if (enrollment.investiture_status !== expectedSourceStatus) {
       throw new ConflictException(
         `El enrollment debe estar en estado ${expectedSourceStatus} para esta operación. ` +
-        `Estado actual: ${enrollment.investiture_status}`,
+          `Estado actual: ${enrollment.investiture_status}`,
       );
     }
 
@@ -1364,11 +1401,17 @@ export class InvestitureService {
       );
     }
 
-    // 4. Transaction: update status + create history
+    // 4. Transaction: update status + create history.
+    // Use updateMany with the expected source status in the WHERE clause so the
+    // write itself is the atomic guard — if another request already changed the
+    // status between our read (step 1) and this write, count will be 0.
     const now = new Date();
     const updatedEnrollment = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.enrollments.update({
-        where: { enrollment_id: enrollmentId },
+      const updateResult = await tx.enrollments.updateMany({
+        where: {
+          enrollment_id: enrollmentId,
+          investiture_status: expectedSourceStatus,
+        },
         data: {
           investiture_status: transition.target,
           validated_by: actorId,
@@ -1377,6 +1420,12 @@ export class InvestitureService {
           locked_for_validation: true,
         },
       });
+
+      if (updateResult.count === 0) {
+        throw new ConflictException(
+          'El estado del enrollment fue modificado por otra solicitud concurrente. Reintentá la operación.',
+        );
+      }
 
       await tx.investiture_validation_history.create({
         data: {
@@ -1387,7 +1436,10 @@ export class InvestitureService {
         },
       });
 
-      return updated;
+      // Row is guaranteed to exist: updateMany confirmed count > 0 above.
+      return (await tx.enrollments.findUnique({
+        where: { enrollment_id: enrollmentId },
+      }))!;
     });
 
     this.logger.log(
@@ -1396,7 +1448,11 @@ export class InvestitureService {
 
     // 5. Send notifications based on the new status
     try {
-      const notifData = { type: 'investiture', entity_id: String(enrollmentId), status: transition.target };
+      const notifData = {
+        type: 'investiture',
+        entity_id: String(enrollmentId),
+        status: transition.target,
+      };
 
       switch (transition.target) {
         case investiture_status_enum.CLUB_APPROVED:
@@ -1439,7 +1495,9 @@ export class InvestitureService {
           break;
       }
     } catch (error) {
-      this.logger.warn(`Notification failed for investiture transition ${enrollmentId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for investiture transition ${enrollmentId}: ${error.message}`,
+      );
     }
 
     return {

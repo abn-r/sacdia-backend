@@ -520,23 +520,27 @@ export class CamporeeLateApprovalsService {
    * NOTE: camporee_payment_id is a UUID string.
    */
   async approvePayment(camporeePaymentId: string, approvedBy: string) {
-    const record = await this.prisma.camporee_payments.findFirst({
-      where: {
-        camporee_payment_id: camporeePaymentId,
-        status: 'pending_approval',
-      },
-    });
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_payments.findFirst({
+        where: {
+          camporee_payment_id: camporeePaymentId,
+          status: 'pending_approval',
+        },
+      });
 
-    if (!record) {
-      throw new NotFoundException('Pago no encontrado');
-    }
+      if (!record) {
+        throw new NotFoundException('Pago no encontrado');
+      }
 
-    return this.prisma.camporee_payments.update({
-      where: { camporee_payment_id: camporeePaymentId },
-      data: {
-        status: 'approved',
-        approved_by: approvedBy,
-      },
+      return tx.camporee_payments.update({
+        where: { camporee_payment_id: camporeePaymentId },
+        data: {
+          status: 'approved',
+          approved_by: approvedBy,
+        },
+      });
     });
   }
 
@@ -549,24 +553,28 @@ export class CamporeeLateApprovalsService {
     rejectedBy: string,
     rejectionReason?: string,
   ) {
-    const record = await this.prisma.camporee_payments.findFirst({
-      where: {
-        camporee_payment_id: camporeePaymentId,
-        status: 'pending_approval',
-      },
-    });
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_payments.findFirst({
+        where: {
+          camporee_payment_id: camporeePaymentId,
+          status: 'pending_approval',
+        },
+      });
 
-    if (!record) {
-      throw new NotFoundException('Pago no encontrado');
-    }
+      if (!record) {
+        throw new NotFoundException('Pago no encontrado');
+      }
 
-    return this.prisma.camporee_payments.update({
-      where: { camporee_payment_id: camporeePaymentId },
-      data: {
-        status: 'rejected',
-        rejected_by: rejectedBy,
-        rejection_reason: rejectionReason ?? null,
-      },
+      return tx.camporee_payments.update({
+        where: { camporee_payment_id: camporeePaymentId },
+        data: {
+          status: 'rejected',
+          rejected_by: rejectedBy,
+          rejection_reason: rejectionReason ?? null,
+        },
+      });
     });
   }
 }
