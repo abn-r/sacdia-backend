@@ -42,6 +42,7 @@ export const CATALOG_CACHE_KEYS = {
       : 'cache:catalogs:club_ideals:all',
   ALLERGIES: 'cache:catalogs:allergies',
   DISEASES: 'cache:catalogs:diseases',
+  MEDICINES: 'cache:catalogs:medicines',
 } as const;
 
 /**
@@ -171,6 +172,7 @@ export class CatalogCacheService {
       CATALOG_CACHE_KEYS.CLUB_IDEALS(),
       CATALOG_CACHE_KEYS.ALLERGIES,
       CATALOG_CACHE_KEYS.DISEASES,
+      CATALOG_CACHE_KEYS.MEDICINES,
     ];
 
     await Promise.allSettled(staticKeys.map((k) => this.invalidate(k)));

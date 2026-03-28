@@ -289,4 +289,21 @@ export class CatalogsService {
       }),
     );
   }
+
+  // ========================================
+  // MEDICINES
+  // ========================================
+  async getMedicines() {
+    return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.MEDICINES, () =>
+      this.prisma.medicines.findMany({
+        where: { active: true },
+        select: {
+          medicine_id: true,
+          name: true,
+          description: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+    );
+  }
 }
