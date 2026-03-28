@@ -523,39 +523,27 @@ export class ActivitiesService {
       }),
     ]);
 
-    // 3. Upsert each new instance outside the batch transaction so that
-    //    Prisma can handle the unique-constraint conflict gracefully.
-    //    We do this sequentially to avoid concurrent unique-constraint races.
-    for (const sectionId of uniqueSectionIds) {
-      const existingInstance = await this.prisma.activity_instances.findUnique({
-        where: {
-          activity_id_club_section_id: {
-            activity_id: activityId,
-            club_section_id: sectionId,
-          },
-        },
-        select: { activity_instance_id: true },
-      });
-
-      if (existingInstance) {
-        await this.prisma.activity_instances.update({
+    // 3. Upsert each new instance in parallel — reactivate existing or create fresh.
+    await Promise.all(
+      uniqueSectionIds.map((sectionId) =>
+        this.prisma.activity_instances.upsert({
           where: {
-            activity_instance_id: existingInstance.activity_instance_id,
+            activity_id_club_section_id: {
+              activity_id: activityId,
+              club_section_id: sectionId,
+            },
           },
-          data: { active: true, modified_at: now },
-        });
-      } else {
-        await this.prisma.activity_instances.create({
-          data: {
+          update: { active: true, modified_at: now },
+          create: {
             activity_id: activityId,
             club_section_id: sectionId,
             active: true,
             created_at: now,
             modified_at: now,
           },
-        });
-      }
-    }
+        }),
+      ),
+    );
 
     const updated = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
@@ -680,7 +668,14 @@ export class ActivitiesService {
   }
 
   async getAttendance(activityId: number) {
-    const activity = await this.findOne(activityId);
+    const activity = await this.prisma.activities.findUnique({
+      where: { activity_id: activityId },
+      select: { activity_id: true, name: true, attendees: true },
+    });
+
+    if (!activity) {
+      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+    }
 
     const attendeeIds = (activity.attendees as string[]) || [];
 
@@ -746,21 +741,20 @@ export class ActivitiesService {
   }
 
   private async applySignedPrivateUrls(activity: any) {
-    const signedActivityImage =
+    const [signedActivityImage, signedUserImage] = await Promise.all([
       typeof activity?.image === 'string'
-        ? await this.resolvePrivateAssetUrl(
+        ? this.resolvePrivateAssetUrl(
             StorageBucketAlias.ACTIVITIES_IMAGES,
             activity.image,
           )
-        : activity?.image;
-
-    const signedUserImage =
+        : Promise.resolve(activity?.image),
       typeof activity?.users?.user_image === 'string'
-        ? await this.resolvePrivateAssetUrl(
+        ? this.resolvePrivateAssetUrl(
             StorageBucketAlias.USER_PROFILES,
             activity.users.user_image,
           )
-        : activity?.users?.user_image;
+        : Promise.resolve(activity?.users?.user_image),
+    ]);
 
     return {
       ...activity,
