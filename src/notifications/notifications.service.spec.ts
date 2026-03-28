@@ -22,7 +22,7 @@ const SENT_BY = '00000000-0000-0000-0000-000000000001';
 describe('NotificationsService', () => {
   let service: NotificationsService;
   let mockSendEachForMulticast: jest.Mock;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let firebaseAdminMock: any;
 
   const mockPrismaService = {
@@ -42,7 +42,9 @@ describe('NotificationsService', () => {
 
   beforeEach(async () => {
     // Retrieve the mocked module so we can control sendEachForMulticast per test
-    firebaseAdminMock = jest.requireMock('../config/firebase-admin.module').firebaseAdmin;
+    firebaseAdminMock = jest.requireMock(
+      '../config/firebase-admin.module',
+    ).firebaseAdmin;
     mockSendEachForMulticast = jest.fn();
     (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
       sendEachForMulticast: mockSendEachForMulticast,
@@ -132,14 +134,18 @@ describe('NotificationsService', () => {
         failureCount: 1,
         responses: [{ success: true }, { success: false }],
       });
-      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+        count: 1,
+      });
 
       const result = await service.sendToUser(dto, SENT_BY);
 
-      expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith({
-        where: { token: { in: ['token-bad'] } },
-        data: { active: false },
-      });
+      expect(mockPrismaService.user_fcm_tokens.updateMany).toHaveBeenCalledWith(
+        {
+          where: { token: { in: ['token-bad'] } },
+          data: { active: false },
+        },
+      );
       expect(result).toEqual({
         success: true,
         successCount: 1,
@@ -159,7 +165,9 @@ describe('NotificationsService', () => {
 
       await service.sendToUser(dto, SENT_BY);
 
-      expect(mockPrismaService.user_fcm_tokens.updateMany).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.user_fcm_tokens.updateMany,
+      ).not.toHaveBeenCalled();
     });
 
     it('should return not-configured message when FCM apps array is empty', async () => {
@@ -210,18 +218,31 @@ describe('NotificationsService', () => {
       });
       expect(mockPrismaService.notification_logs.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ type: 'BROADCAST', sent_by: SENT_BY }),
+          data: expect.objectContaining({
+            type: 'BROADCAST',
+            sent_by: SENT_BY,
+          }),
         }),
       );
     });
 
     it('should send in multiple batches when tokens exceed 500', async () => {
       // 510 tokens → 2 batches (500 + 10)
-      const tokens = Array.from({ length: 510 }, (_, i) => ({ token: `tok-${i}` }));
+      const tokens = Array.from({ length: 510 }, (_, i) => ({
+        token: `tok-${i}`,
+      }));
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue(tokens);
       mockSendEachForMulticast
-        .mockResolvedValueOnce({ successCount: 500, failureCount: 0, responses: [] })
-        .mockResolvedValueOnce({ successCount: 10, failureCount: 0, responses: [] });
+        .mockResolvedValueOnce({
+          successCount: 500,
+          failureCount: 0,
+          responses: [],
+        })
+        .mockResolvedValueOnce({
+          successCount: 10,
+          failureCount: 0,
+          responses: [],
+        });
 
       const result = await service.broadcast(dto, SENT_BY);
 
@@ -255,7 +276,11 @@ describe('NotificationsService', () => {
     it('should return failure when club section has no active members', async () => {
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
 
-      const result = await service.sendToClubMembers(clubSectionId, dto, SENT_BY);
+      const result = await service.sendToClubMembers(
+        clubSectionId,
+        dto,
+        SENT_BY,
+      );
 
       expect(result).toEqual({ success: false, message: 'No members found' });
       expect(mockPrismaService.user_fcm_tokens.findMany).not.toHaveBeenCalled();
@@ -268,7 +293,11 @@ describe('NotificationsService', () => {
       ]);
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
 
-      const result = await service.sendToClubMembers(clubSectionId, dto, SENT_BY);
+      const result = await service.sendToClubMembers(
+        clubSectionId,
+        dto,
+        SENT_BY,
+      );
 
       expect(result).toEqual({
         success: false,
@@ -293,9 +322,15 @@ describe('NotificationsService', () => {
         responses: [],
       });
 
-      const result = await service.sendToClubMembers(clubSectionId, dto, SENT_BY);
+      const result = await service.sendToClubMembers(
+        clubSectionId,
+        dto,
+        SENT_BY,
+      );
 
-      expect(mockPrismaService.club_role_assignments.findMany).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith({
         where: { club_section_id: clubSectionId, active: true },
         select: { user_id: true },
       });
@@ -317,16 +352,34 @@ describe('NotificationsService', () => {
     });
 
     it('should send in batches when club has more than 500 tokens', async () => {
-      const members = Array.from({ length: 5 }, (_, i) => ({ user_id: `user-${i}` }));
-      const tokens = Array.from({ length: 510 }, (_, i) => ({ token: `tok-${i}` }));
+      const members = Array.from({ length: 5 }, (_, i) => ({
+        user_id: `user-${i}`,
+      }));
+      const tokens = Array.from({ length: 510 }, (_, i) => ({
+        token: `tok-${i}`,
+      }));
 
-      mockPrismaService.club_role_assignments.findMany.mockResolvedValue(members);
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue(
+        members,
+      );
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue(tokens);
       mockSendEachForMulticast
-        .mockResolvedValueOnce({ successCount: 500, failureCount: 0, responses: [] })
-        .mockResolvedValueOnce({ successCount: 10, failureCount: 0, responses: [] });
+        .mockResolvedValueOnce({
+          successCount: 500,
+          failureCount: 0,
+          responses: [],
+        })
+        .mockResolvedValueOnce({
+          successCount: 10,
+          failureCount: 0,
+          responses: [],
+        });
 
-      const result = await service.sendToClubMembers(clubSectionId, dto, SENT_BY);
+      const result = await service.sendToClubMembers(
+        clubSectionId,
+        dto,
+        SENT_BY,
+      );
 
       expect(mockSendEachForMulticast).toHaveBeenCalledTimes(2);
       expect(result).toMatchObject({
@@ -340,7 +393,11 @@ describe('NotificationsService', () => {
     it('should return not-configured message when FCM apps array is empty', async () => {
       firebaseAdminMock.apps = [];
 
-      const result = await service.sendToClubMembers(clubSectionId, dto, SENT_BY);
+      const result = await service.sendToClubMembers(
+        clubSectionId,
+        dto,
+        SENT_BY,
+      );
 
       expect(result).toEqual({
         success: false,
@@ -366,7 +423,12 @@ describe('NotificationsService', () => {
           tokens_sent: 10,
           tokens_failed: 0,
           created_at: new Date(),
-          users: { user_id: SENT_BY, name: 'Admin', paternal_last_name: null, email: 'a@b.com' },
+          users: {
+            user_id: SENT_BY,
+            name: 'Admin',
+            paternal_last_name: null,
+            email: 'a@b.com',
+          },
         },
       ];
       mockPrismaService.notification_logs.findMany.mockResolvedValue(mockLogs);

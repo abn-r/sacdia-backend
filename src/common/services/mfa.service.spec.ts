@@ -38,21 +38,25 @@ describe('MfaService', () => {
   describe('enrollMfa', () => {
     it('should return totpURI and backupCodes on success', async () => {
       mockEnrollTotp.mockResolvedValue({
-        totpURI: 'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
+        totpURI:
+          'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
         backupCodes: ['AB3XYZ12', 'CD4MNO56'],
       });
 
       const result = await service.enrollMfa(USER_ID, 'userPassword1');
 
       expect(result).toEqual({
-        totpURI: 'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
+        totpURI:
+          'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
         backupCodes: ['AB3XYZ12', 'CD4MNO56'],
       });
       expect(mockEnrollTotp).toHaveBeenCalledWith(USER_ID, 'userPassword1');
     });
 
     it('should propagate UnauthorizedException from BetterAuthService (wrong password)', async () => {
-      mockEnrollTotp.mockRejectedValue(new UnauthorizedException('Invalid password'));
+      mockEnrollTotp.mockRejectedValue(
+        new UnauthorizedException('Invalid password'),
+      );
 
       await expect(service.enrollMfa(USER_ID, 'wrongPass')).rejects.toThrow(
         UnauthorizedException,
@@ -102,12 +106,16 @@ describe('MfaService', () => {
     it('should resolve without error on success', async () => {
       mockDisableTotp.mockResolvedValue(undefined);
 
-      await expect(service.disableMfa(USER_ID, 'myPassword')).resolves.toBeUndefined();
+      await expect(
+        service.disableMfa(USER_ID, 'myPassword'),
+      ).resolves.toBeUndefined();
       expect(mockDisableTotp).toHaveBeenCalledWith(USER_ID, 'myPassword');
     });
 
     it('should propagate UnauthorizedException for wrong password', async () => {
-      mockDisableTotp.mockRejectedValue(new UnauthorizedException('Invalid password'));
+      mockDisableTotp.mockRejectedValue(
+        new UnauthorizedException('Invalid password'),
+      );
 
       await expect(service.disableMfa(USER_ID, 'wrongPass')).rejects.toThrow(
         UnauthorizedException,

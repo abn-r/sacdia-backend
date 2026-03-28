@@ -164,13 +164,13 @@ describe('AdminReferenceService', () => {
       );
 
       expect(result).toEqual(created);
-      expect(mockPrismaService.honors_categories.findFirst).toHaveBeenCalledWith(
-        {
-          where: {
-            name: { equals: 'Naturaleza', mode: 'insensitive' },
-          },
+      expect(
+        mockPrismaService.honors_categories.findFirst,
+      ).toHaveBeenCalledWith({
+        where: {
+          name: { equals: 'Naturaleza', mode: 'insensitive' },
         },
-      );
+      });
       expect(mockPrismaService.honors_categories.create).toHaveBeenCalledWith({
         data: {
           name: 'Naturaleza',
@@ -226,11 +226,11 @@ describe('AdminReferenceService', () => {
       );
 
       expect(result).toEqual(updated);
-      expect(mockPrismaService.honors_categories.findUnique).toHaveBeenCalledWith(
-        {
-          where: { honor_category_id: 5 },
-        },
-      );
+      expect(
+        mockPrismaService.honors_categories.findUnique,
+      ).toHaveBeenCalledWith({
+        where: { honor_category_id: 5 },
+      });
       expect(mockPrismaService.honors_categories.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { honor_category_id: 5 },
@@ -268,7 +268,9 @@ describe('AdminReferenceService', () => {
         _count: { honors: 0 },
       };
 
-      mockPrismaService.honors_categories.findUnique.mockResolvedValue(existing);
+      mockPrismaService.honors_categories.findUnique.mockResolvedValue(
+        existing,
+      );
       mockPrismaService.honors.count.mockResolvedValue(0);
       mockPrismaService.honors_categories.update.mockResolvedValue(deleted);
 

@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { CatalogCacheService, CATALOG_CACHE_KEYS } from './catalog-cache.service';
+import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+} from './catalog-cache.service';
 import type { Cache } from 'cache-manager';
 
 describe('CatalogCacheService', () => {
@@ -80,11 +83,7 @@ describe('CatalogCacheService', () => {
 
       await service.getOrSet('some-key', loader, 1_800_000);
 
-      expect(cacheManager.set).toHaveBeenCalledWith(
-        'some-key',
-        [],
-        1_800_000,
-      );
+      expect(cacheManager.set).toHaveBeenCalledWith('some-key', [], 1_800_000);
     });
   });
 

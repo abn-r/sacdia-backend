@@ -23,7 +23,10 @@ describe('FinancePeriodService', () => {
       providers: [
         FinancePeriodService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: AuthorizationContextService, useValue: mockAuthorizationContextService },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContextService,
+        },
       ],
     }).compile();
 
@@ -33,7 +36,9 @@ describe('FinancePeriodService', () => {
 
   describe('closeMonthForClub', () => {
     it('should aggregate movements and create a closing record', async () => {
-      const clubId = 1, year = 2026, month = 2;
+      const clubId = 1,
+        year = 2026,
+        month = 2;
 
       mockPrismaService.club_sections.findMany.mockResolvedValue([
         { club_section_id: 10, club_types: { name: 'Conquistadores' } },
@@ -41,23 +46,71 @@ describe('FinancePeriodService', () => {
       ]);
 
       mockPrismaService.finances.findMany.mockResolvedValue([
-        { finance_id: 1, amount: 5000, club_section_id: 10, finance_category_id: 1, finances_categories: { finance_category_id: 1, name: 'Cuotas', type: 0 } },
-        { finance_id: 2, amount: 2000, club_section_id: 10, finance_category_id: 3, finances_categories: { finance_category_id: 3, name: 'Materiales', type: 1 } },
-        { finance_id: 3, amount: 3000, club_section_id: 11, finance_category_id: 1, finances_categories: { finance_category_id: 1, name: 'Cuotas', type: 0 } },
+        {
+          finance_id: 1,
+          amount: 5000,
+          club_section_id: 10,
+          finance_category_id: 1,
+          finances_categories: {
+            finance_category_id: 1,
+            name: 'Cuotas',
+            type: 0,
+          },
+        },
+        {
+          finance_id: 2,
+          amount: 2000,
+          club_section_id: 10,
+          finance_category_id: 3,
+          finances_categories: {
+            finance_category_id: 3,
+            name: 'Materiales',
+            type: 1,
+          },
+        },
+        {
+          finance_id: 3,
+          amount: 3000,
+          club_section_id: 11,
+          finance_category_id: 1,
+          finances_categories: {
+            finance_category_id: 1,
+            name: 'Cuotas',
+            type: 0,
+          },
+        },
       ]);
 
       mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(null);
-      const mockClosing = { finance_period_closing_id: 1, club_id: clubId, year, month };
-      mockPrismaService.financePeriodClosing.create.mockResolvedValue(mockClosing);
+      const mockClosing = {
+        finance_period_closing_id: 1,
+        club_id: clubId,
+        year,
+        month,
+      };
+      mockPrismaService.financePeriodClosing.create.mockResolvedValue(
+        mockClosing,
+      );
 
       const result = await service.closeMonthForClub(clubId, year, month);
 
-      expect(mockPrismaService.financePeriodClosing.create).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.financePeriodClosing.create,
+      ).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          club_id: clubId, year, month,
-          total_income: 8000, total_expense: 2000, balance: 6000, movement_count: 3,
-          breakdown: expect.objectContaining({ by_category: expect.any(Array), by_section: expect.any(Array) }),
-          closed_at: expect.any(Date), closed_by: null,
+          club_id: clubId,
+          year,
+          month,
+          total_income: 8000,
+          total_expense: 2000,
+          balance: 6000,
+          movement_count: 3,
+          breakdown: expect.objectContaining({
+            by_category: expect.any(Array),
+            by_section: expect.any(Array),
+          }),
+          closed_at: expect.any(Date),
+          closed_by: null,
         }),
       });
       expect(result).toEqual(mockClosing);
@@ -70,12 +123,21 @@ describe('FinancePeriodService', () => {
       mockPrismaService.finances.findMany.mockResolvedValue([]);
       mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(null);
       const mockClosing = { finance_period_closing_id: 2, club_id: 1 };
-      mockPrismaService.financePeriodClosing.create.mockResolvedValue(mockClosing);
+      mockPrismaService.financePeriodClosing.create.mockResolvedValue(
+        mockClosing,
+      );
 
       await service.closeMonthForClub(1, 2026, 3);
 
-      expect(mockPrismaService.financePeriodClosing.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ total_income: 0, total_expense: 0, balance: 0, movement_count: 0 }),
+      expect(
+        mockPrismaService.financePeriodClosing.create,
+      ).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          total_income: 0,
+          total_expense: 0,
+          balance: 0,
+          movement_count: 0,
+        }),
       });
     });
 
@@ -84,12 +146,17 @@ describe('FinancePeriodService', () => {
         { club_section_id: 10, club_types: { name: 'Conquistadores' } },
       ]);
       mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
-        finance_period_closing_id: 99, club_id: 1, year: 2026, month: 2,
+        finance_period_closing_id: 99,
+        club_id: 1,
+        year: 2026,
+        month: 2,
       });
 
       const result = await service.closeMonthForClub(1, 2026, 2);
       expect(result).toBeNull();
-      expect(mockPrismaService.financePeriodClosing.create).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.financePeriodClosing.create,
+      ).not.toHaveBeenCalled();
     });
 
     it('should build correct breakdown by category and section', async () => {
@@ -99,32 +166,86 @@ describe('FinancePeriodService', () => {
       ]);
 
       mockPrismaService.finances.findMany.mockResolvedValue([
-        { finance_id: 1, amount: 5000, club_section_id: 10, finance_category_id: 1, finances_categories: { finance_category_id: 1, name: 'Cuotas', type: 0 } },
-        { finance_id: 2, amount: 2000, club_section_id: 11, finance_category_id: 1, finances_categories: { finance_category_id: 1, name: 'Cuotas', type: 0 } },
-        { finance_id: 3, amount: 1500, club_section_id: 10, finance_category_id: 3, finances_categories: { finance_category_id: 3, name: 'Materiales', type: 1 } },
+        {
+          finance_id: 1,
+          amount: 5000,
+          club_section_id: 10,
+          finance_category_id: 1,
+          finances_categories: {
+            finance_category_id: 1,
+            name: 'Cuotas',
+            type: 0,
+          },
+        },
+        {
+          finance_id: 2,
+          amount: 2000,
+          club_section_id: 11,
+          finance_category_id: 1,
+          finances_categories: {
+            finance_category_id: 1,
+            name: 'Cuotas',
+            type: 0,
+          },
+        },
+        {
+          finance_id: 3,
+          amount: 1500,
+          club_section_id: 10,
+          finance_category_id: 3,
+          finances_categories: {
+            finance_category_id: 3,
+            name: 'Materiales',
+            type: 1,
+          },
+        },
       ]);
 
       mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue(null);
       mockPrismaService.financePeriodClosing.create.mockImplementation(
-        ({ data }) => Promise.resolve({ finance_period_closing_id: 1, ...data }),
+        ({ data }) =>
+          Promise.resolve({ finance_period_closing_id: 1, ...data }),
       );
 
       await service.closeMonthForClub(1, 2026, 2);
 
-      const createCall = mockPrismaService.financePeriodClosing.create.mock.calls[0][0];
+      const createCall =
+        mockPrismaService.financePeriodClosing.create.mock.calls[0][0];
       const breakdown = createCall.data.breakdown;
 
       expect(breakdown.by_category).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ finance_category_id: 1, name: 'Cuotas', type: 0, total: 7000 }),
-          expect.objectContaining({ finance_category_id: 3, name: 'Materiales', type: 1, total: 1500 }),
+          expect.objectContaining({
+            finance_category_id: 1,
+            name: 'Cuotas',
+            type: 0,
+            total: 7000,
+          }),
+          expect.objectContaining({
+            finance_category_id: 3,
+            name: 'Materiales',
+            type: 1,
+            total: 1500,
+          }),
         ]),
       );
 
       expect(breakdown.by_section).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ club_section_id: 10, club_type_name: 'Conquistadores', income: 5000, expense: 1500, balance: 3500 }),
-          expect.objectContaining({ club_section_id: 11, club_type_name: 'Aventureros', income: 2000, expense: 0, balance: 2000 }),
+          expect.objectContaining({
+            club_section_id: 10,
+            club_type_name: 'Conquistadores',
+            income: 5000,
+            expense: 1500,
+            balance: 3500,
+          }),
+          expect.objectContaining({
+            club_section_id: 11,
+            club_type_name: 'Aventureros',
+            income: 2000,
+            expense: 0,
+            balance: 2000,
+          }),
         ]),
       );
     });
@@ -138,12 +259,17 @@ describe('FinancePeriodService', () => {
         service.validatePeriodOpen(1, 2026, 2, 'user-123'),
       ).resolves.not.toThrow();
 
-      expect(mockAuthorizationContextService.hasAnyGlobalRole).not.toHaveBeenCalled();
+      expect(
+        mockAuthorizationContextService.hasAnyGlobalRole,
+      ).not.toHaveBeenCalled();
     });
 
     it('should throw ForbiddenException when period is closed and user is not admin', async () => {
       mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
-        finance_period_closing_id: 1, club_id: 1, year: 2026, month: 2,
+        finance_period_closing_id: 1,
+        club_id: 1,
+        year: 2026,
+        month: 2,
       });
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
 
@@ -158,7 +284,10 @@ describe('FinancePeriodService', () => {
 
     it('should allow when period is closed and user is admin', async () => {
       mockPrismaService.financePeriodClosing.findUnique.mockResolvedValue({
-        finance_period_closing_id: 1, club_id: 1, year: 2026, month: 2,
+        finance_period_closing_id: 1,
+        club_id: 1,
+        year: 2026,
+        month: 2,
       });
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
 
@@ -166,10 +295,9 @@ describe('FinancePeriodService', () => {
         service.validatePeriodOpen(1, 2026, 2, 'admin-user-456'),
       ).resolves.not.toThrow();
 
-      expect(mockAuthorizationContextService.hasAnyGlobalRole).toHaveBeenCalledWith(
-        'admin-user-456',
-        ['admin', 'super_admin'],
-      );
+      expect(
+        mockAuthorizationContextService.hasAnyGlobalRole,
+      ).toHaveBeenCalledWith('admin-user-456', ['admin', 'super_admin']);
     });
   });
 
@@ -192,7 +320,8 @@ describe('FinancePeriodService', () => {
         ])
         .mockResolvedValueOnce([]);
 
-      jest.spyOn(service, 'closeMonthForClub')
+      jest
+        .spyOn(service, 'closeMonthForClub')
         .mockResolvedValueOnce({ finance_period_closing_id: 1 } as any)
         .mockResolvedValueOnce({ finance_period_closing_id: 2 } as any);
 
@@ -211,7 +340,8 @@ describe('FinancePeriodService', () => {
         ])
         .mockResolvedValueOnce([]);
 
-      jest.spyOn(service, 'closeMonthForClub')
+      jest
+        .spyOn(service, 'closeMonthForClub')
         .mockResolvedValueOnce({ finance_period_closing_id: 1 } as any)
         .mockRejectedValueOnce(new Error('DB connection lost'))
         .mockResolvedValueOnce({ finance_period_closing_id: 3 } as any);

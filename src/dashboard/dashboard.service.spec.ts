@@ -148,7 +148,9 @@ describe('DashboardService', () => {
       expect(result.club_name).toBe('Club Norte');
       expect(result.user_name).toBe('María López');
       // class_section_progress.count and class_sections.count should NOT be called
-      expect(mockPrismaService.class_section_progress.count).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.class_section_progress.count,
+      ).not.toHaveBeenCalled();
       expect(mockPrismaService.class_sections.count).not.toHaveBeenCalled();
     });
   });
@@ -263,7 +265,9 @@ describe('DashboardService', () => {
       expect(result.class_progress).toBe(0);
 
       // Verify the count was called with the score >= 70 filter
-      expect(mockPrismaService.class_section_progress.count).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.class_section_progress.count,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             score: { gte: 70 },

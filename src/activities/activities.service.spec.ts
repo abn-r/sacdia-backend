@@ -81,9 +81,7 @@ describe('ActivitiesService', () => {
     it('should return empty page when no sections match the clubTypeId filter', async () => {
       const mockClub = {
         club_id: 1,
-        club_sections: [
-          { club_section_id: 1, club_type_id: 1 },
-        ],
+        club_sections: [{ club_section_id: 1, club_type_id: 1 }],
       };
 
       mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
@@ -193,9 +191,7 @@ describe('ActivitiesService', () => {
           data: expect.objectContaining({
             club_section_id: 10,
             activity_instances: {
-              create: [
-                expect.objectContaining({ club_section_id: 10 }),
-              ],
+              create: [expect.objectContaining({ club_section_id: 10 })],
             },
           }),
         }),
@@ -249,8 +245,16 @@ describe('ActivitiesService', () => {
 
   describe('update', () => {
     it('should update allowed fields and return the activity', async () => {
-      const existing = { activity_id: 1, name: 'Campamento', activity_instances: [] };
-      const updated = { activity_id: 1, name: 'Retiro', activity_instances: [] };
+      const existing = {
+        activity_id: 1,
+        name: 'Campamento',
+        activity_instances: [],
+      };
+      const updated = {
+        activity_id: 1,
+        name: 'Retiro',
+        activity_instances: [],
+      };
 
       mockPrismaService.activities.findUnique.mockResolvedValueOnce(existing);
       mockPrismaService.activities.update.mockResolvedValue(updated);
@@ -276,7 +280,11 @@ describe('ActivitiesService', () => {
     });
 
     it('should not call update when dto has no fields', async () => {
-      const existing = { activity_id: 1, name: 'Campamento', activity_instances: [] };
+      const existing = {
+        activity_id: 1,
+        name: 'Campamento',
+        activity_instances: [],
+      };
       mockPrismaService.activities.findUnique.mockResolvedValue(existing);
       mockPrismaService.activities.update.mockResolvedValue(existing);
 
@@ -292,7 +300,11 @@ describe('ActivitiesService', () => {
 
   describe('remove', () => {
     it('should soft-delete the activity by setting active=false', async () => {
-      const existing = { activity_id: 1, name: 'Campamento', activity_instances: [] };
+      const existing = {
+        activity_id: 1,
+        name: 'Campamento',
+        activity_instances: [],
+      };
 
       mockPrismaService.activities.findUnique.mockResolvedValue(existing);
       mockPrismaService.activities.update.mockResolvedValue({
@@ -397,7 +409,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when activity does not exist', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.getAttendance(999)).rejects.toThrow(NotFoundException);
+      await expect(service.getAttendance(999)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should resolve signed URLs for attendee user_image when it is a string', async () => {

@@ -135,16 +135,29 @@ describe('AuthService', () => {
     };
 
     const mockBaResult = {
-      user: { id: 'user-123', email: registerDto.email, name: registerDto.name },
-      session: { token: 'ba-session-token', expiresAt: new Date(Date.now() + 7 * 86400 * 1000) },
+      user: {
+        id: 'user-123',
+        email: registerDto.email,
+        name: registerDto.name,
+      },
+      session: {
+        token: 'ba-session-token',
+        expiresAt: new Date(Date.now() + 7 * 86400 * 1000),
+      },
       accessToken: 'sacdia-jwt-token',
     };
 
     it('should register a user successfully', async () => {
       mockBetterAuthService.createUser.mockResolvedValue(mockBaResult);
       mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
-      mockTx.roles.findFirst.mockResolvedValue({ role_id: 1, role_name: 'user' });
-      mockTx.users_roles.create.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+      mockTx.roles.findFirst.mockResolvedValue({
+        role_id: 1,
+        role_name: 'user',
+      });
+      mockTx.users_roles.create.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
       mockPrismaService.verification.create.mockResolvedValue({});
 
       const result = await service.register(registerDto);
@@ -215,7 +228,10 @@ describe('AuthService', () => {
     const sessionExpiresAt = new Date(1900000000 * 1000);
     const mockBaResult = {
       user: { id: 'user-123', email: loginDto.email },
-      session: { token: 'ba-opaque-session-token', expiresAt: sessionExpiresAt },
+      session: {
+        token: 'ba-opaque-session-token',
+        expiresAt: sessionExpiresAt,
+      },
       accessToken: 'sacdia-hs256-jwt',
     };
 
@@ -306,7 +322,12 @@ describe('AuthService', () => {
         paternal_last_name: 'Garcia',
         maternal_last_name: 'Lopez',
         user_image: null,
-        users_pr: { complete: true, profile_picture_complete: true, personal_info_complete: true, club_selection_complete: true },
+        users_pr: {
+          complete: true,
+          profile_picture_complete: true,
+          personal_info_complete: true,
+          club_selection_complete: true,
+        },
         users_roles: [],
       });
 
@@ -328,7 +349,9 @@ describe('AuthService', () => {
         userAgent: 'test-agent',
       });
 
-      expect(mockBetterAuthService.signOut).toHaveBeenCalledWith('ba-session-token');
+      expect(mockBetterAuthService.signOut).toHaveBeenCalledWith(
+        'ba-session-token',
+      );
       expect(result).toEqual({
         success: true,
         message: 'Sesión cerrada (best effort)',
@@ -393,7 +416,9 @@ describe('AuthService', () => {
         refreshToken: 'ba-session-token',
       });
 
-      expect(mockBetterAuthService.signOut).toHaveBeenCalledWith('ba-session-token');
+      expect(mockBetterAuthService.signOut).toHaveBeenCalledWith(
+        'ba-session-token',
+      );
       expect(result.path).toBe('session');
     });
   });
@@ -1066,9 +1091,9 @@ describe('AuthService', () => {
     it('should throw BadRequestException when user is not found', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.sendVerificationEmail('missing-user')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.sendVerificationEmail('missing-user'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should return alreadyVerified=true when email is already verified', async () => {
@@ -1177,7 +1202,9 @@ describe('AuthService', () => {
       mockPrismaService.users.update.mockResolvedValue({});
       mockPrismaService.verification.delete.mockResolvedValue({});
 
-      const result = await service.confirmEmailVerification({ token: validToken });
+      const result = await service.confirmEmailVerification({
+        token: validToken,
+      });
 
       expect(result).toEqual({
         success: true,

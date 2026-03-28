@@ -6,7 +6,8 @@ import { TokenBlacklistService } from '../../common/services/token-blacklist.ser
 describe('JwtStrategy', () => {
   const mockConfigService = {
     getOrThrow: jest.fn((key: string) => {
-      if (key === 'BETTER_AUTH_SECRET') return 'test-secret-min-32-chars-for-hs256';
+      if (key === 'BETTER_AUTH_SECRET')
+        return 'test-secret-min-32-chars-for-hs256';
       throw new Error(`Missing env var: ${key}`);
     }),
   } as unknown as ConfigService;

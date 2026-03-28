@@ -92,7 +92,11 @@ describe('EvaluationService', () => {
       notes: null,
       evaluated_at: new Date(),
       section: { section_id: sectionId, name: 'Actividades' },
-      evaluated_by: { name: 'Juan', paternal_last_name: 'Perez', maternal_last_name: 'Lopez' },
+      evaluated_by: {
+        name: 'Juan',
+        paternal_last_name: 'Perez',
+        maternal_last_name: 'Lopez',
+      },
     };
 
     const updatedFolder = {
@@ -106,15 +110,17 @@ describe('EvaluationService', () => {
 
     it('should evaluate a section successfully (happy path)', async () => {
       txMock.annual_folders.findUnique
-        .mockResolvedValueOnce(baseFolder)    // first call in evaluateSection
+        .mockResolvedValueOnce(baseFolder) // first call in evaluateSection
         .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' }); // call inside recalcFolderTotals
 
-      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(mockEvaluation);
+      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(
+        mockEvaluation,
+      );
 
       // recalcFolderTotals internals
       txMock.annual_folder_section_evaluations.findMany
         .mockResolvedValueOnce([{ earned_points: 80 }]) // inside recalcFolderTotals
-        .mockResolvedValueOnce([mockEvaluation]);       // inside evaluateSection (post-recalc allEvaluations)
+        .mockResolvedValueOnce([mockEvaluation]); // inside evaluateSection (post-recalc allEvaluations)
 
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 100 },
@@ -123,7 +129,12 @@ describe('EvaluationService', () => {
 
       txMock.annual_folders.update.mockResolvedValue(updatedFolder);
 
-      const result = await service.evaluateSection(folderId, sectionId, dto, evaluatorId);
+      const result = await service.evaluateSection(
+        folderId,
+        sectionId,
+        dto,
+        evaluatorId,
+      );
 
       expect(result.evaluation.earned_points).toBe(80);
       expect(result.folder_summary.status).toBe('under_evaluation');
@@ -158,11 +169,21 @@ describe('EvaluationService', () => {
       });
 
       await expect(
-        service.evaluateSection(folderId, sectionId, { earned_points: 150 }, evaluatorId),
+        service.evaluateSection(
+          folderId,
+          sectionId,
+          { earned_points: 150 },
+          evaluatorId,
+        ),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        service.evaluateSection(folderId, sectionId, { earned_points: 150 }, evaluatorId),
+        service.evaluateSection(
+          folderId,
+          sectionId,
+          { earned_points: 150 },
+          evaluatorId,
+        ),
       ).rejects.toThrow('cannot exceed section max_points');
     });
 
@@ -173,7 +194,12 @@ describe('EvaluationService', () => {
       });
 
       await expect(
-        service.evaluateSection(folderId, 'unknown-section-id', dto, evaluatorId),
+        service.evaluateSection(
+          folderId,
+          'unknown-section-id',
+          dto,
+          evaluatorId,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -181,7 +207,12 @@ describe('EvaluationService', () => {
       txMock.annual_folders.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.evaluateSection('non-existent-folder', sectionId, dto, evaluatorId),
+        service.evaluateSection(
+          'non-existent-folder',
+          sectionId,
+          dto,
+          evaluatorId,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -190,20 +221,30 @@ describe('EvaluationService', () => {
         .mockResolvedValueOnce({ ...baseFolder, status: 'submitted' })
         .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
 
-      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(mockEvaluation);
+      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(
+        mockEvaluation,
+      );
 
       txMock.annual_folder_section_evaluations.findMany
-        .mockResolvedValueOnce([{ earned_points: 80 }])   // recalcFolderTotals
-        .mockResolvedValueOnce([mockEvaluation]);           // allEvaluations (1 of 2 sections done)
+        .mockResolvedValueOnce([{ earned_points: 80 }]) // recalcFolderTotals
+        .mockResolvedValueOnce([mockEvaluation]); // allEvaluations (1 of 2 sections done)
 
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 100 },
         { max_points: 50 },
       ]);
 
-      txMock.annual_folders.update.mockResolvedValue({ ...updatedFolder, status: 'under_evaluation' });
+      txMock.annual_folders.update.mockResolvedValue({
+        ...updatedFolder,
+        status: 'under_evaluation',
+      });
 
-      const result = await service.evaluateSection(folderId, sectionId, dto, evaluatorId);
+      const result = await service.evaluateSection(
+        folderId,
+        sectionId,
+        dto,
+        evaluatorId,
+      );
 
       expect(txMock.annual_folders.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -215,19 +256,31 @@ describe('EvaluationService', () => {
 
     it('should transition folder status to "evaluated" when ALL sections are evaluated', async () => {
       const allEvaluations = [
-        { evaluation_id: 'e1', section_id: sectionId, earned_points: 80, max_points: 100 },
-        { evaluation_id: 'e2', section_id: 'section-uuid-2', earned_points: 40, max_points: 50 },
+        {
+          evaluation_id: 'e1',
+          section_id: sectionId,
+          earned_points: 80,
+          max_points: 100,
+        },
+        {
+          evaluation_id: 'e2',
+          section_id: 'section-uuid-2',
+          earned_points: 40,
+          max_points: 50,
+        },
       ];
 
       txMock.annual_folders.findUnique
         .mockResolvedValueOnce({ ...baseFolder, status: 'under_evaluation' })
         .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
 
-      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(mockEvaluation);
+      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(
+        mockEvaluation,
+      );
 
       txMock.annual_folder_section_evaluations.findMany
-        .mockResolvedValueOnce([{ earned_points: 80 }, { earned_points: 40 }])  // recalcFolderTotals
-        .mockResolvedValueOnce(allEvaluations);  // allEvaluations — 2 of 2 sections done
+        .mockResolvedValueOnce([{ earned_points: 80 }, { earned_points: 40 }]) // recalcFolderTotals
+        .mockResolvedValueOnce(allEvaluations); // allEvaluations — 2 of 2 sections done
 
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 100 },
@@ -243,7 +296,12 @@ describe('EvaluationService', () => {
         evaluated_at: new Date(),
       });
 
-      const result = await service.evaluateSection(folderId, sectionId, dto, evaluatorId);
+      const result = await service.evaluateSection(
+        folderId,
+        sectionId,
+        dto,
+        evaluatorId,
+      );
 
       expect(txMock.annual_folders.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -261,7 +319,9 @@ describe('EvaluationService', () => {
         .mockResolvedValueOnce({ ...baseFolder, status: 'under_evaluation' })
         .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
 
-      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(mockEvaluation);
+      txMock.annual_folder_section_evaluations.upsert.mockResolvedValue(
+        mockEvaluation,
+      );
 
       txMock.annual_folder_section_evaluations.findMany
         .mockResolvedValueOnce([{ earned_points: 80 }])
@@ -319,11 +379,18 @@ describe('EvaluationService', () => {
 
     it('should delete evaluation and recalc totals successfully', async () => {
       txMock.annual_folders.findUnique
-        .mockResolvedValueOnce({ annual_folder_id: folderId, status: 'under_evaluation' })
+        .mockResolvedValueOnce({
+          annual_folder_id: folderId,
+          status: 'under_evaluation',
+        })
         .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
 
-      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(existingEvaluation);
-      txMock.annual_folder_section_evaluations.delete.mockResolvedValue(existingEvaluation);
+      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(
+        existingEvaluation,
+      );
+      txMock.annual_folder_section_evaluations.delete.mockResolvedValue(
+        existingEvaluation,
+      );
 
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([]);
 
@@ -334,9 +401,15 @@ describe('EvaluationService', () => {
 
       txMock.annual_folders.update.mockResolvedValue(updatedFolder);
 
-      const result = await service.reopenSection(folderId, sectionId, evaluatorId);
+      const result = await service.reopenSection(
+        folderId,
+        sectionId,
+        evaluatorId,
+      );
 
-      expect(txMock.annual_folder_section_evaluations.delete).toHaveBeenCalledWith(
+      expect(
+        txMock.annual_folder_section_evaluations.delete,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
             annual_folder_id_section_id: {
@@ -377,7 +450,9 @@ describe('EvaluationService', () => {
         status: 'under_evaluation',
       });
 
-      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(null);
+      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(
+        null,
+      );
 
       await expect(
         service.reopenSection(folderId, sectionId, evaluatorId),
@@ -394,11 +469,18 @@ describe('EvaluationService', () => {
 
     it('should transition folder from "evaluated" back to "under_evaluation"', async () => {
       txMock.annual_folders.findUnique
-        .mockResolvedValueOnce({ annual_folder_id: folderId, status: 'evaluated' })
+        .mockResolvedValueOnce({
+          annual_folder_id: folderId,
+          status: 'evaluated',
+        })
         .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
 
-      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(existingEvaluation);
-      txMock.annual_folder_section_evaluations.delete.mockResolvedValue(existingEvaluation);
+      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(
+        existingEvaluation,
+      );
+      txMock.annual_folder_section_evaluations.delete.mockResolvedValue(
+        existingEvaluation,
+      );
 
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([]);
 
@@ -413,12 +495,17 @@ describe('EvaluationService', () => {
         evaluated_at: null,
       });
 
-      const result = await service.reopenSection(folderId, sectionId, evaluatorId);
+      const result = await service.reopenSection(
+        folderId,
+        sectionId,
+        evaluatorId,
+      );
 
       // The last update (status transition) should set status back
-      const lastUpdateCall = txMock.annual_folders.update.mock.calls[
-        txMock.annual_folders.update.mock.calls.length - 1
-      ][0];
+      const lastUpdateCall =
+        txMock.annual_folders.update.mock.calls[
+          txMock.annual_folders.update.mock.calls.length - 1
+        ][0];
       expect(lastUpdateCall.data).toMatchObject({
         status: 'under_evaluation',
         evaluated_at: null,
@@ -428,21 +515,31 @@ describe('EvaluationService', () => {
 
     it('should keep folder as "under_evaluation" when status was already "under_evaluation"', async () => {
       txMock.annual_folders.findUnique
-        .mockResolvedValueOnce({ annual_folder_id: folderId, status: 'under_evaluation' })
+        .mockResolvedValueOnce({
+          annual_folder_id: folderId,
+          status: 'under_evaluation',
+        })
         .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
 
-      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(existingEvaluation);
-      txMock.annual_folder_section_evaluations.delete.mockResolvedValue(existingEvaluation);
+      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(
+        existingEvaluation,
+      );
+      txMock.annual_folder_section_evaluations.delete.mockResolvedValue(
+        existingEvaluation,
+      );
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([]);
-      txMock.folder_template_sections.findMany.mockResolvedValue([{ max_points: 100 }]);
+      txMock.folder_template_sections.findMany.mockResolvedValue([
+        { max_points: 100 },
+      ]);
       txMock.annual_folders.update.mockResolvedValue(updatedFolder);
 
       await service.reopenSection(folderId, sectionId, evaluatorId);
 
       // The final update should NOT include evaluated_at: null (only set when transitioning from evaluated)
-      const lastUpdateCall = txMock.annual_folders.update.mock.calls[
-        txMock.annual_folders.update.mock.calls.length - 1
-      ][0];
+      const lastUpdateCall =
+        txMock.annual_folders.update.mock.calls[
+          txMock.annual_folders.update.mock.calls.length - 1
+        ][0];
       expect(lastUpdateCall.data.status).toBe('under_evaluation');
       expect(lastUpdateCall.data.evaluated_at).toBeUndefined();
     });
@@ -461,7 +558,9 @@ describe('EvaluationService', () => {
         { earned_points: 40 },
         { earned_points: 30 },
       ]);
-      txMock.annual_folders.findUnique.mockResolvedValue({ folder_template_id: 'tmpl-1' });
+      txMock.annual_folders.findUnique.mockResolvedValue({
+        folder_template_id: 'tmpl-1',
+      });
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 100 },
         { max_points: 50 },
@@ -478,7 +577,9 @@ describe('EvaluationService', () => {
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([
         { earned_points: 50 },
       ]);
-      txMock.annual_folders.findUnique.mockResolvedValue({ folder_template_id: 'tmpl-1' });
+      txMock.annual_folders.findUnique.mockResolvedValue({
+        folder_template_id: 'tmpl-1',
+      });
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 100 },
         { max_points: 50 },
@@ -494,7 +595,9 @@ describe('EvaluationService', () => {
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([
         { earned_points: 75 },
       ]);
-      txMock.annual_folders.findUnique.mockResolvedValue({ folder_template_id: 'tmpl-1' });
+      txMock.annual_folders.findUnique.mockResolvedValue({
+        folder_template_id: 'tmpl-1',
+      });
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 100 },
       ]);
@@ -509,7 +612,9 @@ describe('EvaluationService', () => {
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([
         { earned_points: 50 },
       ]);
-      txMock.annual_folders.findUnique.mockResolvedValue({ folder_template_id: 'tmpl-1' });
+      txMock.annual_folders.findUnique.mockResolvedValue({
+        folder_template_id: 'tmpl-1',
+      });
       txMock.folder_template_sections.findMany.mockResolvedValue([]); // no sections → max = 0
       txMock.annual_folders.update.mockResolvedValue({});
 
@@ -521,7 +626,9 @@ describe('EvaluationService', () => {
 
     it('should handle folder with no evaluations (all zeros)', async () => {
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([]);
-      txMock.annual_folders.findUnique.mockResolvedValue({ folder_template_id: 'tmpl-1' });
+      txMock.annual_folders.findUnique.mockResolvedValue({
+        folder_template_id: 'tmpl-1',
+      });
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 100 },
         { max_points: 50 },
@@ -539,7 +646,9 @@ describe('EvaluationService', () => {
       txMock.annual_folder_section_evaluations.findMany.mockResolvedValue([
         { earned_points: 60 },
       ]);
-      txMock.annual_folders.findUnique.mockResolvedValue({ folder_template_id: 'tmpl-1' });
+      txMock.annual_folders.findUnique.mockResolvedValue({
+        folder_template_id: 'tmpl-1',
+      });
       txMock.folder_template_sections.findMany.mockResolvedValue([
         { max_points: 200 },
       ]);
@@ -573,18 +682,24 @@ describe('EvaluationService', () => {
         status: 'under_evaluation',
       });
 
-      mockPrismaService.annual_folder_section_evaluations.findMany.mockResolvedValue([
-        {
-          evaluation_id: 'eval-1',
-          section_id: 'section-1',
-          earned_points: 80,
-          max_points: 100,
-          notes: 'Well done',
-          evaluated_at: new Date(),
-          section: { section_id: 'section-1', name: 'Actividades', order: 1 },
-          evaluated_by: { name: 'Ana', paternal_last_name: 'Gomez', maternal_last_name: 'Torres' },
-        },
-      ]);
+      mockPrismaService.annual_folder_section_evaluations.findMany.mockResolvedValue(
+        [
+          {
+            evaluation_id: 'eval-1',
+            section_id: 'section-1',
+            earned_points: 80,
+            max_points: 100,
+            notes: 'Well done',
+            evaluated_at: new Date(),
+            section: { section_id: 'section-1', name: 'Actividades', order: 1 },
+            evaluated_by: {
+              name: 'Ana',
+              paternal_last_name: 'Gomez',
+              maternal_last_name: 'Torres',
+            },
+          },
+        ],
+      );
 
       const result = await service.getFolderEvaluations(folderId);
 
@@ -597,7 +712,9 @@ describe('EvaluationService', () => {
     it('should return 404 if folder does not exist', async () => {
       mockPrismaService.annual_folders.findUnique.mockResolvedValue(null);
 
-      await expect(service.getFolderEvaluations('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getFolderEvaluations('non-existent'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should return empty array when folder has no evaluations', async () => {
@@ -605,7 +722,9 @@ describe('EvaluationService', () => {
         annual_folder_id: folderId,
       });
 
-      mockPrismaService.annual_folder_section_evaluations.findMany.mockResolvedValue([]);
+      mockPrismaService.annual_folder_section_evaluations.findMany.mockResolvedValue(
+        [],
+      );
 
       const result = await service.getFolderEvaluations(folderId);
 
@@ -617,18 +736,20 @@ describe('EvaluationService', () => {
         annual_folder_id: folderId,
       });
 
-      mockPrismaService.annual_folder_section_evaluations.findMany.mockResolvedValue([
-        {
-          evaluation_id: 'eval-1',
-          section_id: 'section-1',
-          earned_points: 50,
-          max_points: 100,
-          notes: null,
-          evaluated_at: new Date(),
-          section: { section_id: 'section-1', name: 'Sección A', order: 1 },
-          evaluated_by: null,
-        },
-      ]);
+      mockPrismaService.annual_folder_section_evaluations.findMany.mockResolvedValue(
+        [
+          {
+            evaluation_id: 'eval-1',
+            section_id: 'section-1',
+            earned_points: 50,
+            max_points: 100,
+            notes: null,
+            evaluated_at: new Date(),
+            section: { section_id: 'section-1', name: 'Sección A', order: 1 },
+            evaluated_by: null,
+          },
+        ],
+      );
 
       const result = await service.getFolderEvaluations(folderId);
 

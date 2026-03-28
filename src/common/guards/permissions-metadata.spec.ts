@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
-
 import { ActivitiesController } from '../../activities/activities.controller';
 import { AdminGeographyController } from '../../admin/admin-geography.controller';
 import { AdminReferenceController } from '../../admin/admin-reference.controller';

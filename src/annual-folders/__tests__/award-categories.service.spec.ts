@@ -78,7 +78,9 @@ describe('AwardCategoriesService', () => {
         club_type_id: 2,
         name: 'Conquistadores',
       });
-      mockPrismaService.award_categories.create.mockResolvedValue(categoryWithClub);
+      mockPrismaService.award_categories.create.mockResolvedValue(
+        categoryWithClub,
+      );
 
       const result = await service.create(dto);
 
@@ -93,7 +95,9 @@ describe('AwardCategoriesService', () => {
       mockPrismaService.club_types.findUnique.mockResolvedValue(null);
 
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
-      await expect(service.create(dto)).rejects.toThrow('Club type with ID 999 not found');
+      await expect(service.create(dto)).rejects.toThrow(
+        'Club type with ID 999 not found',
+      );
     });
 
     it('should skip club_type validation when club_type_id is null', async () => {
@@ -134,7 +138,9 @@ describe('AwardCategoriesService', () => {
     ];
 
     it('should return all active categories by default', async () => {
-      mockPrismaService.award_categories.findMany.mockResolvedValue(mockCategories);
+      mockPrismaService.award_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
 
       const result = await service.findAll();
 
@@ -147,7 +153,9 @@ describe('AwardCategoriesService', () => {
     });
 
     it('should filter categories by club_type_id', async () => {
-      mockPrismaService.award_categories.findMany.mockResolvedValue([mockCategories[0]]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([
+        mockCategories[0],
+      ]);
 
       await service.findAll(2);
 
@@ -171,7 +179,9 @@ describe('AwardCategoriesService', () => {
     });
 
     it('should return categories ordered by order then name', async () => {
-      mockPrismaService.award_categories.findMany.mockResolvedValue(mockCategories);
+      mockPrismaService.award_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
 
       await service.findAll();
 
@@ -202,7 +212,9 @@ describe('AwardCategoriesService', () => {
         name: 'Placa de Honor',
         active: true,
       };
-      mockPrismaService.award_categories.findUnique.mockResolvedValue(mockCategory);
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        mockCategory,
+      );
 
       const result = await service.findOne('cat-uuid-1');
 
@@ -212,7 +224,9 @@ describe('AwardCategoriesService', () => {
     it('should throw NotFoundException for non-existent category', async () => {
       mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent-id')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
       await expect(service.findOne('non-existent-id')).rejects.toThrow(
         'Award category with ID non-existent-id not found',
       );
@@ -236,13 +250,17 @@ describe('AwardCategoriesService', () => {
     };
 
     it('should update partial fields only', async () => {
-      mockPrismaService.award_categories.findUnique.mockResolvedValue(existingCategory);
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
       mockPrismaService.award_categories.update.mockResolvedValue({
         ...existingCategory,
         name: 'Placa de Plata',
       });
 
-      const result = await service.update(categoryId, { name: 'Placa de Plata' });
+      const result = await service.update(categoryId, {
+        name: 'Placa de Plata',
+      });
 
       expect(mockPrismaService.award_categories.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -253,7 +271,9 @@ describe('AwardCategoriesService', () => {
     });
 
     it('should validate club_type_id when updating', async () => {
-      mockPrismaService.award_categories.findUnique.mockResolvedValue(existingCategory);
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
       mockPrismaService.club_types.findUnique.mockResolvedValue({
         club_type_id: 3,
         name: 'Aventureros',
@@ -271,26 +291,30 @@ describe('AwardCategoriesService', () => {
     });
 
     it('should reject update if new club_type_id does not exist', async () => {
-      mockPrismaService.award_categories.findUnique.mockResolvedValue(existingCategory);
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
       mockPrismaService.club_types.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(categoryId, { club_type_id: 999 })).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.update(categoryId, { club_type_id: 999 }),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException when category does not exist', async () => {
       mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', { name: 'New Name' })).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.update('non-existent', { name: 'New Name' }),
+      ).rejects.toThrow(NotFoundException);
 
       expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
     });
 
     it('should skip club_type validation when club_type_id is not in update dto', async () => {
-      mockPrismaService.award_categories.findUnique.mockResolvedValue(existingCategory);
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
       mockPrismaService.award_categories.update.mockResolvedValue({
         ...existingCategory,
         min_points: 90,
@@ -317,7 +341,9 @@ describe('AwardCategoriesService', () => {
     };
 
     it('should soft-delete by setting active=false', async () => {
-      mockPrismaService.award_categories.findUnique.mockResolvedValue(existingCategory);
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
       mockPrismaService.award_categories.update.mockResolvedValue({
         ...existingCategory,
         active: false,
@@ -335,7 +361,9 @@ describe('AwardCategoriesService', () => {
     });
 
     it('should NOT hard-delete the record', async () => {
-      mockPrismaService.award_categories.findUnique.mockResolvedValue(existingCategory);
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
       mockPrismaService.award_categories.update.mockResolvedValue({
         ...existingCategory,
         active: false,
@@ -350,7 +378,9 @@ describe('AwardCategoriesService', () => {
     it('should return 404 for non-existent category', async () => {
       mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove('non-existent-id')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
 
       expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
     });

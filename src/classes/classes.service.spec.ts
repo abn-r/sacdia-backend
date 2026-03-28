@@ -187,10 +187,8 @@ describe('ClassesService', () => {
         901,
       );
 
-      const sectionCreateMock = transactionMock.class_section_progress
-        .create as jest.Mock;
-      const moduleCreateMock = transactionMock.class_module_progress
-        .create as jest.Mock;
+      const sectionCreateMock = transactionMock.class_section_progress.create;
+      const moduleCreateMock = transactionMock.class_module_progress.create;
       const sectionCreateCall = sectionCreateMock.mock.calls[0]?.[0] as {
         data: {
           user_id: string;
@@ -271,19 +269,27 @@ describe('ClassesService', () => {
         enrollments: {
           findFirst: findFirstFn,
           count: jest.fn().mockResolvedValue(mocks.activeCount ?? 0),
-          findUnique: jest.fn().mockResolvedValue(mocks.existingEnrollment ?? null),
-          create: jest.fn().mockResolvedValue(mocks.createResult ?? { enrollment_id: 1 }),
-          update: jest.fn().mockResolvedValue(mocks.updateResult ?? { enrollment_id: 1 }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(mocks.existingEnrollment ?? null),
+          create: jest
+            .fn()
+            .mockResolvedValue(mocks.createResult ?? { enrollment_id: 1 }),
+          update: jest
+            .fn()
+            .mockResolvedValue(mocks.updateResult ?? { enrollment_id: 1 }),
         },
         ecclesiastical_years: {
-          findUnique: jest.fn().mockResolvedValue(
-            mocks.ecclesiasticalYear ?? { end_date: new Date('2099-12-31') },
-          ),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(
+              mocks.ecclesiasticalYear ?? { end_date: new Date('2099-12-31') },
+            ),
         },
       };
 
       // Note: mockPrismaService.$transaction is already defined in the module setup (jest.fn())
-      (mockPrismaService.$transaction as jest.Mock).mockImplementation(
+      mockPrismaService.$transaction.mockImplementation(
         async (callback: (tx: any) => Promise<any>) => callback(txMock),
       );
 
@@ -297,7 +303,12 @@ describe('ClassesService', () => {
     it('should allow first enrollment in Aventureros when no active enrollments exist', async () => {
       // findFirst calls: GM check (skip, not GM), highestInvested (null), baseEnrollment (null = first-ever)
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 0,
         createResult: { enrollment_id: 1, class_id: 10 },
@@ -311,7 +322,12 @@ describe('ClassesService', () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
       // But enrollment limit check (step 4) fires first with activeCount: 1
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 2, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 2,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 1,
       });
@@ -323,7 +339,12 @@ describe('ClassesService', () => {
 
     it('should block Aventureros enrollment when 1 active Conquistadores enrollment exists', async () => {
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 1,
       });
@@ -336,7 +357,12 @@ describe('ClassesService', () => {
     it('should block GM class with requires_invested_gm when no prior investiture', async () => {
       // findFirst call 1: GM investiture check → null → throws ForbiddenException
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: true, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 3,
+          requires_invested_gm: true,
+          display_order: 1,
+        },
         findFirstResults: [null],
       });
 
@@ -350,10 +376,19 @@ describe('ClassesService', () => {
       //   1. GM investiture check → found (INVESTIDO in GM)
       //   2. highestInvested for display-order → same INVESTIDO enrollment with display_order 1
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: true, display_order: 2 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 3,
+          requires_invested_gm: true,
+          display_order: 2,
+        },
         findFirstResults: [
           { enrollment_id: 99, investiture_status: 'INVESTIDO' },
-          { enrollment_id: 99, investiture_status: 'INVESTIDO', classes: { display_order: 1 } },
+          {
+            enrollment_id: 99,
+            investiture_status: 'INVESTIDO',
+            classes: { display_order: 1 },
+          },
         ],
         activeCount: 0,
         createResult: { enrollment_id: 2, class_id: 10 },
@@ -366,7 +401,12 @@ describe('ClassesService', () => {
     it('should allow GM class without requires_invested_gm (no investiture needed)', async () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 3,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 0,
         createResult: { enrollment_id: 3, class_id: 10 },
@@ -380,7 +420,12 @@ describe('ClassesService', () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
       // But enrollment limit check (step 4) fires with activeCount: 2
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 3, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 3,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 2,
       });
@@ -392,7 +437,12 @@ describe('ClassesService', () => {
 
     it('should block reactivation when enrollment limit is reached', async () => {
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 1,
         existingEnrollment: { enrollment_id: 5, active: false },
@@ -405,7 +455,12 @@ describe('ClassesService', () => {
 
     it('should allow reactivation when under enrollment limit', async () => {
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 0,
         existingEnrollment: { enrollment_id: 5, active: false },
@@ -419,7 +474,12 @@ describe('ClassesService', () => {
     it('should throw InternalServerErrorException when club types not fully resolved', async () => {
       setupTransactionMock({
         clubTypes: [{ club_type_id: 1, name: 'Aventureros' }],
-        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
       });
 
       await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
@@ -439,7 +499,12 @@ describe('ClassesService', () => {
 
     it('should throw ConflictException when enrollment already exists and is active (regression)', async () => {
       setupTransactionMock({
-        targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 1 },
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+        },
         findFirstResults: [null, null],
         activeCount: 0,
         existingEnrollment: { enrollment_id: 7, active: true },
@@ -458,26 +523,44 @@ describe('ClassesService', () => {
       it('should block enrollment when target display_order exceeds highest INVESTIDO + 1', async () => {
         // User has INVESTIDO at display_order 2, tries to enroll in display_order 4
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 4 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 4,
+          },
           findFirstResults: [
             // highestInvested: INVESTIDO at display_order 2
-            { enrollment_id: 50, investiture_status: 'INVESTIDO', classes: { display_order: 2 } },
+            {
+              enrollment_id: 50,
+              investiture_status: 'INVESTIDO',
+              classes: { display_order: 2 },
+            },
           ],
           activeCount: 0,
         });
 
-        await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-          BadRequestException,
-        );
+        await expect(
+          service.enrollUser(userId, classId, yearId),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('should allow enrollment when target display_order equals highest INVESTIDO + 1', async () => {
         // User has INVESTIDO at display_order 2, enrolls in display_order 3
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 3 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 3,
+          },
           findFirstResults: [
             // highestInvested: INVESTIDO at display_order 2
-            { enrollment_id: 50, investiture_status: 'INVESTIDO', classes: { display_order: 2 } },
+            {
+              enrollment_id: 50,
+              investiture_status: 'INVESTIDO',
+              classes: { display_order: 2 },
+            },
           ],
           activeCount: 0,
           createResult: { enrollment_id: 10, class_id: 10 },
@@ -490,9 +573,18 @@ describe('ClassesService', () => {
       it('should allow re-enrollment in INVESTIDO class (display_order <= max)', async () => {
         // User has INVESTIDO at display_order 3, enrolls in display_order 2
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 2 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 2,
+          },
           findFirstResults: [
-            { enrollment_id: 50, investiture_status: 'INVESTIDO', classes: { display_order: 3 } },
+            {
+              enrollment_id: 50,
+              investiture_status: 'INVESTIDO',
+              classes: { display_order: 3 },
+            },
           ],
           activeCount: 0,
           createResult: { enrollment_id: 11, class_id: 10 },
@@ -505,7 +597,12 @@ describe('ClassesService', () => {
       it('should block enrollment above base class when no INVESTIDO exists', async () => {
         // No INVESTIDO, base class at display_order 1, tries display_order 2
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 2 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 2,
+          },
           findFirstResults: [
             // highestInvested: null
             null,
@@ -515,15 +612,20 @@ describe('ClassesService', () => {
           activeCount: 0,
         });
 
-        await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-          BadRequestException,
-        );
+        await expect(
+          service.enrollUser(userId, classId, yearId),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('should allow enrollment at base class level when no INVESTIDO exists', async () => {
         // No INVESTIDO, base class at display_order 2, enrolls in display_order 2
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 2 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 2,
+          },
           findFirstResults: [
             null,
             { enrollment_id: 60, classes: { display_order: 2 } },
@@ -540,7 +642,12 @@ describe('ClassesService', () => {
         // No INVESTIDO, base class at display_order 1, tries display_order 2
         // But the year has ended → allowed
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 2 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 2,
+          },
           findFirstResults: [
             null,
             { enrollment_id: 60, classes: { display_order: 1 } },
@@ -558,7 +665,12 @@ describe('ClassesService', () => {
         // No INVESTIDO, base class at display_order 1, tries display_order 3
         // Year ended gives +1, so maxAllowed = 1 + 1 = 2, but target is 3
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 3 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 3,
+          },
           findFirstResults: [
             null,
             { enrollment_id: 60, classes: { display_order: 1 } },
@@ -567,15 +679,20 @@ describe('ClassesService', () => {
           ecclesiasticalYear: { end_date: new Date('2020-01-01') },
         });
 
-        await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-          BadRequestException,
-        );
+        await expect(
+          service.enrollUser(userId, classId, yearId),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('should allow first-ever enrollment regardless of display_order (post-registration)', async () => {
         // No INVESTIDO, no base enrollment → first-ever enrollment, skip restriction
         setupTransactionMock({
-          targetClass: { class_id: 10, club_type_id: 1, requires_invested_gm: false, display_order: 5 },
+          targetClass: {
+            class_id: 10,
+            club_type_id: 1,
+            requires_invested_gm: false,
+            display_order: 5,
+          },
           findFirstResults: [null, null],
           activeCount: 0,
           createResult: { enrollment_id: 14, class_id: 10 },

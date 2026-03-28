@@ -1,7 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
-import type {
-  AuthorizationSnapshot,
-} from '../../src/common/services/authorization-context.service';
+import type { AuthorizationSnapshot } from '../../src/common/services/authorization-context.service';
 
 type AuthorizationFixtureOptions = {
   globalPermissions?: string[];

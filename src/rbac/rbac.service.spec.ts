@@ -138,7 +138,9 @@ describe('RbacService', () => {
 
   describe('getPermissionById', () => {
     it('TC03 - happy path: returns permission when found', async () => {
-      mockPrismaService.permissions.findUnique.mockResolvedValue(basePermission);
+      mockPrismaService.permissions.findUnique.mockResolvedValue(
+        basePermission,
+      );
 
       const result = await service.getPermissionById(PERMISSION_ID);
 
@@ -181,7 +183,9 @@ describe('RbacService', () => {
     });
 
     it('TC06 - error: throws ConflictException when name already exists', async () => {
-      mockPrismaService.permissions.findUnique.mockResolvedValue(basePermission);
+      mockPrismaService.permissions.findUnique.mockResolvedValue(
+        basePermission,
+      );
 
       await expect(service.createPermission(dto)).rejects.toThrow(
         ConflictException,
@@ -191,7 +195,11 @@ describe('RbacService', () => {
 
     it('TC07 - creates permission with null description when not provided', async () => {
       const dtoNoDesc: CreatePermissionDto = { permission_name: 'clubs:read' };
-      const permNoDesc = { ...basePermission, permission_name: 'clubs:read', description: null };
+      const permNoDesc = {
+        ...basePermission,
+        permission_name: 'clubs:read',
+        description: null,
+      };
 
       mockPrismaService.permissions.findUnique.mockResolvedValue(null);
       mockPrismaService.permissions.create.mockResolvedValue(permNoDesc);
@@ -221,7 +229,9 @@ describe('RbacService', () => {
         description: 'Listar usuarios',
       };
 
-      mockPrismaService.permissions.findUnique.mockResolvedValue(basePermission);
+      mockPrismaService.permissions.findUnique.mockResolvedValue(
+        basePermission,
+      );
       mockPrismaService.permissions.findFirst.mockResolvedValue(null);
       mockPrismaService.permissions.update.mockResolvedValue(updated);
 
@@ -234,18 +244,24 @@ describe('RbacService', () => {
       mockPrismaService.permissions.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.updatePermission(PERMISSION_ID, { permission_name: 'users:list' }),
+        service.updatePermission(PERMISSION_ID, {
+          permission_name: 'users:list',
+        }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('TC10 - error: throws ConflictException when new name already used by another permission', async () => {
       const conflict = { ...basePermission2, permission_name: 'users:list' };
 
-      mockPrismaService.permissions.findUnique.mockResolvedValue(basePermission);
+      mockPrismaService.permissions.findUnique.mockResolvedValue(
+        basePermission,
+      );
       mockPrismaService.permissions.findFirst.mockResolvedValue(conflict);
 
       await expect(
-        service.updatePermission(PERMISSION_ID, { permission_name: 'users:list' }),
+        service.updatePermission(PERMISSION_ID, {
+          permission_name: 'users:list',
+        }),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -253,7 +269,9 @@ describe('RbacService', () => {
       const dto: UpdatePermissionDto = { description: 'Nueva descripción' };
       const updated = { ...basePermission, description: 'Nueva descripción' };
 
-      mockPrismaService.permissions.findUnique.mockResolvedValue(basePermission);
+      mockPrismaService.permissions.findUnique.mockResolvedValue(
+        basePermission,
+      );
       mockPrismaService.permissions.update.mockResolvedValue(updated);
 
       await service.updatePermission(PERMISSION_ID, dto);
@@ -268,7 +286,9 @@ describe('RbacService', () => {
 
   describe('deletePermission', () => {
     it('TC12 - happy path: soft-deletes permission (sets active=false)', async () => {
-      mockPrismaService.permissions.findUnique.mockResolvedValue(basePermission);
+      mockPrismaService.permissions.findUnique.mockResolvedValue(
+        basePermission,
+      );
       mockPrismaService.permissions.update.mockResolvedValue({
         ...basePermission,
         active: false,
@@ -300,7 +320,9 @@ describe('RbacService', () => {
 
   describe('listRoles', () => {
     it('TC14 - returns only active roles with their active permissions', async () => {
-      mockPrismaService.roles.findMany.mockResolvedValue([baseRoleWithPermissions]);
+      mockPrismaService.roles.findMany.mockResolvedValue([
+        baseRoleWithPermissions,
+      ]);
 
       const result = await service.listRoles();
 
@@ -329,7 +351,9 @@ describe('RbacService', () => {
 
   describe('getRoleWithPermissions', () => {
     it('TC16 - happy path: returns role with its active permissions', async () => {
-      mockPrismaService.roles.findUnique.mockResolvedValue(baseRoleWithPermissions);
+      mockPrismaService.roles.findUnique.mockResolvedValue(
+        baseRoleWithPermissions,
+      );
 
       const result = await service.getRoleWithPermissions(ROLE_ID);
 
@@ -369,12 +393,16 @@ describe('RbacService', () => {
       expect(result.success).toBe(true);
       expect(result.created).toBe(2);
       expect(result.reactivated).toBe(0);
-      expect(mockPrismaService.role_permissions.create).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.role_permissions.create).toHaveBeenCalledTimes(
+        2,
+      );
     });
 
     it('TC19 - reactivates previously deactivated assignment instead of creating duplicate', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.permissions.findMany.mockResolvedValue([basePermission]);
+      mockPrismaService.permissions.findMany.mockResolvedValue([
+        basePermission,
+      ]);
       // Existing inactive assignment
       mockPrismaService.role_permissions.findFirst.mockResolvedValue({
         ...baseRolePermissionRecord,
@@ -385,7 +413,9 @@ describe('RbacService', () => {
         active: true,
       });
 
-      const result = await service.assignPermissionsToRole(ROLE_ID, [PERMISSION_ID]);
+      const result = await service.assignPermissionsToRole(ROLE_ID, [
+        PERMISSION_ID,
+      ]);
 
       expect(result.created).toBe(0);
       expect(result.reactivated).toBe(1);
@@ -394,13 +424,17 @@ describe('RbacService', () => {
 
     it('TC20 - skips already active assignments (returns "existing")', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.permissions.findMany.mockResolvedValue([basePermission]);
+      mockPrismaService.permissions.findMany.mockResolvedValue([
+        basePermission,
+      ]);
       // Existing active assignment → skip
       mockPrismaService.role_permissions.findFirst.mockResolvedValue(
         baseRolePermissionRecord,
       );
 
-      const result = await service.assignPermissionsToRole(ROLE_ID, [PERMISSION_ID]);
+      const result = await service.assignPermissionsToRole(ROLE_ID, [
+        PERMISSION_ID,
+      ]);
 
       expect(result.created).toBe(0);
       expect(result.reactivated).toBe(0);
@@ -420,7 +454,9 @@ describe('RbacService', () => {
       const MISSING_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
       // Only one permission found, but two were requested
-      mockPrismaService.permissions.findMany.mockResolvedValue([basePermission]);
+      mockPrismaService.permissions.findMany.mockResolvedValue([
+        basePermission,
+      ]);
 
       await expect(
         service.assignPermissionsToRole(ROLE_ID, [PERMISSION_ID, MISSING_ID]),
@@ -447,7 +483,10 @@ describe('RbacService', () => {
         PERMISSION_ID,
       );
 
-      expect(result).toEqual({ success: true, message: 'Permiso removido del rol' });
+      expect(result).toEqual({
+        success: true,
+        message: 'Permiso removido del rol',
+      });
       expect(mockPrismaService.role_permissions.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { role_permission_id: ROLE_PERMISSION_ID },
@@ -473,24 +512,38 @@ describe('RbacService', () => {
     it('TC25 - happy path: adds new permissions and removes unlisted ones', async () => {
       // Current active: PERMISSION_ID. Desired: PERMISSION_ID_2
       const currentAssignments = [
-        { ...baseRolePermissionRecord, role_permission_id: 'old-rp-id', permission_id: PERMISSION_ID },
+        {
+          ...baseRolePermissionRecord,
+          role_permission_id: 'old-rp-id',
+          permission_id: PERMISSION_ID,
+        },
       ];
 
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.role_permissions.findMany.mockResolvedValue(currentAssignments);
-      mockPrismaService.role_permissions.updateMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.role_permissions.findMany.mockResolvedValue(
+        currentAssignments,
+      );
+      mockPrismaService.role_permissions.updateMany.mockResolvedValue({
+        count: 1,
+      });
 
       // assignPermissionsToRole will be called internally for the new permission
-      mockPrismaService.permissions.findMany.mockResolvedValue([basePermission2]);
+      mockPrismaService.permissions.findMany.mockResolvedValue([
+        basePermission2,
+      ]);
       mockPrismaService.role_permissions.findFirst.mockResolvedValue(null);
       mockPrismaService.role_permissions.create.mockResolvedValue({});
 
-      const result = await service.syncRolePermissions(ROLE_ID, [PERMISSION_ID_2]);
+      const result = await service.syncRolePermissions(ROLE_ID, [
+        PERMISSION_ID_2,
+      ]);
 
       expect(result.success).toBe(true);
       expect(result.added).toBe(1);
       expect(result.removed).toBe(1);
-      expect(mockPrismaService.role_permissions.updateMany).toHaveBeenCalledTimes(1);
+      expect(
+        mockPrismaService.role_permissions.updateMany,
+      ).toHaveBeenCalledTimes(1);
     });
 
     it('TC26 - no-op: returns zero added/removed when permissions already match', async () => {
@@ -499,13 +552,19 @@ describe('RbacService', () => {
       ];
 
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.role_permissions.findMany.mockResolvedValue(currentAssignments);
+      mockPrismaService.role_permissions.findMany.mockResolvedValue(
+        currentAssignments,
+      );
 
-      const result = await service.syncRolePermissions(ROLE_ID, [PERMISSION_ID]);
+      const result = await service.syncRolePermissions(ROLE_ID, [
+        PERMISSION_ID,
+      ]);
 
       expect(result.added).toBe(0);
       expect(result.removed).toBe(0);
-      expect(mockPrismaService.role_permissions.updateMany).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.role_permissions.updateMany,
+      ).not.toHaveBeenCalled();
     });
 
     it('TC27 - error: throws NotFoundException when role not found', async () => {
@@ -522,8 +581,12 @@ describe('RbacService', () => {
       ];
 
       mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
-      mockPrismaService.role_permissions.findMany.mockResolvedValue(currentAssignments);
-      mockPrismaService.role_permissions.updateMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.role_permissions.findMany.mockResolvedValue(
+        currentAssignments,
+      );
+      mockPrismaService.role_permissions.updateMany.mockResolvedValue({
+        count: 1,
+      });
 
       const result = await service.syncRolePermissions(ROLE_ID, []);
 

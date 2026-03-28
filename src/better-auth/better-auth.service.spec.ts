@@ -107,7 +107,10 @@ describe('BetterAuthService', () => {
         mockBaInstance as any,
       );
 
-      const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
+      const token = service.signJwt({
+        id: 'user-uuid-123',
+        email: 'test@example.com',
+      });
       const parts = token.split('.');
       expect(parts).toHaveLength(3);
     });
@@ -123,8 +126,13 @@ describe('BetterAuthService', () => {
         mockBaInstance as any,
       );
 
-      const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
-      const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString());
+      const token = service.signJwt({
+        id: 'user-uuid-123',
+        email: 'test@example.com',
+      });
+      const header = JSON.parse(
+        Buffer.from(token.split('.')[0], 'base64url').toString(),
+      );
       expect(header.alg).toBe('HS256');
     });
 
@@ -139,8 +147,13 @@ describe('BetterAuthService', () => {
         mockBaInstance as any,
       );
 
-      const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+      const token = service.signJwt({
+        id: 'user-uuid-123',
+        email: 'test@example.com',
+      });
+      const payload = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString(),
+      );
       expect(payload.sub).toBe('user-uuid-123');
     });
 
@@ -155,8 +168,13 @@ describe('BetterAuthService', () => {
         mockBaInstance as any,
       );
 
-      const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+      const token = service.signJwt({
+        id: 'user-uuid-123',
+        email: 'test@example.com',
+      });
+      const payload = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString(),
+      );
       expect(payload.email).toBe('test@example.com');
     });
 
@@ -172,10 +190,15 @@ describe('BetterAuthService', () => {
       );
 
       const before = Math.floor(Date.now() / 1000);
-      const token = service.signJwt({ id: 'user-uuid-123', email: 'test@example.com' });
+      const token = service.signJwt({
+        id: 'user-uuid-123',
+        email: 'test@example.com',
+      });
       const after = Math.floor(Date.now() / 1000);
 
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+      const payload = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString(),
+      );
       const duration = payload.exp - payload.iat;
 
       expect(duration).toBeGreaterThanOrEqual(3599);
@@ -214,7 +237,11 @@ describe('BetterAuthService', () => {
       mockAccountCreate.mockResolvedValue(mockDbAccount);
       mockSessionCreate.mockResolvedValue(mockDbSession);
 
-      const result = await svc.createUser('test@example.com', 'Password123!', 'Test User');
+      const result = await svc.createUser(
+        'test@example.com',
+        'Password123!',
+        'Test User',
+      );
 
       expect(result).toMatchObject({
         user: expect.objectContaining({
@@ -309,7 +336,10 @@ describe('BetterAuthService', () => {
       mockAccountFindFirst.mockResolvedValue(accountWithRealHash);
       mockSessionCreate.mockResolvedValue(mockDbSession);
 
-      const result = await svc.signInWithPassword('test@example.com', 'Password123!');
+      const result = await svc.signInWithPassword(
+        'test@example.com',
+        'Password123!',
+      );
 
       expect(result).toMatchObject({
         user: expect.objectContaining({ email: 'test@example.com' }),
@@ -365,7 +395,9 @@ describe('BetterAuthService', () => {
 
       mockSessionDeleteMany.mockResolvedValue({ count: 1 });
 
-      await expect(svc.signOut('raw-opaque-session-token')).resolves.toBeUndefined();
+      await expect(
+        svc.signOut('raw-opaque-session-token'),
+      ).resolves.toBeUndefined();
       expect(mockSessionDeleteMany).toHaveBeenCalledWith({
         where: { token: 'raw-opaque-session-token' },
       });
@@ -376,7 +408,9 @@ describe('BetterAuthService', () => {
 
       mockSessionDeleteMany.mockRejectedValue(new Error('DB connection lost'));
 
-      await expect(svc.signOut('raw-opaque-session-token')).resolves.toBeUndefined();
+      await expect(
+        svc.signOut('raw-opaque-session-token'),
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -391,7 +425,10 @@ describe('BetterAuthService', () => {
       const futureExpiry = new Date(Date.now() + 7 * 86400 * 1000);
       const validSession = { ...mockDbSession, expiresAt: futureExpiry };
       mockSessionFindFirst.mockResolvedValue(validSession);
-      mockSessionUpdate.mockResolvedValue({ ...validSession, expiresAt: new Date(Date.now() + 7 * 86400 * 1000) });
+      mockSessionUpdate.mockResolvedValue({
+        ...validSession,
+        expiresAt: new Date(Date.now() + 7 * 86400 * 1000),
+      });
       mockUsersFindUnique.mockResolvedValue(mockDbUser);
 
       const result = await svc.refreshSession('raw-opaque-session-token');
@@ -435,13 +472,19 @@ describe('BetterAuthService', () => {
       const { svc } = buildService();
 
       const futureExpiry = new Date(Date.now() + 7 * 86400 * 1000);
-      mockSessionFindFirst.mockResolvedValue({ ...mockDbSession, expiresAt: futureExpiry });
-      mockSessionUpdate.mockResolvedValue({ ...mockDbSession, expiresAt: futureExpiry });
+      mockSessionFindFirst.mockResolvedValue({
+        ...mockDbSession,
+        expiresAt: futureExpiry,
+      });
+      mockSessionUpdate.mockResolvedValue({
+        ...mockDbSession,
+        expiresAt: futureExpiry,
+      });
       mockUsersFindUnique.mockResolvedValue(null); // user deleted
 
-      await expect(svc.refreshSession('raw-opaque-session-token')).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(
+        svc.refreshSession('raw-opaque-session-token'),
+      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 

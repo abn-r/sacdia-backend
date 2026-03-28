@@ -13,27 +13,41 @@ describe('Auth E2E Tests', () => {
   const mockBetterAuthService = {
     signInWithPassword: jest.fn().mockResolvedValue({
       user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
-      session: { token: 'fake-session-token', expiresAt: new Date(1900000000000) },
+      session: {
+        token: 'fake-session-token',
+        expiresAt: new Date(1900000000000),
+      },
       accessToken: 'fake-jwt',
     }),
     refreshSession: jest.fn().mockResolvedValue({
       user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
-      session: { token: 'fake-refreshed-session', expiresAt: new Date(1900000000000) },
+      session: {
+        token: 'fake-refreshed-session',
+        expiresAt: new Date(1900000000000),
+      },
       accessToken: 'fake-refreshed-jwt',
     }),
     signOut: jest.fn().mockResolvedValue(undefined),
     createUser: jest.fn().mockResolvedValue({
       user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
-      session: { token: 'fake-session-token', expiresAt: new Date(1900000000000) },
+      session: {
+        token: 'fake-session-token',
+        expiresAt: new Date(1900000000000),
+      },
       accessToken: 'fake-jwt',
     }),
     signJwt: jest.fn().mockReturnValue('fake-jwt'),
     resetPasswordForEmail: jest.fn().mockResolvedValue(undefined),
     updatePasswordById: jest.fn().mockResolvedValue(undefined),
-    getOAuthUrl: jest.fn().mockResolvedValue({ url: 'https://oauth.test', state: 'xyz' }),
+    getOAuthUrl: jest
+      .fn()
+      .mockResolvedValue({ url: 'https://oauth.test', state: 'xyz' }),
     handleOAuthCallback: jest.fn().mockResolvedValue({
       user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
-      session: { token: 'fake-session-token', expiresAt: new Date(1900000000000) },
+      session: {
+        token: 'fake-session-token',
+        expiresAt: new Date(1900000000000),
+      },
       accessToken: 'fake-jwt',
     }),
     enrollTotp: jest.fn(),
@@ -153,7 +167,10 @@ describe('Auth E2E Tests', () => {
 
       mockBetterAuthService.refreshSession.mockResolvedValueOnce({
         user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
-        session: { token: 'new-refresh-token', expiresAt: new Date(Date.now() + 3600000) },
+        session: {
+          token: 'new-refresh-token',
+          expiresAt: new Date(Date.now() + 3600000),
+        },
         accessToken: refreshedAccessToken,
       });
 
@@ -208,7 +225,10 @@ describe('Auth E2E Tests', () => {
 
       mockBetterAuthService.refreshSession.mockResolvedValueOnce({
         user: { id: 'test-user-id', email: 'test@example.com', name: 'Test' },
-        session: { token: 'legacy-refresh-token', expiresAt: new Date(Date.now() + 3600000) },
+        session: {
+          token: 'legacy-refresh-token',
+          expiresAt: new Date(Date.now() + 3600000),
+        },
         accessToken: 'legacy-access-token',
       });
 

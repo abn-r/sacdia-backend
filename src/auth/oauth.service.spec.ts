@@ -3,10 +3,7 @@ import { OAuthService } from './oauth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
-import {
-  BadRequestException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
 /**
  * OAuthService unit tests — Better Auth edition (W3-008 Part 3).
@@ -177,7 +174,12 @@ describe('OAuthService', () => {
   // ---------------------------------------------------------------------------
   describe('handleCallback', () => {
     const baResult = {
-      user: { id: 'user-123', email: 'juan@example.com', name: 'Juan', image: null },
+      user: {
+        id: 'user-123',
+        email: 'juan@example.com',
+        name: 'Juan',
+        image: null,
+      },
       session: { token: 'ba-session-token', expiresAt: new Date() },
       accessToken: 'sacdia-hs256-jwt',
     };
@@ -188,7 +190,10 @@ describe('OAuthService', () => {
       );
 
       await expect(
-        service.handleCallback({ session_token: 'bad-token', provider: 'google' }),
+        service.handleCallback({
+          session_token: 'bad-token',
+          provider: 'google',
+        }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -197,8 +202,14 @@ describe('OAuthService', () => {
 
       // ensureSacdiaUserProvisioned — user exists, pr exists, role exists
       mockTx.users.findUnique.mockResolvedValue({ user_id: 'user-123' });
-      mockTx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-123', complete: false });
-      mockTx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: false,
+      });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
 
       // outer prisma calls
       mockPrismaService.users.findUnique.mockResolvedValue({
@@ -216,9 +227,14 @@ describe('OAuthService', () => {
         { providerId: 'google' },
       ]);
 
-      const result = await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
+      const result = await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'google',
+      });
 
-      expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith('ba-session-token');
+      expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+        'ba-session-token',
+      );
       expect(result).toEqual({
         accessToken: 'sacdia-hs256-jwt',
         sessionToken: 'ba-session-token',
@@ -244,7 +260,10 @@ describe('OAuthService', () => {
       mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
       mockTx.users_roles.findFirst.mockResolvedValue(null); // no role
       mockTx.roles.findFirst.mockResolvedValue({ role_id: 1 });
-      mockTx.users_roles.create.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+      mockTx.users_roles.create.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
 
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
@@ -262,7 +281,10 @@ describe('OAuthService', () => {
         { providerId: 'credential' },
       ]);
 
-      const result = await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
+      const result = await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'google',
+      });
 
       expect(mockTx.users_pr.create).toHaveBeenCalled();
       expect(mockTx.users_roles.create).toHaveBeenCalled();
@@ -290,8 +312,14 @@ describe('OAuthService', () => {
         user_image: null,
       });
       mockTx.users.update.mockResolvedValue({ user_id: 'user-123' });
-      mockTx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-123', complete: true });
-      mockTx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
 
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
@@ -308,7 +336,10 @@ describe('OAuthService', () => {
         { providerId: 'google' },
       ]);
 
-      await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
+      await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'google',
+      });
 
       expect(mockTx.users.update).toHaveBeenCalledWith({
         where: { user_id: 'user-123' },
@@ -335,8 +366,14 @@ describe('OAuthService', () => {
         user_id: 'user-123',
         user_image: existingImage,
       });
-      mockTx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-123', complete: true });
-      mockTx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
 
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
@@ -353,7 +390,10 @@ describe('OAuthService', () => {
         { providerId: 'google' },
       ]);
 
-      await service.handleCallback({ session_token: 'ba-session-token', provider: 'google' });
+      await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'google',
+      });
 
       expect(mockTx.users.update).not.toHaveBeenCalled();
     });
@@ -375,8 +415,14 @@ describe('OAuthService', () => {
         user_id: 'user-123',
         user_image: null,
       });
-      mockTx.users_pr.findUnique.mockResolvedValue({ user_id: 'user-123', complete: true });
-      mockTx.users_roles.findFirst.mockResolvedValue({ user_id: 'user-123', role_id: 1 });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
 
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
@@ -393,7 +439,10 @@ describe('OAuthService', () => {
         { providerId: 'apple' },
       ]);
 
-      await service.handleCallback({ session_token: 'ba-session-token', provider: 'apple' });
+      await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'apple',
+      });
 
       expect(mockTx.users.update).not.toHaveBeenCalled();
     });

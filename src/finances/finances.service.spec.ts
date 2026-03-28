@@ -175,17 +175,30 @@ describe('FinancesService', () => {
 
   describe('create — period validation', () => {
     const createDto = {
-      year: 2026, month: 2, amount: 1000, club_type_id: 2,
-      finance_category_id: 1, finance_date: '2026-02-15', club_section_id: 10,
+      year: 2026,
+      month: 2,
+      amount: 1000,
+      club_type_id: 2,
+      finance_category_id: 1,
+      finance_date: '2026-02-15',
+      club_section_id: 10,
     };
 
     it('should call validatePeriodOpen before creating a movement', async () => {
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
-      mockPrismaService.finances.create.mockResolvedValue({ finance_id: 1, ...createDto });
+      mockPrismaService.finances.create.mockResolvedValue({
+        finance_id: 1,
+        ...createDto,
+      });
 
       await service.create(createDto, 'user-123', 1);
 
-      expect(mockFinancePeriodService.validatePeriodOpen).toHaveBeenCalledWith(1, 2026, 2, 'user-123');
+      expect(mockFinancePeriodService.validatePeriodOpen).toHaveBeenCalledWith(
+        1,
+        2026,
+        2,
+        'user-123',
+      );
     });
 
     it('should throw ForbiddenException when period is closed for non-admin', async () => {
@@ -193,20 +206,30 @@ describe('FinancesService', () => {
         new ForbiddenException('El periodo 2/2026 está cerrado'),
       );
 
-      await expect(service.create(createDto, 'user-123', 1)).rejects.toThrow(ForbiddenException);
+      await expect(service.create(createDto, 'user-123', 1)).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(mockPrismaService.finances.create).not.toHaveBeenCalled();
     });
 
     it('should persist post_closing_note when provided', async () => {
-      const dtoWithNote = { ...createDto, post_closing_note: 'Ajuste autorizado' };
+      const dtoWithNote = {
+        ...createDto,
+        post_closing_note: 'Ajuste autorizado',
+      };
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
-      mockPrismaService.finances.create.mockResolvedValue({ finance_id: 1, ...dtoWithNote });
+      mockPrismaService.finances.create.mockResolvedValue({
+        finance_id: 1,
+        ...dtoWithNote,
+      });
 
       await service.create(dtoWithNote, 'admin-user', 1);
 
       expect(mockPrismaService.finances.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ post_closing_note: 'Ajuste autorizado' }),
+          data: expect.objectContaining({
+            post_closing_note: 'Ajuste autorizado',
+          }),
         }),
       );
     });
@@ -215,68 +238,127 @@ describe('FinancesService', () => {
   describe('update — period validation', () => {
     it('should resolve clubId from movement and validate period before updating', async () => {
       const existingMovement = {
-        finance_id: 1, year: 2026, month: 2, amount: 1000, club_section_id: 10,
-        finances_categories: { name: 'Cuotas', type: 0 }, club_types: { name: 'Conquistadores' }, users: null,
+        finance_id: 1,
+        year: 2026,
+        month: 2,
+        amount: 1000,
+        club_section_id: 10,
+        finances_categories: { name: 'Cuotas', type: 0 },
+        club_types: { name: 'Conquistadores' },
+        users: null,
       };
 
       mockPrismaService.finances.findUnique.mockResolvedValue(existingMovement);
-      mockPrismaService.club_sections.findUnique.mockResolvedValue({ club_section_id: 10, main_club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 10,
+        main_club_id: 1,
+      });
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
-      mockPrismaService.finances.update.mockResolvedValue({ finance_id: 1, amount: 2000 });
+      mockPrismaService.finances.update.mockResolvedValue({
+        finance_id: 1,
+        amount: 2000,
+      });
 
       await service.update(1, { amount: 2000 }, 'user-123');
 
-      expect(mockFinancePeriodService.validatePeriodOpen).toHaveBeenCalledWith(1, 2026, 2, 'user-123');
+      expect(mockFinancePeriodService.validatePeriodOpen).toHaveBeenCalledWith(
+        1,
+        2026,
+        2,
+        'user-123',
+      );
     });
 
     it('should skip period validation when movement has no club_section_id', async () => {
       const existingMovement = {
-        finance_id: 1, year: 2026, month: 2, amount: 1000, club_section_id: null,
-        finances_categories: { name: 'Cuotas', type: 0 }, club_types: { name: 'Conquistadores' }, users: null,
+        finance_id: 1,
+        year: 2026,
+        month: 2,
+        amount: 1000,
+        club_section_id: null,
+        finances_categories: { name: 'Cuotas', type: 0 },
+        club_types: { name: 'Conquistadores' },
+        users: null,
       };
 
       mockPrismaService.finances.findUnique.mockResolvedValue(existingMovement);
-      mockPrismaService.finances.update.mockResolvedValue({ finance_id: 1, amount: 2000 });
+      mockPrismaService.finances.update.mockResolvedValue({
+        finance_id: 1,
+        amount: 2000,
+      });
 
       await service.update(1, { amount: 2000 }, 'user-123');
 
-      expect(mockFinancePeriodService.validatePeriodOpen).not.toHaveBeenCalled();
+      expect(
+        mockFinancePeriodService.validatePeriodOpen,
+      ).not.toHaveBeenCalled();
     });
   });
 
   describe('remove — period validation', () => {
     it('should resolve clubId and validate period before soft-deleting', async () => {
       const existingMovement = {
-        finance_id: 1, year: 2026, month: 2, amount: 1000, club_section_id: 10,
-        finances_categories: { name: 'Cuotas', type: 0 }, club_types: { name: 'Conquistadores' }, users: null,
+        finance_id: 1,
+        year: 2026,
+        month: 2,
+        amount: 1000,
+        club_section_id: 10,
+        finances_categories: { name: 'Cuotas', type: 0 },
+        club_types: { name: 'Conquistadores' },
+        users: null,
       };
 
       mockPrismaService.finances.findUnique.mockResolvedValue(existingMovement);
-      mockPrismaService.club_sections.findUnique.mockResolvedValue({ club_section_id: 10, main_club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 10,
+        main_club_id: 1,
+      });
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
-      mockPrismaService.finances.update.mockResolvedValue({ finance_id: 1, active: false });
+      mockPrismaService.finances.update.mockResolvedValue({
+        finance_id: 1,
+        active: false,
+      });
 
       await service.remove(1, 'user-123');
 
-      expect(mockFinancePeriodService.validatePeriodOpen).toHaveBeenCalledWith(1, 2026, 2, 'user-123');
+      expect(mockFinancePeriodService.validatePeriodOpen).toHaveBeenCalledWith(
+        1,
+        2026,
+        2,
+        'user-123',
+      );
     });
 
     it('should persist reason as post_closing_note before soft-deleting', async () => {
       const existingMovement = {
-        finance_id: 1, year: 2026, month: 2, amount: 1000, club_section_id: 10,
-        finances_categories: { name: 'Cuotas', type: 0 }, club_types: { name: 'Conquistadores' }, users: null,
+        finance_id: 1,
+        year: 2026,
+        month: 2,
+        amount: 1000,
+        club_section_id: 10,
+        finances_categories: { name: 'Cuotas', type: 0 },
+        club_types: { name: 'Conquistadores' },
+        users: null,
       };
 
       mockPrismaService.finances.findUnique.mockResolvedValue(existingMovement);
-      mockPrismaService.club_sections.findUnique.mockResolvedValue({ club_section_id: 10, main_club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 10,
+        main_club_id: 1,
+      });
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
-      mockPrismaService.finances.update.mockResolvedValue({ finance_id: 1, active: false });
+      mockPrismaService.finances.update.mockResolvedValue({
+        finance_id: 1,
+        active: false,
+      });
 
       await service.remove(1, 'user-123', 'Error de duplicado');
 
       expect(mockPrismaService.finances.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ post_closing_note: 'Error de duplicado' }),
+          data: expect.objectContaining({
+            post_closing_note: 'Error de duplicado',
+          }),
         }),
       );
     });
