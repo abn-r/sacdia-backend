@@ -107,38 +107,6 @@ export class UserHonorRequirementsController {
     return { status: 'success', data };
   }
 
-  @Patch(':honorId/requirements/:requirementId/progress')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @RequirePermissions('user_honors:update')
-  @ApiOperation({
-    summary: 'Actualizar progreso de un requisito individual',
-    description:
-      'Marca o desmarca un requisito como completado con notas opcionales',
-  })
-  @ApiParam({ name: 'userId', type: String })
-  @ApiParam({ name: 'honorId', type: Number })
-  @ApiParam({ name: 'requirementId', type: Number })
-  @ApiBody({ type: UpdateRequirementProgressDto })
-  @ApiResponse({ status: 200, description: 'Progreso actualizado' })
-  @ApiResponse({
-    status: 400,
-    description: 'El requisito no pertenece al honor',
-  })
-  @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
-  async updateProgress(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('honorId', ParseIntPipe) honorId: number,
-    @Param('requirementId', ParseIntPipe) _requirementId: number,
-    @Body() dto: UpdateRequirementProgressDto,
-  ) {
-    const data = await this.honorRequirementsService.updateProgress(
-      userId,
-      honorId,
-      dto,
-    );
-    return { status: 'success', data };
-  }
-
   @Patch(':honorId/requirements/progress/batch')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:update')
@@ -165,6 +133,38 @@ export class UserHonorRequirementsController {
     @Body() dto: BulkUpdateRequirementProgressDto,
   ) {
     const data = await this.honorRequirementsService.bulkUpdateProgress(
+      userId,
+      honorId,
+      dto,
+    );
+    return { status: 'success', data };
+  }
+
+  @Patch(':honorId/requirements/:requirementId/progress')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @RequirePermissions('user_honors:update')
+  @ApiOperation({
+    summary: 'Actualizar progreso de un requisito individual',
+    description:
+      'Marca o desmarca un requisito como completado con notas opcionales',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiParam({ name: 'honorId', type: Number })
+  @ApiParam({ name: 'requirementId', type: Number })
+  @ApiBody({ type: UpdateRequirementProgressDto })
+  @ApiResponse({ status: 200, description: 'Progreso actualizado' })
+  @ApiResponse({
+    status: 400,
+    description: 'El requisito no pertenece al honor',
+  })
+  @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
+  async updateProgress(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('honorId', ParseIntPipe) honorId: number,
+    @Param('requirementId', ParseIntPipe) _requirementId: number,
+    @Body() dto: UpdateRequirementProgressDto,
+  ) {
+    const data = await this.honorRequirementsService.updateProgress(
       userId,
       honorId,
       dto,
