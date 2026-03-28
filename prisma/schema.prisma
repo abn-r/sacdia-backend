@@ -39,6 +39,7 @@ model activities {
 
   @@index([activity_type_id], map: "idx_activities_activity_type_id")
   @@index([club_section_id], map: "idx_activities_club_section_id")
+  @@index([active, activity_type_id], map: "idx_activities_active_type")
 }
 
 model activity_types {
@@ -65,6 +66,7 @@ model activity_instances {
   @@unique([activity_id, club_section_id], map: "activity_instances_unique_instance_per_activity")
   @@index([activity_id], map: "idx_activity_instances_activity")
   @@index([club_section_id], map: "idx_activity_instances_club_section_id")
+  @@index([club_section_id, active], map: "idx_activity_instances_section_active")
 }
 
 model folder_assignments {
@@ -264,11 +266,12 @@ model club_inventory {
   created_at            DateTime?             @default(now()) @db.Timestamptz(6)
   modified_at           DateTime?             @default(now()) @db.Timestamptz(6)
   club_section_id       Int?
-  club_sections         club_sections?        @relation(fields: [club_section_id], references: [club_section_id], onUpdate: NoAction)
+  club_sections         club_sections?        @relation(fields: [club_section_id], references: [club_section_id], onDelete: SetNull, onUpdate: NoAction)
   inventory_categories  inventory_categories? @relation(fields: [inventory_category_id], references: [inventory_category_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_history     inventory_history[]
 
   @@index([club_section_id], map: "idx_club_inventory_club_section_id")
+  @@index([inventory_category_id], map: "idx_club_inventory_inventory_category_id")
 }
 
 model inventory_history {
@@ -485,7 +488,7 @@ model finances {
   modified_at         DateTime?           @default(now()) @db.Timestamptz(6)
   club_section_id     Int?
   post_closing_note   String?
-  club_sections       club_sections?      @relation(fields: [club_section_id], references: [club_section_id], onUpdate: NoAction)
+  club_sections       club_sections?      @relation(fields: [club_section_id], references: [club_section_id], onDelete: SetNull, onUpdate: NoAction)
   club_types          club_types          @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   users               users               @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   modified_by         users?              @relation("finances_modified_by", fields: [modified_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -493,6 +496,9 @@ model finances {
 
   @@index([club_section_id], map: "idx_finances_club_section_id")
   @@index([club_section_id, year, month, active])
+  @@index([created_by], map: "idx_finances_created_by")
+  @@index([finance_category_id], map: "idx_finances_finance_category_id")
+  @@index([modified_by_id], map: "idx_finances_modified_by_id")
 }
 
 model finances_categories {
@@ -1181,6 +1187,8 @@ model member_insurances {
   users              users               @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id, end_date], map: "idx_member_insurances_user_expiry")
+  @@index([created_by_id], map: "idx_member_insurances_created_by_id")
+  @@index([modified_by_id], map: "idx_member_insurances_modified_by_id")
 }
 
 model investiture_validation_history {
@@ -1311,7 +1319,7 @@ model users_honors {
   honor_id          Int
   active            Boolean   @default(true)
   validate          Boolean   @default(false)
-  validation_status String    @default("in_progress") @db.VarChar(20)
+  validation_status honor_validation_status_enum @default(IN_PROGRESS)
   submitted_at      DateTime? @db.Timestamptz(6)
   validated_by_id   String?   @db.Uuid
   validated_at      DateTime? @db.Timestamptz(6)
@@ -1463,6 +1471,13 @@ enum evidence_validation_enum {
   REJECTED
 }
 
+enum honor_validation_status_enum {
+  IN_PROGRESS
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
 // Better Auth tables — model names are singular (BA default), @@map to plural SQL tables
 model session {
   id        String   @id
@@ -1573,6 +1588,9 @@ model camporee_payments {
   registrar           users            @relation("camporee_payments_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([camporee_member_id], map: "idx_camporee_payments_member_id")
+  @@index([registered_by], map: "idx_camporee_payments_registered_by")
+  @@index([approved_by], map: "idx_camporee_payments_approved_by")
+  @@index([rejected_by], map: "idx_camporee_payments_rejected_by")
 }
 
 // ========================================
