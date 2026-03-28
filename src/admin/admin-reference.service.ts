@@ -62,8 +62,10 @@ export class AdminReferenceService {
   }
 
   async listRelationshipTypes() {
+    // Small catalog table: expected to remain well under 100 rows.
     return this.prisma.relationship_types.findMany({
       orderBy: { name: 'asc' },
+      take: 200,
     });
   }
 
@@ -164,8 +166,10 @@ export class AdminReferenceService {
   }
 
   async listAllergies() {
+    // Small catalog table: expected to remain well under 500 rows.
     return this.prisma.allergies.findMany({
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -251,8 +255,10 @@ export class AdminReferenceService {
   }
 
   async listDiseases() {
+    // Small catalog table: expected to remain well under 500 rows.
     return this.prisma.diseases.findMany({
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -338,8 +344,10 @@ export class AdminReferenceService {
   }
 
   async listMedicines() {
+    // Small catalog table: expected to remain well under 500 rows.
     return this.prisma.medicines.findMany({
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -416,14 +424,18 @@ export class AdminReferenceService {
   }
 
   async listEcclesiasticalYears() {
+    // One record per year: expected to grow by at most one row per year.
     return this.prisma.ecclesiastical_years.findMany({
       orderBy: { start_date: 'desc' },
+      take: 100,
     });
   }
 
   async listClubIdeals() {
+    // Static catalog defined per club type: expected to remain under 200 rows.
     return this.prisma.club_ideals.findMany({
       orderBy: [{ club_type_id: 'asc' }, { ideal_order: 'asc' }],
+      take: 200,
     });
   }
 
@@ -538,7 +550,9 @@ export class AdminReferenceService {
     return year;
   }
 
-  async listHonorCategories(query: HonorCategoryListQueryDto = new HonorCategoryListQueryDto()) {
+  async listHonorCategories(
+    query: HonorCategoryListQueryDto = new HonorCategoryListQueryDto(),
+  ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const search = query.search?.trim();
@@ -649,7 +663,10 @@ export class AdminReferenceService {
     return category;
   }
 
-  async deleteHonorCategory(id: number, actorId: string): Promise<HonorCategoryRecord> {
+  async deleteHonorCategory(
+    id: number,
+    actorId: string,
+  ): Promise<HonorCategoryRecord> {
     await this.ensureHonorCategoryExists(id);
 
     const inUseCount = await this.prisma.honors.count({
@@ -832,7 +849,9 @@ export class AdminReferenceService {
     const existing = await this.prisma.honors_categories.findFirst({
       where: {
         name: { equals: name, mode: 'insensitive' },
-        ...(honorCategoryId ? { NOT: { honor_category_id: honorCategoryId } } : {}),
+        ...(honorCategoryId
+          ? { NOT: { honor_category_id: honorCategoryId } }
+          : {}),
       },
     });
 

@@ -174,9 +174,7 @@ export class ClubsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Sección encontrada' })
-  async getSection(
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-  ) {
+  async getSection(@Param('sectionId', ParseIntPipe) sectionId: number) {
     return this.clubsService.getSection(sectionId);
   }
 
@@ -235,9 +233,7 @@ export class ClubsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
-  async getMembers(
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-  ) {
+  async getMembers(@Param('sectionId', ParseIntPipe) sectionId: number) {
     return this.clubsService.getMembers(sectionId);
   }
 
@@ -300,7 +296,9 @@ export class ClubRolesController {
   @ApiOperation({ summary: 'Remover rol de miembro' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Rol removido' })
-  async removeAssignment(@Param('assignmentId', ParseUUIDPipe) assignmentId: string) {
+  async removeAssignment(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+  ) {
     return this.clubsService.removeRoleAssignment(assignmentId);
   }
 }

@@ -35,9 +35,7 @@ type CurrentUserPayload = {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('club-sections/:sectionId/evidence-folder')
 export class EvidenceFolderController {
-  constructor(
-    private readonly evidenceFolderService: EvidenceFolderService,
-  ) {}
+  constructor(private readonly evidenceFolderService: EvidenceFolderService) {}
 
   @Get()
   @RequirePermissions('evidence_folders:read')
@@ -51,7 +49,10 @@ export class EvidenceFolderController {
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.evidenceFolderService.getFolder(user.sub, sectionId);
+    const data = await this.evidenceFolderService.getFolder(
+      user.sub,
+      sectionId,
+    );
     return { status: 'success', data };
   }
 

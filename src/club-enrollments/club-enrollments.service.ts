@@ -122,6 +122,8 @@ export class ClubEnrollmentsService {
       where.ecclesiastical_year_id = filters.year;
     }
 
+    // Per-section enrollments: at most one per ecclesiastical year.
+    // Safety cap of 100 covers decades of operation.
     return this.prisma.club_enrollments.findMany({
       where,
       include: {
@@ -138,6 +140,7 @@ export class ClubEnrollmentsService {
         },
       },
       orderBy: { created_at: 'desc' },
+      take: 100,
     });
   }
 

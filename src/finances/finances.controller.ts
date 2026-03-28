@@ -181,7 +181,8 @@ export class FinancesController {
     name: 'reason',
     required: false,
     type: String,
-    description: 'Justificación para eliminación en período cerrado (solo admin)',
+    description:
+      'Justificación para eliminación en período cerrado (solo admin)',
   })
   @ApiResponse({ status: 200, description: 'Movimiento desactivado' })
   async remove(

@@ -278,7 +278,7 @@ describe('EvidenceFolderService', () => {
 
       mockPrismaService.folders_section_records.update.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'enviado',
+        status: 'PENDING',
       });
 
       await service.submitSection('user-1', 9, 11);
@@ -300,7 +300,7 @@ describe('EvidenceFolderService', () => {
         expect.objectContaining({
           where: { folder_section_record_id: 501 },
           data: expect.objectContaining({
-            status: 'enviado',
+            status: 'PENDING',
             submitted_by_id: 'user-1',
             submitted_at: expect.any(Date),
           }),
@@ -321,13 +321,13 @@ describe('EvidenceFolderService', () => {
       );
     });
 
-    it('should throw ConflictException when section is already enviado', async () => {
+    it('should throw ConflictException when section is already REJECTED', async () => {
       mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
         baseAssignment,
       );
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'enviado',
+        status: 'REJECTED',
         evidence_files: [{ active: true }],
       });
 
@@ -468,7 +468,7 @@ describe('EvidenceFolderService', () => {
       });
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'enviado',
+        status: 'VALIDATED',
         evidence_files: [],
       });
 
@@ -648,7 +648,7 @@ describe('EvidenceFolderService', () => {
           folder_id: 44,
           section_id: 11,
           club_section_id: 9,
-          status: 'enviado',
+          status: 'VALIDATED',
         },
       });
 

@@ -68,11 +68,7 @@ export class MembershipRequestsService {
    * Reject a pending membership request.
    * Sets status to 'rejected', clears expires_at, and stores optional reason.
    */
-  async reject(
-    assignmentId: string,
-    rejectedById: string,
-    reason?: string,
-  ) {
+  async reject(assignmentId: string, rejectedById: string, reason?: string) {
     const assignment = await this.prisma.club_role_assignments.findFirst({
       where: {
         assignment_id: assignmentId,

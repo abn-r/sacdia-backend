@@ -151,7 +151,10 @@ export class FoldersService {
     }
 
     // 3. Obtener sección de club del usuario según el tipo de club
-    const clubSectionId = await this.getUserClubSectionId(userId, folder.club_type);
+    const clubSectionId = await this.getUserClubSectionId(
+      userId,
+      folder.club_type,
+    );
 
     // Validar que el usuario pertenece a un club del tipo requerido
     if (!clubSectionId) {
@@ -180,7 +183,10 @@ export class FoldersService {
   /**
    * Obtener sección de club del usuario para un tipo de club específico
    */
-  private async getUserClubSectionId(userId: string, clubType: number | null): Promise<number | null> {
+  private async getUserClubSectionId(
+    userId: string,
+    clubType: number | null,
+  ): Promise<number | null> {
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       include: {
@@ -201,7 +207,10 @@ export class FoldersService {
 
     // Find a club_role_assignment that has a club_section matching the folder's club_type
     for (const assignment of user.club_role_assignments) {
-      if (assignment.club_sections && assignment.club_sections.club_type_id === clubType) {
+      if (
+        assignment.club_sections &&
+        assignment.club_sections.club_type_id === clubType
+      ) {
         return assignment.club_sections.club_section_id;
       }
     }

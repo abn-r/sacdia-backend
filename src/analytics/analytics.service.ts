@@ -188,7 +188,7 @@ export class AnalyticsService {
       // 2b. User honors pending validation
       this.prisma.users_honors.count({
         where: {
-          validation_status: 'pending',
+          validation_status: 'PENDING_REVIEW',
           active: true,
           ...(scopedClubSectionIds
             ? {

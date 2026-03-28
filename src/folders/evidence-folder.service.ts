@@ -163,7 +163,7 @@ export class EvidenceFolderService {
         folder_section_record_id: sectionRecord.folder_section_record_id,
       },
       data: {
-        status: 'enviado',
+        status: 'PENDING',
         submitted_by_id: userId,
         submitted_at: new Date(),
       },

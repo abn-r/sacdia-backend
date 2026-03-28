@@ -27,7 +27,8 @@ export class CreateUnionCamporeeDto {
 
   @ApiPropertyOptional({
     description: 'Descripción detallada del camporee de unión',
-    example: 'Gran camporee de unión con participación de todos los campos locales',
+    example:
+      'Gran camporee de unión con participación de todos los campos locales',
   })
   @IsOptional()
   @IsString()

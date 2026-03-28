@@ -27,8 +27,16 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser, GlobalRoles, RequirePermissions } from '../common/decorators';
-import { GlobalRolesGuard, JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import {
+  CurrentUser,
+  GlobalRoles,
+  RequirePermissions,
+} from '../common/decorators';
+import {
+  GlobalRolesGuard,
+  JwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
 import { CreateInsuranceDto } from './dto/create-insurance.dto';
 import { UpdateInsuranceDto } from './dto/update-insurance.dto';
 import { InsuranceService } from './insurance.service';
@@ -83,9 +91,13 @@ export class InsuranceController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de seguros próximos a vencer, ordenados por end_date ASC',
+    description:
+      'Lista de seguros próximos a vencer, ordenados por end_date ASC',
   })
-  @ApiResponse({ status: 403, description: 'Forbidden — requiere rol admin o coordinator' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requiere rol admin o coordinator',
+  })
   async getExpiringInsurances(
     @Query('days_ahead') daysAhead?: string,
     @Query('local_field_id') localFieldId?: string,

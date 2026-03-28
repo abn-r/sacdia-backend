@@ -205,7 +205,15 @@ export class MonthlyReportsPdfService {
 
     // ======== PAGE 1 (FRONT) ========
 
-    this.drawHeader(doc, clubName, clubType, districtName, churchName, monthName, report.year);
+    this.drawHeader(
+      doc,
+      clubName,
+      clubType,
+      districtName,
+      churchName,
+      monthName,
+      report.year,
+    );
 
     // Section 1: Administracion
     this.drawSectionTitle(doc, '1. ADMINISTRACION');
@@ -354,35 +362,77 @@ export class MonthlyReportsPdfService {
     doc.moveDown(0.3);
 
     // Member count & meeting days
-    this.drawKeyValue(doc, 'Cantidad de miembros', String(snapshot.member_count));
-    this.drawKeyValue(doc, 'Dias de reunion', snapshot.meeting_days ?? 'No especificado');
+    this.drawKeyValue(
+      doc,
+      'Cantidad de miembros',
+      String(snapshot.member_count),
+    );
+    this.drawKeyValue(
+      doc,
+      'Dias de reunion',
+      snapshot.meeting_days ?? 'No especificado',
+    );
 
     doc.moveDown(0.3);
 
     // Manual fields
     doc.font('Helvetica-Bold').text('Juntas y reuniones:', PAGE_MARGIN, doc.y);
     doc.font('Helvetica');
-    this.drawKeyValue(doc, '  Reuniones de planificacion', String(manual.planning_meetings ?? 0));
-    this.drawKeyValue(doc, '  Reuniones de padres', String(manual.parent_meetings ?? 0));
-    this.drawKeyValue(doc, '  Asistencia consejo de jovenes', String(manual.youth_council_attendance ?? 0));
-    this.drawKeyValue(doc, '  Asistencia junta de iglesia', String(manual.church_board_attendance ?? 0));
+    this.drawKeyValue(
+      doc,
+      '  Reuniones de planificacion',
+      String(manual.planning_meetings ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      '  Reuniones de padres',
+      String(manual.parent_meetings ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      '  Asistencia consejo de jovenes',
+      String(manual.youth_council_attendance ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      '  Asistencia junta de iglesia',
+      String(manual.church_board_attendance ?? 0),
+    );
   }
 
   private drawEnsenanzas(doc: PDFKit.PDFDocument, snapshot: SnapshotData) {
     doc.fontSize(9).font('Helvetica');
 
-    this.drawKeyValue(doc, 'Especialidades iniciadas este mes', String(snapshot.honors?.started ?? 0));
-    this.drawKeyValue(doc, 'Especialidades completadas este mes', String(snapshot.honors?.completed ?? 0));
+    this.drawKeyValue(
+      doc,
+      'Especialidades iniciadas este mes',
+      String(snapshot.honors?.started ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      'Especialidades completadas este mes',
+      String(snapshot.honors?.completed ?? 0),
+    );
 
     if (snapshot.honors?.details && snapshot.honors.details.length > 0) {
       doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').text('Detalle de especialidades:', PAGE_MARGIN, doc.y);
+      doc
+        .font('Helvetica-Bold')
+        .text('Detalle de especialidades:', PAGE_MARGIN, doc.y);
       doc.font('Helvetica');
 
       // Table header
       const tableY = doc.y + 2;
-      const colWidths = [CONTENT_WIDTH * 0.4, CONTENT_WIDTH * 0.35, CONTENT_WIDTH * 0.25];
-      const colX = [PAGE_MARGIN, PAGE_MARGIN + colWidths[0], PAGE_MARGIN + colWidths[0] + colWidths[1]];
+      const colWidths = [
+        CONTENT_WIDTH * 0.4,
+        CONTENT_WIDTH * 0.35,
+        CONTENT_WIDTH * 0.25,
+      ];
+      const colX = [
+        PAGE_MARGIN,
+        PAGE_MARGIN + colWidths[0],
+        PAGE_MARGIN + colWidths[0] + colWidths[1],
+      ];
 
       doc.font('Helvetica-Bold').fontSize(8);
       doc.text('Especialidad', colX[0], tableY);
@@ -395,14 +445,22 @@ export class MonthlyReportsPdfService {
 
       for (let i = 0; i < maxRows; i++) {
         const h = snapshot.honors.details[i];
-        doc.text(h.honor_name ?? '', colX[0], rowY, { width: colWidths[0] - 5 });
+        doc.text(h.honor_name ?? '', colX[0], rowY, {
+          width: colWidths[0] - 5,
+        });
         doc.text(h.user_name ?? '', colX[1], rowY, { width: colWidths[1] - 5 });
-        doc.text(h.validated ? 'Completada' : 'En progreso', colX[2], rowY, { width: colWidths[2] - 5 });
+        doc.text(h.validated ? 'Completada' : 'En progreso', colX[2], rowY, {
+          width: colWidths[2] - 5,
+        });
         rowY += 12;
       }
 
       if (snapshot.honors.details.length > 10) {
-        doc.text(`... y ${snapshot.honors.details.length - 10} mas`, colX[0], rowY);
+        doc.text(
+          `... y ${snapshot.honors.details.length - 10} mas`,
+          colX[0],
+          rowY,
+        );
         rowY += 12;
       }
 
@@ -413,15 +471,27 @@ export class MonthlyReportsPdfService {
   private drawActividades(doc: PDFKit.PDFDocument, snapshot: SnapshotData) {
     doc.fontSize(9).font('Helvetica');
 
-    this.drawKeyValue(doc, 'Total de actividades', String(snapshot.activities?.total ?? 0));
+    this.drawKeyValue(
+      doc,
+      'Total de actividades',
+      String(snapshot.activities?.total ?? 0),
+    );
 
     if (snapshot.activities?.list && snapshot.activities.list.length > 0) {
       doc.moveDown(0.3);
 
       // Table header
       const tableY = doc.y;
-      const colWidths = [CONTENT_WIDTH * 0.2, CONTENT_WIDTH * 0.5, CONTENT_WIDTH * 0.3];
-      const colX = [PAGE_MARGIN, PAGE_MARGIN + colWidths[0], PAGE_MARGIN + colWidths[0] + colWidths[1]];
+      const colWidths = [
+        CONTENT_WIDTH * 0.2,
+        CONTENT_WIDTH * 0.5,
+        CONTENT_WIDTH * 0.3,
+      ];
+      const colX = [
+        PAGE_MARGIN,
+        PAGE_MARGIN + colWidths[0],
+        PAGE_MARGIN + colWidths[0] + colWidths[1],
+      ];
 
       doc.font('Helvetica-Bold').fontSize(8);
       doc.text('Fecha', colX[0], tableY);
@@ -434,7 +504,9 @@ export class MonthlyReportsPdfService {
 
       for (let i = 0; i < maxRows; i++) {
         const a = snapshot.activities.list[i];
-        const dateStr = a.date ? new Date(a.date).toLocaleDateString('es-MX') : 'N/A';
+        const dateStr = a.date
+          ? new Date(a.date).toLocaleDateString('es-MX')
+          : 'N/A';
         doc.text(dateStr, colX[0], rowY, { width: colWidths[0] - 5 });
         doc.text(a.name ?? '', colX[1], rowY, { width: colWidths[1] - 5 });
         doc.text(a.type ?? '', colX[2], rowY, { width: colWidths[2] - 5 });
@@ -442,7 +514,11 @@ export class MonthlyReportsPdfService {
       }
 
       if (snapshot.activities.list.length > 12) {
-        doc.text(`... y ${snapshot.activities.list.length - 12} mas`, colX[0], rowY);
+        doc.text(
+          `... y ${snapshot.activities.list.length - 12} mas`,
+          colX[0],
+          rowY,
+        );
         rowY += 12;
       }
 
@@ -453,7 +529,12 @@ export class MonthlyReportsPdfService {
   private drawFinanzas(doc: PDFKit.PDFDocument, snapshot: SnapshotData) {
     doc.fontSize(9).font('Helvetica');
 
-    const finances = snapshot.finances ?? { income: 0, expenses: 0, balance: 0, transactions: 0 };
+    const finances = snapshot.finances ?? {
+      income: 0,
+      expenses: 0,
+      balance: 0,
+      transactions: 0,
+    };
 
     const formatMoney = (amount: number) =>
       `$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -464,10 +545,26 @@ export class MonthlyReportsPdfService {
     const valueWidth = CONTENT_WIDTH * 0.4;
 
     const rows = [
-      { label: 'Total ingresos', value: formatMoney(finances.income), bold: false },
-      { label: 'Total egresos', value: formatMoney(finances.expenses), bold: false },
-      { label: 'Balance del mes', value: formatMoney(finances.balance), bold: true },
-      { label: 'Total de transacciones', value: String(finances.transactions), bold: false },
+      {
+        label: 'Total ingresos',
+        value: formatMoney(finances.income),
+        bold: false,
+      },
+      {
+        label: 'Total egresos',
+        value: formatMoney(finances.expenses),
+        bold: false,
+      },
+      {
+        label: 'Balance del mes',
+        value: formatMoney(finances.balance),
+        bold: true,
+      },
+      {
+        label: 'Total de transacciones',
+        value: String(finances.transactions),
+        bold: false,
+      },
     ];
 
     let rowY = doc.y;
@@ -478,7 +575,10 @@ export class MonthlyReportsPdfService {
         doc.font('Helvetica');
       }
       doc.text(row.label, tableX, rowY, { width: labelWidth });
-      doc.text(row.value, tableX + labelWidth, rowY, { width: valueWidth, align: 'right' });
+      doc.text(row.value, tableX + labelWidth, rowY, {
+        width: valueWidth,
+        align: 'right',
+      });
       rowY += 14;
     }
 
@@ -493,28 +593,72 @@ export class MonthlyReportsPdfService {
     doc.fontSize(9).font('Helvetica');
 
     this.drawKeyValue(doc, 'Blanco de almas', String(manual.soul_target ?? 0));
-    this.drawKeyValue(doc, 'Miembros no bautizados', String(manual.unbaptized_members ?? 0));
-    this.drawKeyValue(doc, 'Recibiendo estudios biblicos', String(manual.bible_studies_receiving ?? 0));
-    this.drawKeyValue(doc, 'Instruccion biblica semanal', this.boolLabel(manual.has_weekly_bible_instruction));
-    this.drawKeyValue(doc, 'Se dieron estudios biblicos', this.boolLabel(manual.bible_studies_given));
-    this.drawKeyValue(doc, 'Se distribuyo literatura', this.boolLabel(manual.literature_distributed));
-    this.drawKeyValue(doc, 'Bautizados este mes', String(manual.baptized_this_month ?? 0));
-    this.drawKeyValue(doc, 'Total bautizados acumulado', String(manual.total_baptized ?? 0));
+    this.drawKeyValue(
+      doc,
+      'Miembros no bautizados',
+      String(manual.unbaptized_members ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      'Recibiendo estudios biblicos',
+      String(manual.bible_studies_receiving ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      'Instruccion biblica semanal',
+      this.boolLabel(manual.has_weekly_bible_instruction),
+    );
+    this.drawKeyValue(
+      doc,
+      'Se dieron estudios biblicos',
+      this.boolLabel(manual.bible_studies_given),
+    );
+    this.drawKeyValue(
+      doc,
+      'Se distribuyo literatura',
+      this.boolLabel(manual.literature_distributed),
+    );
+    this.drawKeyValue(
+      doc,
+      'Bautizados este mes',
+      String(manual.baptized_this_month ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      'Total bautizados acumulado',
+      String(manual.total_baptized ?? 0),
+    );
 
     doc.moveDown(0.3);
 
     // Booklet / certificates
-    this.drawKeyValue(doc, 'Certificados entregados', this.boolLabel(manual.certificates_delivered));
-    this.drawKeyValue(doc, 'Miembros tienen libreta', this.boolLabel(manual.members_have_booklet));
-    this.drawKeyValue(doc, 'Requisitos de libreta firmados', this.boolLabel(manual.booklet_requirements_signed));
+    this.drawKeyValue(
+      doc,
+      'Certificados entregados',
+      this.boolLabel(manual.certificates_delivered),
+    );
+    this.drawKeyValue(
+      doc,
+      'Miembros tienen libreta',
+      this.boolLabel(manual.members_have_booklet),
+    );
+    this.drawKeyValue(
+      doc,
+      'Requisitos de libreta firmados',
+      this.boolLabel(manual.booklet_requirements_signed),
+    );
 
     // Club participation
     if (manual.club_participation_description) {
       doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').text('Participacion del club:', PAGE_MARGIN, doc.y);
-      doc.font('Helvetica').text(manual.club_participation_description, PAGE_MARGIN + 10, doc.y, {
-        width: CONTENT_WIDTH - 10,
-      });
+      doc
+        .font('Helvetica-Bold')
+        .text('Participacion del club:', PAGE_MARGIN, doc.y);
+      doc
+        .font('Helvetica')
+        .text(manual.club_participation_description, PAGE_MARGIN + 10, doc.y, {
+          width: CONTENT_WIDTH - 10,
+        });
     }
   }
 
@@ -522,12 +666,20 @@ export class MonthlyReportsPdfService {
     doc.fontSize(9).font('Helvetica');
 
     if (manual.community_service_description) {
-      doc.font('Helvetica-Bold').text('Servicio comunitario:', PAGE_MARGIN, doc.y);
-      doc.font('Helvetica').text(manual.community_service_description, PAGE_MARGIN + 10, doc.y, {
-        width: CONTENT_WIDTH - 10,
-      });
+      doc
+        .font('Helvetica-Bold')
+        .text('Servicio comunitario:', PAGE_MARGIN, doc.y);
+      doc
+        .font('Helvetica')
+        .text(manual.community_service_description, PAGE_MARGIN + 10, doc.y, {
+          width: CONTENT_WIDTH - 10,
+        });
     } else {
-      doc.text('Sin descripcion de servicio comunitario para este mes.', PAGE_MARGIN, doc.y);
+      doc.text(
+        'Sin descripcion de servicio comunitario para este mes.',
+        PAGE_MARGIN,
+        doc.y,
+      );
     }
   }
 
@@ -545,18 +697,29 @@ export class MonthlyReportsPdfService {
     this.drawHorizontalLine(doc);
     doc.moveDown(0.5);
 
-    doc.fontSize(10).font('Helvetica-Bold').text('Informacion del Secretario/a', PAGE_MARGIN, doc.y);
+    doc
+      .fontSize(10)
+      .font('Helvetica-Bold')
+      .text('Informacion del Secretario/a', PAGE_MARGIN, doc.y);
     doc.moveDown(0.3);
     doc.fontSize(9).font('Helvetica');
 
     if (submitter) {
-      const fullName = [submitter.name, submitter.paternal_last_name, submitter.maternal_last_name]
+      const fullName = [
+        submitter.name,
+        submitter.paternal_last_name,
+        submitter.maternal_last_name,
+      ]
         .filter(Boolean)
         .join(' ');
       this.drawKeyValue(doc, 'Nombre', fullName || 'N/A');
       this.drawKeyValue(doc, 'Email', submitter.email ?? 'N/A');
     } else {
-      doc.text('No hay informacion del secretario disponible.', PAGE_MARGIN, doc.y);
+      doc.text(
+        'No hay informacion del secretario disponible.',
+        PAGE_MARGIN,
+        doc.y,
+      );
     }
   }
 
@@ -586,7 +749,9 @@ export class MonthlyReportsPdfService {
 
   private drawKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {
     const y = doc.y;
-    doc.font('Helvetica-Bold').text(`${label}: `, PAGE_MARGIN, y, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${label}: `, PAGE_MARGIN, y, { continued: true });
     doc.font('Helvetica').text(value);
   }
 

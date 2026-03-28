@@ -3,7 +3,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreateClubSectionDto {
-  @ApiProperty({ example: 2, description: 'ID del tipo de club (FK a club_types)' })
+  @ApiProperty({
+    example: 2,
+    description: 'ID del tipo de club (FK a club_types)',
+  })
   @Type(() => Number)
   @IsInt()
   club_type_id: number;

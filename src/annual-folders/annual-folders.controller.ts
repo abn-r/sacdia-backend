@@ -49,7 +49,10 @@ export class AnnualFolderTemplatesController {
   @RequirePermissions('annual_folder_templates:create')
   @ApiOperation({ summary: 'Create folder template for a club type and year' })
   @ApiResponse({ status: 201, description: 'Template created' })
-  @ApiResponse({ status: 409, description: 'Template already exists for this combination' })
+  @ApiResponse({
+    status: 409,
+    description: 'Template already exists for this combination',
+  })
   async createTemplate(@Body() dto: CreateTemplateDto) {
     const data = await this.service.createTemplate(dto);
     return { status: 'success', data };
@@ -61,9 +64,7 @@ export class AnnualFolderTemplatesController {
   @ApiParam({ name: 'templateId', description: 'Template UUID' })
   @ApiResponse({ status: 200, description: 'Template details' })
   @ApiResponse({ status: 404, description: 'Template not found' })
-  async getTemplate(
-    @Param('templateId', ParseUUIDPipe) templateId: string,
-  ) {
+  async getTemplate(@Param('templateId', ParseUUIDPipe) templateId: string) {
     const data = await this.service.getTemplate(templateId);
     return { status: 'success', data };
   }
@@ -71,15 +72,28 @@ export class AnnualFolderTemplatesController {
   @Get()
   @RequirePermissions('annual_folder_templates:read')
   @ApiOperation({ summary: 'Get template by club type and year' })
-  @ApiQuery({ name: 'club_type_id', required: true, description: 'Club type ID', example: 2 })
-  @ApiQuery({ name: 'year_id', required: true, description: 'Ecclesiastical year ID', example: 1 })
+  @ApiQuery({
+    name: 'club_type_id',
+    required: true,
+    description: 'Club type ID',
+    example: 2,
+  })
+  @ApiQuery({
+    name: 'year_id',
+    required: true,
+    description: 'Ecclesiastical year ID',
+    example: 1,
+  })
   @ApiResponse({ status: 200, description: 'Template with sections' })
   @ApiResponse({ status: 404, description: 'Template not found' })
   async getTemplateByClubTypeAndYear(
     @Query('club_type_id', ParseIntPipe) clubTypeId: number,
     @Query('year_id', ParseIntPipe) yearId: number,
   ) {
-    const data = await this.service.getTemplateByClubTypeAndYear(clubTypeId, yearId);
+    const data = await this.service.getTemplateByClubTypeAndYear(
+      clubTypeId,
+      yearId,
+    );
     return { status: 'success', data };
   }
 
@@ -118,9 +132,7 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 200, description: 'Section deleted' })
   @ApiResponse({ status: 404, description: 'Section not found' })
   @ApiResponse({ status: 409, description: 'Section has evidences' })
-  async removeSection(
-    @Param('sectionId', ParseUUIDPipe) sectionId: string,
-  ) {
+  async removeSection(@Param('sectionId', ParseUUIDPipe) sectionId: string) {
     const data = await this.service.removeTemplateSection(sectionId);
     return { status: 'success', ...data };
   }
@@ -143,7 +155,10 @@ export class AnnualFoldersController {
   @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
   @ApiResponse({ status: 201, description: 'Annual folder created' })
   @ApiResponse({ status: 404, description: 'Enrollment or template not found' })
-  @ApiResponse({ status: 409, description: 'Folder already exists for enrollment' })
+  @ApiResponse({
+    status: 409,
+    description: 'Folder already exists for enrollment',
+  })
   async createFolderForEnrollment(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
   ) {
@@ -157,9 +172,7 @@ export class AnnualFoldersController {
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiResponse({ status: 200, description: 'Folder details' })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async getFolder(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-  ) {
+  async getFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
     const data = await this.service.getFolder(folderId);
     return { status: 'success', data };
   }
@@ -222,9 +235,7 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 200, description: 'Evidence deleted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Evidence not found' })
-  async deleteEvidence(
-    @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
-  ) {
+  async deleteEvidence(@Param('evidenceId', ParseUUIDPipe) evidenceId: string) {
     const data = await this.service.deleteEvidence(evidenceId);
     return { status: 'success', ...data };
   }
@@ -236,9 +247,7 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 200, description: 'Folder submitted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async submitFolder(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-  ) {
+  async submitFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
     const data = await this.service.submitFolder(folderId);
     return { status: 'success', data };
   }
@@ -257,9 +266,7 @@ export class AnnualFoldersController {
     description: "Folder is not in 'submitted' or 'evaluated' status",
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async closeFolder(
-    @Param('folderId', ParseUUIDPipe) folderId: string,
-  ) {
+  async closeFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
     const data = await this.service.closeFolder(folderId);
     return { status: 'success', data };
   }

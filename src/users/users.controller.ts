@@ -269,7 +269,9 @@ export class UsersController {
     status: 200,
     description: 'Si requiere (edad < 18) o no',
   })
-  async requiresLegalRepresentative(@Param('userId', ParseUUIDPipe) userId: string) {
+  async requiresLegalRepresentative(
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
     const age = await this.usersService.calculateAge(userId);
     const required =
       await this.usersService.requiresLegalRepresentative(userId);

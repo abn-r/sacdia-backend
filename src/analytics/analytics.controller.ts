@@ -56,11 +56,14 @@ export class AnalyticsController {
    * Returns the local_field_id if the user is a coordinator (and NOT an admin).
    * Admins see the global view (no filter).
    */
-  private async resolveLocalFieldScope(userId: string): Promise<number | undefined> {
-    const resolved = await this.authorizationContext.resolveUserAuthorization(userId);
+  private async resolveLocalFieldScope(
+    userId: string,
+  ): Promise<number | undefined> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
 
-    const roleNames = resolved.authorization.grants.global_roles.map(
-      (g) => g.role_name.toLowerCase(),
+    const roleNames = resolved.authorization.grants.global_roles.map((g) =>
+      g.role_name.toLowerCase(),
     );
 
     const isAdmin = roleNames.some((r) =>
@@ -81,6 +84,8 @@ export class AnalyticsController {
 
     // Fallback: use the local_field_id from the user's profile
     const profileLocalFieldId = resolved.profile.local_field_id;
-    return typeof profileLocalFieldId === 'number' ? profileLocalFieldId : undefined;
+    return typeof profileLocalFieldId === 'number'
+      ? profileLocalFieldId
+      : undefined;
   }
 }

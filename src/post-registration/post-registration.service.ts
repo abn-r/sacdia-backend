@@ -84,7 +84,7 @@ export class PostRegistrationService {
     });
 
     return {
-      has_photo: !!(user?.user_image),
+      has_photo: !!user?.user_image,
     };
   }
 

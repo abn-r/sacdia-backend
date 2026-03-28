@@ -17,8 +17,7 @@ export class MembershipRequestsCronService {
   @Cron('0 * * * *', { name: 'membership-requests-expiry' })
   async handleExpiry(): Promise<void> {
     try {
-      const count =
-        await this.membershipRequestsService.expireStaleRequests();
+      const count = await this.membershipRequestsService.expireStaleRequests();
 
       if (count > 0) {
         this.logger.log(`Expired ${count} stale membership request(s)`);

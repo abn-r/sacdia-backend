@@ -122,7 +122,8 @@ export class InventoryController {
   @AuthorizationResource({ type: 'inventory_item', idParam: 'inventoryId' })
   @ApiOperation({
     summary: 'Obtener historial de cambios de un item del inventario',
-    description: 'Retorna el historial de acciones realizadas sobre un item de inventario, ordenado por fecha descendente.',
+    description:
+      'Retorna el historial de acciones realizadas sobre un item de inventario, ordenado por fecha descendente.',
   })
   @ApiParam({
     name: 'inventoryId',

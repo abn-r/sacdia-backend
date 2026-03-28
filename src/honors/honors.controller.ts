@@ -257,7 +257,9 @@ export class UserHonorsController {
     @Param('honorId', ParseIntPipe) honorId: number,
     @UploadedFiles(
       new FilesValidationPipe({
-        certificate: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS },
+        certificate: {
+          allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+        },
         document: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS },
         images: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES },
       }),

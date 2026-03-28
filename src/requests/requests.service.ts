@@ -34,14 +34,13 @@ export class RequestsService {
     }
 
     // Validate user has an active role assignment in from_section
-    const userAssignment =
-      await this.prisma.club_role_assignments.findFirst({
-        where: {
-          user_id: userId,
-          club_section_id: fromSectionId,
-          active: true,
-        },
-      });
+    const userAssignment = await this.prisma.club_role_assignments.findFirst({
+      where: {
+        user_id: userId,
+        club_section_id: fromSectionId,
+        active: true,
+      },
+    });
 
     if (!userAssignment) {
       throw new BadRequestException(
@@ -61,13 +60,12 @@ export class RequestsService {
     }
 
     // Check no pending request already exists for this user
-    const pendingRequest =
-      await this.prisma.club_transfer_requests.findFirst({
-        where: {
-          user_id: userId,
-          status: 'pending',
-        },
-      });
+    const pendingRequest = await this.prisma.club_transfer_requests.findFirst({
+      where: {
+        user_id: userId,
+        status: 'pending',
+      },
+    });
 
     if (pendingRequest) {
       throw new ConflictException(
@@ -106,11 +104,17 @@ export class RequestsService {
         ['director'],
         'Nueva solicitud de traslado',
         `${result.user.name} ${result.user.paternal_last_name} ha solicitado un traslado`,
-        { type: 'transfer', entity_id: result.transfer_request_id, status: 'pending' },
+        {
+          type: 'transfer',
+          entity_id: result.transfer_request_id,
+          status: 'pending',
+        },
         'requests:transfer_created',
       );
     } catch (error) {
-      this.logger.warn(`Notification failed for transfer request ${result.transfer_request_id}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for transfer request ${result.transfer_request_id}: ${error.message}`,
+      );
     }
 
     return result;
@@ -122,13 +126,12 @@ export class RequestsService {
     action: 'approved' | 'rejected',
     comment?: string,
   ) {
-    const request =
-      await this.prisma.club_transfer_requests.findUnique({
-        where: { transfer_request_id: requestId },
-        include: {
-          user: { select: { user_id: true, name: true } },
-        },
-      });
+    const request = await this.prisma.club_transfer_requests.findUnique({
+      where: { transfer_request_id: requestId },
+      include: {
+        user: { select: { user_id: true, name: true } },
+      },
+    });
 
     if (!request) {
       throw new NotFoundException(
@@ -236,12 +239,12 @@ export class RequestsService {
 
     // Notify the member about the transfer decision
     try {
-      const title = action === 'approved'
-        ? 'Traslado aprobado'
-        : 'Traslado rechazado';
-      const body = action === 'approved'
-        ? 'Tu solicitud de traslado ha sido aprobada'
-        : `Tu solicitud de traslado ha sido rechazada${comment ? ': ' + comment : ''}`;
+      const title =
+        action === 'approved' ? 'Traslado aprobado' : 'Traslado rechazado';
+      const body =
+        action === 'approved'
+          ? 'Tu solicitud de traslado ha sido aprobada'
+          : `Tu solicitud de traslado ha sido rechazada${comment ? ': ' + comment : ''}`;
 
       this.notifications.notifySafe(
         request.user_id,
@@ -251,16 +254,15 @@ export class RequestsService {
         `requests:transfer_${action}`,
       );
     } catch (error) {
-      this.logger.warn(`Notification failed for transfer review ${requestId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for transfer review ${requestId}: ${error.message}`,
+      );
     }
 
     return result;
   }
 
-  async getTransferRequests(filters?: {
-    status?: string;
-    sectionId?: number;
-  }) {
+  async getTransferRequests(filters?: { status?: string; sectionId?: number }) {
     const where: Record<string, unknown> = {};
 
     if (filters?.status) {
@@ -309,39 +311,38 @@ export class RequestsService {
   }
 
   async getTransferRequest(requestId: string) {
-    const request =
-      await this.prisma.club_transfer_requests.findUnique({
-        where: { transfer_request_id: requestId },
-        include: {
-          user: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              email: true,
-            },
-          },
-          from_section: {
-            include: {
-              club_types: { select: { name: true } },
-              clubs: { select: { name: true } },
-            },
-          },
-          to_section: {
-            include: {
-              club_types: { select: { name: true } },
-              clubs: { select: { name: true } },
-            },
-          },
-          reviewer: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-            },
+    const request = await this.prisma.club_transfer_requests.findUnique({
+      where: { transfer_request_id: requestId },
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            email: true,
           },
         },
-      });
+        from_section: {
+          include: {
+            club_types: { select: { name: true } },
+            clubs: { select: { name: true } },
+          },
+        },
+        to_section: {
+          include: {
+            club_types: { select: { name: true } },
+            clubs: { select: { name: true } },
+          },
+        },
+        reviewer: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+      },
+    });
 
     if (!request) {
       throw new NotFoundException(
@@ -397,15 +398,16 @@ export class RequestsService {
     await this.validateRoleSlotForRequest(sectionId, roleId);
 
     // Check no pending request for same user + role + section
-    const pendingRequest =
-      await this.prisma.role_assignment_requests.findFirst({
+    const pendingRequest = await this.prisma.role_assignment_requests.findFirst(
+      {
         where: {
           club_section_id: sectionId,
           user_id: userId,
           role_id: roleId,
           status: 'pending',
         },
-      });
+      },
+    );
 
     if (pendingRequest) {
       throw new ConflictException(
@@ -454,7 +456,9 @@ export class RequestsService {
         'requests:assignment_created',
       );
     } catch (error) {
-      this.logger.warn(`Notification failed for assignment request ${result.request_id}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for assignment request ${result.request_id}: ${error.message}`,
+      );
     }
 
     return result;
@@ -466,13 +470,12 @@ export class RequestsService {
     action: 'approved' | 'rejected',
     comment?: string,
   ) {
-    const request =
-      await this.prisma.role_assignment_requests.findUnique({
-        where: { request_id: requestId },
-        include: {
-          role: { select: { role_id: true, role_name: true } },
-        },
-      });
+    const request = await this.prisma.role_assignment_requests.findUnique({
+      where: { request_id: requestId },
+      include: {
+        role: { select: { role_id: true, role_name: true } },
+      },
+    });
 
     if (!request) {
       throw new NotFoundException(
@@ -615,25 +618,41 @@ export class RequestsService {
     // Notify the requester and the target user about the decision
     try {
       const roleName = request.role.role_name;
-      const title = action === 'approved'
-        ? 'Asignación de rol aprobada'
-        : 'Asignación de rol rechazada';
-      const body = action === 'approved'
-        ? `La asignación del rol ${roleName} ha sido aprobada`
-        : `La asignación del rol ${roleName} ha sido rechazada${comment ? ': ' + comment : ''}`;
+      const title =
+        action === 'approved'
+          ? 'Asignación de rol aprobada'
+          : 'Asignación de rol rechazada';
+      const body =
+        action === 'approved'
+          ? `La asignación del rol ${roleName} ha sido aprobada`
+          : `La asignación del rol ${roleName} ha sido rechazada${comment ? ': ' + comment : ''}`;
       const notifData = { type: 'assignment', entity_id: requestId, action };
 
       const assignmentSource = `requests:assignment_${action}`;
 
       // Notify the requester (assistant-lf or whoever requested)
-      this.notifications.notifySafe(request.requested_by, title, body, notifData, assignmentSource);
+      this.notifications.notifySafe(
+        request.requested_by,
+        title,
+        body,
+        notifData,
+        assignmentSource,
+      );
 
       // Notify the target user (the person being assigned)
       if (request.user_id !== request.requested_by) {
-        this.notifications.notifySafe(request.user_id, title, body, notifData, assignmentSource);
+        this.notifications.notifySafe(
+          request.user_id,
+          title,
+          body,
+          notifData,
+          assignmentSource,
+        );
       }
     } catch (error) {
-      this.logger.warn(`Notification failed for assignment review ${requestId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for assignment review ${requestId}: ${error.message}`,
+      );
     }
 
     return result;
@@ -690,41 +709,40 @@ export class RequestsService {
   }
 
   async getAssignmentRequest(requestId: string) {
-    const request =
-      await this.prisma.role_assignment_requests.findUnique({
-        where: { request_id: requestId },
-        include: {
-          user: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              email: true,
-            },
-          },
-          role: { select: { role_id: true, role_name: true } },
-          requester: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-            },
-          },
-          approver: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-            },
-          },
-          club_section: {
-            include: {
-              club_types: { select: { name: true } },
-              clubs: { select: { name: true } },
-            },
+    const request = await this.prisma.role_assignment_requests.findUnique({
+      where: { request_id: requestId },
+      include: {
+        user: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            email: true,
           },
         },
-      });
+        role: { select: { role_id: true, role_name: true } },
+        requester: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        approver: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+        club_section: {
+          include: {
+            club_types: { select: { name: true } },
+            clubs: { select: { name: true } },
+          },
+        },
+      },
+    });
 
     if (!request) {
       throw new NotFoundException(
@@ -749,24 +767,22 @@ export class RequestsService {
 
     if (slotLimit?.max_per_section != null) {
       // Count current active assignments
-      const currentCount =
-        await this.prisma.club_role_assignments.count({
-          where: {
-            club_section_id: sectionId,
-            role_id: roleId,
-            active: true,
-          },
-        });
+      const currentCount = await this.prisma.club_role_assignments.count({
+        where: {
+          club_section_id: sectionId,
+          role_id: roleId,
+          active: true,
+        },
+      });
 
       // Also count pending requests for same role+section
-      const pendingCount =
-        await this.prisma.role_assignment_requests.count({
-          where: {
-            club_section_id: sectionId,
-            role_id: roleId,
-            status: 'pending',
-          },
-        });
+      const pendingCount = await this.prisma.role_assignment_requests.count({
+        where: {
+          club_section_id: sectionId,
+          role_id: roleId,
+          status: 'pending',
+        },
+      });
 
       if (currentCount + pendingCount >= slotLimit.max_per_section) {
         const role = await this.prisma.roles.findUnique({
@@ -784,19 +800,16 @@ export class RequestsService {
     tx?: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
   ): Promise<number> {
     const prisma = tx ?? this.prisma;
-    const currentYear =
-      await prisma.ecclesiastical_years.findFirst({
-        where: {
-          start_date: { lte: new Date() },
-          end_date: { gte: new Date() },
-        },
-        select: { year_id: true },
-      });
+    const currentYear = await prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: new Date() },
+        end_date: { gte: new Date() },
+      },
+      select: { year_id: true },
+    });
 
     if (!currentYear) {
-      throw new BadRequestException(
-        'No active ecclesiastical year configured',
-      );
+      throw new BadRequestException('No active ecclesiastical year configured');
     }
 
     return currentYear.year_id;

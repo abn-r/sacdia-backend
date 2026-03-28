@@ -15,7 +15,8 @@ export class EnrollMfaDto {
 export class VerifyMfaDto {
   @ApiProperty({
     example: '123456',
-    description: 'Código TOTP de 6 dígitos de tu app de autenticación (Google Authenticator, Authy, etc.)',
+    description:
+      'Código TOTP de 6 dígitos de tu app de autenticación (Google Authenticator, Authy, etc.)',
   })
   @IsString()
   @Length(6, 6, { message: 'El código debe tener exactamente 6 dígitos' })

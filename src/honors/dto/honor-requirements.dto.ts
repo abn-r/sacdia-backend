@@ -38,7 +38,9 @@ export class BulkUpdateRequirementProgressDto {
   })
   @IsArray()
   @ArrayNotEmpty()
-  @ArrayMaxSize(50, { message: 'Se pueden actualizar un máximo de 50 requisitos a la vez' })
+  @ArrayMaxSize(50, {
+    message: 'Se pueden actualizar un máximo de 50 requisitos a la vez',
+  })
   @ValidateNested({ each: true })
   @Type(() => UpdateRequirementProgressDto)
   requirements: UpdateRequirementProgressDto[];

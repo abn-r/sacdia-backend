@@ -101,12 +101,12 @@ export class ClubEnrollmentsController {
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({
     status: 200,
-    description: 'Inscripción vigente, o null si la sección no tiene inscripción en el año actual',
+    description:
+      'Inscripción vigente, o null si la sección no tiene inscripción en el año actual',
   })
-  async findCurrent(
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-  ) {
-    const data = await this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
+  async findCurrent(@Param('sectionId', ParseIntPipe) sectionId: number) {
+    const data =
+      await this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
     return { status: 'success', data };
   }
 

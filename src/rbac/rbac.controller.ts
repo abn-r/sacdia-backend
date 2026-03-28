@@ -220,8 +220,7 @@ export class RbacBootstrapController {
 
   @Post('bootstrap-admin')
   @ApiOperation({
-    summary:
-      'Crear el primer super_admin (solo funciona si no existe ninguno)',
+    summary: 'Crear el primer super_admin (solo funciona si no existe ninguno)',
   })
   @ApiResponse({ status: 201, description: 'Primer super_admin creado' })
   @ApiResponse({

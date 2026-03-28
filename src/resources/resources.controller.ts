@@ -78,8 +78,14 @@ export class ResourcesController {
     },
   })
   @ApiResponse({ status: 201, description: 'Recurso creado correctamente' })
-  @ApiResponse({ status: 400, description: 'Datos inválidos o archivo no permitido' })
-  @ApiResponse({ status: 403, description: 'Sin permiso para el scope indicado' })
+  @ApiResponse({
+    status: 400,
+    description: 'Datos inválidos o archivo no permitido',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Sin permiso para el scope indicado',
+  })
   async create(
     @Body() dto: CreateResourceDto,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -142,7 +148,10 @@ export class ResourcesController {
   })
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'URL firmada generada' })
-  @ApiResponse({ status: 400, description: 'El recurso no tiene archivo asociado' })
+  @ApiResponse({
+    status: 400,
+    description: 'El recurso no tiene archivo asociado',
+  })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   async getSignedUrl(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.resourcesService.getSignedUrl(id);
@@ -157,7 +166,8 @@ export class ResourcesController {
   @RequirePermissions('resources:update')
   @ApiOperation({
     summary: 'Actualizar recurso',
-    description: 'Actualiza los metadatos del recurso (sin reemplazar el archivo).',
+    description:
+      'Actualiza los metadatos del recurso (sin reemplazar el archivo).',
   })
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso actualizado' })
@@ -178,7 +188,8 @@ export class ResourcesController {
   @RequirePermissions('resources:delete')
   @ApiOperation({
     summary: 'Eliminar recurso',
-    description: 'Desactiva el recurso (soft delete). El archivo en R2 no se elimina.',
+    description:
+      'Desactiva el recurso (soft delete). El archivo en R2 no se elimina.',
   })
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso eliminado correctamente' })

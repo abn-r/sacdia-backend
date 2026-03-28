@@ -44,11 +44,11 @@ export class ResourcesAppController {
       '(sistema, unión o campo local) y tipo de club. ' +
       'No requiere permiso RBAC explícito — solo autenticación.',
   })
-  @ApiResponse({ status: 200, description: 'Lista paginada de recursos visibles' })
-  async getMyResources(
-    @Query() query: ResourceQueryDto,
-    @Request() req: any,
-  ) {
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de recursos visibles',
+  })
+  async getMyResources(@Query() query: ResourceQueryDto, @Request() req: any) {
     return this.resourcesService.getVisibleResources(query, req.authorization);
   }
 
@@ -85,7 +85,10 @@ export class ResourcesAppController {
   })
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'URL firmada generada' })
-  @ApiResponse({ status: 400, description: 'El recurso no tiene archivo asociado' })
+  @ApiResponse({
+    status: 400,
+    description: 'El recurso no tiene archivo asociado',
+  })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   async getMyResourceSignedUrl(
     @Param('id', ParseUUIDPipe) id: string,

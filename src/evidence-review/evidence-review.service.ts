@@ -19,7 +19,9 @@ import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
 // folders_section_records.status and class_section_progress.status now use
 // evidence_validation_enum (PENDING / VALIDATED / REJECTED) after the
 // 20260327200000_migrate_evidence_status_to_enum migration.
-// users_honors.validation_status remains a separate VARCHAR field.
+// users_honors.validation_status now uses honor_validation_status_enum (IN_PROGRESS /
+// PENDING_REVIEW / APPROVED / REJECTED) after the 20260328110000_honor_validation_status_enum
+// migration.
 
 const FOLDER_STATUS_PENDING = 'PENDING';
 const FOLDER_STATUS_VALIDATED = 'VALIDATED';
@@ -29,9 +31,9 @@ const CLASS_STATUS_PENDING = 'PENDING';
 const CLASS_STATUS_VALIDATED = 'VALIDATED';
 const CLASS_STATUS_REJECTED = 'REJECTED';
 
-const HONOR_STATUS_PENDING = 'in_progress';
-const HONOR_STATUS_VALIDATED = 'validated';
-const HONOR_STATUS_REJECTED = 'rejected';
+const HONOR_STATUS_PENDING = 'IN_PROGRESS';
+const HONOR_STATUS_APPROVED = 'APPROVED';
+const HONOR_STATUS_REJECTED = 'REJECTED';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -584,7 +586,7 @@ export class EvidenceReviewService {
 
     if (record.validation_status !== HONOR_STATUS_PENDING) {
       throw new BadRequestException(
-        `Solo se pueden aprobar honores en estado in_progress. Estado actual: ${record.validation_status}`,
+        `Solo se pueden aprobar honores en estado IN_PROGRESS. Estado actual: ${record.validation_status}`,
       );
     }
 
@@ -593,7 +595,7 @@ export class EvidenceReviewService {
       const result = await tx.users_honors.update({
         where: { user_honor_id: id },
         data: {
-          validation_status: HONOR_STATUS_VALIDATED,
+          validation_status: HONOR_STATUS_APPROVED,
           validate: true,
           validated_by_id: actorId,
           validated_at: now,
@@ -759,8 +761,8 @@ export class EvidenceReviewService {
       throw new BadRequestException(`El honor ya está rechazado`);
     }
 
-    if (record.validation_status === HONOR_STATUS_VALIDATED) {
-      throw new ConflictException(`El registro ya fue validado`);
+    if (record.validation_status === HONOR_STATUS_APPROVED) {
+      throw new ConflictException(`El registro ya fue aprobado`);
     }
 
     const now = new Date();

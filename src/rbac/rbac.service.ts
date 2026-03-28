@@ -17,8 +17,11 @@ export class RbacService {
   // ─── Permisos ───────────────────────────────────────────────
 
   async listPermissions() {
+    // Small system table: permissions are defined at deploy time and are expected
+    // to remain well under 500 rows. Safety cap prevents runaway reads.
     return this.prisma.permissions.findMany({
       orderBy: { permission_name: 'asc' },
+      take: 500,
     });
   }
 
@@ -105,6 +108,8 @@ export class RbacService {
   // ─── Roles ──────────────────────────────────────────────────
 
   async listRoles() {
+    // Small system table: roles are defined at deploy time and are expected
+    // to remain well under 200 rows. Safety cap prevents runaway reads.
     return this.prisma.roles.findMany({
       where: { active: true },
       orderBy: { role_name: 'asc' },
@@ -122,6 +127,7 @@ export class RbacService {
           },
         },
       },
+      take: 200,
     });
   }
 
@@ -238,6 +244,8 @@ export class RbacService {
   // ─── Permisos directos de usuario ───────────────────────────
 
   async getUserPermissions(userId: string) {
+    // Per-user direct permissions: bounded by the total number of permissions
+    // in the system. Safety cap matches listPermissions.
     return this.prisma.users_permissions.findMany({
       where: { user_id: userId, active: true },
       include: {
@@ -251,6 +259,7 @@ export class RbacService {
         },
       },
       orderBy: { permissions: { permission_name: 'asc' } },
+      take: 500,
     });
   }
 
@@ -270,18 +279,14 @@ export class RbacService {
         );
         return { success: true, message: 'Permiso reactivado' };
       }
-      throw new ConflictException(
-        'El usuario ya tiene este permiso asignado',
-      );
+      throw new ConflictException('El usuario ya tiene este permiso asignado');
     }
 
     await this.prisma.users_permissions.create({
       data: { user_id: userId, permission_id: permissionId },
     });
 
-    this.logger.log(
-      `Permiso ${permissionId} asignado a usuario ${userId}`,
-    );
+    this.logger.log(`Permiso ${permissionId} asignado a usuario ${userId}`);
     return { success: true, message: 'Permiso asignado' };
   }
 
@@ -301,9 +306,7 @@ export class RbacService {
       data: { active: false, modified_at: new Date() },
     });
 
-    this.logger.log(
-      `Permiso ${permissionId} removido del usuario ${userId}`,
-    );
+    this.logger.log(`Permiso ${permissionId} removido del usuario ${userId}`);
     return { success: true, message: 'Permiso removido del usuario' };
   }
 
@@ -319,6 +322,8 @@ export class RbacService {
       throw new NotFoundException(`Usuario ${userId} no encontrado`);
     }
 
+    // Per-user role assignments: bounded by the total number of roles.
+    // Safety cap matches listRoles.
     return this.prisma.users_roles.findMany({
       where: { user_id: userId, active: true },
       include: {
@@ -332,6 +337,7 @@ export class RbacService {
         },
       },
       orderBy: { roles: { role_name: 'asc' } },
+      take: 200,
     });
   }
 
@@ -387,9 +393,7 @@ export class RbacService {
     });
 
     if (!assignment) {
-      throw new NotFoundException(
-        'Asignación de rol a usuario no encontrada',
-      );
+      throw new NotFoundException('Asignación de rol a usuario no encontrada');
     }
 
     await this.prisma.users_roles.update({

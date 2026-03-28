@@ -33,7 +33,9 @@ export class ResourceQueryDto {
   @IsIn(['system', 'union', 'local_field'])
   scope_level?: string;
 
-  @ApiPropertyOptional({ description: 'Filtrar por ID del ámbito (union o campo local)' })
+  @ApiPropertyOptional({
+    description: 'Filtrar por ID del ámbito (union o campo local)',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -46,7 +48,11 @@ export class ResourceQueryDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ description: 'Resultados por página', default: 20, maximum: 100 })
+  @ApiPropertyOptional({
+    description: 'Resultados por página',
+    default: 20,
+    maximum: 100,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

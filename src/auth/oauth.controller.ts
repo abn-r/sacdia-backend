@@ -128,7 +128,10 @@ export class OAuthController {
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'Session token inválido o expirado' })
+  @ApiResponse({
+    status: 401,
+    description: 'Session token inválido o expirado',
+  })
   async handleCallback(@Body() dto: OAuthCallbackDto) {
     return this.oauthService.handleCallback(dto);
   }

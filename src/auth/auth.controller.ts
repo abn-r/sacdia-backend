@@ -183,7 +183,9 @@ export class AuthController {
   @ApiBearerAuth()
   // Rate limit: max 3 sends per minute to prevent token farming
   @Throttle({ default: { ttl: 60000, limit: 3 } })
-  @ApiOperation({ summary: 'Enviar email de verificación al usuario autenticado' })
+  @ApiOperation({
+    summary: 'Enviar email de verificación al usuario autenticado',
+  })
   @ApiResponse({
     status: 200,
     description: 'Email de verificación enviado (o ya verificado)',

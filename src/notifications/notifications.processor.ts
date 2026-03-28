@@ -69,7 +69,10 @@ const PERMANENT_FCM_ERROR_CODES = new Set([
 ]);
 
 @Processor(NOTIFICATIONS_QUEUE)
-export class NotificationsProcessor extends WorkerHost implements OnApplicationBootstrap {
+export class NotificationsProcessor
+  extends WorkerHost
+  implements OnApplicationBootstrap
+{
   private readonly logger = new Logger(NotificationsProcessor.name);
 
   constructor(
@@ -125,7 +128,10 @@ export class NotificationsProcessor extends WorkerHost implements OnApplicationB
   private async handleSendToUser(job: Job<SendToUserJobData>) {
     const { userId, title, body, data, sentBy, source } = job.data;
 
-    const allowed = await this.preferencesService.isAllowedForUser(userId, source);
+    const allowed = await this.preferencesService.isAllowedForUser(
+      userId,
+      source,
+    );
     if (!allowed) {
       this.logger.debug(
         `Notification to user ${userId} skipped — opted out of source "${source}" (job ${job.id})`,
@@ -196,7 +202,10 @@ export class NotificationsProcessor extends WorkerHost implements OnApplicationB
       return { skipped: true, reason: 'no-users' };
     }
 
-    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      rawUserIds,
+      source,
+    );
     const userIds = rawUserIds.filter((id) => allowedSet.has(id));
 
     if (userIds.length === 0) {
@@ -254,7 +263,8 @@ export class NotificationsProcessor extends WorkerHost implements OnApplicationB
   // ---------------------------------------------------------------------------
 
   private async handleSendToGlobalRole(job: Job<SendToGlobalRoleJobData>) {
-    const { roleNames, title, body, data, localFieldId, source, unionId } = job.data;
+    const { roleNames, title, body, data, localFieldId, source, unionId } =
+      job.data;
 
     const where: Record<string, unknown> = {
       active: true,
@@ -285,7 +295,10 @@ export class NotificationsProcessor extends WorkerHost implements OnApplicationB
       return { skipped: true, reason: 'no-users' };
     }
 
-    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      rawUserIds,
+      source,
+    );
     const userIds = rawUserIds.filter((id) => allowedSet.has(id));
 
     if (userIds.length === 0) {
@@ -358,7 +371,10 @@ export class NotificationsProcessor extends WorkerHost implements OnApplicationB
     }
 
     const uniqueUserIds = [...new Set(tokens.map((t) => t.user_id))];
-    const allowedSet = await this.preferencesService.filterAllowedUsers(uniqueUserIds, source);
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      uniqueUserIds,
+      source,
+    );
     const filteredTokens = tokens.filter((t) => allowedSet.has(t.user_id));
 
     if (filteredTokens.length === 0) {
@@ -452,9 +468,13 @@ export class NotificationsProcessor extends WorkerHost implements OnApplicationB
         .map((resp, idx) => (resp.success ? tokens[idx] : null))
         .filter((token): token is string => token !== null);
 
-      this.fcmTokensService.updateLastUsed(succeededTokens).catch((err: Error) => {
-        this.logger.warn(`Failed to update last_used for delivered tokens: ${err.message}`);
-      });
+      this.fcmTokensService
+        .updateLastUsed(succeededTokens)
+        .catch((err: Error) => {
+          this.logger.warn(
+            `Failed to update last_used for delivered tokens: ${err.message}`,
+          );
+        });
     }
 
     return {

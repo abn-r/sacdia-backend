@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Patch,
-  Param,
-  Body,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -51,12 +44,14 @@ export class SystemConfigController {
   @GlobalRoles('admin', 'super_admin')
   @ApiOperation({
     summary: 'Obtener una configuracion por clave',
-    description: 'Obtiene el valor de una configuracion especifica del sistema.',
+    description:
+      'Obtiene el valor de una configuracion especifica del sistema.',
   })
   @ApiParam({
     name: 'key',
     type: String,
-    description: 'Clave de configuracion (e.g. investiture.min_approval_percentage)',
+    description:
+      'Clave de configuracion (e.g. investiture.min_approval_percentage)',
   })
   @ApiResponse({ status: 200, description: 'Configuracion encontrada' })
   @ApiResponse({ status: 404, description: 'Configuracion no encontrada' })

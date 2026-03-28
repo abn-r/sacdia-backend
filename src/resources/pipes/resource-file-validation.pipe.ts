@@ -14,16 +14,8 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   ],
-  audio: [
-    'audio/mpeg',
-    'audio/wav',
-    'audio/ogg',
-  ],
-  image: [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-  ],
+  audio: ['audio/mpeg', 'audio/wav', 'audio/ogg'],
+  image: ['image/jpeg', 'image/png', 'image/webp'],
 };
 
 /**

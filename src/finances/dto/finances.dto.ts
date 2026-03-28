@@ -44,12 +44,15 @@ export class CreateFinanceDto {
   @IsDateString()
   finance_date: string;
 
-  @ApiProperty({ description: 'ID de la sección del club (FK a club_sections)' })
+  @ApiProperty({
+    description: 'ID de la sección del club (FK a club_sections)',
+  })
   @IsInt()
   club_section_id: number;
 
   @ApiPropertyOptional({
-    description: 'Justificación para movimiento en período cerrado (solo admin)',
+    description:
+      'Justificación para movimiento en período cerrado (solo admin)',
     maxLength: 500,
   })
   @IsOptional()
@@ -80,7 +83,8 @@ export class UpdateFinanceDto {
   finance_date?: string;
 
   @ApiPropertyOptional({
-    description: 'Justificación para movimiento en período cerrado (solo admin)',
+    description:
+      'Justificación para movimiento en período cerrado (solo admin)',
     maxLength: 500,
   })
   @IsOptional()

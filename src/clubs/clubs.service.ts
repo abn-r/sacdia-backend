@@ -68,7 +68,11 @@ export class ClubsService {
           districts: { select: { name: true } },
           local_fields: { select: { name: true } },
           club_sections: {
-            select: { club_section_id: true, active: true, club_types: { select: { name: true } } },
+            select: {
+              club_section_id: true,
+              active: true,
+              club_types: { select: { name: true } },
+            },
           },
         },
         orderBy: { name: 'asc' },
@@ -159,7 +163,8 @@ export class ClubsService {
       where: { club_section_id: sectionId },
       include: { club_types: { select: { name: true } } },
     });
-    if (!section) throw new NotFoundException(`Club section ${sectionId} not found`);
+    if (!section)
+      throw new NotFoundException(`Club section ${sectionId} not found`);
     return section;
   }
 
@@ -169,7 +174,9 @@ export class ClubsService {
       where: { club_type_id: dto.club_type_id },
     });
     if (!clubType || !clubType.active) {
-      throw new BadRequestException(`Club type ${dto.club_type_id} not found or inactive`);
+      throw new BadRequestException(
+        `Club type ${dto.club_type_id} not found or inactive`,
+      );
     }
     return this.prisma.club_sections.create({
       data: {
@@ -252,9 +259,7 @@ export class ClubsService {
 
   async assignRole(dto: AssignRoleDto) {
     if (!dto.club_section_id) {
-      throw new BadRequestException(
-        'club_section_id is required',
-      );
+      throw new BadRequestException('club_section_id is required');
     }
 
     const roleId = await this.resolveRoleId(dto);
@@ -381,14 +386,13 @@ export class ClubsService {
       });
 
       if (secTreasRole) {
-        const hasSecTreas =
-          await this.prisma.club_role_assignments.findFirst({
-            where: {
-              club_section_id: sectionId,
-              role_id: secTreasRole.role_id,
-              active: true,
-            },
-          });
+        const hasSecTreas = await this.prisma.club_role_assignments.findFirst({
+          where: {
+            club_section_id: sectionId,
+            role_id: secTreasRole.role_id,
+            active: true,
+          },
+        });
 
         if (hasSecTreas) {
           throw new ConflictException(

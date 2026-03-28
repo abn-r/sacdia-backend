@@ -24,10 +24,7 @@ import {
   CreateAssignmentRequestDto,
   ReviewAssignmentRequestDto,
 } from './dto';
-import {
-  RequirePermissions,
-  CurrentUser,
-} from '../common/decorators';
+import { RequirePermissions, CurrentUser } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('requests')
@@ -73,8 +70,7 @@ export class RequestsController {
   @RequirePermissions('club_roles:read')
   @ApiOperation({
     summary: 'Listar solicitudes de transferencia',
-    description:
-      'Lista solicitudes de transferencia con filtros opcionales',
+    description: 'Lista solicitudes de transferencia con filtros opcionales',
   })
   @ApiQuery({
     name: 'status',
@@ -265,8 +261,7 @@ export class RequestsController {
   })
   @ApiResponse({
     status: 409,
-    description:
-      'La solicitud ya fue revisada o se alcanzó el límite de slots',
+    description: 'La solicitud ya fue revisada o se alcanzó el límite de slots',
   })
   async reviewAssignmentRequest(
     @Param('requestId', ParseUUIDPipe) requestId: string,

@@ -20,7 +20,9 @@ export class BulkRejectEvidenceDto {
   })
   @IsArray()
   @ArrayNotEmpty({ message: 'ids no puede estar vacío' })
-  @ArrayMaxSize(200, { message: 'Se pueden rechazar un máximo de 200 registros a la vez' })
+  @ArrayMaxSize(200, {
+    message: 'Se pueden rechazar un máximo de 200 registros a la vez',
+  })
   @IsInt({ each: true })
   @Min(1, { each: true })
   ids: number[];

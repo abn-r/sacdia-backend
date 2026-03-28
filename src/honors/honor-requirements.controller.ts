@@ -53,9 +53,7 @@ export class HonorRequirementsController {
   @ApiParam({ name: 'honorId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de requisitos del honor' })
   @ApiResponse({ status: 404, description: 'Honor no encontrado' })
-  async getRequirements(
-    @Param('honorId', ParseIntPipe) honorId: number,
-  ) {
+  async getRequirements(@Param('honorId', ParseIntPipe) honorId: number) {
     const requirements =
       await this.honorRequirementsService.getRequirements(honorId);
 
@@ -114,7 +112,8 @@ export class UserHonorRequirementsController {
   @RequirePermissions('user_honors:update')
   @ApiOperation({
     summary: 'Actualizar progreso de un requisito individual',
-    description: 'Marca o desmarca un requisito como completado con notas opcionales',
+    description:
+      'Marca o desmarca un requisito como completado con notas opcionales',
   })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'honorId', type: Number })

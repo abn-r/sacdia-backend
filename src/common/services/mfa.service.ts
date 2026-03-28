@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { BetterAuthService } from '../../better-auth/better-auth.service';
 
 // ---------------------------------------------------------------------------

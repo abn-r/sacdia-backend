@@ -60,6 +60,7 @@ export class FinancesService {
     const sectionIds = club.club_sections.map((s) => s.club_section_id);
 
     const where = {
+      active: true,
       club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
       ...(filters?.year && { year: filters.year }),
       ...(filters?.month && { month: filters.month }),
@@ -164,7 +165,12 @@ export class FinancesService {
 
   async create(dto: CreateFinanceDto, createdBy: string, clubId?: number) {
     if (clubId != null) {
-      await this.financePeriodService.validatePeriodOpen(clubId, dto.year, dto.month, createdBy);
+      await this.financePeriodService.validatePeriodOpen(
+        clubId,
+        dto.year,
+        dto.month,
+        createdBy,
+      );
     }
 
     return this.prisma.finances.create({
@@ -200,7 +206,10 @@ export class FinancesService {
       });
       if (section?.main_club_id) {
         await this.financePeriodService.validatePeriodOpen(
-          section.main_club_id, existing.year, existing.month, modifiedBy,
+          section.main_club_id,
+          existing.year,
+          existing.month,
+          modifiedBy,
         );
       }
     }
@@ -239,7 +248,10 @@ export class FinancesService {
       });
       if (section?.main_club_id) {
         await this.financePeriodService.validatePeriodOpen(
-          section.main_club_id, existing.year, existing.month, modifiedBy,
+          section.main_club_id,
+          existing.year,
+          existing.month,
+          modifiedBy,
         );
       }
     }

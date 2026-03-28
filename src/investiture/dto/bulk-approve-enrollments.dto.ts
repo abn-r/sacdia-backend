@@ -30,18 +30,22 @@ export class BulkApproveEnrollmentsDto {
   })
   @IsArray()
   @ArrayNotEmpty({ message: 'enrollmentIds no puede estar vacío' })
-  @ArrayMaxSize(200, { message: 'Se pueden aprobar un máximo de 200 enrollments a la vez' })
+  @ArrayMaxSize(200, {
+    message: 'Se pueden aprobar un máximo de 200 enrollments a la vez',
+  })
   @IsInt({ each: true })
   @Min(1, { each: true })
   enrollmentIds: number[];
 
   @ApiProperty({
-    description: 'Acción de aprobación a aplicar. club-approve no está disponible en bulk (usar endpoint individual).',
+    description:
+      'Acción de aprobación a aplicar. club-approve no está disponible en bulk (usar endpoint individual).',
     enum: ['coordinator-approve', 'field-approve', 'invest'],
     example: 'coordinator-approve',
   })
   @IsEnum(['coordinator-approve', 'field-approve', 'invest'], {
-    message: 'action debe ser uno de: coordinator-approve, field-approve, invest',
+    message:
+      'action debe ser uno de: coordinator-approve, field-approve, invest',
   })
   action: BulkApproveAction;
 

@@ -33,12 +33,8 @@ import { PrismaService } from '../prisma/prisma.service';
         const secret = configService.get<string>('BETTER_AUTH_SECRET');
         if (!secret || secret.length < 32) {
           const logger = new Logger('BetterAuthModule');
-          logger.error(
-            'BETTER_AUTH_SECRET must be at least 32 characters',
-          );
-          throw new Error(
-            'BETTER_AUTH_SECRET must be at least 32 characters',
-          );
+          logger.error('BETTER_AUTH_SECRET must be at least 32 characters');
+          throw new Error('BETTER_AUTH_SECRET must be at least 32 characters');
         }
         return {
           secret,

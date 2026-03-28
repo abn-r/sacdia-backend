@@ -158,7 +158,9 @@ export class FcmTokensService {
    */
   @Cron('0 3 * * 0', { name: 'fcm-tokens-cleanup' })
   async cleanupOldTokens(): Promise<void> {
-    this.logger.log('FCM token cleanup cron triggered — removing tokens unused for 90+ days...');
+    this.logger.log(
+      'FCM token cleanup cron triggered — removing tokens unused for 90+ days...',
+    );
 
     try {
       const ninetyDaysAgo = new Date();
@@ -172,9 +174,12 @@ export class FcmTokensService {
         },
       });
 
-      this.logger.log(`FCM token cleanup complete — deleted ${result.count} stale token(s)`);
+      this.logger.log(
+        `FCM token cleanup complete — deleted ${result.count} stale token(s)`,
+      );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       this.logger.error(`FCM token cleanup failed: ${errorMessage}`);
     }
   }

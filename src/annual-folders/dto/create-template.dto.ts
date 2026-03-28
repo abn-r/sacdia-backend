@@ -1,4 +1,10 @@
-import { IsString, IsInt, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsInt,
+  IsOptional,
+  IsBoolean,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateTemplateDto {
@@ -12,7 +18,8 @@ export class CreateTemplateDto {
   name: string;
 
   @ApiProperty({
-    description: 'ID del tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
+    description:
+      'ID del tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
     example: 2,
   })
   @IsInt()

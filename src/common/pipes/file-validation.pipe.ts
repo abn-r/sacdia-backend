@@ -1,8 +1,4 @@
-import {
-  PipeTransform,
-  Injectable,
-  BadRequestException,
-} from '@nestjs/common';
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
 
 export type FileValidationOptions = {
   maxSize?: number;
@@ -51,9 +47,7 @@ export class FileValidationPipe implements PipeTransform {
   private validateSize(file: Express.Multer.File) {
     if (file.size > this.maxSize) {
       const maxMB = (this.maxSize / (1024 * 1024)).toFixed(1);
-      throw new BadRequestException(
-        `File size exceeds maximum of ${maxMB}MB`,
-      );
+      throw new BadRequestException(`File size exceeds maximum of ${maxMB}MB`);
     }
   }
 
@@ -76,9 +70,7 @@ export class FileValidationPipe implements PipeTransform {
       );
     }
 
-    const matches = bytes.every(
-      (byte, i) => file.buffer[offset + i] === byte,
-    );
+    const matches = bytes.every((byte, i) => file.buffer[offset + i] === byte);
 
     if (!matches) {
       throw new BadRequestException(
@@ -91,18 +83,14 @@ export class FileValidationPipe implements PipeTransform {
 export class FilesValidationPipe implements PipeTransform {
   private readonly fieldRules: Record<string, FileValidationPipe>;
 
-  constructor(
-    fieldRules: Record<string, FileValidationOptions>,
-  ) {
+  constructor(fieldRules: Record<string, FileValidationOptions>) {
     this.fieldRules = {};
     for (const [field, options] of Object.entries(fieldRules)) {
       this.fieldRules[field] = new FileValidationPipe(options);
     }
   }
 
-  transform(
-    files: Record<string, Express.Multer.File[]> | undefined,
-  ) {
+  transform(files: Record<string, Express.Multer.File[]> | undefined) {
     if (!files) return files;
 
     for (const [field, fileList] of Object.entries(files)) {

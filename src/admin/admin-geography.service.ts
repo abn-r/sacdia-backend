@@ -57,8 +57,10 @@ export class AdminGeographyService {
   }
 
   async listCountries() {
+    // Geography catalog: bounded by number of countries in the system (~250 max).
     return this.prisma.countries.findMany({
       orderBy: { name: 'asc' },
+      take: 300,
     });
   }
 
@@ -148,9 +150,11 @@ export class AdminGeographyService {
   }
 
   async listUnions(countryId?: number) {
+    // Geography catalog: unions per country are in the tens at most.
     return this.prisma.unions.findMany({
       where: countryId ? { country_id: countryId } : undefined,
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -256,9 +260,11 @@ export class AdminGeographyService {
   }
 
   async listLocalFields(unionId?: number) {
+    // Geography catalog: local fields per union are in the tens to low hundreds.
     return this.prisma.local_fields.findMany({
       where: unionId ? { union_id: unionId } : undefined,
       orderBy: { name: 'asc' },
+      take: 1000,
     });
   }
 
@@ -371,9 +377,11 @@ export class AdminGeographyService {
   }
 
   async listDistricts(localFieldId?: number) {
+    // Geography catalog: districts per local field are in the tens.
     return this.prisma.districts.findMany({
       where: localFieldId ? { local_field_id: localFieldId } : undefined,
       orderBy: { name: 'asc' },
+      take: 2000,
     });
   }
 
@@ -459,10 +467,7 @@ export class AdminGeographyService {
 
     const keysToInvalidate = [CATALOG_CACHE_KEYS.DISTRICTS()];
     keysToInvalidate.push(CATALOG_CACHE_KEYS.DISTRICTS(current.local_field_id));
-    if (
-      dto.local_field_id &&
-      dto.local_field_id !== current.local_field_id
-    ) {
+    if (dto.local_field_id && dto.local_field_id !== current.local_field_id) {
       keysToInvalidate.push(CATALOG_CACHE_KEYS.DISTRICTS(dto.local_field_id));
     }
     await this.catalogCache.invalidateMany(keysToInvalidate);
@@ -505,9 +510,11 @@ export class AdminGeographyService {
   }
 
   async listChurches(districtId?: number) {
+    // Geography catalog: churches per district are in the tens to low hundreds.
     return this.prisma.churches.findMany({
       where: districtId ? { districlub_type_id: districtId } : undefined,
       orderBy: { name: 'asc' },
+      take: 5000,
     });
   }
 
@@ -586,10 +593,7 @@ export class AdminGeographyService {
     keysToInvalidate.push(
       CATALOG_CACHE_KEYS.CHURCHES(current.districlub_type_id),
     );
-    if (
-      dto.district_id &&
-      dto.district_id !== current.districlub_type_id
-    ) {
+    if (dto.district_id && dto.district_id !== current.districlub_type_id) {
       keysToInvalidate.push(CATALOG_CACHE_KEYS.CHURCHES(dto.district_id));
     }
     await this.catalogCache.invalidateMany(keysToInvalidate);

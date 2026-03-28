@@ -128,7 +128,10 @@ export class PermissionsGuard implements CanActivate {
           await this.resolveUnionCamporeeScope(request, resource),
         );
       case 'activity': {
-        const activityScopeResult = await this.resolveActivityScope(request, resource);
+        const activityScopeResult = await this.resolveActivityScope(
+          request,
+          resource,
+        );
         if ('participatingSectionIds' in activityScopeResult) {
           return this.validateJointActivityScope(
             userId,
@@ -136,7 +139,11 @@ export class PermissionsGuard implements CanActivate {
             activityScopeResult,
           );
         }
-        return this.validateInstanceScope(userId, resolved, activityScopeResult);
+        return this.validateInstanceScope(
+          userId,
+          resolved,
+          activityScopeResult,
+        );
       }
       case 'finance':
         return this.validateInstanceScope(
@@ -774,7 +781,9 @@ export class PermissionsGuard implements CanActivate {
     };
   }
 
-  private clubTypeIdToInstanceType(clubTypeId: number): AuthorizationSectionType {
+  private clubTypeIdToInstanceType(
+    clubTypeId: number,
+  ): AuthorizationSectionType {
     // These mappings follow the club_types catalog convention
     switch (clubTypeId) {
       case 1:

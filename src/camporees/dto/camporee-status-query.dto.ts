@@ -8,7 +8,13 @@ export class CamporeeStatusQueryDto {
   @ApiPropertyOptional({
     description: 'Filtrar por estado de inscripción',
     example: 'approved',
-    enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'],
+    enum: [
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ],
   })
   @IsOptional()
   @IsIn(['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'])

@@ -24,10 +24,7 @@ import {
   CreateWeeklyRecordDto,
   UpdateWeeklyRecordDto,
 } from './dto';
-import {
-  JwtAuthGuard,
-  PermissionsGuard,
-} from '../common/guards';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import {
   AuthorizationResource,
   RequirePermissions,
@@ -129,7 +126,10 @@ export class UnitsController {
   @ApiParam({ name: 'unitId', type: Number })
   @ApiResponse({ status: 201, description: 'Miembro agregado' })
   @ApiResponse({ status: 404, description: 'Unidad o usuario no encontrado' })
-  @ApiResponse({ status: 409, description: 'El usuario ya es miembro de una unidad' })
+  @ApiResponse({
+    status: 409,
+    description: 'El usuario ya es miembro de una unidad',
+  })
   async addMember(
     @Param('clubId', ParseIntPipe) _clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
@@ -146,7 +146,10 @@ export class UnitsController {
   @ApiParam({ name: 'unitId', type: Number })
   @ApiParam({ name: 'memberId', type: Number })
   @ApiResponse({ status: 200, description: 'Miembro removido' })
-  @ApiResponse({ status: 404, description: 'Miembro no encontrado en la unidad' })
+  @ApiResponse({
+    status: 404,
+    description: 'Miembro no encontrado en la unidad',
+  })
   async removeMember(
     @Param('clubId', ParseIntPipe) _clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
@@ -164,7 +167,8 @@ export class UnitsController {
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Listar registros semanales de la unidad',
-    description: 'Devuelve los registros semanales de todos los miembros activos de la unidad',
+    description:
+      'Devuelve los registros semanales de todos los miembros activos de la unidad',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'unitId', type: Number })
@@ -184,8 +188,14 @@ export class UnitsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'unitId', type: Number })
   @ApiResponse({ status: 201, description: 'Registro semanal creado' })
-  @ApiResponse({ status: 400, description: 'El usuario no es miembro activo de la unidad' })
-  @ApiResponse({ status: 409, description: 'Ya existe un registro para esa semana' })
+  @ApiResponse({
+    status: 400,
+    description: 'El usuario no es miembro activo de la unidad',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe un registro para esa semana',
+  })
   async createWeeklyRecord(
     @Param('clubId', ParseIntPipe) _clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,

@@ -48,11 +48,11 @@ export class PostRegistrationController {
 
   @Get('photo-status')
   @SensitiveUserSubresource('post_registration', 'read')
-  @ApiOperation({ summary: 'Verificar si el usuario tiene foto de perfil subida' })
+  @ApiOperation({
+    summary: 'Verificar si el usuario tiene foto de perfil subida',
+  })
   @ApiResponse({ status: 200, description: 'Estado de la foto de perfil' })
-  async getPhotoStatus(
-    @Param('userId', ParseUUIDPipe) userId: string,
-  ) {
+  async getPhotoStatus(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.postRegistrationService.getPhotoStatus(userId);
   }
 

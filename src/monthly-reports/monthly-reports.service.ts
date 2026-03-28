@@ -89,19 +89,14 @@ export class MonthlyReportsService {
     const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
     // Run all queries in parallel
-    const [
-      memberCount,
-      directiva,
-      honorsData,
-      activitiesData,
-      financesData,
-    ] = await Promise.all([
-      this.getMemberCount(clubSectionId, yearId),
-      this.getDirectiva(clubSectionId, yearId),
-      this.getHonorsData(clubSectionId, yearId, startDate, endDate),
-      this.getActivitiesData(clubSectionId, startDate, endDate),
-      this.getFinancesData(clubSectionId, month, year),
-    ]);
+    const [memberCount, directiva, honorsData, activitiesData, financesData] =
+      await Promise.all([
+        this.getMemberCount(clubSectionId, yearId),
+        this.getDirectiva(clubSectionId, yearId),
+        this.getHonorsData(clubSectionId, yearId, startDate, endDate),
+        this.getActivitiesData(clubSectionId, startDate, endDate),
+        this.getFinancesData(clubSectionId, month, year),
+      ]);
 
     return {
       enrollment: {
@@ -357,7 +352,12 @@ export class MonthlyReportsService {
    * Get directiva members (director, subdirector, secretary, treasurer).
    */
   private async getDirectiva(clubSectionId: number, yearId: number) {
-    const directivaRoles = ['director', 'subdirector', 'secretario', 'tesorero'];
+    const directivaRoles = [
+      'director',
+      'subdirector',
+      'secretario',
+      'tesorero',
+    ];
 
     const assignments = await this.prisma.club_role_assignments.findMany({
       where: {
@@ -386,7 +386,11 @@ export class MonthlyReportsService {
     return assignments.map((a) => ({
       role: a.roles.role_name,
       user_id: a.users.user_id,
-      name: [a.users.name, a.users.paternal_last_name, a.users.maternal_last_name]
+      name: [
+        a.users.name,
+        a.users.paternal_last_name,
+        a.users.maternal_last_name,
+      ]
         .filter(Boolean)
         .join(' '),
     }));

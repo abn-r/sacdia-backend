@@ -53,13 +53,32 @@ export class InvestitureController {
   @Post('investiture/enrollments/:enrollmentId/submit')
   @UseGuards(JwtAuthGuard, ClubRolesGuard)
   @ClubRoles('director', 'counselor')
-  @ApiOperation({ summary: 'Enviar enrollment a validación de investidura (consejero/director)' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary:
+      'Enviar enrollment a validación de investidura (consejero/director)',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Enrollment enviado a validación' })
-  @ApiResponse({ status: 400, description: 'Estado actual no permite la transición' })
-  @ApiResponse({ status: 403, description: 'Sin rol de director o consejero en el club' })
-  @ApiResponse({ status: 404, description: 'Enrollment o investiture_config no encontrado' })
-  @ApiResponse({ status: 409, description: 'Ya está en SUBMITTED_FOR_VALIDATION' })
+  @ApiResponse({
+    status: 400,
+    description: 'Estado actual no permite la transición',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Sin rol de director o consejero en el club',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Enrollment o investiture_config no encontrado',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Ya está en SUBMITTED_FOR_VALIDATION',
+  })
   async submitForValidation(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: SubmitForValidationDto,
@@ -82,12 +101,24 @@ export class InvestitureController {
   @Post('investiture/enrollments/:enrollmentId/club-approve')
   @UseGuards(JwtAuthGuard, ClubRolesGuard)
   @ClubRoles('director')
-  @ApiOperation({ summary: 'Director de sección aprueba enrollment para investidura' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
-  @ApiResponse({ status: 200, description: 'Enrollment aprobado por director de sección' })
+  @ApiOperation({
+    summary: 'Director de sección aprueba enrollment para investidura',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enrollment aprobado por director de sección',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de director en el club' })
   @ApiResponse({ status: 404, description: 'Enrollment no encontrado' })
-  @ApiResponse({ status: 409, description: 'El enrollment no está en estado SUBMITTED_FOR_VALIDATION' })
+  @ApiResponse({
+    status: 409,
+    description: 'El enrollment no está en estado SUBMITTED_FOR_VALIDATION',
+  })
   async clubApprove(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: ApproveInvestitureDto,
@@ -111,11 +142,21 @@ export class InvestitureController {
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
   @ApiOperation({ summary: 'Coordinador aprueba enrollment para investidura' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
-  @ApiResponse({ status: 200, description: 'Enrollment aprobado por coordinador' })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enrollment aprobado por coordinador',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   @ApiResponse({ status: 404, description: 'Enrollment no encontrado' })
-  @ApiResponse({ status: 409, description: 'El enrollment no está en estado CLUB_APPROVED' })
+  @ApiResponse({
+    status: 409,
+    description: 'El enrollment no está en estado CLUB_APPROVED',
+  })
   async coordinatorApprove(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: ApproveInvestitureDto,
@@ -139,11 +180,21 @@ export class InvestitureController {
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin')
   @ApiOperation({ summary: 'Campo local aprueba enrollment para investidura' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
-  @ApiResponse({ status: 200, description: 'Enrollment aprobado por campo local' })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enrollment aprobado por campo local',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin' })
   @ApiResponse({ status: 404, description: 'Enrollment no encontrado' })
-  @ApiResponse({ status: 409, description: 'El enrollment no está en estado COORDINATOR_APPROVED' })
+  @ApiResponse({
+    status: 409,
+    description: 'El enrollment no está en estado COORDINATOR_APPROVED',
+  })
   async fieldApprove(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
     @Body() dto: ApproveInvestitureDto,
@@ -166,12 +217,25 @@ export class InvestitureController {
   @Post('investiture/enrollments/:enrollmentId/invest')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
-  @ApiOperation({ summary: 'Registrar investidura formal de un enrollment (después de FIELD_APPROVED)' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary:
+      'Registrar investidura formal de un enrollment (después de FIELD_APPROVED)',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Investidura registrada' })
-  @ApiResponse({ status: 400, description: 'Enrollment no está en estado FIELD_APPROVED' })
+  @ApiResponse({
+    status: 400,
+    description: 'Enrollment no está en estado FIELD_APPROVED',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
-  @ApiResponse({ status: 404, description: 'Enrollment o investiture_config no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Enrollment o investiture_config no encontrado',
+  })
   @ApiResponse({ status: 409, description: 'El enrollment ya fue investido' })
   async markInvestido(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
@@ -195,8 +259,14 @@ export class InvestitureController {
   @Post('investiture/enrollments/:enrollmentId/reject')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
-  @ApiOperation({ summary: 'Rechazar enrollment en cualquier nivel del flujo de aprobación' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary: 'Rechazar enrollment en cualquier nivel del flujo de aprobación',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Enrollment rechazado' })
   @ApiResponse({ status: 400, description: 'Estado actual no permite rechazo' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
@@ -238,19 +308,28 @@ export class InvestitureController {
         status: 'success',
         data: {
           succeeded: [1, 2, 3],
-          failed: [{ id: 4, reason: 'Estado inválido para esta acción: INVESTIDO (se requiere CLUB_APPROVED)' }],
+          failed: [
+            {
+              id: 4,
+              reason:
+                'Estado inválido para esta acción: INVESTIDO (se requiere CLUB_APPROVED)',
+            },
+          ],
         },
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'DTO inválido (array vacío, acción desconocida, etc.)' })
+  @ApiResponse({
+    status: 400,
+    description: 'DTO inválido (array vacío, acción desconocida, etc.)',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
-  async bulkApprove(
-    @Body() dto: BulkApproveEnrollmentsDto,
-    @Request() req,
-  ) {
+  async bulkApprove(@Body() dto: BulkApproveEnrollmentsDto, @Request() req) {
     const actorId: string = req.user.sub;
-    const data = await this.investitureService.bulkApproveEnrollments(actorId, dto);
+    const data = await this.investitureService.bulkApproveEnrollments(
+      actorId,
+      dto,
+    );
     return { status: 'success', data };
   }
 
@@ -277,19 +356,27 @@ export class InvestitureController {
         status: 'success',
         data: {
           succeeded: [1, 2],
-          failed: [{ id: 3, reason: 'No se puede rechazar un enrollment en estado INVESTIDO' }],
+          failed: [
+            {
+              id: 3,
+              reason: 'No se puede rechazar un enrollment en estado INVESTIDO',
+            },
+          ],
         },
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'DTO inválido (sin motivo, array vacío, etc.)' })
+  @ApiResponse({
+    status: 400,
+    description: 'DTO inválido (sin motivo, array vacío, etc.)',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
-  async bulkReject(
-    @Body() dto: BulkRejectEnrollmentsDto,
-    @Request() req,
-  ) {
+  async bulkReject(@Body() dto: BulkRejectEnrollmentsDto, @Request() req) {
     const actorId: string = req.user.sub;
-    const data = await this.investitureService.bulkRejectEnrollments(actorId, dto);
+    const data = await this.investitureService.bulkRejectEnrollments(
+      actorId,
+      dto,
+    );
     return { status: 'success', data };
   }
 
@@ -300,19 +387,52 @@ export class InvestitureController {
   @Get('investiture/pending')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
-  @ApiOperation({ summary: 'Listar enrollments pendientes de aprobación (filtrable por nivel)' })
-  @ApiQuery({ name: 'status', required: false, enum: investiture_status_enum, description: 'Filtrar por nivel de aprobación' })
-  @ApiQuery({ name: 'local_field_id', required: false, type: Number, description: 'Filtrar por campo local' })
-  @ApiQuery({ name: 'ecclesiastical_year_id', required: false, type: Number, description: 'Filtrar por año eclesiástico' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Resultados por página (default: 20)' })
-  @ApiResponse({ status: 200, description: 'Lista paginada de enrollments pendientes' })
+  @ApiOperation({
+    summary:
+      'Listar enrollments pendientes de aprobación (filtrable por nivel)',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: investiture_status_enum,
+    description: 'Filtrar por nivel de aprobación',
+  })
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description: 'Filtrar por campo local',
+  })
+  @ApiQuery({
+    name: 'ecclesiastical_year_id',
+    required: false,
+    type: Number,
+    description: 'Filtrar por año eclesiástico',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Número de página (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Resultados por página (default: 20)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de enrollments pendientes',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   async getPending(
     @Request() req,
     @Query('status') status?: investiture_status_enum,
-    @Query('local_field_id', new ParseIntPipe({ optional: true })) localFieldId?: number,
-    @Query('ecclesiastical_year_id', new ParseIntPipe({ optional: true })) ecclesiasticalYearId?: number,
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
+    @Query('ecclesiastical_year_id', new ParseIntPipe({ optional: true }))
+    ecclesiasticalYearId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -334,10 +454,19 @@ export class InvestitureController {
 
   @Get('investiture/enrollments/:enrollmentId/history')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Historial de validación de investidura de un enrollment' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary: 'Historial de validación de investidura de un enrollment',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Historial de validación' })
-  @ApiResponse({ status: 403, description: 'Sin acceso al historial de este enrollment' })
+  @ApiResponse({
+    status: 403,
+    description: 'Sin acceso al historial de este enrollment',
+  })
   @ApiResponse({ status: 404, description: 'Enrollment no encontrado' })
   async getHistory(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
@@ -359,8 +488,14 @@ export class InvestitureController {
   @Post('enrollments/:enrollmentId/submit-for-validation')
   @UseGuards(JwtAuthGuard, ClubRolesGuard)
   @ClubRoles('director', 'counselor')
-  @ApiOperation({ summary: '[LEGACY] Enviar enrollment a validación de investidura' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary: '[LEGACY] Enviar enrollment a validación de investidura',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Enrollment enviado a validación' })
   async submitForValidationLegacy(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
@@ -379,8 +514,14 @@ export class InvestitureController {
   @Post('enrollments/:enrollmentId/validate')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
-  @ApiOperation({ summary: '[LEGACY] Aprobar o rechazar enrollment para investidura' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary: '[LEGACY] Aprobar o rechazar enrollment para investidura',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Validación registrada' })
   async validateEnrollmentLegacy(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
@@ -399,8 +540,14 @@ export class InvestitureController {
   @Post('enrollments/:enrollmentId/investiture')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
-  @ApiOperation({ summary: '[LEGACY] Registrar investidura formal de un enrollment' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary: '[LEGACY] Registrar investidura formal de un enrollment',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Investidura registrada' })
   async markInvestidoLegacy(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
@@ -418,8 +565,14 @@ export class InvestitureController {
 
   @Get('enrollments/:enrollmentId/investiture-history')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: '[LEGACY] Historial de validación de investidura de un enrollment' })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'ID del enrollment' })
+  @ApiOperation({
+    summary: '[LEGACY] Historial de validación de investidura de un enrollment',
+  })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'ID del enrollment',
+  })
   @ApiResponse({ status: 200, description: 'Historial de validación' })
   async getHistoryLegacy(
     @Param('enrollmentId', ParseIntPipe) enrollmentId: number,
@@ -441,11 +594,20 @@ export class InvestitureController {
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
   @ApiOperation({ summary: 'Listar configuraciones de investidura' })
-  @ApiQuery({ name: 'local_field_id', required: false, type: Number, description: 'Filtrar por campo local' })
-  @ApiResponse({ status: 200, description: 'Lista de configuraciones de investidura' })
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description: 'Filtrar por campo local',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de configuraciones de investidura',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   async getConfigs(
-    @Query('local_field_id', new ParseIntPipe({ optional: true })) localFieldId?: number,
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
   ) {
     const data = await this.investitureService.getConfigs(localFieldId);
     return { status: 'success', data };
@@ -455,13 +617,15 @@ export class InvestitureController {
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
   @ApiOperation({ summary: 'Obtener configuración de investidura por ID' })
-  @ApiParam({ name: 'configId', type: Number, description: 'ID de la configuración' })
+  @ApiParam({
+    name: 'configId',
+    type: Number,
+    description: 'ID de la configuración',
+  })
   @ApiResponse({ status: 200, description: 'Configuración de investidura' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
-  async getConfig(
-    @Param('configId', ParseIntPipe) configId: number,
-  ) {
+  async getConfig(@Param('configId', ParseIntPipe) configId: number) {
     const data = await this.investitureService.getConfig(configId);
     return { status: 'success', data };
   }
@@ -472,10 +636,11 @@ export class InvestitureController {
   @ApiOperation({ summary: 'Crear configuración de investidura' })
   @ApiResponse({ status: 201, description: 'Configuración creada' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin' })
-  @ApiResponse({ status: 409, description: 'Ya existe configuración para este campo local y año' })
-  async createConfig(
-    @Body() dto: CreateInvestitureConfigDto,
-  ) {
+  @ApiResponse({
+    status: 409,
+    description: 'Ya existe configuración para este campo local y año',
+  })
+  async createConfig(@Body() dto: CreateInvestitureConfigDto) {
     const data = await this.investitureService.createConfig(dto);
     return { status: 'success', data };
   }
@@ -484,7 +649,11 @@ export class InvestitureController {
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin')
   @ApiOperation({ summary: 'Actualizar configuración de investidura' })
-  @ApiParam({ name: 'configId', type: Number, description: 'ID de la configuración' })
+  @ApiParam({
+    name: 'configId',
+    type: Number,
+    description: 'ID de la configuración',
+  })
   @ApiResponse({ status: 200, description: 'Configuración actualizada' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin' })
   @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
@@ -499,14 +668,18 @@ export class InvestitureController {
   @Delete('admin/investiture/config/:configId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin')
-  @ApiOperation({ summary: 'Soft-delete de configuración de investidura (active = false)' })
-  @ApiParam({ name: 'configId', type: Number, description: 'ID de la configuración' })
+  @ApiOperation({
+    summary: 'Soft-delete de configuración de investidura (active = false)',
+  })
+  @ApiParam({
+    name: 'configId',
+    type: Number,
+    description: 'ID de la configuración',
+  })
   @ApiResponse({ status: 200, description: 'Configuración desactivada' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin' })
   @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
-  async deleteConfig(
-    @Param('configId', ParseIntPipe) configId: number,
-  ) {
+  async deleteConfig(@Param('configId', ParseIntPipe) configId: number) {
     const data = await this.investitureService.deleteConfig(configId);
     return { status: 'success', data };
   }

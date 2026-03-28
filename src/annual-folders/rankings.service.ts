@@ -328,8 +328,8 @@ export class RankingsService {
           }
         : null,
       by_category: byCategory.map((r) => ({
-        award_category_id: r.award_category!.award_category_id,
-        award_category_name: r.award_category!.name,
+        award_category_id: r.award_category.award_category_id,
+        award_category_name: r.award_category.name,
         rank_position: r.rank_position,
         total_earned_points: r.total_earned_points,
         total_max_points: r.total_max_points,

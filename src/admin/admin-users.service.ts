@@ -534,7 +534,7 @@ export class AdminUsersService {
         approval_status: dto.approved
           ? user_approval_status.approved
           : user_approval_status.rejected,
-        rejection_reason: dto.approved ? null : dto.rejection_reason ?? null,
+        rejection_reason: dto.approved ? null : (dto.rejection_reason ?? null),
         active: dto.approved,
       },
     });
@@ -621,7 +621,10 @@ export class AdminUsersService {
     return {
       blood: user.blood,
       allergies: (user.users_allergies ?? [])
-        .filter((item): item is typeof item & { allergy_id: number } => item.allergy_id !== null)
+        .filter(
+          (item): item is typeof item & { allergy_id: number } =>
+            item.allergy_id !== null,
+        )
         .map((item) => ({
           allergy_id: item.allergy_id,
           name: item.allergies?.name ?? null,
@@ -903,11 +906,16 @@ export class AdminUsersService {
     assignment: ClubAssignmentRecord,
   ): AdminUserDetail['club_assignments'][number]['club'] {
     if (assignment.club_sections) {
-      const typeName = assignment.club_sections.club_types?.name?.toLowerCase() ?? '';
+      const typeName =
+        assignment.club_sections.club_types?.name?.toLowerCase() ?? '';
       let type: 'adventurers' | 'pathfinders' | 'master_guides' = 'pathfinders';
       if (typeName.includes('aventurero') || typeName.includes('adventurer')) {
         type = 'adventurers';
-      } else if (typeName.includes('guía') || typeName.includes('master') || typeName.includes('guild')) {
+      } else if (
+        typeName.includes('guía') ||
+        typeName.includes('master') ||
+        typeName.includes('guild')
+      ) {
         type = 'master_guides';
       }
 

@@ -426,10 +426,7 @@ export class BetterAuthService implements IBetterAuthService {
    * DESIGN NOTE: This is an admin/internal operation. It finds the credential
    * account for the user and updates the hashed password directly.
    */
-  async updatePasswordById(
-    userId: string,
-    newPassword: string,
-  ): Promise<void> {
+  async updatePasswordById(userId: string, newPassword: string): Promise<void> {
     const dbAccount = await this.prisma.account.findFirst({
       where: { userId, providerId: 'credential' },
     });
@@ -482,7 +479,10 @@ export class BetterAuthService implements IBetterAuthService {
 
     for (let i = 0; i < 10; i++) {
       // 6 random bytes → base64url → slice to 8 chars (URL-safe alphanumeric)
-      const code = randomBytes(6).toString('base64url').slice(0, 8).toUpperCase();
+      const code = randomBytes(6)
+        .toString('base64url')
+        .slice(0, 8)
+        .toUpperCase();
       plain.push(code);
       hashed.push(await bcrypt.hash(code, BCRYPT_ROUNDS));
     }
@@ -679,8 +679,7 @@ export class BetterAuthService implements IBetterAuthService {
       return { url: result.url, state };
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       throw new InternalServerErrorException(`getOAuthUrl: ${message}`);
     }
   }
@@ -734,7 +733,9 @@ export class BetterAuthService implements IBetterAuthService {
       const session = mapDbSessionToBaSession(dbSession);
       const accessToken = this.signJwt(user);
 
-      this.logger.log(`OAuth callback handled for provider: ${provider}, user: ${user.id}`);
+      this.logger.log(
+        `OAuth callback handled for provider: ${provider}, user: ${user.id}`,
+      );
       return { user, session, accessToken };
     } catch (error) {
       if (
@@ -743,8 +744,7 @@ export class BetterAuthService implements IBetterAuthService {
       ) {
         throw error;
       }
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       throw new InternalServerErrorException(`handleOAuthCallback: ${message}`);
     }
   }

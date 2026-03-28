@@ -57,7 +57,10 @@ export class MonthlyReportsController {
   })
   @ApiQuery({ name: 'month', description: 'Mes (1-12)', example: 3 })
   @ApiQuery({ name: 'year', description: 'Año', example: 2026 })
-  @ApiResponse({ status: 200, description: 'Vista previa con datos calculados' })
+  @ApiResponse({
+    status: 200,
+    description: 'Vista previa con datos calculados',
+  })
   @ApiResponse({ status: 404, description: 'Matrícula no encontrada' })
   async preview(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
@@ -272,8 +275,7 @@ export class MonthlyReportsController {
     @Param('reportId', ParseUUIDPipe) reportId: string,
     @Res() res: Response,
   ) {
-    const pdfBuffer =
-      await this.monthlyReportsPdfService.generatePdf(reportId);
+    const pdfBuffer = await this.monthlyReportsPdfService.generatePdf(reportId);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -303,9 +305,7 @@ export class MonthlyReportsController {
   })
   @ApiResponse({ status: 200, description: 'Informe completo' })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
-  async getReport(
-    @Param('reportId', ParseUUIDPipe) reportId: string,
-  ) {
+  async getReport(@Param('reportId', ParseUUIDPipe) reportId: string) {
     const data = await this.monthlyReportsService.getReport(reportId);
     return { status: 'success', data };
   }

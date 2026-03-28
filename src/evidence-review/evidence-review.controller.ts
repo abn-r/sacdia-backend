@@ -53,9 +53,22 @@ export class EvidenceReviewController {
     enum: ['folder', 'class', 'honor'],
     description: 'Filtrar por tipo de evidencia',
   })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Página (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Resultados por página (default: 20)' })
-  @ApiResponse({ status: 200, description: 'Lista paginada de evidencias pendientes' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Página (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Resultados por página (default: 20)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de evidencias pendientes',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   async getPending(
     @Query('type') type?: EvidenceType,
@@ -86,7 +99,12 @@ export class EvidenceReviewController {
         status: 'success',
         data: {
           succeeded: [1, 2, 3],
-          failed: [{ id: 4, reason: 'Solo se pueden aprobar registros en estado pendiente.' }],
+          failed: [
+            {
+              id: 4,
+              reason: 'Solo se pueden aprobar registros en estado pendiente.',
+            },
+          ],
         },
       },
     },
@@ -117,7 +135,10 @@ export class EvidenceReviewController {
     status: 200,
     description: 'Resultado parcial o total del rechazo en bloque',
   })
-  @ApiResponse({ status: 400, description: 'DTO inválido (motivo vacío, etc.)' })
+  @ApiResponse({
+    status: 400,
+    description: 'DTO inválido (motivo vacío, etc.)',
+  })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   async bulkReject(
     @Body() dto: BulkRejectEvidenceDto,
@@ -133,10 +154,19 @@ export class EvidenceReviewController {
   // ========================================
 
   @Get(':type/:id')
-  @ApiOperation({ summary: 'Obtener detalle de una evidencia con archivos adjuntos' })
-  @ApiParam({ name: 'type', enum: ['folder', 'class', 'honor'], description: 'Tipo de evidencia' })
+  @ApiOperation({
+    summary: 'Obtener detalle de una evidencia con archivos adjuntos',
+  })
+  @ApiParam({
+    name: 'type',
+    enum: ['folder', 'class', 'honor'],
+    description: 'Tipo de evidencia',
+  })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })
-  @ApiResponse({ status: 200, description: 'Detalle de la evidencia con archivos' })
+  @ApiResponse({
+    status: 200,
+    description: 'Detalle de la evidencia con archivos',
+  })
   @ApiResponse({ status: 404, description: 'Registro no encontrado' })
   async getDetail(
     @Param('type') type: EvidenceType,
@@ -152,7 +182,11 @@ export class EvidenceReviewController {
 
   @Post(':type/:id/approve')
   @ApiOperation({ summary: 'Aprobar una evidencia' })
-  @ApiParam({ name: 'type', enum: ['folder', 'class', 'honor'], description: 'Tipo de evidencia' })
+  @ApiParam({
+    name: 'type',
+    enum: ['folder', 'class', 'honor'],
+    description: 'Tipo de evidencia',
+  })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })
   @ApiResponse({ status: 200, description: 'Evidencia aprobada' })
   @ApiResponse({ status: 400, description: 'Estado inválido para aprobar' })
@@ -164,7 +198,12 @@ export class EvidenceReviewController {
     @Request() req: { user: { sub: string } },
   ) {
     const actorId: string = req.user.sub;
-    const data = await this.evidenceReviewService.approve(type, id, actorId, dto);
+    const data = await this.evidenceReviewService.approve(
+      type,
+      id,
+      actorId,
+      dto,
+    );
     return { status: 'success', data };
   }
 
@@ -174,7 +213,11 @@ export class EvidenceReviewController {
 
   @Post(':type/:id/reject')
   @ApiOperation({ summary: 'Rechazar una evidencia con motivo' })
-  @ApiParam({ name: 'type', enum: ['folder', 'class', 'honor'], description: 'Tipo de evidencia' })
+  @ApiParam({
+    name: 'type',
+    enum: ['folder', 'class', 'honor'],
+    description: 'Tipo de evidencia',
+  })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })
   @ApiResponse({ status: 200, description: 'Evidencia rechazada' })
   @ApiResponse({ status: 400, description: 'Ya está rechazada o motivo vacío' })
@@ -186,7 +229,12 @@ export class EvidenceReviewController {
     @Request() req: { user: { sub: string } },
   ) {
     const actorId: string = req.user.sub;
-    const data = await this.evidenceReviewService.reject(type, id, actorId, dto);
+    const data = await this.evidenceReviewService.reject(
+      type,
+      id,
+      actorId,
+      dto,
+    );
     return { status: 'success', data };
   }
 
@@ -196,7 +244,11 @@ export class EvidenceReviewController {
 
   @Get(':type/:id/history')
   @ApiOperation({ summary: 'Historial de validación de una evidencia' })
-  @ApiParam({ name: 'type', enum: ['folder', 'class', 'honor'], description: 'Tipo de evidencia' })
+  @ApiParam({
+    name: 'type',
+    enum: ['folder', 'class', 'honor'],
+    description: 'Tipo de evidencia',
+  })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })
   @ApiResponse({ status: 200, description: 'Historial de validación' })
   async getHistory(

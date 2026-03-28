@@ -63,8 +63,11 @@ export class YearEndService {
 
     this.logger.log(`Starting year-end closure for year ID ${yearId}...`);
 
-    // Collect draft reports BEFORE the transaction so we can generate snapshots
-    // (snapshot generation reads live data which requires queries outside the tx)
+    // RISK — INTENTIONALLY UNBOUNDED QUERY:
+    // Fetches ALL open club_enrollments for the year to orchestrate closure.
+    // This must be unbounded because every enrollment must be closed atomically.
+    // Expected cardinality: hundreds of clubs × sections per year (< 5 000 rows).
+    // If the dataset ever grows beyond that, refactor to cursor-based batching.
     const enrollments = await this.prisma.club_enrollments.findMany({
       where: {
         ecclesiastical_year_id: yearId,
@@ -76,21 +79,25 @@ export class YearEndService {
     const enrollmentIds = enrollments.map((e) => e.club_enrollment_id);
 
     // Find draft reports that need to be auto-generated
-    const draftReports = enrollmentIds.length > 0
-      ? await this.prisma.monthly_reports.findMany({
-          where: {
-            club_enrollment_id: { in: enrollmentIds },
-            status: 'draft',
-          },
-          select: { monthly_report_id: true, club_enrollment_id: true },
-        })
-      : [];
+    const draftReports =
+      enrollmentIds.length > 0
+        ? await this.prisma.monthly_reports.findMany({
+            where: {
+              club_enrollment_id: { in: enrollmentIds },
+              status: 'draft',
+            },
+            select: { monthly_report_id: true, club_enrollment_id: true },
+          })
+        : [];
 
     // Pre-generate snapshots for all draft reports (reads live data)
     const generatedReportIds: string[] = [];
     for (const report of draftReports) {
       try {
-        await this.monthlyReportsService.generate(report.monthly_report_id, 'system');
+        await this.monthlyReportsService.generate(
+          report.monthly_report_id,
+          'system',
+        );
         generatedReportIds.push(report.monthly_report_id);
         this.logger.debug(`Auto-generated report ${report.monthly_report_id}`);
       } catch (error) {
@@ -174,7 +181,11 @@ export class YearEndService {
   async previewClosureImpact(yearId: number): Promise<YearClosurePreview> {
     const year = await this.validateYearExists(yearId);
 
-    // Enrollments that would be closed
+    // RISK — INTENTIONALLY UNBOUNDED QUERY:
+    // Fetches ALL open club_enrollments for the preview dry-run.
+    // Must be unbounded to give an accurate impact count.
+    // Expected cardinality: hundreds of clubs × sections per year (< 5 000 rows).
+    // If the dataset ever grows beyond that, refactor to cursor-based batching.
     const enrollments = await this.prisma.club_enrollments.findMany({
       where: {
         ecclesiastical_year_id: yearId,
@@ -193,24 +204,26 @@ export class YearEndService {
     const enrollmentIds = enrollments.map((e) => e.club_enrollment_id);
 
     // Folders that would be closed
-    const foldersToClose = enrollmentIds.length > 0
-      ? await this.prisma.annual_folders.count({
-          where: {
-            club_enrollment_id: { in: enrollmentIds },
-            status: { not: 'closed' },
-          },
-        })
-      : 0;
+    const foldersToClose =
+      enrollmentIds.length > 0
+        ? await this.prisma.annual_folders.count({
+            where: {
+              club_enrollment_id: { in: enrollmentIds },
+              status: { not: 'closed' },
+            },
+          })
+        : 0;
 
     // Draft reports that would be auto-generated
-    const reportsToGenerate = enrollmentIds.length > 0
-      ? await this.prisma.monthly_reports.count({
-          where: {
-            club_enrollment_id: { in: enrollmentIds },
-            status: 'draft',
-          },
-        })
-      : 0;
+    const reportsToGenerate =
+      enrollmentIds.length > 0
+        ? await this.prisma.monthly_reports.count({
+            where: {
+              club_enrollment_id: { in: enrollmentIds },
+              status: 'draft',
+            },
+          })
+        : 0;
 
     return {
       yearId,

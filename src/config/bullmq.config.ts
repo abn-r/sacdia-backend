@@ -21,7 +21,10 @@ export function parseRedisConnectionOptions(
         ? decodeURIComponent(url.username)
         : undefined,
     // Extract db index from the pathname (e.g. "/1")
-    db: url.pathname && url.pathname.length > 1 ? parseInt(url.pathname.slice(1), 10) : 0,
+    db:
+      url.pathname && url.pathname.length > 1
+        ? parseInt(url.pathname.slice(1), 10)
+        : 0,
     // Enable TLS for rediss:// URLs (Upstash, Redis Cloud, etc.)
     tls: url.protocol === 'rediss:' ? {} : undefined,
     // BullMQ workers run long-lived connections — avoid aggressive reconnect spam
@@ -58,9 +61,7 @@ export function buildBullRootConfig() {
       }),
     ];
   } catch {
-    console.warn(
-      '⚠️  REDIS_URL is not a valid URL — BullMQ queue disabled.',
-    );
+    console.warn('⚠️  REDIS_URL is not a valid URL — BullMQ queue disabled.');
     return [];
   }
 }

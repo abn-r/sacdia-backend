@@ -6,7 +6,10 @@ import {
 import { NotificationsService } from './notifications.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { FcmTokensService } from './fcm-tokens.service';
-import { NotificationsProcessor, NOTIFICATIONS_QUEUE } from './notifications.processor';
+import {
+  NotificationsProcessor,
+  NOTIFICATIONS_QUEUE,
+} from './notifications.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { FirebaseAdminModule } from '../config/firebase-admin.module';
 import { BullModule } from '@nestjs/bullmq';
@@ -37,6 +40,10 @@ const queueImports = isRedisConfigured()
     FcmTokensService,
     ...(isRedisConfigured() ? [NotificationsProcessor] : []),
   ],
-  exports: [NotificationsService, NotificationPreferencesService, FcmTokensService],
+  exports: [
+    NotificationsService,
+    NotificationPreferencesService,
+    FcmTokensService,
+  ],
 })
 export class NotificationsModule {}

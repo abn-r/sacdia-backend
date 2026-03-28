@@ -65,7 +65,8 @@ export class MfaController {
       properties: {
         totpURI: {
           type: 'string',
-          example: 'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
+          example:
+            'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
           description: 'URI otpauth:// para generar el QR code en el cliente',
         },
         backupCodes: {
@@ -78,7 +79,10 @@ export class MfaController {
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'Contraseña inválida o JWT expirado' })
+  @ApiResponse({
+    status: 401,
+    description: 'Contraseña inválida o JWT expirado',
+  })
   async enrollMfa(@Req() req: Request, @Body() dto: EnrollMfaDto) {
     const userId = (req.user as any).userId as string;
     return this.mfaService.enrollMfa(userId, dto.password);
@@ -105,7 +109,10 @@ export class MfaController {
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'TOTP no enrolado o código inválido' })
+  @ApiResponse({
+    status: 401,
+    description: 'TOTP no enrolado o código inválido',
+  })
   async verifyMfa(@Req() req: Request, @Body() dto: VerifyMfaDto) {
     const userId = (req.user as any).userId as string;
     return this.mfaService.verifyMfa(userId, dto.code);
@@ -133,7 +140,10 @@ export class MfaController {
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'Contraseña inválida o JWT expirado' })
+  @ApiResponse({
+    status: 401,
+    description: 'Contraseña inválida o JWT expirado',
+  })
   async disableMfa(@Req() req: Request, @Body() dto: DisableMfaDto) {
     const userId = (req.user as any).userId as string;
     await this.mfaService.disableMfa(userId, dto.password);

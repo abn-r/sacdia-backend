@@ -120,9 +120,11 @@ export class AuthService {
         'Database error during post-registration, revoking BA session',
         dbError,
       );
-      await this.betterAuthService.signOut(baResult.session.token).catch((e) =>
-        this.logger.warn('Failed to revoke BA session during rollback', e),
-      );
+      await this.betterAuthService
+        .signOut(baResult.session.token)
+        .catch((e) =>
+          this.logger.warn('Failed to revoke BA session during rollback', e),
+        );
       throw dbError;
     }
 
@@ -178,14 +180,18 @@ export class AuthService {
     const maskedEmail = this.maskEmail(dto.email);
 
     // 1. Authenticate with Better Auth
-    let baResult: Awaited<ReturnType<typeof this.betterAuthService.signInWithPassword>>;
+    let baResult: Awaited<
+      ReturnType<typeof this.betterAuthService.signInWithPassword>
+    >;
     try {
       baResult = await this.betterAuthService.signInWithPassword(
         dto.email,
         dto.password,
       );
     } catch (error) {
-      this.logger.warn(`Login failed for ${maskedEmail}: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(
+        `Login failed for ${maskedEmail}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
@@ -325,7 +331,9 @@ export class AuthService {
 
     // The "refresh token" sent by clients IS the BA opaque session token.
     // BA does not have a separate refresh token — the session slides on each getSession call.
-    let baResult: Awaited<ReturnType<typeof this.betterAuthService.refreshSession>>;
+    let baResult: Awaited<
+      ReturnType<typeof this.betterAuthService.refreshSession>
+    >;
     try {
       baResult = await this.betterAuthService.refreshSession(refreshToken);
     } catch (error) {
@@ -692,9 +700,7 @@ export class AuthService {
       }),
     ]);
 
-    this.logger.log(
-      `Email verified for: ${verification.identifier}`,
-    );
+    this.logger.log(`Email verified for: ${verification.identifier}`);
 
     return {
       success: true,

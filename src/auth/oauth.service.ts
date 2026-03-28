@@ -41,7 +41,8 @@ export class OAuthService {
 
   /** Providers supported for connect/disconnect operations. */
   private static readonly VALID_PROVIDERS = ['google', 'apple'] as const;
-  private static readonly DEFAULT_REDIRECT_URL = 'https://sacdia.app/auth/callback';
+  private static readonly DEFAULT_REDIRECT_URL =
+    'https://sacdia.app/auth/callback';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -115,11 +116,19 @@ export class OAuthService {
     // 1. Validate the BA session token and get the user.
     // refreshSession calls getSessionFromToken internally — it will throw
     // UnauthorizedException if the token is invalid or expired.
-    const { user: baUser, session: baSession, accessToken } =
-      await this.betterAuth.refreshSession(dto.session_token);
+    const {
+      user: baUser,
+      session: baSession,
+      accessToken,
+    } = await this.betterAuth.refreshSession(dto.session_token);
 
     // 2. Ensure SACDIA-specific rows exist (users_pr, users_roles)
-    await this.ensureSacdiaUserProvisioned(baUser.id, baUser.email, baUser.name, baUser.image);
+    await this.ensureSacdiaUserProvisioned(
+      baUser.id,
+      baUser.email,
+      baUser.name,
+      baUser.image,
+    );
 
     // 3. Load the full SACDIA user row for the response
     const dbUser = await this.prisma.users.findUnique({
@@ -174,9 +183,7 @@ export class OAuthService {
     });
 
     // Filter out the 'credential' provider (email+password) — not an OAuth provider
-    return accounts
-      .map((a) => a.providerId)
-      .filter((p) => p !== 'credential');
+    return accounts.map((a) => a.providerId).filter((p) => p !== 'credential');
   }
 
   /**
@@ -203,10 +210,13 @@ export class OAuthService {
       select: { providerId: true },
     });
 
-    const hasPasswordAccount = allAccounts.some((a) => a.providerId === 'credential');
-    const hasOtherOAuth = allAccounts
-      .filter((a) => a.providerId !== 'credential' && a.providerId !== provider)
-      .length > 0;
+    const hasPasswordAccount = allAccounts.some(
+      (a) => a.providerId === 'credential',
+    );
+    const hasOtherOAuth =
+      allAccounts.filter(
+        (a) => a.providerId !== 'credential' && a.providerId !== provider,
+      ).length > 0;
 
     if (!hasPasswordAccount && !hasOtherOAuth) {
       throw new BadRequestException(
@@ -283,9 +293,7 @@ export class OAuthService {
         // better-auth.config.ts). Sync the OAuth profile photo on every login
         // so the column is always up-to-date, even when the user updates their
         // Google/Apple profile picture.
-        this.logger.log(
-          `Syncing OAuth profile image for user: ${userId}`,
-        );
+        this.logger.log(`Syncing OAuth profile image for user: ${userId}`);
         await tx.users.update({
           where: { user_id: userId },
           data: { user_image: image },

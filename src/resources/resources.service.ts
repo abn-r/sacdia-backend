@@ -316,10 +316,8 @@ export class ResourcesService {
       updateData.resource_category_id = dto.resource_category_id ?? null;
     if (dto.club_type_id !== undefined)
       updateData.club_type_id = dto.club_type_id ?? null;
-    if (dto.scope_level !== undefined)
-      updateData.scope_level = dto.scope_level;
-    if (dto.scope_id !== undefined)
-      updateData.scope_id = dto.scope_id ?? null;
+    if (dto.scope_level !== undefined) updateData.scope_level = dto.scope_level;
+    if (dto.scope_id !== undefined) updateData.scope_id = dto.scope_id ?? null;
     if (dto.external_url !== undefined)
       updateData.external_url = dto.external_url ?? null;
     if (dto.content !== undefined) updateData.content = dto.content ?? null;
@@ -451,10 +449,7 @@ export class ResourcesService {
         { expiresInSeconds: SIGNED_URL_TTL_SECONDS },
       );
     } catch (error) {
-      this.logger.warn(
-        `No se pudo generar URL firmada para ${fileKey}`,
-        error,
-      );
+      this.logger.warn(`No se pudo generar URL firmada para ${fileKey}`, error);
       return null;
     }
   }

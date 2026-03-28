@@ -140,7 +140,10 @@ export class RankingsController {
     status: 201,
     description: 'Rankings recalculated successfully',
     schema: {
-      example: { status: 'success', data: { message: 'Rankings recalculated', rankings_updated: 42 } },
+      example: {
+        status: 'success',
+        data: { message: 'Rankings recalculated', rankings_updated: 42 },
+      },
     },
   })
   @ApiResponse({ status: 404, description: 'Year not found or no active year' })

@@ -17,7 +17,9 @@ export interface PreferenceEntry {
  *      "investiture"           → "investiture"
  *      undefined               → null
  */
-export function extractCategory(source: string | undefined | null): string | null {
+export function extractCategory(
+  source: string | undefined | null,
+): string | null {
   if (!source) return null;
   const colonIdx = source.indexOf(':');
   return colonIdx !== -1 ? source.substring(0, colonIdx) : source;
@@ -39,7 +41,9 @@ export class NotificationPreferencesService {
       select: { category: true, enabled: true },
     });
 
-    const map = new Map<string, boolean>(rows.map((r) => [r.category, r.enabled]));
+    const map = new Map<string, boolean>(
+      rows.map((r) => [r.category, r.enabled]),
+    );
 
     return NOTIFICATION_CATEGORIES.map((cat) => ({
       category: cat,
@@ -75,7 +79,10 @@ export class NotificationPreferencesService {
    * - If source is undefined/null, always return true
    * - If no preference row exists, default is enabled (opt-out model)
    */
-  async isAllowedForUser(userId: string, source: string | undefined): Promise<boolean> {
+  async isAllowedForUser(
+    userId: string,
+    source: string | undefined,
+  ): Promise<boolean> {
     const category = extractCategory(source);
 
     // No source or admin category — always allowed
@@ -111,7 +118,10 @@ export class NotificationPreferencesService {
    * Returns a Set of user IDs that are ALLOWED to receive the notification.
    * Efficient: single DB query for all users, no N+1.
    */
-  async filterAllowedUsers(userIds: string[], source: string | undefined): Promise<Set<string>> {
+  async filterAllowedUsers(
+    userIds: string[],
+    source: string | undefined,
+  ): Promise<Set<string>> {
     const category = extractCategory(source);
 
     // No opt-out check needed

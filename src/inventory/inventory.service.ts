@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
@@ -17,10 +14,7 @@ export class InventoryService {
   /**
    * Listar items del inventario de una sección de club específica
    */
-  async findAllByClub(
-    clubSectionId: number,
-    categoryId?: number,
-  ) {
+  async findAllByClub(clubSectionId: number, categoryId?: number) {
     const whereClause: any = {
       active: true,
       club_section_id: clubSectionId,
@@ -157,10 +151,15 @@ export class InventoryService {
       },
     });
 
-    await this.logInventoryChange(item.club_inventory_id, 'CREATE', [
-      { field: 'name', oldValue: null, newValue: dto.name },
-      { field: 'amount', oldValue: null, newValue: String(dto.amount ?? 0) },
-    ], performedBy);
+    await this.logInventoryChange(
+      item.club_inventory_id,
+      'CREATE',
+      [
+        { field: 'name', oldValue: null, newValue: dto.name },
+        { field: 'amount', oldValue: null, newValue: String(dto.amount ?? 0) },
+      ],
+      performedBy,
+    );
 
     return {
       inventory_id: item.club_inventory_id,
@@ -206,18 +205,44 @@ export class InventoryService {
     }
 
     // Calcular cambios antes de actualizar
-    const changes: Array<{ field: string; oldValue: string | null; newValue: string | null }> = [];
+    const changes: Array<{
+      field: string;
+      oldValue: string | null;
+      newValue: string | null;
+    }> = [];
     if (dto.name && dto.name !== existingItem.name) {
-      changes.push({ field: 'name', oldValue: existingItem.name, newValue: dto.name });
+      changes.push({
+        field: 'name',
+        oldValue: existingItem.name,
+        newValue: dto.name,
+      });
     }
-    if (dto.description !== undefined && dto.description !== existingItem.description) {
-      changes.push({ field: 'description', oldValue: existingItem.description ?? null, newValue: dto.description ?? null });
+    if (
+      dto.description !== undefined &&
+      dto.description !== existingItem.description
+    ) {
+      changes.push({
+        field: 'description',
+        oldValue: existingItem.description ?? null,
+        newValue: dto.description ?? null,
+      });
     }
-    if (dto.inventory_category_id && dto.inventory_category_id !== existingItem.inventory_category_id) {
-      changes.push({ field: 'inventory_category_id', oldValue: String(existingItem.inventory_category_id ?? ''), newValue: String(dto.inventory_category_id) });
+    if (
+      dto.inventory_category_id &&
+      dto.inventory_category_id !== existingItem.inventory_category_id
+    ) {
+      changes.push({
+        field: 'inventory_category_id',
+        oldValue: String(existingItem.inventory_category_id ?? ''),
+        newValue: String(dto.inventory_category_id),
+      });
     }
     if (dto.amount !== undefined && dto.amount !== existingItem.amount) {
-      changes.push({ field: 'amount', oldValue: String(existingItem.amount ?? 0), newValue: String(dto.amount) });
+      changes.push({
+        field: 'amount',
+        oldValue: String(existingItem.amount ?? 0),
+        newValue: String(dto.amount),
+      });
     }
 
     // Actualizar item
@@ -234,7 +259,12 @@ export class InventoryService {
     });
 
     if (changes.length > 0) {
-      await this.logInventoryChange(inventoryId, 'UPDATE', changes, performedBy);
+      await this.logInventoryChange(
+        inventoryId,
+        'UPDATE',
+        changes,
+        performedBy,
+      );
     }
 
     // Obtener categoría si existe
@@ -284,9 +314,12 @@ export class InventoryService {
       data: { active: false },
     });
 
-    await this.logInventoryChange(inventoryId, 'DELETE', [
-      { field: 'active', oldValue: 'true', newValue: 'false' },
-    ], performedBy);
+    await this.logInventoryChange(
+      inventoryId,
+      'DELETE',
+      [{ field: 'active', oldValue: 'true', newValue: 'false' }],
+      performedBy,
+    );
 
     return {
       message: 'Inventory item deleted successfully',
@@ -303,7 +336,11 @@ export class InventoryService {
   private async logInventoryChange(
     inventoryId: number,
     action: 'CREATE' | 'UPDATE' | 'DELETE',
-    changes: Array<{ field: string; oldValue: string | null; newValue: string | null }>,
+    changes: Array<{
+      field: string;
+      oldValue: string | null;
+      newValue: string | null;
+    }>,
     performedBy: string,
   ): Promise<void> {
     if (changes.length === 0) return;

@@ -140,9 +140,7 @@ export class CamporeesController {
     status: 404,
     description: 'Camporee de unión no encontrado',
   })
-  async findOneUnion(
-    @Param('camporeeId', ParseIntPipe) camporeeId: number,
-  ) {
+  async findOneUnion(@Param('camporeeId', ParseIntPipe) camporeeId: number) {
     return this.camporeesService.findOneUnion(camporeeId);
   }
 
@@ -156,10 +154,7 @@ export class CamporeesController {
   })
   @ApiResponse({ status: 201, description: 'Camporee de unión creado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  async createUnion(
-    @Body() dto: CreateUnionCamporeeDto,
-    @Request() req: any,
-  ) {
+  async createUnion(@Body() dto: CreateUnionCamporeeDto, @Request() req: any) {
     return this.camporeesService.createUnion(
       dto,
       req.user.sub,
@@ -197,9 +192,7 @@ export class CamporeesController {
     status: 404,
     description: 'Camporee de unión no encontrado',
   })
-  async removeUnion(
-    @Param('camporeeId', ParseIntPipe) camporeeId: number,
-  ) {
+  async removeUnion(@Param('camporeeId', ParseIntPipe) camporeeId: number) {
     return this.camporeesService.removeUnion(camporeeId);
   }
 
@@ -223,7 +216,11 @@ export class CamporeesController {
     @Body() dto: EnrollClubDto,
     @Request() req: any,
   ) {
-    return this.camporeesService.enrollClubToUnion(camporeeId, dto, req.user.sub);
+    return this.camporeesService.enrollClubToUnion(
+      camporeeId,
+      dto,
+      req.user.sub,
+    );
   }
 
   @Get('union/:camporeeId/clubs')
@@ -231,17 +228,31 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Listar clubes inscritos en camporee de unión',
-    description: 'Obtiene la lista de secciones de club inscritas en el camporee de unión',
+    description:
+      'Obtiene la lista de secciones de club inscritas en el camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: [
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ],
+  })
   @ApiResponse({ status: 200, description: 'Lista de clubes inscritos' })
   @ApiResponse({ status: 404, description: 'Camporee de unión no encontrado' })
   async getUnionEnrolledClubs(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: CamporeeStatusQueryDto,
   ) {
-    return this.camporeesService.getUnionEnrolledClubs(camporeeId, query.status);
+    return this.camporeesService.getUnionEnrolledClubs(
+      camporeeId,
+      query.status,
+    );
   }
 
   @Delete('union/:camporeeId/clubs/:camporeeClubId')
@@ -249,7 +260,8 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Cancelar inscripción de club en camporee de unión',
-    description: 'Cancela la inscripción de una sección de club en el camporee de unión',
+    description:
+      'Cancela la inscripción de una sección de club en el camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'camporeeClubId', type: Number })
@@ -259,7 +271,10 @@ export class CamporeesController {
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('camporeeClubId', ParseIntPipe) camporeeClubId: number,
   ) {
-    return this.camporeesService.cancelUnionClubEnrollment(camporeeId, camporeeClubId);
+    return this.camporeesService.cancelUnionClubEnrollment(
+      camporeeId,
+      camporeeClubId,
+    );
   }
 
   // ========================================
@@ -271,7 +286,8 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Registrar miembro en camporee de unión',
-    description: 'Registra un miembro en el camporee de unión con validación de seguro',
+    description:
+      'Registra un miembro en el camporee de unión con validación de seguro',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({ status: 201, description: 'Miembro registrado exitosamente' })
@@ -289,10 +305,21 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Listar miembros del camporee de unión',
-    description: 'Obtiene la lista de miembros registrados en el camporee de unión',
+    description:
+      'Obtiene la lista de miembros registrados en el camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: [
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ],
+  })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
   @ApiResponse({ status: 404, description: 'Camporee de unión no encontrado' })
   async getUnionMembers(
@@ -329,20 +356,29 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Registrar pago de miembro en camporee de unión',
-    description: 'Registra un pago para un miembro inscrito en el camporee de unión',
+    description:
+      'Registra un pago para un miembro inscrito en el camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'memberId', type: Number })
   @ApiResponse({ status: 201, description: 'Pago registrado exitosamente' })
   @ApiResponse({ status: 400, description: 'Error de validación' })
-  @ApiResponse({ status: 404, description: 'Miembro o camporee de unión no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Miembro o camporee de unión no encontrado',
+  })
   async createUnionPayment(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('memberId', ParseIntPipe) memberId: number,
     @Body() dto: CreatePaymentDto,
     @Request() req: any,
   ) {
-    return this.camporeesService.createUnionPayment(camporeeId, memberId, dto, req.user.sub);
+    return this.camporeesService.createUnionPayment(
+      camporeeId,
+      memberId,
+      dto,
+      req.user.sub,
+    );
   }
 
   @Get('union/:camporeeId/members/:memberId/payments')
@@ -350,19 +386,37 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Listar pagos de un miembro en camporee de unión',
-    description: 'Obtiene la lista de pagos realizados por un miembro del camporee de unión',
+    description:
+      'Obtiene la lista de pagos realizados por un miembro del camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'memberId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: [
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ],
+  })
   @ApiResponse({ status: 200, description: 'Lista de pagos del miembro' })
-  @ApiResponse({ status: 404, description: 'Miembro o camporee de unión no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Miembro o camporee de unión no encontrado',
+  })
   async getUnionMemberPayments(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Param('memberId', ParseIntPipe) memberId: number,
     @Query() query: CamporeeStatusQueryDto,
   ) {
-    return this.camporeesService.getUnionMemberPayments(camporeeId, memberId, query.status);
+    return this.camporeesService.getUnionMemberPayments(
+      camporeeId,
+      memberId,
+      query.status,
+    );
   }
 
   @Get('union/:camporeeId/payments')
@@ -373,14 +427,30 @@ export class CamporeesController {
     description: 'Obtiene un resumen de todos los pagos del camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
-  @ApiResponse({ status: 200, description: 'Lista de pagos del camporee de unión' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: [
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ],
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de pagos del camporee de unión',
+  })
   @ApiResponse({ status: 404, description: 'Camporee de unión no encontrado' })
   async getUnionCamporeePayments(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: CamporeeStatusQueryDto,
   ) {
-    return this.camporeesService.getUnionCamporeePayments(camporeeId, query.status);
+    return this.camporeesService.getUnionCamporeePayments(
+      camporeeId,
+      query.status,
+    );
   }
 
   // ========================================
@@ -391,8 +461,10 @@ export class CamporeesController {
   @RequirePermissions('attendance:approve_late')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
-    summary: 'Listar inscripciones pendientes de aprobación en camporee de unión',
-    description: 'Obtiene todos los clubes, miembros y pagos con estado pending_approval en el camporee de unión',
+    summary:
+      'Listar inscripciones pendientes de aprobación en camporee de unión',
+    description:
+      'Obtiene todos los clubes, miembros y pagos con estado pending_approval en el camporee de unión',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({ status: 200, description: 'Inscripciones pendientes' })
@@ -406,7 +478,9 @@ export class CamporeesController {
   @Patch('union/:camporeeId/clubs/:camporeeClubId/approve')
   @RequirePermissions('attendance:approve_late')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
-  @ApiOperation({ summary: 'Aprobar inscripción tardía de club en camporee de unión' })
+  @ApiOperation({
+    summary: 'Aprobar inscripción tardía de club en camporee de unión',
+  })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'camporeeClubId', type: Number })
   @ApiResponse({ status: 200, description: 'Inscripción de club aprobada' })
@@ -426,7 +500,9 @@ export class CamporeesController {
   @Patch('union/:camporeeId/clubs/:camporeeClubId/reject')
   @RequirePermissions('attendance:approve_late')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
-  @ApiOperation({ summary: 'Rechazar inscripción tardía de club en camporee de unión' })
+  @ApiOperation({
+    summary: 'Rechazar inscripción tardía de club en camporee de unión',
+  })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'camporeeClubId', type: Number })
   @ApiResponse({ status: 200, description: 'Inscripción de club rechazada' })
@@ -448,7 +524,9 @@ export class CamporeesController {
   @Patch('union/:camporeeId/members/:camporeeMemberId/approve')
   @RequirePermissions('attendance:approve_late')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
-  @ApiOperation({ summary: 'Aprobar inscripción tardía de miembro en camporee de unión' })
+  @ApiOperation({
+    summary: 'Aprobar inscripción tardía de miembro en camporee de unión',
+  })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'camporeeMemberId', type: Number })
   @ApiResponse({ status: 200, description: 'Inscripción de miembro aprobada' })
@@ -468,7 +546,9 @@ export class CamporeesController {
   @Patch('union/:camporeeId/members/:camporeeMemberId/reject')
   @RequirePermissions('attendance:approve_late')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
-  @ApiOperation({ summary: 'Rechazar inscripción tardía de miembro en camporee de unión' })
+  @ApiOperation({
+    summary: 'Rechazar inscripción tardía de miembro en camporee de unión',
+  })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'camporeeMemberId', type: Number })
   @ApiResponse({ status: 200, description: 'Inscripción de miembro rechazada' })
@@ -676,7 +756,11 @@ export class CamporeesController {
     description: 'Obtiene la lista de miembros registrados en el camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['registered', 'pending_approval', 'approved', 'rejected'],
+  })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getMembers(
@@ -737,7 +821,11 @@ export class CamporeesController {
       'Obtiene la lista de secciones de club inscritas en el camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['registered', 'pending_approval', 'approved', 'rejected'],
+  })
   @ApiResponse({ status: 200, description: 'Lista de clubes inscritos' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getEnrolledClubs(
@@ -752,8 +840,7 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Cancelar inscripción de club',
-    description:
-      'Cancela la inscripción de una sección de club en el camporee',
+    description: 'Cancela la inscripción de una sección de club en el camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'camporeeClubId', type: Number })
@@ -778,8 +865,7 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Registrar pago de miembro',
-    description:
-      'Registra un pago para un miembro inscrito en el camporee',
+    description: 'Registra un pago para un miembro inscrito en el camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'memberId', type: Number })
@@ -810,7 +896,17 @@ export class CamporeesController {
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'memberId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: [
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ],
+  })
   @ApiResponse({ status: 200, description: 'Lista de pagos del miembro' })
   @ApiResponse({ status: 404, description: 'Miembro o camporee no encontrado' })
   async getMemberPayments(
@@ -818,7 +914,11 @@ export class CamporeesController {
     @Param('memberId', ParseIntPipe) memberId: number,
     @Query() query: CamporeeStatusQueryDto,
   ) {
-    return this.camporeesService.getMemberPayments(camporeeId, memberId, query.status);
+    return this.camporeesService.getMemberPayments(
+      camporeeId,
+      memberId,
+      query.status,
+    );
   }
 
   @Get(':camporeeId/payments')
@@ -826,11 +926,20 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Listar todos los pagos del camporee',
-    description:
-      'Obtiene un resumen de todos los pagos del camporee',
+    description: 'Obtiene un resumen de todos los pagos del camporee',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['registered', 'pending_approval', 'approved', 'rejected', 'cancelled'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: [
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ],
+  })
   @ApiResponse({ status: 200, description: 'Lista de pagos del camporee' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getCamporeePayments(
@@ -859,7 +968,11 @@ export class CamporeesController {
   @Patch('payments/:camporeePaymentId/approve')
   @RequirePermissions('attendance:approve_late')
   @ApiOperation({ summary: 'Aprobar pago tardío de camporee' })
-  @ApiParam({ name: 'camporeePaymentId', type: String, description: 'UUID del pago' })
+  @ApiParam({
+    name: 'camporeePaymentId',
+    type: String,
+    description: 'UUID del pago',
+  })
   @ApiResponse({ status: 200, description: 'Pago aprobado' })
   @ApiResponse({ status: 404, description: 'Pago no encontrado' })
   async approvePayment(
@@ -875,7 +988,11 @@ export class CamporeesController {
   @Patch('payments/:camporeePaymentId/reject')
   @RequirePermissions('attendance:approve_late')
   @ApiOperation({ summary: 'Rechazar pago tardío de camporee' })
-  @ApiParam({ name: 'camporeePaymentId', type: String, description: 'UUID del pago' })
+  @ApiParam({
+    name: 'camporeePaymentId',
+    type: String,
+    description: 'UUID del pago',
+  })
   @ApiResponse({ status: 200, description: 'Pago rechazado' })
   @ApiResponse({ status: 404, description: 'Pago no encontrado' })
   async rejectPayment(

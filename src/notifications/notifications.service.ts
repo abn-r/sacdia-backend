@@ -96,11 +96,7 @@ export class NotificationsService {
    * Enviar notificación a un usuario específico.
    * Enqueues via BullMQ when Redis is available; otherwise sends synchronously.
    */
-  async sendToUser(
-    dto: SendNotificationDto,
-    sentBy: string,
-    source?: string,
-  ) {
+  async sendToUser(dto: SendNotificationDto, sentBy: string, source?: string) {
     if (!this.isFcmConfigured()) {
       return {
         success: false,
@@ -362,7 +358,10 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
-    const allowed = await this.preferencesService.isAllowedForUser(dto.userId, source);
+    const allowed = await this.preferencesService.isAllowedForUser(
+      dto.userId,
+      source,
+    );
     if (!allowed) {
       this.logger.debug(
         `Notification to user ${dto.userId} skipped — opted out of source "${source}"`,
@@ -419,7 +418,10 @@ export class NotificationsService {
     }
 
     const uniqueUserIds = [...new Set(tokens.map((t) => t.user_id))];
-    const allowedSet = await this.preferencesService.filterAllowedUsers(uniqueUserIds, source);
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      uniqueUserIds,
+      source,
+    );
     const filteredTokens = tokens.filter((t) => allowedSet.has(t.user_id));
 
     if (filteredTokens.length === 0) {
@@ -456,7 +458,11 @@ export class NotificationsService {
       },
     });
 
-    return { success: true, successCount: totalSuccess, failureCount: totalFailure };
+    return {
+      success: true,
+      successCount: totalSuccess,
+      failureCount: totalFailure,
+    };
   }
 
   private async sendToClubMembersSync(
@@ -555,7 +561,10 @@ export class NotificationsService {
       return;
     }
 
-    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      rawUserIds,
+      source,
+    );
     const userIds = rawUserIds.filter((id) => allowedSet.has(id));
 
     if (userIds.length === 0) {
@@ -575,7 +584,9 @@ export class NotificationsService {
     const batches = chunkArray(tokenStrings, 500);
 
     const batchResults = await Promise.allSettled(
-      batches.map((batch) => this.sendMulticastDirect(batch, title, body, data)),
+      batches.map((batch) =>
+        this.sendMulticastDirect(batch, title, body, data),
+      ),
     );
 
     let totalSuccess = 0;
@@ -641,7 +652,10 @@ export class NotificationsService {
       return;
     }
 
-    const allowedSet = await this.preferencesService.filterAllowedUsers(rawUserIds, source);
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      rawUserIds,
+      source,
+    );
     const userIds = rawUserIds.filter((id) => allowedSet.has(id));
 
     if (userIds.length === 0) {
@@ -661,7 +675,9 @@ export class NotificationsService {
     const batches = chunkArray(tokenStrings, 500);
 
     const batchResults = await Promise.allSettled(
-      batches.map((batch) => this.sendMulticastDirect(batch, title, body, data)),
+      batches.map((batch) =>
+        this.sendMulticastDirect(batch, title, body, data),
+      ),
     );
 
     let totalSuccess = 0;
@@ -743,9 +759,13 @@ export class NotificationsService {
         .map((resp, idx) => (resp.success ? tokens[idx] : null))
         .filter((token): token is string => token !== null);
 
-      this.fcmTokensService.updateLastUsed(succeededTokens).catch((err: Error) => {
-        this.logger.warn(`Failed to update last_used for delivered tokens: ${err.message}`);
-      });
+      this.fcmTokensService
+        .updateLastUsed(succeededTokens)
+        .catch((err: Error) => {
+          this.logger.warn(
+            `Failed to update last_used for delivered tokens: ${err.message}`,
+          );
+        });
     }
 
     return {
@@ -753,5 +773,4 @@ export class NotificationsService {
       failureCount: response.failureCount,
     };
   }
-
 }

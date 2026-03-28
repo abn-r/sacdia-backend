@@ -87,6 +87,8 @@ export class HonorsService {
       ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
     };
 
+    // Safety cap: the honors catalog is expected to stay in the low thousands.
+    // A take of 2000 prevents a full-table scan if the catalog grows unexpectedly.
     const honors = await this.prisma.honors.findMany({
       where,
       select: {
@@ -108,6 +110,7 @@ export class HonorsService {
         club_types: { select: { name: true } },
       },
       orderBy: [{ honors_category_id: 'asc' }, { name: 'asc' }],
+      take: 2000,
     });
 
     const grouped = new Map<
@@ -188,6 +191,8 @@ export class HonorsService {
   }
 
   async getCategories() {
+    // Small catalog table: expected to remain under ~100 rows.
+    // No pagination needed; a safety cap is applied as a precaution.
     return this.prisma.honors_categories.findMany({
       where: { active: true },
       select: {
@@ -197,6 +202,7 @@ export class HonorsService {
         icon: true,
       },
       orderBy: { name: 'asc' },
+      take: 200,
     });
   }
 
@@ -205,6 +211,8 @@ export class HonorsService {
   // ========================================
 
   async getUserHonors(userId: string, validated?: boolean) {
+    // A single user is not expected to have more than a few hundred honors.
+    // The cap of 500 prevents unbounded growth from becoming a problem.
     const honors = await this.prisma.users_honors.findMany({
       where: {
         user_id: userId,
@@ -223,6 +231,7 @@ export class HonorsService {
         },
       },
       orderBy: { created_at: 'desc' },
+      take: 500,
     });
 
     return Promise.all(
@@ -255,7 +264,7 @@ export class HonorsService {
           active: true,
           date: dto?.date ? new Date(dto.date) : new Date(),
           validate: false,
-          validation_status: 'in_progress',
+          validation_status: 'IN_PROGRESS',
           certificate: '',
           images: [],
           document: null,
@@ -286,7 +295,7 @@ export class HonorsService {
         honor_id: honorId,
         date: dto?.date ? new Date(dto.date) : new Date(),
         validate: false,
-        validation_status: 'in_progress',
+        validation_status: 'IN_PROGRESS',
         certificate: '',
         images: [],
         active: true,
@@ -762,16 +771,16 @@ export class HonorsService {
       await Promise.all([
         this.prisma.users_honors.count({ where }),
         this.prisma.users_honors.count({
-          where: { ...where, validation_status: 'approved' },
+          where: { ...where, validation_status: 'APPROVED' },
         }),
         this.prisma.users_honors.count({
-          where: { ...where, validation_status: 'pending_review' },
+          where: { ...where, validation_status: 'PENDING_REVIEW' },
         }),
         this.prisma.users_honors.count({
-          where: { ...where, validation_status: 'rejected' },
+          where: { ...where, validation_status: 'REJECTED' },
         }),
         this.prisma.users_honors.count({
-          where: { ...where, validation_status: 'in_progress' },
+          where: { ...where, validation_status: 'IN_PROGRESS' },
         }),
       ]);
 

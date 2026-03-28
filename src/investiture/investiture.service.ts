@@ -189,7 +189,7 @@ export class InvestitureService {
         );
       }
     } catch (error) {
-      this.logger.warn(
+      this.logger.error(
         `Notification failed for investiture submission ${enrollmentId}: ${error.message}`,
       );
     }

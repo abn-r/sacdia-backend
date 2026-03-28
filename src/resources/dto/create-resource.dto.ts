@@ -27,7 +27,9 @@ export class CreateResourceDto {
   @IsInt()
   resource_category_id?: number;
 
-  @ApiPropertyOptional({ description: 'ID del tipo de club. NULL = aplica a todos los tipos de club' })
+  @ApiPropertyOptional({
+    description: 'ID del tipo de club. NULL = aplica a todos los tipos de club',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -42,20 +44,26 @@ export class CreateResourceDto {
   scope_level: string;
 
   @ApiPropertyOptional({
-    description: 'ID del ámbito (union_id o local_field_id). NULL para scope system.',
+    description:
+      'ID del ámbito (union_id o local_field_id). NULL para scope system.',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   scope_id?: number;
 
-  @ApiPropertyOptional({ description: 'URL externa para recursos de tipo video_link', maxLength: 1000 })
+  @ApiPropertyOptional({
+    description: 'URL externa para recursos de tipo video_link',
+    maxLength: 1000,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(1000)
   external_url?: string;
 
-  @ApiPropertyOptional({ description: 'Contenido de texto para recursos de tipo text' })
+  @ApiPropertyOptional({
+    description: 'Contenido de texto para recursos de tipo text',
+  })
   @IsOptional()
   @IsString()
   content?: string;

@@ -20,7 +20,9 @@ export class MonthlyReportsCronService {
    */
   @Cron('0 23 * * *', { name: 'monthly-reports-auto-generate' })
   async handleAutoGenerate(): Promise<void> {
-    this.logger.log('Monthly reports cron triggered — checking configuration...');
+    this.logger.log(
+      'Monthly reports cron triggered — checking configuration...',
+    );
 
     try {
       // 1. Read system_config to check if auto-generation is enabled
@@ -38,7 +40,9 @@ export class MonthlyReportsCronService {
         where: { config_key: 'reports.auto_generate_day' },
       });
 
-      const configuredDay = dayConfig ? parseInt(dayConfig.config_value, 10) : 5;
+      const configuredDay = dayConfig
+        ? parseInt(dayConfig.config_value, 10)
+        : 5;
 
       if (isNaN(configuredDay) || configuredDay < 1 || configuredDay > 28) {
         this.logger.warn(
@@ -84,7 +88,9 @@ export class MonthlyReportsCronService {
       });
 
       if (activeEnrollments.length === 0) {
-        this.logger.log('No active club enrollments found. Nothing to generate.');
+        this.logger.log(
+          'No active club enrollments found. Nothing to generate.',
+        );
         return;
       }
 
@@ -96,11 +102,14 @@ export class MonthlyReportsCronService {
       let successCount = 0;
       let skipCount = 0;
       let errorCount = 0;
-      const errors: { enrollmentId: string; clubName: string; error: string }[] = [];
+      const errors: {
+        enrollmentId: string;
+        clubName: string;
+        error: string;
+      }[] = [];
 
       for (const enrollment of activeEnrollments) {
-        const clubName =
-          enrollment.club_section?.clubs?.name ?? 'Unknown club';
+        const clubName = enrollment.club_section?.clubs?.name ?? 'Unknown club';
         const clubType =
           enrollment.club_section?.club_types?.name ?? 'Unknown type';
         const label = `${clubName} (${clubType})`;

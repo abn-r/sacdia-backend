@@ -82,10 +82,7 @@ export class AnnualFoldersService {
   /**
    * Add a section to an existing template.
    */
-  async addTemplateSection(
-    templateId: string,
-    dto: CreateTemplateSectionDto,
-  ) {
+  async addTemplateSection(templateId: string, dto: CreateTemplateSectionDto) {
     const template = await this.prisma.folder_templates.findUnique({
       where: { folder_template_id: templateId },
     });
@@ -134,7 +131,9 @@ export class AnnualFoldersService {
         ...(dto.order !== undefined && { order: dto.order }),
         ...(dto.required !== undefined && { required: dto.required }),
         ...(dto.max_points !== undefined && { max_points: dto.max_points }),
-        ...(dto.minimum_points !== undefined && { minimum_points: dto.minimum_points }),
+        ...(dto.minimum_points !== undefined && {
+          minimum_points: dto.minimum_points,
+        }),
       },
     });
   }
@@ -274,7 +273,7 @@ export class AnnualFoldersService {
 
     if (!template) {
       throw new NotFoundException(
-        'No folder template found for this enrollment\'s club type and year',
+        "No folder template found for this enrollment's club type and year",
       );
     }
 
@@ -498,9 +497,7 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new NotFoundException(
-        `Evidence with ID ${evidenceId} not found`,
-      );
+      throw new NotFoundException(`Evidence with ID ${evidenceId} not found`);
     }
 
     if (evidence.annual_folder.status !== 'open') {
@@ -541,9 +538,7 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new NotFoundException(
-        `Evidence with ID ${evidenceId} not found`,
-      );
+      throw new NotFoundException(`Evidence with ID ${evidenceId} not found`);
     }
 
     if (evidence.annual_folder.status !== 'open') {
@@ -646,7 +641,7 @@ export class AnnualFoldersService {
 
     // Index evaluations by section_id for O(1) lookup
     const evaluationBySection = new Map<string, any>();
-    for (const evaluation of (folder.evaluations ?? [])) {
+    for (const evaluation of folder.evaluations ?? []) {
       evaluationBySection.set(evaluation.section_id, {
         evaluation_id: evaluation.evaluation_id,
         earned_points: evaluation.earned_points,

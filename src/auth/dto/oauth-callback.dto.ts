@@ -15,7 +15,8 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class OAuthCallbackDto {
   @ApiProperty({
-    description: 'Opaque Better Auth session token (returned after BA OAuth callback)',
+    description:
+      'Opaque Better Auth session token (returned after BA OAuth callback)',
     example: 'ba_session_abc123...',
   })
   @IsString()

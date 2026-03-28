@@ -1,10 +1,4 @@
-import {
-  IsString,
-  IsInt,
-  IsOptional,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsString, IsInt, IsOptional, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAwardCategoryDto {
@@ -45,7 +39,8 @@ export class CreateAwardCategoryDto {
   min_points: number;
 
   @ApiPropertyOptional({
-    description: 'Puntaje máximo de esta categoría (null = sin límite superior)',
+    description:
+      'Puntaje máximo de esta categoría (null = sin límite superior)',
     example: 100,
     minimum: 0,
     nullable: true,

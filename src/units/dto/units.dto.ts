@@ -27,7 +27,9 @@ export class CreateUnitDto {
   @IsUUID()
   advisor_id: string;
 
-  @ApiPropertyOptional({ description: 'UUID del consejero suplente (opcional)' })
+  @ApiPropertyOptional({
+    description: 'UUID del consejero suplente (opcional)',
+  })
   @IsOptional()
   @IsUUID()
   substitute_advisor_id?: string;

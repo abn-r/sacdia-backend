@@ -772,6 +772,8 @@ export class CamporeesService {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
+    // Safety cap: a single local camporee is not expected to have more than
+    // 1 000 registered members. Paginate at the controller level if needed.
     const members = await this.prisma.camporee_members.findMany({
       where: {
         camporee_id: camporeeId,
@@ -802,6 +804,7 @@ export class CamporeesService {
         },
       },
       orderBy: { created_at: 'asc' },
+      take: 1000,
     });
 
     return Promise.all(
@@ -965,6 +968,8 @@ export class CamporeesService {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
+    // Safety cap: a single local camporee is not expected to have more than
+    // 500 enrolled clubs. Paginate at the controller level if needed.
     return this.prisma.camporee_clubs.findMany({
       where: {
         camporee_id: camporeeId,
@@ -988,6 +993,7 @@ export class CamporeesService {
         },
       },
       orderBy: { created_at: 'asc' },
+      take: 500,
     });
   }
 
@@ -1154,6 +1160,7 @@ export class CamporeesService {
       );
     }
 
+    // Safety cap: a single member is unlikely to have more than 200 payments.
     return this.prisma.camporee_payments.findMany({
       where: {
         camporee_member_id: memberId,
@@ -1170,6 +1177,7 @@ export class CamporeesService {
         },
       },
       orderBy: { paid_at: 'desc' },
+      take: 200,
     });
   }
 
@@ -1182,6 +1190,8 @@ export class CamporeesService {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
+    // Safety cap: a camporee payment list grows proportionally to member count.
+    // 5 000 covers 1 000 members × 5 payment installments each.
     return this.prisma.camporee_payments.findMany({
       where: {
         camporee_member: {
@@ -1214,6 +1224,7 @@ export class CamporeesService {
         },
       },
       orderBy: { paid_at: 'desc' },
+      take: 5000,
     });
   }
 
@@ -1654,6 +1665,8 @@ export class CamporeesService {
     // Validate union camporee exists
     await this.findOneUnion(unionCamporeeId);
 
+    // Safety cap: a union camporee aggregates multiple local fields.
+    // 2 000 covers a large union with many clubs across sections.
     return this.prisma.camporee_clubs.findMany({
       where: {
         union_camporee_id: unionCamporeeId,
@@ -1677,6 +1690,7 @@ export class CamporeesService {
         },
       },
       orderBy: { created_at: 'asc' },
+      take: 2000,
     });
   }
 
@@ -1689,6 +1703,8 @@ export class CamporeesService {
     // Validate union camporee exists
     await this.findOneUnion(unionCamporeeId);
 
+    // Safety cap: a union camporee aggregates multiple local fields.
+    // 5 000 covers a large union event with members from many clubs.
     const members = await this.prisma.camporee_members.findMany({
       where: {
         union_camporee_id: unionCamporeeId,
@@ -1719,6 +1735,7 @@ export class CamporeesService {
         },
       },
       orderBy: { created_at: 'asc' },
+      take: 5000,
     });
 
     return Promise.all(
@@ -1735,6 +1752,8 @@ export class CamporeesService {
     // Validate union camporee exists
     await this.findOneUnion(unionCamporeeId);
 
+    // Safety cap: union camporee aggregates many local fields; 5 000 payments
+    // covers 1 000 members × 5 installments.
     return this.prisma.camporee_payments.findMany({
       where: {
         camporee_member: {
@@ -1767,6 +1786,7 @@ export class CamporeesService {
         },
       },
       orderBy: { paid_at: 'desc' },
+      take: 5000,
     });
   }
 
@@ -1798,6 +1818,7 @@ export class CamporeesService {
       );
     }
 
+    // Safety cap: a single member is unlikely to have more than 200 payments.
     return this.prisma.camporee_payments.findMany({
       where: {
         camporee_member_id: memberId,
@@ -1814,6 +1835,7 @@ export class CamporeesService {
         },
       },
       orderBy: { paid_at: 'desc' },
+      take: 200,
     });
   }
 
