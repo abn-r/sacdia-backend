@@ -46,7 +46,10 @@ export class EvaluationService {
       }
 
       // Validate folder status allows evaluation
-      if (folder.status !== 'submitted' && folder.status !== 'under_evaluation') {
+      if (
+        folder.status !== 'submitted' &&
+        folder.status !== 'under_evaluation'
+      ) {
         throw new BadRequestException(
           `Cannot evaluate a folder with status '${folder.status}'. Folder must be 'submitted' or 'under_evaluation'.`,
         );
@@ -110,9 +113,10 @@ export class EvaluationService {
       await this.recalcFolderTotals(folderId, tx);
 
       // Determine new status
-      const allEvaluations = await tx.annual_folder_section_evaluations.findMany({
-        where: { annual_folder_id: folderId },
-      });
+      const allEvaluations =
+        await tx.annual_folder_section_evaluations.findMany({
+          where: { annual_folder_id: folderId },
+        });
       const totalSections = folder.folder_template.sections.length;
       const evaluatedSections = allEvaluations.length;
 
@@ -178,7 +182,10 @@ export class EvaluationService {
       }
 
       // Validate folder status allows reopening
-      if (folder.status !== 'under_evaluation' && folder.status !== 'evaluated') {
+      if (
+        folder.status !== 'under_evaluation' &&
+        folder.status !== 'evaluated'
+      ) {
         throw new BadRequestException(
           `Cannot reopen a section in a folder with status '${folder.status}'. Folder must be 'under_evaluation' or 'evaluated'.`,
         );
@@ -258,20 +265,21 @@ export class EvaluationService {
       );
     }
 
-    const evaluations = await this.prisma.annual_folder_section_evaluations.findMany({
-      where: { annual_folder_id: folderId },
-      include: {
-        section: { select: { section_id: true, name: true, order: true } },
-        evaluated_by: {
-          select: {
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
+    const evaluations =
+      await this.prisma.annual_folder_section_evaluations.findMany({
+        where: { annual_folder_id: folderId },
+        include: {
+          section: { select: { section_id: true, name: true, order: true } },
+          evaluated_by: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
           },
         },
-      },
-      orderBy: { section: { order: 'asc' } },
-    });
+        orderBy: { section: { order: 'asc' } },
+      });
 
     return evaluations.map((e) => this.formatEvaluation(e));
   }
@@ -316,14 +324,9 @@ export class EvaluationService {
       (sum, e) => sum + e.earned_points,
       0,
     );
-    const total_max_points = sections.reduce(
-      (sum, s) => sum + s.max_points,
-      0,
-    );
+    const total_max_points = sections.reduce((sum, s) => sum + s.max_points, 0);
     const progress_percentage =
-      total_max_points > 0
-        ? (total_earned_points / total_max_points) * 100
-        : 0;
+      total_max_points > 0 ? (total_earned_points / total_max_points) * 100 : 0;
 
     await tx.annual_folders.update({
       where: { annual_folder_id: folderId },

@@ -19,10 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { ValidationService } from './validation.service';
 import { SubmitForReviewDto, ReviewValidationDto } from './dto';
-import {
-  CurrentUser,
-  RequirePermissions,
-} from '../common/decorators';
+import { CurrentUser, RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type CurrentUserPayload = {
@@ -187,9 +184,7 @@ export class ValidationController {
     status: 200,
     description: 'Resultado de elegibilidad con porcentaje y detalle',
   })
-  async checkEligibility(
-    @Param('userId', ParseUUIDPipe) userId: string,
-  ) {
+  async checkEligibility(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.validationService.checkInvestmentEligibility(userId);
   }
 }

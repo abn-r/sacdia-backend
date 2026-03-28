@@ -64,8 +64,7 @@ export class ValidationService {
       const updated = await tx.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
-          investiture_status:
-            investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+          investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
           submitted_for_validation: true,
           submitted_at: new Date(),
           locked_for_validation: true,
@@ -109,12 +108,18 @@ export class ValidationService {
           ['coordinator', 'director'],
           'Nueva clase enviada a revisión',
           'Un miembro ha enviado una clase para validación',
-          { type: 'validation', entity_type: 'class', entity_id: String(enrollmentId) },
+          {
+            type: 'validation',
+            entity_type: 'class',
+            entity_id: String(enrollmentId),
+          },
           'validation:class_submitted',
         );
       }
     } catch (error) {
-      this.logger.warn(`Notification failed for class submission ${enrollmentId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for class submission ${enrollmentId}: ${error.message}`,
+      );
     }
 
     return result;
@@ -137,23 +142,24 @@ export class ValidationService {
       );
     }
 
-    if (userHonor.validate === true || userHonor.validation_status === 'approved') {
-      throw new BadRequestException(
-        'El honor ya se encuentra validado',
-      );
+    if (
+      userHonor.validate === true ||
+      userHonor.validation_status === 'APPROVED'
+    ) {
+      throw new BadRequestException('El honor ya se encuentra validado');
     }
 
-    if (userHonor.validation_status === 'pending_review') {
+    if (userHonor.validation_status === 'PENDING_REVIEW') {
       throw new BadRequestException(
         'El honor ya se encuentra pendiente de revision',
       );
     }
 
-    // Allow submission from: in_progress, rejected
-    const allowedStatuses = ['in_progress', 'rejected'];
+    // Allow submission from: IN_PROGRESS, REJECTED
+    const allowedStatuses = ['IN_PROGRESS', 'REJECTED'];
     if (!allowedStatuses.includes(userHonor.validation_status)) {
       throw new BadRequestException(
-        `El honor debe estar en estado in_progress o rejected para enviar a revision. Estado actual: ${userHonor.validation_status}`,
+        `El honor debe estar en estado IN_PROGRESS o REJECTED para enviar a revision. Estado actual: ${userHonor.validation_status}`,
       );
     }
 
@@ -161,7 +167,7 @@ export class ValidationService {
       const updated = await tx.users_honors.update({
         where: { user_honor_id: userHonorId },
         data: {
-          validation_status: 'pending_review',
+          validation_status: 'PENDING_REVIEW',
           submitted_at: new Date(),
           rejection_reason: null, // Clear any previous rejection
           modified_at: new Date(),
@@ -196,12 +202,18 @@ export class ValidationService {
           ['coordinator', 'director'],
           'Nuevo honor enviado a revisión',
           'Un miembro ha enviado un honor para validación',
-          { type: 'validation', entity_type: 'honor', entity_id: String(userHonorId) },
+          {
+            type: 'validation',
+            entity_type: 'honor',
+            entity_id: String(userHonorId),
+          },
           'validation:honor_submitted',
         );
       }
     } catch (error) {
-      this.logger.warn(`Notification failed for honor submission ${userHonorId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for honor submission ${userHonorId}: ${error.message}`,
+      );
     }
 
     return result;
@@ -274,8 +286,7 @@ export class ValidationService {
           validated_at: new Date(),
           rejection_reason: action === 'rejected' ? comment : null,
           locked_for_validation: action === 'approved',
-          submitted_for_validation:
-            action === 'rejected' ? false : true,
+          submitted_for_validation: action === 'rejected' ? false : true,
         },
       });
 
@@ -305,22 +316,29 @@ export class ValidationService {
 
     // Notify the member about approval/rejection
     try {
-      const title = action === 'approved'
-        ? 'Clase aprobada'
-        : 'Clase rechazada';
-      const body = action === 'approved'
-        ? 'Tu clase ha sido aprobada por el revisor'
-        : `Tu clase ha sido rechazada: ${comment}`;
+      const title =
+        action === 'approved' ? 'Clase aprobada' : 'Clase rechazada';
+      const body =
+        action === 'approved'
+          ? 'Tu clase ha sido aprobada por el revisor'
+          : `Tu clase ha sido rechazada: ${comment}`;
 
       this.notifications.notifySafe(
         enrollment.user_id,
         title,
         body,
-        { type: 'validation', entity_type: 'class', entity_id: String(enrollmentId), action },
+        {
+          type: 'validation',
+          entity_type: 'class',
+          entity_id: String(enrollmentId),
+          action,
+        },
         `validation:class_${action}`,
       );
     } catch (error) {
-      this.logger.warn(`Notification failed for class review ${enrollmentId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for class review ${enrollmentId}: ${error.message}`,
+      );
     }
 
     return result;
@@ -345,7 +363,7 @@ export class ValidationService {
     const result = await this.prisma.$transaction(async (tx) => {
       // Update validation_status + backward-compat boolean
       const newValidationStatus =
-        action === 'approved' ? 'approved' : 'rejected';
+        action === 'approved' ? 'APPROVED' : 'REJECTED';
 
       const updated = await tx.users_honors.update({
         where: { user_honor_id: userHonorId },
@@ -376,22 +394,29 @@ export class ValidationService {
 
     // Notify the member about approval/rejection
     try {
-      const title = action === 'approved'
-        ? 'Honor aprobado'
-        : 'Honor rechazado';
-      const body = action === 'approved'
-        ? 'Tu honor ha sido aprobado por el revisor'
-        : `Tu honor ha sido rechazado: ${comment}`;
+      const title =
+        action === 'approved' ? 'Honor aprobado' : 'Honor rechazado';
+      const body =
+        action === 'approved'
+          ? 'Tu honor ha sido aprobado por el revisor'
+          : `Tu honor ha sido rechazado: ${comment}`;
 
       this.notifications.notifySafe(
         userHonor.user_id,
         title,
         body,
-        { type: 'validation', entity_type: 'honor', entity_id: String(userHonorId), action },
+        {
+          type: 'validation',
+          entity_type: 'honor',
+          entity_id: String(userHonorId),
+          action,
+        },
         `validation:honor_${action}`,
       );
     } catch (error) {
-      this.logger.warn(`Notification failed for honor review ${userHonorId}: ${error.message}`);
+      this.logger.warn(
+        `Notification failed for honor review ${userHonorId}: ${error.message}`,
+      );
     }
 
     return result;
@@ -418,8 +443,7 @@ export class ValidationService {
     if (shouldIncludeClasses) {
       results.classes = await this.prisma.enrollments.findMany({
         where: {
-          investiture_status:
-            investiture_status_enum.SUBMITTED_FOR_VALIDATION,
+          investiture_status: investiture_status_enum.SUBMITTED_FOR_VALIDATION,
           active: true,
           ...(filters?.club_section_id
             ? {
@@ -459,7 +483,7 @@ export class ValidationService {
     if (shouldIncludeHonors) {
       results.honors = await this.prisma.users_honors.findMany({
         where: {
-          validation_status: 'pending_review',
+          validation_status: 'PENDING_REVIEW',
           active: true,
           ...(filters?.club_section_id
             ? {
@@ -549,8 +573,9 @@ export class ValidationService {
 
     const totalEnrollments = enrollments.length;
     const approvedEnrollments = enrollments.filter(
-      (e) => e.investiture_status === investiture_status_enum.APPROVED ||
-             e.investiture_status === investiture_status_enum.INVESTIDO,
+      (e) =>
+        e.investiture_status === investiture_status_enum.APPROVED ||
+        e.investiture_status === investiture_status_enum.INVESTIDO,
     ).length;
 
     // Count validated honors
