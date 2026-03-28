@@ -69,7 +69,7 @@ async function bootstrap() {
           for (const [key, value] of Object.entries(event.request.headers)) {
             cleaned[key] = SENSITIVE_HEADERS.has(key.toLowerCase())
               ? '[REDACTED]'
-              : (value as string);
+              : value;
           }
           event.request.headers = cleaned;
         }
@@ -82,6 +82,20 @@ async function bootstrap() {
               body[field] = '[REDACTED]';
             }
           }
+        }
+
+        // Strip sensitive query string parameters
+        if (event.request?.url) {
+          try {
+            const url = new URL(event.request.url, 'http://localhost');
+            const sensitiveParams = ['password', 'token', 'secret', 'authorization', 'refreshtoken', 'refresh_token'];
+            for (const param of sensitiveParams) {
+              if (url.searchParams.has(param)) {
+                url.searchParams.set(param, '[REDACTED]');
+              }
+            }
+            event.request.url = url.pathname + url.search;
+          } catch {}
         }
 
         return event;
@@ -219,9 +233,9 @@ async function bootstrap() {
   // Resultado final: /api/v1/*
 
   // ==========================================
-  // SWAGGER — solo disponible fuera de producción
+  // SWAGGER — opt-in via SWAGGER_ENABLED=true
   // ==========================================
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.SWAGGER_ENABLED === 'true') {
     const config = new DocumentBuilder()
       .setTitle('SACDIA API')
       .setDescription(
@@ -264,7 +278,10 @@ Los endpoints de listado soportan: \`?page=1&limit=20\`
       .addTag('fcm-tokens', 'Gestión de tokens FCM de dispositivos')
       .addTag('admin-geography', 'CRUD admin de jerarquía geográfica')
       .addTag('admin-reference', 'CRUD admin de catálogos de referencia')
-      .addTag('admin-users', 'Gestión admin de usuarios con alcance territorial')
+      .addTag(
+        'admin-users',
+        'Gestión admin de usuarios con alcance territorial',
+      )
       .build();
 
     const document = SwaggerModule.createDocument(app, config);
@@ -281,7 +298,7 @@ Los endpoints de listado soportan: \`?page=1&limit=20\`
   await app.listen(port, '0.0.0.0');
 
   console.log(`\n🚀 Server running on: http://localhost:${port}`);
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.SWAGGER_ENABLED === 'true') {
     console.log(`📖 Swagger docs on: http://localhost:${port}/api`);
   }
   console.log(`✅ API Version: v1 (default)`);

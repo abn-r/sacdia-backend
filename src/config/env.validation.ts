@@ -17,11 +17,10 @@ export const envValidationSchema = Joi.object({
   FRONTEND_URL: Joi.string().uri().optional(),
   ALLOWED_ORIGINS: Joi.string().optional(),
   AUTH_REJECT_SNAKE_CASE: Joi.boolean().default(false),
+  SWAGGER_ENABLED: Joi.string().valid('true', 'false').optional(),
 
   // Logging
-  LOG_LEVEL: Joi.string()
-    .valid('debug', 'info', 'warn', 'error')
-    .optional(),
+  LOG_LEVEL: Joi.string().valid('debug', 'info', 'warn', 'error').optional(),
   LOG_PRETTY: Joi.boolean().optional(),
   LOG_PRETTY_IGNORE: Joi.string().optional(),
 
