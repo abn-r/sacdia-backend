@@ -981,21 +981,22 @@ export class HonorsService {
     );
     const hasImages = Object.prototype.hasOwnProperty.call(userHonor, 'images');
 
-    const certificate = hasCertificate
-      ? await this.resolvePrivateAssetUrl(
-          StorageBucketAlias.USERS_HONORS_CERT,
-          typeof userHonor.certificate === 'string'
-            ? userHonor.certificate
-            : null,
-        )
-      : null;
-
-    const document = hasDocument
-      ? await this.resolvePrivateAssetUrl(
-          StorageBucketAlias.USERS_HONORS,
-          typeof userHonor.document === 'string' ? userHonor.document : null,
-        )
-      : null;
+    const [certificate, document] = await Promise.all([
+      hasCertificate
+        ? this.resolvePrivateAssetUrl(
+            StorageBucketAlias.USERS_HONORS_CERT,
+            typeof userHonor.certificate === 'string'
+              ? userHonor.certificate
+              : null,
+          )
+        : Promise.resolve(null),
+      hasDocument
+        ? this.resolvePrivateAssetUrl(
+            StorageBucketAlias.USERS_HONORS,
+            typeof userHonor.document === 'string' ? userHonor.document : null,
+          )
+        : Promise.resolve(null),
+    ]);
 
     let images: unknown = userHonor.images;
     if (hasImages && Array.isArray(userHonor.images)) {

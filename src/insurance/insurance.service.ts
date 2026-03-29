@@ -114,12 +114,13 @@ export class InsuranceService {
     });
 
     const uniqueMembers = this.uniqueMembers(assignments);
-    const result: Record<string, any>[] = [];
 
-    for (const member of uniqueMembers) {
-      const insurance = await this.loadLatestActiveInsurance(member.user_id);
-      result.push(await this.mapMemberInsurance(member, insurance));
-    }
+    const result = await Promise.all(
+      uniqueMembers.map(async (member) => {
+        const insurance = await this.loadLatestActiveInsurance(member.user_id);
+        return this.mapMemberInsurance(member, insurance);
+      }),
+    );
 
     return result;
   }
