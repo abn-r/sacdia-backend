@@ -1056,6 +1056,7 @@ model notification_logs {
   @@index([sent_by], map: "idx_notification_logs_sender")
   @@index([created_at], map: "idx_notification_logs_created")
   @@index([source], map: "idx_notification_logs_source")
+  @@index([target_type, target_id], map: "idx_notification_logs_target")
 }
 
 model user_fcm_tokens {

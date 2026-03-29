@@ -5,6 +5,7 @@ import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
   NOTIFICATIONS_QUEUE,
   SendToUserJobData,
@@ -67,6 +68,7 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly fcmTokensService: FcmTokensService,
     private readonly preferencesService: NotificationPreferencesService,
+    private readonly authorizationContext: AuthorizationContextService,
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
     private readonly queue: Queue | undefined,
@@ -315,28 +317,48 @@ export class NotificationsService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Obtener historial paginado de notificaciones enviadas.
+   * Obtener historial paginado de notificaciones.
+   *
+   * - Admins (admin | super_admin): devuelve TODOS los logs sin filtro.
+   * - Usuarios regulares: devuelve sólo los logs donde target_type = 'user'
+   *   AND target_id = callerUserId (sus propias notificaciones).
    */
-  async getNotificationHistory(page: number = 1, limit: number = 20) {
+  async getNotificationHistory(
+    callerUserId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
+      callerUserId,
+      ['admin', 'super_admin', 'assistant_admin'],
+    );
+
     const skip = (page - 1) * limit;
+
+    const where = isAdmin
+      ? {}
+      : { target_type: 'user', target_id: callerUserId };
 
     const [data, total] = await Promise.all([
       this.prisma.notification_logs.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { created_at: 'desc' },
-        include: {
-          users: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              email: true,
-            },
-          },
-        },
+        include: isAdmin
+          ? {
+              users: {
+                select: {
+                  user_id: true,
+                  name: true,
+                  paternal_last_name: true,
+                  email: true,
+                },
+              },
+            }
+          : undefined,
       }),
-      this.prisma.notification_logs.count(),
+      this.prisma.notification_logs.count({ where }),
     ]);
 
     return {

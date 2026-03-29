@@ -25,18 +25,13 @@ import {
   IsObject,
   IsBoolean,
 } from 'class-validator';
-import { GlobalRoles } from '../common/decorators';
 import { RequirePermissions } from '../common/decorators';
 import {
   JwtAuthGuard,
   OwnerOrAdminGuard,
   PermissionsGuard,
-  GlobalRolesGuard,
 } from '../common/guards';
-import {
-  NOTIFICATION_CATEGORIES,
-  NotificationCategory,
-} from './notification-categories.constants';
+import { NOTIFICATION_CATEGORIES } from './notification-categories.constants';
 
 // DTOs
 class UpdatePreferenceDto {
@@ -142,14 +137,21 @@ export class NotificationsController {
   }
 
   @Get('history')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
-  @ApiOperation({ summary: 'Get paginated notification history' })
+  @ApiOperation({
+    summary: 'Get paginated notification history',
+    description:
+      'Admins (admin|super_admin) see all logs. Regular users see only their own notifications (target_type=user).',
+  })
   async getHistory(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Request() req,
   ) {
-    return this.notificationsService.getNotificationHistory(page, limit);
+    return this.notificationsService.getNotificationHistory(
+      req.user.sub,
+      page,
+      limit,
+    );
   }
 
   // ---------------------------------------------------------------------------

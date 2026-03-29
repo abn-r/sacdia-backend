@@ -3,6 +3,7 @@ import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 // ---------------------------------------------------------------------------
 // Mock firebase-admin module BEFORE importing the service under test.
@@ -36,6 +37,10 @@ describe('NotificationsService', () => {
     filterAllowedUsers: jest.fn().mockImplementation((userIds: string[]) =>
       Promise.resolve(new Set(userIds)),
     ),
+  };
+
+  const mockAuthorizationContextService = {
+    hasAnyGlobalRole: jest.fn().mockResolvedValue(false),
   };
 
   const mockPrismaService = {
@@ -72,6 +77,10 @@ describe('NotificationsService', () => {
         {
           provide: NotificationPreferencesService,
           useValue: mockPreferencesService,
+        },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContextService,
         },
       ],
     }).compile();
@@ -434,12 +443,60 @@ describe('NotificationsService', () => {
   // getNotificationHistory
   // ---------------------------------------------------------------------------
   describe('getNotificationHistory', () => {
-    it('should return paginated notification history', async () => {
+    const CALLER_ID = '00000000-0000-0000-0000-000000000099';
+
+    it('regular user: should filter logs by target_type=user and target_id=callerUserId', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
+
       const mockLogs = [
         {
           log_id: 1,
           title: 'Test',
           body: 'Body',
+          type: 'USER',
+          target_type: 'user',
+          target_id: CALLER_ID,
+          sent_by: null,
+          tokens_sent: 1,
+          tokens_failed: 0,
+          created_at: new Date(),
+        },
+      ];
+      mockPrismaService.notification_logs.findMany.mockResolvedValue(mockLogs);
+      mockPrismaService.notification_logs.count.mockResolvedValue(1);
+
+      const result = await service.getNotificationHistory(CALLER_ID, 1, 20);
+
+      expect(
+        mockAuthorizationContextService.hasAnyGlobalRole,
+      ).toHaveBeenCalledWith(CALLER_ID, [
+        'admin',
+        'super_admin',
+        'assistant_admin',
+      ]);
+      expect(mockPrismaService.notification_logs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { target_type: 'user', target_id: CALLER_ID },
+          include: undefined,
+        }),
+      );
+      expect(result).toEqual({
+        data: mockLogs,
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+    });
+
+    it('admin user: should return all logs with user relation included', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+
+      const mockLogs = [
+        {
+          log_id: 2,
+          title: 'Broadcast',
+          body: 'Global',
           type: 'BROADCAST',
           target_type: 'all',
           target_id: null,
@@ -458,8 +515,14 @@ describe('NotificationsService', () => {
       mockPrismaService.notification_logs.findMany.mockResolvedValue(mockLogs);
       mockPrismaService.notification_logs.count.mockResolvedValue(1);
 
-      const result = await service.getNotificationHistory(1, 20);
+      const result = await service.getNotificationHistory(SENT_BY, 1, 20);
 
+      expect(mockPrismaService.notification_logs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {},
+          include: expect.objectContaining({ users: expect.any(Object) }),
+        }),
+      );
       expect(result).toEqual({
         data: mockLogs,
         total: 1,
