@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
+import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -160,6 +162,70 @@ async function main() {
         ],
         skipDuplicates: true,
     });
+
+    // Seed admin user (super_admin)
+    console.log('📝 Seeding admin user...');
+    const adminEmail = 'admin@sacdia.com';
+    const existingAdmin = await prisma.users.findUnique({
+        where: { email: adminEmail },
+    });
+
+    if (!existingAdmin) {
+        const adminId = randomUUID();
+        const hashedPassword = await bcrypt.hash('Sacdia2026!', 12);
+
+        await prisma.users.create({
+            data: {
+                user_id: adminId,
+                email: adminEmail,
+                name: 'Admin',
+                paternal_last_name: 'SACDIA',
+                email_verified: true,
+                active: true,
+                access_panel: true,
+                approval_status: 'approved',
+            },
+        });
+
+        await prisma.account.create({
+            data: {
+                id: randomUUID(),
+                accountId: adminId,
+                providerId: 'credential',
+                userId: adminId,
+                password: hashedPassword,
+            },
+        });
+
+        const superAdminRole = await prisma.roles.findUnique({
+            where: { role_name: 'super_admin' },
+        });
+
+        if (superAdminRole) {
+            await prisma.users_roles.create({
+                data: {
+                    user_role_id: randomUUID(),
+                    user_id: adminId,
+                    role_id: superAdminRole.role_id,
+                    active: true,
+                },
+            });
+        }
+
+        await prisma.users_pr.create({
+            data: {
+                user_id: adminId,
+                complete: true,
+                profile_picture_complete: true,
+                personal_info_complete: true,
+                club_selection_complete: true,
+            },
+        });
+
+        console.log(`✅ Admin user created: ${adminEmail} (super_admin)`);
+    } else {
+        console.log(`⏭️  Admin user already exists: ${adminEmail}`);
+    }
 
     console.log('✅ Seed completed successfully!');
 }
