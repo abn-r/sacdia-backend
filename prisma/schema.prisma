@@ -140,6 +140,10 @@ model camporee_members {
   camporee_payments  camporee_payments[]
 
   @@index([union_camporee_id], map: "idx_camporee_members_union_camporee_id")
+  @@index([camporee_id], map: "idx_camporee_members_camporee_id")
+  @@index([user_id], map: "idx_camporee_members_user_id")
+  @@index([camporee_id, active], map: "idx_camporee_members_camporee_active")
+  @@index([status], map: "idx_camporee_members_status")
 }
 
 model churches {
@@ -210,6 +214,7 @@ model class_section_progress {
   evidence_files      evidence_files[]
 
   @@unique([user_id, class_id, module_id, section_id])
+  @@index([enrollment_id], map: "idx_class_section_progress_enrollment_id")
 }
 
 model class_sections {
@@ -385,6 +390,8 @@ model club_role_assignments {
   @@index([user_id], map: "idx_club_role_assignments_user")
   @@index([ecclesiastical_year_id], map: "idx_club_role_assignments_year")
   @@index([club_section_id], map: "idx_club_role_assignments_club_section_id")
+  // auth/me hot path: resolveUserAuthorization filters WHERE user_id = ? AND active = true, ordered by start_date DESC
+  @@index([user_id, active, start_date(sort: Desc)], map: "idx_club_role_assignments_user_active_start")
 }
 
 model countries {
@@ -428,6 +435,11 @@ model ecclesiastical_years {
   club_enrollments         club_enrollments[]
   folder_templates         folder_templates[]
   club_annual_rankings     club_annual_rankings[]
+
+  // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
+  @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
+  // Filter by active flag when listing available years
+  @@index([active], map: "idx_ecclesiastical_years_active")
 }
 
 model enrollments {
@@ -587,6 +599,7 @@ model folders_modules_records {
   folders_modules         folders_modules? @relation(fields: [module_id], references: [folder_module_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([club_section_id], map: "idx_folders_modules_records_club_section_id")
+  @@index([folder_id], map: "idx_folders_modules_records_folder_id")
 }
 
 model folders_section_records {
@@ -617,6 +630,8 @@ model folders_section_records {
   validated_by             users?            @relation("evidence_files_validated_by", fields: [validated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([club_section_id], map: "idx_folders_section_records_club_section_id")
+  @@index([status], map: "idx_folders_section_records_status")
+  @@index([folder_id, active], map: "idx_folders_section_records_folder_active")
 }
 
 model folders_sections {
@@ -814,6 +829,8 @@ model role_permissions {
 
   @@unique([role_id, permission_id])
   @@index([role_id], map: "idx_role_permissions_role_id")
+  // auth/me hot path: role_permissions loaded with WHERE role_id = ? AND active = true
+  @@index([role_id, active], map: "idx_role_permissions_role_id_active")
 }
 
 model roles {
@@ -1366,6 +1383,8 @@ model users_roles {
 
   @@unique([user_id, role_id], map: "user_roles_user_id_role_id_key")
   @@index([user_id], map: "idx_users_roles_user_id")
+  // auth/me hot path: resolveUserAuthorization filters WHERE user_id = ? AND active = true
+  @@index([user_id, active], map: "idx_users_roles_user_id_active")
 }
 
 model medicines {
@@ -1490,6 +1509,8 @@ model session {
   userId    String   @map("user_id") @db.Uuid
   user      users    @relation(fields: [userId], references: [user_id], onDelete: Cascade)
 
+  // Needed for cascade deletes triggered by Better Auth on logout/session cleanup
+  @@index([userId], map: "idx_sessions_user_id")
   @@map("sessions")
 }
 
