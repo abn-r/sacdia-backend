@@ -103,6 +103,7 @@ describe('ClassesService', () => {
           section_id: 101,
           score: 90,
           evidences: null,
+          evidence_files: [],
         },
       ]);
 
@@ -115,6 +116,26 @@ describe('ClassesService', () => {
         where: {
           enrollment_id: 501,
           active: true,
+        },
+        include: {
+          evidence_files: {
+            where: { active: true },
+            select: {
+              evidence_file_id: true,
+              file_url: true,
+              file_name: true,
+              file_type: true,
+              uploaded_at: true,
+              uploaded_by: {
+                select: {
+                  name: true,
+                  paternal_last_name: true,
+                  maternal_last_name: true,
+                },
+              },
+            },
+            orderBy: { uploaded_at: 'asc' },
+          },
         },
       });
     });

@@ -333,6 +333,7 @@ describe('AdminReferenceService', () => {
       expect(result).toEqual(ideals);
       expect(mockPrismaService.club_ideals.findMany).toHaveBeenCalledWith({
         orderBy: [{ club_type_id: 'asc' }, { ideal_order: 'asc' }],
+        take: 200,
       });
     });
   });

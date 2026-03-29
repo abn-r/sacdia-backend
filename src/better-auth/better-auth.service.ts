@@ -313,43 +313,89 @@ export class BetterAuthService implements IBetterAuthService {
   /**
    * Refreshes a session by looking it up via the opaque session token.
    *
-   * Flow:
-   *   1. Find session by token → UnauthorizedException if missing
-   *   2. Check expiry → delete + UnauthorizedException if expired
-   *   3. Slide expiry forward by SESSION_DURATION_MS
-   *   4. Load user → sign new SACDIA JWT
+   * Flow (single round-trip for the happy path):
+   *   1. UPDATE sessions JOIN users WHERE token=$1 AND expires_at > NOW() RETURNING *
+   *      — slides expiry and fetches user data in one query.
+   *   2. If no rows returned: check whether the token exists at all to emit the
+   *      correct error (not found vs expired). Expired sessions are deleted
+   *      fire-and-forget so the error path adds no latency to the caller.
+   *   3. Map raw result → BaSession + BaUser → sign SACDIA JWT.
    */
   async refreshSession(sessionToken: string): Promise<BaAuthResult> {
-    // 1. Find session
-    const dbSession = await this.prisma.session.findFirst({
-      where: { token: sessionToken },
-    });
-    if (!dbSession) {
-      throw new UnauthorizedException('Session not found or expired');
-    }
+    const newExpiresAt = new Date(Date.now() + SESSION_DURATION_MS);
 
-    // 2. Check expiry
-    if (dbSession.expiresAt < new Date()) {
-      await this.prisma.session.deleteMany({ where: { token: sessionToken } });
+    // Single round-trip: UPDATE + JOIN users, slide expiry, return all needed fields.
+    // The WHERE clause enforces both token match and non-expiry atomically.
+    type RefreshRow = {
+      // session fields
+      id: string;
+      token: string;
+      expires_at: Date;
+      created_at: Date;
+      updated_at: Date;
+      ip_address: string | null;
+      user_agent: string | null;
+      user_id: string;
+      // user fields (prefixed to avoid collision)
+      u_user_id: string;
+      u_email: string;
+      u_name: string | null;
+      u_email_verified: boolean;
+      u_user_image: string | null;
+      u_created_at: Date;
+      u_modified_at: Date;
+    };
+
+    const rows = await this.prisma.$queryRaw<RefreshRow[]>`
+      UPDATE sessions s
+         SET expires_at = ${newExpiresAt},
+             updated_at = NOW()
+        FROM users u
+       WHERE s.token      = ${sessionToken}
+         AND s.expires_at > NOW()
+         AND u.user_id    = s.user_id
+   RETURNING s.id,
+             s.token,
+             s.expires_at,
+             s.created_at,
+             s.updated_at,
+             s.ip_address,
+             s.user_agent,
+             s.user_id,
+             u.user_id    AS u_user_id,
+             u.email      AS u_email,
+             u.name       AS u_name,
+             u.email_verified  AS u_email_verified,
+             u.user_image AS u_user_image,
+             u.created_at AS u_created_at,
+             u.modified_at AS u_modified_at
+    `;
+
+    if (rows.length === 0) {
+      // Distinguish "token not found" from "token expired" for correct error message.
+      // This secondary query only runs on the error path — no impact on happy-path latency.
+      const existing = await this.prisma.session.findFirst({
+        where: { token: sessionToken },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        throw new UnauthorizedException('Session not found or expired');
+      }
+
+      // Token exists but is expired — clean it up fire-and-forget.
+      this.prisma.session
+        .deleteMany({ where: { token: sessionToken } })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `refreshSession: failed to delete expired session — ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+
       throw new UnauthorizedException('Session expired');
     }
 
-    // 3. Slide expiry
-    const newExpiresAt = new Date(Date.now() + SESSION_DURATION_MS);
-    const updatedSession = await this.prisma.session.update({
-      where: { id: dbSession.id },
-      data: { expiresAt: newExpiresAt },
-    });
-
-    // 4. Load user
-    const dbUser = await this.prisma.users.findUnique({
-      where: { user_id: dbSession.userId },
-    });
-    if (!dbUser) {
-      throw new InternalServerErrorException(
-        'refreshSession: user not found for session',
-      );
-    }
+    const row = rows[0];
 
     // SECURITY NOTE — JWT blacklisting:
     // refreshSession issues a new HS256 JWT but cannot blacklist the previous one
@@ -358,8 +404,27 @@ export class BetterAuthService implements IBetterAuthService {
     // blacklist would require a Redis store keyed by jti or token hash — defer to
     // a future hardening pass if the 1h window is deemed insufficient.
 
-    const user = mapDbUserToBaUser(dbUser);
-    const session = mapDbSessionToBaSession(updatedSession);
+    const session = mapDbSessionToBaSession({
+      id: row.id,
+      userId: row.user_id,
+      token: row.token,
+      expiresAt: row.expires_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      ipAddress: row.ip_address,
+      userAgent: row.user_agent,
+    });
+
+    const user = mapDbUserToBaUser({
+      user_id: row.u_user_id,
+      email: row.u_email,
+      name: row.u_name,
+      email_verified: row.u_email_verified,
+      user_image: row.u_user_image,
+      created_at: row.u_created_at,
+      modified_at: row.u_modified_at,
+    });
+
     const accessToken = this.signJwt(user);
 
     this.logger.log(`Session refreshed for user: ${user.id}`);

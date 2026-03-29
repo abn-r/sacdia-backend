@@ -255,9 +255,9 @@ describe('PostRegistrationService', () => {
     };
 
     it('should reuse existing club assignment and class enrollment on retry', async () => {
-      transactionMock.club_role_assignments.findFirst.mockResolvedValue({
-        assignment_id: 'assignment-existing',
-      });
+      transactionMock.club_role_assignments.findFirst
+        .mockResolvedValueOnce(null) // existingSameType check → no duplicate in a different club
+        .mockResolvedValueOnce({ assignment_id: 'assignment-existing' }); // existingAssignment → retry found
       transactionMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 501,
         active: true,

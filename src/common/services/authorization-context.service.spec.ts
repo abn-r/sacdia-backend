@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthorizationContextService } from './authorization-context.service';
 
@@ -17,6 +18,7 @@ describe('AuthorizationContextService', () => {
       providers: [
         AuthorizationContextService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CACHE_MANAGER, useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() } },
       ],
     }).compile();
 

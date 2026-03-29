@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 @Injectable()
 export class MembershipRequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   /**
    * List pending membership requests for a club section.
@@ -54,7 +58,7 @@ export class MembershipRequestsService {
       throw new NotFoundException('Solicitud no encontrada');
     }
 
-    return this.prisma.club_role_assignments.update({
+    const updated = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: {
         status: 'active',
@@ -62,6 +66,12 @@ export class MembershipRequestsService {
         modified_at: new Date(),
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      assignment.user_id,
+    );
+
+    return updated;
   }
 
   /**
@@ -81,7 +91,7 @@ export class MembershipRequestsService {
       throw new NotFoundException('Solicitud no encontrada');
     }
 
-    return this.prisma.club_role_assignments.update({
+    const updated = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: {
         status: 'rejected',
@@ -90,6 +100,12 @@ export class MembershipRequestsService {
         modified_at: new Date(),
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      assignment.user_id,
+    );
+
+    return updated;
   }
 
   /**

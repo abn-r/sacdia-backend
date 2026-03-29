@@ -6,6 +6,7 @@ import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 describe('ActivitiesService', () => {
   let service: ActivitiesService;
@@ -35,12 +36,17 @@ describe('ActivitiesService', () => {
     ),
   };
 
+  const mockNotificationsService = {
+    sendToClubMembers: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ActivitiesService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
@@ -179,6 +185,7 @@ describe('ActivitiesService', () => {
 
       mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 10,
         main_club_id: 1,
         club_type_id: 1,
       });

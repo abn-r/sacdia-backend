@@ -644,15 +644,20 @@ describe('HonorsService', () => {
     it('should return user honor statistics', async () => {
       mockPrismaService.users_honors.count
         .mockResolvedValueOnce(10) // total
-        .mockResolvedValueOnce(5) // validated
-        .mockResolvedValueOnce(5); // in progress
+        .mockResolvedValueOnce(5) // approved
+        .mockResolvedValueOnce(3) // pending_review
+        .mockResolvedValueOnce(1) // rejected
+        .mockResolvedValueOnce(1); // in_progress
 
       const result = await service.getUserHonorStats('user-123');
 
       expect(result).toEqual({
         total: 10,
         validated: 5,
-        in_progress: 5,
+        approved: 5,
+        pending_review: 3,
+        rejected: 1,
+        in_progress: 1,
       });
     });
   });

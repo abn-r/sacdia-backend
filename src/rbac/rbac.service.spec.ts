@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RbacService } from './rbac.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 
@@ -98,6 +99,7 @@ describe('RbacService', () => {
       providers: [
         RbacService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: AuthorizationContextService, useValue: { invalidateUserAuthorizationCache: jest.fn() } },
       ],
     }).compile();
 
@@ -120,6 +122,7 @@ describe('RbacService', () => {
       expect(result).toHaveLength(2);
       expect(mockPrismaService.permissions.findMany).toHaveBeenCalledWith({
         orderBy: { permission_name: 'asc' },
+        take: 500,
       });
     });
 

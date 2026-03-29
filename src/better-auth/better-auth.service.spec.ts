@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -27,6 +26,7 @@ describe('BetterAuthService', () => {
   const mockSessionDeleteMany = jest.fn();
   const mockSessionUpdate = jest.fn();
   const mockVerificationCreate = jest.fn();
+  const mockQueryRaw = jest.fn();
 
   const mockPrisma = {
     users: {
@@ -47,6 +47,7 @@ describe('BetterAuthService', () => {
     verification: {
       create: mockVerificationCreate,
     },
+    $queryRaw: mockQueryRaw,
   };
 
   // -- BA instance mock (kept for OAuth/TOTP stubs) --------------------------
@@ -274,7 +275,7 @@ describe('BetterAuthService', () => {
           data: expect.objectContaining({
             email: 'test@example.com',
             name: 'Test User',
-            email_verified: false,
+            email_verified: true,
           }),
         }),
       );
@@ -418,18 +419,36 @@ describe('BetterAuthService', () => {
   // refreshSession
   // ---------------------------------------------------------------------------
 
+  /**
+   * Shared fixture that matches the RefreshRow type returned by $queryRaw.
+   * All fields use snake_case as Postgres returns them.
+   * User columns are prefixed with u_ to avoid collision with session columns.
+   */
+  const mockRefreshRow = {
+    // session fields
+    id: 'session-id-abc',
+    token: 'raw-opaque-session-token',
+    expires_at: new Date(Date.now() + 7 * 86400 * 1000),
+    created_at: new Date('2026-01-01'),
+    updated_at: new Date('2026-01-01'),
+    ip_address: null,
+    user_agent: null,
+    user_id: 'user-uuid-123',
+    // user fields (u_ prefix)
+    u_user_id: 'user-uuid-123',
+    u_email: 'test@example.com',
+    u_name: 'Test User',
+    u_email_verified: false,
+    u_user_image: null,
+    u_created_at: new Date('2026-01-01'),
+    u_modified_at: new Date('2026-01-01'),
+  };
+
   describe('refreshSession', () => {
     it('should return a new BaAuthResult with a fresh SACDIA JWT on success', async () => {
       const { svc } = buildService();
 
-      const futureExpiry = new Date(Date.now() + 7 * 86400 * 1000);
-      const validSession = { ...mockDbSession, expiresAt: futureExpiry };
-      mockSessionFindFirst.mockResolvedValue(validSession);
-      mockSessionUpdate.mockResolvedValue({
-        ...validSession,
-        expiresAt: new Date(Date.now() + 7 * 86400 * 1000),
-      });
-      mockUsersFindUnique.mockResolvedValue(mockDbUser);
+      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
 
       const result = await svc.refreshSession('raw-opaque-session-token');
 
@@ -438,53 +457,70 @@ describe('BetterAuthService', () => {
         session: expect.objectContaining({ userId: 'user-uuid-123' }),
         accessToken: 'mocked-sacdia-jwt',
       });
+      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
     });
 
-    it('should throw UnauthorizedException when session is not found', async () => {
+    it('should map all RefreshRow fields correctly onto BaSession and BaUser', async () => {
       const { svc } = buildService();
 
+      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
+
+      const result = await svc.refreshSession('raw-opaque-session-token');
+
+      expect(result.session).toMatchObject({
+        id: 'session-id-abc',
+        userId: 'user-uuid-123',
+        token: 'raw-opaque-session-token',
+        ipAddress: null,
+        userAgent: null,
+      });
+      expect(result.user).toMatchObject({
+        id: 'user-uuid-123',
+        email: 'test@example.com',
+        name: 'Test User',
+        emailVerified: false,
+      });
+    });
+
+    it('should throw UnauthorizedException when session token is not found', async () => {
+      const { svc } = buildService();
+
+      // $queryRaw returns no rows — token does not exist in DB at all
+      mockQueryRaw.mockResolvedValue([]);
       mockSessionFindFirst.mockResolvedValue(null);
 
       await expect(svc.refreshSession('non-existent-token')).rejects.toThrow(
         UnauthorizedException,
       );
+      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
+      // Secondary lookup to distinguish not-found vs expired
+      expect(mockSessionFindFirst).toHaveBeenCalledWith({
+        where: { token: 'non-existent-token' },
+        select: { id: true },
+      });
     });
 
-    it('should throw UnauthorizedException and delete the session when it is expired', async () => {
+    it('should throw UnauthorizedException and fire-and-forget delete when session is expired', async () => {
       const { svc } = buildService();
 
-      const expiredSession = {
-        ...mockDbSession,
-        expiresAt: new Date(Date.now() - 1000), // 1 second ago
-      };
-      mockSessionFindFirst.mockResolvedValue(expiredSession);
+      // $queryRaw returns no rows — token exists but is expired (WHERE expires_at > NOW() failed)
+      mockQueryRaw.mockResolvedValue([]);
+      mockSessionFindFirst.mockResolvedValue({ id: 'session-id-abc' }); // token exists
       mockSessionDeleteMany.mockResolvedValue({ count: 1 });
 
       await expect(svc.refreshSession('expired-session-token')).rejects.toThrow(
         UnauthorizedException,
       );
+      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
+      expect(mockSessionFindFirst).toHaveBeenCalledWith({
+        where: { token: 'expired-session-token' },
+        select: { id: true },
+      });
+      // deleteMany is fire-and-forget — it must have been called (the promise is not awaited
+      // but Jest's mock records the call synchronously at invocation time)
       expect(mockSessionDeleteMany).toHaveBeenCalledWith({
         where: { token: 'expired-session-token' },
       });
-    });
-
-    it('should throw InternalServerErrorException when user is not found for a valid session', async () => {
-      const { svc } = buildService();
-
-      const futureExpiry = new Date(Date.now() + 7 * 86400 * 1000);
-      mockSessionFindFirst.mockResolvedValue({
-        ...mockDbSession,
-        expiresAt: futureExpiry,
-      });
-      mockSessionUpdate.mockResolvedValue({
-        ...mockDbSession,
-        expiresAt: futureExpiry,
-      });
-      mockUsersFindUnique.mockResolvedValue(null); // user deleted
-
-      await expect(
-        svc.refreshSession('raw-opaque-session-token'),
-      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 

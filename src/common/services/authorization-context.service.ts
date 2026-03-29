@@ -1,4 +1,6 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Inject, Logger } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type AuthorizationScopeNode = {
@@ -151,6 +153,20 @@ type ClubAssignmentRecord = {
   } | null;
 };
 
+/**
+ * Cache key for a user's resolved authorization context.
+ * Convention mirrors CATALOG_CACHE_KEYS: `auth:context:{userId}`
+ */
+export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
+  `auth:context:${userId}`;
+
+/**
+ * TTL for user authorization context — 5 minutes in milliseconds.
+ * Auth context changes infrequently (role/assignment mutations are rare),
+ * so a mid-range TTL balances freshness with DB load reduction.
+ */
+const AUTH_CONTEXT_TTL_MS = 300_000; // 5 minutes
+
 const CLUB_SCOPE_SELECT = {
   club_id: true,
   name: true,
@@ -176,11 +192,62 @@ const CLUB_SCOPE_SELECT = {
 
 @Injectable()
 export class AuthorizationContextService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AuthorizationContextService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
+
+  /**
+   * Invalidate the cached authorization context for a specific user.
+   * Call this whenever a user's roles, global permissions, or club assignments
+   * are mutated so that the next request reflects the updated state.
+   *
+   * Mutation points that MUST call this method:
+   *   - RbacService.assignRoleToUser / removeRoleFromUser / bootstrapAdmin
+   *   - RbacService.assignPermissionsToRole / removePermissionFromRole / syncRolePermissions
+   *     (affects all users that hold the modified role — per-role invalidation is not
+   *      implemented; rely on TTL expiry for role-level permission changes)
+   *   - ClubsService.assignRole / updateRoleAssignment / removeRoleAssignment
+   *   - MembershipRequestsService.approve / reject
+   *   - RequestsService / PostRegistrationService when creating or mutating assignments
+   */
+  async invalidateUserAuthorizationCache(userId: string): Promise<void> {
+    const key = AUTH_CONTEXT_CACHE_KEY(userId);
+    try {
+      await this.cacheManager.del(key);
+      this.logger.debug(`Auth context cache INVALIDATED — ${key}`);
+    } catch (err) {
+      this.logger.warn(
+        `Auth context cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
+      );
+    }
+  }
 
   async resolveUserAuthorization(
     userId: string,
   ): Promise<ResolvedAuthorizationProfile> {
+    const cacheKey = AUTH_CONTEXT_CACHE_KEY(userId);
+
+    // ── Cache HIT path ──────────────────────────────────────────────────────
+    try {
+      const cached =
+        await this.cacheManager.get<ResolvedAuthorizationProfile>(cacheKey);
+      if (cached !== null && cached !== undefined) {
+        this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
+        return cached;
+      }
+    } catch (err) {
+      // Redis down or deserialization error — degrade gracefully to DB
+      this.logger.warn(
+        `Auth context cache GET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
+      );
+    }
+
+    this.logger.debug(`Auth context cache MISS — ${cacheKey}`);
+
+    // ── DB query (unchanged) ────────────────────────────────────────────────
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: {
@@ -329,7 +396,7 @@ export class AuthorizationContextService {
       ? this.toLegacyAssignmentContext(activeClubGrant)
       : null;
 
-    return {
+    const result: ResolvedAuthorizationProfile = {
       profile: {
         user_id: user.user_id,
         email: user.email,
@@ -389,6 +456,21 @@ export class AuthorizationContextService {
         },
       },
     };
+
+    // ── Cache SET path ──────────────────────────────────────────────────────
+    try {
+      await this.cacheManager.set(cacheKey, result, AUTH_CONTEXT_TTL_MS);
+      this.logger.debug(
+        `Auth context cache SET  — ${cacheKey} (TTL ${AUTH_CONTEXT_TTL_MS}ms)`,
+      );
+    } catch (err) {
+      // Redis down — return DB result without caching, degrade gracefully
+      this.logger.warn(
+        `Auth context cache SET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
+      );
+    }
+
+    return result;
   }
 
   async hasAnyGlobalRole(
@@ -575,5 +657,9 @@ export class AuthorizationContextService {
       club_name: assignment.club.club_name,
       club_type: assignment.section.club_type_name ?? null,
     };
+  }
+
+  private extractMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
   }
 }

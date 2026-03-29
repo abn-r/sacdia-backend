@@ -8,6 +8,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { InvestitureService } from './investiture.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import {
   ValidateEnrollmentDto,
@@ -25,9 +26,12 @@ describe('InvestitureService', () => {
   const createTxMock = () => ({
     enrollments: {
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUnique: jest.fn(),
     },
     investiture_validation_history: {
       create: jest.fn(),
+      createMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
   });
 
@@ -60,6 +64,12 @@ describe('InvestitureService', () => {
 
   const mockAuthorizationContext = {
     hasAnyGlobalRole: jest.fn(),
+  };
+
+  const mockNotificationsService = {
+    sendToSectionRole: jest.fn().mockResolvedValue(undefined),
+    sendToGlobalRole: jest.fn().mockResolvedValue(undefined),
+    notifySafe: jest.fn().mockResolvedValue(undefined),
   };
 
   // ---- shared fixtures ----
@@ -118,6 +128,10 @@ describe('InvestitureService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContext,
+        },
+        {
+          provide: NotificationsService,
+          useValue: mockNotificationsService,
         },
       ],
     }).compile();
@@ -233,8 +247,11 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        user_id: 'user-abc',
+        users: { local_field_id: 3 },
       });
-      txMock.enrollments.update.mockResolvedValue({
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'CLUB_APPROVED',
       });
@@ -279,8 +296,11 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'CLUB_APPROVED',
+        user_id: 'user-abc',
+        users: { local_field_id: 3 },
       });
-      txMock.enrollments.update.mockResolvedValue({
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'COORDINATOR_APPROVED',
       });
@@ -321,8 +341,11 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'COORDINATOR_APPROVED',
+        user_id: 'user-abc',
+        users: { local_field_id: 3 },
       });
-      txMock.enrollments.update.mockResolvedValue({
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'FIELD_APPROVED',
       });
@@ -856,8 +879,11 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        user_id: 'user-abc',
+        users: { local_field_id: 3 },
       });
-      txMock.enrollments.update.mockResolvedValue({
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'CLUB_APPROVED',
       });
@@ -870,8 +896,11 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'CLUB_APPROVED',
+        user_id: 'user-abc',
+        users: { local_field_id: 3 },
       });
-      txMock.enrollments.update.mockResolvedValue({
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'COORDINATOR_APPROVED',
       });
@@ -887,8 +916,11 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'COORDINATOR_APPROVED',
+        user_id: 'user-abc',
+        users: { local_field_id: 3 },
       });
-      txMock.enrollments.update.mockResolvedValue({
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'FIELD_APPROVED',
       });

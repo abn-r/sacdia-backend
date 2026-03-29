@@ -3,6 +3,7 @@ import { ClubsService } from './clubs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 describe('ClubsService', () => {
   let service: ClubsService;
@@ -47,6 +48,7 @@ describe('ClubsService', () => {
         ClubsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        { provide: AuthorizationContextService, useValue: { invalidateUserAuthorizationCache: jest.fn() } },
       ],
     }).compile();
 

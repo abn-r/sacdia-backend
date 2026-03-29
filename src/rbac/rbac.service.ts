@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 
@@ -12,7 +13,10 @@ import { UpdatePermissionDto } from './dto/update-permission.dto';
 export class RbacService {
   private readonly logger = new Logger(RbacService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ─── Permisos ───────────────────────────────────────────────
 
@@ -374,6 +378,9 @@ export class RbacService {
         this.logger.log(
           `Rol ${role.role_name} reactivado para usuario ${userId}`,
         );
+        await this.authorizationContext.invalidateUserAuthorizationCache(
+          userId,
+        );
         return { success: true, message: 'Rol reactivado' };
       }
       throw new ConflictException('El usuario ya tiene este rol asignado');
@@ -384,6 +391,7 @@ export class RbacService {
     });
 
     this.logger.log(`Rol ${role.role_name} asignado a usuario ${userId}`);
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
     return { success: true, message: 'Rol asignado' };
   }
 
@@ -402,6 +410,7 @@ export class RbacService {
     });
 
     this.logger.log(`Rol ${roleId} removido del usuario ${userId}`);
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
     return { success: true, message: 'Rol removido del usuario' };
   }
 
@@ -452,6 +461,8 @@ export class RbacService {
     this.logger.warn(
       `BOOTSTRAP: Usuario ${user.email} (${userId}) asignado como primer super_admin`,
     );
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
 
     return {
       success: true,

@@ -25,6 +25,9 @@ describe('AuthService', () => {
   // transaction (BA owns the users table insert via prismaAdapter).
   // -------------------------------------------------------------------------
   const mockTx = {
+    users: {
+      update: jest.fn(),
+    },
     users_pr: {
       create: jest.fn(),
     },
@@ -169,11 +172,26 @@ describe('AuthService', () => {
       );
       expect(mockTx.users_pr.create).toHaveBeenCalled();
       expect(mockTx.users_roles.create).toHaveBeenCalled();
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         userId: 'user-123',
         message: 'Usuario registrado exitosamente',
         emailVerificationPending: true,
+        status: 'success',
+        data: expect.objectContaining({
+          user: expect.objectContaining({
+            id: 'user-123',
+            email: registerDto.email,
+            name: registerDto.name,
+            paternal_last_name: registerDto.paternal_last_name,
+            maternal_last_name: registerDto.maternal_last_name,
+            roles: ['user'],
+          }),
+          needsPostRegistration: true,
+          postRegistrationStatus: expect.objectContaining({
+            complete: false,
+          }),
+        }),
       });
     });
 

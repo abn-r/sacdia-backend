@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FcmTokensService } from './fcm-tokens.service';
+import { NotificationPreferencesService } from './notification-preferences.service';
 
 // ---------------------------------------------------------------------------
 // Mock firebase-admin module BEFORE importing the service under test.
@@ -24,6 +26,17 @@ describe('NotificationsService', () => {
   let mockSendEachForMulticast: jest.Mock;
 
   let firebaseAdminMock: any;
+
+  const mockFcmTokensService = {
+    updateLastUsed: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockPreferencesService = {
+    isAllowedForUser: jest.fn().mockResolvedValue(true),
+    filterAllowedUsers: jest.fn().mockImplementation((userIds: string[]) =>
+      Promise.resolve(new Set(userIds)),
+    ),
+  };
 
   const mockPrismaService = {
     user_fcm_tokens: {
@@ -55,6 +68,11 @@ describe('NotificationsService', () => {
       providers: [
         NotificationsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FcmTokensService, useValue: mockFcmTokensService },
+        {
+          provide: NotificationPreferencesService,
+          useValue: mockPreferencesService,
+        },
       ],
     }).compile();
 
@@ -132,7 +150,13 @@ describe('NotificationsService', () => {
       mockSendEachForMulticast.mockResolvedValue({
         successCount: 1,
         failureCount: 1,
-        responses: [{ success: true }, { success: false }],
+        responses: [
+          { success: true },
+          {
+            success: false,
+            error: { code: 'messaging/registration-token-not-registered' },
+          },
+        ],
       });
       mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
         count: 1,

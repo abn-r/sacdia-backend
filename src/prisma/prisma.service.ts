@@ -19,7 +19,19 @@ export class PrismaService
 
   constructor(private configService: ConfigService) {
     const connectionString = configService.get<string>('DATABASE_URL');
-    const pool = new Pool({ connectionString });
+
+    // Neon cold-start mitigation: default idleTimeoutMillis is 10s which causes
+    // a new TCP handshake + TLS negotiation on every request after brief idle.
+    // keepAlive prevents the OS from closing the TCP connection silently,
+    // and idleTimeoutMillis: 30000 gives Neon enough time to reuse the slot.
+    const pool = new Pool({
+      connectionString,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+    });
     const adapter = new PrismaPg(pool);
 
     const isProduction = process.env.NODE_ENV === 'production';

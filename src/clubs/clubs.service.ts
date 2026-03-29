@@ -26,6 +26,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 @Injectable()
 export class ClubsService {
@@ -36,6 +37,7 @@ export class ClubsService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly authorizationContext: AuthorizationContextService,
   ) {}
 
   // ========================================
@@ -281,13 +283,19 @@ export class ClubsService {
       club_section_id: dto.club_section_id,
     };
 
-    return this.prisma.club_role_assignments.create({
+    const created = await this.prisma.club_role_assignments.create({
       data: assignment,
       include: {
         users: { select: { name: true, paternal_last_name: true } },
         roles: { select: { role_name: true } },
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      dto.user_id,
+    );
+
+    return created;
   }
 
   async updateRoleAssignment(
@@ -318,14 +326,20 @@ export class ClubsService {
       updateData.status = dto.status;
     }
 
-    return this.prisma.club_role_assignments.update({
+    const updated = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: updateData,
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      updated.user_id,
+    );
+
+    return updated;
   }
 
   async removeRoleAssignment(assignmentId: string) {
-    return this.prisma.club_role_assignments.update({
+    const removed = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: {
         active: false,
@@ -334,6 +348,12 @@ export class ClubsService {
         modified_at: new Date(),
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      removed.user_id,
+    );
+
+    return removed;
   }
 
   // ========================================

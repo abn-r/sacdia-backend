@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CamporeesService } from './camporees.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
@@ -43,6 +44,10 @@ describe('CamporeesService', () => {
     ),
   };
 
+  const mockNotificationsService = {
+    sendToGlobalRole: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -54,6 +59,10 @@ describe('CamporeesService', () => {
         {
           provide: FILE_STORAGE_SERVICE,
           useValue: mockFileStorageService,
+        },
+        {
+          provide: NotificationsService,
+          useValue: mockNotificationsService,
         },
       ],
     }).compile();
@@ -588,10 +597,11 @@ describe('CamporeesService', () => {
       expect(result).toEqual(mockMembers);
       expect(mockPrismaService.camporee_members.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
+          where: expect.objectContaining({
             camporee_id: 1,
             active: true,
-          },
+            status: { not: 'pending_approval' },
+          }),
         }),
       );
     });
