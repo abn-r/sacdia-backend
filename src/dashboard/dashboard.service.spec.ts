@@ -86,7 +86,8 @@ describe('DashboardService', () => {
         {
           activity_id: 1,
           name: 'Campamento',
-          created_at: new Date('2026-04-10T09:00:00Z'),
+          activity_date: new Date('2026-04-10'),
+          activity_time: '09:00',
           activity_place: 'Parque Nacional',
           activity_types: { name: 'Outdoor' },
         },

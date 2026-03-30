@@ -160,24 +160,36 @@ export class DashboardService {
         where: {
           club_section_id: clubSectionId,
           active: true,
-          created_at: { gte: now },
+          activity_date: { gte: now },
         },
-        orderBy: { created_at: 'asc' },
+        orderBy: { activity_date: 'asc' },
         take: 5,
         select: {
           activity_id: true,
           name: true,
-          created_at: true,
+          activity_date: true,
+          activity_time: true,
           activity_place: true,
           activity_types: { select: { name: true } },
         },
       });
 
       for (const a of activities) {
+        // Combine activity_date (Date) with activity_time (HH:mm string) into a
+        // single ISO timestamp so the Flutter widget can display both day and time.
+        let activityDateTime: string;
+        if (a.activity_date) {
+          const dateStr = a.activity_date.toISOString().split('T')[0]; // YYYY-MM-DD
+          const timeStr = a.activity_time ?? '00:00';
+          activityDateTime = new Date(`${dateStr}T${timeStr}:00.000Z`).toISOString();
+        } else {
+          activityDateTime = new Date().toISOString();
+        }
+
         upcomingActivities.push({
           id: a.activity_id,
           title: a.name,
-          date: a.created_at?.toISOString() ?? new Date().toISOString(),
+          date: activityDateTime,
           location: a.activity_place ?? null,
         });
       }
