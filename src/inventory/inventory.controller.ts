@@ -79,7 +79,7 @@ export class InventoryController {
   async findAllByClub(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('instanceType') instanceType: 'adv' | 'pathf' | 'mg',
-    @Query('category', ParseIntPipe) categoryId?: number,
+    @Query('category', new ParseIntPipe({ optional: true })) categoryId?: number,
   ) {
     const result = await this.inventoryService.findAllByClub(
       clubId,
@@ -244,6 +244,7 @@ export class InventoryController {
 
   @Get('catalogs/inventory-categories')
   @RequirePermissions('inventory:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Listar categorías de inventario',
     description:
