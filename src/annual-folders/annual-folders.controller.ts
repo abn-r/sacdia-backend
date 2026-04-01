@@ -9,16 +9,25 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import { AnnualFoldersService } from './annual-folders.service';
 import {
   CreateTemplateDto,
@@ -197,15 +206,41 @@ export class AnnualFoldersController {
 
   @Post(':folderId/sections/:sectionId/evidences')
   @RequirePermissions('evidence_folders:update')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload evidence to a folder section' })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Evidence file (image or PDF, max 5MB)',
+        },
+        notes: {
+          type: 'string',
+          description: 'Optional notes about the evidence',
+          example: 'Acta de la reunión del 15 de enero',
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 201, description: 'Evidence uploaded' })
-  @ApiResponse({ status: 400, description: 'Folder is not open' })
+  @ApiResponse({ status: 400, description: 'Folder is not open or invalid file' })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async uploadEvidence(
     @Param('folderId', ParseUUIDPipe) folderId: string,
     @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+      }),
+    )
+    file: Express.Multer.File,
     @Body() dto: UploadEvidenceDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -214,6 +249,7 @@ export class AnnualFoldersController {
       sectionId,
       dto,
       user.sub,
+      file,
     );
     return { status: 'success', data };
   }

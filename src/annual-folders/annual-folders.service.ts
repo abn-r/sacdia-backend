@@ -1,10 +1,16 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 import {
   CreateTemplateDto,
   CreateTemplateSectionDto,
@@ -15,7 +21,11 @@ import {
 
 @Injectable()
 export class AnnualFoldersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   // ========================================
   // TEMPLATE MANAGEMENT (Admin)
@@ -426,13 +436,19 @@ export class AnnualFoldersService {
 
   /**
    * Upload evidence to a section (only if folder status is 'open').
+   * Accepts a multipart file that is uploaded to R2 internally.
    */
   async uploadEvidence(
     folderId: string,
     sectionId: string,
     dto: UploadEvidenceDto,
     userId: string,
+    file: Express.Multer.File,
   ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('File is required');
+    }
+
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },
     });
@@ -463,12 +479,21 @@ export class AnnualFoldersService {
       );
     }
 
+    const extension = this.resolveFileExtension(file);
+    const objectKey = `annual-evidence-${folderId}-${sectionId}-${Date.now()}.${extension}`;
+    const uploaded = await this.fileStorage.upload(
+      StorageBucketAlias.EVIDENCE_FILES,
+      objectKey,
+      file.buffer,
+      { contentType: file.mimetype },
+    );
+
     return this.prisma.annual_folder_evidences.create({
       data: {
         annual_folder_id: folderId,
         section_id: sectionId,
-        file_url: dto.file_url,
-        file_name: dto.file_name,
+        file_url: uploaded.url,
+        file_name: file.originalname || objectKey,
         uploaded_by: userId,
         notes: dto.notes,
       },
@@ -483,6 +508,22 @@ export class AnnualFoldersService {
         },
       },
     });
+  }
+
+  private resolveFileExtension(file: Express.Multer.File): string {
+    const original = file.originalname ?? '';
+    const ext = original.includes('.')
+      ? original.split('.').pop()?.toLowerCase()
+      : null;
+
+    if (ext) return ext;
+
+    if (file.mimetype === 'application/pdf') return 'pdf';
+    if (file.mimetype === 'image/png') return 'png';
+    if (file.mimetype === 'image/webp') return 'webp';
+    if (file.mimetype === 'image/jpeg') return 'jpg';
+
+    return 'bin';
   }
 
   /**
