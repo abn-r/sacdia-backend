@@ -3,6 +3,7 @@ import {
   AnnualFoldersController,
   AnnualFolderTemplatesController,
 } from './annual-folders.controller';
+import { AnnualFolderBySectionController } from './annual-folder-by-section.controller';
 import { AnnualFoldersService } from './annual-folders.service';
 import { AwardCategoriesController } from './award-categories.controller';
 import { AwardCategoriesService } from './award-categories.service';
@@ -11,12 +12,14 @@ import { EvaluationService } from './evaluation.service';
 import { RankingsController } from './rankings.controller';
 import { RankingsService } from './rankings.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ClubEnrollmentsModule } from '../club-enrollments/club-enrollments.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ClubEnrollmentsModule],
   controllers: [
     AnnualFolderTemplatesController,
     AnnualFoldersController,
+    AnnualFolderBySectionController,
     AwardCategoriesController,
     EvaluationController,
     RankingsController,
