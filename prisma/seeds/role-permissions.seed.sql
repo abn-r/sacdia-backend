@@ -1046,6 +1046,7 @@ WHERE r.role_name = 'assistant-lf'
     'annual_folder_templates:update',
     'annual_folder_templates:delete',
     'annual_folders:evaluate',
+    'annual_folders:submit',
     'award_categories:create',
     'award_categories:read',
     'award_categories:update',
@@ -1312,6 +1313,23 @@ WHERE r.role_name = 'coordinator'
   AND r.active = true
   AND p.active = true
   AND p.permission_name IN ('resources:read', 'resource_categories:read')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- annual_folders:submit — coordinators (folder-level submit, NOT for club users)
+-- ============================
+-- Coordinators can submit the entire folder on behalf of a club.
+-- Field-level roles (assistant-lf, director-lf, etc.) already inherit via
+-- the assistant-lf permission set above.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'annual_folders:submit'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 COMMIT;

@@ -1018,6 +1018,7 @@ model users {
   camporee_payments_registered                camporee_payments[]                 @relation("camporee_payments_registered_by")
   annual_folder_evidences                     annual_folder_evidences[]           @relation("annual_folder_evidences_uploader")
   annual_folder_section_evaluations_evaluated annual_folder_section_evaluations[] @relation("evaluation_evaluator")
+  annual_folder_section_submissions           annual_folder_section_submissions[] @relation("section_submission_submitter")
   monthly_reports_submitted                   monthly_reports[]                   @relation("monthly_report_submitter")
   transfer_requests_made                      club_transfer_requests[]            @relation("transfer_requester")
   transfer_requests_reviewed                  club_transfer_requests[]            @relation("transfer_reviewer")
@@ -1680,9 +1681,10 @@ model folder_template_sections {
   created_at         DateTime @default(now()) @db.Timestamptz(6)
   modified_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  folder_template folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: Cascade, onUpdate: NoAction)
-  evidences       annual_folder_evidences[]
-  evaluations     annual_folder_section_evaluations[]
+  folder_template    folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: Cascade, onUpdate: NoAction)
+  evidences          annual_folder_evidences[]
+  evaluations        annual_folder_section_evaluations[]
+  section_submissions annual_folder_section_submissions[]
 
   @@index([folder_template_id], map: "idx_folder_template_sections_template")
 }
@@ -1702,10 +1704,11 @@ model annual_folders {
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  club_enrollment club_enrollments                    @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
-  folder_template folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: NoAction, onUpdate: NoAction)
-  evidences       annual_folder_evidences[]
-  evaluations     annual_folder_section_evaluations[]
+  club_enrollment     club_enrollments                    @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
+  folder_template     folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: NoAction, onUpdate: NoAction)
+  evidences           annual_folder_evidences[]
+  evaluations         annual_folder_section_evaluations[]
+  section_submissions annual_folder_section_submissions[]
 
   @@unique([club_enrollment_id])
   @@index([folder_template_id], map: "idx_annual_folders_template")
@@ -1756,6 +1759,30 @@ model annual_folder_section_evaluations {
   @@index([section_id], map: "idx_annual_folder_section_evaluations_section")
   @@index([evaluated_by_id], map: "idx_annual_folder_section_evaluations_evaluator")
   @@map("annual_folder_section_evaluations")
+}
+
+// ========================================
+// ANNUAL FOLDER SECTION SUBMISSIONS (Phase 5.x)
+// Per-section submission tracking — club users submit per section;
+// coordinators/admins submit the whole folder.
+// ========================================
+
+model annual_folder_section_submissions {
+  section_submission_id String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  annual_folder_id      String   @db.Uuid
+  section_id            String   @db.Uuid
+  submitted_by          String   @db.Uuid
+  submitted_at          DateTime @default(now()) @db.Timestamptz(6)
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  annual_folder   annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
+  section         folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
+  submitter       users                    @relation("section_submission_submitter", fields: [submitted_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([annual_folder_id, section_id])
+  @@index([annual_folder_id], map: "idx_section_submissions_folder")
+  @@index([section_id], map: "idx_section_submissions_section")
 }
 
 model award_categories {

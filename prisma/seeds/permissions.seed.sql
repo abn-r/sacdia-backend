@@ -287,10 +287,11 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
--- Annual Folders Evaluation
+-- Annual Folders Evaluation & Submission
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
-  ('annual_folders:evaluate', 'Evaluate annual folder sections (assign points)', true)
+  ('annual_folders:evaluate', 'Evaluate annual folder sections (assign points)', true),
+  ('annual_folders:submit', 'Submit entire annual folder for review (coordinator/field-level only)', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

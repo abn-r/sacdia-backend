@@ -281,9 +281,48 @@ export class AnnualFoldersController {
     return { status: 'success', ...data };
   }
 
-  @Post(':folderId/submit')
+  /**
+   * Per-section submit — club user operation.
+   * Marks a single section as submitted. The folder-level status is NOT changed.
+   * The Flutter app should call this after uploading evidence for each section.
+   */
+  @Post(':folderId/sections/:sectionId/submit')
   @RequirePermissions('evidence_folders:update')
-  @ApiOperation({ summary: 'Submit folder for review' })
+  @ApiOperation({
+    summary: 'Submit a single section of an annual folder',
+    description:
+      'Club-user operation. Records that the user has finished uploading evidence for this section. Does NOT change the overall folder status.',
+  })
+  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiResponse({ status: 201, description: 'Section submitted' })
+  @ApiResponse({
+    status: 400,
+    description: 'Folder is not open or section has no evidence',
+  })
+  @ApiResponse({ status: 404, description: 'Folder or section not found' })
+  async submitSection(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.submitSection(folderId, sectionId, user.sub);
+    return { status: 'success', data };
+  }
+
+  /**
+   * Folder-level submit — coordinator / field admin operation only.
+   * Permission: annual_folders:submit (NOT evidence_folders:update).
+   * Regular club users must NOT call this endpoint; they use the per-section
+   * submit above and the coordinator closes the loop from the admin panel.
+   */
+  @Post(':folderId/submit')
+  @RequirePermissions('annual_folders:submit')
+  @ApiOperation({
+    summary: 'Submit entire folder for review (coordinator/admin only)',
+    description:
+      "Changes folder status from 'open' to 'submitted'. Restricted to coordinators and field admins (annual_folders:submit permission). Club users should submit per-section instead.",
+  })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiResponse({ status: 200, description: 'Folder submitted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })

@@ -358,6 +358,17 @@ export class AnnualFoldersService {
             },
           },
         },
+        section_submissions: {
+          include: {
+            submitter: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -410,6 +421,17 @@ export class AnnualFoldersService {
         evaluations: {
           include: {
             evaluated_by: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        section_submissions: {
+          include: {
+            submitter: {
               select: {
                 name: true,
                 paternal_last_name: true,
@@ -600,7 +622,102 @@ export class AnnualFoldersService {
   // ========================================
 
   /**
+   * Submit a single section of an annual folder (club user operation).
+   *
+   * Validates that:
+   *  - The folder exists and is in 'open' status.
+   *  - The section belongs to the folder's template.
+   *  - The section has at least one evidence uploaded.
+   *
+   * Creates or updates (upsert) a row in annual_folder_section_submissions.
+   */
+  async submitSection(folderId: string, sectionId: string, userId: string) {
+    const folder = await this.prisma.annual_folders.findUnique({
+      where: { annual_folder_id: folderId },
+    });
+
+    if (!folder) {
+      throw new NotFoundException(
+        `Annual folder with ID ${folderId} not found`,
+      );
+    }
+
+    if (folder.status !== 'open') {
+      throw new BadRequestException(
+        `Cannot submit a section in a folder with status '${folder.status}'. Folder must be 'open'.`,
+      );
+    }
+
+    // Validate that the section belongs to this folder's template
+    const section = await this.prisma.folder_template_sections.findFirst({
+      where: {
+        section_id: sectionId,
+        folder_template_id: folder.folder_template_id,
+      },
+    });
+
+    if (!section) {
+      throw new NotFoundException(
+        `Section ${sectionId} does not belong to this folder's template`,
+      );
+    }
+
+    // Validate that at least one evidence exists for this section in this folder
+    const evidenceCount = await this.prisma.annual_folder_evidences.count({
+      where: {
+        annual_folder_id: folderId,
+        section_id: sectionId,
+      },
+    });
+
+    if (evidenceCount === 0) {
+      throw new BadRequestException(
+        `Cannot submit section '${section.name}': at least one evidence file must be uploaded first`,
+      );
+    }
+
+    const now = new Date();
+
+    // Upsert: re-submitting a section simply records the latest submitter/time
+    const submission =
+      await this.prisma.annual_folder_section_submissions.upsert({
+        where: {
+          annual_folder_id_section_id: {
+            annual_folder_id: folderId,
+            section_id: sectionId,
+          },
+        },
+        create: {
+          annual_folder_id: folderId,
+          section_id: sectionId,
+          submitted_by: userId,
+          submitted_at: now,
+        },
+        update: {
+          submitted_by: userId,
+          submitted_at: now,
+          modified_at: now,
+        },
+      });
+
+    return {
+      section_submission_id: submission.section_submission_id,
+      section_id: submission.section_id,
+      annual_folder_id: submission.annual_folder_id,
+      submitted_at: submission.submitted_at,
+      submitted_by: userId,
+    };
+  }
+
+  /**
    * Submit a folder (change status from 'open' to 'submitted').
+   *
+   * This is a FOLDER-LEVEL operation intended for coordinators and field admins
+   * only (permission: annual_folders:submit). Regular club users submit per
+   * section via POST /annual-folders/:folderId/sections/:sectionId/submit.
+   *
+   * TODO: consider enforcing that ALL required sections have at least one
+   * entry in annual_folder_section_submissions before allowing the transition.
    */
   async submitFolder(folderId: string) {
     const folder = await this.prisma.annual_folders.findUnique({
@@ -693,19 +810,35 @@ export class AnnualFoldersService {
       });
     }
 
-    // Build sections with their evidences and evaluation (if present)
-    const sections = folder.folder_template.sections.map((section: any) => ({
-      section_id: section.section_id,
-      name: section.name,
-      description: section.description,
-      order: section.order,
-      required: section.required,
-      max_points: section.max_points,
-      minimum_points: section.minimum_points,
-      evidences: evidencesBySection.get(section.section_id) ?? [],
-      evidence_count: (evidencesBySection.get(section.section_id) ?? []).length,
-      evaluation: evaluationBySection.get(section.section_id) ?? null,
-    }));
+    // Index section submissions by section_id for O(1) lookup
+    const submissionBySection = new Map<string, any>();
+    for (const sub of folder.section_submissions ?? []) {
+      submissionBySection.set(sub.section_id, {
+        section_submission_id: sub.section_submission_id,
+        submitted_at: sub.submitted_at,
+        submitted_by: this.formatUserName(sub.submitter),
+      });
+    }
+
+    // Build sections with their evidences, evaluation, and submission status
+    const sections = folder.folder_template.sections.map((section: any) => {
+      const submission = submissionBySection.get(section.section_id) ?? null;
+      return {
+        section_id: section.section_id,
+        name: section.name,
+        description: section.description,
+        order: section.order,
+        required: section.required,
+        max_points: section.max_points,
+        minimum_points: section.minimum_points,
+        evidences: evidencesBySection.get(section.section_id) ?? [],
+        evidence_count: (evidencesBySection.get(section.section_id) ?? [])
+          .length,
+        evaluation: evaluationBySection.get(section.section_id) ?? null,
+        submission,
+        submission_status: submission ? 'submitted' : 'pending',
+      };
+    });
 
     return {
       annual_folder_id: folder.annual_folder_id,
