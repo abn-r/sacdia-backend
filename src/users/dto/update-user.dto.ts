@@ -14,6 +14,31 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { blood_type } from '@prisma/client';
 
 export class UpdateUserDto {
+  @ApiPropertyOptional({ example: 'Carlos' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'Mendoza' })
+  @IsOptional()
+  @IsString()
+  paternal_last_name?: string;
+
+  @ApiPropertyOptional({ example: 'Ruiz' })
+  @IsOptional()
+  @IsString()
+  maternal_last_name?: string;
+
+  @ApiPropertyOptional({ example: '+52 55 1234 5678' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'Av. Reforma 123, CDMX' })
+  @IsOptional()
+  @IsString()
+  address?: string;
+
   @ApiPropertyOptional({ example: 'M', enum: ['M', 'F'] })
   @IsOptional()
   @IsIn(['M', 'F'])

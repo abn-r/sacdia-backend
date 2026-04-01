@@ -23,7 +23,7 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('BETTER_AUTH_SECRET') ?? '',
         signOptions: {
-          expiresIn: '1h',
+          expiresIn: '8h',
           algorithm: 'HS256',
         },
       }),

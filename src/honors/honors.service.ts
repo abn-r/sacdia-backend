@@ -97,6 +97,7 @@ export class HonorsService {
         description: true,
         honor_image: true,
         skill_level: true,
+        material_url: true,
         club_type_id: true,
         honors_category_id: true,
         honors_categories: {
@@ -128,6 +129,7 @@ export class HonorsService {
           description: string | null;
           honor_image: string | null;
           skill_level: number | null;
+          material_url: string | null;
           club_type_id: number | null;
           club_type_name: string | null;
         }>;
@@ -165,6 +167,7 @@ export class HonorsService {
         description: honor.description,
         honor_image: honor.honor_image,
         skill_level: honor.skill_level,
+        material_url: honor.material_url,
         club_type_id: honor.club_type_id,
         club_type_name: honor.club_types?.name ?? null,
       });

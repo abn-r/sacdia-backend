@@ -33,69 +33,26 @@ function isPlaceholderRedisUrl(value: string): boolean {
               '⚠️  REDIS_URL contains placeholder values. Skipping Redis connection.',
             );
           } else {
-            let redisClient: any;
             try {
-              // Validación temprana de URL para evitar errores ambiguos.
               new URL(rawRedisUrl);
 
-              const { redisInsStore } = await import('cache-manager-redis-yet');
-              const { createClient } = await import('redis');
+              const { default: KeyvRedis } = await import('@keyv/redis');
               console.log('🔄 Attempting to connect to Redis...');
 
-              const isDev = process.env.NODE_ENV !== 'production';
-              const redisOptions: any = {
-                url: rawRedisUrl,
-                socket: {
-                  connectTimeout: 5000,
-                  // In development: retry once after 500 ms, then give up so
-                  // the app starts without blocking. In production: use the
-                  // default exponential back-off so transient drops self-heal.
-                  // Returning `false` permanently kills the connection and causes
-                  // an unhandled 'error' event that can crash the process.
-                  reconnectStrategy: isDev
-                    ? (retries: number) => (retries >= 1 ? false : 500)
-                    : undefined, // default: exponential back-off
-                },
-              };
-
-              if (rawRedisUrl.startsWith('rediss://')) {
-                redisOptions.socket.tls = true;
-              }
-
-              redisClient = createClient(redisOptions);
-
-              redisClient.on('error', (err: unknown) => {
-                const message =
-                  err instanceof Error ? err.message : String(err);
-                console.warn('⚠️  Redis runtime error:', message);
-              });
-
-              redisClient.on('end', () => {
-                console.warn('⚠️  Redis connection ended.');
-              });
-
-              await redisClient.connect();
-
-              const store = redisInsStore(redisClient, {
-                ttl: 86400000,
-              });
+              const keyvRedis = new KeyvRedis(rawRedisUrl);
 
               console.log('✅ Redis cache connected successfully');
               return {
-                store,
+                stores: [keyvRedis],
                 ttl: 86400000, // 24 horas en ms
               };
             } catch (error) {
-              if (redisClient?.isOpen) {
-                await redisClient.disconnect().catch(() => undefined);
-              }
               const message =
                 error instanceof Error ? error.message : 'Unknown error';
               console.warn('⚠️  Redis connection failed:', message);
               console.warn(
                 '📦 Falling back to in-memory cache (development mode)',
               );
-              // Continuar con fallback en lugar de fallar
             }
           }
         }
@@ -104,7 +61,6 @@ function isPlaceholderRedisUrl(value: string): boolean {
         console.log('💾 Using in-memory cache');
         return {
           ttl: 86400000,
-          max: 10000,
         };
       },
     }),

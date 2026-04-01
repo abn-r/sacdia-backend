@@ -39,7 +39,7 @@ import { PrismaService } from '../prisma/prisma.service';
         return {
           secret,
           signOptions: {
-            expiresIn: '1h',
+            expiresIn: '8h',
             algorithm: 'HS256',
           },
         };

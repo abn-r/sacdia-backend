@@ -62,6 +62,8 @@ export class ClubEnrollmentsService {
         );
       }
 
+      this.validateSecretaryTreasurerConstraint(dto);
+
       return tx.club_enrollments.create({
         data: {
           club_section_id: sectionId,
@@ -69,6 +71,22 @@ export class ClubEnrollmentsService {
           status: 'active',
           address: dto.address,
           meeting_days: dto.meeting_days,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          meeting_schedule: dto.meeting_schedule
+            ? dto.meeting_schedule.map((item) => ({
+                day: item.day,
+                time: item.time,
+              }))
+            : undefined,
+          souls_target: dto.souls_target,
+          fee: dto.fee ?? false,
+          fee_amount: dto.fee_amount ?? null,
+          director_id: dto.director_id,
+          deputy_director_ids: dto.deputy_director_ids ?? [],
+          secretary_id: dto.secretary_id,
+          treasurer_id: dto.treasurer_id,
+          secretary_treasurer_id: dto.secretary_treasurer_id,
           created_by: userId,
         },
         include: {
@@ -159,12 +177,35 @@ export class ClubEnrollmentsService {
       );
     }
 
+    this.validateSecretaryTreasurerConstraint(dto);
+
+    // Build a clean data object — avoid passing `undefined` properties to Prisma
+    // so that omitted fields are not accidentally nulled out.
+    const data: Record<string, unknown> = { modified_at: new Date() };
+
+    if (dto.address !== undefined) data.address = dto.address;
+    if (dto.meeting_days !== undefined) data.meeting_days = dto.meeting_days;
+    if (dto.latitude !== undefined) data.latitude = dto.latitude;
+    if (dto.longitude !== undefined) data.longitude = dto.longitude;
+    if (dto.meeting_schedule !== undefined)
+      data.meeting_schedule = dto.meeting_schedule.map((item) => ({
+        day: item.day,
+        time: item.time,
+      }));
+    if (dto.souls_target !== undefined) data.souls_target = dto.souls_target;
+    if (dto.fee !== undefined) data.fee = dto.fee;
+    if (dto.fee_amount !== undefined) data.fee_amount = dto.fee_amount;
+    if (dto.director_id !== undefined) data.director_id = dto.director_id;
+    if (dto.deputy_director_ids !== undefined)
+      data.deputy_director_ids = dto.deputy_director_ids;
+    if (dto.secretary_id !== undefined) data.secretary_id = dto.secretary_id;
+    if (dto.treasurer_id !== undefined) data.treasurer_id = dto.treasurer_id;
+    if (dto.secretary_treasurer_id !== undefined)
+      data.secretary_treasurer_id = dto.secretary_treasurer_id;
+
     return this.prisma.club_enrollments.update({
       where: { club_enrollment_id: enrollmentId },
-      data: {
-        ...dto,
-        modified_at: new Date(),
-      },
+      data,
       include: {
         club_section: {
           include: { club_types: { select: { name: true } } },
@@ -192,6 +233,24 @@ export class ClubEnrollmentsService {
     });
 
     return !!enrollment;
+  }
+
+  /**
+   * A club can have either a secretary + treasurer OR a combined secretary-treasurer,
+   * never both configurations at the same time.
+   */
+  private validateSecretaryTreasurerConstraint(
+    dto: CreateClubEnrollmentDto | UpdateClubEnrollmentDto,
+  ): void {
+    const hasIndividualRoles = dto.secretary_id || dto.treasurer_id;
+    const hasCombinedRole = dto.secretary_treasurer_id;
+
+    if (hasIndividualRoles && hasCombinedRole) {
+      throw new BadRequestException(
+        'secretary_treasurer_id is mutually exclusive with secretary_id and treasurer_id. ' +
+          'A club must use either the combined role or separate roles, not both.',
+      );
+    }
   }
 
   private async getActiveEcclesiasticalYear() {
