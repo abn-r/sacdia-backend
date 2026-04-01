@@ -22,7 +22,11 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  CurrentUser,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { EvidenceFolderService } from './evidence-folder.service';
 
@@ -33,6 +37,7 @@ type CurrentUserPayload = {
 @ApiTags('Evidence Folder')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('club-sections/:sectionId/evidence-folder')
 export class EvidenceFolderController {
   constructor(private readonly evidenceFolderService: EvidenceFolderService) {}

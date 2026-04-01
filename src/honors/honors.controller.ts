@@ -261,7 +261,7 @@ export class UserHonorsController {
           allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
         },
         document: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS },
-        images: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES },
+        images: { allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS },
       }),
     )
     files: {

@@ -27,7 +27,11 @@ import {
   UploadEvidenceDto,
   UpdateEvidenceDto,
 } from './dto';
-import { CurrentUser, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  CurrentUser,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type CurrentUserPayload = {
@@ -145,6 +149,7 @@ export class AnnualFolderTemplatesController {
 @ApiTags('Annual Folders')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('annual-folders')
 export class AnnualFoldersController {
   constructor(private readonly service: AnnualFoldersService) {}

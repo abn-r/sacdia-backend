@@ -28,6 +28,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import {
+  AuthorizationResource,
   CurrentUser,
   GlobalRoles,
   RequirePermissions,
@@ -56,6 +57,7 @@ export class InsuranceController {
 
   @Get('clubs/:clubId/sections/:sectionId/members/insurance')
   @RequirePermissions('insurance:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Listar seguros de miembros por sección' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
