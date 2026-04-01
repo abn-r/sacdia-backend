@@ -34,9 +34,11 @@ describe('NotificationsService', () => {
 
   const mockPreferencesService = {
     isAllowedForUser: jest.fn().mockResolvedValue(true),
-    filterAllowedUsers: jest.fn().mockImplementation((userIds: string[]) =>
-      Promise.resolve(new Set(userIds)),
-    ),
+    filterAllowedUsers: jest
+      .fn()
+      .mockImplementation((userIds: string[]) =>
+        Promise.resolve(new Set(userIds)),
+      ),
   };
 
   const mockAuthorizationContextService = {

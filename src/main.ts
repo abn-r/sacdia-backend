@@ -88,14 +88,23 @@ async function bootstrap() {
         if (event.request?.url) {
           try {
             const url = new URL(event.request.url, 'http://localhost');
-            const sensitiveParams = ['password', 'token', 'secret', 'authorization', 'refreshtoken', 'refresh_token'];
+            const sensitiveParams = [
+              'password',
+              'token',
+              'secret',
+              'authorization',
+              'refreshtoken',
+              'refresh_token',
+            ];
             for (const param of sensitiveParams) {
               if (url.searchParams.has(param)) {
                 url.searchParams.set(param, '[REDACTED]');
               }
             }
             event.request.url = url.pathname + url.search;
-          } catch {}
+          } catch {
+            // URL parsing failed — use original path
+          }
         }
 
         return event;
@@ -305,4 +314,4 @@ Los endpoints de listado soportan: \`?page=1&limit=20\`
   console.log(`📍 Base URL: http://localhost:${port}/api/v1`);
   console.log(`🔒 Security: Helmet, Rate Limiting, Compression enabled`);
 }
-bootstrap();
+bootstrap().catch(console.error);

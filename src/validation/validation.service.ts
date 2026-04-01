@@ -103,7 +103,7 @@ export class ValidationService {
       });
 
       if (memberSection?.club_section_id) {
-        this.notifications.sendToSectionRole(
+        void this.notifications.sendToSectionRole(
           memberSection.club_section_id,
           ['coordinator', 'director'],
           'Nueva clase enviada a revisión',
@@ -197,7 +197,7 @@ export class ValidationService {
       });
 
       if (memberSection?.club_section_id) {
-        this.notifications.sendToSectionRole(
+        void this.notifications.sendToSectionRole(
           memberSection.club_section_id,
           ['coordinator', 'director'],
           'Nuevo honor enviado a revisión',
@@ -323,7 +323,7 @@ export class ValidationService {
           ? 'Tu clase ha sido aprobada por el revisor'
           : `Tu clase ha sido rechazada: ${comment}`;
 
-      this.notifications.notifySafe(
+      void this.notifications.notifySafe(
         enrollment.user_id,
         title,
         body,
@@ -401,7 +401,7 @@ export class ValidationService {
           ? 'Tu honor ha sido aprobado por el revisor'
           : `Tu honor ha sido rechazado: ${comment}`;
 
-      this.notifications.notifySafe(
+      void this.notifications.notifySafe(
         userHonor.user_id,
         title,
         body,

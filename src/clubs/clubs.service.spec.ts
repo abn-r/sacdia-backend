@@ -48,7 +48,10 @@ describe('ClubsService', () => {
         ClubsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
-        { provide: AuthorizationContextService, useValue: { invalidateUserAuthorizationCache: jest.fn() } },
+        {
+          provide: AuthorizationContextService,
+          useValue: { invalidateUserAuthorizationCache: jest.fn() },
+        },
       ],
     }).compile();
 

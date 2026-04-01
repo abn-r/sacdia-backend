@@ -99,7 +99,7 @@ export class RequestsService {
 
     // Notify director of from_section about the transfer request
     try {
-      this.notifications.sendToSectionRole(
+      void this.notifications.sendToSectionRole(
         fromSectionId,
         ['director'],
         'Nueva solicitud de traslado',
@@ -246,7 +246,7 @@ export class RequestsService {
           ? 'Tu solicitud de traslado ha sido aprobada'
           : `Tu solicitud de traslado ha sido rechazada${comment ? ': ' + comment : ''}`;
 
-      this.notifications.notifySafe(
+      void this.notifications.notifySafe(
         request.user_id,
         title,
         body,
@@ -447,7 +447,7 @@ export class RequestsService {
     // Notify directors (approvers) of the section about the new assignment request
     try {
       const userName = `${result.user.name} ${result.user.paternal_last_name}`;
-      this.notifications.sendToSectionRole(
+      void this.notifications.sendToSectionRole(
         sectionId,
         ['director'],
         'Nueva solicitud de asignación de rol',
@@ -631,7 +631,7 @@ export class RequestsService {
       const assignmentSource = `requests:assignment_${action}`;
 
       // Notify the requester (assistant-lf or whoever requested)
-      this.notifications.notifySafe(
+      void this.notifications.notifySafe(
         request.requested_by,
         title,
         body,
@@ -641,7 +641,7 @@ export class RequestsService {
 
       // Notify the target user (the person being assigned)
       if (request.user_id !== request.requested_by) {
-        this.notifications.notifySafe(
+        void this.notifications.notifySafe(
           request.user_id,
           title,
           body,

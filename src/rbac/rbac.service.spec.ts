@@ -99,7 +99,10 @@ describe('RbacService', () => {
       providers: [
         RbacService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: AuthorizationContextService, useValue: { invalidateUserAuthorizationCache: jest.fn() } },
+        {
+          provide: AuthorizationContextService,
+          useValue: { invalidateUserAuthorizationCache: jest.fn() },
+        },
       ],
     }).compile();
 

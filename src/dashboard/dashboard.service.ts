@@ -181,7 +181,9 @@ export class DashboardService {
         if (a.activity_date) {
           const dateStr = a.activity_date.toISOString().split('T')[0]; // YYYY-MM-DD
           const timeStr = a.activity_time ?? '00:00';
-          activityDateTime = new Date(`${dateStr}T${timeStr}:00.000Z`).toISOString();
+          activityDateTime = new Date(
+            `${dateStr}T${timeStr}:00.000Z`,
+          ).toISOString();
         } else {
           activityDateTime = new Date().toISOString();
         }
