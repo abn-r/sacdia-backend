@@ -38,7 +38,6 @@ import {
 import {
   JwtAuthGuard,
   OptionalJwtAuthGuard,
-  OwnerOrAdminGuard,
   PermissionsGuard,
 } from '../common/guards';
 import {
@@ -145,7 +144,7 @@ export class HonorsController {
 
 @ApiTags('user-honors')
 @Controller('users/:userId/honors')
-@UseGuards(JwtAuthGuard, OwnerOrAdminGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class UserHonorsController {
   constructor(private readonly honorsService: HonorsService) {}

@@ -74,7 +74,7 @@ export class FinancesService {
         include: {
           finances_categories: { select: { name: true, type: true } },
           club_types: { select: { name: true } },
-          users: { select: { name: true, paternal_last_name: true } },
+          users: { select: { name: true, paternal_last_name: true, user_image: true } },
         },
         orderBy: [{ finance_date: 'desc' }, { created_at: 'desc' }],
         skip: pagination?.skip ?? 0,
@@ -150,7 +150,7 @@ export class FinancesService {
       include: {
         finances_categories: true,
         club_types: { select: { name: true } },
-        users: { select: { name: true, paternal_last_name: true } },
+        users: { select: { name: true, paternal_last_name: true, user_image: true } },
       },
     });
 
