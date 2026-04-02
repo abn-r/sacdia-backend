@@ -1,4 +1,4 @@
-import { IsString, MaxLength, IsOptional, IsIn, IsInt } from 'class-validator';
+import { IsString, MaxLength, IsOptional, IsIn, IsInt, IsUrl } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -57,7 +57,7 @@ export class CreateResourceDto {
     maxLength: 1000,
   })
   @IsOptional()
-  @IsString()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(1000)
   external_url?: string;
 

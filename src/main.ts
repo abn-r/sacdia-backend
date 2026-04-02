@@ -174,6 +174,11 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: '10mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
 
+  // Global Multer file size limit — 10 MB safety net for multipart uploads.
+  // Individual FileInterceptor usages may impose stricter per-endpoint limits;
+  // this catches any upload that bypasses per-route configuration.
+  app.useBodyParser('raw', { limit: '10mb', type: 'multipart/form-data' });
+
   // ==========================================
   // CORS
   // ==========================================

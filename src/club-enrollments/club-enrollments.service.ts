@@ -6,13 +6,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CatalogsService } from '../catalogs/catalogs.service';
 import { CreateClubEnrollmentDto, UpdateClubEnrollmentDto } from './dto';
 
 @Injectable()
 export class ClubEnrollmentsService {
   private readonly logger = new Logger(ClubEnrollmentsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly catalogsService: CatalogsService,
+  ) {}
 
   // ========================================
   // CREATE
@@ -254,12 +258,7 @@ export class ClubEnrollmentsService {
   }
 
   private async getActiveEcclesiasticalYear() {
-    const currentYear = await this.prisma.ecclesiastical_years.findFirst({
-      where: {
-        start_date: { lte: new Date() },
-        end_date: { gte: new Date() },
-      },
-    });
+    const currentYear = await this.catalogsService.getCurrentEcclesiasticalYear();
 
     if (!currentYear) {
       throw new BadRequestException('No active ecclesiastical year configured');

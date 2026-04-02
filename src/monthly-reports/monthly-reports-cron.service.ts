@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MonthlyReportsService } from './monthly-reports.service';
+import { DistributedLockService } from '../common/services/distributed-lock.service';
 
 @Injectable()
 export class MonthlyReportsCronService {
@@ -10,6 +11,7 @@ export class MonthlyReportsCronService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly monthlyReportsService: MonthlyReportsService,
+    private readonly lockService: DistributedLockService,
   ) {}
 
   /**
@@ -20,6 +22,17 @@ export class MonthlyReportsCronService {
    */
   @Cron('0 23 * * *', { name: 'monthly-reports-auto-generate' })
   async handleAutoGenerate(): Promise<void> {
+    const acquired = await this.lockService.tryAcquire(
+      'cron:monthly-reports-auto-generate',
+      23 * 60 * 60 * 1000, // 23 hours — slightly less than the 24-hour interval
+    );
+    if (!acquired) {
+      this.logger.debug(
+        'Another instance is handling monthly reports auto-generation — skipping',
+      );
+      return;
+    }
+
     this.logger.log(
       'Monthly reports cron triggered — checking configuration...',
     );
@@ -173,6 +186,8 @@ export class MonthlyReportsCronService {
       this.logger.error(
         `Fatal error in monthly reports auto-generation: ${errorMessage}`,
       );
+    } finally {
+      await this.lockService.release('cron:monthly-reports-auto-generate');
     }
   }
 

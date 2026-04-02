@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DistributedLockService } from '../common/services/distributed-lock.service';
 
 @Injectable()
 export class ActivitiesReminderService {
@@ -10,6 +11,7 @@ export class ActivitiesReminderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly lockService: DistributedLockService,
   ) {}
 
   /**
@@ -21,6 +23,17 @@ export class ActivitiesReminderService {
    */
   @Cron('*/5 * * * *', { name: 'activities-reminder' })
   async handleActivityReminders(): Promise<void> {
+    const acquired = await this.lockService.tryAcquire(
+      'cron:activities-reminder',
+      4 * 60 * 1000, // 4 min — slightly less than the 5-min interval
+    );
+    if (!acquired) {
+      this.logger.debug(
+        'Another instance is handling activity reminders — skipping',
+      );
+      return;
+    }
+
     // IMPORTANT: Reminder times are calculated in server timezone.
     // If the server runs in UTC and clubs operate in a different timezone,
     // reminders may fire at incorrect times. Future improvement: store
@@ -143,6 +156,8 @@ export class ActivitiesReminderService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Fatal error in activity reminder cron: ${message}`);
+    } finally {
+      await this.lockService.release('cron:activities-reminder');
     }
   }
 }

@@ -91,6 +91,8 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  // Strict rate limit: 5 attempts per minute — matches login (replay/token-stuffing protection)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Refrescar sesión con refresh token' })
   @ApiResponse({
     status: 200,

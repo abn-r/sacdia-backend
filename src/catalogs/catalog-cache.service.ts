@@ -145,16 +145,56 @@ export class CatalogCacheService {
   /**
    * Invalidate ALL catalog cache entries.
    *
-   * cache-manager v5/v6 does not expose a SCAN-based prefix delete on all
-   * stores. The reliable approach is to enumerate the known static keys
-   * plus a set of common parameterised variants and delete them all.
+   * Strategy: attempt pattern-based deletion via the underlying Redis client
+   * (available when using @keyv/redis). If the client is not accessible —
+   * e.g., in-memory cache fallback or future store changes — falls back to
+   * explicit enumeration of all known static and common parameterised keys.
    *
-   * This is intentionally conservative — it only touches `cache:catalogs:*`
-   * keys and will never remove token-blacklist or session entries.
+   * This is intentionally conservative: only `cache:catalogs:*` keys are
+   * touched, so token-blacklist and session entries are never affected.
+   *
+   * Limitation: parameterised keys with arbitrary IDs (e.g.,
+   * `cache:catalogs:unions:country:999`) that were cached but are not in the
+   * static list will only be removed by the pattern-based path.
    */
   async invalidateAll(): Promise<void> {
     this.logger.log('Cache INVALIDATE ALL — purgando todos los catálogos');
 
+    // ── Pattern-based path (Redis SCAN) ──────────────────────────────────────
+    // cache-manager wraps a Keyv store; the raw Redis client is accessible via
+    // the store's internal `_redis` property when @keyv/redis is in use.
+    try {
+      const store = (this.cacheManager as any).store;
+      // Keyv exposes the adapter via `store` on the inner stores array, or
+      // directly on the top-level store object depending on the version.
+      const redisClient =
+        store?.stores?.[0]?.opts?.store?._redis ??
+        store?.opts?.store?._redis ??
+        store?.client;
+
+      if (redisClient && typeof redisClient.keys === 'function') {
+        // Use KEYS only in this controlled context (catalog namespace is small).
+        // For very large catalogs a SCAN cursor loop would be preferable.
+        const keys: string[] = await redisClient.keys(`${CATALOG_PREFIX}*`);
+        if (keys.length > 0) {
+          await redisClient.del(keys);
+        }
+        this.logger.log(
+          `Cache INVALIDATE ALL (pattern) — ${keys.length} entradas eliminadas`,
+        );
+        return;
+      }
+    } catch (err) {
+      // Pattern path unavailable — proceed to static fallback below
+      this.logger.warn(
+        `Pattern-based invalidation unavailable: ${this.extractMessage(err)}. Usando fallback estático.`,
+      );
+    }
+
+    // ── Static fallback ───────────────────────────────────────────────────────
+    // Covers all keys known at compile time plus the most common parameterised
+    // variants. Keys with arbitrary IDs that are not listed here will survive
+    // until their TTL expires.
     const staticKeys: string[] = [
       CATALOG_CACHE_KEYS.CLUB_TYPES,
       CATALOG_CACHE_KEYS.ACTIVITY_TYPES,
@@ -176,6 +216,9 @@ export class CatalogCacheService {
     ];
 
     await Promise.allSettled(staticKeys.map((k) => this.invalidate(k)));
+    this.logger.log(
+      `Cache INVALIDATE ALL (static) — ${staticKeys.length} claves procesadas`,
+    );
   }
 
   /**

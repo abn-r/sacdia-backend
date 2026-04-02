@@ -13,9 +13,10 @@ import { RankingsController } from './rankings.controller';
 import { RankingsService } from './rankings.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ClubEnrollmentsModule } from '../club-enrollments/club-enrollments.module';
+import { CatalogsModule } from '../catalogs/catalogs.module';
 
 @Module({
-  imports: [PrismaModule, ClubEnrollmentsModule],
+  imports: [PrismaModule, ClubEnrollmentsModule, CatalogsModule],
   controllers: [
     AnnualFolderTemplatesController,
     AnnualFoldersController,

@@ -16,8 +16,8 @@ import {
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RequirePermissions } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
 import { AdminReferenceService } from './admin-reference.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import {
@@ -38,7 +38,8 @@ import {
 
 @ApiTags('admin-reference')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
+@GlobalRoles('admin', 'super_admin')
 @Controller('admin')
 export class AdminReferenceController {
   constructor(

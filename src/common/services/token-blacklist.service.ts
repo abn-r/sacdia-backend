@@ -87,8 +87,8 @@ export class TokenBlacklistService {
   }
 
   private hashToken(token: string): string {
-    // SHA-256 hash truncado a 32 caracteres para evitar colisiones de cache key
-    return createHash('sha256').update(token).digest('hex').substring(0, 32);
+    // Full 64-character SHA-256 hex digest — truncation increases collision risk
+    return createHash('sha256').update(token).digest('hex');
   }
 
   private normalizeEpochSeconds(timestamp: number): number {

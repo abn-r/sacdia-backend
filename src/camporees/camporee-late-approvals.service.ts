@@ -143,21 +143,25 @@ export class CamporeeLateApprovalsService {
    * Approve a pending club enrollment.
    */
   async approveClubEnrollment(camporeeClubId: number, approvedBy: string) {
-    const record = await this.prisma.camporee_clubs.findFirst({
-      where: { camporee_club_id: camporeeClubId, status: 'pending_approval' },
-    });
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_clubs.findFirst({
+        where: { camporee_club_id: camporeeClubId, status: 'pending_approval' },
+      });
 
-    if (!record) {
-      throw new NotFoundException('Inscripción de club no encontrada');
-    }
+      if (!record) {
+        throw new NotFoundException('Inscripción de club no encontrada');
+      }
 
-    return this.prisma.camporee_clubs.update({
-      where: { camporee_club_id: camporeeClubId },
-      data: {
-        status: 'approved',
-        approved_by: approvedBy,
-        modified_at: new Date(),
-      },
+      return tx.camporee_clubs.update({
+        where: { camporee_club_id: camporeeClubId },
+        data: {
+          status: 'approved',
+          approved_by: approvedBy,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -169,22 +173,26 @@ export class CamporeeLateApprovalsService {
     rejectedBy: string,
     rejectionReason?: string,
   ) {
-    const record = await this.prisma.camporee_clubs.findFirst({
-      where: { camporee_club_id: camporeeClubId, status: 'pending_approval' },
-    });
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_clubs.findFirst({
+        where: { camporee_club_id: camporeeClubId, status: 'pending_approval' },
+      });
 
-    if (!record) {
-      throw new NotFoundException('Inscripción de club no encontrada');
-    }
+      if (!record) {
+        throw new NotFoundException('Inscripción de club no encontrada');
+      }
 
-    return this.prisma.camporee_clubs.update({
-      where: { camporee_club_id: camporeeClubId },
-      data: {
-        status: 'rejected',
-        rejected_by: rejectedBy,
-        rejection_reason: rejectionReason ?? null,
-        modified_at: new Date(),
-      },
+      return tx.camporee_clubs.update({
+        where: { camporee_club_id: camporeeClubId },
+        data: {
+          status: 'rejected',
+          rejected_by: rejectedBy,
+          rejection_reason: rejectionReason ?? null,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -196,24 +204,28 @@ export class CamporeeLateApprovalsService {
    * Approve a pending member enrollment.
    */
   async approveMemberEnrollment(camporeeMemberId: number, approvedBy: string) {
-    const record = await this.prisma.camporee_members.findFirst({
-      where: {
-        camporee_member_id: camporeeMemberId,
-        status: 'pending_approval',
-      },
-    });
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: camporeeMemberId,
+          status: 'pending_approval',
+        },
+      });
 
-    if (!record) {
-      throw new NotFoundException('Inscripción de miembro no encontrada');
-    }
+      if (!record) {
+        throw new NotFoundException('Inscripción de miembro no encontrada');
+      }
 
-    return this.prisma.camporee_members.update({
-      where: { camporee_member_id: camporeeMemberId },
-      data: {
-        status: 'approved',
-        approved_by: approvedBy,
-        modified_at: new Date(),
-      },
+      return tx.camporee_members.update({
+        where: { camporee_member_id: camporeeMemberId },
+        data: {
+          status: 'approved',
+          approved_by: approvedBy,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -225,25 +237,29 @@ export class CamporeeLateApprovalsService {
     rejectedBy: string,
     rejectionReason?: string,
   ) {
-    const record = await this.prisma.camporee_members.findFirst({
-      where: {
-        camporee_member_id: camporeeMemberId,
-        status: 'pending_approval',
-      },
-    });
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: camporeeMemberId,
+          status: 'pending_approval',
+        },
+      });
 
-    if (!record) {
-      throw new NotFoundException('Inscripción de miembro no encontrada');
-    }
+      if (!record) {
+        throw new NotFoundException('Inscripción de miembro no encontrada');
+      }
 
-    return this.prisma.camporee_members.update({
-      where: { camporee_member_id: camporeeMemberId },
-      data: {
-        status: 'rejected',
-        rejected_by: rejectedBy,
-        rejection_reason: rejectionReason ?? null,
-        modified_at: new Date(),
-      },
+      return tx.camporee_members.update({
+        where: { camporee_member_id: camporeeMemberId },
+        data: {
+          status: 'rejected',
+          rejected_by: rejectedBy,
+          rejection_reason: rejectionReason ?? null,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -259,25 +275,29 @@ export class CamporeeLateApprovalsService {
     camporeeClubId: number,
     approvedBy: string,
   ) {
-    const record = await this.prisma.camporee_clubs.findFirst({
-      where: {
-        camporee_club_id: camporeeClubId,
-        union_camporee_id: unionCamporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de club no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_clubs.update({
-      where: { camporee_club_id: camporeeClubId },
-      data: {
-        status: 'approved',
-        approved_by: approvedBy,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_clubs.findFirst({
+        where: {
+          camporee_club_id: camporeeClubId,
+          union_camporee_id: unionCamporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de club no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_clubs.update({
+        where: { camporee_club_id: camporeeClubId },
+        data: {
+          status: 'approved',
+          approved_by: approvedBy,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -290,26 +310,30 @@ export class CamporeeLateApprovalsService {
     rejectedBy: string,
     rejectionReason?: string,
   ) {
-    const record = await this.prisma.camporee_clubs.findFirst({
-      where: {
-        camporee_club_id: camporeeClubId,
-        union_camporee_id: unionCamporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de club no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_clubs.update({
-      where: { camporee_club_id: camporeeClubId },
-      data: {
-        status: 'rejected',
-        rejected_by: rejectedBy,
-        rejection_reason: rejectionReason ?? null,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_clubs.findFirst({
+        where: {
+          camporee_club_id: camporeeClubId,
+          union_camporee_id: unionCamporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de club no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_clubs.update({
+        where: { camporee_club_id: camporeeClubId },
+        data: {
+          status: 'rejected',
+          rejected_by: rejectedBy,
+          rejection_reason: rejectionReason ?? null,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -325,25 +349,29 @@ export class CamporeeLateApprovalsService {
     camporeeMemberId: number,
     approvedBy: string,
   ) {
-    const record = await this.prisma.camporee_members.findFirst({
-      where: {
-        camporee_member_id: camporeeMemberId,
-        union_camporee_id: unionCamporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_members.update({
-      where: { camporee_member_id: camporeeMemberId },
-      data: {
-        status: 'approved',
-        approved_by: approvedBy,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: camporeeMemberId,
+          union_camporee_id: unionCamporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_members.update({
+        where: { camporee_member_id: camporeeMemberId },
+        data: {
+          status: 'approved',
+          approved_by: approvedBy,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -356,26 +384,30 @@ export class CamporeeLateApprovalsService {
     rejectedBy: string,
     rejectionReason?: string,
   ) {
-    const record = await this.prisma.camporee_members.findFirst({
-      where: {
-        camporee_member_id: camporeeMemberId,
-        union_camporee_id: unionCamporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_members.update({
-      where: { camporee_member_id: camporeeMemberId },
-      data: {
-        status: 'rejected',
-        rejected_by: rejectedBy,
-        rejection_reason: rejectionReason ?? null,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: camporeeMemberId,
+          union_camporee_id: unionCamporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_members.update({
+        where: { camporee_member_id: camporeeMemberId },
+        data: {
+          status: 'rejected',
+          rejected_by: rejectedBy,
+          rejection_reason: rejectionReason ?? null,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -391,25 +423,29 @@ export class CamporeeLateApprovalsService {
     camporeeClubId: number,
     approvedBy: string,
   ) {
-    const record = await this.prisma.camporee_clubs.findFirst({
-      where: {
-        camporee_club_id: camporeeClubId,
-        camporee_id: camporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de club no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_clubs.update({
-      where: { camporee_club_id: camporeeClubId },
-      data: {
-        status: 'approved',
-        approved_by: approvedBy,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_clubs.findFirst({
+        where: {
+          camporee_club_id: camporeeClubId,
+          camporee_id: camporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de club no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_clubs.update({
+        where: { camporee_club_id: camporeeClubId },
+        data: {
+          status: 'approved',
+          approved_by: approvedBy,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -422,26 +458,30 @@ export class CamporeeLateApprovalsService {
     rejectedBy: string,
     rejectionReason?: string,
   ) {
-    const record = await this.prisma.camporee_clubs.findFirst({
-      where: {
-        camporee_club_id: camporeeClubId,
-        camporee_id: camporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de club no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_clubs.update({
-      where: { camporee_club_id: camporeeClubId },
-      data: {
-        status: 'rejected',
-        rejected_by: rejectedBy,
-        rejection_reason: rejectionReason ?? null,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_clubs.findFirst({
+        where: {
+          camporee_club_id: camporeeClubId,
+          camporee_id: camporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de club no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_clubs.update({
+        where: { camporee_club_id: camporeeClubId },
+        data: {
+          status: 'rejected',
+          rejected_by: rejectedBy,
+          rejection_reason: rejectionReason ?? null,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -457,25 +497,29 @@ export class CamporeeLateApprovalsService {
     camporeeMemberId: number,
     approvedBy: string,
   ) {
-    const record = await this.prisma.camporee_members.findFirst({
-      where: {
-        camporee_member_id: camporeeMemberId,
-        camporee_id: camporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_members.update({
-      where: { camporee_member_id: camporeeMemberId },
-      data: {
-        status: 'approved',
-        approved_by: approvedBy,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: camporeeMemberId,
+          camporee_id: camporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_members.update({
+        where: { camporee_member_id: camporeeMemberId },
+        data: {
+          status: 'approved',
+          approved_by: approvedBy,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 
@@ -488,26 +532,30 @@ export class CamporeeLateApprovalsService {
     rejectedBy: string,
     rejectionReason?: string,
   ) {
-    const record = await this.prisma.camporee_members.findFirst({
-      where: {
-        camporee_member_id: camporeeMemberId,
-        camporee_id: camporeeId,
-        status: 'pending_approval',
-      },
-    });
-    if (!record) {
-      throw new NotFoundException(
-        'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-      );
-    }
-    return this.prisma.camporee_members.update({
-      where: { camporee_member_id: camporeeMemberId },
-      data: {
-        status: 'rejected',
-        rejected_by: rejectedBy,
-        rejection_reason: rejectionReason ?? null,
-        modified_at: new Date(),
-      },
+    // Wrap check + update in a transaction to prevent a concurrent approval/rejection
+    // from slipping between the findFirst and the update (check-then-act race condition).
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: camporeeMemberId,
+          camporee_id: camporeeId,
+          status: 'pending_approval',
+        },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
+        );
+      }
+      return tx.camporee_members.update({
+        where: { camporee_member_id: camporeeMemberId },
+        data: {
+          status: 'rejected',
+          rejected_by: rejectedBy,
+          rejection_reason: rejectionReason ?? null,
+          modified_at: new Date(),
+        },
+      });
     });
   }
 

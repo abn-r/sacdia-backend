@@ -45,8 +45,9 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
 
-  // JWT access tokens are 8h (28800 s) — used as the blacklist TTL.
-  private static readonly JWT_TTL_SECONDS = 28800;
+  // JWT access tokens are 1h (3600 s) — balances UX with token exposure window.
+  // Refresh flow extends sessions seamlessly. Used as the blacklist TTL.
+  private static readonly JWT_TTL_SECONDS = 3600;
 
   constructor(
     private prisma: PrismaService,

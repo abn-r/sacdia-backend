@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -250,11 +249,15 @@ describe('ClassesService', () => {
     // Reusable mock for prisma.$transaction
     //
     // enrollments.findFirst is called up to 3 times in enrollUser:
-    //   1. GM investiture pre-condition check (step 3)
-    //   2. Highest INVESTIDO class for display-order validation (step 3b)
-    //   3. Base enrollment for display-order validation (step 3b, only if no INVESTIDO)
+    //   1. GM investiture pre-condition check (step 2, only if requires_invested_gm)
+    //   2. Highest INVESTIDO class for display-order validation (step 3)
+    //   3. Base enrollment for display-order validation (step 3, only if no INVESTIDO)
     //
-    // To handle this, findFirstResults accepts an ordered array of return values.
+    // club_types.findMany is called only for Aventureros/Conquistadores pool check (step 4).
+    // For GM classes the pool check uses club_type_id directly — no findMany call.
+    //
+    // targetClass MUST include club_types: { name } so the service can classify the pool
+    // without relying on hardcoded exact-match strings.
     const setupTransactionMock = (mocks: {
       clubTypes?: any[];
       targetClass?: any;
@@ -278,9 +281,8 @@ describe('ClassesService', () => {
         club_types: {
           findMany: jest.fn().mockResolvedValue(
             mocks.clubTypes ?? [
-              { club_type_id: 1, name: 'Aventureros' },
-              { club_type_id: 2, name: 'Conquistadores' },
-              { club_type_id: 3, name: 'Guías Mayores' },
+              { club_type_id: 1 },
+              { club_type_id: 2 },
             ],
           ),
         },
@@ -322,13 +324,14 @@ describe('ClassesService', () => {
     const yearId = 1;
 
     it('should allow first enrollment in Aventureros when no active enrollments exist', async () => {
-      // findFirst calls: GM check (skip, not GM), highestInvested (null), baseEnrollment (null = first-ever)
+      // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
       setupTransactionMock({
         targetClass: {
           class_id: 10,
           club_type_id: 1,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Aventureros' },
         },
         findFirstResults: [null, null],
         activeCount: 0,
@@ -348,6 +351,7 @@ describe('ClassesService', () => {
           club_type_id: 2,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Conquistadores' },
         },
         findFirstResults: [null, null],
         activeCount: 1,
@@ -365,6 +369,7 @@ describe('ClassesService', () => {
           club_type_id: 1,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Aventureros' },
         },
         findFirstResults: [null, null],
         activeCount: 1,
@@ -383,6 +388,7 @@ describe('ClassesService', () => {
           club_type_id: 3,
           requires_invested_gm: true,
           display_order: 1,
+          club_types: { name: 'Guías Mayores' },
         },
         findFirstResults: [null],
       });
@@ -402,6 +408,7 @@ describe('ClassesService', () => {
           club_type_id: 3,
           requires_invested_gm: true,
           display_order: 2,
+          club_types: { name: 'Guías Mayores' },
         },
         findFirstResults: [
           { enrollment_id: 99, investiture_status: 'INVESTIDO' },
@@ -427,6 +434,7 @@ describe('ClassesService', () => {
           club_type_id: 3,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Guías Mayores' },
         },
         findFirstResults: [null, null],
         activeCount: 0,
@@ -446,6 +454,7 @@ describe('ClassesService', () => {
           club_type_id: 3,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Guías Mayores' },
         },
         findFirstResults: [null, null],
         activeCount: 2,
@@ -463,6 +472,7 @@ describe('ClassesService', () => {
           club_type_id: 1,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Aventureros' },
         },
         findFirstResults: [null, null],
         activeCount: 1,
@@ -481,6 +491,7 @@ describe('ClassesService', () => {
           club_type_id: 1,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Aventureros' },
         },
         findFirstResults: [null, null],
         activeCount: 0,
@@ -492,20 +503,24 @@ describe('ClassesService', () => {
       expect(result).toMatchObject({ enrollment_id: 5, active: true });
     });
 
-    it('should throw InternalServerErrorException when club types not fully resolved', async () => {
+    it('should classify club type using partial name match (unaccented DB variant)', async () => {
+      // Simulates a DB that stores "Guias Mayores" without the accent on the i.
+      // The service uses contains('guia') so it still resolves to the GM pool.
       setupTransactionMock({
-        clubTypes: [{ club_type_id: 1, name: 'Aventureros' }],
         targetClass: {
           class_id: 10,
-          club_type_id: 1,
+          club_type_id: 3,
           requires_invested_gm: false,
           display_order: 1,
+          club_types: { name: 'Guias Mayores' },
         },
+        findFirstResults: [null, null],
+        activeCount: 0,
+        createResult: { enrollment_id: 3, class_id: 10 },
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      const result = await service.enrollUser(userId, classId, yearId);
+      expect(result).toMatchObject({ enrollment_id: 3, class_id: 10 });
     });
 
     it('should throw NotFoundException when target class does not exist', async () => {
@@ -549,6 +564,7 @@ describe('ClassesService', () => {
             club_type_id: 1,
             requires_invested_gm: false,
             display_order: 4,
+            club_types: { name: 'Aventureros' },
           },
           findFirstResults: [
             // highestInvested: INVESTIDO at display_order 2
@@ -574,6 +590,7 @@ describe('ClassesService', () => {
             club_type_id: 1,
             requires_invested_gm: false,
             display_order: 3,
+            club_types: { name: 'Aventureros' },
           },
           findFirstResults: [
             // highestInvested: INVESTIDO at display_order 2
@@ -599,6 +616,7 @@ describe('ClassesService', () => {
             club_type_id: 1,
             requires_invested_gm: false,
             display_order: 2,
+            club_types: { name: 'Aventureros' },
           },
           findFirstResults: [
             {

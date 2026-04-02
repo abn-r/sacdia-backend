@@ -8,6 +8,7 @@ import { PermissionsGuard } from './guards/permissions.guard';
 import { R2FileStorageService } from './services/r2-file-storage.service';
 import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
+import { DistributedLockService } from './services/distributed-lock.service';
 
 function isPlaceholderRedisUrl(value: string): boolean {
   return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
@@ -81,6 +82,10 @@ function isPlaceholderRedisUrl(value: string): boolean {
       provide: FILE_STORAGE_SERVICE,
       useExisting: R2FileStorageService,
     },
+    // ==========================================
+    // INFRAESTRUCTURA DISTRIBUIDA
+    // ==========================================
+    DistributedLockService,
   ],
   exports: [
     CacheModule,
@@ -90,6 +95,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     AuthorizationContextService,
     PermissionsGuard,
     FILE_STORAGE_SERVICE,
+    DistributedLockService,
   ],
 })
 export class CommonModule {}

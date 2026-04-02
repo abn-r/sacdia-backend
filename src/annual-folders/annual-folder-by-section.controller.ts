@@ -19,6 +19,7 @@ import {
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { ClubEnrollmentsService } from '../club-enrollments/club-enrollments.service';
+import { CatalogsService } from '../catalogs/catalogs.service';
 import { AnnualFoldersService } from './annual-folders.service';
 
 @ApiTags('Annual Folders')
@@ -30,6 +31,7 @@ export class AnnualFolderBySectionController {
   constructor(
     private readonly annualFoldersService: AnnualFoldersService,
     private readonly clubEnrollmentsService: ClubEnrollmentsService,
+    private readonly catalogsService: CatalogsService,
   ) {}
 
   @Get()
@@ -53,8 +55,14 @@ export class AnnualFolderBySectionController {
   async getFolderBySection(
     @Param('sectionId', ParseIntPipe) sectionId: number,
   ) {
-    const enrollment =
-      await this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
+    const [activeYear, enrollment] = await Promise.all([
+      this.catalogsService.getCurrentEcclesiasticalYear(),
+      this.clubEnrollmentsService.findCurrentBySectionId(sectionId),
+    ]);
+
+    if (!activeYear) {
+      throw new NotFoundException('No hay año eclesiástico activo configurado');
+    }
 
     if (!enrollment) {
       throw new NotFoundException(
