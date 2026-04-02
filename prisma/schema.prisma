@@ -482,6 +482,9 @@ model enrollments {
   @@index([investiture_status], map: "idx_enrollments_status")
   @@index([locked_for_validation], map: "idx_enrollments_locked")
   @@index([user_id, cross_type_enrollment], map: "idx_enrollments_cross_type")
+  @@index([class_id], map: "idx_enrollments_class_id")
+  @@index([user_id, investiture_status, active], map: "idx_enrollments_user_investiture_active")
+  @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
 }
 
 model error_logs {

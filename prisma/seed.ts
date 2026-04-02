@@ -227,6 +227,115 @@ async function main() {
         console.log(`⏭️  Admin user already exists: ${adminEmail}`);
     }
 
+    // Seed test user for GM investiture tests
+    console.log('📝 Seeding test user for GM investiture...');
+    const TEST_USER_ID = 'a0000001-0000-4000-8000-000000000001';
+    const testUserEmail = 'testuser.gm@sacdia.test';
+
+    await prisma.users.upsert({
+        where: { user_id: TEST_USER_ID },
+        create: {
+            user_id: TEST_USER_ID,
+            email: testUserEmail,
+            name: 'Test',
+            paternal_last_name: 'GM',
+            email_verified: true,
+            active: true,
+            access_app: true,
+            approval_status: 'approved',
+        },
+        update: {},
+    });
+
+    await prisma.account.upsert({
+        where: { providerId_accountId: { providerId: 'credential', accountId: TEST_USER_ID } },
+        create: {
+            id: 'a0000001-0000-4000-8000-000000000002',
+            accountId: TEST_USER_ID,
+            providerId: 'credential',
+            userId: TEST_USER_ID,
+        },
+        update: {},
+    });
+
+    await prisma.users_pr.upsert({
+        where: { user_id: TEST_USER_ID },
+        create: {
+            user_id: TEST_USER_ID,
+            complete: true,
+            profile_picture_complete: true,
+            personal_info_complete: true,
+            club_selection_complete: true,
+        },
+        update: {},
+    });
+
+    // Seed a GM class for investiture enrollment
+    console.log('📝 Seeding GM class for investiture tests...');
+    const gmClubType = await prisma.club_types.findFirst({ where: { name: 'Guías Mayores' } });
+    if (!gmClubType) {
+        throw new Error('Guías Mayores club_type not found. Run club_types seed first.');
+    }
+
+    let gmClass = await prisma.classes.findFirst({
+        where: { name: 'Guía Mayor - Nivel 1 (Seed)' },
+    });
+
+    if (!gmClass) {
+        gmClass = await prisma.classes.create({
+            data: {
+                name: 'Guía Mayor - Nivel 1 (Seed)',
+                description: 'Clase de prueba para tests de investidura GM',
+                active: true,
+                club_type_id: gmClubType.club_type_id,
+                minimum_age: 16,
+                requires_invested_gm: false,
+                display_order: 1,
+            },
+        });
+    }
+
+    // Seed an ecclesiastical year for the enrollment
+    console.log('📝 Seeding ecclesiastical year for investiture tests...');
+    let seedYear = await prisma.ecclesiastical_years.findFirst({
+        where: { year_id: 1 },
+    });
+
+    if (!seedYear) {
+        seedYear = await prisma.ecclesiastical_years.create({
+            data: {
+                start_date: new Date('2026-01-01'),
+                end_date: new Date('2026-12-31'),
+                active: true,
+            },
+        });
+    }
+
+    // Seed GM investiture enrollment for the test user
+    console.log('📝 Seeding GM investiture enrollment for test user...');
+    await prisma.enrollments.upsert({
+        where: {
+            user_id_class_id_ecclesiastical_year_id: {
+                user_id: TEST_USER_ID,
+                class_id: gmClass.class_id,
+                ecclesiastical_year_id: seedYear.year_id,
+            },
+        },
+        create: {
+            user_id: TEST_USER_ID,
+            class_id: gmClass.class_id,
+            ecclesiastical_year_id: seedYear.year_id,
+            investiture_status: 'INVESTIDO',
+            active: true,
+        },
+        update: {
+            investiture_status: 'INVESTIDO',
+            active: true,
+        },
+    });
+
+    console.log(`✅ Test user ${TEST_USER_ID} seeded with INVESTIDO enrollment in class ${gmClass.class_id}.`);
+
     console.log('✅ Seed completed successfully!');
 }
 
