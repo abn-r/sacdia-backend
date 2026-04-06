@@ -707,37 +707,71 @@ model honors {
 model honor_requirements {
   requirement_id                  Int                               @id @default(autoincrement())
   honor_id                        Int
+  parent_id                       Int?
   requirement_number              Int
+  display_label                   String?                           @db.VarChar(10)
   requirement_text                String
+  reference_text                  String?
   has_sub_items                   Boolean                           @default(false)
+  is_choice_group                 Boolean                           @default(false)
+  choice_min                      Int?
+  requires_evidence               Boolean                           @default(false)
   needs_review                    Boolean                           @default(true)
   active                          Boolean                           @default(true)
   created_at                      DateTime                          @default(now()) @db.Timestamptz(6)
   modified_at                     DateTime                          @default(now()) @db.Timestamptz(6)
   honors                          honors                            @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction)
+  parent                          honor_requirements?               @relation("RequirementSubItems", fields: [parent_id], references: [requirement_id], onDelete: NoAction, onUpdate: NoAction)
+  children                        honor_requirements[]              @relation("RequirementSubItems")
   user_honor_requirement_progress user_honor_requirement_progress[]
 
-  @@unique([honor_id, requirement_number])
+  @@unique([honor_id, requirement_number], map: "honor_requirements_honor_id_requirement_number_key")
   @@index([honor_id])
+  @@index([parent_id])
   @@map("honor_requirements")
 }
 
 model user_honor_requirement_progress {
-  progress_id        Int                @id @default(autoincrement())
-  user_honor_id      Int
-  requirement_id     Int
-  completed          Boolean            @default(false)
-  notes              String?
-  completed_at       DateTime?          @db.Timestamptz(6)
-  active             Boolean            @default(true)
-  created_at         DateTime           @default(now()) @db.Timestamptz(6)
-  modified_at        DateTime           @default(now()) @db.Timestamptz(6)
-  users_honors       users_honors       @relation(fields: [user_honor_id], references: [user_honor_id], onDelete: Cascade, onUpdate: NoAction)
-  honor_requirements honor_requirements @relation(fields: [requirement_id], references: [requirement_id], onDelete: NoAction, onUpdate: NoAction)
+  progress_id          Int                    @id @default(autoincrement())
+  user_honor_id        Int
+  requirement_id       Int
+  completed            Boolean                @default(false)
+  text_response        String?                @db.VarChar(800)
+  notes                String?
+  completed_at         DateTime?              @db.Timestamptz(6)
+  active               Boolean                @default(true)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime               @default(now()) @db.Timestamptz(6)
+  users_honors         users_honors           @relation(fields: [user_honor_id], references: [user_honor_id], onDelete: Cascade, onUpdate: NoAction)
+  honor_requirements   honor_requirements     @relation(fields: [requirement_id], references: [requirement_id], onDelete: NoAction, onUpdate: NoAction)
+  requirement_evidence requirement_evidence[]
 
   @@unique([user_honor_id, requirement_id])
   @@index([user_honor_id])
   @@map("user_honor_requirement_progress")
+}
+
+enum evidence_type_enum {
+  IMAGE
+  FILE
+  LINK
+}
+
+model requirement_evidence {
+  evidence_id   Int                             @id @default(autoincrement())
+  progress_id   Int
+  evidence_type evidence_type_enum
+  url           String
+  filename      String?                         @db.VarChar(255)
+  mime_type     String?                         @db.VarChar(100)
+  file_size     Int?
+  active        Boolean                         @default(true)
+  created_at    DateTime                        @default(now()) @db.Timestamptz(6)
+  modified_at   DateTime                        @default(now()) @db.Timestamptz(6)
+  progress      user_honor_requirement_progress @relation(fields: [progress_id], references: [progress_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([progress_id])
+  @@map("requirement_evidence")
 }
 
 model honors_categories {
