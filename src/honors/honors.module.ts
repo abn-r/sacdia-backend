@@ -6,6 +6,8 @@ import {
 } from './honor-requirements.controller';
 import { HonorsService } from './honors.service';
 import { HonorRequirementsService } from './honor-requirements.service';
+import { AdminHonorsController } from '../admin/admin-honors.controller';
+import { AdminHonorsService } from '../admin/admin-honors.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -15,8 +17,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     UserHonorsController,
     HonorRequirementsController,
     UserHonorRequirementsController,
+    AdminHonorsController,
   ],
-  providers: [HonorsService, HonorRequirementsService],
+  providers: [HonorsService, HonorRequirementsService, AdminHonorsService],
   exports: [HonorsService],
 })
 export class HonorsModule {}
