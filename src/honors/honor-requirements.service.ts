@@ -173,8 +173,6 @@ export class HonorRequirementsService {
       select: {
         requirement_id: true,
         honor_id: true,
-        requires_evidence: true,
-        has_sub_items: true,
       },
     });
 
@@ -193,28 +191,6 @@ export class HonorRequirementsService {
       throw new NotFoundException(
         `User ${userId} is not enrolled in honor ${honorId}`,
       );
-    }
-
-    if (dto.completed && requirement.requires_evidence) {
-      const existingProgress =
-        await this.prisma.user_honor_requirement_progress.findUnique({
-          where: {
-            user_honor_id_requirement_id: {
-              user_honor_id: userHonor.user_honor_id,
-              requirement_id: dto.requirementId,
-            },
-          },
-          include: {
-            requirement_evidence: { where: { active: true } },
-          },
-        });
-      const hasEvidence =
-        (existingProgress?.requirement_evidence?.length ?? 0) > 0;
-      if (!hasEvidence) {
-        throw new BadRequestException(
-          'Este requisito requiere al menos una evidencia para marcarse como completado',
-        );
-      }
     }
 
     return this.prisma.user_honor_requirement_progress.upsert({
