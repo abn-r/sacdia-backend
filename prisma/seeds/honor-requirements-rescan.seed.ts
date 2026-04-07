@@ -1087,8 +1087,8 @@ async function main() {
     } else {
       console.log(`\n[APPLY] Executing ${allUpdates.length} updates and ${allSubItemInserts.length} inserts...`);
 
-      // Apply updates in batches of 50 with extended timeout for Neon
-      const BATCH_SIZE = 50;
+      // Apply updates in small batches with extended timeout for Neon
+      const BATCH_SIZE = 20;
       const TX_TIMEOUT = 30000; // 30s — Neon cold starts can be slow
 
       for (let i = 0; i < allUpdates.length; i += BATCH_SIZE) {
