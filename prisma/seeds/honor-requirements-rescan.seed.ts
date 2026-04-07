@@ -894,6 +894,7 @@ async function main() {
   let totalFieldChanges = 0;
   let totalAppliedUpdates = 0;
   let totalAppliedInserts = 0;
+  let totalSkippedInserts = 0;
 
   const allUpdates: RequirementUpdate[] = [];
   const allSubItemInserts: SubItemInsert[] = [];
@@ -1086,8 +1087,9 @@ async function main() {
     } else {
       console.log(`\n[APPLY] Executing ${allUpdates.length} updates and ${allSubItemInserts.length} inserts...`);
 
-      // Apply updates in batches of 50
+      // Apply updates in batches of 50 with extended timeout for Neon
       const BATCH_SIZE = 50;
+      const TX_TIMEOUT = 30000; // 30s — Neon cold starts can be slow
 
       for (let i = 0; i < allUpdates.length; i += BATCH_SIZE) {
         const batch = allUpdates.slice(i, i + BATCH_SIZE);
@@ -1103,6 +1105,7 @@ async function main() {
               data: updateData as Parameters<typeof prisma.honor_requirements.update>[0]['data'],
             });
           }),
+          { timeout: TX_TIMEOUT },
         );
 
         totalAppliedUpdates += batch.length;
@@ -1113,39 +1116,62 @@ async function main() {
 
       if (allUpdates.length > 0) console.log();
 
-      // Insert new sub-items
+      // Insert new sub-items (idempotent — skips duplicates)
       for (const si of allSubItemInserts) {
-        // Find the next available requirement_number for this honor (sub-items use
-        // a synthetic number: parent_number * 1000 + position)
-        const existingCount = await prisma.honor_requirements.count({
-          where: { honor_id: si.honor_id, parent_id: si.parent_requirement_id },
-        });
-
         // Use a stable synthetic requirement_number: parent * 1000 + label_index
         const labelOrder = 'abcdefghijklmnopqrstuvwxyz';
         const labelIdx = labelOrder.indexOf(si.label.toLowerCase());
-        const syntheticNumber =
-          si.parent_requirement_number * 1000 + (labelIdx >= 0 ? labelIdx + 1 : existingCount + 1);
 
-        await prisma.honor_requirements.create({
-          data: {
+        // For roman numerals (i, ii, iii, iv, v, vi), use 100-based offset
+        const romanOrder = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'];
+        const romanIdx = romanOrder.indexOf(si.label.toLowerCase());
+
+        let subOffset: number;
+        if (romanIdx >= 0) {
+          subOffset = 100 + romanIdx + 1; // i=101, ii=102, etc.
+        } else if (labelIdx >= 0) {
+          subOffset = labelIdx + 1; // a=1, b=2, etc.
+        } else {
+          // Fallback: count existing siblings
+          const existingCount = await prisma.honor_requirements.count({
+            where: { honor_id: si.honor_id, parent_id: si.parent_requirement_id },
+          });
+          subOffset = existingCount + 1;
+        }
+
+        const syntheticNumber = si.parent_requirement_number * 1000 + subOffset;
+
+        // Upsert: skip if already exists with this (honor_id, requirement_number)
+        const existing = await prisma.honor_requirements.findFirst({
+          where: {
             honor_id: si.honor_id,
-            parent_id: si.parent_requirement_id,
             requirement_number: syntheticNumber,
-            display_label: si.label,
-            requirement_text: si.text,
-            reference_text: si.reference_text,
-            has_sub_items: false,
-            is_choice_group: false,
-            choice_min: null,
-            requires_evidence: si.requires_evidence,
-            needs_review: true,
           },
         });
 
-        totalAppliedInserts++;
+        if (!existing) {
+          await prisma.honor_requirements.create({
+            data: {
+              honor_id: si.honor_id,
+              parent_id: si.parent_requirement_id,
+              requirement_number: syntheticNumber,
+              display_label: si.label,
+              requirement_text: si.text,
+              reference_text: si.reference_text,
+              has_sub_items: false,
+              is_choice_group: false,
+              choice_min: null,
+              requires_evidence: si.requires_evidence,
+              needs_review: true,
+            },
+          });
+          totalAppliedInserts++;
+        } else {
+          totalSkippedInserts++;
+        }
+
         process.stdout.write(
-          `\r   Inserts applied: ${totalAppliedInserts}/${allSubItemInserts.length}`,
+          `\r   Inserts: ${totalAppliedInserts} new, ${totalSkippedInserts} skipped / ${allSubItemInserts.length} total`,
         );
       }
 
