@@ -142,7 +142,7 @@ export class CreateClubEnrollmentDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(2)
-  @IsString({ each: true })
+  @IsUUID('4', { each: true })
   deputy_director_ids?: string[];
 
   @ApiPropertyOptional({
