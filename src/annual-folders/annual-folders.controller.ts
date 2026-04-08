@@ -282,6 +282,30 @@ export class AnnualFoldersController {
   }
 
   /**
+   * Section status — club user or coordinator read operation.
+   * Returns the current snapshot for one section: evidence count,
+   * submission record (if any), and evaluation record (if any).
+   */
+  @Get(':folderId/sections/:sectionId/status')
+  @RequirePermissions('evidence_folders:read')
+  @ApiOperation({
+    summary: 'Get the current status of a single section within an annual folder',
+    description:
+      'Returns section metadata, evidence count, submission record (if submitted), and evaluation record (if evaluated). Useful for the Flutter app to show per-section progress.',
+  })
+  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiResponse({ status: 200, description: 'Section status snapshot' })
+  @ApiResponse({ status: 404, description: 'Folder or section not found' })
+  async getSectionStatus(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+  ) {
+    const data = await this.service.getSectionStatus(folderId, sectionId);
+    return { status: 'success', data };
+  }
+
+  /**
    * Per-section submit — club user operation.
    * Marks a single section as submitted. The folder-level status is NOT changed.
    * The Flutter app should call this after uploading evidence for each section.

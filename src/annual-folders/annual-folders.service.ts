@@ -618,6 +618,132 @@ export class AnnualFoldersService {
   }
 
   // ========================================
+  // SECTION STATUS QUERY
+  // ========================================
+
+  /**
+   * Return the current status snapshot for a single section within a folder.
+   *
+   * Response includes:
+   *  - Section template metadata (name, required, points)
+   *  - Evidence count for this section
+   *  - Submission record (if any)
+   *  - Evaluation record (if any)
+   *  - Derived `submission_status`: 'pending' | 'submitted' | 'evaluated'
+   */
+  async getSectionStatus(folderId: string, sectionId: string) {
+    const folder = await this.prisma.annual_folders.findUnique({
+      where: { annual_folder_id: folderId },
+      select: {
+        annual_folder_id: true,
+        folder_template_id: true,
+        status: true,
+      },
+    });
+
+    if (!folder) {
+      throw new NotFoundException(
+        `Annual folder with ID ${folderId} not found`,
+      );
+    }
+
+    // Validate section belongs to this folder's template
+    const section = await this.prisma.folder_template_sections.findFirst({
+      where: {
+        section_id: sectionId,
+        folder_template_id: folder.folder_template_id,
+      },
+    });
+
+    if (!section) {
+      throw new NotFoundException(
+        `Section ${sectionId} does not belong to this folder's template`,
+      );
+    }
+
+    // Fetch evidence count, submission, and evaluation in parallel
+    const [evidenceCount, submission, evaluation] = await Promise.all([
+      this.prisma.annual_folder_evidences.count({
+        where: { annual_folder_id: folderId, section_id: sectionId },
+      }),
+      this.prisma.annual_folder_section_submissions.findUnique({
+        where: {
+          annual_folder_id_section_id: {
+            annual_folder_id: folderId,
+            section_id: sectionId,
+          },
+        },
+        include: {
+          submitter: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      }),
+      this.prisma.annual_folder_section_evaluations.findUnique({
+        where: {
+          annual_folder_id_section_id: {
+            annual_folder_id: folderId,
+            section_id: sectionId,
+          },
+        },
+        include: {
+          evaluated_by: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    let submissionStatus: 'pending' | 'submitted' | 'evaluated' = 'pending';
+    if (evaluation) {
+      submissionStatus = 'evaluated';
+    } else if (submission) {
+      submissionStatus = 'submitted';
+    }
+
+    return {
+      folder_id: folderId,
+      folder_status: folder.status,
+      section: {
+        section_id: section.section_id,
+        name: section.name,
+        description: section.description,
+        order: section.order,
+        required: section.required,
+        max_points: section.max_points,
+        minimum_points: section.minimum_points,
+      },
+      evidence_count: evidenceCount,
+      submission_status: submissionStatus,
+      submission: submission
+        ? {
+            section_submission_id: submission.section_submission_id,
+            submitted_at: submission.submitted_at,
+            submitted_by: this.formatUserName(submission.submitter),
+          }
+        : null,
+      evaluation: evaluation
+        ? {
+            evaluation_id: evaluation.evaluation_id,
+            earned_points: evaluation.earned_points,
+            max_points: evaluation.max_points,
+            notes: evaluation.notes,
+            evaluator: this.formatUserName(evaluation.evaluated_by),
+            evaluated_at: evaluation.evaluated_at,
+          }
+        : null,
+    };
+  }
+
+  // ========================================
   // STATUS TRANSITIONS
   // ========================================
 
