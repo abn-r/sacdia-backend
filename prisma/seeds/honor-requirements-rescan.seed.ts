@@ -1095,16 +1095,18 @@ async function main() {
         const batch = allUpdates.slice(i, i + BATCH_SIZE);
 
         await prisma.$transaction(
-          batch.map((u) => {
-            const updateData: Record<string, unknown> = { needs_review: true };
-            for (const [field, { to }] of Object.entries(u.changes)) {
-              updateData[field] = to;
+          async (tx) => {
+            for (const u of batch) {
+              const updateData: Record<string, unknown> = { needs_review: true };
+              for (const [field, { to }] of Object.entries(u.changes)) {
+                updateData[field] = to;
+              }
+              await tx.honor_requirements.update({
+                where: { requirement_id: u.requirement_id },
+                data: updateData as Parameters<typeof prisma.honor_requirements.update>[0]['data'],
+              });
             }
-            return prisma.honor_requirements.update({
-              where: { requirement_id: u.requirement_id },
-              data: updateData as Parameters<typeof prisma.honor_requirements.update>[0]['data'],
-            });
-          }),
+          },
           { timeout: TX_TIMEOUT },
         );
 
