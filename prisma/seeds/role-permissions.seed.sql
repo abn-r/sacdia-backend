@@ -51,7 +51,6 @@ WHERE r.role_name = 'user'
 
     -- Post-registration (club enrollment)
     'post_registration:read',
-    'post_registration:update',
     'clubs:read',
     'club_sections:read',
 
@@ -116,7 +115,6 @@ WHERE r.role_name = 'member'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -184,7 +182,6 @@ WHERE r.role_name = 'counselor'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -266,7 +263,6 @@ WHERE r.role_name = 'secretary'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -377,7 +373,6 @@ WHERE r.role_name = 'treasurer'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -474,7 +469,6 @@ WHERE r.role_name = 'secretary-treasurer'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -587,7 +581,6 @@ WHERE r.role_name = 'deputy-director'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -681,7 +674,6 @@ WHERE r.role_name = 'director'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -983,7 +975,6 @@ WHERE r.role_name = 'assistant-lf'
 
     -- Post-registration
     'post_registration:read',
-    'post_registration:update',
 
     -- Dashboard
     'dashboard:read',
@@ -1052,7 +1043,13 @@ WHERE r.role_name = 'assistant-lf'
     'award_categories:update',
     'award_categories:delete',
     'rankings:read',
-    'rankings:recalculate'
+    'rankings:recalculate',
+
+    -- ===== Registration assistance (field-level) =====
+    -- Allow assistant-lf to complete post-registration steps on behalf of users.
+    -- director-lf, assistant-union, director-union, and higher roles inherit
+    -- this permission via the JOIN-based copy blocks below.
+    'registration:complete'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 

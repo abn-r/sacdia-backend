@@ -647,12 +647,14 @@ describe('Permissions metadata', () => {
       ),
     ).toEqual({ family: 'post_registration', mode: 'read' });
 
+    // step-1/2/3 complete: use registration:complete directly (no sensitive subresource
+    // fallback) so that users:update does NOT grant third-party access to these endpoints.
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         PostRegistrationController.prototype.completeStep1,
       ),
-    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    ).toEqual({ permissions: ['registration:complete'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -664,14 +666,14 @@ describe('Permissions metadata', () => {
         SENSITIVE_USER_SUBRESOURCE_KEY,
         PostRegistrationController.prototype.completeStep1,
       ),
-    ).toEqual({ family: 'post_registration', mode: 'update' });
+    ).toBeUndefined();
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         PostRegistrationController.prototype.completeStep2,
       ),
-    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    ).toEqual({ permissions: ['registration:complete'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -683,14 +685,14 @@ describe('Permissions metadata', () => {
         SENSITIVE_USER_SUBRESOURCE_KEY,
         PostRegistrationController.prototype.completeStep2,
       ),
-    ).toEqual({ family: 'post_registration', mode: 'update' });
+    ).toBeUndefined();
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         PostRegistrationController.prototype.completeStep3,
       ),
-    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    ).toEqual({ permissions: ['registration:complete'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -702,7 +704,7 @@ describe('Permissions metadata', () => {
         SENSITIVE_USER_SUBRESOURCE_KEY,
         PostRegistrationController.prototype.completeStep3,
       ),
-    ).toEqual({ family: 'post_registration', mode: 'update' });
+    ).toBeUndefined();
   });
 
   it('keeps out-of-scope user routes on legacy users:* metadata', () => {

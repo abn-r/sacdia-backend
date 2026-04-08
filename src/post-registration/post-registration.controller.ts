@@ -19,7 +19,11 @@ import {
 } from '@nestjs/swagger';
 import { PostRegistrationService } from './post-registration.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
-import { SensitiveUserSubresource } from '../common/decorators';
+import {
+  SensitiveUserSubresource,
+  RequirePermissions,
+  AuthorizationResource,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type AuthenticatedRequest = Request & {
@@ -71,7 +75,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-1/complete')
-  @SensitiveUserSubresource('post_registration', 'update')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 1: Foto de perfil',
@@ -93,7 +98,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-2/complete')
-  @SensitiveUserSubresource('post_registration', 'update')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 2: Información personal',
@@ -116,7 +122,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-3/complete')
-  @SensitiveUserSubresource('post_registration', 'update')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 3: Selección de club',

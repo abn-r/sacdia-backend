@@ -415,8 +415,21 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('emergency_contacts:update', 'Update user emergency contacts', true),
   ('legal_representative:read', 'Read user legal representative info', true),
   ('legal_representative:update', 'Update user legal representative info', true),
-  ('post_registration:read', 'Read user post-registration data', true),
-  ('post_registration:update', 'Update user post-registration data', true)
+  ('post_registration:read', 'Read user post-registration data', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Registration Assistance (global, field-level)
+-- ============================
+-- Used exclusively on POST step-1/2/3 complete endpoints to allow
+-- field-level staff (director_lf, assistant_lf, admin, super_admin) to
+-- complete post-registration on behalf of a third-party user.
+-- Does NOT fall back to users:update — intentionally more restrictive.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('registration:complete', 'Complete post-registration steps on behalf of another user', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
