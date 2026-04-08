@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateFinanceDto, UpdateFinanceDto, FinanceFiltersDto } from './dto';
+import {
+  CreateFinanceDto,
+  UpdateFinanceDto,
+  FinanceFiltersDto,
+  GetAllTransactionsDto,
+} from './dto';
 import {
   PaginationDto,
   PaginatedResult,
@@ -88,6 +93,155 @@ export class FinancesService {
       total,
       pagination ?? new PaginationDto(),
     );
+  }
+
+  async getAllTransactions(
+    clubId: number,
+    dto: GetAllTransactionsDto,
+  ): Promise<PaginatedResult<any>> {
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+      select: {
+        club_sections: { select: { club_section_id: true } },
+      },
+    });
+
+    if (!club) {
+      throw new NotFoundException(`Club with ID ${clubId} not found`);
+    }
+
+    const sectionIds = club.club_sections.map((s) => s.club_section_id);
+
+    // Type filter: finances_categories.type 0=ingreso, 1=egreso
+    const typeFilter =
+      dto.type === 'income'
+        ? { finances_categories: { type: 0 } }
+        : dto.type === 'expense'
+          ? { finances_categories: { type: 1 } }
+          : {};
+
+    // Search filter: description OR category name (case-insensitive)
+    const searchFilter = dto.search
+      ? {
+          OR: [
+            {
+              description: { contains: dto.search, mode: 'insensitive' as const },
+            },
+            {
+              finances_categories: {
+                name: { contains: dto.search, mode: 'insensitive' as const },
+              },
+            },
+          ],
+        }
+      : {};
+
+    // Date range filter: endDate is inclusive so extend to end of day
+    const dateFilter = {
+      ...(dto.startDate && {
+        finance_date: { gte: new Date(dto.startDate) },
+      }),
+      ...(dto.endDate && {
+        finance_date: { lte: new Date(`${dto.endDate}T23:59:59.999Z`) },
+      }),
+    };
+
+    // Merge date filters: both startDate and endDate present requires an AND
+    const dateRangeFilter =
+      dto.startDate && dto.endDate
+        ? {
+            finance_date: {
+              gte: new Date(dto.startDate),
+              lte: new Date(`${dto.endDate}T23:59:59.999Z`),
+            },
+          }
+        : dateFilter;
+
+    const where = {
+      active: true,
+      club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      ...typeFilter,
+      ...searchFilter,
+      ...dateRangeFilter,
+    };
+
+    // Resolve orderBy based on sortBy field
+    const sortDir = dto.sortOrder ?? 'desc';
+    const orderBy =
+      dto.sortBy === 'amount'
+        ? [{ amount: sortDir as 'asc' | 'desc' }]
+        : dto.sortBy === 'category'
+          ? [{ finances_categories: { name: sortDir as 'asc' | 'desc' } }]
+          : [{ finance_date: sortDir as 'asc' | 'desc' }];
+
+    const [data, total] = await Promise.all([
+      this.prisma.finances.findMany({
+        where,
+        include: {
+          finances_categories: {
+            select: {
+              finance_category_id: true,
+              name: true,
+              icon: true,
+              type: true,
+            },
+          },
+          club_types: { select: { name: true } },
+          users: {
+            select: { name: true, paternal_last_name: true, user_image: true },
+          },
+          modified_by: {
+            select: { name: true, paternal_last_name: true },
+          },
+        },
+        orderBy,
+        skip: dto.skip,
+        take: dto.take,
+      }),
+      this.prisma.finances.count({ where }),
+    ]);
+
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const totalPages = Math.ceil(total / limit);
+
+    // Map to response shape defined in spec
+    const mapped = data.map((record) => ({
+      id: record.finance_id,
+      type: record.finances_categories.type === 0 ? 'income' : 'expense',
+      amount: record.amount,
+      description: record.description ?? null,
+      notes: record.post_closing_note ?? null,
+      date: record.finance_date,
+      year: record.year,
+      month: record.month,
+      category: {
+        id: record.finances_categories.finance_category_id,
+        name: record.finances_categories.name,
+        iconIndex: record.finances_categories.icon ?? 0,
+        typeCode: record.finances_categories.type,
+      },
+      registeredByName: record.users
+        ? `${record.users.name} ${record.users.paternal_last_name}`.trim()
+        : null,
+      registeredAt: record.created_at ?? null,
+      modifiedByName: record.modified_by
+        ? `${record.modified_by.name} ${record.modified_by.paternal_last_name}`.trim()
+        : null,
+      modifiedAt: record.modified_at ?? null,
+    }));
+
+    return {
+      data: mapped,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
   }
 
   async getSummary(clubId: number, year?: number, month?: number) {

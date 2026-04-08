@@ -20,7 +20,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { FinancesService } from './finances.service';
-import { CreateFinanceDto, UpdateFinanceDto } from './dto';
+import { CreateFinanceDto, UpdateFinanceDto, GetAllTransactionsDto } from './dto';
 import {
   JwtAuthGuard,
   ClubRolesGuard,
@@ -67,6 +67,35 @@ export class FinancesController {
   // ========================================
   // FINANZAS POR CLUB
   // ========================================
+
+  @Get('clubs/:clubId/finances/transactions')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Listar todas las transacciones del club (paginadas)',
+    description:
+      'Obtiene todas las transacciones financieras del club con soporte de paginación, búsqueda, filtros por tipo y rango de fechas.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (1-indexed, default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página (max: 100, default: 20)' })
+  @ApiQuery({ name: 'type', required: false, enum: ['income', 'expense'], description: 'Filtrar por tipo: income o expense' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Búsqueda en descripción y nombre de categoría' })
+  @ApiQuery({ name: 'startDate', required: false, type: String, description: 'Fecha inicio del rango YYYY-MM-DD (inclusive)' })
+  @ApiQuery({ name: 'endDate', required: false, type: String, description: 'Fecha fin del rango YYYY-MM-DD (inclusive)' })
+  @ApiQuery({ name: 'sortBy', required: false, enum: ['date', 'amount', 'category'], description: 'Campo de ordenamiento (default: date)' })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'], description: 'Dirección del ordenamiento (default: desc)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de transacciones con meta de paginación',
+  })
+  @ApiResponse({ status: 404, description: 'Club no encontrado' })
+  async getAllTransactions(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Query() dto: GetAllTransactionsDto,
+  ) {
+    return this.financesService.getAllTransactions(clubId, dto);
+  }
 
   @Get('clubs/:clubId/finances')
   @RequirePermissions('finances:read')
