@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -65,10 +70,50 @@ export class MemberOfMonthService {
   ) {
     await this.validateClubSection(clubId, sectionId);
 
-    const skip = (page - 1) * limit;
+    // H5: clamp pagination params server-side
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+    const skip = (safePage - 1) * safeLimit;
+
+    // H7: paginate over distinct (year, month) periods, then fetch all rows for those periods
+    const distinctPeriods = await this.prisma.$queryRaw<
+      Array<{ year: number; month: number }>
+    >`
+      SELECT DISTINCT year, month
+      FROM member_of_month
+      WHERE club_section_id = ${sectionId}
+      ORDER BY year DESC, month DESC
+      LIMIT ${safeLimit} OFFSET ${skip}
+    `;
+
+    const totalResult = await this.prisma.$queryRaw<
+      Array<{ count: bigint }>
+    >`
+      SELECT COUNT(DISTINCT (year, month)) AS count
+      FROM member_of_month
+      WHERE club_section_id = ${sectionId}
+    `;
+
+    const total = Number(totalResult[0]?.count ?? 0);
+
+    if (distinctPeriods.length === 0) {
+      return {
+        data: [],
+        pagination: { page: safePage, limit: safeLimit, total },
+      };
+    }
+
+    // Fetch all entries for those specific periods using Prisma ORM (safe)
+    const periodFilters = distinctPeriods.map((p) => ({
+      club_section_id: sectionId,
+      year: p.year,
+      month: p.month,
+    }));
 
     const entries = await this.prisma.member_of_month.findMany({
-      where: { club_section_id: sectionId },
+      where: {
+        OR: periodFilters,
+      },
       include: {
         users: {
           select: {
@@ -80,15 +125,9 @@ export class MemberOfMonthService {
         },
       },
       orderBy: [{ year: 'desc' }, { month: 'desc' }],
-      skip,
-      take: limit,
     });
 
-    const total = await this.prisma.member_of_month.count({
-      where: { club_section_id: sectionId },
-    });
-
-    // Group entries by month/year
+    // Group entries by month/year in the same order as distinctPeriods
     const grouped = new Map<string, typeof entries>();
     for (const entry of entries) {
       const key = `${entry.year}-${entry.month}`;
@@ -96,20 +135,24 @@ export class MemberOfMonthService {
       grouped.get(key)!.push(entry);
     }
 
-    const data = Array.from(grouped.entries()).map(([_key, group]) => ({
-      month: group[0].month,
-      year: group[0].year,
-      members: group.map((e) => ({
-        user_id: e.user_id,
-        name: `${e.users.name ?? ''} ${e.users.paternal_last_name ?? ''}`.trim(),
-        photo_url: e.users.user_image ?? null,
-        total_points: e.total_points,
-      })),
-    }));
+    const data = distinctPeriods.map((period) => {
+      const key = `${period.year}-${period.month}`;
+      const group = grouped.get(key) ?? [];
+      return {
+        month: period.month,
+        year: period.year,
+        members: group.map((e) => ({
+          user_id: e.user_id,
+          name: `${e.users.name ?? ''} ${e.users.paternal_last_name ?? ''}`.trim(),
+          photo_url: e.users.user_image ?? null,
+          total_points: e.total_points,
+        })),
+      };
+    });
 
     return {
       data,
-      pagination: { page, limit, total },
+      pagination: { page: safePage, limit: safeLimit, total },
     };
   }
 
@@ -122,8 +165,11 @@ export class MemberOfMonthService {
     sectionId: number,
     month: number,
     year: number,
+    requestingUserId: string,
   ) {
     await this.validateClubSection(clubId, sectionId);
+    // C6: Only directors of the section may trigger evaluation
+    await this.assertIsDirector(requestingUserId, sectionId);
     return this.runEvaluation(sectionId, month, year);
   }
 
@@ -139,8 +185,10 @@ export class MemberOfMonthService {
     // 1. Calculate ISO week range for the given month/year
     const weekRange = this.getWeekRangeForMonth(year, month);
 
-    // 2. Aggregate points per user for that section and week range
-    // Path: weekly_record_scores -> weekly_records (week in range)
+    // 2. Aggregate points per user for that section and week range.
+    // H9: With the `year` column on weekly_records, we filter by exact year
+    // to correctly handle the December cross-year edge case where startWeek > endWeek.
+    // Path: weekly_record_scores -> weekly_records (week in range, year = target year)
     //       -> unit_members (user_id) -> units (club_section_id = sectionId)
     const scores = await this.prisma.$queryRaw<MemberResult[]>`
       SELECT
@@ -151,6 +199,7 @@ export class MemberOfMonthService {
         AND u.club_section_id = ${sectionId}
         AND u.active = true
       JOIN weekly_records wr ON wr.user_id = um.user_id
+        AND wr.year = ${year}
         AND wr.week >= ${weekRange.startWeek}
         AND wr.week <= ${weekRange.endWeek}
         AND wr.active = true
@@ -386,6 +435,35 @@ export class MemberOfMonthService {
   // ============================================================
   // Validation helpers
   // ============================================================
+
+  /**
+   * C6: Ensures the requesting user holds a director-level role in the given section.
+   * Throws ForbiddenException if no matching active assignment is found.
+   */
+  private async assertIsDirector(
+    userId: string,
+    sectionId: number,
+  ): Promise<void> {
+    const directorAssignment =
+      await this.prisma.club_role_assignments.findFirst({
+        where: {
+          user_id: userId,
+          club_section_id: sectionId,
+          active: true,
+          status: 'active',
+          roles: {
+            role_name: { in: ['director', 'sub-director', 'directora'] },
+          },
+        },
+        select: { assignment_id: true },
+      });
+
+    if (!directorAssignment) {
+      throw new ForbiddenException(
+        'Solo directores del club pueden ejecutar la evaluación de Miembro del Mes',
+      );
+    }
+  }
 
   private async validateClubSection(
     clubId: number,

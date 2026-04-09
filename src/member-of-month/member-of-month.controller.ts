@@ -5,9 +5,11 @@ import {
   Param,
   Body,
   Query,
+  Req,
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -75,6 +77,7 @@ export class MemberOfMonthController {
   @Post('clubs/:clubId/sections/:sectionId/member-of-month/evaluate')
   @RequirePermissions('units:update')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary: 'Disparar evaluación manual de miembro del mes',
     description: 'Solo directores del club pueden ejecutar esta acción',
@@ -82,17 +85,20 @@ export class MemberOfMonthController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 201, description: 'Evaluación ejecutada exitosamente' })
+  @ApiResponse({ status: 403, description: 'Solo directores pueden ejecutar esta acción' })
   @ApiResponse({ status: 404, description: 'Sección no encontrada' })
   async evaluateMemberOfMonth(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Body() dto: EvaluateMemberOfMonthDto,
+    @Req() req: any,
   ) {
     return this.memberOfMonthService.evaluateMemberOfMonth(
       clubId,
       sectionId,
       dto.month,
       dto.year,
+      req.user.sub,
     );
   }
 }

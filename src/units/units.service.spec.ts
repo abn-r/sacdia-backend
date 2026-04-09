@@ -489,6 +489,7 @@ describe('UnitsService', () => {
     const dto = {
       user_id: 'uuid-user-1',
       week: 5,
+      year: 2026,
       attendance: 10,
       punctuality: 5,
     };
