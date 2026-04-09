@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { maskEmail } from '../utils/mask-email.util';
 
 /**
  * Filtro global de excepciones HTTP.
@@ -123,7 +124,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     for (const [key, raw] of Object.entries(source)) {
       if (key.toLowerCase() === 'email' && typeof raw === 'string') {
-        masked[key] = this.maskEmail(raw);
+        masked[key] = maskEmail(raw);
       } else {
         masked[key] = this.maskEmailInObject(raw);
       }
@@ -132,12 +133,4 @@ export class HttpExceptionFilter implements ExceptionFilter {
     return masked;
   }
 
-  private maskEmail(email: string): string {
-    const [localPart, domain] = email.split('@');
-    if (!localPart || !domain) return '***';
-
-    const visibleLocal =
-      localPart.length <= 2 ? (localPart[0] ?? '*') : localPart.slice(0, 2);
-    return `${visibleLocal}***@${domain}`;
-  }
 }

@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   InternalServerErrorException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -13,6 +14,7 @@ import { randomUUID, randomBytes } from 'crypto';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BetterAuthInstance } from './better-auth.config';
+import { maskEmail } from '../common/utils/mask-email.util';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -243,7 +245,7 @@ export class BetterAuthService implements IBetterAuthService {
         user_id: userId,
         email,
         name,
-        email_verified: true,
+        email_verified: false,
       },
     });
 
@@ -448,9 +450,15 @@ export class BetterAuthService implements IBetterAuthService {
   }
 
   /**
-   * Creates a password-reset verification token and logs it.
+   * Creates a password-reset verification token.
    *
-   * In production this should send an email with the token.
+   * SECURITY: The raw token is NEVER logged — it is a credential equivalent to a
+   * temporary password. Only a masked email and expiry are logged.
+   *
+   * EMAIL_ENABLED guard: if no email transport is configured the endpoint returns
+   * ServiceUnavailableException so callers get a clear, actionable error instead of
+   * silently losing the token.
+   *
    * BA's requestPasswordReset is NOT used here to avoid BA adapter write issues.
    *
    * Always succeeds silently for unknown emails (enumeration-safe).
@@ -459,10 +467,20 @@ export class BetterAuthService implements IBetterAuthService {
     email: string,
     _redirectTo?: string,
   ): Promise<void> {
+    // Guard: email transport must be explicitly enabled.
+    if (process.env.EMAIL_ENABLED !== 'true') {
+      throw new ServiceUnavailableException(
+        'Password reset is temporarily unavailable. Please contact support.',
+      );
+    }
+
     const dbUser = await this.prisma.users.findUnique({ where: { email } });
     if (!dbUser) {
-      // Silent — do not reveal whether the email exists
-      this.logger.log(`Password reset requested for unknown email: ${email}`);
+      // Silent — do not reveal whether the email exists.
+      // Log only masked email to avoid PII in logs.
+      this.logger.log(
+        `Password reset requested for unknown email: ${maskEmail(email)}`,
+      );
       return;
     }
 
@@ -481,7 +499,7 @@ export class BetterAuthService implements IBetterAuthService {
     // TODO(production): send email with reset link containing the token.
     // SECURITY: Never log the raw token — it is a credential.
     this.logger.log(
-      `Password reset token generated for ${email} (expires ${expiresAt.toISOString()})`,
+      `Password reset token generated for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
     );
   }
 
@@ -826,4 +844,5 @@ export class BetterAuthService implements IBetterAuthService {
   signJwt(user: Pick<BaUser, 'id' | 'email'>): string {
     return this.jwtService.sign({ sub: user.id, email: user.email });
   }
+
 }

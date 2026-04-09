@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import {
   Controller,
   Get,
@@ -9,13 +10,18 @@ import {
   UseGuards,
   ParseUUIDPipe,
   Put,
+  Headers,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiHeader,
 } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import { RequirePermissions, GlobalRoles } from '../common/decorators';
 import {
   JwtAuthGuard,
@@ -211,23 +217,68 @@ export class RbacController {
   }
 }
 
-// ─── Bootstrap Controller (sin auth) ────────────────────────
+// ─── Bootstrap Controller ───────────────────────────────────
+// Requiere x-bootstrap-secret header que coincida con BOOTSTRAP_SECRET env var.
+// Si BOOTSTRAP_SECRET no está configurado, el endpoint retorna 403 (deshabilitado).
 
 @ApiTags('rbac-bootstrap')
 @Controller('admin/rbac')
 export class RbacBootstrapController {
-  constructor(private readonly rbacService: RbacService) {}
+  constructor(
+    private readonly rbacService: RbacService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('bootstrap-admin')
+  // Rate limit estricto: 1 request por minuto (protección contra race condition en deploy)
+  @Throttle({ default: { ttl: 60000, limit: 1 } })
   @ApiOperation({
     summary: 'Crear el primer super_admin (solo funciona si no existe ninguno)',
+    description:
+      'Requiere el header x-bootstrap-secret con el valor de BOOTSTRAP_SECRET. ' +
+      'Si BOOTSTRAP_SECRET no está configurado, el endpoint está deshabilitado.',
+  })
+  @ApiHeader({
+    name: 'x-bootstrap-secret',
+    description: 'Secret de bootstrap definido en BOOTSTRAP_SECRET (env var)',
+    required: true,
   })
   @ApiResponse({ status: 201, description: 'Primer super_admin creado' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Endpoint deshabilitado (BOOTSTRAP_SECRET no configurado) o secret inválido',
+  })
   @ApiResponse({
     status: 409,
     description: 'Ya existe un super_admin',
   })
-  async bootstrapAdmin(@Body() dto: BootstrapAdminDto) {
+  async bootstrapAdmin(
+    @Headers('x-bootstrap-secret') bootstrapSecret: string | undefined,
+    @Body() dto: BootstrapAdminDto,
+  ) {
+    const configuredSecret = this.configService.get<string>('BOOTSTRAP_SECRET');
+
+    if (!configuredSecret) {
+      throw new ForbiddenException(
+        'Bootstrap endpoint is disabled. Set BOOTSTRAP_SECRET to enable it.',
+      );
+    }
+
+    if (!bootstrapSecret) {
+      throw new ForbiddenException('Invalid bootstrap secret.');
+    }
+
+    const secretBuffer = Buffer.from(configuredSecret, 'utf8');
+    const providedBuffer = Buffer.from(bootstrapSecret, 'utf8');
+
+    if (
+      secretBuffer.length !== providedBuffer.length ||
+      !timingSafeEqual(secretBuffer, providedBuffer)
+    ) {
+      throw new ForbiddenException('Invalid bootstrap secret.');
+    }
+
     return this.rbacService.bootstrapAdmin(dto.user_id);
   }
 }

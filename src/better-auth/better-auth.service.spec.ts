@@ -1,6 +1,7 @@
 import {
   ConflictException,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -275,7 +276,7 @@ describe('BetterAuthService', () => {
           data: expect.objectContaining({
             email: 'test@example.com',
             name: 'Test User',
-            email_verified: true,
+            email_verified: false,
           }),
         }),
       );
@@ -529,6 +530,14 @@ describe('BetterAuthService', () => {
   // ---------------------------------------------------------------------------
 
   describe('resetPasswordForEmail', () => {
+    beforeEach(() => {
+      process.env.EMAIL_ENABLED = 'true';
+    });
+
+    afterEach(() => {
+      delete process.env.EMAIL_ENABLED;
+    });
+
     it('should create a verification token when email exists', async () => {
       const { svc } = buildService();
 
@@ -558,6 +567,17 @@ describe('BetterAuthService', () => {
       await expect(
         svc.resetPasswordForEmail('unknown@example.com'),
       ).resolves.toBeUndefined();
+
+      expect(mockVerificationCreate).not.toHaveBeenCalled();
+    });
+
+    it('should throw ServiceUnavailableException when EMAIL_ENABLED is not set', async () => {
+      delete process.env.EMAIL_ENABLED;
+      const { svc } = buildService();
+
+      await expect(
+        svc.resetPasswordForEmail('test@example.com'),
+      ).rejects.toThrow(ServiceUnavailableException);
 
       expect(mockVerificationCreate).not.toHaveBeenCalled();
     });

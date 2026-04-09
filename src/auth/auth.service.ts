@@ -4,7 +4,7 @@ import {
   BadRequestException,
   UnauthorizedException,
   InternalServerErrorException,
-  NotImplementedException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
@@ -17,6 +17,7 @@ import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { buildAuthTokenResponse } from './utils/auth-token-response.util';
+import { maskEmail } from '../common/utils/mask-email.util';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import {
@@ -178,7 +179,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const maskedEmail = this.maskEmail(dto.email);
+    const maskedEmail = maskEmail(dto.email);
 
     // 1. Authenticate with Better Auth
     let baResult: Awaited<
@@ -483,6 +484,11 @@ export class AuthService {
     try {
       await this.betterAuthService.resetPasswordForEmail(dto.email, redirectTo);
     } catch (error) {
+      // ServiceUnavailableException means email transport is disabled — propagate as-is
+      // so the HTTP layer returns 503 with the original message.
+      if (error instanceof ServiceUnavailableException) {
+        throw error;
+      }
       this.logger.error(
         `Password reset request error: ${error instanceof Error ? error.message : String(error)}`,
         error,
@@ -490,7 +496,9 @@ export class AuthService {
       throw new BadRequestException('Error al solicitar recuperación');
     }
 
-    this.logger.log(`Password reset requested for: ${dto.email}`);
+    this.logger.log(
+      `Password reset requested for: ${maskEmail(dto.email)}`,
+    );
 
     return {
       success: true,
@@ -499,27 +507,18 @@ export class AuthService {
   }
 
   /**
-   * Updates the password for an authenticated user.
+   * Updates the password for the currently authenticated user (self-service).
    *
-   * DESIGN LIMITATION: Better Auth's base API does NOT support admin password
-   * update by userId without the `admin` plugin. `BetterAuthService.updatePasswordById`
-   * throws NotImplementedException until the admin plugin is added to better-auth.config.ts.
+   * Delegates to BetterAuthService.updatePasswordById() which writes directly
+   * to the `account` table — no Better Auth admin plugin required.
    *
-   * The endpoint POST /auth/update-password (protected by JwtAuthGuard) currently has
-   * no viable implementation path without one of:
-   *   a) Adding the BA admin plugin: `auth.api.setUserPassword({ body: { userId, password } })`
-   *   b) Requiring the user to supply their current password + session token (changePassword flow)
-   *   c) Re-routing to resetPasswordForEmail (email-based flow — different UX contract)
-   *
-   * Until the admin plugin is added, this method throws NotImplementedException.
-   * Track as blocker: add `admin()` to better-auth.config.ts plugins array.
+   * For admin-scoped password updates (setting another user's password without
+   * their current password), see AdminAuthService.setUserPassword() and
+   * POST /api/v1/admin/users/:userId/password.
    */
-  async updatePassword(_userId: string, _newPassword: string): Promise<void> {
-    throw new NotImplementedException(
-      'updatePassword requires the BA admin plugin. ' +
-        'Add admin() to better-auth.config.ts and call ' +
-        'betterAuthService.updatePasswordById() after the plugin is configured.',
-    );
+  async updatePassword(userId: string, newPassword: string): Promise<void> {
+    await this.betterAuthService.updatePasswordById(userId, newPassword);
+    this.logger.log(`Self-service password updated for user: ${userId}`);
   }
 
   async getProfile(userId: string) {
@@ -701,7 +700,9 @@ export class AuthService {
       }),
     ]);
 
-    this.logger.log(`Email verified for: ${verification.identifier}`);
+    this.logger.log(
+      `Email verified for: ${maskEmail(verification.identifier)}`,
+    );
 
     return {
       success: true,
@@ -710,8 +711,18 @@ export class AuthService {
   }
 
   /**
-   * Creates a 24h verification token in the `verification` table and logs it.
-   * In production: replace logger.log with an email delivery call.
+   * Creates a 24h verification token in the `verification` table.
+   *
+   * SECURITY: The raw token is NEVER logged — it is a credential. Only masked email
+   * and expiry are logged. The NODE_ENV guard was removed: even in development, logging
+   * a raw token creates a credential-in-logs risk that outweighs any debugging benefit.
+   *
+   * EMAIL_ENABLED guard: if no email transport is configured the method logs a warning
+   * but does NOT throw — the caller (register, sendVerificationEmail) treats this as
+   * fire-and-forget. Token is still persisted so it can be delivered once transport
+   * is enabled.
+   *
+   * TODO(production): replace the log statement with an actual email delivery call.
    */
   private async createAndLogVerificationToken(email: string): Promise<void> {
     const token = randomBytes(32).toString('base64url');
@@ -726,13 +737,18 @@ export class AuthService {
       },
     });
 
-    // TODO(production): replace this block with an actual email delivery call.
-    // Raw token is only logged in development — never in production.
-    if (process.env.NODE_ENV === 'development') {
-      this.logger.debug(
-        `[DEV] Email verification token for ${email} (expires ${expiresAt.toISOString()}): ${token}`,
+    if (process.env.EMAIL_ENABLED !== 'true') {
+      this.logger.warn(
+        `[EMAIL_DISABLED] Verification token created for ${maskEmail(email)} but EMAIL_ENABLED is not set — email not sent.`,
       );
+      return;
     }
+
+    // TODO(production): send verification email with link containing the token.
+    // SECURITY: Never log the raw token — it is a credential.
+    this.logger.log(
+      `Verification email queued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
+    );
   }
 
   private normalizeToken(token?: string | null): string | undefined {
@@ -766,14 +782,4 @@ export class AuthService {
     return process.env.AUTH_REJECT_SNAKE_CASE?.toLowerCase() !== 'false';
   }
 
-  private maskEmail(email?: string | null): string {
-    if (!email) return 'unknown';
-
-    const [localPart, domain] = email.split('@');
-    if (!localPart || !domain) return '***';
-
-    const visibleLocal =
-      localPart.length <= 2 ? (localPart[0] ?? '*') : localPart.slice(0, 2);
-    return `${visibleLocal}***@${domain}`;
-  }
 }

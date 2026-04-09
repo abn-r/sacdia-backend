@@ -43,6 +43,7 @@ async function bootstrap() {
       'authorization',
       'x-session-token',
       'x-refresh-token',
+      'x-bootstrap-secret',
     ]);
     const SENSITIVE_BODY_FIELDS = new Set([
       'password',

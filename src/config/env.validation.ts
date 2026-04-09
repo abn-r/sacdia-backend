@@ -88,4 +88,8 @@ export const envValidationSchema = Joi.object({
 
   // Sentry
   SENTRY_DSN: Joi.string().uri().allow('').optional(),
+
+  // Bootstrap admin (one-time setup secret)
+  // If not set, POST /api/v1/admin/rbac/bootstrap-admin returns 403 (disabled).
+  BOOTSTRAP_SECRET: Joi.string().trim().min(32).optional(),
 });

@@ -6,6 +6,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   NotImplementedException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -561,6 +562,16 @@ describe('AuthService', () => {
       await expect(
         service.requestPasswordReset({ email: 'juan.garcia@example.com' }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should propagate ServiceUnavailableException from BA as-is (503)', async () => {
+      mockBetterAuthService.resetPasswordForEmail.mockRejectedValue(
+        new ServiceUnavailableException('Password reset is temporarily unavailable'),
+      );
+
+      await expect(
+        service.requestPasswordReset({ email: 'juan.garcia@example.com' }),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
   });
 
