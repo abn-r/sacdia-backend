@@ -7,6 +7,7 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -15,6 +16,8 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { MfaGuard } from '../common/guards/mfa.guard';
+import { SkipMfaCheck } from '../common/decorators/skip-mfa-check.decorator';
 import { MfaService } from '../common/services/mfa.service';
 import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
 
@@ -23,9 +26,17 @@ import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
  *
  * ## Authentication
  *
- * All endpoints are protected by JwtAuthGuard.  The user's UUID (`userId`) is
- * extracted from the SACDIA HS256 JWT payload (`sub` field) — no separate
- * session token is required.
+ * All endpoints are protected by JwtAuthGuard + MfaGuard.
+ * The user's UUID (`userId`) is extracted from the SACDIA HS256 JWT payload
+ * (`sub` field) — no separate session token is required.
+ *
+ * ## MFA enforcement
+ *
+ * POST /auth/mfa/verify is decorated with @SkipMfaCheck() so it is reachable
+ * with an aal1 token (mfa_pending: true). All other endpoints require a full
+ * aal2 token (mfa_pending absent or false). This prevents a user from
+ * enrolling or disabling MFA without having first completed the second factor
+ * in the current session.
  *
  * ## Storage
  *
@@ -39,7 +50,7 @@ import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
  */
 @ApiTags('auth')
 @Controller('auth/mfa')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, MfaGuard)
 @ApiBearerAuth()
 export class MfaController {
   constructor(private readonly mfaService: MfaService) {}
@@ -93,11 +104,18 @@ export class MfaController {
   // ---------------------------------------------------------------------------
 
   @Post('verify')
+  // SkipMfaCheck: this is the endpoint that CLEARS mfa_pending.
+  // It must be reachable with an aal1 token (mfa_pending: true).
+  @SkipMfaCheck()
+  // Strict rate limit: 5 attempts per minute — TOTP is 6-digit so brute force is feasible
+  // without this guard. Allows for reasonable typos while blocking automated attacks.
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({
     summary: 'Verificar código TOTP',
     description:
       'Verifica un código de 6 dígitos de la app de autenticación. ' +
-      'Retorna { verified: true } si el código es válido. ' +
+      'Si el código es válido, retorna un nuevo `accessToken` aal2 (sin mfa_pending) ' +
+      'que el cliente debe usar en lugar del token original. ' +
       'Falla con 401 si TOTP no está enrolado.',
   })
   @ApiResponse({
@@ -106,6 +124,13 @@ export class MfaController {
     schema: {
       properties: {
         verified: { type: 'boolean', example: true },
+        accessToken: {
+          type: 'string',
+          description:
+            'Nuevo JWT aal2 emitido tras verificación exitosa. ' +
+            'Reemplaza el token aal1 (mfa_pending) original. ' +
+            'Ausente cuando verified es false.',
+        },
       },
     },
   })
@@ -115,7 +140,8 @@ export class MfaController {
   })
   async verifyMfa(@Req() req: Request, @Body() dto: VerifyMfaDto) {
     const userId = (req.user as any).userId as string;
-    return this.mfaService.verifyMfa(userId, dto.code);
+    const email = (req.user as any).email as string;
+    return this.mfaService.verifyMfa(userId, email, dto.code);
   }
 
   // ---------------------------------------------------------------------------
@@ -155,6 +181,8 @@ export class MfaController {
   // ---------------------------------------------------------------------------
 
   @Get('status')
+  // Status check is safe to expose with an aal1 token — no sensitive action is taken.
+  @SkipMfaCheck()
   @ApiOperation({
     summary: 'Estado de 2FA',
     description:

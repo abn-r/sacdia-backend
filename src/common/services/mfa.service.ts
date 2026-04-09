@@ -69,18 +69,25 @@ export class MfaService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Verify a TOTP code.
-   * Used both to confirm enrollment and to satisfy an MFA step during login.
+   * Verify a TOTP code and, on success, issue a full aal2 JWT.
    *
-   * @param userId - User's UUID from the SACDIA JWT.
+   * This endpoint is intended to be called after a password-only login when the
+   * user has MFA enrolled. The caller provides the aal1 token (mfa_pending: true)
+   * in the Authorization header and a 6-digit TOTP code in the body. On success
+   * a new JWT without `mfa_pending` is returned, granting full aal2 access.
+   *
+   * @param userId - User's UUID from the SACDIA JWT (populated by JwtAuthGuard).
+   * @param email  - User's email from the SACDIA JWT (needed to re-sign).
    * @param code   - 6-digit TOTP code from the authenticator app.
-   * @returns `{ verified: true }` on success; `{ verified: false }` on invalid code.
+   * @returns `{ verified: true, accessToken }` on success;
+   *          `{ verified: false }` on invalid TOTP code.
    * @throws UnauthorizedException when TOTP is not enrolled.
    */
   async verifyMfa(
     userId: string,
+    email: string,
     code: string,
-  ): Promise<{ verified: boolean }> {
+  ): Promise<{ verified: boolean; accessToken?: string }> {
     const { enabled } = await this.betterAuthService.hasTotpEnabled(userId);
     if (!enabled) {
       throw new UnauthorizedException(
@@ -90,7 +97,22 @@ export class MfaService {
 
     const result = await this.betterAuthService.verifyTotp(userId, code);
     this.logger.log(`TOTP verification for user ${userId}: ${result.verified}`);
-    return result;
+
+    if (!result.verified) {
+      return { verified: false };
+    }
+
+    // Issue a full aal2 JWT (no mfa_pending flag) to replace the aal1 token.
+    const accessToken = this.betterAuthService.signJwt(
+      { id: userId, email },
+      false,
+    );
+
+    this.logger.log(
+      `MFA verification complete (aal2 token issued) for user: ${userId}`,
+    );
+
+    return { verified: true, accessToken };
   }
 
   // ---------------------------------------------------------------------------

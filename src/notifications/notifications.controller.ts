@@ -13,6 +13,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   BadRequestException,
+  ParseEnumPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
@@ -32,6 +33,12 @@ import {
   PermissionsGuard,
 } from '../common/guards';
 import { NOTIFICATION_CATEGORIES } from './notification-categories.constants';
+
+enum ClubInstanceType {
+  adventurers = 'adventurers',
+  pathfinders = 'pathfinders',
+  master_guilds = 'master_guilds',
+}
 
 // DTOs
 class UpdatePreferenceDto {
@@ -122,8 +129,8 @@ export class NotificationsController {
   @RequirePermissions('notifications:club')
   @ApiOperation({ summary: 'Send notification to club members' })
   async sendToClub(
-    @Param('instanceType')
-    instanceType: 'adventurers' | 'pathfinders' | 'master_guilds',
+    @Param('instanceType', new ParseEnumPipe(ClubInstanceType))
+    instanceType: ClubInstanceType,
     @Param('instanceId', ParseIntPipe) instanceId: number,
     @Body() dto: BroadcastNotificationDto,
     @Request() req,
@@ -136,11 +143,19 @@ export class NotificationsController {
     );
   }
 
+  // TODO [SECURITY M-2]: Admin notification history shows ALL logs regardless of
+  // the admin's territory/scope. A local field admin can currently see notification
+  // logs for all users across all clubs and fields.
+  // Fix: retrieve the caller's authorization context (local_field_id or union_id)
+  // via AuthorizationContextService and pass it to getNotificationHistory so the
+  // service can filter notification_logs by the scoped territory. Only super_admin
+  // should receive unfiltered results. This requires extending both the service
+  // query and the AuthorizationContextService to expose scope information.
   @Get('history')
   @ApiOperation({
     summary: 'Get paginated notification history',
     description:
-      'Admins (admin|super_admin) see all logs. Regular users see only their own notifications (target_type=user).',
+      'Admins (admin|super_admin) see all logs. Regular users see only their own notifications (target_type=user). NOTE: admin scope restriction by territory is pending implementation.',
   })
   async getHistory(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,

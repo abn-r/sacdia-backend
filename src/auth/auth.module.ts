@@ -9,6 +9,7 @@ import { OAuthService } from './oauth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { MfaController } from './mfa.controller';
+import { MfaGuard } from '../common/guards/mfa.guard';
 import { SessionsController } from './sessions.controller';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 
@@ -42,6 +43,7 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
     OAuthService,
     JwtStrategy,
     AuthorizationContextService,
+    MfaGuard,
   ],
   exports: [
     AuthService,
@@ -49,6 +51,7 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
     JwtStrategy,
     PassportModule,
     AuthorizationContextService,
+    MfaGuard,
   ],
 })
 export class AuthModule {}

@@ -8,7 +8,7 @@ import sanitizeHtml from 'sanitize-html';
 @Injectable()
 export class SanitizePipe implements PipeTransform {
   transform(value: any, metadata: ArgumentMetadata) {
-    if (metadata.type !== 'body' && metadata.type !== 'query') {
+    if (!['body', 'query', 'param'].includes(metadata.type)) {
       return value;
     }
 

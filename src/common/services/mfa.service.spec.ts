@@ -16,12 +16,14 @@ describe('MfaService', () => {
   const mockVerifyTotp = jest.fn();
   const mockDisableTotp = jest.fn();
   const mockHasTotpEnabled = jest.fn();
+  const mockSignJwt = jest.fn().mockReturnValue('mock-aal2-token');
 
   const mockBetterAuthService = {
     enrollTotp: mockEnrollTotp,
     verifyTotp: mockVerifyTotp,
     disableTotp: mockDisableTotp,
     hasTotpEnabled: mockHasTotpEnabled,
+    signJwt: mockSignJwt,
   };
 
   beforeEach(() => {
@@ -69,21 +71,25 @@ describe('MfaService', () => {
   // ---------------------------------------------------------------------------
 
   describe('verifyMfa', () => {
-    it('should return { verified: true } when code is valid', async () => {
+    it('should return { verified: true, accessToken } when code is valid', async () => {
       mockHasTotpEnabled.mockResolvedValue({ enabled: true });
       mockVerifyTotp.mockResolvedValue({ verified: true });
 
-      const result = await service.verifyMfa(USER_ID, '123456');
+      const result = await service.verifyMfa(USER_ID, 'user@example.com', '123456');
 
-      expect(result).toEqual({ verified: true });
+      expect(result).toEqual({ verified: true, accessToken: 'mock-aal2-token' });
       expect(mockVerifyTotp).toHaveBeenCalledWith(USER_ID, '123456');
+      expect(mockSignJwt).toHaveBeenCalledWith(
+        { id: USER_ID, email: 'user@example.com' },
+        false,
+      );
     });
 
     it('should return { verified: false } when code is invalid', async () => {
       mockHasTotpEnabled.mockResolvedValue({ enabled: true });
       mockVerifyTotp.mockResolvedValue({ verified: false });
 
-      const result = await service.verifyMfa(USER_ID, '000000');
+      const result = await service.verifyMfa(USER_ID, 'user@example.com', '000000');
 
       expect(result).toEqual({ verified: false });
     });
@@ -91,9 +97,9 @@ describe('MfaService', () => {
     it('should throw UnauthorizedException when TOTP is not enrolled', async () => {
       mockHasTotpEnabled.mockResolvedValue({ enabled: false });
 
-      await expect(service.verifyMfa(USER_ID, '123456')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.verifyMfa(USER_ID, 'user@example.com', '123456'),
+      ).rejects.toThrow(UnauthorizedException);
       expect(mockVerifyTotp).not.toHaveBeenCalled();
     });
   });

@@ -4,6 +4,7 @@ import { AuthorizationContextService } from './services/authorization-context.se
 import { TokenBlacklistService } from './services/token-blacklist.service';
 import { SessionManagementService } from './services/session-management.service';
 import { MfaService } from './services/mfa.service';
+import { CleanupService } from './services/cleanup.service';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { R2FileStorageService } from './services/r2-file-storage.service';
 import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
@@ -86,6 +87,10 @@ function isPlaceholderRedisUrl(value: string): boolean {
     // INFRAESTRUCTURA DISTRIBUIDA
     // ==========================================
     DistributedLockService,
+    // ==========================================
+    // MANTENIMIENTO - Limpieza de registros expirados
+    // ==========================================
+    CleanupService,
   ],
   exports: [
     CacheModule,

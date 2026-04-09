@@ -149,6 +149,12 @@ async function bootstrap() {
               fontSrc: ["'self'"],
             },
           },
+      // crossOriginEmbedderPolicy disabled intentionally: the mobile app and admin panel
+      // load assets (profile pictures, evidence files, PDF resources) from Cloudflare R2
+      // and other cross-origin CDN sources. COEP requires all cross-origin resources to
+      // opt in via CORP/COEP headers, which third-party storage buckets do not set by
+      // default. Enabling this would break image rendering across the entire application.
+      // Re-evaluate if all CDN/storage resources are brought under the same origin.
       crossOriginEmbedderPolicy: false,
       hsts: isDevelopment
         ? false

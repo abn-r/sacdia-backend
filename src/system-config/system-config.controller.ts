@@ -1,4 +1,12 @@
-import { Controller, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Body,
+  UseGuards,
+  BadRequestException,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,6 +17,7 @@ import {
 import { SystemConfigService } from './system-config.service';
 import { GlobalRoles } from '../common/decorators';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
+import { UpdateSystemConfigDto } from './dto/update-system-config.dto';
 
 @ApiTags('system-config')
 @Controller('system-config')
@@ -73,14 +82,20 @@ export class SystemConfigController {
   @ApiParam({
     name: 'key',
     type: String,
-    description: 'Clave de configuracion',
+    description: 'Clave de configuracion (max 100 caracteres)',
   })
   @ApiResponse({ status: 200, description: 'Configuracion actualizada' })
+  @ApiResponse({ status: 400, description: 'Clave o valor invalido' })
   @ApiResponse({ status: 404, description: 'Configuracion no encontrada' })
   async updateByKey(
     @Param('key') key: string,
-    @Body() body: { config_value: string },
+    @Body() dto: UpdateSystemConfigDto,
   ) {
-    return this.systemConfigService.updateByKey(key, body.config_value);
+    if (!key || key.length > 100) {
+      throw new BadRequestException(
+        'config_key must be a non-empty string with a maximum length of 100 characters',
+      );
+    }
+    return this.systemConfigService.updateByKey(key, dto.config_value);
   }
 }

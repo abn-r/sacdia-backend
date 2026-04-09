@@ -101,7 +101,7 @@ export interface IBetterAuthService {
   ): Promise<BaAuthResult>;
 
   // -- JWT (Option C core — IMPLEMENTED) ------------------------------------
-  signJwt(user: Pick<BaUser, 'id' | 'email'>): string;
+  signJwt(user: Pick<BaUser, 'id' | 'email'>, mfaPending?: boolean): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,12 +303,25 @@ export class BetterAuthService implements IBetterAuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // 4. Create session + sign JWT
+    // 4. Check MFA enrollment — if TOTP is active, issue a restricted token
+    //    with mfa_pending: true. The client must call POST /auth/mfa/verify to
+    //    obtain a full aal2 token. MfaGuard blocks protected endpoints while
+    //    mfa_pending is true.
+    const { enabled: mfaEnabled } = await this.hasTotpEnabled(dbUser.user_id);
+
+    // 5. Create session + sign JWT
     const session = await this.createSession(dbUser.user_id);
     const user = mapDbUserToBaUser(dbUser);
-    const accessToken = this.signJwt(user);
+    const accessToken = this.signJwt(user, mfaEnabled);
 
-    this.logger.log(`User signed in: ${user.id}`);
+    if (mfaEnabled) {
+      this.logger.log(
+        `User signed in with MFA pending (aal1): ${user.id} — TOTP verification required`,
+      );
+    } else {
+      this.logger.log(`User signed in: ${user.id}`);
+    }
+
     return { user, session, accessToken };
   }
 
@@ -837,12 +850,26 @@ export class BetterAuthService implements IBetterAuthService {
   /**
    * Signs a SACDIA HS256 JWT for API consumers.
    *
-   * Payload: { sub: user.id, email: user.email }
+   * Payload: { sub: user.id, email: user.email, [mfa_pending] }
    * Algorithm: HS256 (via BETTER_AUTH_SECRET in JwtModule config)
-   * Expiry: 1h (configured in BetterAuthModule JwtModule.registerAsync)
+   * Expiry: 8h (configured in BetterAuthModule JwtModule.registerAsync)
+   *
+   * @param user        - User identity fields to embed in the JWT.
+   * @param mfaPending  - When `true`, the token carries `mfa_pending: true`,
+   *                      indicating the second factor (TOTP) has not been
+   *                      verified yet. Protected endpoints should reject these
+   *                      tokens via MfaGuard until the user calls
+   *                      POST /auth/mfa/verify successfully.
    */
-  signJwt(user: Pick<BaUser, 'id' | 'email'>): string {
-    return this.jwtService.sign({ sub: user.id, email: user.email });
+  signJwt(user: Pick<BaUser, 'id' | 'email'>, mfaPending = false): string {
+    const payload: Record<string, unknown> = {
+      sub: user.id,
+      email: user.email,
+    };
+    if (mfaPending) {
+      payload['mfa_pending'] = true;
+    }
+    return this.jwtService.sign(payload);
   }
 
 }

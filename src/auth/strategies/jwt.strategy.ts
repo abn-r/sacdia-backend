@@ -8,6 +8,12 @@ import { TokenBlacklistService } from '../../common/services/token-blacklist.ser
 export interface JwtPayload {
   sub: string; // user_id
   email: string;
+  /**
+   * Present and `true` when the user has TOTP enrolled but has not yet completed
+   * the second factor after password login. Endpoints that require full auth
+   * (aal2) should be blocked until this is cleared by POST /auth/mfa/verify.
+   */
+  mfa_pending?: boolean;
   iat?: number;
   exp?: number;
 }
@@ -66,6 +72,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: payload.sub,
       user_id: payload.sub,
       email: payload.email,
+      mfa_pending: payload.mfa_pending ?? false,
     };
   }
 

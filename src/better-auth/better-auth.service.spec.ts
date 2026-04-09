@@ -27,6 +27,7 @@ describe('BetterAuthService', () => {
   const mockSessionDeleteMany = jest.fn();
   const mockSessionUpdate = jest.fn();
   const mockVerificationCreate = jest.fn();
+  const mockVerificationFindFirst = jest.fn();
   const mockQueryRaw = jest.fn();
 
   const mockPrisma = {
@@ -47,6 +48,7 @@ describe('BetterAuthService', () => {
     },
     verification: {
       create: mockVerificationCreate,
+      findFirst: mockVerificationFindFirst,
     },
     $queryRaw: mockQueryRaw,
   };
@@ -91,6 +93,8 @@ describe('BetterAuthService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: no TOTP enrolled — hasTotpEnabled returns null → mfa_pending: false
+    mockVerificationFindFirst.mockResolvedValue(null);
   });
 
   // ---------------------------------------------------------------------------

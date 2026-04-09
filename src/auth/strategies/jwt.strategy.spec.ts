@@ -49,6 +49,7 @@ describe('JwtStrategy', () => {
       userId: 'user-123',
       user_id: 'user-123',
       email: 'user@example.com',
+      mfa_pending: false,
     });
   });
 
