@@ -153,9 +153,18 @@ export class ClubsService {
 
   async getSections(clubId: number) {
     await this.findOne(clubId);
+    // Intentionally limited select: this endpoint is called without
+    // club_sections:read permission to support the post-registration flow.
+    // Only expose fields needed to identify and select a section — operational
+    // details (fee, souls_target, meeting_day/time, contact info) are omitted.
     return this.prisma.club_sections.findMany({
       where: { main_club_id: clubId },
-      include: { club_types: { select: { name: true } } },
+      select: {
+        club_section_id: true,
+        active: true,
+        name: true,
+        club_types: { select: { club_type_id: true, name: true } },
+      },
       orderBy: { club_section_id: 'asc' },
     });
   }

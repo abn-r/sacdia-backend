@@ -56,7 +56,7 @@ export class ClubsController {
   @ApiOperation({
     summary: 'Listar clubs',
     description:
-      'Obtiene la lista de clubs con filtros opcionales y paginación. No requiere permiso clubs:read para permitir selección de club durante post-registro.',
+      'Obtiene la lista de clubs con filtros opcionales y paginación. No requiere permiso clubs:read — diseñado para permitir la selección de club durante el post-registro. Solo devuelve campos de identificación del club y un resumen mínimo de secciones (id, tipo, estado activo); no se exponen datos operacionales de las secciones.',
   })
   @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'districtId', required: false, type: Number })
@@ -159,10 +159,10 @@ export class ClubsController {
   @ApiOperation({
     summary: 'Obtener secciones del club',
     description:
-      'Lista todas las secciones (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read para permitir selección de sección durante post-registro.',
+      'Lista las secciones del club (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read — diseñado para permitir la selección de sección durante el post-registro. La respuesta es intencionalmente limitada a campos de identificación (id, nombre, tipo); los detalles operacionales (cuota, cupo, horarios, contacto) se omiten para reducir la superficie de exposición.',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 200, description: 'Secciones del club' })
+  @ApiResponse({ status: 200, description: 'Secciones del club (campos de identificación)' })
   async getSections(@Param('clubId', ParseIntPipe) clubId: number) {
     return this.clubsService.getSections(clubId);
   }
