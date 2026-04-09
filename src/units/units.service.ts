@@ -12,15 +12,27 @@ import {
   CreateWeeklyRecordDto,
   UpdateWeeklyRecordDto,
 } from './dto';
+import { ScoringCategoriesService } from '../scoring-categories/scoring-categories.service';
 
 @Injectable()
 export class UnitsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly scoringCategoriesService: ScoringCategoriesService,
+  ) {}
 
   private readonly unitInclude = {
     club_types: { select: { club_type_id: true, name: true } },
     club_sections: {
-      select: { club_section_id: true, main_club_id: true },
+      select: {
+        club_section_id: true,
+        main_club_id: true,
+        clubs: {
+          select: {
+            local_field_id: true,
+          },
+        },
+      },
     },
     users_units_captain_idTousers: {
       select: {
@@ -203,7 +215,7 @@ export class UnitsService {
   // ========================================
 
   async addMember(unitId: number, dto: AddUnitMemberDto) {
-    await this.findOne(unitId);
+    const unit = await this.findOne(unitId);
 
     const userExists = await this.prisma.users.findUnique({
       where: { user_id: dto.user_id },
@@ -214,19 +226,40 @@ export class UnitsService {
       throw new NotFoundException(`User with ID ${dto.user_id} not found`);
     }
 
-    const existing = await this.prisma.unit_members.findUnique({
-      where: { user_id: dto.user_id },
+    // Service-layer validation: user can only be in ONE active unit per club_section
+    if (unit.club_section_id) {
+      const conflictingMembership = await this.prisma.unit_members.findFirst({
+        where: {
+          user_id: dto.user_id,
+          active: true,
+          units: {
+            club_section_id: unit.club_section_id,
+            active: true,
+          },
+        },
+      });
+
+      if (conflictingMembership) {
+        throw new ConflictException(
+          'El miembro ya pertenece a una unidad activa en esta sección.',
+        );
+      }
+    }
+
+    // Check if there's a previous membership in THIS unit (possibly inactive)
+    const existingInThisUnit = await this.prisma.unit_members.findFirst({
+      where: { unit_id: unitId, user_id: dto.user_id },
     });
 
-    if (existing) {
-      if (existing.active) {
+    if (existingInThisUnit) {
+      if (existingInThisUnit.active) {
         throw new ConflictException(
-          `User ${dto.user_id} is already a member of a unit`,
+          `User ${dto.user_id} is already an active member of unit ${unitId}`,
         );
       }
 
       return this.prisma.unit_members.update({
-        where: { user_id: dto.user_id },
+        where: { unit_member_id: existingInThisUnit.unit_member_id },
         data: {
           unit_id: unitId,
           active: true,
@@ -294,6 +327,17 @@ export class UnitsService {
             user_image: true,
           },
         },
+        weekly_record_scores: {
+          include: {
+            scoring_category: {
+              select: {
+                scoring_category_id: true,
+                name: true,
+                max_points: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ week: 'asc' }, { user_id: 'asc' }],
     });
@@ -322,27 +366,92 @@ export class UnitsService {
       );
     }
 
-    return this.prisma.weekly_records.create({
-      data: {
-        user_id: dto.user_id,
-        week: dto.week,
-        attendance: dto.attendance,
-        punctuality: dto.punctuality,
-        points: dto.points,
-        active: true,
-        created_at: new Date(),
-        modified_at: new Date(),
-      },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            user_image: true,
+    // Validate and resolve scores if provided
+    let calculatedPoints = 0;
+    const validatedScores: { category_id: number; points: number }[] = [];
+
+    if (dto.scores && dto.scores.length > 0) {
+      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const availableCategories =
+        localFieldId !== null
+          ? await this.scoringCategoriesService.getActiveCategiesForLocalField(
+              localFieldId,
+            )
+          : [];
+
+      const categoryMap = new Map(
+        availableCategories.map((c) => [c.scoring_category_id, c]),
+      );
+
+      for (const scoreEntry of dto.scores) {
+        const category = categoryMap.get(scoreEntry.category_id);
+        if (!category) {
+          throw new BadRequestException(
+            `Category ${scoreEntry.category_id} is not active or not available for this club's local field`,
+          );
+        }
+        if (scoreEntry.points > category.max_points) {
+          throw new BadRequestException(
+            `Points ${scoreEntry.points} exceeds max_points ${category.max_points} for category "${category.name}"`,
+          );
+        }
+        calculatedPoints += scoreEntry.points;
+        validatedScores.push({
+          category_id: scoreEntry.category_id,
+          points: scoreEntry.points,
+        });
+      }
+    }
+
+    // Use transaction for atomic create
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.weekly_records.create({
+        data: {
+          user_id: dto.user_id,
+          week: dto.week,
+          attendance: dto.attendance ?? 0,
+          punctuality: dto.punctuality ?? 0,
+          points: calculatedPoints,
+          active: true,
+          created_at: new Date(),
+          modified_at: new Date(),
+        },
+      });
+
+      if (validatedScores.length > 0) {
+        await tx.weekly_record_scores.createMany({
+          data: validatedScores.map((s) => ({
+            record_id: record.record_id,
+            category_id: s.category_id,
+            points: s.points,
+          })),
+        });
+      }
+
+      return tx.weekly_records.findUnique({
+        where: { record_id: record.record_id },
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              user_image: true,
+            },
+          },
+          weekly_record_scores: {
+            include: {
+              scoring_category: {
+                select: {
+                  scoring_category_id: true,
+                  name: true,
+                  max_points: true,
+                },
+              },
+            },
           },
         },
-      },
+      });
     });
   }
 
@@ -351,7 +460,7 @@ export class UnitsService {
     recordId: number,
     dto: UpdateWeeklyRecordDto,
   ) {
-    await this.findOne(unitId);
+    const unit = await this.findOne(unitId);
 
     const record = await this.prisma.weekly_records.findFirst({
       where: { record_id: recordId },
@@ -363,26 +472,119 @@ export class UnitsService {
       );
     }
 
-    const updateData: any = { modified_at: new Date() };
+    // Validate and process scores if provided
+    let newCalculatedPoints: number | undefined;
+    const validatedScores: { category_id: number; points: number }[] = [];
 
-    if (dto.attendance !== undefined) updateData.attendance = dto.attendance;
-    if (dto.punctuality !== undefined) updateData.punctuality = dto.punctuality;
-    if (dto.points !== undefined) updateData.points = dto.points;
-    if (dto.active !== undefined) updateData.active = dto.active;
+    if (dto.scores && dto.scores.length > 0) {
+      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const availableCategories =
+        localFieldId !== null
+          ? await this.scoringCategoriesService.getActiveCategiesForLocalField(
+              localFieldId,
+            )
+          : [];
 
-    return this.prisma.weekly_records.update({
-      where: { record_id: recordId },
-      data: updateData,
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            user_image: true,
+      const categoryMap = new Map(
+        availableCategories.map((c) => [c.scoring_category_id, c]),
+      );
+
+      for (const scoreEntry of dto.scores) {
+        const category = categoryMap.get(scoreEntry.category_id);
+        if (!category) {
+          throw new BadRequestException(
+            `Category ${scoreEntry.category_id} is not active or not available for this club's local field`,
+          );
+        }
+        if (scoreEntry.points > category.max_points) {
+          throw new BadRequestException(
+            `Points ${scoreEntry.points} exceeds max_points ${category.max_points} for category "${category.name}"`,
+          );
+        }
+        validatedScores.push({
+          category_id: scoreEntry.category_id,
+          points: scoreEntry.points,
+        });
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Upsert each score entry
+      for (const scoreEntry of validatedScores) {
+        await tx.weekly_record_scores.upsert({
+          where: {
+            record_id_category_id: {
+              record_id: recordId,
+              category_id: scoreEntry.category_id,
+            },
+          },
+          update: { points: scoreEntry.points },
+          create: {
+            record_id: recordId,
+            category_id: scoreEntry.category_id,
+            points: scoreEntry.points,
+          },
+        });
+      }
+
+      // Recalculate total points if scores changed
+      if (validatedScores.length > 0) {
+        const allScores = await tx.weekly_record_scores.findMany({
+          where: { record_id: recordId },
+          select: { points: true },
+        });
+        newCalculatedPoints = allScores.reduce((sum, s) => sum + s.points, 0);
+      }
+
+      const updateData: any = { modified_at: new Date() };
+      if (dto.attendance !== undefined) updateData.attendance = dto.attendance;
+      if (dto.punctuality !== undefined)
+        updateData.punctuality = dto.punctuality;
+      if (dto.active !== undefined) updateData.active = dto.active;
+      if (newCalculatedPoints !== undefined)
+        updateData.points = newCalculatedPoints;
+
+      return tx.weekly_records.update({
+        where: { record_id: recordId },
+        data: updateData,
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              user_image: true,
+            },
+          },
+          weekly_record_scores: {
+            include: {
+              scoring_category: {
+                select: {
+                  scoring_category_id: true,
+                  name: true,
+                  max_points: true,
+                },
+              },
+            },
           },
         },
-      },
+      });
     });
+  }
+
+  // ========================================
+  // Helpers
+  // ========================================
+
+  /**
+   * Resolves the local_field_id for a given unit by traversing:
+   * unit → club_section → clubs → local_field_id
+   */
+  private resolveLocalFieldForUnit(
+    unit: Awaited<ReturnType<typeof this.findOne>>,
+  ): number | null {
+    const localFieldId =
+      unit.club_sections?.clubs?.local_field_id ?? null;
+    return localFieldId;
   }
 }

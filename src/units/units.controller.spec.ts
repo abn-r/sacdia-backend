@@ -213,7 +213,7 @@ describe('UnitsController', () => {
 
   describe('updateWeeklyRecord', () => {
     it('should call service.updateWeeklyRecord with unitId, recordId and dto', async () => {
-      const dto = { points: 20 };
+      const dto = { attendance: 1 };
       const mockRecord = { record_id: 10, points: 20 };
       mockUnitsService.updateWeeklyRecord.mockResolvedValue(mockRecord);
 
