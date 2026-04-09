@@ -567,7 +567,16 @@ describe('UnitsService', () => {
 
       mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
       mockPrismaService.weekly_records.findFirst.mockResolvedValue(mockRecord);
-      mockPrismaService.weekly_records.update.mockResolvedValue(updated);
+      mockPrismaService.unit_members.findFirst.mockResolvedValue({
+        unit_member_id: 1,
+        unit_id: 1,
+        user_id: 'uuid-user-1',
+        active: true,
+      });
+      mockPrismaService.weekly_records.update.mockResolvedValue({
+        ...updated,
+        weekly_record_scores: [],
+      });
 
       const result = await service.updateWeeklyRecord(1, 10, { attendance: 1 });
 
