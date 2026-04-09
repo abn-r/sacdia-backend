@@ -1334,6 +1334,7 @@ model weekly_records {
   record_id            Int                    @id @default(autoincrement())
   user_id              String                 @db.Uuid
   week                 Int
+  year                 Int
   attendance           Int
   punctuality          Int
   points               Int
@@ -1343,7 +1344,7 @@ model weekly_records {
   users                users                  @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   weekly_record_scores weekly_record_scores[]
 
-  @@unique([user_id, week], map: "weekly_records_user_id_week_key")
+  @@unique([user_id, week, year], map: "weekly_records_user_id_week_year_key")
 }
 
 // ========================================

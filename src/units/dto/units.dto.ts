@@ -126,11 +126,19 @@ export class CreateWeeklyRecordDto {
   @Max(53)
   week: number;
 
+  @ApiProperty({ description: 'Año del registro (ej: 2026)' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(2020)
+  @Max(2100)
+  year: number;
+
   @ApiPropertyOptional({ description: 'Asistencia (0 o 1)' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100)
   attendance?: number;
 
   @ApiPropertyOptional({ description: 'Puntualidad (puntos legacy)' })
@@ -138,6 +146,7 @@ export class CreateWeeklyRecordDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100)
   punctuality?: number;
 
   @ApiPropertyOptional({
@@ -157,6 +166,7 @@ export class UpdateWeeklyRecordDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100)
   attendance?: number;
 
   @ApiPropertyOptional({ description: 'Puntualidad (puntos)' })
@@ -164,6 +174,7 @@ export class UpdateWeeklyRecordDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100)
   punctuality?: number;
 
   @ApiPropertyOptional({ description: 'Estado activo del registro' })
