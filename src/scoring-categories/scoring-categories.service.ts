@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
@@ -25,6 +26,8 @@ export interface CategoryWithReadonly {
 
 @Injectable()
 export class ScoringCategoriesService {
+  private readonly logger = new Logger(ScoringCategoriesService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   // ============================================================
@@ -44,8 +47,8 @@ export class ScoringCategoriesService {
     }));
   }
 
-  async createDivisionCategory(dto: CreateScoringCategoryDto) {
-    return this.prisma.scoring_categories.create({
+  async createDivisionCategory(dto: CreateScoringCategoryDto, userId?: string) {
+    const result = await this.prisma.scoring_categories.create({
       data: {
         name: dto.name,
         max_points: dto.max_points,
@@ -54,9 +57,17 @@ export class ScoringCategoriesService {
         active: true,
       },
     });
+    this.logger.log(
+      `Category created: "${dto.name}" at DIVISION level (origin_id: 0) by user ${userId ?? 'system'}`,
+    );
+    return result;
   }
 
-  async updateDivisionCategory(id: number, dto: UpdateScoringCategoryDto) {
+  async updateDivisionCategory(
+    id: number,
+    dto: UpdateScoringCategoryDto,
+    userId?: string,
+  ) {
     const category = await this.prisma.scoring_categories.findUnique({
       where: { scoring_category_id: id },
     });
@@ -66,12 +77,15 @@ export class ScoringCategoriesService {
     }
 
     if (category.origin_level !== 'DIVISION') {
+      this.logger.warn(
+        `Unauthorized attempt to modify category ${id} by user ${userId ?? 'system'}`,
+      );
       throw new ForbiddenException(
         'No puede modificar una categoría que no pertenece a este nivel',
       );
     }
 
-    return this.prisma.scoring_categories.update({
+    const result = await this.prisma.scoring_categories.update({
       where: { scoring_category_id: id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -79,9 +93,13 @@ export class ScoringCategoriesService {
         ...(dto.active !== undefined && { active: dto.active }),
       },
     });
+    this.logger.log(
+      `Category ${id} updated at DIVISION level by user ${userId ?? 'system'}`,
+    );
+    return result;
   }
 
-  async deleteDivisionCategory(id: number) {
+  async deleteDivisionCategory(id: number, userId?: string) {
     const category = await this.prisma.scoring_categories.findUnique({
       where: { scoring_category_id: id },
     });
@@ -91,15 +109,22 @@ export class ScoringCategoriesService {
     }
 
     if (category.origin_level !== 'DIVISION') {
+      this.logger.warn(
+        `Unauthorized attempt to modify category ${id} by user ${userId ?? 'system'}`,
+      );
       throw new ForbiddenException(
         'No puede eliminar una categoría que no pertenece a este nivel',
       );
     }
 
-    return this.prisma.scoring_categories.update({
+    const result = await this.prisma.scoring_categories.update({
       where: { scoring_category_id: id },
       data: { active: false },
     });
+    this.logger.warn(
+      `Category ${id} soft-deleted at DIVISION level by user ${userId ?? 'system'}`,
+    );
+    return result;
   }
 
   // ============================================================
@@ -203,7 +228,7 @@ export class ScoringCategoriesService {
   ) {
     await this.assertUserBelongsToUnion(userId, unionId);
 
-    return this.prisma.scoring_categories.create({
+    const result = await this.prisma.scoring_categories.create({
       data: {
         name: dto.name,
         max_points: dto.max_points,
@@ -212,6 +237,10 @@ export class ScoringCategoriesService {
         active: true,
       },
     });
+    this.logger.log(
+      `Category created: "${dto.name}" at UNION level (origin_id: ${unionId}) by user ${userId}`,
+    );
+    return result;
   }
 
   async updateUnionCategory(
@@ -230,12 +259,15 @@ export class ScoringCategoriesService {
     }
 
     if (category.origin_level !== 'UNION' || category.origin_id !== unionId) {
+      this.logger.warn(
+        `Unauthorized attempt to modify category ${id} by user ${userId}`,
+      );
       throw new ForbiddenException(
         'No puede modificar una categoría heredada o de otro nivel',
       );
     }
 
-    return this.prisma.scoring_categories.update({
+    const result = await this.prisma.scoring_categories.update({
       where: { scoring_category_id: id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -243,6 +275,10 @@ export class ScoringCategoriesService {
         ...(dto.active !== undefined && { active: dto.active }),
       },
     });
+    this.logger.log(
+      `Category ${id} updated at UNION level by user ${userId}`,
+    );
+    return result;
   }
 
   async deleteUnionCategory(unionId: number, id: number, userId: string) {
@@ -257,15 +293,22 @@ export class ScoringCategoriesService {
     }
 
     if (category.origin_level !== 'UNION' || category.origin_id !== unionId) {
+      this.logger.warn(
+        `Unauthorized attempt to modify category ${id} by user ${userId}`,
+      );
       throw new ForbiddenException(
         'No puede eliminar una categoría heredada o de otro nivel',
       );
     }
 
-    return this.prisma.scoring_categories.update({
+    const result = await this.prisma.scoring_categories.update({
       where: { scoring_category_id: id },
       data: { active: false },
     });
+    this.logger.warn(
+      `Category ${id} soft-deleted at UNION level by user ${userId}`,
+    );
+    return result;
   }
 
   // ============================================================
@@ -330,7 +373,7 @@ export class ScoringCategoriesService {
       throw new NotFoundException(`Local field ${fieldId} not found`);
     }
 
-    return this.prisma.scoring_categories.create({
+    const result = await this.prisma.scoring_categories.create({
       data: {
         name: dto.name,
         max_points: dto.max_points,
@@ -339,6 +382,10 @@ export class ScoringCategoriesService {
         active: true,
       },
     });
+    this.logger.log(
+      `Category created: "${dto.name}" at LOCAL_FIELD level (origin_id: ${fieldId}) by user ${userId}`,
+    );
+    return result;
   }
 
   async updateLocalFieldCategory(
@@ -360,12 +407,15 @@ export class ScoringCategoriesService {
       category.origin_level !== 'LOCAL_FIELD' ||
       category.origin_id !== fieldId
     ) {
+      this.logger.warn(
+        `Unauthorized attempt to modify category ${id} by user ${userId}`,
+      );
       throw new ForbiddenException(
         'No puede modificar una categoría heredada o de otro nivel',
       );
     }
 
-    return this.prisma.scoring_categories.update({
+    const result = await this.prisma.scoring_categories.update({
       where: { scoring_category_id: id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -373,6 +423,10 @@ export class ScoringCategoriesService {
         ...(dto.active !== undefined && { active: dto.active }),
       },
     });
+    this.logger.log(
+      `Category ${id} updated at LOCAL_FIELD level by user ${userId}`,
+    );
+    return result;
   }
 
   async deleteLocalFieldCategory(fieldId: number, id: number, userId: string) {
@@ -390,15 +444,22 @@ export class ScoringCategoriesService {
       category.origin_level !== 'LOCAL_FIELD' ||
       category.origin_id !== fieldId
     ) {
+      this.logger.warn(
+        `Unauthorized attempt to modify category ${id} by user ${userId}`,
+      );
       throw new ForbiddenException(
         'No puede eliminar una categoría heredada o de otro nivel',
       );
     }
 
-    return this.prisma.scoring_categories.update({
+    const result = await this.prisma.scoring_categories.update({
       where: { scoring_category_id: id },
       data: { active: false },
     });
+    this.logger.warn(
+      `Category ${id} soft-deleted at LOCAL_FIELD level by user ${userId}`,
+    );
+    return result;
   }
 
   // ============================================================
