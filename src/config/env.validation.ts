@@ -85,6 +85,9 @@ export const envValidationSchema = Joi.object({
   APPLE_TEAM_ID: Joi.string().allow('').optional(),
   APPLE_KEY_ID: Joi.string().allow('').optional(),
   APPLE_PRIVATE_KEY: Joi.string().allow('').optional(),
+  // Comma-separated allowlist of valid OAuth redirectUrl values.
+  // Falls back to ALLOWED_ORIGINS when not set.
+  ALLOWED_OAUTH_REDIRECT_URLS: Joi.string().optional(),
 
   // Sentry
   SENTRY_DSN: Joi.string().uri().allow('').optional(),

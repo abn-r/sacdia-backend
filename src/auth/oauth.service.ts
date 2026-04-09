@@ -44,6 +44,50 @@ export class OAuthService {
   private static readonly DEFAULT_REDIRECT_URL =
     'https://sacdia.app/auth/callback';
 
+  /**
+   * Returns the allowlist of permitted OAuth redirect URLs.
+   *
+   * Resolution order:
+   *   1. ALLOWED_OAUTH_REDIRECT_URLS (comma-separated) — OAuth-specific list
+   *   2. ALLOWED_ORIGINS (comma-separated) — shared CORS list used as fallback
+   *   3. DEFAULT_REDIRECT_URL — hardcoded fallback when neither env var is set
+   */
+  private getAllowedRedirectUrls(): string[] {
+    const oauthSpecific = process.env.ALLOWED_OAUTH_REDIRECT_URLS;
+    if (oauthSpecific) {
+      return oauthSpecific
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean);
+    }
+
+    const origins = process.env.ALLOWED_ORIGINS;
+    if (origins) {
+      return origins
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean);
+    }
+
+    return [OAuthService.DEFAULT_REDIRECT_URL];
+  }
+
+  /**
+   * Validates that the given redirect URL is in the configured allowlist.
+   * Throws BadRequestException if it is not, preventing open-redirect attacks.
+   */
+  private validateRedirectUrl(url: string): void {
+    const allowed = this.getAllowedRedirectUrls();
+    if (!allowed.includes(url)) {
+      this.logger.warn(
+        `OAuth redirect URL rejected — not in allowlist: ${url}`,
+      );
+      throw new BadRequestException(
+        'La URL de redirección proporcionada no está permitida.',
+      );
+    }
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly betterAuth: BetterAuthService,
@@ -66,6 +110,9 @@ export class OAuthService {
    * the browser to `redirectTo` (our mobile deep-link or admin URL).
    */
   async initiateGoogleSignIn(redirectUrl?: string) {
+    if (redirectUrl) {
+      this.validateRedirectUrl(redirectUrl);
+    }
     const callbackUrl = redirectUrl ?? OAuthService.DEFAULT_REDIRECT_URL;
     this.logger.log(`Initiating Google OAuth — callbackUrl: ${callbackUrl}`);
 
@@ -80,6 +127,9 @@ export class OAuthService {
    * AFTER:  betterAuth.getOAuthUrl('apple', redirectTo)
    */
   async initiateAppleSignIn(redirectUrl?: string) {
+    if (redirectUrl) {
+      this.validateRedirectUrl(redirectUrl);
+    }
     const callbackUrl = redirectUrl ?? OAuthService.DEFAULT_REDIRECT_URL;
     this.logger.log(`Initiating Apple OAuth — callbackUrl: ${callbackUrl}`);
 

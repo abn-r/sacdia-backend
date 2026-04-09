@@ -91,7 +91,18 @@ export class ResourcesService {
       const scopeSegment =
         dto.scope_id != null ? String(dto.scope_id) : 'system';
       const uuid = randomUUID();
-      fileKey = `${dto.scope_level}/${scopeSegment}/${uuid}/${file.originalname}`;
+
+      // Extract and sanitize the file extension from the original filename.
+      // We deliberately discard the rest of the name (attacker-controlled) and
+      // use the UUID as the authoritative filename to prevent path traversal via
+      // `../`, special Unicode, or excessively long names.
+      const rawExt = file.originalname.includes('.')
+        ? file.originalname.slice(file.originalname.lastIndexOf('.'))
+        : '';
+      // Keep only [a-zA-Z0-9.] — strip anything else (e.g. null bytes, slashes)
+      const safeExtension = rawExt.replace(/[^a-zA-Z0-9.]/g, '');
+
+      fileKey = `${dto.scope_level}/${scopeSegment}/${uuid}${safeExtension}`;
 
       const uploaded = await this.fileStorage.upload(
         StorageBucketAlias.RESOURCES_FILES,

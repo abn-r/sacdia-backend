@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
+import { maskEmail } from '../common/utils/mask-email.util';
 
 @Injectable()
 export class RbacService {
@@ -459,7 +460,7 @@ export class RbacService {
     });
 
     this.logger.warn(
-      `BOOTSTRAP: Usuario ${user.email} (${userId}) asignado como primer super_admin`,
+      `BOOTSTRAP: Usuario ${maskEmail(user.email)} (${userId}) asignado como primer super_admin`,
     );
 
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
