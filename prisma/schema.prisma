@@ -370,6 +370,7 @@ model club_sections {
   transfer_requests_from   club_transfer_requests[]   @relation("transfer_from")
   transfer_requests_to     club_transfer_requests[]   @relation("transfer_to")
   role_assignment_requests role_assignment_requests[]
+  member_of_month          member_of_month[]
 
   @@unique([main_club_id, club_type_id])
 }
@@ -947,12 +948,15 @@ model unions {
 model unit_members {
   unit_member_id Int      @id @default(autoincrement())
   unit_id        Int
-  user_id        String   @unique @db.Uuid
+  user_id        String   @db.Uuid
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   modified_at    DateTime @default(now()) @db.Timestamptz(6)
   active         Boolean  @default(true)
   units          units    @relation(fields: [unit_id], references: [unit_id], onDelete: NoAction, onUpdate: NoAction)
   users          users    @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_unit_members_user_id")
+  @@index([unit_id], map: "idx_unit_members_unit_id")
 }
 
 model units {
@@ -1025,7 +1029,7 @@ model users {
   member_insurances_created                   member_insurances[]                 @relation("member_insurances_created_by")
   member_insurances_modified                  member_insurances[]                 @relation("member_insurances_modified_by")
   member_insurances                           member_insurances[]
-  unit_members                                unit_members?
+  unit_members                                unit_members[]
   units_advisor_id                            units[]                             @relation("units_advisor_idTousers")
   units_captain_id                            units[]                             @relation("units_captain_idTousers")
   units_secretary_id                          units[]                             @relation("units_secretary_idTousers")
@@ -1044,6 +1048,7 @@ model users {
   users_pr                                    users_pr?
   users_roles                                 users_roles[]
   weekly_records                              weekly_records[]
+  member_of_month                             member_of_month[]
   session                                     session[]
   account                                     account[]
   club_enrollments_created                    club_enrollments[]                  @relation("enrollment_creator")
@@ -1326,18 +1331,73 @@ model emergency_contacts {
 }
 
 model weekly_records {
-  record_id   Int      @id @default(autoincrement())
-  user_id     String   @db.Uuid
-  week        Int
-  attendance  Int
-  punctuality Int
-  points      Int
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
-  modified_at DateTime @default(now()) @db.Timestamptz(6)
-  active      Boolean  @default(true)
-  users       users    @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  record_id            Int                    @id @default(autoincrement())
+  user_id              String                 @db.Uuid
+  week                 Int
+  attendance           Int
+  punctuality          Int
+  points               Int
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime               @default(now()) @db.Timestamptz(6)
+  active               Boolean                @default(true)
+  users                users                  @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  weekly_record_scores weekly_record_scores[]
 
-  @@unique([user_id, week])
+  @@unique([user_id, week], map: "weekly_records_user_id_week_key")
+}
+
+// ========================================
+// SCORING CATEGORIES (Units Scoring system)
+// ========================================
+
+enum origin_level_enum {
+  DIVISION
+  UNION
+  LOCAL_FIELD
+}
+
+model scoring_categories {
+  scoring_category_id  Int                    @id @default(autoincrement())
+  name                 String                 @db.VarChar(100)
+  max_points           Int
+  origin_level         origin_level_enum
+  origin_id            Int
+  active               Boolean                @default(true)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+  weekly_record_scores weekly_record_scores[]
+
+  @@index([origin_level, origin_id], map: "idx_scoring_categories_level_id")
+  @@map("scoring_categories")
+}
+
+model weekly_record_scores {
+  score_id         Int                 @id @default(autoincrement())
+  record_id        Int
+  category_id      Int
+  points           Int                 @default(0)
+  weekly_record    weekly_records      @relation(fields: [record_id], references: [record_id], onDelete: Cascade)
+  scoring_category scoring_categories @relation(fields: [category_id], references: [scoring_category_id])
+
+  @@unique([record_id, category_id])
+  @@map("weekly_record_scores")
+}
+
+model member_of_month {
+  member_of_month_id Int           @id @default(autoincrement())
+  club_section_id    Int
+  user_id            String        @db.Uuid
+  month              Int
+  year               Int
+  total_points       Int
+  notified           Boolean       @default(false)
+  created_at         DateTime      @default(now()) @db.Timestamptz(6)
+  club_section       club_sections @relation(fields: [club_section_id], references: [club_section_id])
+  users              users         @relation(fields: [user_id], references: [user_id])
+
+  @@unique([club_section_id, user_id, month, year])
+  @@index([club_section_id, month, year], map: "idx_member_of_month_section_period")
+  @@map("member_of_month")
 }
 
 model users_allergies {
