@@ -1334,7 +1334,7 @@ model weekly_records {
   record_id            Int                    @id @default(autoincrement())
   user_id              String                 @db.Uuid
   week                 Int
-  year                 Int
+  year                 Int                    @default(2026)
   attendance           Int
   punctuality          Int
   points               Int
