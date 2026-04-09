@@ -303,11 +303,9 @@ describe('UnitsService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
-      // First findFirst: cross-section conflict check (returns null = no conflict)
-      // Second findFirst: check existing membership in THIS unit (returns null = new member)
-      mockPrismaService.unit_members.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      // No club_section_id on the unit → cross-section check is skipped.
+      // Only one findFirst fires: check existing membership in THIS unit (null = new member).
+      mockPrismaService.unit_members.findFirst.mockResolvedValueOnce(null);
       mockPrismaService.unit_members.create.mockResolvedValue(mockMember);
 
       const result = await service.addMember(1, dto);
@@ -325,7 +323,7 @@ describe('UnitsService', () => {
     });
 
     it('should reactivate an inactive member', async () => {
-      const mockUnit = { unit_id: 1, unit_members: [] };
+      const mockUnit = { unit_id: 1, club_section_id: 10, unit_members: [] };
       const existingInactive = {
         unit_member_id: 5,
         unit_id: 2,
@@ -338,7 +336,8 @@ describe('UnitsService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
-      // First findFirst: no cross-section conflict; second: finds inactive membership
+      // First findFirst: cross-section conflict check (null = no conflict in section 10)
+      // Second findFirst: finds the inactive membership in THIS unit
       mockPrismaService.unit_members.findFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(existingInactive);
@@ -351,7 +350,7 @@ describe('UnitsService', () => {
     });
 
     it('should throw ConflictException when user is already an active member', async () => {
-      const mockUnit = { unit_id: 1, unit_members: [] };
+      const mockUnit = { unit_id: 1, club_section_id: 10, unit_members: [] };
       const existingActive = {
         unit_member_id: 5,
         unit_id: 1,
@@ -363,7 +362,8 @@ describe('UnitsService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
-      // First findFirst: no cross-section conflict; second: active membership in THIS unit
+      // First findFirst: cross-section conflict check (null = no conflict in section 10)
+      // Second findFirst: finds the active membership in THIS unit → triggers ConflictException
       mockPrismaService.unit_members.findFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(existingActive);
@@ -451,7 +451,13 @@ describe('UnitsService', () => {
         ],
       };
       const mockRecords = [
-        { record_id: 1, user_id: 'uuid-user-1', week: 1, points: 10 },
+        {
+          record_id: 1,
+          user_id: 'uuid-user-1',
+          week: 1,
+          points: 10,
+          weekly_record_scores: [],
+        },
       ];
 
       mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
@@ -459,7 +465,10 @@ describe('UnitsService', () => {
 
       const result = await service.findWeeklyRecords(1);
 
-      expect(result).toEqual(mockRecords);
+      // transformWeeklyRecord strips weekly_record_scores and adds scores: []
+      expect(result).toEqual([
+        { record_id: 1, user_id: 'uuid-user-1', week: 1, points: 10, scores: [] },
+      ]);
     });
 
     it('should return empty array when unit has no active members', async () => {
