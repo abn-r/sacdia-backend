@@ -33,7 +33,7 @@ export class ScoringCategoriesService {
 
   async findDivisionCategories(): Promise<CategoryWithReadonly[]> {
     const categories = await this.prisma.scoring_categories.findMany({
-      where: { origin_level: 'DIVISION', active: true },
+      where: { origin_level: 'DIVISION' },
       orderBy: { name: 'asc' },
     });
 
@@ -76,6 +76,7 @@ export class ScoringCategoriesService {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.max_points !== undefined && { max_points: dto.max_points }),
+        ...(dto.active !== undefined && { active: dto.active }),
       },
     });
   }
@@ -102,13 +103,79 @@ export class ScoringCategoriesService {
   }
 
   // ============================================================
+  // Organizational scoping helpers (IDOR prevention)
+  // ============================================================
+
+  /**
+   * Verifies the requesting user has an active club assignment whose club
+   * belongs to a local field that is under the given union.
+   * Super-admins and global admins with union scope bypass this check.
+   */
+  private async assertUserBelongsToUnion(
+    userId: string,
+    unionId: number,
+  ): Promise<void> {
+    // Check via active club_role_assignment: club → local_field → union
+    const assignment = await this.prisma.club_role_assignments.findFirst({
+      where: {
+        user_id: userId,
+        active: true,
+        status: 'active',
+        club_sections: {
+          clubs: {
+            local_fields: {
+              union_id: unionId,
+            },
+          },
+        },
+      },
+      select: { assignment_id: true },
+    });
+
+    if (!assignment) {
+      throw new ForbiddenException(
+        'No tiene permisos para gestionar categorías de esta unión',
+      );
+    }
+  }
+
+  /**
+   * Verifies the requesting user has an active club assignment whose club
+   * belongs to the given local field.
+   * Super-admins and global admins with local-field scope bypass this check.
+   */
+  private async assertUserBelongsToLocalField(
+    userId: string,
+    fieldId: number,
+  ): Promise<void> {
+    const assignment = await this.prisma.club_role_assignments.findFirst({
+      where: {
+        user_id: userId,
+        active: true,
+        status: 'active',
+        club_sections: {
+          clubs: {
+            local_field_id: fieldId,
+          },
+        },
+      },
+      select: { assignment_id: true },
+    });
+
+    if (!assignment) {
+      throw new ForbiddenException(
+        'No tiene permisos para gestionar categorías de este campo local',
+      );
+    }
+  }
+
+  // ============================================================
   // UNION level
   // ============================================================
 
   async findUnionCategories(unionId: number): Promise<CategoryWithReadonly[]> {
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
-        active: true,
         OR: [
           { origin_level: 'DIVISION' },
           { origin_level: 'UNION', origin_id: unionId },
@@ -129,7 +196,13 @@ export class ScoringCategoriesService {
     }));
   }
 
-  async createUnionCategory(unionId: number, dto: CreateScoringCategoryDto) {
+  async createUnionCategory(
+    unionId: number,
+    dto: CreateScoringCategoryDto,
+    userId: string,
+  ) {
+    await this.assertUserBelongsToUnion(userId, unionId);
+
     return this.prisma.scoring_categories.create({
       data: {
         name: dto.name,
@@ -145,7 +218,9 @@ export class ScoringCategoriesService {
     unionId: number,
     id: number,
     dto: UpdateScoringCategoryDto,
+    userId: string,
   ) {
+    await this.assertUserBelongsToUnion(userId, unionId);
     const category = await this.prisma.scoring_categories.findUnique({
       where: { scoring_category_id: id },
     });
@@ -165,11 +240,14 @@ export class ScoringCategoriesService {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.max_points !== undefined && { max_points: dto.max_points }),
+        ...(dto.active !== undefined && { active: dto.active }),
       },
     });
   }
 
-  async deleteUnionCategory(unionId: number, id: number) {
+  async deleteUnionCategory(unionId: number, id: number, userId: string) {
+    await this.assertUserBelongsToUnion(userId, unionId);
+
     const category = await this.prisma.scoring_categories.findUnique({
       where: { scoring_category_id: id },
     });
@@ -211,7 +289,6 @@ export class ScoringCategoriesService {
 
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
-        active: true,
         OR: [
           { origin_level: 'DIVISION' },
           { origin_level: 'UNION', origin_id: unionId },
@@ -240,7 +317,10 @@ export class ScoringCategoriesService {
   async createLocalFieldCategory(
     fieldId: number,
     dto: CreateScoringCategoryDto,
+    userId: string,
   ) {
+    await this.assertUserBelongsToLocalField(userId, fieldId);
+
     const localField = await this.prisma.local_fields.findUnique({
       where: { local_field_id: fieldId },
       select: { local_field_id: true },
@@ -265,7 +345,9 @@ export class ScoringCategoriesService {
     fieldId: number,
     id: number,
     dto: UpdateScoringCategoryDto,
+    userId: string,
   ) {
+    await this.assertUserBelongsToLocalField(userId, fieldId);
     const category = await this.prisma.scoring_categories.findUnique({
       where: { scoring_category_id: id },
     });
@@ -288,11 +370,14 @@ export class ScoringCategoriesService {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.max_points !== undefined && { max_points: dto.max_points }),
+        ...(dto.active !== undefined && { active: dto.active }),
       },
     });
   }
 
-  async deleteLocalFieldCategory(fieldId: number, id: number) {
+  async deleteLocalFieldCategory(fieldId: number, id: number, userId: string) {
+    await this.assertUserBelongsToLocalField(userId, fieldId);
+
     const category = await this.prisma.scoring_categories.findUnique({
       where: { scoring_category_id: id },
     });
@@ -323,8 +408,9 @@ export class ScoringCategoriesService {
   /**
    * Returns the merged active scoring categories visible to a given local field.
    * Used by the weekly records service to validate category_ids.
+   * Only active categories are returned (intentional — used for validation, not admin display).
    */
-  async getActiveCategiesForLocalField(fieldId: number) {
+  async getActiveCategoriesForLocalField(fieldId: number) {
     const localField = await this.prisma.local_fields.findUnique({
       where: { local_field_id: fieldId },
       select: { union_id: true },

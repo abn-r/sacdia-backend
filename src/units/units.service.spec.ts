@@ -49,7 +49,7 @@ describe('UnitsService', () => {
   };
 
   const mockScoringCategoriesService = {
-    getActiveCategiesForLocalField: jest.fn().mockResolvedValue([]),
+    getActiveCategoriesForLocalField: jest.fn().mockResolvedValue([]),
   };
 
   beforeEach(async () => {

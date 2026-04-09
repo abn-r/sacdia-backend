@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Req,
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
@@ -108,11 +109,17 @@ export class ScoringCategoriesController {
   @ApiOperation({ summary: 'Crear categoría de puntuación para una unión' })
   @ApiParam({ name: 'unionId', type: Number })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
+  @ApiResponse({ status: 403, description: 'Sin permisos para esta unión' })
   async createUnionCategory(
     @Param('unionId', ParseIntPipe) unionId: number,
     @Body() dto: CreateScoringCategoryDto,
+    @Req() req: any,
   ) {
-    return this.scoringCategoriesService.createUnionCategory(unionId, dto);
+    return this.scoringCategoriesService.createUnionCategory(
+      unionId,
+      dto,
+      req.user.sub,
+    );
   }
 
   @Patch('unions/:unionId/scoring-categories/:id')
@@ -122,14 +129,20 @@ export class ScoringCategoriesController {
   @ApiParam({ name: 'unionId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría actualizada' })
-  @ApiResponse({ status: 403, description: 'No puede modificar categoría heredada' })
+  @ApiResponse({ status: 403, description: 'No puede modificar categoría heredada o de otra unión' })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async updateUnionCategory(
     @Param('unionId', ParseIntPipe) unionId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateScoringCategoryDto,
+    @Req() req: any,
   ) {
-    return this.scoringCategoriesService.updateUnionCategory(unionId, id, dto);
+    return this.scoringCategoriesService.updateUnionCategory(
+      unionId,
+      id,
+      dto,
+      req.user.sub,
+    );
   }
 
   @Delete('unions/:unionId/scoring-categories/:id')
@@ -139,13 +152,18 @@ export class ScoringCategoriesController {
   @ApiParam({ name: 'unionId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría desactivada' })
-  @ApiResponse({ status: 403, description: 'No puede eliminar categoría heredada' })
+  @ApiResponse({ status: 403, description: 'No puede eliminar categoría heredada o de otra unión' })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async deleteUnionCategory(
     @Param('unionId', ParseIntPipe) unionId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
   ) {
-    return this.scoringCategoriesService.deleteUnionCategory(unionId, id);
+    return this.scoringCategoriesService.deleteUnionCategory(
+      unionId,
+      id,
+      req.user.sub,
+    );
   }
 
   // ========================================
@@ -170,11 +188,17 @@ export class ScoringCategoriesController {
   @ApiOperation({ summary: 'Crear categoría de puntuación para un campo local' })
   @ApiParam({ name: 'fieldId', type: Number })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
+  @ApiResponse({ status: 403, description: 'Sin permisos para este campo local' })
   async createLocalFieldCategory(
     @Param('fieldId', ParseIntPipe) fieldId: number,
     @Body() dto: CreateScoringCategoryDto,
+    @Req() req: any,
   ) {
-    return this.scoringCategoriesService.createLocalFieldCategory(fieldId, dto);
+    return this.scoringCategoriesService.createLocalFieldCategory(
+      fieldId,
+      dto,
+      req.user.sub,
+    );
   }
 
   @Patch('local-fields/:fieldId/scoring-categories/:id')
@@ -184,17 +208,19 @@ export class ScoringCategoriesController {
   @ApiParam({ name: 'fieldId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría actualizada' })
-  @ApiResponse({ status: 403, description: 'No puede modificar categoría heredada' })
+  @ApiResponse({ status: 403, description: 'No puede modificar categoría heredada o de otro campo local' })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async updateLocalFieldCategory(
     @Param('fieldId', ParseIntPipe) fieldId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateScoringCategoryDto,
+    @Req() req: any,
   ) {
     return this.scoringCategoriesService.updateLocalFieldCategory(
       fieldId,
       id,
       dto,
+      req.user.sub,
     );
   }
 
@@ -205,12 +231,17 @@ export class ScoringCategoriesController {
   @ApiParam({ name: 'fieldId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría desactivada' })
-  @ApiResponse({ status: 403, description: 'No puede eliminar categoría heredada' })
+  @ApiResponse({ status: 403, description: 'No puede eliminar categoría heredada o de otro campo local' })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async deleteLocalFieldCategory(
     @Param('fieldId', ParseIntPipe) fieldId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
   ) {
-    return this.scoringCategoriesService.deleteLocalFieldCategory(fieldId, id);
+    return this.scoringCategoriesService.deleteLocalFieldCategory(
+      fieldId,
+      id,
+      req.user.sub,
+    );
   }
 }

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -302,6 +303,73 @@ export class UnitsService {
   // REGISTROS SEMANALES
   // ========================================
 
+  /**
+   * Transforms a raw Prisma weekly_records row (with weekly_record_scores included)
+   * into the flat response shape expected by the frontend and Flutter clients.
+   */
+  private transformWeeklyRecord(
+    record: {
+      record_id: number;
+      user_id: string;
+      week: number;
+      year: number;
+      attendance: number;
+      punctuality: number;
+      points: number;
+      active: boolean;
+      created_at: Date;
+      modified_at: Date;
+      users?: {
+        user_id: string;
+        name: string | null;
+        paternal_last_name: string | null;
+        user_image: string | null;
+      };
+      weekly_record_scores?: Array<{
+        category_id: number;
+        points: number;
+        scoring_category: {
+          scoring_category_id: number;
+          name: string;
+          max_points: number;
+        } | null;
+      }>;
+    },
+  ) {
+    const { weekly_record_scores, ...rest } = record;
+    return {
+      ...rest,
+      scores: (weekly_record_scores ?? []).map((wrs) => ({
+        category_id: wrs.category_id,
+        category_name: wrs.scoring_category?.name ?? '',
+        points: wrs.points,
+        max_points: wrs.scoring_category?.max_points ?? 0,
+      })),
+    };
+  }
+
+  private readonly weeklyRecordInclude = {
+    users: {
+      select: {
+        user_id: true,
+        name: true,
+        paternal_last_name: true,
+        user_image: true,
+      },
+    },
+    weekly_record_scores: {
+      include: {
+        scoring_category: {
+          select: {
+            scoring_category_id: true,
+            name: true,
+            max_points: true,
+          },
+        },
+      },
+    },
+  } as const;
+
   async findWeeklyRecords(unitId: number) {
     const unit = await this.findOne(unitId);
 
@@ -313,34 +381,16 @@ export class UnitsService {
       return [];
     }
 
-    return this.prisma.weekly_records.findMany({
+    const records = await this.prisma.weekly_records.findMany({
       where: {
         user_id: { in: memberUserIds },
         active: true,
       },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            user_image: true,
-          },
-        },
-        weekly_record_scores: {
-          include: {
-            scoring_category: {
-              select: {
-                scoring_category_id: true,
-                name: true,
-                max_points: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: [{ week: 'asc' }, { user_id: 'asc' }],
+      include: this.weeklyRecordInclude,
+      orderBy: [{ year: 'desc' }, { week: 'asc' }, { user_id: 'asc' }],
     });
+
+    return records.map((r) => this.transformWeeklyRecord(r));
   }
 
   async createWeeklyRecord(unitId: number, dto: CreateWeeklyRecordDto) {
@@ -357,12 +407,14 @@ export class UnitsService {
     }
 
     const existing = await this.prisma.weekly_records.findUnique({
-      where: { user_id_week: { user_id: dto.user_id, week: dto.week } },
+      where: {
+        user_id_week_year: { user_id: dto.user_id, week: dto.week, year: dto.year },
+      },
     });
 
     if (existing) {
       throw new ConflictException(
-        `Weekly record for user ${dto.user_id} on week ${dto.week} already exists`,
+        `Weekly record for user ${dto.user_id} on week ${dto.week}/${dto.year} already exists`,
       );
     }
 
@@ -374,7 +426,7 @@ export class UnitsService {
       const localFieldId = await this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
-          ? await this.scoringCategoriesService.getActiveCategiesForLocalField(
+          ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
               localFieldId,
             )
           : [];
@@ -409,6 +461,7 @@ export class UnitsService {
         data: {
           user_id: dto.user_id,
           week: dto.week,
+          year: dto.year,
           attendance: dto.attendance ?? 0,
           punctuality: dto.punctuality ?? 0,
           points: calculatedPoints,
@@ -428,30 +481,12 @@ export class UnitsService {
         });
       }
 
-      return tx.weekly_records.findUnique({
+      const created = await tx.weekly_records.findUnique({
         where: { record_id: record.record_id },
-        include: {
-          users: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              user_image: true,
-            },
-          },
-          weekly_record_scores: {
-            include: {
-              scoring_category: {
-                select: {
-                  scoring_category_id: true,
-                  name: true,
-                  max_points: true,
-                },
-              },
-            },
-          },
-        },
+        include: this.weeklyRecordInclude,
       });
+
+      return this.transformWeeklyRecord(created!);
     });
   }
 
@@ -472,6 +507,16 @@ export class UnitsService {
       );
     }
 
+    // C3: Verify the record belongs to an active member of this unit
+    const isMemberOfUnit = await this.prisma.unit_members.findFirst({
+      where: { unit_id: unitId, user_id: record.user_id, active: true },
+    });
+    if (!isMemberOfUnit) {
+      throw new ForbiddenException(
+        'El registro no pertenece a un miembro de esta unidad',
+      );
+    }
+
     // Validate and process scores if provided
     let newCalculatedPoints: number | undefined;
     const validatedScores: { category_id: number; points: number }[] = [];
@@ -480,7 +525,7 @@ export class UnitsService {
       const localFieldId = await this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
-          ? await this.scoringCategoriesService.getActiveCategiesForLocalField(
+          ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
               localFieldId,
             )
           : [];
@@ -544,31 +589,13 @@ export class UnitsService {
       if (newCalculatedPoints !== undefined)
         updateData.points = newCalculatedPoints;
 
-      return tx.weekly_records.update({
+      const updated = await tx.weekly_records.update({
         where: { record_id: recordId },
         data: updateData,
-        include: {
-          users: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              user_image: true,
-            },
-          },
-          weekly_record_scores: {
-            include: {
-              scoring_category: {
-                select: {
-                  scoring_category_id: true,
-                  name: true,
-                  max_points: true,
-                },
-              },
-            },
-          },
-        },
+        include: this.weeklyRecordInclude,
       });
+
+      return this.transformWeeklyRecord(updated);
     });
   }
 
