@@ -21,6 +21,7 @@ import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guar
 import { AdminReferenceService } from './admin-reference.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import {
+  CreateActivityTypeDto,
   CreateAllergyDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
@@ -28,6 +29,7 @@ import {
   HonorCategoryListQueryDto,
   CreateMedicineDto,
   CreateRelationshipTypeDto,
+  UpdateActivityTypeDto,
   UpdateAllergyDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
@@ -66,6 +68,62 @@ export class AdminReferenceController {
   async invalidateCatalogCache() {
     await this.catalogCache.invalidateAll();
     return { status: 'success', message: 'Caché de catálogos invalidado' };
+  }
+
+  // ========================================
+  // ACTIVITY TYPES
+  // ========================================
+
+  @Get('activity-types')
+  @RequirePermissions('catalogs:read')
+  @ApiOperation({ summary: 'List activity types for admin management' })
+  async listActivityTypes() {
+    const data = await this.referenceService.listActivityTypes();
+    return { status: 'success', data };
+  }
+
+  @Post('activity-types')
+  @RequirePermissions('catalogs:create')
+  @ApiOperation({ summary: 'Create activity type' })
+  async createActivityType(
+    @Body() dto: CreateActivityTypeDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.createActivityType(
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Patch('activity-types/:activityTypeId')
+  @RequirePermissions('catalogs:update')
+  @ApiOperation({ summary: 'Update activity type' })
+  async updateActivityType(
+    @Param('activityTypeId', ParseIntPipe) activityTypeId: number,
+    @Body() dto: UpdateActivityTypeDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.updateActivityType(
+      activityTypeId,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('activity-types/:activityTypeId')
+  @RequirePermissions('catalogs:delete')
+  @ApiOperation({ summary: 'Soft delete activity type' })
+  async deleteActivityType(
+    @Param('activityTypeId', ParseIntPipe) activityTypeId: number,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.deleteActivityType(
+      activityTypeId,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
   }
 
   @Get('relationship-types')

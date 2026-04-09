@@ -12,6 +12,7 @@ import {
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
 import {
+  CreateActivityTypeDto,
   CreateAllergyDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
@@ -19,6 +20,7 @@ import {
   CreateMedicineDto,
   HonorCategoryListQueryDto,
   CreateRelationshipTypeDto,
+  UpdateActivityTypeDto,
   UpdateAllergyDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
@@ -59,6 +61,167 @@ export class AdminReferenceService {
         timestamp: new Date().toISOString(),
       }),
     );
+  }
+
+  // ========================================
+  // ACTIVITY TYPES
+  // ========================================
+
+  async listActivityTypes() {
+    // Small catalog table: expected to remain well under 50 rows.
+    return this.prisma.activity_types.findMany({
+      orderBy: { activity_type_id: 'asc' },
+      take: 200,
+    });
+  }
+
+  async createActivityType(dto: CreateActivityTypeDto, actorId: string) {
+    const name = this.normalizeName(dto.name);
+    const code = dto.code.trim().toUpperCase();
+
+    await this.ensureActivityTypeUnique(name, code);
+
+    const activityType = await this.prisma.activity_types.create({
+      data: {
+        code,
+        name,
+        description: dto.description,
+        active: dto.active ?? true,
+      },
+    });
+
+    this.logMutation(
+      'create',
+      'activity_types',
+      activityType.activity_type_id,
+      actorId,
+    );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
+
+    return activityType;
+  }
+
+  async updateActivityType(
+    activityTypeId: number,
+    dto: UpdateActivityTypeDto,
+    actorId: string,
+  ) {
+    await this.ensureActivityTypeExists(activityTypeId);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+    const code = dto.code ? dto.code.trim().toUpperCase() : undefined;
+
+    if (name || code) {
+      await this.ensureActivityTypeUnique(
+        name ?? undefined,
+        code ?? undefined,
+        activityTypeId,
+      );
+    }
+
+    const activityType = await this.prisma.activity_types.update({
+      where: { activity_type_id: activityTypeId },
+      data: {
+        ...(code ? { code } : {}),
+        ...(name ? { name } : {}),
+        ...(typeof dto.description === 'string'
+          ? { description: dto.description }
+          : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'update',
+      'activity_types',
+      activityTypeId,
+      actorId,
+    );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
+
+    return activityType;
+  }
+
+  async deleteActivityType(activityTypeId: number, actorId: string) {
+    await this.ensureActivityTypeExists(activityTypeId);
+
+    const inUseCount = await this.prisma.activities.count({
+      where: { activity_type_id: activityTypeId, active: true },
+    });
+
+    if (inUseCount > 0) {
+      throw new ConflictException(
+        'Cannot deactivate activity type because it is in use by active activities',
+      );
+    }
+
+    const activityType = await this.prisma.activity_types.update({
+      where: { activity_type_id: activityTypeId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'delete',
+      'activity_types',
+      activityTypeId,
+      actorId,
+    );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
+
+    return activityType;
+  }
+
+  private async ensureActivityTypeExists(activityTypeId: number) {
+    const entity = await this.prisma.activity_types.findUnique({
+      where: { activity_type_id: activityTypeId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(
+        `Activity type ${activityTypeId} not found`,
+      );
+    }
+
+    return entity;
+  }
+
+  private async ensureActivityTypeUnique(
+    name?: string,
+    code?: string,
+    excludeId?: number,
+  ) {
+    if (name) {
+      const existingByName = await this.prisma.activity_types.findFirst({
+        where: {
+          name: { equals: name, mode: 'insensitive' },
+          ...(excludeId ? { NOT: { activity_type_id: excludeId } } : {}),
+        },
+      });
+
+      if (existingByName) {
+        throw new ConflictException('Activity type name already exists');
+      }
+    }
+
+    if (code) {
+      const existingByCode = await this.prisma.activity_types.findFirst({
+        where: {
+          code: { equals: code, mode: 'insensitive' },
+          ...(excludeId ? { NOT: { activity_type_id: excludeId } } : {}),
+        },
+      });
+
+      if (existingByCode) {
+        throw new ConflictException('Activity type code already exists');
+      }
+    }
   }
 
   async listRelationshipTypes() {

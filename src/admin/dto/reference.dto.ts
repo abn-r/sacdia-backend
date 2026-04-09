@@ -156,6 +156,56 @@ export class UpdateMedicineDto {
   active?: boolean;
 }
 
+export class CreateActivityTypeDto {
+  @ApiProperty({ example: 'CULTO' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  code: string;
+
+  @ApiProperty({ example: 'Culto de Adoración' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name: string;
+
+  @ApiPropertyOptional({ example: 'Servicio de adoración semanal' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class UpdateActivityTypeDto {
+  @ApiPropertyOptional({ example: 'CULTO' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  code?: string;
+
+  @ApiPropertyOptional({ example: 'Culto de Adoración' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'Servicio de adoración semanal' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
 export class CreateEcclesiasticalYearDto {
   @ApiProperty({ example: '2026-01-01' })
   @IsDateString()
