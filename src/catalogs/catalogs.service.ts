@@ -124,11 +124,27 @@ export class CatalogsService {
   // ========================================
   // DISTRICTS
   // ========================================
+
+  /** Shapes a raw Prisma row into the canonical API response shape.
+   * The DB PK is `districlub_type_id` (legacy name with existing FKs) —
+   * the public contract exposes it as `district_id`. */
+  private mapDistrict(row: {
+    districlub_type_id: number;
+    name: string;
+    local_field_id: number;
+  }) {
+    return {
+      district_id: row.districlub_type_id,
+      name: row.name,
+      local_field_id: row.local_field_id,
+    };
+  }
+
   async getDistricts(localFieldId?: number) {
     return this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.DISTRICTS(localFieldId),
-      () =>
-        this.prisma.districts.findMany({
+      async () => {
+        const rows = await this.prisma.districts.findMany({
           where: {
             active: true,
             ...(localFieldId && { local_field_id: localFieldId }),
@@ -139,18 +155,37 @@ export class CatalogsService {
             local_field_id: true,
           },
           orderBy: { name: 'asc' },
-        }),
+        });
+        return rows.map((r) => this.mapDistrict(r));
+      },
     );
   }
 
   // ========================================
   // CHURCHES
   // ========================================
+
+  /** Shapes a raw Prisma row into the canonical API response shape.
+   * The DB FK to districts is `districlub_type_id` (legacy name inherited from
+   * the districts PK) — the public contract exposes it as `district_id`,
+   * consistent with what mapDistrict already exposes as the district PK. */
+  private mapChurch(row: {
+    church_id: number;
+    name: string;
+    districlub_type_id: number;
+  }) {
+    return {
+      church_id: row.church_id,
+      name: row.name,
+      district_id: row.districlub_type_id,
+    };
+  }
+
   async getChurches(districtId?: number) {
     return this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.CHURCHES(districtId),
-      () =>
-        this.prisma.churches.findMany({
+      async () => {
+        const rows = await this.prisma.churches.findMany({
           where: {
             active: true,
             ...(districtId && { districlub_type_id: districtId }),
@@ -161,13 +196,31 @@ export class CatalogsService {
             districlub_type_id: true,
           },
           orderBy: { name: 'asc' },
-        }),
+        });
+        return rows.map((r) => this.mapChurch(r));
+      },
     );
   }
 
   // ========================================
   // ROLES
   // ========================================
+
+  /** Shapes a raw Prisma row into the canonical API response shape.
+   * The DB column is `role_name` — the public contract exposes it as `name`
+   * to match Flutter's RoleModel.fromJson expectation. */
+  private mapRole(row: {
+    role_id: number;
+    role_name: string;
+    role_category: role_category;
+  }) {
+    return {
+      role_id: row.role_id,
+      name: row.role_name,
+      role_category: row.role_category,
+    };
+  }
+
   async getRoles(category?: string) {
     const whereClause: { active: boolean; role_category?: role_category } = {
       active: true,
@@ -177,27 +230,56 @@ export class CatalogsService {
       whereClause.role_category = category as role_category;
     }
 
-    return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.ROLES(category), () =>
-      this.prisma.roles.findMany({
-        where: whereClause,
-        select: {
-          role_id: true,
-          role_name: true,
-          role_category: true,
-        },
-        orderBy: { role_name: 'asc' },
-      }),
+    return this.catalogCache.getOrSet(
+      CATALOG_CACHE_KEYS.ROLES(category),
+      async () => {
+        const rows = await this.prisma.roles.findMany({
+          where: whereClause,
+          select: {
+            role_id: true,
+            role_name: true,
+            role_category: true,
+          },
+          orderBy: { role_name: 'asc' },
+        });
+        return rows.map((r) => this.mapRole(r));
+      },
     );
   }
 
   // ========================================
   // ECCLESIASTICAL YEARS
   // ========================================
+
+  /** Shapes a raw Prisma row into the canonical API response shape. */
+  private mapEcclesiasticalYear(row: {
+    year_id: number;
+    start_date: Date;
+    end_date: Date;
+    active: boolean;
+  }) {
+    const startYear = row.start_date.getFullYear();
+    const endYear = row.end_date.getFullYear();
+    // "2025-2026" — adventist ecclesiastical years run Oct → Sep, so start/end
+    // years always differ. When they coincide (data edge-case) the label stays
+    // readable (e.g. "2025").
+    const name =
+      startYear !== endYear ? `${startYear}-${endYear}` : `${startYear}`;
+
+    return {
+      ecclesiastical_year_id: row.year_id,
+      name,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      active: row.active,
+    };
+  }
+
   async getEcclesiasticalYears() {
     return this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
-      () =>
-        this.prisma.ecclesiastical_years.findMany({
+      async () => {
+        const rows = await this.prisma.ecclesiastical_years.findMany({
           select: {
             year_id: true,
             start_date: true,
@@ -205,7 +287,9 @@ export class CatalogsService {
             active: true,
           },
           orderBy: { start_date: 'desc' },
-        }),
+        });
+        return rows.map((r) => this.mapEcclesiasticalYear(r));
+      },
     );
   }
 
@@ -215,8 +299,8 @@ export class CatalogsService {
     // Current year changes once a year — 24h TTL is safe.
     return this.catalogCache.getOrSet(
       CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
-      () =>
-        this.prisma.ecclesiastical_years.findFirst({
+      async () => {
+        const row = await this.prisma.ecclesiastical_years.findFirst({
           where: {
             start_date: { lte: today },
             end_date: { gte: today },
@@ -227,7 +311,9 @@ export class CatalogsService {
             end_date: true,
             active: true,
           },
-        }),
+        });
+        return row ? this.mapEcclesiasticalYear(row) : null;
+      },
       86_400_000, // 24 hours
     );
   }

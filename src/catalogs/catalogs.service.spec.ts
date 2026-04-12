@@ -218,7 +218,9 @@ describe('CatalogsService', () => {
 
       const result = await service.getRoles('CLUB');
 
-      expect(result).toEqual(mockRoles);
+      expect(result).toEqual([
+        { role_id: '1', name: 'director', role_category: 'CLUB' },
+      ]);
       expect(mockPrismaService.roles.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -244,7 +246,13 @@ describe('CatalogsService', () => {
 
       const result = await service.getCurrentEcclesiasticalYear();
 
-      expect(result).toEqual(mockYear);
+      expect(result).toEqual({
+        ecclesiastical_year_id: 1,
+        name: '2025-2026',
+        start_date: new Date('2025-08-01'),
+        end_date: new Date('2026-07-31'),
+        active: true,
+      });
       expect(
         mockPrismaService.ecclesiastical_years.findFirst,
       ).toHaveBeenCalledWith(
