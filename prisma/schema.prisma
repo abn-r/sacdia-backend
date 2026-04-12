@@ -149,7 +149,7 @@ model camporee_members {
 model churches {
   church_id          Int       @id @default(autoincrement())
   name               String    @db.VarChar(50)
-  active             Boolean   @default(false)
+  active             Boolean   @default(true)
   created_at         DateTime? @default(now()) @db.Timestamptz(6)
   modified_at        DateTime? @default(now()) @db.Timestamptz(6)
   districlub_type_id Int
