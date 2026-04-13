@@ -119,8 +119,8 @@ export class UnitsService {
   }
 
   async findOne(unitId: number) {
-    const unit = await this.prisma.units.findUnique({
-      where: { unit_id: unitId },
+    const unit = await this.prisma.units.findFirst({
+      where: { unit_id: unitId, active: true },
       include: this.unitInclude,
     });
 
@@ -393,7 +393,7 @@ export class UnitsService {
     return records.map((r) => this.transformWeeklyRecord(r));
   }
 
-  async createWeeklyRecord(unitId: number, dto: CreateWeeklyRecordDto) {
+  async createWeeklyRecord(unitId: number, dto: CreateWeeklyRecordDto, userId: string) {
     const unit = await this.findOne(unitId);
 
     const isMember = unit.unit_members.some(
@@ -466,6 +466,7 @@ export class UnitsService {
           punctuality: dto.punctuality ?? 0,
           points: calculatedPoints,
           active: true,
+          created_by: userId,
           created_at: new Date(),
           modified_at: new Date(),
         },

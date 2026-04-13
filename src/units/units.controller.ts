@@ -8,6 +8,7 @@ import {
   Body,
   ParseIntPipe,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -200,8 +201,9 @@ export class UnitsController {
     @Param('clubId', ParseIntPipe) _clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
     @Body() dto: CreateWeeklyRecordDto,
+    @Request() req: any,
   ) {
-    return this.unitsService.createWeeklyRecord(unitId, dto);
+    return this.unitsService.createWeeklyRecord(unitId, dto, req.user.sub);
   }
 
   @Patch('clubs/:clubId/units/:unitId/weekly-records/:recordId')
