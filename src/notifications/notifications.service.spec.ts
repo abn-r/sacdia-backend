@@ -46,6 +46,9 @@ describe('NotificationsService', () => {
   };
 
   const mockPrismaService = {
+    users: {
+      findMany: jest.fn(),
+    },
     user_fcm_tokens: {
       findMany: jest.fn(),
       updateMany: jest.fn(),
@@ -80,6 +83,7 @@ describe('NotificationsService', () => {
     (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
       sendEachForMulticast: mockSendEachForMulticast,
     });
+    mockPrismaService.users.findMany.mockResolvedValue([]);
     mockPrismaService.notification_logs.create.mockResolvedValue({ log_id: 1 });
     mockPrismaService.notification_deliveries.create.mockResolvedValue({});
     mockPrismaService.notification_deliveries.createMany.mockResolvedValue({ count: 1 });
@@ -134,16 +138,25 @@ describe('NotificationsService', () => {
       body: 'Mensaje de prueba',
     };
 
-    it('should return failure when no active FCM tokens found', async () => {
+    it('should create delivery and return success even when user has no FCM tokens (regression: inbox must not depend on tokens)', async () => {
+      // This is the exact scenario that was silently broken: admin sends to a
+      // user who has never logged in from mobile (no registered FCM tokens).
+      // Expected: delivery row created, success: true, push skipped gracefully.
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
 
       const result = await service.sendToUser(dto, SENT_BY);
 
-      expect(result).toEqual({
-        success: false,
-        message: 'No active FCM tokens found',
-      });
+      // Must succeed — the inbox is the source of truth
+      expect(result).toMatchObject({ success: true, skippedPush: true });
+      // FCM multicast must NOT have been called
       expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      // Delivery + log must have been persisted
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(mockPrismaService.notification_deliveries.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ user_id: dto.userId }),
+        }),
+      );
     });
 
     it('should send notification and return success counts', async () => {
@@ -165,7 +178,7 @@ describe('NotificationsService', () => {
           notification: { title: dto.title, body: dto.body },
         }),
       );
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         successCount: 2,
         failureCount: 0,
@@ -205,7 +218,7 @@ describe('NotificationsService', () => {
           data: { active: false },
         },
       );
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         successCount: 1,
         failureCount: 1,
@@ -247,16 +260,49 @@ describe('NotificationsService', () => {
   describe('broadcast', () => {
     const dto = { title: 'Aviso', body: 'Mensaje global' };
 
-    it('should return failure when no active tokens exist', async () => {
+    it('should return failure when no active users exist', async () => {
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+
+      const result = await service.broadcast(dto, SENT_BY);
+
+      expect(result).toEqual({ success: false, message: 'No active users' });
+      expect(mockPrismaService.user_fcm_tokens.findMany).not.toHaveBeenCalled();
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+    });
+
+    it('should create deliveries for all active users even when none have FCM tokens', async () => {
+      // Regression: broadcast to users with no registered devices must still
+      // create delivery rows so the inbox is populated.
+      mockPrismaService.users.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+        { user_id: 'user-2' },
+      ]);
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
 
       const result = await service.broadcast(dto, SENT_BY);
 
-      expect(result).toEqual({ success: false, message: 'No active tokens' });
+      expect(result).toMatchObject({
+        success: true,
+        skippedPush: true,
+        deliveriesCreated: 2,
+      });
       expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ user_id: 'user-1' }),
+            expect.objectContaining({ user_id: 'user-2' }),
+          ]),
+        }),
+      );
     });
 
-    it('should broadcast to all active tokens in a single batch', async () => {
+    it('should broadcast to all active users and push to those with tokens', async () => {
+      mockPrismaService.users.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+        { user_id: 'user-2' },
+      ]);
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
         { token: 'tok-1' },
         { token: 'tok-2' },
@@ -270,7 +316,7 @@ describe('NotificationsService', () => {
       const result = await service.broadcast(dto, SENT_BY);
 
       expect(mockSendEachForMulticast).toHaveBeenCalledTimes(1);
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         successCount: 2,
         failureCount: 0,
@@ -286,10 +332,14 @@ describe('NotificationsService', () => {
     });
 
     it('should send in multiple batches when tokens exceed 500', async () => {
-      // 510 tokens → 2 batches (500 + 10)
+      // 510 users, 510 tokens → 2 batches (500 + 10)
+      const users = Array.from({ length: 510 }, (_, i) => ({
+        user_id: `user-${i}`,
+      }));
       const tokens = Array.from({ length: 510 }, (_, i) => ({
         token: `tok-${i}`,
       }));
+      mockPrismaService.users.findMany.mockResolvedValue(users);
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue(tokens);
       mockSendEachForMulticast
         .mockResolvedValueOnce({
@@ -306,7 +356,7 @@ describe('NotificationsService', () => {
       const result = await service.broadcast(dto, SENT_BY);
 
       expect(mockSendEachForMulticast).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         successCount: 510,
         failureCount: 0,
@@ -345,7 +395,9 @@ describe('NotificationsService', () => {
       expect(mockPrismaService.user_fcm_tokens.findMany).not.toHaveBeenCalled();
     });
 
-    it('should return failure when members have no active FCM tokens', async () => {
+    it('should create deliveries and return success when members have no active FCM tokens', async () => {
+      // Regression: club members without registered devices must still get
+      // delivery rows so their inbox is populated when they open the app.
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
         { user_id: 'user-1' },
         { user_id: 'user-2' },
@@ -358,11 +410,21 @@ describe('NotificationsService', () => {
         SENT_BY,
       );
 
-      expect(result).toEqual({
-        success: false,
-        message: 'No active tokens for club members',
+      expect(result).toMatchObject({
+        success: true,
+        skippedPush: true,
+        memberCount: 2,
       });
       expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ user_id: 'user-1' }),
+            expect.objectContaining({ user_id: 'user-2' }),
+          ]),
+        }),
+      );
     });
 
     it('should send notifications to all club members with active tokens', async () => {
@@ -397,7 +459,7 @@ describe('NotificationsService', () => {
         where: { user_id: { in: ['user-1', 'user-2'] }, active: true },
         select: { token: true },
       });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         successCount: 3,
         failureCount: 0,
@@ -405,7 +467,11 @@ describe('NotificationsService', () => {
       });
       expect(mockPrismaService.notification_logs.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ type: 'CLUB', sent_by: SENT_BY }),
+          data: expect.objectContaining({
+            type: 'CLUB',
+            sent_by: SENT_BY,
+            tokens_sent: 0,
+          }),
         }),
       );
     });
@@ -613,6 +679,30 @@ describe('NotificationsService', () => {
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
       expect(mockPrismaService.notification_deliveries.createMany).not.toHaveBeenCalled();
+    });
+
+    it('should create deliveries even when resolved users have no FCM tokens', async () => {
+      // Regression: role-based notification to users without registered devices
+      // must still populate the inbox.
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+        { user_id: 'user-2' },
+      ]);
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+
+      await service.sendToSectionRole(clubSectionId, roleNames, title, body);
+
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ user_id: 'user-1' }),
+            expect.objectContaining({ user_id: 'user-2' }),
+          ]),
+          skipDuplicates: true,
+        }),
+      );
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
     });
   });
 

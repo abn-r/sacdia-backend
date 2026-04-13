@@ -1,3 +1,21 @@
+// =============================================================================
+// NOTIFICATION DELIVERY CONTRACT
+// =============================================================================
+// The `notification_deliveries` table is the SOURCE OF TRUTH for the user
+// inbox. Every send operation MUST create a log + delivery row for every
+// targeted user, REGARDLESS of whether those users have active FCM tokens.
+//
+// FCM push is a best-effort delivery mechanism layered ON TOP:
+//   - If a user has active tokens → send push.
+//   - If a user has no tokens   → skip push, inbox delivery still created.
+//
+// User opt-out preferences (`notification_preferences`) suppress BOTH push
+// AND inbox delivery. A user who opted out of a source will not receive a
+// push notification AND will not see the notification in their inbox.
+// Rationale: opt-out signals the user does not want to be notified about
+// that source at all — the inbox is not an override of that intent.
+// =============================================================================
+
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -463,6 +481,7 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
+    // Step 1: Check opt-out. Opt-out suppresses BOTH push and inbox delivery.
     const allowed = await this.preferencesService.isAllowedForUser(
       dto.userId,
       source,
@@ -474,27 +493,11 @@ export class NotificationsService {
       return { success: false, skipped: true, reason: 'user_preference' };
     }
 
-    const tokens = await this.prisma.user_fcm_tokens.findMany({
-      where: { user_id: dto.userId, active: true },
-      select: { token: true },
-    });
+    // Step 2: Create log + delivery BEFORE FCM push. The inbox entry must
+    // exist regardless of whether the user has active FCM tokens.
+    let successCount = 0;
+    let failureCount = 0;
 
-    if (tokens.length === 0) {
-      return { success: false, message: 'No active FCM tokens found' };
-    }
-
-    const tokenStrings = tokens.map((t) => t.token);
-    const { successCount, failureCount } = await this.sendMulticastDirect(
-      tokenStrings,
-      dto.title,
-      dto.body,
-      dto.data,
-    );
-
-    // Persist log + delivery atomically. Deliveries are the inbox source of
-    // truth — both must be written together. FCM was already called; if this
-    // transaction fails the push still delivered but the inbox entry is lost.
-    // We log the error and do not throw so the API response still returns success.
     await this.prisma.$transaction(async (tx) => {
       const log = await tx.notification_logs.create({
         data: {
@@ -505,8 +508,8 @@ export class NotificationsService {
           target_id: dto.userId,
           sent_by: isUuid(sentBy) ? sentBy : null,
           source: source ?? null,
-          tokens_sent: successCount,
-          tokens_failed: failureCount,
+          tokens_sent: 0,
+          tokens_failed: 0,
         },
       });
       await tx.notification_deliveries.create({
@@ -518,7 +521,32 @@ export class NotificationsService {
       );
     });
 
-    return { success: true, successCount, failureCount };
+    // Step 3: FCM push — best effort, only if tokens exist.
+    const tokens = await this.prisma.user_fcm_tokens.findMany({
+      where: { user_id: dto.userId, active: true },
+      select: { token: true },
+    });
+
+    if (tokens.length > 0) {
+      const tokenStrings = tokens.map((t) => t.token);
+      ({ successCount, failureCount } = await this.sendMulticastDirect(
+        tokenStrings,
+        dto.title,
+        dto.body,
+        dto.data,
+      ));
+    } else {
+      this.logger.debug(
+        `sendToUserSync: no active FCM tokens for user ${dto.userId} — delivery created, push skipped`,
+      );
+    }
+
+    return {
+      success: true,
+      successCount,
+      failureCount,
+      skippedPush: tokens.length === 0,
+    };
   }
 
   private async broadcastSync(
@@ -526,46 +554,34 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
-    const tokens = await this.prisma.user_fcm_tokens.findMany({
+    // Step 1: Resolve all active users — the inbox recipients.
+    // We query users directly, NOT tokens, so users without tokens still get
+    // a delivery row. Opt-out suppresses both push and inbox.
+    const activeUsers = await this.prisma.users.findMany({
       where: { active: true },
-      select: { token: true, user_id: true },
+      select: { user_id: true },
     });
 
-    if (tokens.length === 0) {
-      return { success: false, message: 'No active tokens' };
+    if (activeUsers.length === 0) {
+      return { success: false, message: 'No active users' };
     }
 
-    const uniqueUserIds = [...new Set(tokens.map((t) => t.user_id))];
+    const allUserIds = activeUsers.map((u) => u.user_id);
     const allowedSet = await this.preferencesService.filterAllowedUsers(
-      uniqueUserIds,
+      allUserIds,
       source,
     );
-    const filteredTokens = tokens.filter((t) => allowedSet.has(t.user_id));
+    const allowedUserIds = [...allowedSet];
 
-    if (filteredTokens.length === 0) {
+    if (allowedUserIds.length === 0) {
       return { success: false, message: 'All users opted out' };
     }
 
-    const tokenStrings = filteredTokens.map((t) => t.token);
-    const batches = chunkArray(tokenStrings, 500);
+    // Step 2: Create log + deliveries for ALL allowed users atomically.
+    // Token count is unknown at this point; we'll update after FCM.
     let totalSuccess = 0;
     let totalFailure = 0;
 
-    for (const batch of batches) {
-      const result = await this.sendMulticastDirect(
-        batch,
-        dto.title,
-        dto.body,
-        dto.data,
-      );
-      totalSuccess += result.successCount;
-      totalFailure += result.failureCount;
-    }
-
-    // Persist log + bulk deliveries for all allowed users atomically.
-    // Uses INSERT...SELECT for performance (avoids round-tripping each row).
-    // If this fails the FCM pushes already went out — log and continue.
-    const allowedUserIds = [...allowedSet];
     await this.prisma.$transaction(async (tx) => {
       const log = await tx.notification_logs.create({
         data: {
@@ -576,29 +592,55 @@ export class NotificationsService {
           target_id: null,
           sent_by: isUuid(sentBy) ? sentBy : null,
           source: source ?? null,
-          tokens_sent: totalSuccess,
-          tokens_failed: totalFailure,
+          tokens_sent: 0,
+          tokens_failed: 0,
         },
       });
-      if (allowedUserIds.length > 0) {
-        await tx.notification_deliveries.createMany({
-          data: allowedUserIds.map((uid) => ({
-            log_id: log.log_id,
-            user_id: uid,
-          })),
-          skipDuplicates: true,
-        });
-      }
+      await tx.notification_deliveries.createMany({
+        data: allowedUserIds.map((uid) => ({
+          log_id: log.log_id,
+          user_id: uid,
+        })),
+        skipDuplicates: true,
+      });
     }).catch((err: Error) => {
       this.logger.warn(
         `broadcastSync: failed to persist log/deliveries: ${err.message}`,
       );
     });
 
+    // Step 3: FCM push — best effort, only to users with active tokens.
+    const tokenRows = await this.prisma.user_fcm_tokens.findMany({
+      where: { user_id: { in: allowedUserIds }, active: true },
+      select: { token: true },
+    });
+
+    if (tokenRows.length > 0) {
+      const tokenStrings = tokenRows.map((t) => t.token);
+      const batches = chunkArray(tokenStrings, 500);
+
+      for (const batch of batches) {
+        const result = await this.sendMulticastDirect(
+          batch,
+          dto.title,
+          dto.body,
+          dto.data,
+        );
+        totalSuccess += result.successCount;
+        totalFailure += result.failureCount;
+      }
+    } else {
+      this.logger.debug(
+        `broadcastSync: no active FCM tokens for any allowed user — deliveries created, push skipped`,
+      );
+    }
+
     return {
       success: true,
       successCount: totalSuccess,
       failureCount: totalFailure,
+      deliveriesCreated: allowedUserIds.length,
+      skippedPush: tokenRows.length === 0,
     };
   }
 
@@ -608,6 +650,7 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
+    // Step 1: Resolve members — genuine empty set is a hard stop.
     const members = await this.prisma.club_role_assignments.findMany({
       where: { club_section_id: clubSectionId, active: true },
       select: { user_id: true },
@@ -618,39 +661,21 @@ export class NotificationsService {
       return { success: false, message: 'No members found' };
     }
 
-    const allowedUserIds = [
-      ...(await this.preferencesService.filterAllowedUsers(rawUserIds, source)),
-    ];
-    const userIds = allowedUserIds;
+    // Opt-out suppresses both push and inbox delivery.
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      rawUserIds,
+      source,
+    );
+    const userIds = [...allowedSet];
 
     if (userIds.length === 0) {
-      return { success: false, message: 'No members found' };
+      return { success: false, message: 'All members opted out' };
     }
 
-    const tokens = await this.prisma.user_fcm_tokens.findMany({
-      where: { user_id: { in: userIds }, active: true },
-      select: { token: true },
-    });
-
-    if (tokens.length === 0) {
-      return { success: false, message: 'No active tokens for club members' };
-    }
-
-    const tokenStrings = tokens.map((t) => t.token);
-    const batches = chunkArray(tokenStrings, 500);
+    // Step 2: Create log + deliveries for all allowed members atomically.
+    // This happens regardless of FCM token availability.
     let totalSuccess = 0;
     let totalFailure = 0;
-
-    for (const batch of batches) {
-      const result = await this.sendMulticastDirect(
-        batch,
-        dto.title,
-        dto.body,
-        dto.data,
-      );
-      totalSuccess += result.successCount;
-      totalFailure += result.failureCount;
-    }
 
     await this.prisma.$transaction(async (tx) => {
       const log = await tx.notification_logs.create({
@@ -662,8 +687,8 @@ export class NotificationsService {
           target_id: String(clubSectionId),
           sent_by: isUuid(sentBy) ? sentBy : null,
           source: source ?? null,
-          tokens_sent: totalSuccess,
-          tokens_failed: totalFailure,
+          tokens_sent: 0,
+          tokens_failed: 0,
         },
       });
       await tx.notification_deliveries.createMany({
@@ -676,11 +701,38 @@ export class NotificationsService {
       );
     });
 
+    // Step 3: FCM push — best effort, only to members with active tokens.
+    const tokens = await this.prisma.user_fcm_tokens.findMany({
+      where: { user_id: { in: userIds }, active: true },
+      select: { token: true },
+    });
+
+    if (tokens.length > 0) {
+      const tokenStrings = tokens.map((t) => t.token);
+      const batches = chunkArray(tokenStrings, 500);
+
+      for (const batch of batches) {
+        const result = await this.sendMulticastDirect(
+          batch,
+          dto.title,
+          dto.body,
+          dto.data,
+        );
+        totalSuccess += result.successCount;
+        totalFailure += result.failureCount;
+      }
+    } else {
+      this.logger.debug(
+        `sendToClubMembersSync: no active FCM tokens for section ${clubSectionId} — deliveries created, push skipped`,
+      );
+    }
+
     return {
       success: true,
       successCount: totalSuccess,
       failureCount: totalFailure,
       memberCount: rawUserIds.length,
+      skippedPush: tokens.length === 0,
     };
   }
 
@@ -692,6 +744,7 @@ export class NotificationsService {
     data?: Record<string, string>,
     source?: string,
   ): Promise<void> {
+    // Step 1: Resolve target users by role — genuine empty set is a hard stop.
     const assignments = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: clubSectionId,
@@ -708,6 +761,7 @@ export class NotificationsService {
       return;
     }
 
+    // Opt-out suppresses both push and inbox delivery.
     const allowedSet = await this.preferencesService.filterAllowedUsers(
       rawUserIds,
       source,
@@ -718,37 +772,8 @@ export class NotificationsService {
       return;
     }
 
-    const tokens = await this.prisma.user_fcm_tokens.findMany({
-      where: { user_id: { in: userIds }, active: true },
-      select: { token: true },
-    });
-
-    if (tokens.length === 0) {
-      return;
-    }
-
-    const tokenStrings = tokens.map((t) => t.token);
-    const batches = chunkArray(tokenStrings, 500);
-
-    const batchResults = await Promise.allSettled(
-      batches.map((batch) =>
-        this.sendMulticastDirect(batch, title, body, data),
-      ),
-    );
-
-    let totalSuccess = 0;
-    let totalFailure = 0;
-    for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
-        totalSuccess += result.value.successCount;
-        totalFailure += result.value.failureCount;
-      } else {
-        this.logger.warn(
-          `sendToSectionRoleSync batch failed: ${result.reason?.message ?? result.reason}`,
-        );
-      }
-    }
-
+    // Step 2: Create log + deliveries for all allowed users atomically.
+    // This happens regardless of FCM token availability.
     await this.prisma.$transaction(async (tx) => {
       const log = await tx.notification_logs.create({
         data: {
@@ -759,8 +784,8 @@ export class NotificationsService {
           target_id: String(clubSectionId),
           sent_by: null,
           source: source ?? null,
-          tokens_sent: totalSuccess,
-          tokens_failed: totalFailure,
+          tokens_sent: 0,
+          tokens_failed: 0,
         },
       });
       await tx.notification_deliveries.createMany({
@@ -772,6 +797,28 @@ export class NotificationsService {
         `sendToSectionRoleSync: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
       );
     });
+
+    // Step 3: FCM push — best effort, only to users with active tokens.
+    const tokens = await this.prisma.user_fcm_tokens.findMany({
+      where: { user_id: { in: userIds }, active: true },
+      select: { token: true },
+    });
+
+    if (tokens.length === 0) {
+      this.logger.debug(
+        `sendToSectionRoleSync: no active FCM tokens for section ${clubSectionId} — deliveries created, push skipped`,
+      );
+      return;
+    }
+
+    const tokenStrings = tokens.map((t) => t.token);
+    const batches = chunkArray(tokenStrings, 500);
+
+    await Promise.allSettled(
+      batches.map((batch) =>
+        this.sendMulticastDirect(batch, title, body, data),
+      ),
+    );
   }
 
   private async sendToGlobalRoleSync(
@@ -783,6 +830,7 @@ export class NotificationsService {
     source?: string,
     unionId?: number,
   ): Promise<void> {
+    // Step 1: Resolve target users by global role — genuine empty set is a hard stop.
     const where: Record<string, unknown> = {
       active: true,
       roles: {
@@ -809,6 +857,7 @@ export class NotificationsService {
       return;
     }
 
+    // Opt-out suppresses both push and inbox delivery.
     const allowedSet = await this.preferencesService.filterAllowedUsers(
       rawUserIds,
       source,
@@ -819,37 +868,8 @@ export class NotificationsService {
       return;
     }
 
-    const tokens = await this.prisma.user_fcm_tokens.findMany({
-      where: { user_id: { in: userIds }, active: true },
-      select: { token: true },
-    });
-
-    if (tokens.length === 0) {
-      return;
-    }
-
-    const tokenStrings = tokens.map((t) => t.token);
-    const batches = chunkArray(tokenStrings, 500);
-
-    const batchResults = await Promise.allSettled(
-      batches.map((batch) =>
-        this.sendMulticastDirect(batch, title, body, data),
-      ),
-    );
-
-    let totalSuccess = 0;
-    let totalFailure = 0;
-    for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
-        totalSuccess += result.value.successCount;
-        totalFailure += result.value.failureCount;
-      } else {
-        this.logger.warn(
-          `sendToGlobalRoleSync batch failed: ${result.reason?.message ?? result.reason}`,
-        );
-      }
-    }
-
+    // Step 2: Create log + deliveries for all allowed users atomically.
+    // This happens regardless of FCM token availability.
     await this.prisma.$transaction(async (tx) => {
       const log = await tx.notification_logs.create({
         data: {
@@ -860,8 +880,8 @@ export class NotificationsService {
           target_id: localFieldId ? String(localFieldId) : null,
           sent_by: null,
           source: source ?? null,
-          tokens_sent: totalSuccess,
-          tokens_failed: totalFailure,
+          tokens_sent: 0,
+          tokens_failed: 0,
         },
       });
       await tx.notification_deliveries.createMany({
@@ -873,6 +893,28 @@ export class NotificationsService {
         `sendToGlobalRoleSync: failed to persist log/deliveries for roles ${roleNames.join(',')}: ${err.message}`,
       );
     });
+
+    // Step 3: FCM push — best effort, only to users with active tokens.
+    const tokens = await this.prisma.user_fcm_tokens.findMany({
+      where: { user_id: { in: userIds }, active: true },
+      select: { token: true },
+    });
+
+    if (tokens.length === 0) {
+      this.logger.debug(
+        `sendToGlobalRoleSync: no active FCM tokens for roles ${roleNames.join(',')} — deliveries created, push skipped`,
+      );
+      return;
+    }
+
+    const tokenStrings = tokens.map((t) => t.token);
+    const batches = chunkArray(tokenStrings, 500);
+
+    await Promise.allSettled(
+      batches.map((batch) =>
+        this.sendMulticastDirect(batch, title, body, data),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
