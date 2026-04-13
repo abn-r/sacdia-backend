@@ -210,8 +210,8 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ============================
 -- Secretary inherits ALL counselor permissions (34) plus additional ones
 -- for administrative tasks: club sections, insurance management, activities,
--- reports, club instances, and camporee registration.
--- Total: 28 (member) + 6 (counselor) + 12 (secretary) + 4 (inventory) = 50
+-- reports, club instances, camporee registration, and club info updates.
+-- Total: 28 (member) + 6 (counselor) + 13 (secretary) + 4 (inventory) = 51
 
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
@@ -284,8 +284,9 @@ WHERE r.role_name = 'secretary'
     -- View insurance status
     'insurance:read',
 
-    -- ===== Additional SECRETARY permissions (12) =====
-    -- Club section management
+    -- ===== Additional SECRETARY permissions (13) =====
+    -- Club info + section management
+    'clubs:update',
     'club_sections:update',
     -- Insurance management (create/update records)
     'insurance:create',
