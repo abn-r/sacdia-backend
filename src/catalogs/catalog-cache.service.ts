@@ -34,8 +34,10 @@ export const CATALOG_CACHE_KEYS = {
     category
       ? `cache:catalogs:roles:${category.toLowerCase()}`
       : 'cache:catalogs:roles:all',
-  ECCLESIASTICAL_YEARS: 'cache:catalogs:ecclesiastical_years',
-  ECCLESIASTICAL_YEARS_CURRENT: 'cache:catalogs:ecclesiastical_years:current',
+  // v2: shape changed in commit 9c7b28f (year_id → ecclesiastical_year_id).
+  // Bumping the suffix orphans stale v1 payloads instead of crashing readers.
+  ECCLESIASTICAL_YEARS: 'cache:catalogs:ecclesiastical_years:v2',
+  ECCLESIASTICAL_YEARS_CURRENT: 'cache:catalogs:ecclesiastical_years:v2:current',
   CLUB_IDEALS: (clubTypeId?: number) =>
     clubTypeId
       ? `cache:catalogs:club_ideals:type:${clubTypeId}`

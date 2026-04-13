@@ -108,7 +108,10 @@ export class ClubEnrollmentsService {
   // ========================================
 
   async findCurrentBySectionId(sectionId: number) {
-    const currentYear = await this.getActiveEcclesiasticalYear();
+    const currentYear = await this.catalogsService.getCurrentEcclesiasticalYear();
+    if (!currentYear) {
+      return null;
+    }
 
     const enrollment = await this.prisma.club_enrollments.findUnique({
       where: {

@@ -227,9 +227,14 @@ async function bootstrap() {
   // ==========================================
   // SEGURIDAD - Global Filters (Exception Handling)
   // ==========================================
+  // Filters are evaluated top-down; the first whose @Catch() metadata matches
+  // wins. The specific filter (HttpException) MUST precede the catch-all,
+  // otherwise AllExceptionsFilter swallows every HttpException and converts
+  // 400/404/403 into generic 500s — losing masking, validation details, and
+  // the real status code at the client.
   app.useGlobalFilters(
-    new AllExceptionsFilter(), // Catch-all para errores no manejados
-    new HttpExceptionFilter(), // HTTP exceptions con logs seguros
+    new HttpExceptionFilter(), // Specific: HttpException + subclasses with safe logging
+    new AllExceptionsFilter(), // Catch-all fallback for non-HTTP exceptions
   );
 
   // ==========================================
