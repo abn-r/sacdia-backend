@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { MulterModule } from '@nestjs/platform-express';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -137,6 +138,20 @@ import { buildBullRootConfig } from './config/bullmq.config';
         limit: 100, // 100 requests por minuto
       },
     ]),
+
+    // ==========================================
+    // MULTIPART UPLOADS - Global Multer limits
+    // ==========================================
+    // Safety net for every FileInterceptor in the app: caps uploads at 10 MB.
+    // Individual endpoints can still tighten this via their own FileInterceptor
+    // options. Configured here (not via app.useBodyParser in main.ts) so Multer
+    // parses the multipart stream itself — a raw body parser would consume the
+    // stream first and break boundary detection.
+    MulterModule.register({
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10 MB
+      },
+    }),
 
     // ==========================================
     // MÓDULOS DE APLICACIÓN
