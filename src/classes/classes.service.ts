@@ -4,10 +4,12 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { AchievementsService } from '../achievements/achievements.service';
 import {
   PaginationDto,
   PaginatedResult,
@@ -28,12 +30,14 @@ const ALLOWED_MIME_TYPES = new Set([
 
 @Injectable()
 export class ClassesService {
+  private readonly logger = new Logger(ClassesService.name);
   private siblingTypeIdsCache: Promise<number[]> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   private getSiblingClubTypeIds(): Promise<number[]> {
@@ -212,7 +216,7 @@ export class ClassesService {
     classId: number,
     ecclesiasticalYearId: number,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const enrollment = await this.prisma.$transaction(async (tx) => {
       // 1. Get target class with its club type name so we can classify the pool
       //    without relying on hardcoded exact-match strings that break under
       //    encoding/collation differences in the DB.
@@ -323,7 +327,7 @@ export class ClassesService {
           where: { enrollment_id: existing.enrollment_id },
           data: { active: true },
           include: {
-            classes: { select: { name: true } },
+            classes: { select: { name: true, club_type_id: true } },
             ecclesiastical_year: {
               select: { start_date: true, end_date: true },
             },
@@ -339,11 +343,27 @@ export class ClassesService {
           enrollment_date: new Date(),
         },
         include: {
-          classes: { select: { name: true } },
+          classes: { select: { name: true, club_type_id: true } },
           ecclesiastical_year: { select: { start_date: true, end_date: true } },
         },
       });
     });
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId,
+        eventType: 'class.started',
+        payload: {
+          class_id: classId,
+          class_name: enrollment.classes?.name ?? null,
+          club_type_id: enrollment.classes?.club_type_id ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
+
+    return enrollment;
   }
 
   async getUserEnrollments(userId: string, ecclesiasticalYearId?: number) {

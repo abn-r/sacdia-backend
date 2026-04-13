@@ -394,6 +394,17 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Achievements
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('achievements:read', 'View achievements catalog and user progress', true),
+  ('achievements:manage', 'Create, update, delete, and manage achievements', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Dashboard
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES

@@ -31,6 +31,7 @@ import type {
   AuthorizationSnapshot,
   GlobalAuthorizationGrant,
 } from '../common/services/authorization-context.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 @Injectable()
 export class CamporeesService {
@@ -42,6 +43,7 @@ export class CamporeesService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly notificationsService: NotificationsService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   // ========================================
@@ -629,6 +631,7 @@ export class CamporeesService {
   async registerMember(camporeeId: number, dto: RegisterMemberDto) {
     let isLate = false;
     let camporeeLocalFieldId: number | null = null;
+    let camporeeName: string | null = null;
 
     const member = await this.prisma.$transaction(async (tx) => {
       // 1. Validate camporee exists
@@ -647,6 +650,7 @@ export class CamporeesService {
 
       isLate = this.isAfterDeadline(camporee.member_registration_deadline);
       camporeeLocalFieldId = camporee.local_field_id;
+      camporeeName = camporee.name;
 
       // 2. Validate user exists
       const user = await tx.users.findUnique({
@@ -759,6 +763,21 @@ export class CamporeesService {
         );
       });
     }
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId: dto.user_id,
+        eventType: 'camporee.participated',
+        payload: {
+          camporee_id: camporeeId,
+          camporee_name: camporeeName,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
+
+    // TODO: emit camporee.completed when a dedicated camporee completion action is added
 
     return this.applySignedPrivateUrls(member);
   }
@@ -1422,6 +1441,7 @@ export class CamporeesService {
   async registerMemberToUnion(unionCamporeeId: number, dto: RegisterMemberDto) {
     let isLate = false;
     let camporeeUnionId: number | null = null;
+    let camporeeName: string | null = null;
 
     const member = await this.prisma.$transaction(async (tx) => {
       // 1. Validate union camporee exists
@@ -1440,6 +1460,7 @@ export class CamporeesService {
 
       isLate = this.isAfterDeadline(camporee.member_registration_deadline);
       camporeeUnionId = camporee.union_id;
+      camporeeName = camporee.name;
 
       // 2. Validate user exists
       const user = await tx.users.findUnique({
@@ -1553,6 +1574,21 @@ export class CamporeesService {
         );
       });
     }
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId: dto.user_id,
+        eventType: 'camporee.participated',
+        payload: {
+          camporee_id: unionCamporeeId,
+          camporee_name: camporeeName,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
+
+    // TODO: emit camporee.completed when a dedicated camporee completion action is added
 
     return this.applySignedPrivateUrls(member);
   }

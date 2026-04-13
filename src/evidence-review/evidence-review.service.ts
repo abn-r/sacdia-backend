@@ -13,6 +13,7 @@ import {
   EvidenceType,
 } from './dto/bulk-approve-evidence.dto';
 import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
+import { AchievementsService } from '../achievements/achievements.service';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
 //
@@ -99,7 +100,10 @@ const USER_NAME_SELECT = {
 export class EvidenceReviewService {
   private readonly logger = new Logger(EvidenceReviewService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly achievementsService: AchievementsService,
+  ) {}
 
   // ============================================================
   // GET /evidence-review/pending
@@ -578,6 +582,16 @@ export class EvidenceReviewService {
   private async approveHonor(id: number, actorId: string, comments?: string) {
     const record = await this.prisma.users_honors.findUnique({
       where: { user_honor_id: id },
+      include: {
+        honors: {
+          select: {
+            honor_id: true,
+            name: true,
+            honors_category_id: true,
+            club_type_id: true,
+          },
+        },
+      },
     });
 
     if (!record) {
@@ -616,6 +630,21 @@ export class EvidenceReviewService {
 
       return result;
     });
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId: record.user_id,
+        eventType: 'honor.validated',
+        payload: {
+          honor_id: record.honors?.honor_id ?? record.honor_id,
+          category_id: record.honors?.honors_category_id ?? null,
+          honor_name: record.honors?.name ?? null,
+          club_type_id: record.honors?.club_type_id ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
 
     return {
       id: updated.user_honor_id,

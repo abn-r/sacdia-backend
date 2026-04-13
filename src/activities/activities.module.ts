@@ -4,10 +4,11 @@ import { ActivitiesService } from './activities.service';
 import { ActivitiesReminderService } from './activities-reminder.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AchievementsModule } from '../achievements/achievements.module';
 import { ClubRolesGuard } from '../common/guards';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule],
+  imports: [PrismaModule, NotificationsModule, AchievementsModule],
   controllers: [ActivitiesController],
   providers: [ActivitiesService, ActivitiesReminderService, ClubRolesGuard],
   exports: [ActivitiesService],

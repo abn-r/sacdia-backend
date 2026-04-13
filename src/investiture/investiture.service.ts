@@ -19,6 +19,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AchievementsService } from '../achievements/achievements.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import { ApproveInvestitureDto } from './dto/approve-investiture.dto';
 import { RejectInvestitureDto } from './dto/reject-investiture.dto';
@@ -79,6 +80,7 @@ export class InvestitureService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly notifications: NotificationsService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   // ========================================
@@ -412,6 +414,12 @@ export class InvestitureService {
             local_field_id: true,
           },
         },
+        classes: {
+          select: {
+            name: true,
+            club_type_id: true,
+          },
+        },
       },
     });
 
@@ -481,6 +489,21 @@ export class InvestitureService {
       this.logger.warn(
         `Notification failed for investiture completion ${enrollmentId}: ${error.message}`,
       );
+    }
+
+    // Emit achievement event for class completion
+    try {
+      await this.achievementsService.emitEvent({
+        userId: enrollment.user_id,
+        eventType: 'class.completed',
+        payload: {
+          class_id: enrollment.class_id,
+          class_name: enrollment.classes?.name ?? null,
+          club_type_id: enrollment.classes?.club_type_id ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
     }
 
     // Step 6: Return result
@@ -892,6 +915,7 @@ export class InvestitureService {
         class_id: true,
         ecclesiastical_year_id: true,
         users: { select: { local_field_id: true } },
+        classes: { select: { name: true, club_type_id: true } },
       },
     });
 
@@ -1073,6 +1097,27 @@ export class InvestitureService {
             },
             'investiture:invested',
           ),
+        ),
+      );
+
+      // Emit achievement events for each invested enrollment (fire-and-forget)
+      await Promise.allSettled(
+        succeededEnrollments.map((enrollment) =>
+          this.achievementsService
+            .emitEvent({
+              userId: enrollment.user_id,
+              eventType: 'class.completed',
+              payload: {
+                class_id: enrollment.class_id,
+                class_name: enrollment.classes?.name ?? null,
+                club_type_id: enrollment.classes?.club_type_id ?? null,
+              },
+            })
+            .catch((error: Error) => {
+              this.logger.warn(
+                `Failed to emit achievement event for enrollment ${enrollment.enrollment_id}: ${error.message}`,
+              );
+            }),
         ),
       );
     } else {

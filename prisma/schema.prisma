@@ -314,6 +314,7 @@ model club_types {
   resources            resources[]
   award_categories     award_categories[]
   club_annual_rankings club_annual_rankings[]
+  achievements         achievements[]
 }
 
 model clubs {
@@ -444,6 +445,7 @@ model ecclesiastical_years {
   club_enrollments         club_enrollments[]
   folder_templates         folder_templates[]
   club_annual_rankings     club_annual_rankings[]
+  user_achievements        user_achievements[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -1074,6 +1076,8 @@ model users {
   section_progress_validated                  class_section_progress[]            @relation("section_progress_validated_by")
   honors_validated                            users_honors[]                      @relation("honor_validator")
   resources                                   resources[]
+  user_achievements                           user_achievements[]
+  achievement_event_log                       achievement_event_log[]
 }
 
 model notification_preferences {
@@ -2103,4 +2107,117 @@ model resources {
   @@index([club_type_id], map: "idx_resources_club_type")
   @@index([resource_category_id], map: "idx_resources_category")
   @@index([resource_type], map: "idx_resources_type")
+}
+
+// ─── Achievement System ────────────────────────────────────────────
+
+enum achievement_type {
+  THRESHOLD
+  STREAK
+  COMPOUND
+  MILESTONE
+  COLLECTION
+}
+
+enum achievement_scope {
+  GLOBAL
+  CLUB_TYPE
+  ECCLESIASTICAL_YEAR
+}
+
+enum achievement_tier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+model achievement_categories {
+  achievement_category_id Int            @id @default(autoincrement())
+  name                    String         @unique @db.VarChar(100)
+  description             String?        @db.VarChar(500)
+  icon                    String?        @db.VarChar(100)
+  display_order           Int            @default(0)
+  active                  Boolean        @default(true)
+  created_at              DateTime       @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  achievements            achievements[]
+
+  @@map("achievement_categories")
+}
+
+model achievements {
+  achievement_id  Int               @id @default(autoincrement())
+  category_id     Int
+  name            String            @unique @db.VarChar(200)
+  description     String            @db.VarChar(1000)
+  badge_image_key String?           @db.VarChar(500)
+  type            achievement_type
+  scope           achievement_scope @default(GLOBAL)
+  tier            achievement_tier  @default(BRONZE)
+  points          Int               @default(0)
+  criteria        Json
+  secret          Boolean           @default(false)
+  repeatable      Boolean           @default(false)
+  max_repeats     Int?
+  club_type_id    Int?
+  prerequisite_id Int?
+  active          Boolean           @default(true)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+
+  category          achievement_categories @relation(fields: [category_id], references: [achievement_category_id], onDelete: NoAction, onUpdate: NoAction)
+  club_type         club_types?            @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  prerequisite      achievements?          @relation("achievement_chain", fields: [prerequisite_id], references: [achievement_id], onDelete: NoAction, onUpdate: NoAction)
+  dependents        achievements[]         @relation("achievement_chain")
+  user_achievements user_achievements[]
+
+  @@index([category_id], map: "idx_achievements_category")
+  @@index([type], map: "idx_achievements_type")
+  @@index([scope, club_type_id], map: "idx_achievements_scope_club")
+  @@index([active], map: "idx_achievements_active")
+  @@map("achievements")
+}
+
+model user_achievements {
+  user_achievement_id    Int       @id @default(autoincrement())
+  user_id                String    @db.Uuid
+  achievement_id         Int
+  progress_value         Int       @default(0)
+  progress_target        Int
+  progress_metadata      Json?
+  completed              Boolean   @default(false)
+  completed_at           DateTime? @db.Timestamptz(6)
+  notified               Boolean   @default(false)
+  ecclesiastical_year_id Int?
+  times_completed        Int       @default(0)
+  active                 Boolean   @default(true)
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  users               users                 @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  achievement         achievements          @relation(fields: [achievement_id], references: [achievement_id], onDelete: NoAction, onUpdate: NoAction)
+  ecclesiastical_year ecclesiastical_years? @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([user_id, achievement_id, ecclesiastical_year_id])
+  @@index([user_id, completed], map: "idx_user_achievements_user_completed")
+  @@index([achievement_id], map: "idx_user_achievements_achievement")
+  @@index([user_id, achievement_id], map: "idx_user_achievements_user_achievement")
+  @@map("user_achievements")
+}
+
+model achievement_event_log {
+  event_id      Int      @id @default(autoincrement())
+  user_id       String   @db.Uuid
+  event_type    String   @db.VarChar(100)
+  event_payload Json
+  processed     Boolean  @default(false)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  users users @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_id, event_type, created_at], map: "idx_achievement_events_user_type_date")
+  @@index([processed, created_at], map: "idx_achievement_events_processed")
+  @@map("achievement_event_log")
 }

@@ -26,6 +26,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -41,6 +42,7 @@ export class HonorsService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   // ========================================
@@ -244,7 +246,7 @@ export class HonorsService {
 
   async startHonor(userId: string, honorId: number, dto?: StartHonorDto) {
     // Verificar que el honor existe y está activo
-    await this.findOne(honorId);
+    const honor = await this.findOne(honorId);
 
     // Buscar si existe un registro previo (activo o inactivo)
     const existing = await this.prisma.users_honors.findFirst({
@@ -288,6 +290,21 @@ export class HonorsService {
         },
       });
 
+      try {
+        await this.achievementsService.emitEvent({
+          userId,
+          eventType: 'honor.started',
+          payload: {
+            honor_id: honor.honor_id,
+            category_id: honor.honors_category_id,
+            honor_name: honor.name,
+            club_type_id: honor.club_type_id,
+          },
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      }
+
       return this.mapUserHonorPrivateUrls(updated);
     }
 
@@ -313,6 +330,21 @@ export class HonorsService {
         },
       },
     });
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId,
+        eventType: 'honor.started',
+        payload: {
+          honor_id: honor.honor_id,
+          category_id: honor.honors_category_id,
+          honor_name: honor.name,
+          club_type_id: honor.club_type_id,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
 
     return this.mapUserHonorPrivateUrls(created);
   }

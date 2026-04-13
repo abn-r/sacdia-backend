@@ -45,6 +45,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { EvidenceReviewModule } from './evidence-review/evidence-review.module';
 import { ScoringCategoriesModule } from './scoring-categories/scoring-categories.module';
 import { MemberOfMonthModule } from './member-of-month/member-of-month.module';
+import { AchievementsModule } from './achievements/achievements.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 
@@ -193,6 +194,7 @@ import { buildBullRootConfig } from './config/bullmq.config';
     EvidenceReviewModule,
     ScoringCategoriesModule,
     MemberOfMonthModule,
+    AchievementsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

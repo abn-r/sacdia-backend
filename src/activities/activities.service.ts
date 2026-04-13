@@ -25,6 +25,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 @Injectable()
 export class ActivitiesService {
@@ -36,6 +37,7 @@ export class ActivitiesService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly notificationsService: NotificationsService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   private readonly activityInclude = {
@@ -654,17 +656,38 @@ export class ActivitiesService {
   // ========================================
 
   async recordAttendance(activityId: number, dto: RecordAttendanceDto) {
-    await this.findOne(activityId);
+    const activity = await this.findOne(activityId);
 
     const attendees = dto.user_ids;
 
-    return this.prisma.activities.update({
+    const updated = await this.prisma.activities.update({
       where: { activity_id: activityId },
       data: {
         attendees: attendees as Prisma.InputJsonValue,
         modified_at: new Date(),
       },
     });
+
+    // Emit activity.attended for each attending user — fire-and-forget
+    for (const userId of attendees) {
+      try {
+        await this.achievementsService.emitEvent({
+          userId,
+          eventType: 'activity.attended',
+          payload: {
+            activity_id: activityId,
+            activity_type: activity.activity_types?.code ?? activity.activity_type_id,
+            club_id: activity.club_sections?.main_club_id ?? null,
+          },
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      }
+    }
+
+    // TODO: emit activity.completed when a dedicated completion action is added
+
+    return updated;
   }
 
   async getAttendance(activityId: number) {
