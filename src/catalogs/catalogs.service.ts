@@ -210,7 +210,7 @@ export class CatalogsService {
    * The DB column is `role_name` — the public contract exposes it as `name`
    * to match Flutter's RoleModel.fromJson expectation. */
   private mapRole(row: {
-    role_id: number;
+    role_id: string;
     role_name: string;
     role_category: role_category;
   }) {

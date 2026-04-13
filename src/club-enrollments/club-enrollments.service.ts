@@ -55,7 +55,7 @@ export class ClubEnrollmentsService {
         where: {
           club_section_id_ecclesiastical_year_id: {
             club_section_id: sectionId,
-            ecclesiastical_year_id: currentYear.year_id,
+            ecclesiastical_year_id: currentYear.ecclesiastical_year_id,
           },
         },
       });
@@ -71,7 +71,7 @@ export class ClubEnrollmentsService {
       return tx.club_enrollments.create({
         data: {
           club_section_id: sectionId,
-          ecclesiastical_year_id: currentYear.year_id,
+          ecclesiastical_year_id: currentYear.ecclesiastical_year_id,
           status: 'active',
           address: dto.address,
           meeting_days: dto.meeting_days,
@@ -114,7 +114,7 @@ export class ClubEnrollmentsService {
       where: {
         club_section_id_ecclesiastical_year_id: {
           club_section_id: sectionId,
-          ecclesiastical_year_id: currentYear.year_id,
+          ecclesiastical_year_id: currentYear.ecclesiastical_year_id,
         },
       },
       include: {
@@ -230,7 +230,7 @@ export class ClubEnrollmentsService {
       where: {
         club_section_id_ecclesiastical_year_id: {
           club_section_id: sectionId,
-          ecclesiastical_year_id: currentYear.year_id,
+          ecclesiastical_year_id: currentYear.ecclesiastical_year_id,
         },
       },
       select: { club_enrollment_id: true },
