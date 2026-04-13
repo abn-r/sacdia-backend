@@ -579,6 +579,11 @@ export class AuthService {
       },
     });
 
+    // Invalidate the cached authorization context so the next call to
+    // resolveUserAuthorization re-reads from DB and picks up the new
+    // active_club_assignment_id we just persisted.
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
 

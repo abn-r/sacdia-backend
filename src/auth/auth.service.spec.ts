@@ -81,6 +81,7 @@ describe('AuthService', () => {
 
   const mockAuthorizationContextService = {
     resolveUserAuthorization: jest.fn(),
+    invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockTokenBlacklistService = {

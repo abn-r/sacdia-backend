@@ -20,6 +20,7 @@ export interface DashboardSummaryDto {
   club_type: string | null;
   user_role: string | null;
   current_class_name: string | null;
+  current_class_id: number | null;
   class_progress: number;
   honors_completed: number;
   honors_in_progress: number;
@@ -40,7 +41,7 @@ export class DashboardService {
   ) {}
 
   async getSummary(userId: string): Promise<DashboardSummaryDto> {
-    const [user, enrollment, honors, clubAssignment] = await Promise.all([
+    const [user, enrollment, honors, userPr] = await Promise.all([
       this.prisma.users.findUnique({
         where: { user_id: userId },
         select: {
@@ -63,9 +64,55 @@ export class DashboardService {
         where: { user_id: userId, active: true },
         select: { validate: true },
       }),
-      this.prisma.club_role_assignments.findFirst({
-        where: { user_id: userId, active: true },
-        orderBy: { created_at: 'desc' },
+      // Read the persisted active context from users_pr — this is the single
+      // source of truth set by PATCH /auth/me/context. Mirrors exactly the
+      // logic used by AuthorizationContextService.resolveUserAuthorization().
+      this.prisma.users_pr.findUnique({
+        where: { user_id: userId },
+        select: { active_club_assignment_id: true },
+      }),
+    ]);
+
+    // Resolve the active club assignment using the same priority order as
+    // AuthorizationContextService: persisted ID first, then most-recent fallback.
+    const clubAssignment = await (async () => {
+      const activeAssignmentId = userPr?.active_club_assignment_id;
+
+      if (activeAssignmentId) {
+        // Try to fetch the explicitly chosen assignment first.
+        const explicit = await this.prisma.club_role_assignments.findFirst({
+          where: {
+            assignment_id: activeAssignmentId,
+            user_id: userId,
+            active: true,
+            status: 'active',
+          },
+          select: {
+            club_sections: {
+              select: {
+                club_section_id: true,
+                club_types: { select: { name: true } },
+                clubs: { select: { name: true } },
+              },
+            },
+            roles: { select: { role_name: true } },
+          },
+        });
+
+        if (explicit) return explicit;
+
+        // If the stored ID is no longer active (e.g. revoked), fall through to
+        // the same auto-select that AuthorizationContextService uses.
+        this.logger.warn(
+          `Dashboard: stored active_club_assignment_id ${activeAssignmentId} is no longer active for user ${userId}. Falling back to most recent.`,
+        );
+      }
+
+      // Fallback: most recently started active assignment — mirrors
+      // AuthorizationContextService's activeClubGrants[0] (ordered by start_date desc).
+      return this.prisma.club_role_assignments.findFirst({
+        where: { user_id: userId, active: true, status: 'active' },
+        orderBy: { start_date: 'desc' },
         select: {
           club_sections: {
             select: {
@@ -76,8 +123,8 @@ export class DashboardService {
           },
           roles: { select: { role_name: true } },
         },
-      }),
-    ]);
+      });
+    })();
 
     // ----------------------------------------
     // User name
@@ -204,6 +251,7 @@ export class DashboardService {
       club_type: clubType,
       user_role: userRole,
       current_class_name: currentClassName,
+      current_class_id: enrollment?.class_id ?? null,
       class_progress: classProgress,
       honors_completed: honorsCompleted,
       honors_in_progress: honorsInProgress,

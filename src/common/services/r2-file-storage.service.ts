@@ -336,6 +336,18 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.ACHIEVEMENTS_BADGES:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_ACHIEVEMENTS_BADGES'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_ACHIEVEMENTS_BADGES',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_ACHIEVEMENTS_BADGES',
+            'achievements/badges',
+          ),
+          isPublic: true,
+        };
       default:
         throw new InternalServerErrorException(
           `Unsupported storage bucket alias: ${bucketAlias}`,
