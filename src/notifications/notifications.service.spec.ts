@@ -58,6 +58,17 @@ describe('NotificationsService', () => {
       findMany: jest.fn(),
       count: jest.fn(),
     },
+    notification_deliveries: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      createMany: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      count: jest.fn(),
+    },
+    // $transaction: callback style — executes the callback with `this` as the tx
+    $transaction: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -69,7 +80,20 @@ describe('NotificationsService', () => {
     (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
       sendEachForMulticast: mockSendEachForMulticast,
     });
-    mockPrismaService.notification_logs.create.mockResolvedValue({});
+    mockPrismaService.notification_logs.create.mockResolvedValue({ log_id: 1 });
+    mockPrismaService.notification_deliveries.create.mockResolvedValue({});
+    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({ count: 1 });
+    mockPrismaService.notification_deliveries.count.mockResolvedValue(0);
+
+    // $transaction: simulate the interactive callback style — run callback with prisma mock as tx
+    mockPrismaService.$transaction.mockImplementation(
+      (cbOrArray: unknown) => {
+        if (typeof cbOrArray === 'function') {
+          return cbOrArray(mockPrismaService);
+        }
+        return Promise.resolve([]);
+      },
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -446,26 +470,31 @@ describe('NotificationsService', () => {
   // ---------------------------------------------------------------------------
   describe('getNotificationHistory', () => {
     const CALLER_ID = '00000000-0000-0000-0000-000000000099';
+    const DELIVERY_ID = '00000000-0000-0000-0000-000000000088';
 
-    it('regular user: should filter logs by target_type=user and target_id=callerUserId', async () => {
+    it('regular user: should query notification_deliveries (not notification_logs)', async () => {
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
 
-      const mockLogs = [
+      const mockDeliveries = [
         {
+          delivery_id: DELIVERY_ID,
           log_id: 1,
-          title: 'Test',
-          body: 'Body',
-          type: 'USER',
-          target_type: 'user',
-          target_id: CALLER_ID,
-          sent_by: null,
-          tokens_sent: 1,
-          tokens_failed: 0,
+          user_id: CALLER_ID,
+          read_at: null,
           created_at: new Date(),
+          notification_log: {
+            log_id: 1,
+            title: 'Test',
+            body: 'Body',
+            type: 'SECTION_ROLE',
+            target_type: 'section_role',
+            source: null,
+            created_at: new Date(),
+          },
         },
       ];
-      mockPrismaService.notification_logs.findMany.mockResolvedValue(mockLogs);
-      mockPrismaService.notification_logs.count.mockResolvedValue(1);
+      mockPrismaService.notification_deliveries.findMany.mockResolvedValue(mockDeliveries);
+      mockPrismaService.notification_deliveries.count.mockResolvedValue(1);
 
       const result = await service.getNotificationHistory(CALLER_ID, 1, 20);
 
@@ -476,19 +505,22 @@ describe('NotificationsService', () => {
         'super_admin',
         'assistant_admin',
       ]);
-      expect(mockPrismaService.notification_logs.findMany).toHaveBeenCalledWith(
+      // Must NOT query notification_logs directly for regular users
+      expect(mockPrismaService.notification_logs.findMany).not.toHaveBeenCalled();
+      expect(mockPrismaService.notification_deliveries.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { target_type: 'user', target_id: CALLER_ID },
-          include: undefined,
+          where: { user_id: CALLER_ID },
+          include: { notification_log: true },
+          orderBy: { created_at: 'desc' },
         }),
       );
-      expect(result).toEqual({
-        data: mockLogs,
-        total: 1,
-        page: 1,
-        limit: 20,
-        totalPages: 1,
+      expect(result.data[0]).toMatchObject({
+        delivery_id: DELIVERY_ID,
+        read_at: null,
+        title: 'Test',
+        type: 'SECTION_ROLE',
       });
+      expect(result.total).toBe(1);
     });
 
     it('admin user: should return all logs with user relation included', async () => {
@@ -525,6 +557,8 @@ describe('NotificationsService', () => {
           include: expect.objectContaining({ users: expect.any(Object) }),
         }),
       );
+      // Admin path should NOT touch notification_deliveries
+      expect(mockPrismaService.notification_deliveries.findMany).not.toHaveBeenCalled();
       expect(result).toEqual({
         data: mockLogs,
         total: 1,
@@ -532,6 +566,122 @@ describe('NotificationsService', () => {
         limit: 20,
         totalPages: 1,
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // sendToSectionRole — delivery creation
+  // ---------------------------------------------------------------------------
+  describe('sendToSectionRole delivery creation', () => {
+    const clubSectionId = 10;
+    const roleNames = ['director'];
+    const title = 'Alerta';
+    const body = 'Reunión de directores';
+
+    it('should create deliveries for each resolved user', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+        { user_id: 'user-2' },
+      ]);
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'tok-1' },
+      ]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true }],
+      });
+
+      await service.sendToSectionRole(clubSectionId, roleNames, title, body);
+
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ user_id: 'user-1' }),
+            expect.objectContaining({ user_id: 'user-2' }),
+          ]),
+          skipDuplicates: true,
+        }),
+      );
+    });
+
+    it('should not create deliveries when no users match the role', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+      await service.sendToSectionRole(clubSectionId, roleNames, title, body);
+
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      expect(mockPrismaService.notification_deliveries.createMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getUnreadCount
+  // ---------------------------------------------------------------------------
+  describe('getUnreadCount', () => {
+    it('should return count of unread deliveries', async () => {
+      mockPrismaService.notification_deliveries.count.mockResolvedValue(7);
+
+      const result = await service.getUnreadCount('user-1');
+
+      expect(mockPrismaService.notification_deliveries.count).toHaveBeenCalledWith({
+        where: { user_id: 'user-1', read_at: null },
+      });
+      expect(result).toEqual({ count: 7 });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // markDeliveryRead
+  // ---------------------------------------------------------------------------
+  describe('markDeliveryRead', () => {
+    const deliveryId = '00000000-0000-0000-0000-000000000001';
+    const callerId = '00000000-0000-0000-0000-000000000002';
+
+    it('should update read_at when delivery belongs to caller', async () => {
+      const existingDelivery = { delivery_id: deliveryId, user_id: callerId, read_at: null };
+      mockPrismaService.notification_deliveries.findFirst.mockResolvedValue(existingDelivery);
+      mockPrismaService.notification_deliveries.update.mockResolvedValue({
+        ...existingDelivery,
+        read_at: new Date(),
+      });
+
+      const result = await service.markDeliveryRead(deliveryId, callerId);
+
+      expect(mockPrismaService.notification_deliveries.findFirst).toHaveBeenCalledWith({
+        where: { delivery_id: deliveryId, user_id: callerId },
+      });
+      expect(mockPrismaService.notification_deliveries.update).toHaveBeenCalledWith({
+        where: { delivery_id: deliveryId },
+        data: { read_at: expect.any(Date) },
+      });
+      expect(result.read_at).toBeTruthy();
+    });
+
+    it('should throw NotFoundException when delivery not found or belongs to another user', async () => {
+      mockPrismaService.notification_deliveries.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.markDeliveryRead(deliveryId, 'other-user'),
+      ).rejects.toThrow('not found');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // markAllDeliveriesRead
+  // ---------------------------------------------------------------------------
+  describe('markAllDeliveriesRead', () => {
+    it('should bulk update all unread deliveries and return count', async () => {
+      mockPrismaService.notification_deliveries.updateMany.mockResolvedValue({ count: 4 });
+
+      const result = await service.markAllDeliveriesRead('user-1');
+
+      expect(mockPrismaService.notification_deliveries.updateMany).toHaveBeenCalledWith({
+        where: { user_id: 'user-1', read_at: null },
+        data: { read_at: expect.any(Date) },
+      });
+      expect(result).toEqual({ updated: 4 });
     });
   });
 });
