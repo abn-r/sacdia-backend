@@ -12,9 +12,11 @@ describe('Honors E2E Tests', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
-    
+
     await app.init();
   });
 
@@ -72,6 +74,21 @@ describe('Honors E2E Tests', () => {
       if (response.body.length > 0) {
         expect(response.body[0]).toHaveProperty('honor_category_id');
         expect(response.body[0]).toHaveProperty('name');
+      }
+    });
+  });
+
+  describe('/api/v1/honors/grouped-by-category (GET)', () => {
+    it('should return honors grouped by category', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/honors/grouped-by-category')
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      if (response.body.length > 0) {
+        expect(response.body[0]).toHaveProperty('category');
+        expect(response.body[0]).toHaveProperty('honors');
+        expect(Array.isArray(response.body[0].honors)).toBe(true);
       }
     });
   });

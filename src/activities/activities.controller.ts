@@ -9,8 +9,15 @@ import {
   Body,
   ParseIntPipe,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   Request,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -18,16 +25,30 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { ActivitiesService } from './activities.service';
-import { CreateActivityDto, UpdateActivityDto, RecordAttendanceDto } from './dto';
-import { JwtAuthGuard, ClubRolesGuard } from '../common/guards';
-import { ClubRoles } from '../common/decorators';
+import {
+  CreateActivityDto,
+  UpdateActivityDto,
+  RecordAttendanceDto,
+} from './dto';
+import {
+  JwtAuthGuard,
+  ClubRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
+import {
+  AuthorizationResource,
+  ClubRoles,
+  RequirePermissions,
+} from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('activities')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
@@ -37,6 +58,8 @@ export class ActivitiesController {
   // ========================================
 
   @Get('clubs/:clubId/activities')
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Listar actividades del club',
     description: 'Obtiene todas las actividades de las instancias del club',
@@ -44,15 +67,17 @@ export class ActivitiesController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiQuery({ name: 'clubTypeId', required: false, type: Number })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
-  @ApiQuery({ name: 'activityType', required: false, type: Number })
+  @ApiQuery({ name: 'activityTypeId', required: false, type: Number })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Lista paginada de actividades' })
   async findByClub(
     @Param('clubId', ParseIntPipe) clubId: number,
-    @Query('clubTypeId', new ParseIntPipe({ optional: true })) clubTypeId?: number,
+    @Query('clubTypeId', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
     @Query('active') active?: string,
-    @Query('activityType', new ParseIntPipe({ optional: true })) activityType?: number,
+    @Query('activityTypeId', new ParseIntPipe({ optional: true }))
+    activityTypeId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -64,8 +89,9 @@ export class ActivitiesController {
       clubId,
       {
         clubTypeId,
-        active: active === 'true' ? true : active === 'false' ? false : undefined,
-        activityType,
+        active:
+          active === 'true' ? true : active === 'false' ? false : undefined,
+        activityTypeId,
       },
       pagination,
     );
@@ -73,20 +99,27 @@ export class ActivitiesController {
 
   @Post('clubs/:clubId/activities')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'secretary', 'counselor')
+  @ClubRoles('director', 'deputy_director', 'secretary', 'counselor')
+  @RequirePermissions('activities:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Crear actividad',
-    description: 'Crea una nueva actividad para el club (requiere rol de liderazgo)',
+    description:
+      'Crea una nueva actividad para el club (requiere rol de liderazgo). Soporta múltiples instancias del mismo club mediante instances[]',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 201, description: 'Actividad creada' })
+  @ApiResponse({
+    status: 400,
+    description: 'Payload inválido para el tipo/instancia de club',
+  })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   async create(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Body() dto: CreateActivityDto,
     @Request() req: any,
   ) {
-    return this.activitiesService.create(dto, req.user.sub);
+    return this.activitiesService.create(clubId, dto, req.user.sub);
   }
 
   // ========================================
@@ -94,6 +127,8 @@ export class ActivitiesController {
   // ========================================
 
   @Get('activities/:activityId')
+  @RequirePermissions('activities:read')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({ summary: 'Obtener actividad por ID' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad encontrada' })
@@ -103,6 +138,8 @@ export class ActivitiesController {
   }
 
   @Patch('activities/:activityId')
+  @RequirePermissions('activities:update')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({ summary: 'Actualizar actividad' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad actualizada' })
@@ -114,6 +151,8 @@ export class ActivitiesController {
   }
 
   @Delete('activities/:activityId')
+  @RequirePermissions('activities:delete')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({ summary: 'Desactivar actividad' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad desactivada' })
@@ -121,11 +160,43 @@ export class ActivitiesController {
     return this.activitiesService.remove(activityId);
   }
 
+  @Post('activities/:activityId/image')
+  @RequirePermissions('activities:update')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Subir imagen de actividad' })
+  @ApiParam({ name: 'activityId', type: Number })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Imagen subida exitosamente' })
+  @ApiResponse({ status: 400, description: 'Formato o tamaño inválido' })
+  @ApiResponse({ status: 404, description: 'Actividad no encontrada' })
+  async uploadImage(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES,
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.activitiesService.uploadImage(activityId, file);
+  }
+
   // ========================================
   // ASISTENCIA
   // ========================================
 
   @Post('activities/:activityId/attendance')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({
     summary: 'Registrar asistencia',
     description: 'Registra la lista de usuarios que asistieron a la actividad',
@@ -140,6 +211,8 @@ export class ActivitiesController {
   }
 
   @Get('activities/:activityId/attendance')
+  @RequirePermissions('attendance:read')
+  @AuthorizationResource({ type: 'activity', idParam: 'activityId' })
   @ApiOperation({
     summary: 'Obtener asistencia',
     description: 'Obtiene la lista de usuarios que asistieron a la actividad',

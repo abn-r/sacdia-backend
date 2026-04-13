@@ -14,7 +14,7 @@ This directory contains authorization guards for the SACDIA API.
 getProfile() { ... }
 ```
 
-**Populates**: `request.user` with `{ sub, userId, email }`
+**Populates**: `request.user` with `{ sub, userId, user_id, email }`
 
 ---
 
@@ -23,7 +23,7 @@ getProfile() { ... }
 
 **Usage**:
 ```typescript
-@ClubRoles('director', 'subdirector')
+@ClubRoles('director', 'deputy_director')
 @UseGuards(JwtAuthGuard, ClubRolesGuard)
 @Post('clubs/:clubId/instances')
 createInstance() { ... }
@@ -35,7 +35,7 @@ createInstance() { ... }
 
 **Roles**:
 - director
-- subdirector
+- deputy_director
 - secretary
 - treasurer
 - counselor
@@ -64,6 +64,12 @@ createHonor() { ... }
 - coordinator: Union/association level
 - user: Regular user (default)
 
+**Operational requirement (admin user management scope)**:
+- `super_admin`: scope `ALL` (all users)
+- `admin`: scope from actor location. If `union_id` exists => `UNION`; else requires `local_field_id` => `LOCAL_FIELD`
+- `coordinator`: requires `local_field_id` => `LOCAL_FIELD`
+- If scope data is missing for `admin`/`coordinator`, backend must return `403` (misconfigured role assignment)
+
 ---
 
 ### 4. OwnerOrAdminGuard ⭐ NEW
@@ -85,13 +91,6 @@ getUserHonors(@Param('userId') userId: string) { ... }
 - User profile endpoints
 - User-specific resources (honors, classes, etc.)
 - Personal data access
-
----
-
-### 5. IpWhitelistGuard
-**Purpose**: Restrict access to whitelisted IP addresses
-
-**Usage**: Typically applied globally or to admin routes
 
 ---
 
@@ -128,7 +127,7 @@ deleteUser() { ... }
 
 ### Club Role Required
 ```typescript
-@ClubRoles('director', 'subdirector')
+@ClubRoles('director', 'deputy_director')
 @UseGuards(JwtAuthGuard, ClubRolesGuard)
 @Post('clubs/:clubId/activities')
 createActivity() { ... }
@@ -164,7 +163,7 @@ Authorization guard rejects insufficient permissions:
 - `"User not authenticated"`
 - `"You need one of these global roles: admin, super_admin"`
 - `"You can only access your own resources unless you have admin privileges"`
-- `"You need one of these club roles: director, subdirector"`
+- `"You need one of these club roles: director, deputy_director"`
 
 ---
 

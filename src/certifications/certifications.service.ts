@@ -12,7 +12,7 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 
 @Injectable()
 export class CertificationsService {
@@ -126,14 +126,15 @@ export class CertificationsService {
     }
 
     // 3. Verificar si ya está inscrito
-    const existingEnrollment =
-      await this.prisma.users_certifications.findFirst({
+    const existingEnrollment = await this.prisma.users_certifications.findFirst(
+      {
         where: {
           user_id: userId,
           certification_id: dto.certification_id,
           active: true,
         },
-      });
+      },
+    );
 
     if (existingEnrollment) {
       throw new ConflictException(
@@ -378,7 +379,7 @@ export class CertificationsService {
   async updateProgress(
     userId: string,
     certificationId: number,
-    dto: UpdateProgressDto,
+    dto: UpdateCertificationProgressDto,
   ) {
     return await this.prisma.$transaction(async (tx) => {
       // 1. Verificar que el usuario está inscrito
@@ -492,10 +493,11 @@ export class CertificationsService {
       }
 
       // 6. Verificar si la certificación está completa
-      const allModulesInCertification =
-        await tx.certification_modules.findMany({
+      const allModulesInCertification = await tx.certification_modules.findMany(
+        {
           where: { certification_id: certificationId },
-        });
+        },
+      );
 
       const completedModulesCount =
         await tx.certification_module_progress.count({

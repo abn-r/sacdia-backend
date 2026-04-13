@@ -16,7 +16,8 @@ export class CreateLegalRepresentativeDto {
   representative_user_id?: string;
 
   @ApiPropertyOptional({
-    description: 'Nombre (requerido si no se proporciona representative_user_id)',
+    description:
+      'Nombre (requerido si no se proporciona representative_user_id)',
   })
   @IsOptional()
   @IsString()
@@ -25,7 +26,8 @@ export class CreateLegalRepresentativeDto {
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Apellido paterno (requerido si no se proporciona representative_user_id)',
+    description:
+      'Apellido paterno (requerido si no se proporciona representative_user_id)',
   })
   @IsOptional()
   @IsString()
@@ -40,7 +42,8 @@ export class CreateLegalRepresentativeDto {
   maternal_last_name?: string;
 
   @ApiPropertyOptional({
-    description: 'Teléfono (requerido si no se proporciona representative_user_id)',
+    description:
+      'Teléfono (requerido si no se proporciona representative_user_id)',
   })
   @IsOptional()
   @IsString()

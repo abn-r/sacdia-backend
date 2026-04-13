@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { maskEmail } from '../utils/mask-email.util';
 
 /**
  * Filtro global de excepciones HTTP.
@@ -24,20 +25,30 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse();
 
-    // Log completo internamente (no expuesto al cliente)
-    this.logger.error(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        method: request.method,
-        url: request.url,
-        status,
-        message: exception.message,
-        stack:
-          process.env.NODE_ENV === 'development'
-            ? exception.stack
-            : undefined,
-      }),
-    );
+    const logPayload = {
+      timestamp: new Date().toISOString(),
+      method: request.method,
+      url: request.url,
+      status,
+      message: exception.message,
+      validationDetails: this.sanitizeValidationDetails(exceptionResponse),
+      requestBody:
+        process.env.NODE_ENV === 'development'
+          ? this.sanitizeRequestBody(request.url, request.body)
+          : undefined,
+      stack:
+        process.env.NODE_ENV === 'development' &&
+        status !== HttpStatus.UNAUTHORIZED
+          ? exception.stack
+          : undefined,
+    };
+
+    // En 401 el comportamiento esperado puede ser común (token expirado), por eso WARN.
+    if (status === HttpStatus.UNAUTHORIZED) {
+      this.logger.warn(logPayload);
+    } else {
+      this.logger.error(logPayload);
+    }
 
     // En producción: errores genéricos para >= 500
     if (process.env.NODE_ENV === 'production') {
@@ -67,6 +78,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
   }
 
+  /**
+   * Strips submitted user values from validation error details before logging.
+   * Keeps constraint names and counts so developers can diagnose failures,
+   * but never persists PII or arbitrary user input to the log stream.
+   */
+  private sanitizeValidationDetails(response: any): any {
+    if (typeof response === 'string') return response;
+    if (response?.message && Array.isArray(response.message)) {
+      // Only keep the constraint messages (field + rule), not submitted values
+      return { constraints: response.message.length, messages: response.message };
+    }
+    return { type: typeof response };
+  }
+
   private extractMessage(response: string | object): string {
     if (typeof response === 'string') {
       return response;
@@ -77,4 +102,35 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
     return 'An error occurred';
   }
+
+  private sanitizeRequestBody(url: string, body: unknown): unknown {
+    if (!body || typeof body !== 'object') return body;
+    if (!url.includes('/auth/login')) return body;
+
+    return this.maskEmailInObject(body);
+  }
+
+  private maskEmailInObject(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.maskEmailInObject(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    const source = value as Record<string, unknown>;
+    const masked: Record<string, unknown> = {};
+
+    for (const [key, raw] of Object.entries(source)) {
+      if (key.toLowerCase() === 'email' && typeof raw === 'string') {
+        masked[key] = maskEmail(raw);
+      } else {
+        masked[key] = this.maskEmailInObject(raw);
+      }
+    }
+
+    return masked;
+  }
+
 }

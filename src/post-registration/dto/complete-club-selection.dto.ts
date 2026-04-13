@@ -1,4 +1,4 @@
-import { IsInt, IsIn } from 'class-validator';
+import { IsInt } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CompleteClubSelectionDto {
@@ -15,19 +15,11 @@ export class CompleteClubSelectionDto {
   local_field_id: number;
 
   @ApiProperty({
-    example: 'adventurers',
-    enum: ['adventurers', 'pathfinders', 'master_guild'],
-    description: 'Tipo de club',
-  })
-  @IsIn(['adventurers', 'pathfinders', 'master_guild'])
-  club_type: 'adventurers' | 'pathfinders' | 'master_guild';
-
-  @ApiProperty({
     example: 1,
-    description: 'ID de la instancia del club (club_adv_id, club_pathf_id, o club_mg_id)',
+    description: 'ID de la sección del club',
   })
   @IsInt()
-  club_instance_id: number;
+  club_section_id: number;
 
   @ApiProperty({
     example: 1,

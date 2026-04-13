@@ -1,28 +1,35 @@
-import { IsString, Length } from 'class-validator';
+import { IsString, Length, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+
+export class EnrollMfaDto {
+  @ApiProperty({
+    example: 'mySecretPassword123',
+    description:
+      'Contraseña actual del usuario. Requerida para habilitar 2FA (evita enrolamiento no autorizado).',
+  })
+  @IsString()
+  @MaxLength(128)
+  password: string;
+}
 
 export class VerifyMfaDto {
   @ApiProperty({
-    example: 'abc123-factor-id',
-    description: 'ID del factor MFA a verificar',
-  })
-  @IsString()
-  factorId: string;
-
-  @ApiProperty({
     example: '123456',
-    description: 'Código TOTP de 6 dígitos de tu app de autenticación',
+    description:
+      'Código TOTP de 6 dígitos de tu app de autenticación (Google Authenticator, Authy, etc.)',
   })
   @IsString()
-  @Length(6, 6, { message: 'El código debe tener 6 dígitos' })
+  @Length(6, 6, { message: 'El código debe tener exactamente 6 dígitos' })
   code: string;
 }
 
-export class UnenrollMfaDto {
+export class DisableMfaDto {
   @ApiProperty({
-    example: 'abc123-factor-id',
-    description: 'ID del factor MFA a eliminar',
+    example: 'mySecretPassword123',
+    description:
+      'Contraseña actual del usuario. Requerida para deshabilitar 2FA (previene desactivación no autorizada).',
   })
   @IsString()
-  factorId: string;
+  @MaxLength(128)
+  password: string;
 }

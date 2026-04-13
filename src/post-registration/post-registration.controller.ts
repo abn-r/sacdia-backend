@@ -4,10 +4,13 @@ import {
   Post,
   Param,
   Body,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -16,25 +19,64 @@ import {
 } from '@nestjs/swagger';
 import { PostRegistrationService } from './post-registration.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import {
+  SensitiveUserSubresource,
+  RequirePermissions,
+  AuthorizationResource,
+} from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+
+type AuthenticatedRequest = Request & {
+  user?: {
+    sub?: string;
+  };
+};
 
 @ApiTags('post-registration')
 @Controller('users/:userId/post-registration')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class PostRegistrationController {
   constructor(
     private readonly postRegistrationService: PostRegistrationService,
   ) {}
 
+  private buildActorContext(userId: string, request: AuthenticatedRequest) {
+    const actorUserId = request.user?.sub ?? '';
+
+    return {
+      actorUserId,
+      isOwner: actorUserId === userId,
+    };
+  }
+
+  @Get('photo-status')
+  @SensitiveUserSubresource('post_registration', 'read')
+  @ApiOperation({
+    summary: 'Verificar si el usuario tiene foto de perfil subida',
+  })
+  @ApiResponse({ status: 200, description: 'Estado de la foto de perfil' })
+  async getPhotoStatus(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.postRegistrationService.getPhotoStatus(userId);
+  }
+
   @Get('status')
+  @SensitiveUserSubresource('post_registration', 'read')
   @ApiOperation({ summary: 'Obtener estado del post-registro' })
   @ApiResponse({ status: 200, description: 'Estado actual' })
-  async getStatus(@Param('userId') userId: string) {
-    return this.postRegistrationService.getStatus(userId);
+  async getStatus(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.getStatus(
+      userId,
+      this.buildActorContext(userId, request),
+    );
   }
 
   @Post('step-1/complete')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 1: Foto de perfil',
@@ -45,11 +87,19 @@ export class PostRegistrationController {
     status: 400,
     description: 'Usuario no tiene foto de perfil',
   })
-  async completeStep1(@Param('userId') userId: string) {
-    return this.postRegistrationService.completeStep1(userId);
+  async completeStep1(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.completeStep1(
+      userId,
+      this.buildActorContext(userId, request),
+    );
   }
 
   @Post('step-2/complete')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 2: Información personal',
@@ -61,16 +111,24 @@ export class PostRegistrationController {
     status: 400,
     description: 'Faltan datos requeridos',
   })
-  async completeStep2(@Param('userId') userId: string) {
-    return this.postRegistrationService.completeStep2(userId);
+  async completeStep2(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.completeStep2(
+      userId,
+      this.buildActorContext(userId, request),
+    );
   }
 
   @Post('step-3/complete')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 3: Selección de club',
     description:
-      'Transacción completa: actualiza país/unión/campo, asigna rol member, inscribe en clase, marca post-registro completo',
+      'Transacción completa: actualiza país/unión/campo, resuelve membresía de club y registra inscripción anual en enrollments antes de cerrar post-registro',
   })
   @ApiResponse({
     status: 200,
@@ -81,9 +139,14 @@ export class PostRegistrationController {
     description: 'Club no encontrado o datos inválidos',
   })
   async completeStep3(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: CompleteClubSelectionDto,
+    @Req() request: AuthenticatedRequest,
   ) {
-    return this.postRegistrationService.completeStep3(userId, dto);
+    return this.postRegistrationService.completeStep3(
+      userId,
+      dto,
+      this.buildActorContext(userId, request),
+    );
   }
 }

@@ -1,28 +1,44 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
   CreateClubDto,
   UpdateClubDto,
-  CreateInstanceDto,
-  UpdateInstanceDto,
+  CreateClubSectionDto,
+  UpdateClubSectionDto,
   AssignRoleDto,
   UpdateRoleAssignmentDto,
-  ClubInstanceType,
 } from './dto';
 import {
   PaginationDto,
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 @Injectable()
 export class ClubsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ClubsService.name);
+  private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ========================================
   // CLUBS - CRUD
@@ -53,9 +69,13 @@ export class ClubsService {
           churches: { select: { name: true } },
           districts: { select: { name: true } },
           local_fields: { select: { name: true } },
-          club_adventurers: { select: { club_adv_id: true, active: true } },
-          club_pathfinders: { select: { club_pathf_id: true, active: true } },
-          club_master_guild: { select: { club_mg_id: true, active: true } },
+          club_sections: {
+            select: {
+              club_section_id: true,
+              active: true,
+              club_types: { select: { name: true } },
+            },
+          },
         },
         orderBy: { name: 'asc' },
         skip: pagination?.skip ?? 0,
@@ -78,9 +98,9 @@ export class ClubsService {
         churches: true,
         districts: true,
         local_fields: true,
-        club_adventurers: true,
-        club_pathfinders: true,
-        club_master_guild: true,
+        club_sections: {
+          include: { club_types: { select: { name: true } } },
+        },
       },
     });
 
@@ -128,151 +148,87 @@ export class ClubsService {
   }
 
   // ========================================
-  // INSTANCES (Adventurers, Pathfinders, Master Guilds)
+  // SECTIONS (unified club_sections)
   // ========================================
 
-  async getInstances(clubId: number) {
-    const club = await this.findOne(clubId);
-
-    return {
-      adventurers: club.club_adventurers,
-      pathfinders: club.club_pathfinders,
-      master_guilds: club.club_master_guild,
-    };
-  }
-
-  async getInstance(clubId: number, type: ClubInstanceType) {
-    const club = await this.findOne(clubId);
-
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return club.club_adventurers;
-      case ClubInstanceType.PATHFINDERS:
-        return club.club_pathfinders;
-      case ClubInstanceType.MASTER_GUILDS:
-        return club.club_master_guild;
-      default:
-        throw new BadRequestException(`Invalid instance type: ${type}`);
-    }
-  }
-
-  async createInstance(clubId: number, dto: CreateInstanceDto) {
-    await this.findOne(clubId); // Verify club exists
-
-    // Get club type id
-    const clubType = await this.prisma.club_types.findFirst({
-      where: {
-        name: this.getClubTypeName(dto.type),
+  async getSections(clubId: number) {
+    await this.findOne(clubId);
+    // Intentionally limited select: this endpoint is called without
+    // club_sections:read permission to support the post-registration flow.
+    // Only expose fields needed to identify and select a section — operational
+    // details (fee, souls_target, meeting_day/time, contact info) are omitted.
+    return this.prisma.club_sections.findMany({
+      where: { main_club_id: clubId },
+      select: {
+        club_section_id: true,
         active: true,
+        name: true,
+        club_types: { select: { club_type_id: true, name: true } },
       },
+      orderBy: { club_section_id: 'asc' },
     });
+  }
 
-    if (!clubType) {
+  async getSection(sectionId: number) {
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      include: { club_types: { select: { name: true } } },
+    });
+    if (!section)
+      throw new NotFoundException(`Club section ${sectionId} not found`);
+    return section;
+  }
+
+  async createSection(clubId: number, dto: CreateClubSectionDto) {
+    await this.findOne(clubId);
+    const clubType = await this.prisma.club_types.findUnique({
+      where: { club_type_id: dto.club_type_id },
+    });
+    if (!clubType || !clubType.active) {
       throw new BadRequestException(
-        `Club type for ${dto.type} not found in catalog`,
+        `Club type ${dto.club_type_id} not found or inactive`,
       );
     }
-
-    // Cast meeting arrays to Prisma InputJsonValue
-    const meetingDay = (dto.meeting_day || []) as Prisma.InputJsonValue[];
-    const meetingTime = (dto.meeting_time || []) as Prisma.InputJsonValue[];
-
-    switch (dto.type) {
-      case ClubInstanceType.ADVENTURERS:
-        return this.prisma.club_adventurers.create({
-          data: {
-            main_club_id: clubId,
-            club_type_id: clubType.club_type_id,
-            souls_target: dto.souls_target || 1,
-            fee: dto.fee || 0,
-            meeting_day: meetingDay,
-            meeting_time: meetingTime,
-            active: true,
-          },
-        });
-      case ClubInstanceType.PATHFINDERS:
-        return this.prisma.club_pathfinders.create({
-          data: {
-            main_club_id: clubId,
-            club_type_id: clubType.club_type_id,
-            souls_target: dto.souls_target || 1,
-            fee: dto.fee || 0,
-            meeting_day: meetingDay,
-            meeting_time: meetingTime,
-            active: true,
-          },
-        });
-      case ClubInstanceType.MASTER_GUILDS:
-        return this.prisma.club_master_guilds.create({
-          data: {
-            main_club_id: clubId,
-            club_type_id: clubType.club_type_id,
-            souls_target: dto.souls_target || 1,
-            fee: dto.fee || 0,
-            meeting_day: meetingDay,
-            meeting_time: meetingTime,
-            active: true,
-          },
-        });
-      default:
-        throw new BadRequestException(`Invalid instance type: ${dto.type}`);
-    }
+    return this.prisma.club_sections.create({
+      data: {
+        main_club_id: clubId,
+        club_type_id: dto.club_type_id,
+        souls_target: dto.souls_target || 1,
+        fee: dto.fee || 0,
+        meeting_day: (dto.meeting_day || []) as Prisma.InputJsonValue[],
+        meeting_time: (dto.meeting_time || []) as Prisma.InputJsonValue[],
+        active: true,
+      },
+      include: { club_types: { select: { name: true } } },
+    });
   }
 
-  async updateInstance(
-    instanceId: number,
-    type: ClubInstanceType,
-    dto: UpdateInstanceDto,
-  ) {
-    // Build update data with proper types
-    const updateData: {
-      souls_target?: number;
-      fee?: number;
-      meeting_day?: Prisma.InputJsonValue[];
-      meeting_time?: Prisma.InputJsonValue[];
-      active?: boolean;
-      modified_at: Date;
-    } = {
-      modified_at: new Date(),
-    };
-
-    if (dto.souls_target !== undefined) updateData.souls_target = dto.souls_target;
-    if (dto.fee !== undefined) updateData.fee = dto.fee;
-    if (dto.active !== undefined) updateData.active = dto.active;
-    if (dto.meeting_day) updateData.meeting_day = dto.meeting_day as Prisma.InputJsonValue[];
-    if (dto.meeting_time) updateData.meeting_time = dto.meeting_time as Prisma.InputJsonValue[];
-
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return this.prisma.club_adventurers.update({
-          where: { club_adv_id: instanceId },
-          data: updateData,
-        });
-      case ClubInstanceType.PATHFINDERS:
-        return this.prisma.club_pathfinders.update({
-          where: { club_pathf_id: instanceId },
-          data: updateData,
-        });
-      case ClubInstanceType.MASTER_GUILDS:
-        return this.prisma.club_master_guilds.update({
-          where: { club_mg_id: instanceId },
-          data: updateData,
-        });
-      default:
-        throw new BadRequestException(`Invalid instance type: ${type}`);
-    }
+  async updateSection(sectionId: number, dto: UpdateClubSectionDto) {
+    const { meeting_day, meeting_time, ...rest } = dto;
+    return this.prisma.club_sections.update({
+      where: { club_section_id: sectionId },
+      data: {
+        ...rest,
+        ...(meeting_day !== undefined && {
+          meeting_day: meeting_day as Prisma.InputJsonValue[],
+        }),
+        ...(meeting_time !== undefined && {
+          meeting_time: meeting_time as Prisma.InputJsonValue[],
+        }),
+        modified_at: new Date(),
+      },
+      include: { club_types: { select: { name: true } } },
+    });
   }
 
   // ========================================
   // ROLE ASSIGNMENTS
   // ========================================
 
-  async getMembers(instanceId: number, type: ClubInstanceType) {
-    const whereClause = this.getInstanceWhereClause(instanceId, type);
-
-    return this.prisma.club_role_assignments.findMany({
+  async getMembers(sectionId: number) {
+    const members = await this.prisma.club_role_assignments.findMany({
       where: {
-        ...whereClause,
+        club_section_id: sectionId,
         active: true,
       },
       include: {
@@ -295,52 +251,104 @@ export class ClubsService {
       },
       orderBy: { start_date: 'desc' },
     });
+
+    return Promise.all(
+      members.map(async (member) => ({
+        ...member,
+        users: member.users
+          ? {
+              ...member.users,
+              user_image:
+                typeof member.users.user_image === 'string'
+                  ? await this.resolvePrivateProfileUrl(member.users.user_image)
+                  : member.users.user_image,
+            }
+          : member.users,
+      })),
+    );
   }
 
   async assignRole(dto: AssignRoleDto) {
+    if (!dto.club_section_id) {
+      throw new BadRequestException('club_section_id is required');
+    }
+
+    const roleId = await this.resolveRoleId(dto);
+    const ecclesiasticalYearId =
+      dto.ecclesiastical_year_id ??
+      (await this.getActiveEcclesiasticalYearId());
+    const startDate = dto.start_date ?? new Date();
+
+    await this.validateRoleSlot(dto.club_section_id, roleId);
+
     const assignment = {
       user_id: dto.user_id,
-      role_id: dto.role_id,
-      ecclesiastical_year_id: dto.ecclesiastical_year_id,
-      start_date: dto.start_date,
+      role_id: roleId,
+      ecclesiastical_year_id: ecclesiasticalYearId,
+      start_date: startDate,
       end_date: dto.end_date,
       active: true,
       status: 'active',
-      club_adv_id:
-        dto.instance_type === ClubInstanceType.ADVENTURERS
-          ? dto.instance_id
-          : null,
-      club_pathf_id:
-        dto.instance_type === ClubInstanceType.PATHFINDERS
-          ? dto.instance_id
-          : null,
-      club_mg_id:
-        dto.instance_type === ClubInstanceType.MASTER_GUILDS
-          ? dto.instance_id
-          : null,
+      club_section_id: dto.club_section_id,
     };
 
-    return this.prisma.club_role_assignments.create({
+    const created = await this.prisma.club_role_assignments.create({
       data: assignment,
       include: {
         users: { select: { name: true, paternal_last_name: true } },
         roles: { select: { role_name: true } },
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      dto.user_id,
+    );
+
+    return created;
   }
 
-  async updateRoleAssignment(assignmentId: string, dto: UpdateRoleAssignmentDto) {
-    return this.prisma.club_role_assignments.update({
+  async updateRoleAssignment(
+    assignmentId: string,
+    dto: UpdateRoleAssignmentDto,
+  ) {
+    const updateData: Record<string, unknown> = {
+      modified_at: new Date(),
+    };
+
+    if (dto.role_id || dto.role) {
+      updateData.role_id = await this.resolveRoleId(dto);
+    }
+
+    if (dto.ecclesiastical_year_id !== undefined) {
+      updateData.ecclesiastical_year_id = dto.ecclesiastical_year_id;
+    }
+
+    if (dto.start_date !== undefined) {
+      updateData.start_date = dto.start_date;
+    }
+
+    if (dto.end_date !== undefined) {
+      updateData.end_date = dto.end_date;
+    }
+
+    if (dto.status !== undefined) {
+      updateData.status = dto.status;
+    }
+
+    const updated = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
-      data: {
-        ...dto,
-        modified_at: new Date(),
-      },
+      data: updateData,
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      updated.user_id,
+    );
+
+    return updated;
   }
 
   async removeRoleAssignment(assignmentId: string) {
-    return this.prisma.club_role_assignments.update({
+    const removed = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: {
         active: false,
@@ -349,35 +357,178 @@ export class ClubsService {
         modified_at: new Date(),
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      removed.user_id,
+    );
+
+    return removed;
   }
 
   // ========================================
   // HELPERS
   // ========================================
 
-  private getClubTypeName(type: ClubInstanceType): string {
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return 'Aventureros';
-      case ClubInstanceType.PATHFINDERS:
-        return 'Conquistadores';
-      case ClubInstanceType.MASTER_GUILDS:
-        return 'Guías Mayores';
-      default:
-        return '';
+  private async validateRoleSlot(
+    sectionId: number,
+    roleId: string,
+  ): Promise<void> {
+    // 1. Check max_per_section from role_slot_limits
+    const slotLimit = await this.prisma.role_slot_limits.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (slotLimit?.max_per_section != null) {
+      const currentCount = await this.prisma.club_role_assignments.count({
+        where: {
+          club_section_id: sectionId,
+          role_id: roleId,
+          active: true,
+        },
+      });
+
+      if (currentCount >= slotLimit.max_per_section) {
+        const role = await this.prisma.roles.findUnique({
+          where: { role_id: roleId },
+          select: { role_name: true },
+        });
+        throw new ConflictException(
+          `Maximum ${slotLimit.max_per_section} "${role?.role_name ?? roleId}" per section reached`,
+        );
+      }
+    }
+
+    // 2. Mutual exclusivity: secretary / treasurer vs secretary-treasurer
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_name: true },
+    });
+
+    if (!role) return;
+
+    const roleName = role.role_name.toLowerCase();
+
+    if (roleName === 'secretary' || roleName === 'treasurer') {
+      const secTreasRole = await this.prisma.roles.findFirst({
+        where: { role_name: 'secretary-treasurer', active: true },
+        select: { role_id: true },
+      });
+
+      if (secTreasRole) {
+        const hasSecTreas = await this.prisma.club_role_assignments.findFirst({
+          where: {
+            club_section_id: sectionId,
+            role_id: secTreasRole.role_id,
+            active: true,
+          },
+        });
+
+        if (hasSecTreas) {
+          throw new ConflictException(
+            `Cannot assign "${roleName}" when "secretary-treasurer" already exists in this section`,
+          );
+        }
+      }
+    }
+
+    if (roleName === 'secretary-treasurer') {
+      const conflictingRoles = await this.prisma.roles.findMany({
+        where: { role_name: { in: ['secretary', 'treasurer'] }, active: true },
+        select: { role_id: true, role_name: true },
+      });
+
+      if (conflictingRoles.length > 0) {
+        const conflictingIds = conflictingRoles.map((r) => r.role_id);
+        const existingConflict =
+          await this.prisma.club_role_assignments.findFirst({
+            where: {
+              club_section_id: sectionId,
+              role_id: { in: conflictingIds },
+              active: true,
+            },
+            include: {
+              roles: { select: { role_name: true } },
+            },
+          });
+
+        if (existingConflict) {
+          throw new ConflictException(
+            `Cannot assign "secretary-treasurer" when "${existingConflict.roles.role_name}" already exists in this section`,
+          );
+        }
+      }
     }
   }
 
-  private getInstanceWhereClause(instanceId: number, type: ClubInstanceType) {
-    switch (type) {
-      case ClubInstanceType.ADVENTURERS:
-        return { club_adv_id: instanceId };
-      case ClubInstanceType.PATHFINDERS:
-        return { club_pathf_id: instanceId };
-      case ClubInstanceType.MASTER_GUILDS:
-        return { club_mg_id: instanceId };
-      default:
-        throw new BadRequestException(`Invalid instance type: ${type}`);
+  private async getActiveEcclesiasticalYearId(): Promise<number> {
+    const currentYear = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: new Date() },
+        end_date: { gte: new Date() },
+      },
+      select: { year_id: true },
+    });
+
+    if (!currentYear) {
+      throw new BadRequestException('No active ecclesiastical year configured');
+    }
+
+    return currentYear.year_id;
+  }
+
+  private async resolveRoleId(
+    dto: Pick<AssignRoleDto, 'role_id' | 'role'>,
+  ): Promise<string> {
+    if (dto.role_id) {
+      return dto.role_id;
+    }
+
+    if (!dto.role) {
+      throw new BadRequestException('role_id or role is required');
+    }
+
+    const normalizedRoleName = dto.role.trim().toLowerCase();
+    if (!normalizedRoleName) {
+      throw new BadRequestException('role is empty');
+    }
+
+    const role = await this.prisma.roles.findFirst({
+      where: {
+        role_name: normalizedRoleName,
+        role_category: 'CLUB',
+        active: true,
+      },
+      select: { role_id: true },
+    });
+
+    if (!role) {
+      throw new BadRequestException(
+        `Role "${normalizedRoleName}" not found in CLUB category`,
+      );
+    }
+
+    return role.role_id;
+  }
+
+  private async resolvePrivateProfileUrl(
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        value,
+        {
+          expiresInSeconds: ClubsService.PRIVATE_ASSET_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for club member profile. Returning original value.',
+        error,
+      );
+      return value;
     }
   }
 }

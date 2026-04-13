@@ -1,15 +1,17 @@
 import {
+  ArrayNotEmpty,
   IsInt,
   IsOptional,
   IsString,
   IsBoolean,
   IsArray,
   IsDateString,
-  IsUrl,
   Min,
   Max,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class StartHonorDto {
   @ApiPropertyOptional({ description: 'Fecha de inicio del honor' })
@@ -53,6 +55,57 @@ export class UpdateUserHonorDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+}
+
+export class CreateUserHonorDto {
+  @ApiProperty({ description: 'ID del honor/especialidad' })
+  @IsInt()
+  honorId: number;
+
+  @ApiPropertyOptional({ description: 'Fecha de registro/inicio del honor' })
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+
+  @ApiPropertyOptional({ description: 'Honor validado por instructor' })
+  @IsOptional()
+  @IsBoolean()
+  validate?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'URL del certificado (pasar null o string vacío para limpiar)',
+  })
+  @IsOptional()
+  @IsString()
+  certificate?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'URLs de imágenes de evidencia',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  images?: string[] | null;
+
+  @ApiPropertyOptional({
+    description: 'URL del documento adicional',
+  })
+  @IsOptional()
+  @IsString()
+  document?: string | null;
+}
+
+export class BulkCreateUserHonorsDto {
+  @ApiProperty({
+    description: 'Listado de honores a registrar',
+    type: [CreateUserHonorDto],
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => CreateUserHonorDto)
+  honors: CreateUserHonorDto[];
 }
 
 export class HonorFiltersDto {

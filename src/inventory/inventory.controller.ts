@@ -9,6 +9,7 @@ import {
   Query,
   ParseIntPipe,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,11 +22,15 @@ import {
 import { InventoryService } from './inventory.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('inventory')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
@@ -35,6 +40,13 @@ export class InventoryController {
   // ========================================
 
   @Get('clubs/:clubId/inventory')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({
+    type: 'inventory_instance',
+    idParam: 'clubId',
+    instanceTypeSource: 'query',
+    instanceTypeField: 'instanceType',
+  })
   @ApiOperation({
     summary: 'Listar items del inventario de un club',
     description:
@@ -67,11 +79,10 @@ export class InventoryController {
   async findAllByClub(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('instanceType') instanceType: 'adv' | 'pathf' | 'mg',
-    @Query('category', ParseIntPipe) categoryId?: number,
+    @Query('category', new ParseIntPipe({ optional: true })) categoryId?: number,
   ) {
     const result = await this.inventoryService.findAllByClub(
       clubId,
-      instanceType,
       categoryId,
     );
     return {
@@ -81,6 +92,8 @@ export class InventoryController {
   }
 
   @Get('inventory/:id')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Obtener detalles de un item del inventario',
     description:
@@ -104,11 +117,44 @@ export class InventoryController {
     };
   }
 
+  @Get('inventory/:inventoryId/history')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'inventoryId' })
+  @ApiOperation({
+    summary: 'Obtener historial de cambios de un item del inventario',
+    description:
+      'Retorna el historial de acciones realizadas sobre un item de inventario, ordenado por fecha descendente.',
+  })
+  @ApiParam({
+    name: 'inventoryId',
+    description: 'ID del item de inventario',
+    example: 1,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Historial de cambios del item',
+  })
+  @ApiResponse({ status: 404, description: 'Item no encontrado' })
+  async getHistory(@Param('inventoryId', ParseIntPipe) inventoryId: number) {
+    const data = await this.inventoryService.getInventoryHistory(inventoryId);
+    return {
+      status: 'success',
+      data,
+    };
+  }
+
   @Post('clubs/:clubId/inventory')
+  @RequirePermissions('inventory:create')
+  @AuthorizationResource({
+    type: 'inventory_instance',
+    idParam: 'clubId',
+    instanceTypeSource: 'body',
+    instanceTypeField: 'instanceType',
+  })
   @ApiOperation({
     summary: 'Agregar nuevo item al inventario',
     description:
-      'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Subdirector o Tesorero.',
+      'Crea un nuevo item de inventario para una instancia específica de club. Requiere rol de Director, Deputy Director o Treasurer.',
   })
   @ApiParam({
     name: 'clubId',
@@ -125,8 +171,9 @@ export class InventoryController {
   async create(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Body() dto: CreateItemDto,
+    @Req() req: any,
   ) {
-    const data = await this.inventoryService.create(clubId, dto);
+    const data = await this.inventoryService.create(clubId, dto, req.user.sub);
     return {
       status: 'success',
       data,
@@ -134,10 +181,12 @@ export class InventoryController {
   }
 
   @Patch('inventory/:id')
+  @RequirePermissions('inventory:update')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Actualizar un item del inventario',
     description:
-      'Actualiza información de un item existente. Requiere rol de Director, Subdirector o Tesorero.',
+      'Actualiza información de un item existente. Requiere rol de Director, Deputy Director o Treasurer.',
   })
   @ApiParam({
     name: 'id',
@@ -153,8 +202,9 @@ export class InventoryController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateItemDto,
+    @Req() req: any,
   ) {
-    const data = await this.inventoryService.update(id, dto);
+    const data = await this.inventoryService.update(id, dto, req.user.sub);
     return {
       status: 'success',
       data,
@@ -162,10 +212,12 @@ export class InventoryController {
   }
 
   @Delete('inventory/:id')
+  @RequirePermissions('inventory:delete')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
   @ApiOperation({
     summary: 'Eliminar un item del inventario',
     description:
-      'Elimina un item del inventario (soft delete). Requiere rol de Director o Subdirector.',
+      'Elimina un item del inventario (soft delete). Requiere rol de Director o Deputy Director.',
   })
   @ApiParam({
     name: 'id',
@@ -178,8 +230,8 @@ export class InventoryController {
     status: 403,
     description: 'No tiene permisos para eliminar items',
   })
-  async delete(@Param('id', ParseIntPipe) id: number) {
-    const data = await this.inventoryService.delete(id);
+  async delete(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const data = await this.inventoryService.delete(id, req.user.sub);
     return {
       status: 'success',
       ...data,
@@ -191,6 +243,8 @@ export class InventoryController {
   // ========================================
 
   @Get('catalogs/inventory-categories')
+  @RequirePermissions('inventory:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Listar categorías de inventario',
     description:

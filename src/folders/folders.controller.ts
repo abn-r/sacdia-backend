@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -21,18 +22,25 @@ import {
 import { FoldersService } from './folders.service';
 import { UpdateSectionRecordDto } from './dto/update-section-record.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  OptionalJwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
+
+// ========================================
+// CATÁLOGO DE CARPETAS (Público)
+// ========================================
 
 @ApiTags('folders')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 @Controller('folders')
+@UseGuards(OptionalJwtAuthGuard)
 export class FoldersController {
   constructor(private readonly foldersService: FoldersService) {}
-
-  // ========================================
-  // FOLDER TEMPLATES
-  // ========================================
 
   @Get('folders')
   @ApiOperation({
@@ -43,7 +51,8 @@ export class FoldersController {
   @ApiQuery({
     name: 'club_type',
     required: false,
-    description: 'Filtrar por tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
+    description:
+      'Filtrar por tipo de club (1: Aventureros, 2: Conquistadores, 3: Guías Mayores)',
     example: 2,
   })
   @ApiQuery({
@@ -59,7 +68,6 @@ export class FoldersController {
     example: 50,
   })
   @ApiResponse({ status: 200, description: 'Lista de templates de carpetas' })
-  @ApiResponse({ status: 401, description: 'No autenticado' })
   async findAll(
     @Query('club_type', ParseIntPipe) clubTypeId?: number,
     @Query() paginationDto?: PaginationDto,
@@ -87,7 +95,10 @@ export class FoldersController {
     status: 200,
     description: 'Detalles del template con módulos y secciones',
   })
-  @ApiResponse({ status: 404, description: 'Template de carpeta no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Template de carpeta no encontrado',
+  })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const data = await this.foldersService.findOne(id);
     return {
@@ -95,12 +106,22 @@ export class FoldersController {
       data,
     };
   }
+}
 
-  // ========================================
-  // USER FOLDER ASSIGNMENTS
-  // ========================================
+// ========================================
+// CARPETAS DE USUARIO (Autenticado)
+// ========================================
+
+@ApiTags('folders')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Controller('folders')
+export class UserFoldersController {
+  constructor(private readonly foldersService: FoldersService) {}
 
   @Post('users/:userId/folders/:folderId/enroll')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribirse en una carpeta',
     description:
@@ -121,13 +142,16 @@ export class FoldersController {
     status: 400,
     description: 'Usuario no pertenece a un club del tipo requerido',
   })
-  @ApiResponse({ status: 404, description: 'Template de carpeta no encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Template de carpeta no encontrado',
+  })
   @ApiResponse({
     status: 409,
     description: 'Usuario ya tiene una asignación activa para esta carpeta',
   })
   async enrollUser(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
   ) {
     const data = await this.foldersService.enrollUser(userId, folderId);
@@ -138,6 +162,8 @@ export class FoldersController {
   }
 
   @Get('users/:userId/folders')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Listar carpetas asignadas del usuario',
     description:
@@ -152,7 +178,7 @@ export class FoldersController {
     status: 200,
     description: 'Lista de carpetas del usuario con progreso',
   })
-  async getUserFolders(@Param('userId') userId: string) {
+  async getUserFolders(@Param('userId', ParseUUIDPipe) userId: string) {
     const data = await this.foldersService.getUserFolders(userId);
     return {
       status: 'success',
@@ -161,6 +187,8 @@ export class FoldersController {
   }
 
   @Get('users/:userId/folders/:folderId/progress')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Ver progreso detallado de una carpeta',
     description:
@@ -185,7 +213,7 @@ export class FoldersController {
     description: 'Asignación de carpeta no encontrada',
   })
   async getFolderProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
   ) {
     const data = await this.foldersService.getFolderProgress(userId, folderId);
@@ -195,7 +223,11 @@ export class FoldersController {
     };
   }
 
-  @Patch('users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId')
+  @Patch(
+    'users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId',
+  )
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
     description:
@@ -234,7 +266,7 @@ export class FoldersController {
     description: 'Asignación de carpeta no encontrada',
   })
   async updateSectionProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
     @Param('moduleId', ParseIntPipe) moduleId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -254,10 +286,11 @@ export class FoldersController {
   }
 
   @Delete('users/:userId/folders/:folderId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Abandonar una carpeta',
-    description:
-      'Desactiva la asignación de carpeta del usuario (soft delete)',
+    description: 'Desactiva la asignación de carpeta del usuario (soft delete)',
   })
   @ApiParam({
     name: 'userId',
@@ -278,7 +311,7 @@ export class FoldersController {
     description: 'Asignación de carpeta no encontrada',
   })
   async deleteAssignment(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('folderId', ParseIntPipe) folderId: number,
   ) {
     const data = await this.foldersService.deleteAssignment(userId, folderId);

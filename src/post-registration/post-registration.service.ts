@@ -1,13 +1,22 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
+
+export type PostRegistrationActorContext = {
+  actorUserId: string;
+  isOwner: boolean;
+};
+
+type ClubInstanceField = 'club_section_id';
 
 @Injectable()
 export class PostRegistrationService {
@@ -19,7 +28,10 @@ export class PostRegistrationService {
     private legalRepService: LegalRepresentativesService,
   ) {}
 
-  async getStatus(userId: string) {
+  async getStatus(
+    userId: string,
+    actor: PostRegistrationActorContext = this.createOwnerContext(userId),
+  ) {
     const userPr = await this.prisma.users_pr.findUnique({
       where: { user_id: userId },
     });
@@ -37,7 +49,7 @@ export class PostRegistrationService {
       nextStep = 'clubSelection';
     }
 
-    return {
+    const response = {
       status: 'success',
       data: {
         complete: userPr.complete,
@@ -50,213 +62,538 @@ export class PostRegistrationService {
         dateCompleted: userPr.date_completed,
       },
     };
+
+    if (actor.isOwner) {
+      return response;
+    }
+
+    return {
+      status: 'success',
+      data: {
+        complete: response.data.complete,
+        steps: response.data.steps,
+        dateCompleted: response.data.dateCompleted,
+      },
+    };
   }
 
-  async completeStep1(userId: string) {
-    // Verificar que el usuario tenga foto
+  async getPhotoStatus(userId: string) {
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: { user_image: true },
     });
 
-    if (!user?.user_image) {
-      throw new BadRequestException(
-        'Debe subir una foto de perfil antes de completar este paso',
-      );
-    }
-
-    await this.prisma.users_pr.update({
-      where: { user_id: userId },
-      data: { profile_picture_complete: true },
-    });
-
-    this.logger.log(`Step 1 (profile picture) completed for user ${userId}`);
-
     return {
-      status: 'success',
-      message: 'Paso 1 completado: Foto de perfil',
+      has_photo: !!user?.user_image,
     };
   }
 
-  async completeStep2(userId: string) {
-    // Validar que tenga info personal completa
-    const user = await this.prisma.users.findUnique({
-      where: { user_id: userId },
+  async completeStep1(
+    userId: string,
+    actor: PostRegistrationActorContext = this.createOwnerContext(userId),
+  ) {
+    try {
+      // Verificar que el usuario tenga foto
+      const user = await this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: { user_image: true },
+      });
+
+      if (!user?.user_image) {
+        throw new BadRequestException(
+          'Debe subir una foto de perfil antes de completar este paso',
+        );
+      }
+
+      await this.prisma.users_pr.update({
+        where: { user_id: userId },
+        data: { profile_picture_complete: true },
+      });
+
+      this.logger.log(`Step 1 (profile picture) completed for user ${userId}`);
+
+      return actor.isOwner
+        ? {
+            status: 'success',
+            message: 'Paso 1 completado: Foto de perfil',
+          }
+        : {
+            status: 'success',
+            message: 'Paso 1 completado',
+          };
+    } catch (error) {
+      throw this.sanitizeAdministrativeValidationError(
+        error,
+        actor,
+        'No se puede completar el paso 1 para este usuario',
+      );
+    }
+  }
+
+  async completeStep2(
+    userId: string,
+    actor: PostRegistrationActorContext = this.createOwnerContext(userId),
+  ) {
+    try {
+      // Validar que tenga info personal completa
+      const user = await this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: {
+          gender: true,
+          birthday: true,
+          baptism: true,
+        },
+      });
+
+      if (!user) {
+        throw new BadRequestException('Usuario no encontrado');
+      }
+
+      if (!user.gender || !user.birthday || user.baptism === null) {
+        throw new BadRequestException(
+          'Debe completar información personal (género, cumpleaños, bautismo)',
+        );
+      }
+
+      // Validar contactos de emergencia (al menos 1)
+      const contactsCount = await this.prisma.emergency_contacts.count({
+        where: {
+          owner_id: userId,
+          active: true,
+        },
+      });
+
+      if (contactsCount === 0) {
+        throw new BadRequestException(
+          'Debe agregar al menos un contacto de emergencia',
+        );
+      }
+
+      // Si es menor de 18, validar representante legal
+      const requiresRep =
+        await this.usersService.requiresLegalRepresentative(userId);
+
+      if (requiresRep) {
+        try {
+          await this.legalRepService.findOne(userId);
+        } catch {
+          throw new BadRequestException(
+            'Menores de 18 años deben registrar un representante legal',
+          );
+        }
+      }
+
+      await this.prisma.users_pr.update({
+        where: { user_id: userId },
+        data: { personal_info_complete: true },
+      });
+
+      this.logger.log(`Step 2 (personal info) completed for user ${userId}`);
+
+      return actor.isOwner
+        ? {
+            status: 'success',
+            message: 'Paso 2 completado: Información personal',
+          }
+        : {
+            status: 'success',
+            message: 'Paso 2 completado',
+          };
+    } catch (error) {
+      throw this.sanitizeAdministrativeValidationError(
+        error,
+        actor,
+        'No se puede completar el paso 2 para este usuario',
+      );
+    }
+  }
+
+  async completeStep3(
+    userId: string,
+    dto: CompleteClubSelectionDto,
+    actor: PostRegistrationActorContext = this.createOwnerContext(userId),
+  ) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const currentYear = await this.resolveActiveEcclesiasticalYear(tx, now);
+        const memberRoleId = await this.resolveMemberRoleId(tx);
+        const clubInstanceField: ClubInstanceField = 'club_section_id';
+
+        await this.resolveSelectedClub(tx, dto);
+        await this.resolveSelectedClass(tx, dto.class_id);
+
+        await tx.users.update({
+          where: { user_id: userId },
+          data: {
+            country_id: dto.country_id,
+            union_id: dto.union_id,
+            local_field_id: dto.local_field_id,
+          },
+        });
+
+        await this.resolveMemberAssignment(tx, {
+          userId,
+          roleId: memberRoleId,
+          clubInstanceField,
+          clubInstanceId: dto.club_section_id,
+          ecclesiasticalYearId: currentYear.year_id,
+          assignmentStartDate: currentYear.start_date,
+        });
+
+        await tx.enrollments.updateMany({
+          where: {
+            user_id: userId,
+            ecclesiastical_year_id: currentYear.year_id,
+            active: true,
+            NOT: { class_id: dto.class_id },
+          },
+          data: {
+            active: false,
+          },
+        });
+
+        await this.resolveOperationalEnrollment(tx, {
+          userId,
+          classId: dto.class_id,
+          ecclesiasticalYearId: currentYear.year_id,
+        });
+
+        await tx.users_pr.update({
+          where: { user_id: userId },
+          data: {
+            club_selection_complete: true,
+            complete: true,
+            date_completed: now,
+          },
+        });
+
+        this.logger.log(
+          `Step 3 (club selection) completed for user ${userId} - Post-registration COMPLETE`,
+        );
+
+        const response = {
+          status: 'success',
+          message: 'Post-registro completado exitosamente',
+          data: {
+            clubSectionId: dto.club_section_id,
+            classId: dto.class_id,
+            ecclesiasticalYear: currentYear.year_id,
+          },
+        };
+
+        if (actor.isOwner) {
+          return response;
+        }
+
+        return {
+          status: 'success',
+          message: 'Paso 3 completado',
+        };
+      });
+    } catch (error) {
+      throw this.sanitizeAdministrativeValidationError(
+        error,
+        actor,
+        'No se puede completar el paso 3 para este usuario',
+      );
+    }
+  }
+
+  private async resolveActiveEcclesiasticalYear(
+    tx: Prisma.TransactionClient,
+    at: Date,
+  ): Promise<{ year_id: number; start_date: Date }> {
+    const currentYear = await tx.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: at },
+        end_date: { gte: at },
+      },
       select: {
-        gender: true,
-        birthday: true,
-        baptism: true,
+        year_id: true,
+        start_date: true,
       },
     });
 
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado');
-    }
-
-    if (!user.gender || !user.birthday || user.baptism === null) {
-      throw new BadRequestException(
-        'Debe completar información personal (género, cumpleaños, bautismo)',
+    if (!currentYear) {
+      throw new InternalServerErrorException(
+        'No hay año eclesiástico activo configurado',
       );
     }
 
-    // Validar contactos de emergencia (al menos 1)
-    const contactsCount = await this.prisma.emergency_contacts.count({
+    return currentYear;
+  }
+
+  private async resolveMemberRoleId(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
+    const memberRole = await tx.roles.findFirst({
       where: {
-        owner_id: userId,
+        role_name: 'member',
+        role_category: 'CLUB',
+      },
+      select: {
+        role_id: true,
+      },
+    });
+
+    if (!memberRole) {
+      throw new InternalServerErrorException(
+        'Rol "member" no encontrado en el sistema',
+      );
+    }
+
+    return memberRole.role_id;
+  }
+
+  private async resolveSelectedClub(
+    tx: Prisma.TransactionClient,
+    dto: CompleteClubSelectionDto,
+  ) {
+    const section = await tx.club_sections.findUnique({
+      where: { club_section_id: dto.club_section_id },
+    });
+
+    if (!section) {
+      throw new BadRequestException('Club no encontrado');
+    }
+  }
+
+  private async resolveSelectedClass(
+    tx: Prisma.TransactionClient,
+    classId: number,
+  ) {
+    const selectedClass = await tx.classes.findUnique({
+      where: { class_id: classId },
+      select: {
+        class_id: true,
         active: true,
       },
     });
 
-    if (contactsCount === 0) {
-      throw new BadRequestException(
-        'Debe agregar al menos un contacto de emergencia',
+    if (!selectedClass || !selectedClass.active) {
+      throw new BadRequestException('Clase no encontrada');
+    }
+  }
+
+  private async resolveMemberAssignment(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      roleId: string;
+      clubInstanceField: ClubInstanceField;
+      clubInstanceId: number;
+      ecclesiasticalYearId: number;
+      assignmentStartDate: Date;
+    },
+  ) {
+    // --- Multi-club same-type validation ---
+    const targetSection = await tx.club_sections.findUnique({
+      where: { club_section_id: params.clubInstanceId },
+      select: { club_type_id: true },
+    });
+
+    if (!targetSection) {
+      throw new BadRequestException('Club no encontrado');
+    }
+
+    const existingSameType = await tx.club_role_assignments.findFirst({
+      where: {
+        user_id: params.userId,
+        status: { in: ['active', 'pending'] },
+        active: true,
+        club_sections: {
+          club_type_id: targetSection.club_type_id,
+        },
+        // Exclude the exact same club section (re-registration case)
+        NOT: {
+          club_section_id: params.clubInstanceId,
+        },
+      },
+    });
+
+    if (existingSameType) {
+      throw new ConflictException(
+        'Ya tienes una membresía activa o pendiente en un club del mismo tipo',
       );
     }
 
-    // Si es menor de 18, validar representante legal
-    const requiresRep =
-      await this.usersService.requiresLegalRepresentative(userId);
+    // --- Create or reactivate assignment with pending status ---
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 8);
 
-    if (requiresRep) {
-      try {
-        await this.legalRepService.findOne(userId);
-      } catch {
-        throw new BadRequestException(
-          'Menores de 18 años deben registrar un representante legal',
+    const where: Prisma.club_role_assignmentsWhereInput = {
+      user_id: params.userId,
+      role_id: params.roleId,
+      ecclesiastical_year_id: params.ecclesiasticalYearId,
+      [params.clubInstanceField]: params.clubInstanceId,
+      start_date: params.assignmentStartDate,
+    };
+
+    const existingAssignment = await tx.club_role_assignments.findFirst({
+      where,
+    });
+
+    if (existingAssignment) {
+      if (
+        !existingAssignment.active ||
+        existingAssignment.status !== 'pending'
+      ) {
+        await tx.club_role_assignments.update({
+          where: {
+            assignment_id: existingAssignment.assignment_id,
+          },
+          data: {
+            active: true,
+            status: 'pending',
+            expires_at: expiresAt,
+            end_date: null,
+          },
+        });
+      }
+
+      return;
+    }
+
+    try {
+      await tx.club_role_assignments.create({
+        data: {
+          user_id: params.userId,
+          role_id: params.roleId,
+          [params.clubInstanceField]: params.clubInstanceId,
+          ecclesiastical_year_id: params.ecclesiasticalYearId,
+          start_date: params.assignmentStartDate,
+          active: true,
+          status: 'pending',
+          expires_at: expiresAt,
+        },
+      });
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const recoveredAssignment = await tx.club_role_assignments.findFirst({
+        where,
+      });
+
+      if (!recoveredAssignment) {
+        throw new InternalServerErrorException(
+          'No se pudo resolver la asignación de membresía del club',
+        );
+      }
+
+      if (
+        !recoveredAssignment.active ||
+        recoveredAssignment.status !== 'pending'
+      ) {
+        await tx.club_role_assignments.update({
+          where: {
+            assignment_id: recoveredAssignment.assignment_id,
+          },
+          data: {
+            active: true,
+            status: 'pending',
+            expires_at: expiresAt,
+            end_date: null,
+          },
+        });
+      }
+    }
+  }
+
+  private async resolveOperationalEnrollment(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      classId: number;
+      ecclesiasticalYearId: number;
+    },
+  ) {
+    const enrollmentWhere = {
+      user_id_class_id_ecclesiastical_year_id: {
+        user_id: params.userId,
+        class_id: params.classId,
+        ecclesiastical_year_id: params.ecclesiasticalYearId,
+      },
+    };
+
+    const existingEnrollment = await tx.enrollments.findUnique({
+      where: enrollmentWhere,
+      select: {
+        enrollment_id: true,
+        active: true,
+      },
+    });
+
+    if (existingEnrollment) {
+      if (!existingEnrollment.active) {
+        await tx.enrollments.update({
+          where: {
+            enrollment_id: existingEnrollment.enrollment_id,
+          },
+          data: {
+            active: true,
+          },
+        });
+      }
+
+      return;
+    }
+
+    try {
+      await tx.enrollments.create({
+        data: {
+          user_id: params.userId,
+          class_id: params.classId,
+          ecclesiastical_year_id: params.ecclesiasticalYearId,
+        },
+      });
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const recoveredEnrollment = await tx.enrollments.findUnique({
+        where: enrollmentWhere,
+        select: {
+          enrollment_id: true,
+        },
+      });
+
+      if (!recoveredEnrollment) {
+        throw new InternalServerErrorException(
+          'No se pudo resolver la inscripción anual operativa',
         );
       }
     }
+  }
 
-    await this.prisma.users_pr.update({
-      where: { user_id: userId },
-      data: { personal_info_complete: true },
-    });
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    );
+  }
 
-    this.logger.log(`Step 2 (personal info) completed for user ${userId}`);
-
+  private createOwnerContext(userId: string): PostRegistrationActorContext {
     return {
-      status: 'success',
-      message: 'Paso 2 completado: Información personal',
+      actorUserId: userId,
+      isOwner: true,
     };
   }
 
-  async completeStep3(userId: string, dto: CompleteClubSelectionDto) {
-    return await this.prisma.$transaction(async (tx) => {
-      // 1. Actualizar país, unión, campo local
-      await tx.users.update({
-        where: { user_id: userId },
-        data: {
-          country_id: dto.country_id,
-          union_id: dto.union_id,
-          local_field_id: dto.local_field_id,
-        },
-      });
+  private sanitizeAdministrativeValidationError(
+    error: unknown,
+    actor: PostRegistrationActorContext,
+    genericMessage: string,
+  ): Error {
+    if (actor.isOwner || !(error instanceof BadRequestException)) {
+      return error as Error;
+    }
 
-      // 2. Obtener año eclesiástico actual
-      const currentYear = await tx.ecclesiastical_years.findFirst({
-        where: {
-          start_date: { lte: new Date() },
-          end_date: { gte: new Date() },
-        },
-      });
-
-      if (!currentYear) {
-        throw new InternalServerErrorException(
-          'No hay año eclesiástico activo configurado',
-        );
-      }
-
-      // 3. Obtener rol "member" (CLUB)
-      const memberRole = await tx.roles.findFirst({
-        where: {
-          role_name: 'member',
-          role_category: 'CLUB',
-        },
-      });
-
-      if (!memberRole) {
-        throw new InternalServerErrorException(
-          'Rol "member" no encontrado en el sistema',
-        );
-      }
-
-      // 4. Determinar campo de instancia según tipo de club
-      const clubInstanceField =
-        dto.club_type === 'adventurers'
-          ? 'club_adv_id'
-          : dto.club_type === 'pathfinders'
-            ? 'club_pathf_id'
-            : 'club_mg_id';
-
-      // 5. Verificar que el club existe
-      const clubTable =
-        dto.club_type === 'adventurers'
-          ? 'club_adventurers'
-          : dto.club_type === 'pathfinders'
-            ? 'club_pathfinders'
-            : 'club_master_guilds';
-
-      const clubIdField =
-        dto.club_type === 'adventurers'
-          ? 'club_adv_id'
-          : dto.club_type === 'pathfinders'
-            ? 'club_pathf_id'
-            : 'club_mg_id';
-
-      const club = await (tx as any)[clubTable].findUnique({
-        where: { [clubIdField]: dto.club_instance_id },
-      });
-
-      if (!club) {
-        throw new BadRequestException('Club no encontrado');
-      }
-
-      // 6. Asignar rol en club
-      await tx.club_role_assignments.create({
-        data: {
-          user_id: userId,
-          role_id: memberRole.role_id,
-          [clubInstanceField]: dto.club_instance_id,
-          ecclesiastical_year_id: currentYear.year_id,
-          start_date: new Date(),
-          active: true,
-          status: 'active',
-        },
-      });
-
-      // 7. Inscribir en clase
-      await tx.users_classes.create({
-        data: {
-          user_id: userId,
-          class_id: dto.class_id,
-          current_class: true,
-        },
-      });
-
-      // 8. Marcar post-registro completo
-      await tx.users_pr.update({
-        where: { user_id: userId },
-        data: {
-          club_selection_complete: true,
-          complete: true,
-          date_completed: new Date(),
-        },
-      });
-
-      this.logger.log(
-        `Step 3 (club selection) completed for user ${userId} - Post-registration COMPLETE`,
-      );
-
-      return {
-        status: 'success',
-        message: 'Post-registro completado exitosamente',
-        data: {
-          clubType: dto.club_type,
-          clubId: dto.club_instance_id,
-          classId: dto.class_id,
-          ecclesiasticalYear: currentYear.year_id,
-        },
-      };
-    });
+    return new BadRequestException(genericMessage);
   }
 }

@@ -1,0 +1,388 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
+import { AwardCategoriesService } from '../award-categories.service';
+import { PrismaService } from '../../prisma/prisma.service';
+
+describe('AwardCategoriesService', () => {
+  let service: AwardCategoriesService;
+
+  const mockPrismaService = {
+    club_types: {
+      findUnique: jest.fn(),
+    },
+    award_categories: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AwardCategoriesService,
+        { provide: PrismaService, useValue: mockPrismaService },
+      ],
+    }).compile();
+
+    service = module.get<AwardCategoriesService>(AwardCategoriesService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  // ================================================================
+  // create
+  // ================================================================
+
+  describe('create', () => {
+    const baseDto = {
+      name: 'Placa de Honor',
+      min_points: 80,
+    };
+
+    const mockCategory = {
+      award_category_id: 'cat-uuid-1',
+      name: 'Placa de Honor',
+      description: null,
+      club_type_id: null,
+      min_points: 80,
+      max_points: null,
+      icon: null,
+      order: 0,
+      active: true,
+    };
+
+    it('should create a category successfully without club_type_id', async () => {
+      mockPrismaService.award_categories.create.mockResolvedValue(mockCategory);
+
+      const result = await service.create(baseDto);
+
+      expect(mockPrismaService.club_types.findUnique).not.toHaveBeenCalled();
+      expect(result).toEqual(mockCategory);
+    });
+
+    it('should create a category successfully with a valid club_type_id', async () => {
+      const dto = { ...baseDto, club_type_id: 2 };
+      const categoryWithClub = {
+        ...mockCategory,
+        club_type_id: 2,
+        club_type: { club_type_id: 2, name: 'Conquistadores' },
+      };
+
+      mockPrismaService.club_types.findUnique.mockResolvedValue({
+        club_type_id: 2,
+        name: 'Conquistadores',
+      });
+      mockPrismaService.award_categories.create.mockResolvedValue(
+        categoryWithClub,
+      );
+
+      const result = await service.create(dto);
+
+      expect(mockPrismaService.club_types.findUnique).toHaveBeenCalledWith({
+        where: { club_type_id: 2 },
+      });
+      expect(result.club_type_id).toBe(2);
+    });
+
+    it('should reject if club_type_id does not exist', async () => {
+      const dto = { ...baseDto, club_type_id: 999 };
+      mockPrismaService.club_types.findUnique.mockResolvedValue(null);
+
+      await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+      await expect(service.create(dto)).rejects.toThrow(
+        'Club type with ID 999 not found',
+      );
+    });
+
+    it('should skip club_type validation when club_type_id is null', async () => {
+      const dto = { ...baseDto, club_type_id: null };
+      mockPrismaService.award_categories.create.mockResolvedValue(mockCategory);
+
+      await service.create(dto as any);
+
+      expect(mockPrismaService.club_types.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should use defaults when optional fields are not provided', async () => {
+      mockPrismaService.award_categories.create.mockResolvedValue(mockCategory);
+
+      await service.create(baseDto);
+
+      expect(mockPrismaService.award_categories.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            order: 0,
+            active: true,
+            club_type_id: null,
+            icon: null,
+          }),
+        }),
+      );
+    });
+  });
+
+  // ================================================================
+  // findAll
+  // ================================================================
+
+  describe('findAll', () => {
+    const mockCategories = [
+      { award_category_id: 'cat-1', name: 'Alpha', order: 1, active: true },
+      { award_category_id: 'cat-2', name: 'Beta', order: 2, active: true },
+    ];
+
+    it('should return all active categories by default', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
+
+      const result = await service.findAll();
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ active: true }),
+        }),
+      );
+      expect(result).toEqual(mockCategories);
+    });
+
+    it('should filter categories by club_type_id', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue([
+        mockCategories[0],
+      ]);
+
+      await service.findAll(2);
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ club_type_id: 2 }),
+        }),
+      );
+    });
+
+    it('should filter categories by active=false when explicitly requested', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+
+      await service.findAll(undefined, false);
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ active: false }),
+        }),
+      );
+    });
+
+    it('should return categories ordered by order then name', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
+
+      await service.findAll();
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ order: 'asc' }, { name: 'asc' }],
+        }),
+      );
+    });
+
+    it('should return empty array when no categories match', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll(999);
+
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  // ================================================================
+  // findOne
+  // ================================================================
+
+  describe('findOne', () => {
+    it('should return a category by ID', async () => {
+      const mockCategory = {
+        award_category_id: 'cat-uuid-1',
+        name: 'Placa de Honor',
+        active: true,
+      };
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        mockCategory,
+      );
+
+      const result = await service.findOne('cat-uuid-1');
+
+      expect(result).toEqual(mockCategory);
+    });
+
+    it('should throw NotFoundException for non-existent category', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
+
+      await expect(service.findOne('non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.findOne('non-existent-id')).rejects.toThrow(
+        'Award category with ID non-existent-id not found',
+      );
+    });
+  });
+
+  // ================================================================
+  // update
+  // ================================================================
+
+  describe('update', () => {
+    const categoryId = 'cat-uuid-1';
+
+    const existingCategory = {
+      award_category_id: categoryId,
+      name: 'Placa de Honor',
+      min_points: 80,
+      club_type_id: null,
+      active: true,
+      club_type: null,
+    };
+
+    it('should update partial fields only', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.award_categories.update.mockResolvedValue({
+        ...existingCategory,
+        name: 'Placa de Plata',
+      });
+
+      const result = await service.update(categoryId, {
+        name: 'Placa de Plata',
+      });
+
+      expect(mockPrismaService.award_categories.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ name: 'Placa de Plata' }),
+        }),
+      );
+      expect(result.name).toBe('Placa de Plata');
+    });
+
+    it('should validate club_type_id when updating', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.club_types.findUnique.mockResolvedValue({
+        club_type_id: 3,
+        name: 'Aventureros',
+      });
+      mockPrismaService.award_categories.update.mockResolvedValue({
+        ...existingCategory,
+        club_type_id: 3,
+      });
+
+      await service.update(categoryId, { club_type_id: 3 });
+
+      expect(mockPrismaService.club_types.findUnique).toHaveBeenCalledWith({
+        where: { club_type_id: 3 },
+      });
+    });
+
+    it('should reject update if new club_type_id does not exist', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.club_types.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.update(categoryId, { club_type_id: 999 }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw NotFoundException when category does not exist', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.update('non-existent', { name: 'New Name' }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
+    });
+
+    it('should skip club_type validation when club_type_id is not in update dto', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.award_categories.update.mockResolvedValue({
+        ...existingCategory,
+        min_points: 90,
+      });
+
+      await service.update(categoryId, { min_points: 90 });
+
+      expect(mockPrismaService.club_types.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  // ================================================================
+  // remove (soft delete)
+  // ================================================================
+
+  describe('remove', () => {
+    const categoryId = 'cat-uuid-1';
+
+    const existingCategory = {
+      award_category_id: categoryId,
+      name: 'Placa de Honor',
+      active: true,
+      club_type: null,
+    };
+
+    it('should soft-delete by setting active=false', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.award_categories.update.mockResolvedValue({
+        ...existingCategory,
+        active: false,
+      });
+
+      const result = await service.remove(categoryId);
+
+      expect(mockPrismaService.award_categories.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { award_category_id: categoryId },
+          data: { active: false },
+        }),
+      );
+      expect(result.message).toBe('Award category deactivated successfully');
+    });
+
+    it('should NOT hard-delete the record', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.award_categories.update.mockResolvedValue({
+        ...existingCategory,
+        active: false,
+      });
+
+      await service.remove(categoryId);
+
+      // Ensure delete was never called — only update (soft-delete)
+      expect(mockPrismaService.award_categories).not.toHaveProperty('delete');
+    });
+
+    it('should return 404 for non-existent category', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
+
+      await expect(service.remove('non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
+    });
+  });
+});

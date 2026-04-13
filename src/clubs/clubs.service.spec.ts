@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ClubsService } from './clubs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 describe('ClubsService', () => {
   let service: ClubsService;
@@ -17,18 +19,10 @@ describe('ClubsService', () => {
     club_types: {
       findFirst: jest.fn(),
     },
-    club_adventurers: {
+    club_sections: {
       findFirst: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
-    club_pathfinders: {
-      findFirst: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
-    club_master_guilds: {
-      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -37,6 +31,15 @@ describe('ClubsService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    roles: {
+      findFirst: jest.fn(),
+    },
+  };
+
+  const mockFileStorageService = {
+    getSignedDownloadUrl: jest.fn(
+      async (_bucket: unknown, value: string) => value,
+    ),
   };
 
   beforeEach(async () => {
@@ -44,6 +47,11 @@ describe('ClubsService', () => {
       providers: [
         ClubsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        {
+          provide: AuthorizationContextService,
+          useValue: { invalidateUserAuthorizationCache: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -60,9 +68,7 @@ describe('ClubsService', () => {
 
   describe('findAll', () => {
     it('should return paginated clubs', async () => {
-      const mockClubs = [
-        { club_id: 1, name: 'Club Central', active: true },
-      ];
+      const mockClubs = [{ club_id: 1, name: 'Club Central', active: true }];
 
       mockPrismaService.clubs.findMany.mockResolvedValue(mockClubs);
       mockPrismaService.clubs.count.mockResolvedValue(1);
@@ -151,6 +157,75 @@ describe('ClubsService', () => {
       const result = await service.remove(1);
 
       expect(result.active).toBe(false);
+    });
+  });
+
+  describe('getSections', () => {
+    it('should return sections with club_type name', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_id: 10,
+        name: 'Club Norte',
+      });
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
+        {
+          club_section_id: 1,
+          club_type_id: 1,
+          active: true,
+          club_types: { name: 'Aventureros' },
+        },
+        {
+          club_section_id: 2,
+          club_type_id: 2,
+          active: true,
+          club_types: { name: 'Conquistadores' },
+        },
+      ]);
+
+      const result = await service.getSections(10);
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          club_section_id: 1,
+          club_types: { name: 'Aventureros' },
+        }),
+        expect.objectContaining({
+          club_section_id: 2,
+          club_types: { name: 'Conquistadores' },
+        }),
+      ]);
+    });
+  });
+
+  describe('updateRoleAssignment', () => {
+    it('should update role_id on an existing assignment without recreating it', async () => {
+      mockPrismaService.club_role_assignments.update.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        role_id: 'role-2',
+        status: 'active',
+      });
+
+      const result = await service.updateRoleAssignment('assignment-1', {
+        role_id: 'role-2',
+        status: 'active',
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          assignment_id: 'assignment-1',
+          role_id: 'role-2',
+        }),
+      );
+      expect(
+        mockPrismaService.club_role_assignments.update,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { assignment_id: 'assignment-1' },
+          data: expect.objectContaining({
+            role_id: 'role-2',
+            status: 'active',
+          }),
+        }),
+      );
     });
   });
 });

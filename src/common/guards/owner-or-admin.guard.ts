@@ -4,16 +4,18 @@ import {
   ExecutionContext,
   ForbiddenException,
 } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { AuthorizationContextService } from '../services/authorization-context.service';
 
 /**
  * Guard que permite acceso si:
  * 1. El usuario es el propietario del recurso (userId en params coincide con el usuario autenticado)
- * 2. El usuario tiene un rol global administrativo (admin, coordinator, super_admin)
+ * 2. El usuario tiene un rol global administrativo (admin, assistant_admin, coordinator, super_admin)
  */
 @Injectable()
 export class OwnerOrAdminGuard implements CanActivate {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -36,7 +38,12 @@ export class OwnerOrAdminGuard implements CanActivate {
     }
 
     // Caso 2: El usuario tiene rol administrativo global
-    const isAdmin = await this.checkAdminRole(user.sub);
+    const isAdmin = await this.authorizationContext.hasAnyGlobalRole(user.sub, [
+      'admin',
+      'assistant_admin',
+      'coordinator',
+      'super_admin',
+    ]);
 
     if (isAdmin) {
       return true;
@@ -44,33 +51,6 @@ export class OwnerOrAdminGuard implements CanActivate {
 
     throw new ForbiddenException(
       'You can only access your own resources unless you have admin privileges',
-    );
-  }
-
-  private async checkAdminRole(userId: string): Promise<boolean> {
-    const adminRoles = ['admin', 'coordinator', 'super_admin'];
-
-    const userRoles = await this.prisma.users_roles.findMany({
-      where: {
-        user_id: userId,
-        active: true,
-      },
-      include: {
-        roles: {
-          select: {
-            role_name: true,
-            active: true,
-          },
-        },
-      },
-    });
-
-    const activeRoleNames = userRoles
-      .filter((ur) => ur.roles.active)
-      .map((ur) => ur.roles.role_name.toLowerCase());
-
-    return adminRoles.some((adminRole) =>
-      activeRoleNames.includes(adminRole.toLowerCase()),
     );
   }
 }

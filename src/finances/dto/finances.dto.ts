@@ -2,9 +2,10 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsNumber,
   IsDateString,
   Min,
+  Max,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -17,6 +18,7 @@ export class CreateFinanceDto {
   @ApiProperty({ description: 'Mes del movimiento (1-12)' })
   @IsInt()
   @Min(1)
+  @Max(12)
   month: number;
 
   @ApiProperty({ description: 'Monto del movimiento (en centavos)' })
@@ -28,7 +30,9 @@ export class CreateFinanceDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)' })
+  @ApiProperty({
+    description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+  })
   @IsInt()
   club_type_id: number;
 
@@ -40,20 +44,21 @@ export class CreateFinanceDto {
   @IsDateString()
   finance_date: string;
 
-  @ApiPropertyOptional({ description: 'ID de la instancia de Aventureros' })
-  @IsOptional()
+  @ApiProperty({
+    description: 'ID de la sección del club (FK a club_sections)',
+  })
   @IsInt()
-  club_adv_id?: number;
+  club_section_id: number;
 
-  @ApiPropertyOptional({ description: 'ID de la instancia de Conquistadores' })
+  @ApiPropertyOptional({
+    description:
+      'Justificación para movimiento en período cerrado (solo admin)',
+    maxLength: 500,
+  })
   @IsOptional()
-  @IsInt()
-  club_pathf_id?: number;
-
-  @ApiPropertyOptional({ description: 'ID de la instancia de Guías Mayores' })
-  @IsOptional()
-  @IsInt()
-  club_mg_id?: number;
+  @IsString()
+  @MaxLength(500)
+  post_closing_note?: string;
 }
 
 export class UpdateFinanceDto {
@@ -76,6 +81,16 @@ export class UpdateFinanceDto {
   @IsOptional()
   @IsDateString()
   finance_date?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Justificación para movimiento en período cerrado (solo admin)',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  post_closing_note?: string;
 }
 
 export class FinanceFiltersDto {

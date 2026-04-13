@@ -15,6 +15,7 @@ export class EnrollClassDto {
 
   @ApiProperty({ description: 'ID del año eclesiástico' })
   @IsInt()
+  @Min(1)
   ecclesiastical_year_id: number;
 }
 
@@ -43,4 +44,12 @@ export class UpdateProgressDto {
   @IsOptional()
   @IsObject()
   evidences?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      'Override aditivo para resolver una inscripción anual específica durante la transición class-scoped',
+  })
+  @IsOptional()
+  @IsInt()
+  enrollment_id?: number;
 }

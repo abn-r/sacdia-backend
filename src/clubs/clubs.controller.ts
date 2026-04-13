@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -8,6 +9,7 @@ import {
   Query,
   Body,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -22,19 +24,26 @@ import { ClubsService } from './clubs.service';
 import {
   CreateClubDto,
   UpdateClubDto,
-  CreateInstanceDto,
-  UpdateInstanceDto,
+  CreateClubSectionDto,
+  UpdateClubSectionDto,
   AssignRoleDto,
   UpdateRoleAssignmentDto,
-  ClubInstanceType,
 } from './dto';
-import { JwtAuthGuard, ClubRolesGuard } from '../common/guards';
-import { ClubRoles } from '../common/decorators';
+import {
+  AuthorizationResource,
+  ClubRoles,
+  RequirePermissions,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  ClubRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('clubs')
 @Controller('clubs')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ClubsController {
   constructor(private readonly clubsService: ClubsService) {}
@@ -46,14 +55,25 @@ export class ClubsController {
   @Get()
   @ApiOperation({
     summary: 'Listar clubs',
-    description: 'Obtiene la lista de clubs con filtros opcionales y paginación',
+    description:
+      'Obtiene la lista de clubs con filtros opcionales y paginación. No requiere permiso clubs:read — diseñado para permitir la selección de club durante el post-registro. Solo devuelve campos de identificación del club y un resumen mínimo de secciones (id, tipo, estado activo); no se exponen datos operacionales de las secciones.',
   })
   @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'districtId', required: false, type: Number })
   @ApiQuery({ name: 'churchId', required: false, type: Number })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (1-indexed)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página (max 100)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Número de página (1-indexed)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Elementos por página (max 100)',
+  })
   @ApiResponse({ status: 200, description: 'Lista paginada de clubs' })
   async findAll(
     @Query('localFieldId', new ParseIntPipe({ optional: true }))
@@ -74,13 +94,16 @@ export class ClubsController {
         localFieldId,
         districtId,
         churchId,
-        active: active === 'true' ? true : active === 'false' ? false : undefined,
+        active:
+          active === 'true' ? true : active === 'false' ? false : undefined,
       },
       pagination,
     );
   }
 
   @Get(':clubId')
+  @RequirePermissions('clubs:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Obtener club por ID' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club encontrado' })
@@ -90,6 +113,7 @@ export class ClubsController {
   }
 
   @Post()
+  @RequirePermissions('clubs:create')
   @ApiOperation({ summary: 'Crear nuevo club' })
   @ApiResponse({ status: 201, description: 'Club creado' })
   async create(@Body() dto: CreateClubDto) {
@@ -98,8 +122,12 @@ export class ClubsController {
 
   @Patch(':clubId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector')
-  @ApiOperation({ summary: 'Actualizar club (requiere rol director o subdirector)' })
+  @ClubRoles('director', 'deputy_director')
+  @RequirePermissions('clubs:update')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Actualizar club (requiere rol director o deputy director)',
+  })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club actualizado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
@@ -113,6 +141,8 @@ export class ClubsController {
   @Delete(':clubId')
   @UseGuards(ClubRolesGuard)
   @ClubRoles('director')
+  @RequirePermissions('clubs:delete')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Desactivar club (requiere rol director)' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({ status: 200, description: 'Club desactivado' })
@@ -122,106 +152,117 @@ export class ClubsController {
   }
 
   // ========================================
-  // INSTANCES
+  // SECTIONS
   // ========================================
 
-  @Get(':clubId/instances')
+  @Get(':clubId/sections')
   @ApiOperation({
-    summary: 'Obtener instancias del club',
-    description: 'Lista todas las instancias (Aventureros, Conquistadores, GM)',
-  })
-  @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 200, description: 'Instancias del club' })
-  async getInstances(@Param('clubId', ParseIntPipe) clubId: number) {
-    return this.clubsService.getInstances(clubId);
-  }
-
-  @Get(':clubId/instances/:type')
-  @ApiOperation({ summary: 'Obtener instancia por tipo' })
-  @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({
-    name: 'type',
-    enum: ClubInstanceType,
-    description: 'Tipo de instancia',
-  })
-  @ApiResponse({ status: 200, description: 'Instancia encontrada' })
-  async getInstance(
-    @Param('clubId', ParseIntPipe) clubId: number,
-    @Param('type') type: ClubInstanceType,
-  ) {
-    return this.clubsService.getInstance(clubId, type);
-  }
-
-  @Post(':clubId/instances')
-  @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector')
-  @ApiOperation({
-    summary: 'Crear instancia de club (requiere director o subdirector)',
+    summary: 'Obtener secciones del club',
     description:
-      'Crea una nueva instancia (Aventureros, Conquistadores, Guías Mayores)',
+      'Lista las secciones del club (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read — diseñado para permitir la selección de sección durante el post-registro. La respuesta es intencionalmente limitada a campos de identificación (id, nombre, tipo); los detalles operacionales (cuota, cupo, horarios, contacto) se omiten para reducir la superficie de exposición.',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 201, description: 'Instancia creada' })
-  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  async createInstance(
-    @Param('clubId', ParseIntPipe) clubId: number,
-    @Body() dto: CreateInstanceDto,
-  ) {
-    return this.clubsService.createInstance(clubId, dto);
+  @ApiResponse({ status: 200, description: 'Secciones del club (campos de identificación)' })
+  async getSections(@Param('clubId', ParseIntPipe) clubId: number) {
+    return this.clubsService.getSections(clubId);
   }
 
-  @Patch(':clubId/instances/:type/:instanceId')
-  @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'secretary')
-  @ApiOperation({ summary: 'Actualizar instancia (requiere director, subdirector o secretario)' })
+  @Get(':clubId/sections/:sectionId')
+  @RequirePermissions('club_sections:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({ summary: 'Obtener sección por ID' })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({ name: 'type', enum: ClubInstanceType })
-  @ApiParam({ name: 'instanceId', type: Number })
-  @ApiResponse({ status: 200, description: 'Instancia actualizada' })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Sección encontrada' })
+  async getSection(@Param('sectionId', ParseIntPipe) sectionId: number) {
+    return this.clubsService.getSection(sectionId);
+  }
+
+  @Post(':clubId/sections')
+  @UseGuards(ClubRolesGuard)
+  @ClubRoles('director', 'deputy_director')
+  @RequirePermissions('club_sections:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Crear sección de club (requiere director o deputy director)',
+    description:
+      'Crea una nueva sección (Aventureros, Conquistadores, Guías Mayores)',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiResponse({ status: 201, description: 'Sección creada' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  async updateInstance(
-    @Param('instanceId', ParseIntPipe) instanceId: number,
-    @Param('type') type: ClubInstanceType,
-    @Body() dto: UpdateInstanceDto,
+  async createSection(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Body() dto: CreateClubSectionDto,
   ) {
-    return this.clubsService.updateInstance(instanceId, type, dto);
+    return this.clubsService.createSection(clubId, dto);
+  }
+
+  @Patch(':clubId/sections/:sectionId')
+  @UseGuards(ClubRolesGuard)
+  @ClubRoles('director', 'deputy_director', 'secretary')
+  @RequirePermissions('club_sections:update')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary:
+      'Actualizar sección (requiere director, deputy director o secretary)',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 200, description: 'Sección actualizada' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  async updateSection(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Body() dto: UpdateClubSectionDto,
+  ) {
+    return this.clubsService.updateSection(sectionId, dto);
   }
 
   // ========================================
   // MEMBERS & ROLES
   // ========================================
 
-  @Get(':clubId/instances/:type/:instanceId/members')
+  @Get(':clubId/sections/:sectionId/members')
+  @RequirePermissions('club_roles:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
-    summary: 'Listar miembros de la instancia',
+    summary: 'Listar miembros de la sección',
     description:
-      'Retorna todos los miembros asignados a la instancia con sus roles',
+      'Retorna todos los miembros asignados a la sección con sus roles',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({ name: 'type', enum: ClubInstanceType })
-  @ApiParam({ name: 'instanceId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
-  async getMembers(
-    @Param('instanceId', ParseIntPipe) instanceId: number,
-    @Param('type') type: ClubInstanceType,
-  ) {
-    return this.clubsService.getMembers(instanceId, type);
+  async getMembers(@Param('sectionId', ParseIntPipe) sectionId: number) {
+    return this.clubsService.getMembers(sectionId);
   }
 
-  @Post(':clubId/instances/:type/:instanceId/roles')
-  @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'secretary')
+  @Post(':clubId/sections/:sectionId/roles')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
-    summary: 'Asignar rol a un miembro (requiere director, subdirector o secretario)',
-    description: 'Asigna un rol específico a un usuario en la instancia',
+    summary:
+      'Asignar rol a un miembro (requiere director, deputy director o secretary)',
+    description: 'Asigna un rol específico a un usuario en la sección',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiParam({ name: 'type', enum: ClubInstanceType })
-  @ApiParam({ name: 'instanceId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 201, description: 'Rol asignado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  async assignRole(@Body() dto: AssignRoleDto) {
-    return this.clubsService.assignRole(dto);
+  async assignRole(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Body() dto: AssignRoleDto,
+  ) {
+    if (dto.club_section_id && dto.club_section_id !== sectionId) {
+      throw new BadRequestException(
+        'club_section_id in body must match route sectionId',
+      );
+    }
+
+    return this.clubsService.assignRole({
+      ...dto,
+      club_section_id: sectionId,
+    });
   }
 }
 
@@ -231,27 +272,33 @@ export class ClubsController {
 
 @ApiTags('club-roles')
 @Controller('club-roles')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class ClubRolesController {
   constructor(private readonly clubsService: ClubsService) {}
 
   @Patch(':assignmentId')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({ summary: 'Actualizar asignación de rol' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación actualizada' })
   async updateAssignment(
-    @Param('assignmentId') assignmentId: string,
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @Body() dto: UpdateRoleAssignmentDto,
   ) {
     return this.clubsService.updateRoleAssignment(assignmentId, dto);
   }
 
   @Delete(':assignmentId')
+  @RequirePermissions('club_roles:revoke')
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({ summary: 'Remover rol de miembro' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Rol removido' })
-  async removeAssignment(@Param('assignmentId') assignmentId: string) {
+  async removeAssignment(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+  ) {
     return this.clubsService.removeRoleAssignment(assignmentId);
   }
 }

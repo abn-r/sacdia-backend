@@ -1,0 +1,7 @@
+-- NO-OP: This migration was a duplicate of 20260324025007_enhance_investiture_approval_flow
+-- which already adds camporee_clubs.status, camporee_clubs.registered_by,
+-- the camporee_payments table, and all associated foreign keys.
+--
+-- Original SQL removed to fix Prisma shadow database replay (P3006 error:
+-- "constraint camporee_clubs_registered_by_fkey already exists").
+-- The migration record is kept so production history remains consistent.

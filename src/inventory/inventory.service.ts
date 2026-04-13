@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
@@ -17,48 +12,50 @@ export class InventoryService {
   // ========================================
 
   /**
-   * Listar items del inventario de un club específico
+   * Listar items del inventario de una sección de club específica
    */
-  async findAllByClub(
-    clubId: number,
-    instanceType: 'adv' | 'pathf' | 'mg',
-    categoryId?: number,
-  ) {
-    // Construir where clause según el tipo de instancia
-    const whereClause = this.buildWhereClause(clubId, instanceType, categoryId);
+  async findAllByClub(clubSectionId: number, categoryId?: number) {
+    const whereClause: any = {
+      active: true,
+      club_section_id: clubSectionId,
+      ...(categoryId && { inventory_category_id: categoryId }),
+    };
 
     const items = await this.prisma.club_inventory.findMany({
       where: whereClause,
-      orderBy: [
-        { inventory_category_id: 'asc' },
-        { name: 'asc' },
-      ],
+      orderBy: [{ inventory_category_id: 'asc' }, { name: 'asc' }],
     });
 
     // Obtener categorías únicas
-    const categoryIds = [...new Set(items.map(i => i.inventory_category_id).filter(Boolean))];
+    const categoryIds = [
+      ...new Set(items.map((i) => i.inventory_category_id).filter(Boolean)),
+    ];
     const categories = await this.prisma.inventory_categories.findMany({
       where: { inventory_category_id: { in: categoryIds as number[] } },
     });
 
-    const categoryMap = new Map(categories.map(c => [c.inventory_category_id, c]));
+    const categoryMap = new Map(
+      categories.map((c) => [c.inventory_category_id, c]),
+    );
 
     return {
       data: items.map((item) => {
-        const category = item.inventory_category_id ? categoryMap.get(item.inventory_category_id) : null;
+        const category = item.inventory_category_id
+          ? categoryMap.get(item.inventory_category_id)
+          : null;
         return {
           inventory_id: item.club_inventory_id,
           name: item.name,
           description: item.description,
           inventory_category_id: item.inventory_category_id,
-          category: category ? {
-            category_id: category.inventory_category_id,
-            name: category.name,
-          } : null,
+          category: category
+            ? {
+                category_id: category.inventory_category_id,
+                name: category.name,
+              }
+            : null,
           amount: item.amount,
-          club_adv_id: item.club_adv_id,
-          club_pathf_id: item.club_pathf_id,
-          club_mg_id: item.club_mg_id,
+          club_section_id: item.club_section_id,
           active: item.active,
           created_at: item.created_at,
           updated_at: item.modified_at,
@@ -67,37 +64,9 @@ export class InventoryService {
       meta: {
         total_items: items.length,
         total_value_estimated: null,
-        club_instance: {
-          [`club_${instanceType}_id`]: clubId,
-          instance_type: instanceType,
-        },
+        club_section_id: clubSectionId,
       },
     };
-  }
-
-  /**
-   * Construir where clause según tipo de instancia
-   */
-  private buildWhereClause(
-    clubId: number,
-    instanceType: 'adv' | 'pathf' | 'mg',
-    categoryId?: number,
-  ) {
-    const baseWhere: any = {
-      active: true,
-      ...(categoryId && { inventory_category_id: categoryId }),
-    };
-
-    switch (instanceType) {
-      case 'adv':
-        return { ...baseWhere, club_adv_id: clubId };
-      case 'pathf':
-        return { ...baseWhere, club_pathf_id: clubId };
-      case 'mg':
-        return { ...baseWhere, club_mg_id: clubId };
-      default:
-        throw new BadRequestException('Invalid instance type');
-    }
   }
 
   /**
@@ -109,11 +78,17 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(`Inventory item with ID ${inventoryId} not found`);
+      throw new NotFoundException(
+        `Inventory item with ID ${inventoryId} not found`,
+      );
     }
 
     // Obtener categoría si existe
-    let category: { category_id: number; name: string; description: null } | null = null;
+    let category: {
+      category_id: number;
+      name: string;
+      description: null;
+    } | null = null;
     if (item.inventory_category_id) {
       const cat = await this.prisma.inventory_categories.findUnique({
         where: { inventory_category_id: item.inventory_category_id },
@@ -134,20 +109,18 @@ export class InventoryService {
       inventory_category_id: item.inventory_category_id,
       category,
       amount: item.amount,
-      club_adv_id: item.club_adv_id,
-      club_pathf_id: item.club_pathf_id,
-      club_mg_id: item.club_mg_id,
+      club_section_id: item.club_section_id,
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
-      history: [], // TODO: Implementar sistema de historial
+      history: await this.getInventoryHistory(item.club_inventory_id),
     };
   }
 
   /**
    * Agregar nuevo item al inventario
    */
-  async create(clubId: number, dto: CreateItemDto) {
+  async create(clubSectionId: number, dto: CreateItemDto, performedBy: string) {
     // Validar que la categoría existe
     const category = await this.prisma.inventory_categories.findUnique({
       where: { inventory_category_id: dto.inventory_category_id },
@@ -157,11 +130,14 @@ export class InventoryService {
       throw new NotFoundException('Inventory category not found');
     }
 
-    // Validar que el club existe según el tipo de instancia
-    await this.validateClubExists(clubId, dto.instanceType);
+    // Validar que la sección de club existe
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: clubSectionId },
+    });
 
-    // Determinar qué campo de club usar
-    const clubFields = this.getClubFields(clubId, dto.instanceType);
+    if (!section) {
+      throw new NotFoundException('Club section not found');
+    }
 
     // Crear item
     const item = await this.prisma.club_inventory.create({
@@ -170,10 +146,20 @@ export class InventoryService {
         description: dto.description,
         inventory_category_id: dto.inventory_category_id,
         amount: dto.amount,
-        ...clubFields,
+        club_section_id: clubSectionId,
         active: true,
       },
     });
+
+    await this.logInventoryChange(
+      item.club_inventory_id,
+      'CREATE',
+      [
+        { field: 'name', oldValue: null, newValue: dto.name },
+        { field: 'amount', oldValue: null, newValue: String(dto.amount ?? 0) },
+      ],
+      performedBy,
+    );
 
     return {
       inventory_id: item.club_inventory_id,
@@ -185,9 +171,7 @@ export class InventoryService {
         name: category.name,
       },
       amount: item.amount,
-      club_adv_id: item.club_adv_id,
-      club_pathf_id: item.club_pathf_id,
-      club_mg_id: item.club_mg_id,
+      club_section_id: item.club_section_id,
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
@@ -195,64 +179,18 @@ export class InventoryService {
   }
 
   /**
-   * Validar que el club existe según el tipo de instancia
-   */
-  private async validateClubExists(
-    clubId: number,
-    instanceType: 'adv' | 'pathf' | 'mg',
-  ) {
-    let clubExists = false;
-
-    switch (instanceType) {
-      case 'adv':
-        clubExists = !!(await this.prisma.club_adventurers.findUnique({
-          where: { club_adv_id: clubId },
-        }));
-        break;
-      case 'pathf':
-        clubExists = !!(await this.prisma.club_pathfinders.findUnique({
-          where: { club_pathf_id: clubId },
-        }));
-        break;
-      case 'mg':
-        clubExists = !!(await this.prisma.club_master_guilds.findUnique({
-          where: { club_mg_id: clubId },
-        }));
-        break;
-    }
-
-    if (!clubExists) {
-      throw new NotFoundException(`Club not found for instance type ${instanceType}`);
-    }
-  }
-
-  /**
-   * Obtener campos de club según el tipo de instancia
-   */
-  private getClubFields(clubId: number, instanceType: 'adv' | 'pathf' | 'mg') {
-    switch (instanceType) {
-      case 'adv':
-        return { club_adv_id: clubId, club_pathf_id: null, club_mg_id: null };
-      case 'pathf':
-        return { club_adv_id: null, club_pathf_id: clubId, club_mg_id: null };
-      case 'mg':
-        return { club_adv_id: null, club_pathf_id: null, club_mg_id: clubId };
-      default:
-        throw new BadRequestException('Invalid instance type');
-    }
-  }
-
-  /**
    * Actualizar un item del inventario
    */
-  async update(inventoryId: number, dto: UpdateItemDto) {
+  async update(inventoryId: number, dto: UpdateItemDto, performedBy: string) {
     // Verificar que el item existe
     const existingItem = await this.prisma.club_inventory.findUnique({
       where: { club_inventory_id: inventoryId },
     });
 
     if (!existingItem) {
-      throw new NotFoundException(`Inventory item with ID ${inventoryId} not found`);
+      throw new NotFoundException(
+        `Inventory item with ID ${inventoryId} not found`,
+      );
     }
 
     // Si se actualiza la categoría, validar que existe
@@ -264,6 +202,47 @@ export class InventoryService {
       if (!category || !category.active) {
         throw new NotFoundException('Inventory category not found');
       }
+    }
+
+    // Calcular cambios antes de actualizar
+    const changes: Array<{
+      field: string;
+      oldValue: string | null;
+      newValue: string | null;
+    }> = [];
+    if (dto.name && dto.name !== existingItem.name) {
+      changes.push({
+        field: 'name',
+        oldValue: existingItem.name,
+        newValue: dto.name,
+      });
+    }
+    if (
+      dto.description !== undefined &&
+      dto.description !== existingItem.description
+    ) {
+      changes.push({
+        field: 'description',
+        oldValue: existingItem.description ?? null,
+        newValue: dto.description ?? null,
+      });
+    }
+    if (
+      dto.inventory_category_id &&
+      dto.inventory_category_id !== existingItem.inventory_category_id
+    ) {
+      changes.push({
+        field: 'inventory_category_id',
+        oldValue: String(existingItem.inventory_category_id ?? ''),
+        newValue: String(dto.inventory_category_id),
+      });
+    }
+    if (dto.amount !== undefined && dto.amount !== existingItem.amount) {
+      changes.push({
+        field: 'amount',
+        oldValue: String(existingItem.amount ?? 0),
+        newValue: String(dto.amount),
+      });
     }
 
     // Actualizar item
@@ -278,6 +257,15 @@ export class InventoryService {
         ...(dto.amount !== undefined && { amount: dto.amount }),
       },
     });
+
+    if (changes.length > 0) {
+      await this.logInventoryChange(
+        inventoryId,
+        'UPDATE',
+        changes,
+        performedBy,
+      );
+    }
 
     // Obtener categoría si existe
     let category: { category_id: number; name: string } | null = null;
@@ -300,9 +288,7 @@ export class InventoryService {
       inventory_category_id: item.inventory_category_id,
       category,
       amount: item.amount,
-      club_adv_id: item.club_adv_id,
-      club_pathf_id: item.club_pathf_id,
-      club_mg_id: item.club_mg_id,
+      club_section_id: item.club_section_id,
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
@@ -312,13 +298,15 @@ export class InventoryService {
   /**
    * Eliminar un item del inventario (soft delete)
    */
-  async delete(inventoryId: number) {
+  async delete(inventoryId: number, performedBy: string) {
     const item = await this.prisma.club_inventory.findUnique({
       where: { club_inventory_id: inventoryId },
     });
 
     if (!item) {
-      throw new NotFoundException(`Inventory item with ID ${inventoryId} not found`);
+      throw new NotFoundException(
+        `Inventory item with ID ${inventoryId} not found`,
+      );
     }
 
     await this.prisma.club_inventory.update({
@@ -326,9 +314,90 @@ export class InventoryService {
       data: { active: false },
     });
 
+    await this.logInventoryChange(
+      inventoryId,
+      'DELETE',
+      [{ field: 'active', oldValue: 'true', newValue: 'false' }],
+      performedBy,
+    );
+
     return {
       message: 'Inventory item deleted successfully',
     };
+  }
+
+  // ========================================
+  // INVENTORY HISTORY
+  // ========================================
+
+  /**
+   * Registrar un cambio en el historial de un item de inventario
+   */
+  private async logInventoryChange(
+    inventoryId: number,
+    action: 'CREATE' | 'UPDATE' | 'DELETE',
+    changes: Array<{
+      field: string;
+      oldValue: string | null;
+      newValue: string | null;
+    }>,
+    performedBy: string,
+  ): Promise<void> {
+    if (changes.length === 0) return;
+
+    await this.prisma.inventory_history.createMany({
+      data: changes.map((change) => ({
+        inventory_id: inventoryId,
+        action,
+        field_changed: change.field,
+        old_value: change.oldValue,
+        new_value: change.newValue,
+        performed_by: performedBy,
+      })),
+    });
+  }
+
+  /**
+   * Obtener el historial de cambios de un item de inventario
+   */
+  async getInventoryHistory(inventoryId: number) {
+    const item = await this.prisma.club_inventory.findUnique({
+      where: { club_inventory_id: inventoryId },
+    });
+
+    if (!item) {
+      throw new NotFoundException(
+        `Inventory item with ID ${inventoryId} not found`,
+      );
+    }
+
+    const records = await this.prisma.inventory_history.findMany({
+      where: { inventory_id: inventoryId },
+      orderBy: { created_at: 'desc' },
+      include: {
+        users: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+          },
+        },
+      },
+    });
+
+    return records.map((r) => ({
+      history_id: r.history_id,
+      action: r.action,
+      field_changed: r.field_changed,
+      old_value: r.old_value,
+      new_value: r.new_value,
+      performed_by: {
+        user_id: r.users.user_id,
+        name: r.users.name,
+        paternal_last_name: r.users.paternal_last_name,
+      },
+      created_at: r.created_at,
+    }));
   }
 
   // ========================================

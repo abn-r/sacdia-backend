@@ -27,34 +27,30 @@ export class AuditInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const duration = Date.now() - startTime;
-          this.logger.log(
-            JSON.stringify({
-              timestamp: new Date().toISOString(),
-              userId: user?.user_id || 'anonymous',
-              method,
-              url: this.sanitizeUrl(url),
-              ip: this.getClientIp(request),
-              userAgent: userAgent.substring(0, 100),
-              duration: `${duration}ms`,
-              status: 'success',
-            }),
-          );
+          this.logger.log({
+            timestamp: new Date().toISOString(),
+            userId: user?.user_id || 'anonymous',
+            method,
+            url: this.sanitizeUrl(url),
+            ip: this.getClientIp(request),
+            userAgent: userAgent.substring(0, 100),
+            duration: `${duration}ms`,
+            status: 'success',
+          });
         },
         error: (error) => {
           const duration = Date.now() - startTime;
-          this.logger.warn(
-            JSON.stringify({
-              timestamp: new Date().toISOString(),
-              userId: user?.user_id || 'anonymous',
-              method,
-              url: this.sanitizeUrl(url),
-              ip: this.getClientIp(request),
-              userAgent: userAgent.substring(0, 100),
-              duration: `${duration}ms`,
-              status: 'error',
-              errorMessage: error.message,
-            }),
-          );
+          this.logger.warn({
+            timestamp: new Date().toISOString(),
+            userId: user?.user_id || 'anonymous',
+            method,
+            url: this.sanitizeUrl(url),
+            ip: this.getClientIp(request),
+            userAgent: userAgent.substring(0, 100),
+            duration: `${duration}ms`,
+            status: 'error',
+            errorMessage: error.message,
+          });
         },
       }),
     );
@@ -73,10 +69,18 @@ export class AuditInterceptor implements NestInterceptor {
   }
 
   /**
-   * Sanitizar URL para no exponer información sensible en logs
+   * Sanitizar URL para no exponer información sensible en logs.
+   * - Elimina query params (pueden contener tokens o valores sensibles)
+   * - Enmascara segmentos de path que parecen tokens largos (>30 chars alfanuméricos)
+   *   típicos de FCM tokens, API keys u otros secretos en la URL
    */
   private sanitizeUrl(url: string): string {
-    // Remover query params que podrían contener tokens
-    return url.split('?')[0];
+    const path = url.split('?')[0];
+    return path
+      .split('/')
+      .map((segment) =>
+        /^[A-Za-z0-9_-]{30,}$/.test(segment) ? '[REDACTED]' : segment,
+      )
+      .join('/');
   }
 }

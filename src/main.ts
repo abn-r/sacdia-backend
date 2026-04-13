@@ -1,43 +1,169 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import compression from 'compression';
-import { json, urlencoded } from 'express';
+import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
+import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
+// ==========================================
+// PROCESS-LEVEL SAFETY NET
+// Prevents unhandled Redis / BullMQ 'error' events from killing the process.
+// Individual modules should handle errors themselves (see NotificationsProcessor),
+// but this guard catches anything that slips through.
+// ==========================================
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection at:', promise, 'reason:', reason);
+  // Do NOT call process.exit() — let the app keep running unless it's truly fatal.
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message, err.stack);
+  // Only exit on truly unrecoverable errors (not Redis blips).
+  if (err.message?.includes('ENOMEM') || err.message?.includes('ENOSPC')) {
+    process.exit(1);
+  }
+});
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // ==========================================
+  // SENTRY - Error Monitoring
+  // ==========================================
+  let sentryEnabled = false;
+  if (process.env.SENTRY_DSN) {
+    const SENSITIVE_HEADERS = new Set([
+      'authorization',
+      'x-session-token',
+      'x-refresh-token',
+      'x-bootstrap-secret',
+    ]);
+    const SENSITIVE_BODY_FIELDS = new Set([
+      'password',
+      'refresh_token',
+      'refreshToken',
+      'access_token',
+      'accessToken',
+      'blood',
+      'birthday',
+      'allergies',
+      'diseases',
+      'medicines',
+    ]);
+
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+      profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+      beforeSend(event) {
+        // Strip sensitive request headers
+        if (event.request?.headers) {
+          const cleaned: Record<string, string> = {};
+          for (const [key, value] of Object.entries(event.request.headers)) {
+            cleaned[key] = SENSITIVE_HEADERS.has(key.toLowerCase())
+              ? '[REDACTED]'
+              : value;
+          }
+          event.request.headers = cleaned;
+        }
+
+        // Strip sensitive request body fields
+        if (event.request?.data && typeof event.request.data === 'object') {
+          const body = event.request.data as Record<string, unknown>;
+          for (const field of SENSITIVE_BODY_FIELDS) {
+            if (field in body) {
+              body[field] = '[REDACTED]';
+            }
+          }
+        }
+
+        // Strip sensitive query string parameters
+        if (event.request?.url) {
+          try {
+            const url = new URL(event.request.url, 'http://localhost');
+            const sensitiveParams = [
+              'password',
+              'token',
+              'secret',
+              'authorization',
+              'refreshtoken',
+              'refresh_token',
+            ];
+            for (const param of sensitiveParams) {
+              if (url.searchParams.has(param)) {
+                url.searchParams.set(param, '[REDACTED]');
+              }
+            }
+            event.request.url = url.pathname + url.search;
+          } catch {
+            // URL parsing failed — use original path
+          }
+        }
+
+        return event;
+      },
+    });
+    sentryEnabled = true;
+    console.log('✅ Sentry monitoring initialized');
+  }
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+  app.useLogger(app.get(Logger));
+
+  // ==========================================
+  // TRUST PROXY — Client IP detection behind reverse proxies
+  // ==========================================
+  // Must be set BEFORE any middleware that reads the client IP (helmet, throttler, etc.)
+  // Without this, ThrottlerGuard sees the proxy IP for all requests, making per-IP rate
+  // limiting completely ineffective when running behind Vercel / nginx / load balancers.
+  // Value 1 means: trust exactly one hop (the immediate upstream proxy).
+  app.set('trust proxy', 1);
 
   // ==========================================
   // SEGURIDAD - Helmet (Security Headers)
   // ==========================================
   const isDevelopment = process.env.NODE_ENV !== 'production';
-  
+
   app.use(
     helmet({
-      // Deshabilitar CSP en desarrollo para que Swagger UI funcione
-      contentSecurityPolicy: isDevelopment ? false : {
-        directives: {
-          defaultSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-          scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-          imgSrc: ["'self'", 'data:', 'https:'],
-          fontSrc: ["'self'", 'https://cdn.jsdelivr.net'],
-        },
-      },
+      // Development: disable CSP entirely so Swagger UI works
+      // Production: strict CSP — no 'unsafe-inline', no CDN sources (Swagger is disabled)
+      contentSecurityPolicy: isDevelopment
+        ? false
+        : {
+            directives: {
+              defaultSrc: ["'self'"],
+              styleSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              imgSrc: ["'self'", 'data:', 'https:'],
+              fontSrc: ["'self'"],
+            },
+          },
+      // crossOriginEmbedderPolicy disabled intentionally: the mobile app and admin panel
+      // load assets (profile pictures, evidence files, PDF resources) from Cloudflare R2
+      // and other cross-origin CDN sources. COEP requires all cross-origin resources to
+      // opt in via CORP/COEP headers, which third-party storage buckets do not set by
+      // default. Enabling this would break image rendering across the entire application.
+      // Re-evaluate if all CDN/storage resources are brought under the same origin.
       crossOriginEmbedderPolicy: false,
-      hsts: isDevelopment ? false : {
-        maxAge: 31536000,
-        includeSubDomains: true,
-      },
+      hsts: isDevelopment
+        ? false
+        : {
+            maxAge: 31536000,
+            includeSubDomains: true,
+          },
     }),
   );
-
 
   // ==========================================
   // PERFORMANCE - Compression
@@ -45,10 +171,20 @@ async function bootstrap() {
   app.use(compression());
 
   // ==========================================
+  // SEGURIDAD - Request Timeout
+  // ==========================================
+  app.use(timeoutMiddleware);
+
+  // ==========================================
   // SEGURIDAD - Request Size Limits
   // ==========================================
-  app.use(json({ limit: '10mb' }));
-  app.use(urlencoded({ extended: true, limit: '10mb' }));
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
+
+  // Global Multer file size limit — 10 MB safety net for multipart uploads.
+  // Individual FileInterceptor usages may impose stricter per-endpoint limits;
+  // this catches any upload that bypasses per-route configuration.
+  app.useBodyParser('raw', { limit: '10mb', type: 'multipart/form-data' });
 
   // ==========================================
   // CORS
@@ -60,7 +196,10 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Permitir requests sin origin (e.g., Postman, curl)
+      // Allow requests without an Origin header (health checks, server-to-server,
+      // curl, mobile clients). CORS is a browser-only mechanism — non-browser
+      // requests never send Origin, so blocking them here only breaks health
+      // checks and legitimate API consumers. Auth is enforced by JWT guards.
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -88,32 +227,45 @@ async function bootstrap() {
   // ==========================================
   // SEGURIDAD - Global Filters (Exception Handling)
   // ==========================================
+  // Filters are evaluated top-down; the first whose @Catch() metadata matches
+  // wins. The specific filter (HttpException) MUST precede the catch-all,
+  // otherwise AllExceptionsFilter swallows every HttpException and converts
+  // 400/404/403 into generic 500s — losing masking, validation details, and
+  // the real status code at the client.
   app.useGlobalFilters(
-    new AllExceptionsFilter(), // Catch-all para errores no manejados
-    new HttpExceptionFilter(), // HTTP exceptions con logs seguros
+    new HttpExceptionFilter(), // Specific: HttpException + subclasses with safe logging
+    new AllExceptionsFilter(), // Catch-all fallback for non-HTTP exceptions
   );
 
   // ==========================================
   // AUDITORÍA - Global Interceptors
   // ==========================================
-  app.useGlobalInterceptors(new AuditInterceptor());
+  app.useGlobalInterceptors(
+    new AuditInterceptor(),
+    ...(sentryEnabled ? [new SentryInterceptor()] : []),
+  );
 
   // ==========================================
-  // API Versioning (URI-based)
+  // API Prefix + Versioning (URI-based)
   // ==========================================
+  // Prefijo global: /api
+  app.setGlobalPrefix('api');
+
+  // Versionado URI: /api/v1, /api/v2, etc.
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: '1',
   });
-
+  // Resultado final: /api/v1/*
 
   // ==========================================
-  // SWAGGER
+  // SWAGGER — opt-in via SWAGGER_ENABLED=true
   // ==========================================
-  const config = new DocumentBuilder()
-    .setTitle('SACDIA API')
-    .setDescription(
-      `## Sistema de Administración de Clubes de Conquistadores y Aventureros
+  if (process.env.SWAGGER_ENABLED === 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('SACDIA API')
+      .setDescription(
+        `## Sistema de Administración de Clubes de Conquistadores y Aventureros
 
 ### Módulos Disponibles
 - **Auth**: Autenticación con Supabase + JWT
@@ -131,42 +283,52 @@ Todos los endpoints protegidos requieren Bearer Token (JWT de Supabase).
 ### Paginación
 Los endpoints de listado soportan: \`?page=1&limit=20\`
 `,
-    )
-    .setVersion('2.2.0')
-    .setContact('SACDIA Team', 'https://sacdia.app', 'dev@sacdia.app')
-    .setLicense('Proprietary', '')
-    .addBearerAuth()
-    .addTag('auth', 'Autenticación y registro')
-    .addTag('users', 'Gestión de usuarios')
-    .addTag('emergency-contacts', 'Contactos de emergencia')
-    .addTag('legal-representatives', 'Representantes legales')
-    .addTag('post-registration', 'Post-registro y onboarding')
-    .addTag('catalogs', 'Catálogos de referencia')
-    .addTag('clubs', 'Gestión de clubes')
-    .addTag('classes', 'Clases progresivas')
-    .addTag('honors', 'Catálogo de honores/especialidades')
-    .addTag('user-honors', 'Progreso de honores por usuario')
-    .addTag('activities', 'Actividades de club')
-    .addTag('finances', 'Control financiero')
-    .build();
+      )
+      .setVersion('2.2.0')
+      .setContact('SACDIA Team', 'https://sacdia.app', 'dev@sacdia.app')
+      .setLicense('Proprietary', '')
+      .addBearerAuth()
+      .addTag('auth', 'Autenticación y registro')
+      .addTag('users', 'Gestión de usuarios')
+      .addTag('emergency-contacts', 'Contactos de emergencia')
+      .addTag('legal-representatives', 'Representantes legales')
+      .addTag('post-registration', 'Post-registro y onboarding')
+      .addTag('catalogs', 'Catálogos de referencia')
+      .addTag('clubs', 'Gestión de clubes')
+      .addTag('classes', 'Clases progresivas')
+      .addTag('honors', 'Catálogo de honores/especialidades')
+      .addTag('user-honors', 'Progreso de honores por usuario')
+      .addTag('activities', 'Actividades de club')
+      .addTag('finances', 'Control financiero')
+      .addTag('notifications', 'Push notifications vía Firebase FCM')
+      .addTag('fcm-tokens', 'Gestión de tokens FCM de dispositivos')
+      .addTag('admin-geography', 'CRUD admin de jerarquía geográfica')
+      .addTag('admin-reference', 'CRUD admin de catálogos de referencia')
+      .addTag(
+        'admin-users',
+        'Gestión admin de usuarios con alcance territorial',
+      )
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document, {
-    swaggerOptions: {
-      persistAuthorization: true,
-      docExpansion: 'none',
-      filter: true,
-      showRequestDuration: true,
-    },
-  });
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document, {
+      swaggerOptions: {
+        docExpansion: 'none',
+        filter: true,
+        showRequestDuration: true,
+      },
+    });
+  }
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
+  const port = parseInt(process.env.PORT || '3000', 10);
+  await app.listen(port, '0.0.0.0');
 
   console.log(`\n🚀 Server running on: http://localhost:${port}`);
-  console.log(`📖 Swagger docs on: http://localhost:${port}/api`);
+  if (process.env.SWAGGER_ENABLED === 'true') {
+    console.log(`📖 Swagger docs on: http://localhost:${port}/api`);
+  }
   console.log(`✅ API Version: v1 (default)`);
-  console.log(`📍 Base URL: http://localhost:${port}/v1`);
+  console.log(`📍 Base URL: http://localhost:${port}/api/v1`);
   console.log(`🔒 Security: Helmet, Rate Limiting, Compression enabled`);
 }
-bootstrap();
+bootstrap().catch(console.error);

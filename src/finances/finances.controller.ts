@@ -20,14 +20,22 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { FinancesService } from './finances.service';
-import { CreateFinanceDto, UpdateFinanceDto } from './dto';
-import { JwtAuthGuard, ClubRolesGuard } from '../common/guards';
-import { ClubRoles } from '../common/decorators';
+import { CreateFinanceDto, UpdateFinanceDto, GetAllTransactionsDto } from './dto';
+import {
+  JwtAuthGuard,
+  ClubRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
+import {
+  AuthorizationResource,
+  ClubRoles,
+  RequirePermissions,
+} from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('finances')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class FinancesController {
   constructor(private readonly financesService: FinancesService) {}
@@ -37,6 +45,8 @@ export class FinancesController {
   // ========================================
 
   @Get('finances/categories')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Listar categorías financieras',
     description: 'Lista todas las categorías de ingresos y egresos',
@@ -58,7 +68,38 @@ export class FinancesController {
   // FINANZAS POR CLUB
   // ========================================
 
+  @Get('clubs/:clubId/finances/transactions')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Listar todas las transacciones del club (paginadas)',
+    description:
+      'Obtiene todas las transacciones financieras del club con soporte de paginación, búsqueda, filtros por tipo y rango de fechas.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (1-indexed, default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página (max: 100, default: 20)' })
+  @ApiQuery({ name: 'type', required: false, enum: ['income', 'expense'], description: 'Filtrar por tipo: income o expense' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Búsqueda en descripción y nombre de categoría' })
+  @ApiQuery({ name: 'startDate', required: false, type: String, description: 'Fecha inicio del rango YYYY-MM-DD (inclusive)' })
+  @ApiQuery({ name: 'endDate', required: false, type: String, description: 'Fecha fin del rango YYYY-MM-DD (inclusive)' })
+  @ApiQuery({ name: 'sortBy', required: false, enum: ['date', 'amount', 'category'], description: 'Campo de ordenamiento (default: date)' })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'], description: 'Dirección del ordenamiento (default: desc)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de transacciones con meta de paginación',
+  })
+  @ApiResponse({ status: 404, description: 'Club no encontrado' })
+  async getAllTransactions(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Query() dto: GetAllTransactionsDto,
+  ) {
+    return this.financesService.getAllTransactions(clubId, dto);
+  }
+
   @Get('clubs/:clubId/finances')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Listar movimientos financieros del club',
     description: 'Obtiene todos los movimientos de las instancias del club',
@@ -75,8 +116,10 @@ export class FinancesController {
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
     @Query('month', new ParseIntPipe({ optional: true })) month?: number,
-    @Query('clubTypeId', new ParseIntPipe({ optional: true })) clubTypeId?: number,
-    @Query('categoryId', new ParseIntPipe({ optional: true })) categoryId?: number,
+    @Query('clubTypeId', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+    @Query('categoryId', new ParseIntPipe({ optional: true }))
+    categoryId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -92,6 +135,8 @@ export class FinancesController {
   }
 
   @Get('clubs/:clubId/finances/summary')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Resumen financiero del club',
     description: 'Obtiene el resumen de ingresos, egresos y balance',
@@ -110,7 +155,9 @@ export class FinancesController {
 
   @Post('clubs/:clubId/finances')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'subdirector', 'treasurer')
+  @ClubRoles('director', 'deputy_director', 'treasurer')
+  @RequirePermissions('finances:create')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Crear movimiento financiero',
     description: 'Crea un nuevo ingreso o egreso (requiere rol de tesorería)',
@@ -123,7 +170,7 @@ export class FinancesController {
     @Body() dto: CreateFinanceDto,
     @Request() req: any,
   ) {
-    return this.financesService.create(dto, req.user.sub);
+    return this.financesService.create(dto, req.user.sub, clubId);
   }
 
   // ========================================
@@ -131,6 +178,8 @@ export class FinancesController {
   // ========================================
 
   @Get('finances/:financeId')
+  @RequirePermissions('finances:read')
+  @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
   @ApiOperation({ summary: 'Obtener movimiento por ID' })
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento encontrado' })
@@ -140,21 +189,37 @@ export class FinancesController {
   }
 
   @Patch('finances/:financeId')
+  @RequirePermissions('finances:update')
+  @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
   @ApiOperation({ summary: 'Actualizar movimiento' })
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento actualizado' })
   async update(
     @Param('financeId', ParseIntPipe) financeId: number,
     @Body() dto: UpdateFinanceDto,
+    @Request() req: any,
   ) {
-    return this.financesService.update(financeId, dto);
+    return this.financesService.update(financeId, dto, req.user.sub);
   }
 
   @Delete('finances/:financeId')
+  @RequirePermissions('finances:delete')
+  @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
   @ApiOperation({ summary: 'Desactivar movimiento' })
   @ApiParam({ name: 'financeId', type: Number })
+  @ApiQuery({
+    name: 'reason',
+    required: false,
+    type: String,
+    description:
+      'Justificación para eliminación en período cerrado (solo admin)',
+  })
   @ApiResponse({ status: 200, description: 'Movimiento desactivado' })
-  async remove(@Param('financeId', ParseIntPipe) financeId: number) {
-    return this.financesService.remove(financeId);
+  async remove(
+    @Param('financeId', ParseIntPipe) financeId: number,
+    @Request() req: any,
+    @Query('reason') reason?: string,
+  ) {
+    return this.financesService.remove(financeId, req.user.sub, reason);
   }
 }

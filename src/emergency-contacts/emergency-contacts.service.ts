@@ -16,6 +16,17 @@ export class EmergencyContactsService {
 
   constructor(private prisma: PrismaService) {}
 
+  private async validateRelationshipTypeExists(relationshipTypeId: string) {
+    const relationshipType = await this.prisma.relationship_types.findUnique({
+      where: { relationship_type_id: relationshipTypeId },
+      select: { relationship_type_id: true },
+    });
+
+    if (!relationshipType) {
+      throw new BadRequestException('Tipo de relación no válido');
+    }
+  }
+
   async create(userId: string, createDto: CreateEmergencyContactDto) {
     // Validar máximo 5 contactos activos
     const activeCount = await this.prisma.emergency_contacts.count({
@@ -45,6 +56,8 @@ export class EmergencyContactsService {
       throw new ConflictException('Este contacto ya existe');
     }
 
+    await this.validateRelationshipTypeExists(createDto.relationship_type_id);
+
     // Si marcan como principal, desmarcar otros
     if (createDto.primary) {
       await this.prisma.emergency_contacts.updateMany({
@@ -62,7 +75,7 @@ export class EmergencyContactsService {
       data: {
         owner_id: userId,
         name: createDto.name,
-        relationship_type: createDto.relationship_type,
+        relationship_type_id: createDto.relationship_type_id,
         phone: createDto.phone,
         primary: createDto.primary ?? false,
         active: true,
@@ -88,17 +101,23 @@ export class EmergencyContactsService {
       select: {
         emergency_id: true,
         name: true,
-        relationship_type: true,
+        relationship_type_id: true,
         phone: true,
         primary: true,
         created_at: true,
         modified_at: true,
+        relationship_types: {
+          select: { name: true },
+        },
       },
     });
 
     return {
       status: 'success',
-      data: contacts,
+      data: contacts.map(({ relationship_types, ...rest }) => ({
+        ...rest,
+        relationship_type_name: relationship_types.name,
+      })),
       meta: {
         total: contacts.length,
         remaining: this.MAX_CONTACTS - contacts.length,
@@ -113,13 +132,22 @@ export class EmergencyContactsService {
         owner_id: userId,
         active: true,
       },
+      include: {
+        relationship_types: {
+          select: { name: true },
+        },
+      },
     });
 
     if (!contact) {
       throw new NotFoundException('Contacto de emergencia no encontrado');
     }
 
-    return { status: 'success', data: contact };
+    const { relationship_types, ...rest } = contact;
+    return {
+      status: 'success',
+      data: { ...rest, relationship_type_name: relationship_types.name },
+    };
   }
 
   async update(
@@ -138,6 +166,10 @@ export class EmergencyContactsService {
 
     if (!existingContact) {
       throw new NotFoundException('Contacto de emergencia no encontrado');
+    }
+
+    if (updateDto.relationship_type_id) {
+      await this.validateRelationshipTypeExists(updateDto.relationship_type_id);
     }
 
     // Si marcan como principal, desmarcar otros

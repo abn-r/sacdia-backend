@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -20,22 +21,27 @@ import {
 } from '@nestjs/swagger';
 import { CertificationsService } from './certifications.service';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  OptionalJwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
+
+// ========================================
+// CATÁLOGO DE CERTIFICACIONES (Público)
+// ========================================
 
 @ApiTags('certifications')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 @Controller('certifications')
+@UseGuards(OptionalJwtAuthGuard)
 export class CertificationsController {
-  constructor(
-    private readonly certificationsService: CertificationsService,
-  ) {}
-
-  // ========================================
-  // CERTIFICATIONS
-  // ========================================
+  constructor(private readonly certificationsService: CertificationsService) {}
 
   @Get('certifications')
   @ApiOperation({
@@ -56,7 +62,6 @@ export class CertificationsController {
     example: 50,
   })
   @ApiResponse({ status: 200, description: 'Lista de certificaciones' })
-  @ApiResponse({ status: 401, description: 'No autenticado' })
   async findAll(@Query() paginationDto: PaginationDto) {
     const result = await this.certificationsService.findAll(paginationDto);
     return {
@@ -89,12 +94,22 @@ export class CertificationsController {
       data,
     };
   }
+}
 
-  // ========================================
-  // USER CERTIFICATIONS
-  // ========================================
+// ========================================
+// CERTIFICACIONES DE USUARIO (Autenticado)
+// ========================================
+
+@ApiTags('certifications')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Controller('certifications')
+export class UserCertificationsController {
+  constructor(private readonly certificationsService: CertificationsService) {}
 
   @Post('users/:userId/certifications/enroll')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribirse en una certificación',
     description:
@@ -116,7 +131,7 @@ export class CertificationsController {
     description: 'Usuario ya inscrito en esta certificación',
   })
   async enrollUser(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: EnrollCertificationDto,
   ) {
     const data = await this.certificationsService.enrollUser(userId, dto);
@@ -127,6 +142,8 @@ export class CertificationsController {
   }
 
   @Get('users/:userId/certifications')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Listar certificaciones del usuario',
     description:
@@ -141,7 +158,7 @@ export class CertificationsController {
     status: 200,
     description: 'Lista de certificaciones del usuario con progreso',
   })
-  async getUserCertifications(@Param('userId') userId: string) {
+  async getUserCertifications(@Param('userId', ParseUUIDPipe) userId: string) {
     const data = await this.certificationsService.getUserCertifications(userId);
     return {
       status: 'success',
@@ -150,6 +167,8 @@ export class CertificationsController {
   }
 
   @Get('users/:userId/certifications/:certificationId/progress')
+  @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Ver progreso detallado de una certificación',
     description:
@@ -174,7 +193,7 @@ export class CertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async getCertificationProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
   ) {
     const data = await this.certificationsService.getCertificationProgress(
@@ -188,6 +207,8 @@ export class CertificationsController {
   }
 
   @Patch('users/:userId/certifications/:certificationId/progress')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
     description:
@@ -216,9 +237,9 @@ export class CertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async updateProgress(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
-    @Body() dto: UpdateProgressDto,
+    @Body() dto: UpdateCertificationProgressDto,
   ) {
     const data = await this.certificationsService.updateProgress(
       userId,
@@ -232,6 +253,8 @@ export class CertificationsController {
   }
 
   @Delete('users/:userId/certifications/:certificationId')
+  @RequirePermissions('users:update')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Abandonar una certificación',
     description:
@@ -256,7 +279,7 @@ export class CertificationsController {
     description: 'Inscripción en certificación no encontrada',
   })
   async deleteCertification(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('certificationId', ParseIntPipe) certificationId: number,
   ) {
     const data = await this.certificationsService.deleteCertification(

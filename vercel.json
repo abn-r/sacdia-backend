@@ -21,7 +21,8 @@
     }
   ],
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "AUTH_REJECT_SNAKE_CASE": "true"
   },
   "buildCommand": "pnpm run build",
   "outputDirectory": "dist",

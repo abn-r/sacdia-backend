@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -46,7 +47,12 @@ export class TokenBlacklistService {
     expiresInSeconds: number = 86400,
   ): Promise<void> {
     const key = `${this.BLACKLIST_PREFIX}user:${userId}:all`;
-    await this.cacheManager.set(key, Date.now().toString(), expiresInSeconds * 1000);
+    const timestampSeconds = Math.floor(Date.now() / 1000);
+    await this.cacheManager.set(
+      key,
+      timestampSeconds.toString(),
+      expiresInSeconds * 1000,
+    );
     this.logger.warn(`All tokens blacklisted for user ${userId}`);
   }
 
@@ -56,14 +62,22 @@ export class TokenBlacklistService {
    * @param tokenIssuedAt - Timestamp de emisión del token
    * @returns true si el token fue emitido antes del bloqueo
    */
-  async isUserBlacklisted(userId: string, tokenIssuedAt: number): Promise<boolean> {
+  async isUserBlacklisted(
+    userId: string,
+    tokenIssuedAt: number,
+  ): Promise<boolean> {
     const key = `${this.BLACKLIST_PREFIX}user:${userId}:all`;
     const blacklistTime = await this.cacheManager.get<string>(key);
-    
+
     if (!blacklistTime) return false;
-    
+
+    const parsed = parseInt(blacklistTime, 10);
+    if (Number.isNaN(parsed)) return false;
+
+    const normalizedSeconds = this.normalizeEpochSeconds(parsed);
+
     // Si el token fue emitido antes del bloqueo, está revocado
-    return tokenIssuedAt < parseInt(blacklistTime, 10);
+    return tokenIssuedAt < normalizedSeconds;
   }
 
   private getBlacklistKey(token: string): string {
@@ -73,7 +87,14 @@ export class TokenBlacklistService {
   }
 
   private hashToken(token: string): string {
-    // Usar últimos 32 caracteres del token como identificador
-    return token.slice(-32);
+    // Full 64-character SHA-256 hex digest — truncation increases collision risk
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private normalizeEpochSeconds(timestamp: number): number {
+    // Compatibilidad: valores históricos en milisegundos.
+    return timestamp > 1_000_000_000_000
+      ? Math.floor(timestamp / 1000)
+      : timestamp;
   }
 }
