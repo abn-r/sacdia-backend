@@ -29,6 +29,7 @@ const FOLDER_STATUS_VALIDATED = 'VALIDATED';
 const FOLDER_STATUS_REJECTED = 'REJECTED';
 
 const CLASS_STATUS_PENDING = 'PENDING';
+const CLASS_STATUS_SUBMITTED = 'SUBMITTED';
 const CLASS_STATUS_VALIDATED = 'VALIDATED';
 const CLASS_STATUS_REJECTED = 'REJECTED';
 
@@ -184,7 +185,7 @@ export class EvidenceReviewService {
   private async getClassPending(): Promise<EvidenceItem[]> {
     const records = await this.prisma.class_section_progress.findMany({
       where: {
-        status: CLASS_STATUS_PENDING,
+        status: CLASS_STATUS_SUBMITTED,
         active: true,
         submitted_at: { not: null },
       },
@@ -540,9 +541,9 @@ export class EvidenceReviewService {
       );
     }
 
-    if (record.status !== CLASS_STATUS_PENDING) {
+    if (record.status !== CLASS_STATUS_SUBMITTED) {
       throw new BadRequestException(
-        `Solo se pueden aprobar registros en estado pendiente. Estado actual: ${record.status}`,
+        `Solo se pueden aprobar registros en estado enviado (SUBMITTED). Estado actual: ${record.status}`,
       );
     }
 

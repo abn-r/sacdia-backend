@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, evidence_validation_enum } from '@prisma/client';
 import { AchievementsService } from '../achievements/achievements.service';
 import {
   PaginationDto,
@@ -573,7 +573,7 @@ export class ClassesService {
             score: progress?.score || 0,
             evidences: progress?.evidences || null,
             evidence_files: evidenceFiles,
-            status: progress?.status || 'PENDING',
+            status: progress?.status ?? evidence_validation_enum.PENDING,
             submitted_by_name: null,
             submitted_at: progress?.submitted_at?.toISOString() || null,
             validated_by_name: null,
@@ -837,8 +837,8 @@ export class ClassesService {
 
     // Must be in PENDING or REJECTED status to submit
     if (
-      sectionProgress.status !== 'PENDING' &&
-      sectionProgress.status !== 'REJECTED'
+      sectionProgress.status !== evidence_validation_enum.PENDING &&
+      sectionProgress.status !== evidence_validation_enum.REJECTED
     ) {
       throw new BadRequestException(
         `Section is already in status '${sectionProgress.status}' and cannot be submitted`,
@@ -860,7 +860,7 @@ export class ClassesService {
         section_progress_id: sectionProgress.section_progress_id,
       },
       data: {
-        status: 'PENDING',
+        status: evidence_validation_enum.SUBMITTED,
         submitted_by_id: userId,
         submitted_at: new Date(),
         modified_at: new Date(),

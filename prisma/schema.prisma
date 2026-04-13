@@ -1623,6 +1623,7 @@ enum insurance_type_enum {
 
 enum evidence_validation_enum {
   PENDING
+  SUBMITTED
   VALIDATED
   REJECTED
 }
