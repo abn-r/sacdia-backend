@@ -5,6 +5,7 @@ import {
   Param,
   Delete,
   Get,
+  Patch,
   Put,
   Request,
   UseGuards,
@@ -15,7 +16,13 @@ import {
   BadRequestException,
   ParseEnumPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiResponse,
+  ApiParam,
+} from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { FcmTokensService } from './fcm-tokens.service';
@@ -170,6 +177,51 @@ export class NotificationsController {
       page,
       limit,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inbox helpers (unread count, mark read, mark all read)
+  // ---------------------------------------------------------------------------
+
+  @Get('unread-count')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Get unread notification count for the current user',
+    description:
+      'Returns the number of notification_deliveries where read_at is null for the calling user.',
+  })
+  @ApiResponse({ status: 200, description: 'Unread count', schema: { example: { count: 3 } } })
+  async getUnreadCount(@Request() req) {
+    return this.notificationsService.getUnreadCount(req.user.sub);
+  }
+
+  @Patch(':deliveryId/read')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Mark a single notification delivery as read',
+    description:
+      'Sets read_at = NOW() for the given delivery. Returns 404 if not found or not owned by the caller.',
+  })
+  @ApiParam({ name: 'deliveryId', description: 'UUID of the notification_deliveries row' })
+  @ApiResponse({ status: 200, description: 'Updated delivery row' })
+  @ApiResponse({ status: 404, description: 'Delivery not found or not owned by caller' })
+  async markRead(
+    @Param('deliveryId', ParseUUIDPipe) deliveryId: string,
+    @Request() req,
+  ) {
+    return this.notificationsService.markDeliveryRead(deliveryId, req.user.sub);
+  }
+
+  @Patch('read-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Mark all unread notifications as read',
+    description:
+      'Bulk sets read_at = NOW() for all unread deliveries of the calling user.',
+  })
+  @ApiResponse({ status: 200, description: 'Count of updated rows', schema: { example: { updated: 5 } } })
+  async markAllRead(@Request() req) {
+    return this.notificationsService.markAllDeliveriesRead(req.user.sub);
   }
 
   // ---------------------------------------------------------------------------
