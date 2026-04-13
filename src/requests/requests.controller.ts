@@ -24,12 +24,13 @@ import {
   CreateAssignmentRequestDto,
   ReviewAssignmentRequestDto,
 } from './dto';
-import { RequirePermissions, CurrentUser } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions, CurrentUser } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('requests')
 @Controller('requests')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'active_assignment' })
 @ApiBearerAuth()
 export class RequestsController {
   constructor(private readonly requestsService: RequestsService) {}

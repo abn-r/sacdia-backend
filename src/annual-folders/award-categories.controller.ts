@@ -21,12 +21,13 @@ import {
 import { AwardCategoriesService } from './award-categories.service';
 import { CreateAwardCategoryDto } from './dto/create-award-category.dto';
 import { UpdateAwardCategoryDto } from './dto/update-award-category.dto';
-import { RequirePermissions } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('Award Categories')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('award-categories')
 export class AwardCategoriesController {
   constructor(private readonly service: AwardCategoriesService) {}

@@ -26,7 +26,7 @@ import {
   IsObject,
   IsBoolean,
 } from 'class-validator';
-import { RequirePermissions } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
 import {
   JwtAuthGuard,
   OwnerOrAdminGuard,
@@ -105,6 +105,7 @@ export class NotificationsController {
 
   @Post('send')
   @RequirePermissions('notifications:send')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Send notification to specific user' })
   async sendToUser(@Body() dto: SendNotificationDto, @Request() req) {
     return this.notificationsService.sendToUser(
@@ -116,6 +117,7 @@ export class NotificationsController {
 
   @Post('broadcast')
   @RequirePermissions('notifications:broadcast')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Send notification to all users' })
   async broadcast(@Body() dto: BroadcastNotificationDto, @Request() req) {
     return this.notificationsService.broadcast(
@@ -127,6 +129,7 @@ export class NotificationsController {
 
   @Post('club/:instanceType/:instanceId')
   @RequirePermissions('notifications:club')
+  @AuthorizationResource({ type: 'active_assignment' }) // TODO(rbac): verify notifications:club is club-scoped in seed
   @ApiOperation({ summary: 'Send notification to club members' })
   async sendToClub(
     @Param('instanceType', new ParseEnumPipe(ClubInstanceType))

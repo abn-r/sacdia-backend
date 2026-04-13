@@ -17,7 +17,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
 import { AdminGeographyService } from './admin-geography.service';
 import {
@@ -37,6 +37,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminGeographyController {
   constructor(private readonly geographyService: AdminGeographyService) {}

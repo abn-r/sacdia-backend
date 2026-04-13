@@ -19,7 +19,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
 import {
   AdminCurrentOperationalEnrollmentDto,
@@ -35,6 +35,7 @@ import { AdminUsersService } from './admin-users.service';
 @ApiExtraModels(AdminCurrentOperationalEnrollmentDto, AdminTrajectoryClassDto)
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}

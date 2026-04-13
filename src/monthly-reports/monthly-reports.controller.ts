@@ -25,12 +25,13 @@ import type { Response } from 'express';
 import { MonthlyReportsService } from './monthly-reports.service';
 import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { UpdateManualDataDto } from './dto';
-import { RequirePermissions } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('monthly-reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('monthly-reports')
 export class MonthlyReportsController {
   constructor(

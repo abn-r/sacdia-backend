@@ -16,7 +16,7 @@ import {
 } from '@nestjs/swagger';
 import { EvaluationService } from './evaluation.service';
 import { EvaluateSectionDto } from './dto';
-import { CurrentUser, RequirePermissions } from '../common/decorators';
+import { AuthorizationResource, CurrentUser, RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type CurrentUserPayload = {
@@ -36,6 +36,7 @@ export class EvaluationController {
 
   @Post(':folderId/sections/:sectionId/evaluate')
   @RequirePermissions('annual_folders:evaluate')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Evaluate a section of an annual folder' })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
@@ -66,6 +67,7 @@ export class EvaluationController {
 
   @Post(':folderId/sections/:sectionId/reopen')
   @RequirePermissions('annual_folders:evaluate')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary: 'Reopen a section for re-evaluation (removes existing evaluation)',
   })
@@ -99,6 +101,7 @@ export class EvaluationController {
     permissions: ['annual_folders:evaluate', 'evidence_folders:read'],
     mode: 'any',
   })
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Get all section evaluations for a folder' })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiResponse({ status: 200, description: 'List of section evaluations' })

@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
 import { AdminHonorsService } from './admin-honors.service';
 import {
@@ -25,6 +25,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin/honors')
 export class AdminHonorsController {
   constructor(private readonly adminHonorsService: AdminHonorsService) {}

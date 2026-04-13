@@ -17,7 +17,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -45,6 +45,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin/users/:userId')
 export class AdminAuthController {
   constructor(private readonly adminAuthService: AdminAuthService) {}

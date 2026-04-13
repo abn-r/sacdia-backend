@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -78,7 +79,15 @@ export class PermissionsGuard implements CanActivate {
       this.reflector.getAllAndOverride<AuthorizationResourceMetadata>(
         AUTHORIZATION_RESOURCE_KEY,
         [context.getHandler(), context.getClass()],
-      ) ?? { type: 'global' };
+      );
+
+    if (!resource) {
+      const className = context.getClass().name;
+      const handlerName = context.getHandler().name;
+      throw new InternalServerErrorException(
+        `RBAC misconfiguration: Handler ${className}.${handlerName} has @RequirePermissions but no @AuthorizationResource. Add @AuthorizationResource({ type: ... }) to declare the permission scope explicitly.`,
+      );
+    }
     const sensitiveUserSubresource =
       this.reflector.getAllAndOverride<SensitiveUserSubresourceMetadata>(
         SENSITIVE_USER_SUBRESOURCE_KEY,

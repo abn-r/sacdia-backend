@@ -54,6 +54,7 @@ type CurrentUserPayload = {
 @ApiTags('Annual Folders - Templates')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('annual-folders/templates')
 export class AnnualFolderTemplatesController {
   constructor(private readonly service: AnnualFoldersService) {}

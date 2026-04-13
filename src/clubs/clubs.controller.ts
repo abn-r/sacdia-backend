@@ -114,6 +114,7 @@ export class ClubsController {
 
   @Post()
   @RequirePermissions('clubs:create')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear nuevo club' })
   @ApiResponse({ status: 201, description: 'Club creado' })
   async create(@Body() dto: CreateClubDto) {

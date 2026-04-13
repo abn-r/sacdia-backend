@@ -19,7 +19,11 @@ import {
 } from '@nestjs/swagger';
 import { ValidationService } from './validation.service';
 import { SubmitForReviewDto, ReviewValidationDto } from './dto';
-import { CurrentUser, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  CurrentUser,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type CurrentUserPayload = {
@@ -38,6 +42,7 @@ export class ValidationController {
   // ========================================
 
   @Post('submit')
+  @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('classes:update')
   @ApiOperation({
     summary: 'Enviar clase/honor a revision',
@@ -66,6 +71,7 @@ export class ValidationController {
   // ========================================
 
   @Post(':entityType/:entityId/review')
+  @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('classes:update')
   @ApiOperation({
     summary: 'Aprobar o rechazar clase/honor',
@@ -108,6 +114,7 @@ export class ValidationController {
   // ========================================
 
   @Get('pending')
+  @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('classes:read')
   @ApiOperation({
     summary: 'Listar items pendientes de revision',
@@ -143,6 +150,7 @@ export class ValidationController {
   // ========================================
 
   @Get(':entityType/:entityId/history')
+  @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('classes:read')
   @ApiOperation({
     summary: 'Historial de validacion',
@@ -174,6 +182,7 @@ export class ValidationController {
 
   @Get('eligibility/:userId')
   @RequirePermissions('users:read_detail')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Verificar elegibilidad para investidura',
     description:

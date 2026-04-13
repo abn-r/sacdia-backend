@@ -22,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -38,6 +38,7 @@ import { BootstrapAdminDto } from './dto/bootstrap-admin.dto';
 @ApiTags('rbac')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('admin/rbac')
 export class RbacController {
   constructor(private readonly rbacService: RbacService) {}

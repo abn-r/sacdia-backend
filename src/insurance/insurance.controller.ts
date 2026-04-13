@@ -118,6 +118,7 @@ export class InsuranceController {
 
   @Get('users/:memberId/insurance')
   @RequirePermissions('insurance:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Obtener seguro activo del miembro' })
   @ApiParam({ name: 'memberId', type: String })
   @ApiResponse({ status: 200, description: 'Seguro del miembro' })
@@ -128,6 +129,7 @@ export class InsuranceController {
 
   @Post('users/:memberId/insurance')
   @RequirePermissions('insurance:create')
+  @AuthorizationResource({ type: 'active_assignment' })
   @UseInterceptors(FileInterceptor('evidence'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Crear seguro para un miembro' })
@@ -170,6 +172,7 @@ export class InsuranceController {
 
   @Patch('insurance/:insuranceId')
   @RequirePermissions('insurance:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @UseInterceptors(FileInterceptor('evidence'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Actualizar seguro' })

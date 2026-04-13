@@ -16,12 +16,13 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { RankingsService } from './rankings.service';
-import { RequirePermissions } from '../common/decorators';
+import { AuthorizationResource, RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('Annual Folders - Rankings')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('annual-folders/rankings')
 export class RankingsController {
   constructor(private readonly rankingsService: RankingsService) {}
