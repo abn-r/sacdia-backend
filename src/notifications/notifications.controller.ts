@@ -195,6 +195,18 @@ export class NotificationsController {
     return this.notificationsService.getUnreadCount(req.user.sub);
   }
 
+  @Patch('read-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Mark all unread notifications as read',
+    description:
+      'Bulk sets read_at = NOW() for all unread deliveries of the calling user.',
+  })
+  @ApiResponse({ status: 200, description: 'Count of updated rows', schema: { example: { updated: 5 } } })
+  async markAllRead(@Request() req) {
+    return this.notificationsService.markAllDeliveriesRead(req.user.sub);
+  }
+
   @Patch(':deliveryId/read')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
@@ -210,18 +222,6 @@ export class NotificationsController {
     @Request() req,
   ) {
     return this.notificationsService.markDeliveryRead(deliveryId, req.user.sub);
-  }
-
-  @Patch('read-all')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({
-    summary: 'Mark all unread notifications as read',
-    description:
-      'Bulk sets read_at = NOW() for all unread deliveries of the calling user.',
-  })
-  @ApiResponse({ status: 200, description: 'Count of updated rows', schema: { example: { updated: 5 } } })
-  async markAllRead(@Request() req) {
-    return this.notificationsService.markAllDeliveriesRead(req.user.sub);
   }
 
   // ---------------------------------------------------------------------------
