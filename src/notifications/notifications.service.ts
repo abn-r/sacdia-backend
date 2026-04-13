@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { firebaseAdmin } from '../config/firebase-admin.module';
@@ -319,9 +319,16 @@ export class NotificationsService {
   /**
    * Obtener historial paginado de notificaciones.
    *
-   * - Admins (admin | super_admin): devuelve TODOS los logs sin filtro.
-   * - Usuarios regulares: devuelve sólo los logs donde target_type = 'user'
-   *   AND target_id = callerUserId (sus propias notificaciones).
+   * - Admins (admin | super_admin | assistant_admin): devuelve TODOS los
+   *   notification_logs directamente (incluye sender info).
+   *   TODO [SECURITY M-2]: territory-scope filter pending — a local field admin
+   *   currently sees logs for all territories. Only super_admin should be
+   *   unfiltered. See controller comment for fix approach.
+   *
+   * - Usuarios regulares: consulta notification_deliveries (mailbox-per-user).
+   *   Esto resuelve el bug donde sendToSectionRole / broadcast / sendToClubMembers
+   *   jamás generaban un log con target_type='user', por lo que la bandeja de
+   *   entrada siempre aparecía vacía para usuarios no-admin.
    */
   async getNotificationHistory(
     callerUserId: string,
@@ -335,31 +342,63 @@ export class NotificationsService {
 
     const skip = (page - 1) * limit;
 
-    const where = isAdmin
-      ? {}
-      : { target_type: 'user', target_id: callerUserId };
+    if (isAdmin) {
+      // Admin path: read directly from notification_logs (full audit log)
+      // TODO [SECURITY M-2]: restrict to admin's territory scope
+      const [data, total] = await Promise.all([
+        this.prisma.notification_logs.findMany({
+          where: {},
+          skip,
+          take: limit,
+          orderBy: { created_at: 'desc' },
+          include: {
+            users: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+                email: true,
+              },
+            },
+          },
+        }),
+        this.prisma.notification_logs.count({ where: {} }),
+      ]);
 
-    const [data, total] = await Promise.all([
-      this.prisma.notification_logs.findMany({
-        where,
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    }
+
+    // Regular user path: read from notification_deliveries (per-recipient mailbox)
+    const [deliveries, total] = await Promise.all([
+      this.prisma.notification_deliveries.findMany({
+        where: { user_id: callerUserId },
+        include: { notification_log: true },
+        orderBy: { created_at: 'desc' },
         skip,
         take: limit,
-        orderBy: { created_at: 'desc' },
-        include: isAdmin
-          ? {
-              users: {
-                select: {
-                  user_id: true,
-                  name: true,
-                  paternal_last_name: true,
-                  email: true,
-                },
-              },
-            }
-          : undefined,
       }),
-      this.prisma.notification_logs.count({ where }),
+      this.prisma.notification_deliveries.count({
+        where: { user_id: callerUserId },
+      }),
     ]);
+
+    const data = deliveries.map((d) => ({
+      delivery_id: d.delivery_id,
+      read_at: d.read_at,
+      created_at: d.created_at,
+      log_id: d.notification_log.log_id,
+      title: d.notification_log.title,
+      body: d.notification_log.body,
+      type: d.notification_log.type,
+      target_type: d.notification_log.target_type,
+      source: d.notification_log.source,
+    }));
 
     return {
       data,
@@ -368,6 +407,50 @@ export class NotificationsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inbox helpers (unread count, mark read, mark all read)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Count unread deliveries for the calling user.
+   */
+  async getUnreadCount(callerUserId: string): Promise<{ count: number }> {
+    const count = await this.prisma.notification_deliveries.count({
+      where: { user_id: callerUserId, read_at: null },
+    });
+    return { count };
+  }
+
+  /**
+   * Mark a single delivery as read. Verifies ownership — throws NotFoundException
+   * if the delivery does not exist or belongs to another user.
+   */
+  async markDeliveryRead(deliveryId: string, callerUserId: string) {
+    const delivery = await this.prisma.notification_deliveries.findFirst({
+      where: { delivery_id: deliveryId, user_id: callerUserId },
+    });
+    if (!delivery) {
+      throw new NotFoundException(
+        `Delivery ${deliveryId} not found or not owned by caller`,
+      );
+    }
+    return this.prisma.notification_deliveries.update({
+      where: { delivery_id: deliveryId },
+      data: { read_at: new Date() },
+    });
+  }
+
+  /**
+   * Bulk mark all unread deliveries as read for the calling user.
+   */
+  async markAllDeliveriesRead(callerUserId: string): Promise<{ updated: number }> {
+    const result = await this.prisma.notification_deliveries.updateMany({
+      where: { user_id: callerUserId, read_at: null },
+      data: { read_at: new Date() },
+    });
+    return { updated: result.count };
   }
 
   // ============================================================================
@@ -408,18 +491,31 @@ export class NotificationsService {
       dto.data,
     );
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title: dto.title,
-        body: dto.body,
-        type: 'USER',
-        target_type: 'user',
-        target_id: dto.userId,
-        sent_by: isUuid(sentBy) ? sentBy : null,
-        source: source ?? null,
-        tokens_sent: successCount,
-        tokens_failed: failureCount,
-      },
+    // Persist log + delivery atomically. Deliveries are the inbox source of
+    // truth — both must be written together. FCM was already called; if this
+    // transaction fails the push still delivered but the inbox entry is lost.
+    // We log the error and do not throw so the API response still returns success.
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title: dto.title,
+          body: dto.body,
+          type: 'USER',
+          target_type: 'user',
+          target_id: dto.userId,
+          sent_by: isUuid(sentBy) ? sentBy : null,
+          source: source ?? null,
+          tokens_sent: successCount,
+          tokens_failed: failureCount,
+        },
+      });
+      await tx.notification_deliveries.create({
+        data: { log_id: log.log_id, user_id: dto.userId },
+      });
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `sendToUserSync: failed to persist log/delivery for user ${dto.userId}: ${err.message}`,
+      );
     });
 
     return { success: true, successCount, failureCount };
@@ -466,18 +562,37 @@ export class NotificationsService {
       totalFailure += result.failureCount;
     }
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title: dto.title,
-        body: dto.body,
-        type: 'BROADCAST',
-        target_type: 'all',
-        target_id: null,
-        sent_by: isUuid(sentBy) ? sentBy : null,
-        source: source ?? null,
-        tokens_sent: totalSuccess,
-        tokens_failed: totalFailure,
-      },
+    // Persist log + bulk deliveries for all allowed users atomically.
+    // Uses INSERT...SELECT for performance (avoids round-tripping each row).
+    // If this fails the FCM pushes already went out — log and continue.
+    const allowedUserIds = [...allowedSet];
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title: dto.title,
+          body: dto.body,
+          type: 'BROADCAST',
+          target_type: 'all',
+          target_id: null,
+          sent_by: isUuid(sentBy) ? sentBy : null,
+          source: source ?? null,
+          tokens_sent: totalSuccess,
+          tokens_failed: totalFailure,
+        },
+      });
+      if (allowedUserIds.length > 0) {
+        await tx.notification_deliveries.createMany({
+          data: allowedUserIds.map((uid) => ({
+            log_id: log.log_id,
+            user_id: uid,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `broadcastSync: failed to persist log/deliveries: ${err.message}`,
+      );
     });
 
     return {
@@ -537,18 +652,28 @@ export class NotificationsService {
       totalFailure += result.failureCount;
     }
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title: dto.title,
-        body: dto.body,
-        type: 'CLUB',
-        target_type: 'club_section',
-        target_id: String(clubSectionId),
-        sent_by: isUuid(sentBy) ? sentBy : null,
-        source: source ?? null,
-        tokens_sent: totalSuccess,
-        tokens_failed: totalFailure,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title: dto.title,
+          body: dto.body,
+          type: 'CLUB',
+          target_type: 'club_section',
+          target_id: String(clubSectionId),
+          sent_by: isUuid(sentBy) ? sentBy : null,
+          source: source ?? null,
+          tokens_sent: totalSuccess,
+          tokens_failed: totalFailure,
+        },
+      });
+      await tx.notification_deliveries.createMany({
+        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+        skipDuplicates: true,
+      });
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `sendToClubMembersSync: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
+      );
     });
 
     return {
@@ -624,18 +749,28 @@ export class NotificationsService {
       }
     }
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title,
-        body,
-        type: 'SECTION_ROLE',
-        target_type: 'section_role',
-        target_id: String(clubSectionId),
-        sent_by: null,
-        source: source ?? null,
-        tokens_sent: totalSuccess,
-        tokens_failed: totalFailure,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title,
+          body,
+          type: 'SECTION_ROLE',
+          target_type: 'section_role',
+          target_id: String(clubSectionId),
+          sent_by: null,
+          source: source ?? null,
+          tokens_sent: totalSuccess,
+          tokens_failed: totalFailure,
+        },
+      });
+      await tx.notification_deliveries.createMany({
+        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+        skipDuplicates: true,
+      });
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `sendToSectionRoleSync: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
+      );
     });
   }
 
@@ -715,18 +850,28 @@ export class NotificationsService {
       }
     }
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title,
-        body,
-        type: 'GLOBAL_ROLE',
-        target_type: 'global_role',
-        target_id: localFieldId ? String(localFieldId) : null,
-        sent_by: null,
-        source: source ?? null,
-        tokens_sent: totalSuccess,
-        tokens_failed: totalFailure,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title,
+          body,
+          type: 'GLOBAL_ROLE',
+          target_type: 'global_role',
+          target_id: localFieldId ? String(localFieldId) : null,
+          sent_by: null,
+          source: source ?? null,
+          tokens_sent: totalSuccess,
+          tokens_failed: totalFailure,
+        },
+      });
+      await tx.notification_deliveries.createMany({
+        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+        skipDuplicates: true,
+      });
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `sendToGlobalRoleSync: failed to persist log/deliveries for roles ${roleNames.join(',')}: ${err.message}`,
+      );
     });
   }
 

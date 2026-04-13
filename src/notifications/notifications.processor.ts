@@ -159,18 +159,27 @@ export class NotificationsProcessor
       data,
     );
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title,
-        body,
-        type: 'USER',
-        target_type: 'user',
-        target_id: userId,
-        sent_by: isUuid(sentBy) ? sentBy : null,
-        source: source ?? null,
-        tokens_sent: successCount,
-        tokens_failed: failureCount,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title,
+          body,
+          type: 'USER',
+          target_type: 'user',
+          target_id: userId,
+          sent_by: isUuid(sentBy) ? sentBy : null,
+          source: source ?? null,
+          tokens_sent: successCount,
+          tokens_failed: failureCount,
+        },
+      });
+      await tx.notification_deliveries.create({
+        data: { log_id: log.log_id, user_id: userId },
+      });
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `handleSendToUser: failed to persist log/delivery for user ${userId}: ${err.message}`,
+      );
     });
 
     return { successCount, failureCount };
@@ -241,18 +250,28 @@ export class NotificationsProcessor
       }
     }
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title,
-        body,
-        type: 'SECTION_ROLE',
-        target_type: 'section_role',
-        target_id: String(clubSectionId),
-        sent_by: null,
-        source: source ?? null,
-        tokens_sent: totalSuccess,
-        tokens_failed: totalFailure,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title,
+          body,
+          type: 'SECTION_ROLE',
+          target_type: 'section_role',
+          target_id: String(clubSectionId),
+          sent_by: null,
+          source: source ?? null,
+          tokens_sent: totalSuccess,
+          tokens_failed: totalFailure,
+        },
+      });
+      await tx.notification_deliveries.createMany({
+        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+        skipDuplicates: true,
+      });
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `handleSendToSectionRole: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
+      );
     });
 
     return { successCount: totalSuccess, failureCount: totalFailure };
@@ -334,18 +353,28 @@ export class NotificationsProcessor
       }
     }
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title,
-        body,
-        type: 'GLOBAL_ROLE',
-        target_type: 'global_role',
-        target_id: localFieldId ? String(localFieldId) : null,
-        sent_by: null,
-        source: source ?? null,
-        tokens_sent: totalSuccess,
-        tokens_failed: totalFailure,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title,
+          body,
+          type: 'GLOBAL_ROLE',
+          target_type: 'global_role',
+          target_id: localFieldId ? String(localFieldId) : null,
+          sent_by: null,
+          source: source ?? null,
+          tokens_sent: totalSuccess,
+          tokens_failed: totalFailure,
+        },
+      });
+      await tx.notification_deliveries.createMany({
+        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+        skipDuplicates: true,
+      });
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `handleSendToGlobalRole: failed to persist log/deliveries for roles ${roleNames.join(',')}: ${err.message}`,
+      );
     });
 
     return { successCount: totalSuccess, failureCount: totalFailure };
@@ -395,18 +424,34 @@ export class NotificationsProcessor
       totalFailure += result.failureCount;
     }
 
-    await this.prisma.notification_logs.create({
-      data: {
-        title,
-        body,
-        type: 'BROADCAST',
-        target_type: 'all',
-        target_id: null,
-        sent_by: isUuid(sentBy) ? sentBy : null,
-        source: source ?? null,
-        tokens_sent: totalSuccess,
-        tokens_failed: totalFailure,
-      },
+    const allowedUserIds = [...allowedSet];
+    await this.prisma.$transaction(async (tx) => {
+      const log = await tx.notification_logs.create({
+        data: {
+          title,
+          body,
+          type: 'BROADCAST',
+          target_type: 'all',
+          target_id: null,
+          sent_by: isUuid(sentBy) ? sentBy : null,
+          source: source ?? null,
+          tokens_sent: totalSuccess,
+          tokens_failed: totalFailure,
+        },
+      });
+      if (allowedUserIds.length > 0) {
+        await tx.notification_deliveries.createMany({
+          data: allowedUserIds.map((uid) => ({
+            log_id: log.log_id,
+            user_id: uid,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }).catch((err: Error) => {
+      this.logger.warn(
+        `handleBroadcast: failed to persist log/deliveries: ${err.message}`,
+      );
     });
 
     return { successCount: totalSuccess, failureCount: totalFailure };
