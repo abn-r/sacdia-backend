@@ -1073,6 +1073,7 @@ model users {
   validation_logs_as_user                     validation_logs[]                   @relation("validation_log_user")
   validation_logs_as_performer                validation_logs[]                   @relation("validation_log_performer")
   notification_preferences                    notification_preferences[]
+  notification_deliveries                     notification_deliveries[]
   section_progress_submitted                  class_section_progress[]            @relation("section_progress_submitted_by")
   section_progress_validated                  class_section_progress[]            @relation("section_progress_validated_by")
   honors_validated                            users_honors[]                      @relation("honor_validator")
@@ -1109,12 +1110,29 @@ model notification_logs {
   tokens_failed Int      @default(0)
   created_at    DateTime @default(now()) @db.Timestamptz()
 
-  users users? @relation("notification_logs_sender", fields: [sent_by], references: [user_id])
+  users        users?                      @relation("notification_logs_sender", fields: [sent_by], references: [user_id])
+  deliveries   notification_deliveries[]
 
   @@index([sent_by], map: "idx_notification_logs_sender")
   @@index([created_at], map: "idx_notification_logs_created")
   @@index([source], map: "idx_notification_logs_source")
   @@index([target_type, target_id], map: "idx_notification_logs_target")
+}
+
+model notification_deliveries {
+  delivery_id      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  log_id           Int
+  user_id          String    @db.Uuid
+  read_at          DateTime? @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  notification_log notification_logs @relation(fields: [log_id], references: [log_id], onDelete: Cascade)
+  user             users             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@unique([log_id, user_id])
+  @@index([user_id, read_at])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("notification_deliveries")
 }
 
 model user_fcm_tokens {
