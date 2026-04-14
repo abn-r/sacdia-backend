@@ -46,11 +46,10 @@ export class AnnualFolderBySectionController {
     description: 'Club section ID',
     example: 1,
   })
-  @ApiResponse({ status: 200, description: 'Annual folder details' })
   @ApiResponse({
-    status: 404,
+    status: 200,
     description:
-      'No active enrollment for this section, or no annual folder created yet',
+      'Annual folder details, or null if no active enrollment or no folder created yet for this section',
   })
   async getFolderBySection(
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -60,14 +59,11 @@ export class AnnualFolderBySectionController {
       this.clubEnrollmentsService.findCurrentBySectionId(sectionId),
     ]);
 
-    if (!activeYear) {
-      throw new NotFoundException('No hay año eclesiástico activo configurado');
-    }
-
-    if (!enrollment) {
-      throw new NotFoundException(
-        'No hay inscripción activa para esta sección',
-      );
+    // Ausencia de año eclesiástico o de inscripción son estados de negocio
+    // válidos (club recién creado, campo local aún no hizo el setup anual).
+    // Devolvemos 200 + null, igual que GET /enrollments/current (commit 0d97360).
+    if (!activeYear || !enrollment) {
+      return { status: 'success', data: null };
     }
 
     let data: unknown;
@@ -76,13 +72,10 @@ export class AnnualFolderBySectionController {
         enrollment.club_enrollment_id,
       );
     } catch (err: unknown) {
-      if (
-        err instanceof NotFoundException &&
-        (err.message as string).includes(enrollment.club_enrollment_id)
-      ) {
-        throw new NotFoundException(
-          'No se ha creado carpeta de evidencias para esta sección',
-        );
+      // La carpeta no existe todavía — estado de negocio válido, no un error.
+      // Dejamos pasar cualquier otro error (ForbiddenException, 500, etc.).
+      if (err instanceof NotFoundException) {
+        return { status: 'success', data: null };
       }
       throw err;
     }
