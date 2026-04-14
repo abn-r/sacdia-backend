@@ -18,7 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { EvaluationService } from './evaluation.service';
 import { AnnualFoldersService } from './annual-folders.service';
-import { EvaluateSectionDto, SetReviewerNoteDto } from './dto';
+import { ConfirmUnionDto, EvaluateSectionDto, SetReviewerNoteDto } from './dto';
 import { AuthorizationResource, CurrentUser, RequirePermissions } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
@@ -26,6 +26,22 @@ type CurrentUserPayload = {
   sub: string;
 };
 
+/**
+ * Evaluation endpoints for annual folders follow a deliberate
+ * "read-wider-than-write" RBAC policy:
+ *
+ * - WRITE operations (evaluate section, reopen, set reviewer note) require
+ *   `annual_folders:evaluate` at `type: 'global'`. Only LF and union-tier
+ *   actors with the global permission can mutate evaluation state.
+ *
+ * - READ operations (`GET /:folderId/evaluations`) require the same permission
+ *   at `type: 'active_assignment'`. Any user with an active assignment to the
+ *   club can see their own folder's evaluations without being granted global
+ *   write access.
+ *
+ * Introduced by SDD `annual-folders-ownership-rework` (ADR-6). See
+ * `docs/steering/runtime-sacdia.md` for the canon rationale.
+ */
 @ApiTags('Annual Folders - Evaluation')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -99,9 +115,61 @@ export class EvaluationController {
   }
 
   // ========================================
+  // CONFIRM UNION EVALUATION
+  // ========================================
+
+  @Post(':folderId/sections/:sectionId/confirm-union')
+  @RequirePermissions('annual_folders:evaluate')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Union actor confirms or overrides a pre-approved section',
+    description:
+      'Allows a union-tier actor to record a final APPROVED or REJECTED decision on a section that ' +
+      'was pre-approved at local-field level. An optional note can be provided to document the ' +
+      'rationale for any override. Requires annual_folders:evaluate at global scope.',
+  })
+  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
+  @ApiBody({ type: ConfirmUnionDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Union confirmation recorded',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          section_evaluation_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+          union_decision: 'APPROVED',
+          union_notes: 'Revisado y aprobado por la unión',
+          union_confirmed_by: 'Juan Pérez',
+          union_confirmed_at: '2026-04-14T10:00:00.000Z',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Section not pre-approved or folder status invalid' })
+  @ApiResponse({ status: 403, description: 'Missing annual_folders:evaluate (global) permission' })
+  @ApiResponse({ status: 404, description: 'Folder or section evaluation not found' })
+  async confirmUnion(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @Body() dto: ConfirmUnionDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.evaluationService.confirmUnion(
+      folderId,
+      sectionId,
+      dto,
+      user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  // ========================================
   // GET FOLDER EVALUATIONS
   // ========================================
 
+  // Read scope is intentionally WIDER than write scope — see class JSDoc.
   @Get(':folderId/evaluations')
   @RequirePermissions({
     permissions: ['annual_folders:evaluate', 'evidence_folders:read'],

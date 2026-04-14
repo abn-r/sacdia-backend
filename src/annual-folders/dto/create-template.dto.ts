@@ -3,6 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsBoolean,
+  IsNumber,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -39,4 +40,24 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    required: false,
+    type: Number,
+    description: 'ID de la unión propietaria del template (exclusivo con owner_local_field_id)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsNumber()
+  owner_union_id?: number;
+
+  @ApiPropertyOptional({
+    required: false,
+    type: Number,
+    description: 'ID del campo local propietario del template (exclusivo con owner_union_id)',
+    example: 3,
+  })
+  @IsOptional()
+  @IsNumber()
+  owner_local_field_id?: number;
 }

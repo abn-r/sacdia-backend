@@ -7,3 +7,4 @@ export { CreateAwardCategoryDto } from './create-award-category.dto';
 export { UpdateAwardCategoryDto } from './update-award-category.dto';
 export { EvaluateSectionDto } from './evaluate-section.dto';
 export { SetReviewerNoteDto } from './set-reviewer-note.dto';
+export { ConfirmUnionDto } from './confirm-union.dto';

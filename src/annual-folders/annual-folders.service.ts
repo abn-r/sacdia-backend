@@ -11,6 +11,8 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import type { folder_templates } from '@prisma/client';
+import { annual_folder_section_status_enum } from '@prisma/client';
 import {
   CreateTemplateDto,
   CreateTemplateSectionDto,
@@ -34,21 +36,20 @@ export class AnnualFoldersService {
 
   /**
    * Create a folder template for a specific club type and ecclesiastical year.
-   * The combination of club_type_id + ecclesiastical_year_id must be unique.
+   * Ownership (union or local_field) must be provided. The combination of
+   * club_type_id + ecclesiastical_year_id + owner must be unique per owner tier.
    */
   async createTemplate(dto: CreateTemplateDto) {
-    const existing = await this.prisma.folder_templates.findUnique({
-      where: {
-        club_type_id_ecclesiastical_year_id: {
-          club_type_id: dto.club_type_id,
-          ecclesiastical_year_id: dto.ecclesiastical_year_id,
-        },
-      },
-    });
+    // NOTE: uniqueness is now enforced per-owner-tier via partial unique indexes
+    // (see migration 20260415100000_folder_templates_polymorphic_owner).
+    // Duplicate violations are raised by the DB constraint.
 
-    if (existing) {
-      throw new ConflictException(
-        'A template already exists for this club type and ecclesiastical year',
+    // Enforce exactly-one owner rule
+    const hasUnionOwner = dto.owner_union_id != null;
+    const hasLocalFieldOwner = dto.owner_local_field_id != null;
+    if (hasUnionOwner === hasLocalFieldOwner) {
+      throw new BadRequestException(
+        'Exactly one of owner_union_id or owner_local_field_id must be provided',
       );
     }
 
@@ -80,6 +81,8 @@ export class AnnualFoldersService {
         club_type_id: dto.club_type_id,
         ecclesiastical_year_id: dto.ecclesiastical_year_id,
         active: dto.active ?? true,
+        owner_union_id: dto.owner_union_id ?? null,
+        owner_local_field_id: dto.owner_local_field_id ?? null,
       },
       include: {
         club_type: { select: { name: true } },
@@ -181,14 +184,15 @@ export class AnnualFoldersService {
 
   /**
    * Get a template by club type and ecclesiastical year, with all sections.
+   * Returns the first active template found for the given pair regardless of owner tier.
+   * Phase B2 will add owner-scoped resolution (resolveTemplateForClub).
    */
   async getTemplateByClubTypeAndYear(clubTypeId: number, yearId: number) {
-    const template = await this.prisma.folder_templates.findUnique({
+    const template = await this.prisma.folder_templates.findFirst({
       where: {
-        club_type_id_ecclesiastical_year_id: {
-          club_type_id: clubTypeId,
-          ecclesiastical_year_id: yearId,
-        },
+        club_type_id: clubTypeId,
+        ecclesiastical_year_id: yearId,
+        active: true,
       },
       include: {
         club_type: { select: { name: true } },
@@ -256,58 +260,56 @@ export class AnnualFoldersService {
       );
     }
 
-    // Get the enrollment with club section details
-    const enrollment = await this.prisma.club_enrollments.findUnique({
-      where: { club_enrollment_id: enrollmentId },
-      include: {
-        club_section: {
-          select: { club_type_id: true },
+    // resolveTemplateForClub loads the enrollment internally and throws
+    // NotFoundException if not found or no matching template exists.
+    const { template } = await this.resolveTemplateForClub(
+      enrollmentId,
+      undefined,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      // Load template sections once, inside the transaction.
+      const sections = await tx.folder_template_sections.findMany({
+        where: { folder_template_id: template.folder_template_id },
+      });
+
+      // Camporee linkage is NOT resolved in this task (no active resolver exists).
+      // Both fields default to null; requires_union_confirmation is false.
+      // Follow-up gap: implement camporee-lookup logic once the camporee resolver is ready.
+      const folder = await tx.annual_folders.create({
+        data: {
+          club_enrollment_id: enrollmentId,
+          folder_template_id: template.folder_template_id,
+          status: 'open',
+          local_camporee_id: null,
+          union_camporee_id: null,
+          requires_union_confirmation: false,
         },
-      },
-    });
-
-    if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${enrollmentId} not found`,
-      );
-    }
-
-    // Find the template for this club type + year
-    const template = await this.prisma.folder_templates.findUnique({
-      where: {
-        club_type_id_ecclesiastical_year_id: {
-          club_type_id: enrollment.club_section.club_type_id,
-          ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
-        },
-      },
-    });
-
-    if (!template) {
-      throw new NotFoundException(
-        "No folder template found for this enrollment's club type and year",
-      );
-    }
-
-    if (!template.active) {
-      throw new BadRequestException(
-        'The folder template for this enrollment is not active',
-      );
-    }
-
-    return this.prisma.annual_folders.create({
-      data: {
-        club_enrollment_id: enrollmentId,
-        folder_template_id: template.folder_template_id,
-        status: 'open',
-      },
-      include: {
-        folder_template: {
-          include: {
-            sections: { orderBy: { order: 'asc' } },
-            club_type: { select: { name: true } },
+        include: {
+          folder_template: {
+            include: {
+              sections: { orderBy: { order: 'asc' } },
+              club_type: { select: { name: true } },
+            },
           },
         },
-      },
+      });
+
+      // Eagerly create one evaluation row per template section (atomic with folder creation).
+      if (sections.length > 0) {
+        await tx.annual_folder_section_evaluations.createMany({
+          data: sections.map((section) => ({
+            annual_folder_id: folder.annual_folder_id,
+            section_id: section.section_id,
+            earned_points: 0,
+            max_points: section.max_points,
+            notes: null,
+            status: annual_folder_section_status_enum.PENDING,
+          })),
+        });
+      }
+
+      return folder;
     });
   }
 
@@ -356,8 +358,24 @@ export class AnnualFoldersService {
           orderBy: { created_at: 'asc' },
         },
         evaluations: {
-          include: {
-            evaluated_by: {
+          select: {
+            evaluation_id: true,
+            section_id: true,
+            status: true,
+            earned_points: true,
+            max_points: true,
+            notes: true,
+            lf_approved_at: true,
+            union_approved_at: true,
+            union_decision: true,
+            lf_approver: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+            union_approver: {
               select: {
                 name: true,
                 paternal_last_name: true,
@@ -434,8 +452,24 @@ export class AnnualFoldersService {
           orderBy: { created_at: 'asc' },
         },
         evaluations: {
-          include: {
-            evaluated_by: {
+          select: {
+            evaluation_id: true,
+            section_id: true,
+            status: true,
+            earned_points: true,
+            max_points: true,
+            notes: true,
+            lf_approved_at: true,
+            union_approved_at: true,
+            union_decision: true,
+            lf_approver: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+            union_approver: {
               select: {
                 name: true,
                 paternal_last_name: true,
@@ -703,7 +737,7 @@ export class AnnualFoldersService {
    *  - Evidence count for this section
    *  - Submission record (if any)
    *  - Evaluation record (if any)
-   *  - Derived `submission_status`: 'pending' | 'submitted' | 'evaluated'
+   *  - Evaluation record including stored `status`, `lf_approver`, `union_approver`, `union_decision`
    */
   async getSectionStatus(folderId: string, sectionId: string) {
     const folder = await this.prisma.annual_folders.findUnique({
@@ -764,8 +798,23 @@ export class AnnualFoldersService {
             section_id: sectionId,
           },
         },
-        include: {
-          evaluated_by: {
+        select: {
+          evaluation_id: true,
+          status: true,
+          earned_points: true,
+          max_points: true,
+          notes: true,
+          lf_approved_at: true,
+          union_approved_at: true,
+          union_decision: true,
+          lf_approver: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+          union_approver: {
             select: {
               name: true,
               paternal_last_name: true,
@@ -775,13 +824,6 @@ export class AnnualFoldersService {
         },
       }),
     ]);
-
-    let submissionStatus: 'pending' | 'submitted' | 'evaluated' = 'pending';
-    if (evaluation) {
-      submissionStatus = 'evaluated';
-    } else if (submission) {
-      submissionStatus = 'submitted';
-    }
 
     return {
       folder_id: folderId,
@@ -796,7 +838,6 @@ export class AnnualFoldersService {
         minimum_points: section.minimum_points,
       },
       evidence_count: evidenceCount,
-      submission_status: submissionStatus,
       submission: submission
         ? {
             section_submission_id: submission.section_submission_id,
@@ -807,11 +848,16 @@ export class AnnualFoldersService {
       evaluation: evaluation
         ? {
             evaluation_id: evaluation.evaluation_id,
+            status: evaluation.status,
             earned_points: evaluation.earned_points,
             max_points: evaluation.max_points,
             notes: evaluation.notes,
-            evaluator: this.formatUserName(evaluation.evaluated_by),
-            evaluated_at: evaluation.evaluated_at,
+            lf_approver: this.formatUserName(evaluation.lf_approver),
+            lf_approved_at: evaluation.lf_approved_at ?? null,
+            union_approver:
+              this.formatUserName(evaluation.union_approver) ?? null,
+            union_approved_at: evaluation.union_approved_at ?? null,
+            union_decision: evaluation.union_decision ?? null,
           }
         : null,
     };
@@ -878,9 +924,13 @@ export class AnnualFoldersService {
 
     const now = new Date();
 
-    // Upsert: re-submitting a section simply records the latest submitter/time
-    const submission =
-      await this.prisma.annual_folder_section_submissions.upsert({
+    // Atomically upsert the submission record and transition the evaluation
+    // row from PENDING → SUBMITTED. The updateMany is idempotent: if the
+    // status is already SUBMITTED or has advanced further (e.g. PREAPPROVED_LF,
+    // VALIDATED, REJECTED from a re-submission after reopen), the WHERE clause
+    // matches 0 rows and no change is made.
+    const submission = await this.prisma.$transaction(async (tx) => {
+      const sub = await tx.annual_folder_section_submissions.upsert({
         where: {
           annual_folder_id_section_id: {
             annual_folder_id: folderId,
@@ -899,6 +949,20 @@ export class AnnualFoldersService {
           modified_at: now,
         },
       });
+
+      await tx.annual_folder_section_evaluations.updateMany({
+        where: {
+          annual_folder_id: folderId,
+          section_id: sectionId,
+          status: annual_folder_section_status_enum.PENDING,
+        },
+        data: {
+          status: annual_folder_section_status_enum.SUBMITTED,
+        },
+      });
+
+      return sub;
+    });
 
     return {
       section_submission_id: submission.section_submission_id,
@@ -979,6 +1043,104 @@ export class AnnualFoldersService {
   // PRIVATE HELPERS
   // ========================================
 
+  /**
+   * Resolve the active folder template for a club enrollment using the
+   * owner fallback chain: union-owned template first, local_field-owned second.
+   *
+   * Resolution order (R-C5-2):
+   *  1. Try union-owned template (owner_union_id = enrollment.club.local_field.union_id)
+   *  2. Fallback: local_field-owned template (owner_local_field_id = enrollment.club.local_field_id)
+   *  3. Neither found → NotFoundException
+   *
+   * @param enrollmentId - UUID of the club enrollment
+   * @param overrideYearId - Optional override for ecclesiastical_year_id.
+   *   When undefined, the year is taken from the enrollment row itself.
+   */
+  private async resolveTemplateForClub(
+    enrollmentId: string,
+    overrideYearId: number | undefined,
+  ): Promise<{ template: folder_templates; resolvedVia: 'union' | 'local_field' }> {
+    // Load enrollment with the full club → local_field → union chain
+    const enrollment = await this.prisma.club_enrollments.findUnique({
+      where: { club_enrollment_id: enrollmentId },
+      include: {
+        club_section: {
+          select: {
+            club_type_id: true,
+            main_club_id: true,
+            clubs: {
+              select: {
+                club_id: true,
+                local_field_id: true,
+                local_fields: {
+                  select: {
+                    local_field_id: true,
+                    union_id: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException(
+        `Club enrollment with ID ${enrollmentId} not found`,
+      );
+    }
+
+    const club = enrollment.club_section.clubs;
+    if (!club) {
+      throw new NotFoundException(
+        `Club section for enrollment ${enrollmentId} has no parent club — cannot resolve template owner`,
+      );
+    }
+
+    const localField = club.local_fields;
+    if (!localField) {
+      throw new NotFoundException(
+        `Club ${club.club_id} has no local field — cannot resolve template owner`,
+      );
+    }
+
+    const clubTypeId = enrollment.club_section.club_type_id;
+    const yearId = overrideYearId ?? enrollment.ecclesiastical_year_id;
+
+    // 1. Try union-owned template first
+    const unionTemplate = await this.prisma.folder_templates.findFirst({
+      where: {
+        club_type_id: clubTypeId,
+        ecclesiastical_year_id: yearId,
+        owner_union_id: localField.union_id,
+        active: true,
+      },
+    });
+
+    if (unionTemplate) {
+      return { template: unionTemplate, resolvedVia: 'union' };
+    }
+
+    // 2. Fallback to local_field-owned template
+    const lfTemplate = await this.prisma.folder_templates.findFirst({
+      where: {
+        club_type_id: clubTypeId,
+        ecclesiastical_year_id: yearId,
+        owner_local_field_id: localField.local_field_id,
+        active: true,
+      },
+    });
+
+    if (lfTemplate) {
+      return { template: lfTemplate, resolvedVia: 'local_field' };
+    }
+
+    throw new NotFoundException(
+      `No folder template found for club ${club.club_id} (club_type=${clubTypeId}, year=${yearId})`,
+    );
+  }
+
   private formatFolderResponse(folder: any) {
     // Group evidences by section
     const evidencesBySection = new Map<string, any[]>();
@@ -1005,11 +1167,15 @@ export class AnnualFoldersService {
     for (const evaluation of folder.evaluations ?? []) {
       evaluationBySection.set(evaluation.section_id, {
         evaluation_id: evaluation.evaluation_id,
+        status: evaluation.status,
         earned_points: evaluation.earned_points,
         max_points: evaluation.max_points,
         notes: evaluation.notes,
-        evaluator: this.formatUserName(evaluation.evaluated_by),
-        evaluated_at: evaluation.evaluated_at,
+        lf_approver: this.formatUserName(evaluation.lf_approver),
+        lf_approved_at: evaluation.lf_approved_at ?? null,
+        union_approver: this.formatUserName(evaluation.union_approver) ?? null,
+        union_approved_at: evaluation.union_approved_at ?? null,
+        union_decision: evaluation.union_decision ?? null,
       });
     }
 
@@ -1039,7 +1205,6 @@ export class AnnualFoldersService {
           .length,
         evaluation: evaluationBySection.get(section.section_id) ?? null,
         submission,
-        submission_status: submission ? 'submitted' : 'pending',
       };
     });
 

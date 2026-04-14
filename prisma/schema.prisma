@@ -819,6 +819,7 @@ model local_camporees {
   modified_at                  DateTime             @default(now()) @db.Timestamptz(6)
   attending_clubs_camporees    camporee_clubs[]
   attending_members_camporees  camporee_members[]
+  annual_folders               annual_folders[]
   ecclesiastical_year_relation ecclesiastical_years @relation("local_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields                 local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -835,6 +836,7 @@ model local_fields {
   attending_members_camporees camporee_members[]
   clubs                       clubs[]
   districts                   districts[]
+  folder_templates            folder_templates[]
   investiture_configs         investiture_config[]
   local_camporees             local_camporees[]
   unions                      unions                        @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
@@ -929,6 +931,7 @@ model union_camporees {
   union_camporee_local_fields  union_camporee_local_fields[]
   attending_clubs_camporees    camporee_clubs[]
   attending_members_camporees  camporee_members[]
+  annual_folders               annual_folders[]
   ecclesiastical_year_relation ecclesiastical_years          @relation("union_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   unions                       unions                        @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -941,10 +944,11 @@ model unions {
   country_id      Int
   created_at      DateTime?         @default(now()) @db.Timestamptz(6)
   modified_at     DateTime?         @default(now()) @db.Timestamptz(6)
-  local_fields    local_fields[]
-  union_camporees union_camporees[]
-  countries       countries         @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
-  users           users[]
+  local_fields     local_fields[]
+  union_camporees  union_camporees[]
+  folder_templates folder_templates[]
+  countries        countries         @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
+  users            users[]
 }
 
 model unit_members {
@@ -1063,7 +1067,8 @@ model users {
   camporee_payments_registered                camporee_payments[]                 @relation("camporee_payments_registered_by")
   annual_folder_evidences                     annual_folder_evidences[]           @relation("annual_folder_evidences_uploader")
   annual_folder_evidences_reviewed            annual_folder_evidences[]           @relation("annual_folder_evidences_reviewer")
-  annual_folder_section_evaluations_evaluated annual_folder_section_evaluations[] @relation("evaluation_evaluator")
+  evaluation_lf_approvals   annual_folder_section_evaluations[] @relation("evaluation_lf_approver")
+  evaluation_union_approvals annual_folder_section_evaluations[] @relation("evaluation_union_approver")
   annual_folder_section_submissions           annual_folder_section_submissions[] @relation("section_submission_submitter")
   monthly_reports_submitted                   monthly_reports[]                   @relation("monthly_report_submitter")
   transfer_requests_made                      club_transfer_requests[]            @relation("transfer_requester")
@@ -1629,11 +1634,24 @@ enum evidence_validation_enum {
   REJECTED
 }
 
+enum annual_folder_section_status_enum {
+  PENDING
+  SUBMITTED
+  PREAPPROVED_LF
+  VALIDATED
+  REJECTED
+}
+
 enum honor_validation_status_enum {
   IN_PROGRESS
   PENDING_REVIEW
   APPROVED
   REJECTED
+}
+
+enum union_evaluation_decision_enum {
+  APPROVED
+  REJECTED_OVERRIDE
 }
 
 // Better Auth tables — model names are singular (BA default), @@map to plural SQL tables
@@ -1778,6 +1796,8 @@ model folder_templates {
   name                   String    @db.VarChar(200)
   club_type_id           Int
   ecclesiastical_year_id Int
+  owner_union_id         Int?
+  owner_local_field_id   Int?
   active                 Boolean   @default(true)
   minimum_points         Int       @default(0)
   closing_date           DateTime? @db.Timestamptz(6)
@@ -1786,12 +1806,17 @@ model folder_templates {
 
   club_type           club_types                 @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   ecclesiastical_year ecclesiastical_years       @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_union         unions?                    @relation(fields: [owner_union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  owner_local_field   local_fields?              @relation(fields: [owner_local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
   sections            folder_template_sections[]
   annual_folders      annual_folders[]
 
-  @@unique([club_type_id, ecclesiastical_year_id])
+  // @@unique([club_type_id, ecclesiastical_year_id]) — removed: replaced by 2 partial unique indexes
+  // (Prisma 7 DSL cannot model partial uniques; they are declared in migration SQL)
   @@index([club_type_id], map: "idx_folder_templates_club_type")
   @@index([ecclesiastical_year_id], map: "idx_folder_templates_year")
+  @@index([owner_union_id], map: "idx_folder_templates_owner_union")
+  @@index([owner_local_field_id], map: "idx_folder_templates_owner_local_field")
 }
 
 model folder_template_sections {
@@ -1815,28 +1840,35 @@ model folder_template_sections {
 }
 
 model annual_folders {
-  annual_folder_id    String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
-  club_enrollment_id  String    @db.Uuid
-  folder_template_id  String    @db.Uuid
+  annual_folder_id              String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  club_enrollment_id            String    @db.Uuid
+  folder_template_id            String    @db.Uuid
+  local_camporee_id             Int?
+  union_camporee_id             Int?
+  requires_union_confirmation   Boolean   @default(false)
   /// Status values: "open", "submitted", "under_evaluation", "evaluated", "closed"
-  status              String    @default("open") @db.VarChar(20)
-  submitted_at        DateTime? @db.Timestamptz(6)
-  closed_at           DateTime? @db.Timestamptz(6)
-  total_earned_points Int       @default(0)
-  total_max_points    Int       @default(0)
-  progress_percentage Float     @default(0)
-  evaluated_at        DateTime? @db.Timestamptz(6)
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  status                        String    @default("open") @db.VarChar(20)
+  submitted_at                  DateTime? @db.Timestamptz(6)
+  closed_at                     DateTime? @db.Timestamptz(6)
+  total_earned_points           Int       @default(0)
+  total_max_points              Int       @default(0)
+  progress_percentage           Float     @default(0)
+  evaluated_at                  DateTime? @db.Timestamptz(6)
+  created_at                    DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at                   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   club_enrollment     club_enrollments                    @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
   folder_template     folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: NoAction, onUpdate: NoAction)
+  local_camporee      local_camporees?                    @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: NoAction, onUpdate: NoAction)
+  union_camporee      union_camporees?                    @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: NoAction, onUpdate: NoAction)
   evidences           annual_folder_evidences[]
   evaluations         annual_folder_section_evaluations[]
   section_submissions annual_folder_section_submissions[]
 
   @@unique([club_enrollment_id])
   @@index([folder_template_id], map: "idx_annual_folders_template")
+  @@index([local_camporee_id], map: "idx_annual_folders_local_camporee")
+  @@index([union_camporee_id], map: "idx_annual_folders_union_camporee")
 }
 
 model annual_folder_evidences {
@@ -1868,25 +1900,31 @@ model annual_folder_evidences {
 // ========================================
 
 model annual_folder_section_evaluations {
-  evaluation_id    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  annual_folder_id String   @db.Uuid
-  section_id       String   @db.Uuid
-  earned_points    Int      @default(0)
-  max_points       Int      @default(0)
+  evaluation_id    String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  annual_folder_id String                          @db.Uuid
+  section_id       String                          @db.Uuid
+  earned_points    Int                             @default(0)
+  max_points       Int                             @default(0)
   notes            String?
-  evaluated_by_id  String   @db.Uuid
-  evaluated_at     DateTime @default(now()) @db.Timestamptz(6)
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  lf_approved_by   String?                         @db.Uuid
+  lf_approved_at   DateTime?                       @db.Timestamptz(6)
+  union_approved_by String?                        @db.Uuid
+  union_approved_at DateTime?                      @db.Timestamptz(6)
+  union_decision   union_evaluation_decision_enum?
+  status           annual_folder_section_status_enum @default(PENDING)
+  created_at       DateTime                        @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime                        @default(now()) @updatedAt @db.Timestamptz(6)
 
-  annual_folder annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
-  section       folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
-  evaluated_by  users                    @relation("evaluation_evaluator", fields: [evaluated_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  annual_folder  annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
+  section        folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
+  lf_approver    users?                   @relation("evaluation_lf_approver", fields: [lf_approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  union_approver users?                   @relation("evaluation_union_approver", fields: [union_approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([annual_folder_id, section_id])
   @@index([annual_folder_id], map: "idx_annual_folder_section_evaluations_folder")
   @@index([section_id], map: "idx_annual_folder_section_evaluations_section")
-  @@index([evaluated_by_id], map: "idx_annual_folder_section_evaluations_evaluator")
+  @@index([lf_approved_by], map: "idx_annual_folder_section_evaluations_lf_approver")
+  @@index([status], map: "idx_annual_folder_section_evaluations_status")
   @@map("annual_folder_section_evaluations")
 }
 
