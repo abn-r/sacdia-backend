@@ -6,3 +6,4 @@ export { UpdateEvidenceDto } from './update-evidence.dto';
 export { CreateAwardCategoryDto } from './create-award-category.dto';
 export { UpdateAwardCategoryDto } from './update-award-category.dto';
 export { EvaluateSectionDto } from './evaluate-section.dto';
+export { SetReviewerNoteDto } from './set-reviewer-note.dto';

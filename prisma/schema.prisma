@@ -1062,6 +1062,7 @@ model users {
   camporee_clubs_registered                   camporee_clubs[]                    @relation("camporee_clubs_registered_by")
   camporee_payments_registered                camporee_payments[]                 @relation("camporee_payments_registered_by")
   annual_folder_evidences                     annual_folder_evidences[]           @relation("annual_folder_evidences_uploader")
+  annual_folder_evidences_reviewed            annual_folder_evidences[]           @relation("annual_folder_evidences_reviewer")
   annual_folder_section_evaluations_evaluated annual_folder_section_evaluations[] @relation("evaluation_evaluator")
   annual_folder_section_submissions           annual_folder_section_submissions[] @relation("section_submission_submitter")
   monthly_reports_submitted                   monthly_reports[]                   @relation("monthly_report_submitter")
@@ -1839,19 +1840,23 @@ model annual_folders {
 }
 
 model annual_folder_evidences {
-  evidence_id      String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
-  annual_folder_id String   @db.Uuid
-  section_id       String   @db.Uuid
-  file_url         String
-  file_name        String   @db.VarChar(255)
-  uploaded_by      String   @db.Uuid
-  notes            String?
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  evidence_id         String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  annual_folder_id    String    @db.Uuid
+  section_id          String    @db.Uuid
+  file_url            String
+  file_name           String    @db.VarChar(255)
+  uploaded_by         String    @db.Uuid
+  notes               String?
+  reviewer_note       String?
+  reviewer_noted_by   String?   @db.Uuid
+  reviewer_noted_at   DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   annual_folder annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
   section       folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
   uploader      users                    @relation("annual_folder_evidences_uploader", fields: [uploaded_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer      users?                   @relation("annual_folder_evidences_reviewer", fields: [reviewer_noted_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([annual_folder_id], map: "idx_annual_folder_evidences_folder")
   @@index([section_id], map: "idx_annual_folder_evidences_section")

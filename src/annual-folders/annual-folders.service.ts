@@ -17,6 +17,7 @@ import {
   UpdateTemplateSectionDto,
   UploadEvidenceDto,
   UpdateEvidenceDto,
+  SetReviewerNoteDto,
 } from './dto';
 
 @Injectable()
@@ -344,6 +345,13 @@ export class AnnualFoldersService {
                 maternal_last_name: true,
               },
             },
+            reviewer: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
           },
           orderBy: { created_at: 'asc' },
         },
@@ -409,6 +417,13 @@ export class AnnualFoldersService {
           include: {
             section: { select: { section_id: true, name: true } },
             uploader: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+            reviewer: {
               select: {
                 name: true,
                 paternal_last_name: true,
@@ -615,6 +630,65 @@ export class AnnualFoldersService {
     });
 
     return { message: 'Evidence deleted successfully' };
+  }
+
+  // ========================================
+  // REVIEWER NOTE ON EVIDENCE
+  // ========================================
+
+  /**
+   * Set (or clear) a reviewer note on a specific evidence file.
+   *
+   * Only users with the `annual_folders:evaluate` permission (assistant-lf,
+   * director-lf and higher) should reach this method — enforcement is done at
+   * the controller layer via PermissionsGuard.
+   *
+   * Passing null or an empty string clears the note and resets the audit fields.
+   * Any non-empty string saves the note and records who set it and when.
+   */
+  async setReviewerNote(
+    evidenceId: string,
+    dto: SetReviewerNoteDto,
+    reviewerUserId: string,
+  ) {
+    const evidence = await this.prisma.annual_folder_evidences.findUnique({
+      where: { evidence_id: evidenceId },
+    });
+
+    if (!evidence) {
+      throw new NotFoundException(`Evidence with ID ${evidenceId} not found`);
+    }
+
+    const hasNote =
+      dto.reviewer_note !== null &&
+      dto.reviewer_note !== undefined &&
+      dto.reviewer_note.trim().length > 0;
+
+    return this.prisma.annual_folder_evidences.update({
+      where: { evidence_id: evidenceId },
+      data: {
+        reviewer_note: hasNote ? dto.reviewer_note!.trim() : null,
+        reviewer_noted_by: hasNote ? reviewerUserId : null,
+        reviewer_noted_at: hasNote ? new Date() : null,
+      },
+      include: {
+        section: { select: { section_id: true, name: true } },
+        uploader: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+        reviewer: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
   }
 
   // ========================================
@@ -918,6 +992,9 @@ export class AnnualFoldersService {
         file_url: evidence.file_url,
         file_name: evidence.file_name,
         notes: evidence.notes,
+        reviewer_note: evidence.reviewer_note ?? null,
+        reviewer_noted_by: this.formatUserName(evidence.reviewer) ?? null,
+        reviewer_noted_at: evidence.reviewer_noted_at ?? null,
         uploaded_by: this.formatUserName(evidence.uploader),
         created_at: evidence.created_at,
       });
