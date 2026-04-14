@@ -627,8 +627,8 @@ export class PermissionsGuard implements CanActivate {
       (globalRoleNames.has('admin') ||
         globalRoleNames.has('assistant_admin') ||
         globalRoleNames.has('coordinator') ||
-        globalRoleNames.has('director_lf') ||
-        globalRoleNames.has('assistant_lf'))
+        globalRoleNames.has('director-lf') ||
+        globalRoleNames.has('assistant-lf'))
     ) {
       return true;
     }
