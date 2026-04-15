@@ -746,13 +746,7 @@ describe('confirmUnion — RBAC and service preconditions', () => {
   // =========================================================================
 
   describe('T-C9: club user — rejected by service-layer role check', () => {
-    it.todo(
-      'T-C9a: club-user director is FORBIDDEN at HTTP layer (guard: no global annual_folders:evaluate) — requires supertest e2e harness',
-    );
-
-    it.todo(
-      'T-C9b: non-assigned user is FORBIDDEN at HTTP layer (guard: no global annual_folders:evaluate) — requires supertest e2e harness',
-    );
+    // T-C9a / T-C9b moved to test/confirm-union-http.e2e-spec.ts (HTTP-layer guard coverage)
 
     it('T-C9c: club-user director is rejected at service layer (no union role in users_roles)', async () => {
       const seeded = await seedFolderWithEvaluation({
