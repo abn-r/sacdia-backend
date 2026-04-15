@@ -1373,6 +1373,9 @@ export class AnnualFoldersService {
       total_earned_points: folder.total_earned_points,
       total_max_points: folder.total_max_points,
       progress_percentage: folder.progress_percentage,
+      local_camporee_id: folder.local_camporee_id ?? null,
+      union_camporee_id: folder.union_camporee_id ?? null,
+      requires_union_confirmation: folder.requires_union_confirmation ?? false,
       club_enrollment: folder.club_enrollment,
       template: {
         folder_template_id: folder.folder_template.folder_template_id,

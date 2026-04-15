@@ -185,7 +185,34 @@ export class AnnualFoldersController {
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({ summary: 'Get annual folder with sections and evidences' })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
-  @ApiResponse({ status: 200, description: 'Folder details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Folder details',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          annual_folder_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+          status: 'open',
+          submitted_at: null,
+          closed_at: null,
+          evaluated_at: null,
+          created_at: '2026-04-14T10:00:00.000Z',
+          total_earned_points: 0,
+          total_max_points: 100,
+          progress_percentage: 0,
+          local_camporee_id: 5,
+          union_camporee_id: null,
+          requires_union_confirmation: false,
+          club_enrollment: {},
+          template: {},
+          sections: [],
+          total_sections: 0,
+          total_evidences: 0,
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async getFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
     const data = await this.service.getFolder(folderId);
@@ -196,7 +223,34 @@ export class AnnualFoldersController {
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({ summary: 'Get annual folder by enrollment ID' })
   @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
-  @ApiResponse({ status: 200, description: 'Folder details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Folder details',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          annual_folder_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+          status: 'open',
+          submitted_at: null,
+          closed_at: null,
+          evaluated_at: null,
+          created_at: '2026-04-14T10:00:00.000Z',
+          total_earned_points: 0,
+          total_max_points: 100,
+          progress_percentage: 0,
+          local_camporee_id: null,
+          union_camporee_id: 12,
+          requires_union_confirmation: true,
+          club_enrollment: {},
+          template: {},
+          sections: [],
+          total_sections: 0,
+          total_evidences: 0,
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Folder not found for enrollment' })
   async getFolderByEnrollment(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
