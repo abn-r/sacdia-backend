@@ -42,10 +42,19 @@ export class EvaluationService {
       // Fetch folder with template sections
       const folder = await tx.annual_folders.findUnique({
         where: { annual_folder_id: folderId },
-        include: {
+        select: {
+          annual_folder_id: true,
+          status: true,
+          requires_union_confirmation: true,
           folder_template: {
-            include: {
-              sections: true,
+            select: {
+              sections: {
+                select: {
+                  section_id: true,
+                  name: true,
+                  max_points: true,
+                },
+              },
             },
           },
         },
@@ -121,7 +130,7 @@ export class EvaluationService {
       }
 
       // Compute new status based on union confirmation requirement
-      const requiresUnion = (folder as any).requires_union_confirmation;
+      const requiresUnion = folder.requires_union_confirmation;
       const newEvalStatus = requiresUnion
         ? annual_folder_section_status_enum.PREAPPROVED_LF
         : annual_folder_section_status_enum.VALIDATED;
@@ -272,10 +281,17 @@ export class EvaluationService {
       // Load folder
       const folder = await tx.annual_folders.findUnique({
         where: { annual_folder_id: folderId },
-        include: {
+        select: {
+          annual_folder_id: true,
+          status: true,
+          requires_union_confirmation: true,
           folder_template: {
-            include: {
-              sections: true,
+            select: {
+              sections: {
+                select: {
+                  section_id: true,
+                },
+              },
             },
           },
         },
@@ -288,7 +304,7 @@ export class EvaluationService {
       }
 
       // Precondition: folder must require union confirmation
-      if (!(folder as any).requires_union_confirmation) {
+      if (!folder.requires_union_confirmation) {
         throw new BadRequestException(
           'This folder does not require union confirmation',
         );

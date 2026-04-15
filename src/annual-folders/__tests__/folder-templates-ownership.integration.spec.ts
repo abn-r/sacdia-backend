@@ -221,25 +221,13 @@ describe('C1-S5: Duplicate union ownership must be rejected', () => {
 // ---------------------------------------------------------------------------
 describe('C1-S6: Two local fields in the same union can each own the same type-year template', () => {
   it('allows LF-1 and LF-2 (both in union 20) to coexist for Conquistadores 2026', async () => {
-    // Pre-condition: union 20 must NOT own a Conquistadores 2026 template
-    // (INV-7 is enforced at resolution, not at creation, so we only need to verify
-    // the two LF rows are created and coexist without DB errors)
-    const existing = await prisma.folder_templates.findFirst({
-      where: {
-        club_type_id: CLUB_TYPE,
-        ecclesiastical_year_id: YEAR_ID,
-        owner_union_id: 20,
-      },
-    });
-    // If union 20 already owns this slot, skip with explanation
-    if (existing) {
-      console.warn(
-        'C1-S6 SKIP: union 20 already owns a Conquistadores 2026 template. ' +
-        'INV-7 mutual exclusion is a resolution-time concern; skipping LF creation test ' +
-        'to avoid polluting the dev DB.',
-      );
-      return;
-    }
+    // No pre-condition check needed: the partial unique index
+    // folder_templates_local_field_owner_unique is on (owner_local_field_id, club_type_id,
+    // ecclesiastical_year_id) WHERE owner_local_field_id IS NOT NULL. Union-owned rows
+    // (owner_union_id IS NOT NULL, owner_local_field_id IS NULL) live under a separate
+    // index and do not collide with LF-owned rows. INV-7 mutual exclusion is enforced
+    // at resolution time, not creation time — two LFs in the same union can independently
+    // own templates for the same (club_type, year) pair.
 
     const idL1 = await createTemplate({
       clubTypeId: CLUB_TYPE,
