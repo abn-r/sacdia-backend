@@ -7,10 +7,12 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "transformIgnorePatterns": [
-    "/node_modules/.pnpm/(?!(jose@|jwks-rsa@))"
+    "/node_modules/.pnpm/(?!(jose@|jwks-rsa@|@scure\\+base@|@otplib\\+|otplib@|@noble\\+hashes@|@noble\\+ciphers@))"
   ],
   "moduleNameMapper": {
-    "^src/(.*)$": "<rootDir>/../src/$1"
+    "^src/(.*)$": "<rootDir>/../src/$1",
+    "^better-auth$": "<rootDir>/mocks/better-auth.mock.ts",
+    "^better-auth/(.*)$": "<rootDir>/mocks/better-auth.mock.ts"
   },
   "setupFilesAfterEnv": ["<rootDir>/setup.ts"],
   "testTimeout": 30000,
