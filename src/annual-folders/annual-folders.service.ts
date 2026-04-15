@@ -273,17 +273,17 @@ export class AnnualFoldersService {
         where: { folder_template_id: template.folder_template_id },
       });
 
-      // Camporee linkage is NOT resolved in this task (no active resolver exists).
-      // Both fields default to null; requires_union_confirmation is false.
-      // Follow-up gap: implement camporee-lookup logic once the camporee resolver is ready.
+      const camporeeLink = await this.resolveCamporeeLinkageForEnrollment(
+        enrollmentId,
+        tx,
+      );
+
       const folder = await tx.annual_folders.create({
         data: {
           club_enrollment_id: enrollmentId,
           folder_template_id: template.folder_template_id,
           status: 'open',
-          local_camporee_id: null,
-          union_camporee_id: null,
-          requires_union_confirmation: false,
+          ...camporeeLink,
         },
         include: {
           folder_template: {
@@ -1139,6 +1139,161 @@ export class AnnualFoldersService {
     throw new NotFoundException(
       `No folder template found for club ${club.club_id} (club_type=${clubTypeId}, year=${yearId})`,
     );
+  }
+
+  /**
+   * T-1.2 — Map a club_type_id to the corresponding includes_* column name
+   * on both `local_camporees` and `union_camporees`.
+   *
+   * Verified mapping against prisma/seeds/folder-templates.seed.ts:
+   *   1 = Aventureros (adventurers)
+   *   2 = Conquistadores (pathfinders)
+   *   3 = Guías Mayores (master_guides)
+   *
+   * T-1.1 spike result: dynamic computed-property keys in Prisma where clauses
+   * compile cleanly with TypeScript strict mode — using that approach here.
+   */
+  private clubTypeToCamporeeIncludesColumn(
+    clubTypeId: number,
+  ): 'includes_adventurers' | 'includes_pathfinders' | 'includes_master_guides' {
+    switch (clubTypeId) {
+      case 1:
+        return 'includes_adventurers';
+      case 2:
+        return 'includes_pathfinders';
+      case 3:
+        return 'includes_master_guides';
+      default:
+        throw new BadRequestException(
+          `Unsupported club_type_id ${clubTypeId} for camporee linkage`,
+        );
+    }
+  }
+
+  /**
+   * T-2.1 — Resolve camporee linkage for a club enrollment.
+   *
+   * Implements asymmetric lookup (CAMP-1):
+   *  - Union tier: club must be enrolled in a union_camporee via a non-rejected
+   *    camporee_clubs row. Enrollment-based — no existence-only check.
+   *  - Local tier: no camporee_clubs check. A local_camporee that exists for the
+   *    club's local_field + year + active + includes_<type> applies automatically.
+   *  - Union-first precedence: always try union first; local is fallback.
+   *  - Both null is a valid state (investiture-only folder).
+   *
+   * Must be called INSIDE an existing $transaction — uses the tx client throughout.
+   */
+  private async resolveCamporeeLinkageForEnrollment(
+    enrollmentId: string,
+    tx: Parameters<Parameters<typeof this.prisma.$transaction>[0]>[0],
+  ): Promise<{
+    local_camporee_id: number | null;
+    union_camporee_id: number | null;
+    requires_union_confirmation: boolean;
+  }> {
+    // Re-hydrate enrollment inside tx to get the full club → local_field chain.
+    // Mirrors the pattern from resolveTemplateForClub.
+    const enrollment = await tx.club_enrollments.findUnique({
+      where: { club_enrollment_id: enrollmentId },
+      include: {
+        club_section: {
+          select: {
+            club_section_id: true,
+            club_type_id: true,
+            clubs: {
+              select: {
+                club_id: true,
+                local_fields: {
+                  select: {
+                    local_field_id: true,
+                    union_id: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        ecclesiastical_year: {
+          select: { year_id: true },
+        },
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException(
+        `Club enrollment with ID ${enrollmentId} not found`,
+      );
+    }
+
+    const clubSection = enrollment.club_section;
+    const club = clubSection?.clubs;
+    if (!club) {
+      throw new NotFoundException(
+        `Club section for enrollment ${enrollmentId} has no parent club — cannot resolve camporee linkage`,
+      );
+    }
+
+    const localField = club.local_fields;
+    if (!localField) {
+      throw new NotFoundException(
+        `Club ${club.club_id} has no local field — cannot resolve camporee linkage`,
+      );
+    }
+
+    const clubTypeId = clubSection.club_type_id;
+    const yearId = enrollment.ecclesiastical_year.year_id;
+    const includesColumn = this.clubTypeToCamporeeIncludesColumn(clubTypeId);
+
+    // Step 1 — Union tier (enrollment-based via camporee_clubs).
+    // The relation field name in schema.prisma is `union_camporees` (plural).
+    const unionEnrollment = await tx.camporee_clubs.findFirst({
+      where: {
+        club_section_id: clubSection.club_section_id,
+        active: true,
+        status: { not: 'rejected' },
+        union_camporee_id: { not: null },
+        union_camporees: {
+          active: true,
+          ecclesiastical_year: yearId,
+          [includesColumn]: true,
+        },
+      },
+      orderBy: { union_camporees: { created_at: 'desc' } },
+    });
+
+    if (unionEnrollment?.union_camporee_id != null) {
+      return {
+        union_camporee_id: unionEnrollment.union_camporee_id,
+        local_camporee_id: null,
+        requires_union_confirmation: true,
+      };
+    }
+
+    // Step 2 — Local tier (existence-based, no camporee_clubs check).
+    const localCamporee = await tx.local_camporees.findFirst({
+      where: {
+        local_field_id: localField.local_field_id,
+        ecclesiastical_year: yearId,
+        active: true,
+        [includesColumn]: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (localCamporee) {
+      return {
+        local_camporee_id: localCamporee.local_camporee_id,
+        union_camporee_id: null,
+        requires_union_confirmation: false,
+      };
+    }
+
+    // Step 3 — Neither: investiture-only folder (valid state, not an error).
+    return {
+      local_camporee_id: null,
+      union_camporee_id: null,
+      requires_union_confirmation: false,
+    };
   }
 
   private formatFolderResponse(folder: any) {
