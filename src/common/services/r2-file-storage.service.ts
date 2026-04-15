@@ -176,6 +176,22 @@ export class R2FileStorageService implements FileStorageService {
     }
   }
 
+  /**
+   * Resolve a stored object key to its public CDN URL synchronously.
+   * Only valid for buckets configured with isPublic: true (e.g. ACHIEVEMENTS_BADGES).
+   * Throws InternalServerErrorException if called on a private bucket.
+   */
+  resolvePublicUrl(bucketAlias: StorageBucketAlias, key: string): string {
+    const config = this.getBucketConfig(bucketAlias);
+    if (!config.isPublic) {
+      throw new InternalServerErrorException(
+        `resolvePublicUrl called on private bucket alias: ${bucketAlias}`,
+      );
+    }
+    const relativeKey = this.toRelativeKey(config.keyPrefix, this.normalizeKey(key));
+    return this.buildPublicUrl(config.publicBaseUrl, relativeKey);
+  }
+
   private buildPublicUrl(publicBaseUrl: string, relativeKey: string) {
     const normalizedBase = this.normalizeBaseUrl(publicBaseUrl);
     const normalizedKey = this.normalizeKey(relativeKey)

@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { achievement_type, Prisma } from '@prisma/client';
@@ -7,6 +7,11 @@ import { HandlerRegistry } from './handlers/handler.registry';
 import { EmitEventDto } from './dto/emit-event.dto';
 import { ACHIEVEMENTS_QUEUE } from './achievements.constants';
 import { EvaluateJobData } from './achievements.processor';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 /**
  * Default BullMQ job options — up to 3 attempts with exponential backoff.
@@ -29,6 +34,8 @@ export class AchievementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly handlerRegistry: HandlerRegistry,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
     @Optional()
     @InjectQueue(ACHIEVEMENTS_QUEUE)
     private readonly queue: Queue | undefined,
@@ -120,8 +127,18 @@ export class AchievementsService {
       this.prisma.achievements.count({ where }),
     ]);
 
+    const mappedData = data.map((item) => ({
+      ...item,
+      badge_image_url: item.badge_image_key
+        ? this.fileStorage.resolvePublicUrl(
+            StorageBucketAlias.ACHIEVEMENTS_BADGES,
+            item.badge_image_key,
+          )
+        : null,
+    }));
+
     return {
-      data,
+      data: mappedData,
       total,
       page,
       limit,
@@ -222,8 +239,19 @@ export class AchievementsService {
         ? { ...achievement, name: '???', description: '???', badge_image_key: null }
         : achievement;
 
+      // Append badge_image_url derived from the (possibly masked) badge_image_key
+      const maskedWithUrl = {
+        ...masked,
+        badge_image_url: masked.badge_image_key
+          ? this.fileStorage.resolvePublicUrl(
+              StorageBucketAlias.ACHIEVEMENTS_BADGES,
+              masked.badge_image_key,
+            )
+          : null,
+      };
+
       categoryMap.get(cat.achievement_category_id)!.achievements.push({
-        achievement: masked,
+        achievement: maskedWithUrl,
         user_achievement: userProgress,
       });
     }
@@ -257,15 +285,25 @@ export class AchievementsService {
 
     if (!achievement) return null;
 
+    const achievementWithUrl = {
+      ...achievement,
+      badge_image_url: achievement.badge_image_key
+        ? this.fileStorage.resolvePublicUrl(
+            StorageBucketAlias.ACHIEVEMENTS_BADGES,
+            achievement.badge_image_key,
+          )
+        : null,
+    };
+
     if (!userId) {
-      return { achievement, userProgress: null };
+      return { achievement: achievementWithUrl, userProgress: null };
     }
 
     const userProgress = await this.prisma.user_achievements.findFirst({
       where: { user_id: userId, achievement_id: achievementId },
     });
 
-    return { achievement, userProgress: userProgress ?? null };
+    return { achievement: achievementWithUrl, userProgress: userProgress ?? null };
   }
 
   // ---------------------------------------------------------------------------

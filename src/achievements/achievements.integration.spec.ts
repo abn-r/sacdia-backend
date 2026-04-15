@@ -12,6 +12,7 @@ import { ThresholdHandler } from './handlers/threshold.handler';
 import { HandlerRegistry } from './handlers/handler.registry';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
 describe('Achievements Integration: emitEvent → evaluate → notify', () => {
   let service: AchievementsService;
@@ -99,6 +100,12 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
     eventLogIdCounter = 0;
     userAchievementRecord = null;
 
+    const mockFileStorageService = {
+      resolvePublicUrl: jest.fn().mockImplementation((_bucket: string, key: string) =>
+        `https://cdn.r2.example/achievements-badges/${key}`,
+      ),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HandlerRegistry,
@@ -107,6 +114,7 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
         AchievementsProcessor,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         // Provide queue mock directly — InjectQueue token requires this approach
         {
           provide: 'BullQueue_achievements',
@@ -122,9 +130,9 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
       })
       .overrideProvider(AchievementsService)
       .useFactory({
-        factory: (prisma: PrismaService, registry: HandlerRegistry) =>
-          new AchievementsService(prisma, registry, undefined), // no queue — we call processor manually
-        inject: [PrismaService, HandlerRegistry],
+        factory: (prisma: PrismaService, registry: HandlerRegistry, fileStorage: any) =>
+          new AchievementsService(prisma, registry, fileStorage, undefined), // no queue — we call processor manually
+        inject: [PrismaService, HandlerRegistry, FILE_STORAGE_SERVICE],
       })
       .compile();
 

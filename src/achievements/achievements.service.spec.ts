@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AchievementsService } from './achievements.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HandlerRegistry } from './handlers/handler.registry';
+import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 
 describe('AchievementsService', () => {
   let service: AchievementsService;
@@ -34,6 +35,12 @@ describe('AchievementsService', () => {
     getHandler: jest.fn().mockReturnValue(mockHandler),
   };
 
+  const mockFileStorageService = {
+    resolvePublicUrl: jest.fn().mockImplementation((_bucket: string, key: string) =>
+      `https://cdn.r2.example/achievements-badges/${key}`,
+    ),
+  };
+
   /**
    * Build the service without a BullMQ queue (undefined queue — graceful fallback mode).
    * Tests that depend on queue enqueuing use a separate setup with a mock queue.
@@ -44,6 +51,7 @@ describe('AchievementsService', () => {
         AchievementsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: HandlerRegistry, useValue: mockHandlerRegistry },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         // Simulate the @Optional() @InjectQueue() — provide undefined
         {
           provide: 'BullQueue_achievements',
@@ -116,6 +124,7 @@ describe('AchievementsService', () => {
           AchievementsService,
           { provide: PrismaService, useValue: mockPrismaService },
           { provide: HandlerRegistry, useValue: mockHandlerRegistry },
+          { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
           { provide: 'BullQueue_achievements', useValue: mockQueue },
         ],
       }).compile();
@@ -148,6 +157,7 @@ describe('AchievementsService', () => {
           AchievementsService,
           { provide: PrismaService, useValue: mockPrismaService },
           { provide: HandlerRegistry, useValue: mockHandlerRegistry },
+          { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
           { provide: 'BullQueue_achievements', useValue: mockQueue },
         ],
       }).compile();
@@ -174,19 +184,36 @@ describe('AchievementsService', () => {
   describe('findAllAchievements', () => {
     it('should return paginated achievements with default page/limit', async () => {
       const mockData = [
-        { achievement_id: 1, name: 'Logro 1', category: {} },
-        { achievement_id: 2, name: 'Logro 2', category: {} },
+        { achievement_id: 1, name: 'Logro 1', badge_image_key: null, category: {} },
+        { achievement_id: 2, name: 'Logro 2', badge_image_key: null, category: {} },
       ];
       mockPrismaService.achievements.findMany.mockResolvedValue(mockData);
       mockPrismaService.achievements.count.mockResolvedValue(2);
 
       const result = await service.findAllAchievements();
 
-      expect(result.data).toEqual(mockData);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].achievement_id).toBe(1);
+      expect(result.data[0].badge_image_url).toBeNull(); // no key → null url
+      expect(result.data[1].achievement_id).toBe(2);
       expect(result.total).toBe(2);
       expect(result.page).toBe(1);
       expect(result.limit).toBe(20);
       expect(result.totalPages).toBe(1);
+    });
+
+    it('should include badge_image_url when badge_image_key is present', async () => {
+      const mockData = [
+        { achievement_id: 1, name: 'Logro con badge', badge_image_key: 'achievements/badges/1_bronze.png', category: {} },
+      ];
+      mockPrismaService.achievements.findMany.mockResolvedValue(mockData);
+      mockPrismaService.achievements.count.mockResolvedValue(1);
+
+      const result = await service.findAllAchievements();
+
+      expect(result.data[0].badge_image_url).toBe(
+        'https://cdn.r2.example/achievements-badges/achievements/badges/1_bronze.png',
+      );
     });
 
     it('should filter by type when provided', async () => {
@@ -437,6 +464,7 @@ describe('AchievementsService', () => {
       const mockAchievement = {
         achievement_id: 1,
         name: 'Test',
+        badge_image_key: null,
         category: {},
       };
       const mockProgress = {
@@ -453,17 +481,37 @@ describe('AchievementsService', () => {
       const result = await service.getAchievementDetail(1, 'user-1');
 
       expect(result).not.toBeNull();
-      expect(result!.achievement).toEqual(mockAchievement);
+      expect(result!.achievement.achievement_id).toBe(1);
+      expect(result!.achievement.name).toBe('Test');
+      expect(result!.achievement.badge_image_url).toBeNull(); // no key → null url
       expect(result!.userProgress).toEqual(mockProgress);
     });
 
+    it('should include badge_image_url when badge_image_key is present', async () => {
+      const mockAchievement = {
+        achievement_id: 2,
+        name: 'Badge Test',
+        badge_image_key: 'achievements/badges/2_gold.png',
+        category: {},
+      };
+      mockPrismaService.achievements.findUnique.mockResolvedValue(mockAchievement);
+      mockPrismaService.user_achievements.findFirst.mockResolvedValue(null);
+
+      const result = await service.getAchievementDetail(2, 'user-1');
+
+      expect(result!.achievement.badge_image_url).toBe(
+        'https://cdn.r2.example/achievements-badges/achievements/badges/2_gold.png',
+      );
+    });
+
     it('should return achievement with userProgress=null when userId is not provided', async () => {
-      const mockAchievement = { achievement_id: 1, name: 'Test', category: {} };
+      const mockAchievement = { achievement_id: 1, name: 'Test', badge_image_key: null, category: {} };
       mockPrismaService.achievements.findUnique.mockResolvedValue(mockAchievement);
 
       const result = await service.getAchievementDetail(1);
 
-      expect(result!.achievement).toEqual(mockAchievement);
+      expect(result!.achievement.achievement_id).toBe(1);
+      expect(result!.achievement.badge_image_url).toBeNull();
       expect(result!.userProgress).toBeNull();
       expect(mockPrismaService.user_achievements.findFirst).not.toHaveBeenCalled();
     });
@@ -477,7 +525,7 @@ describe('AchievementsService', () => {
     });
 
     it('should return achievement with userProgress=null when user has no progress record', async () => {
-      const mockAchievement = { achievement_id: 1, name: 'Test', category: {} };
+      const mockAchievement = { achievement_id: 1, name: 'Test', badge_image_key: null, category: {} };
       mockPrismaService.achievements.findUnique.mockResolvedValue(mockAchievement);
       mockPrismaService.user_achievements.findFirst.mockResolvedValue(null); // no progress
 
@@ -579,6 +627,7 @@ describe('AchievementsService', () => {
           AchievementsService,
           { provide: PrismaService, useValue: mockPrismaService },
           { provide: HandlerRegistry, useValue: mockHandlerRegistry },
+          { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
           { provide: 'BullQueue_achievements', useValue: mockQueue },
         ],
       }).compile();

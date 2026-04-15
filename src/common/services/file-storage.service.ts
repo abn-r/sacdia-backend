@@ -46,4 +46,9 @@ export interface FileStorageService {
     keyOrPublicUrl: string,
     options?: SignedUrlOptions,
   ): Promise<string>;
+  /**
+   * Resolve a stored key to its public CDN URL synchronously.
+   * Only valid for public buckets (isPublic: true). Throws if the bucket is private.
+   */
+  resolvePublicUrl(bucketAlias: StorageBucketAlias, key: string): string;
 }
