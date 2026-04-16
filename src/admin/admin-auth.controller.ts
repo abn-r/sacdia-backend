@@ -55,7 +55,7 @@ export class AdminAuthController {
   // ---------------------------------------------------------------------------
 
   @Get('sessions')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({
     summary: "List all active sessions for a user",
     description:
@@ -83,7 +83,7 @@ export class AdminAuthController {
   }
 
   @Delete('sessions/:sessionId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: "Revoke a specific session for a user",
@@ -107,7 +107,7 @@ export class AdminAuthController {
   }
 
   @Delete('sessions')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: "Revoke all sessions for a user",
@@ -143,7 +143,7 @@ export class AdminAuthController {
   // ---------------------------------------------------------------------------
 
   @Get('mfa/status')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({
     summary: "Get MFA enrollment status for a user",
     description:
@@ -171,7 +171,7 @@ export class AdminAuthController {
   }
 
   @Delete('mfa')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: "Reset (disable) MFA for a user",
@@ -196,7 +196,7 @@ export class AdminAuthController {
   // ---------------------------------------------------------------------------
 
   @Post('password')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: "Set a new password for a user",

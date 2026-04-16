@@ -126,7 +126,7 @@ export class AdminUsersController {
   }
 
   @Patch('users/:userId/approval')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Approve or reject a user' })
   async updateUserApproval(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -137,7 +137,7 @@ export class AdminUsersController {
   }
 
   @Patch('users/:userId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Update user administrative fields' })
   async updateUser(
     @Param('userId', ParseUUIDPipe) userId: string,

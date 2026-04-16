@@ -3,7 +3,7 @@ import { user_approval_status } from '@prisma/client';
 import type { Request } from 'express';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { JwtAuthGuard, GlobalRolesGuard, PermissionsGuard } from '../common/guards';
 import { AdminListUsersQueryDto } from './dto';
 
 describe('AdminUsersController', () => {
@@ -27,6 +27,8 @@ describe('AdminUsersController', () => {
       ],
     })
       .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(GlobalRolesGuard)
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })
       .overrideGuard(PermissionsGuard)
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })

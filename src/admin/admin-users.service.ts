@@ -541,9 +541,24 @@ export class AdminUsersService {
   }
 
   async updateUser(userId: string, dto: UpdateAdminUserDto) {
+    // Build an explicit update payload so that only known Prisma columns are
+    // forwarded. This guards against clients that send legacy field names such
+    // as `approval` (numeric) or `approved` (bool) that no longer exist on the
+    // users table.
+    const data: Parameters<typeof this.prisma.users.update>[0]['data'] = {};
+
+    if (typeof dto.active === 'boolean') data.active = dto.active;
+    if (typeof dto.access_app === 'boolean') data.access_app = dto.access_app;
+    if (typeof dto.access_panel === 'boolean')
+      data.access_panel = dto.access_panel;
+    if (dto.approval_status !== undefined)
+      data.approval_status = dto.approval_status;
+    if (typeof dto.rejection_reason === 'string')
+      data.rejection_reason = dto.rejection_reason;
+
     return this.prisma.users.update({
       where: { user_id: userId },
-      data: dto,
+      data,
     });
   }
 

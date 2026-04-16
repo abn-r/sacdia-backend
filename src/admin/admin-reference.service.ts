@@ -14,6 +14,8 @@ import {
 import {
   CreateActivityTypeDto,
   CreateAllergyDto,
+  CreateClubIdealDto,
+  CreateClubTypeDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
   CreateHonorCategoryDto,
@@ -22,6 +24,8 @@ import {
   CreateRelationshipTypeDto,
   UpdateActivityTypeDto,
   UpdateAllergyDto,
+  UpdateClubIdealDto,
+  UpdateClubTypeDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
   UpdateHonorCategoryDto,
@@ -77,7 +81,7 @@ export class AdminReferenceService {
 
   async createActivityType(dto: CreateActivityTypeDto, actorId: string) {
     const name = this.normalizeName(dto.name);
-    const code = dto.code.trim().toUpperCase();
+    const code = dto.code.trim();
 
     await this.ensureActivityTypeUnique(name, code);
 
@@ -110,7 +114,7 @@ export class AdminReferenceService {
     await this.ensureActivityTypeExists(activityTypeId);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
-    const code = dto.code ? dto.code.trim().toUpperCase() : undefined;
+    const code = dto.code ? dto.code.trim() : undefined;
 
     if (name || code) {
       await this.ensureActivityTypeUnique(
@@ -600,6 +604,220 @@ export class AdminReferenceService {
       orderBy: [{ club_type_id: 'asc' }, { ideal_order: 'asc' }],
       take: 200,
     });
+  }
+
+  // ========================================
+  // CLUB TYPES
+  // ========================================
+
+  async listClubTypes() {
+    return this.prisma.club_types.findMany({
+      orderBy: { name: 'asc' },
+      take: 50,
+    });
+  }
+
+  async createClubType(dto: CreateClubTypeDto, actorId: string) {
+    const name = this.normalizeName(dto.name);
+    await this.ensureClubTypeUnique(name);
+
+    const clubType = await this.prisma.club_types.create({
+      data: {
+        name,
+        active: dto.active ?? true,
+      },
+    });
+
+    this.logMutation('create', 'club_types', clubType.club_type_id, actorId);
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+
+    return clubType;
+  }
+
+  async updateClubType(
+    clubTypeId: number,
+    dto: UpdateClubTypeDto,
+    actorId: string,
+  ) {
+    await this.ensureClubTypeExists(clubTypeId);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+    if (name) {
+      await this.ensureClubTypeUnique(name, clubTypeId);
+    }
+
+    const clubType = await this.prisma.club_types.update({
+      where: { club_type_id: clubTypeId },
+      data: {
+        ...(name ? { name } : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation('update', 'club_types', clubTypeId, actorId);
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+
+    return clubType;
+  }
+
+  async deleteClubType(clubTypeId: number, actorId: string) {
+    await this.ensureClubTypeExists(clubTypeId);
+
+    const inUseCount = await this.prisma.club_sections.count({
+      where: { club_type_id: clubTypeId, active: true },
+    });
+
+    if (inUseCount > 0) {
+      throw new ConflictException(
+        'Cannot deactivate club type because it has active club sections',
+      );
+    }
+
+    const clubType = await this.prisma.club_types.update({
+      where: { club_type_id: clubTypeId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation('delete', 'club_types', clubTypeId, actorId);
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+
+    return clubType;
+  }
+
+  private async ensureClubTypeExists(clubTypeId: number) {
+    const entity = await this.prisma.club_types.findUnique({
+      where: { club_type_id: clubTypeId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(`Club type ${clubTypeId} not found`);
+    }
+
+    return entity;
+  }
+
+  private async ensureClubTypeUnique(name: string, excludeId?: number) {
+    const existing = await this.prisma.club_types.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        ...(excludeId ? { NOT: { club_type_id: excludeId } } : {}),
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('Club type name already exists');
+    }
+  }
+
+  // ========================================
+  // CLUB IDEALS (admin CRUD)
+  // ========================================
+
+  async createClubIdeal(dto: CreateClubIdealDto, actorId: string) {
+    const name = this.normalizeName(dto.name);
+
+    // Ensure referenced club type exists
+    await this.ensureClubTypeExists(dto.club_type_id);
+
+    const clubIdeal = await this.prisma.club_ideals.create({
+      data: {
+        name,
+        club_type_id: dto.club_type_id,
+        ideal_order: dto.ideal_order,
+        ideal: dto.ideal ?? null,
+        active: dto.active ?? true,
+      },
+    });
+
+    this.logMutation(
+      'create',
+      'club_ideals',
+      clubIdeal.club_ideal_id,
+      actorId,
+    );
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.CLUB_IDEALS(dto.club_type_id),
+    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_IDEALS());
+
+    return clubIdeal;
+  }
+
+  async updateClubIdeal(
+    clubIdealId: number,
+    dto: UpdateClubIdealDto,
+    actorId: string,
+  ) {
+    const existing = await this.ensureClubIdealExists(clubIdealId);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+
+    const clubIdeal = await this.prisma.club_ideals.update({
+      where: { club_ideal_id: clubIdealId },
+      data: {
+        ...(name ? { name } : {}),
+        ...(typeof dto.ideal_order === 'number'
+          ? { ideal_order: dto.ideal_order }
+          : {}),
+        ...(typeof dto.ideal === 'string' ? { ideal: dto.ideal } : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'update',
+      'club_ideals',
+      clubIdealId,
+      actorId,
+    );
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.CLUB_IDEALS(existing.club_type_id),
+    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_IDEALS());
+
+    return clubIdeal;
+  }
+
+  async deleteClubIdeal(clubIdealId: number, actorId: string) {
+    const existing = await this.ensureClubIdealExists(clubIdealId);
+
+    const clubIdeal = await this.prisma.club_ideals.update({
+      where: { club_ideal_id: clubIdealId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'delete',
+      'club_ideals',
+      clubIdealId,
+      actorId,
+    );
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.CLUB_IDEALS(existing.club_type_id),
+    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_IDEALS());
+
+    return clubIdeal;
+  }
+
+  private async ensureClubIdealExists(clubIdealId: number) {
+    const entity = await this.prisma.club_ideals.findUnique({
+      where: { club_ideal_id: clubIdealId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(`Club ideal ${clubIdealId} not found`);
+    }
+
+    return entity;
   }
 
   async createEcclesiasticalYear(
