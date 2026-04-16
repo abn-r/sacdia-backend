@@ -9,6 +9,7 @@ describe('GlobalRolesGuard', () => {
   };
 
   const mockAuthorizationContext = {
+    isSuperAdmin: jest.fn(),
     hasAnyGlobalRole: jest.fn(),
   };
 
@@ -64,26 +65,25 @@ describe('GlobalRolesGuard', () => {
 
   it('should allow super_admin user when roles list does not include super_admin', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin', 'coordinator']);
-    // First call: isSuperAdmin check → true
-    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(true);
+    // isSuperAdmin bypass → true: god-mode, short-circuit
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(true);
 
     await expect(
       guard.canActivate(createContext({ user: { sub: 'super-admin-user' } })),
     ).resolves.toBe(true);
 
-    // Should have checked super_admin bypass and short-circuited — only 1 call total
-    expect(mockAuthorizationContext.hasAnyGlobalRole).toHaveBeenCalledTimes(1);
-    expect(mockAuthorizationContext.hasAnyGlobalRole).toHaveBeenCalledWith(
+    // isSuperAdmin was called once and the guard short-circuited — hasAnyGlobalRole never reached
+    expect(mockAuthorizationContext.isSuperAdmin).toHaveBeenCalledTimes(1);
+    expect(mockAuthorizationContext.isSuperAdmin).toHaveBeenCalledWith(
       'super-admin-user',
-      ['super_admin'],
     );
+    expect(mockAuthorizationContext.hasAnyGlobalRole).not.toHaveBeenCalled();
   });
 
   it('should not grant bypass to non-super_admin users', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin', 'coordinator']);
-    // First call: isSuperAdmin check → false
-    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(false);
-    // Second call: role check → false
+    // isSuperAdmin → false, then role check → false
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
     mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(false);
 
     await expect(
@@ -92,14 +92,14 @@ describe('GlobalRolesGuard', () => {
       new ForbiddenException('You need one of these global roles: admin, coordinator'),
     );
 
-    expect(mockAuthorizationContext.hasAnyGlobalRole).toHaveBeenCalledTimes(2);
+    expect(mockAuthorizationContext.isSuperAdmin).toHaveBeenCalledTimes(1);
+    expect(mockAuthorizationContext.hasAnyGlobalRole).toHaveBeenCalledTimes(1);
   });
 
   it('should allow a user with a matching required role', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['coordinator']);
-    // First call: isSuperAdmin → false
-    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(false);
-    // Second call: role check → true
+    // isSuperAdmin → false, role check → true
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
     mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(true);
 
     await expect(
@@ -109,9 +109,8 @@ describe('GlobalRolesGuard', () => {
 
   it('should expand admin alias to include assistant_admin', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin']);
-    // First call: isSuperAdmin → false
-    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(false);
-    // Second call: role check (expanded to admin + assistant_admin) → true
+    // isSuperAdmin → false, role check (expanded) → true
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
     mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(true);
 
     await expect(
@@ -119,17 +118,16 @@ describe('GlobalRolesGuard', () => {
     ).resolves.toBe(true);
 
     // Verify aliases were expanded: admin → [admin, assistant_admin]
-    const secondCall = mockAuthorizationContext.hasAnyGlobalRole.mock.calls[1];
-    expect(secondCall[1]).toEqual(
+    const firstRoleCall = mockAuthorizationContext.hasAnyGlobalRole.mock.calls[0];
+    expect(firstRoleCall[1]).toEqual(
       expect.arrayContaining(['admin', 'assistant_admin']),
     );
   });
 
   it('should throw ForbiddenException when user has no matching role', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin']);
-    // First call: isSuperAdmin → false
-    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(false);
-    // Second call: role check → false
+    // isSuperAdmin → false, role check → false
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
     mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(false);
 
     await expect(

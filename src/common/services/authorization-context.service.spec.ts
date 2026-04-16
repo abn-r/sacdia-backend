@@ -190,6 +190,54 @@ describe('AuthorizationContextService', () => {
     });
   });
 
+  describe('isSuperAdmin', () => {
+    const buildUserWithRole = (roleName: string) => ({
+      user_id: 'user-sa',
+      email: 'sa@test.com',
+      name: 'Super',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: null,
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      user_image: null,
+      country_id: null,
+      union_id: null,
+      local_field_id: null,
+      created_at: new Date('2026-01-01'),
+      countries: null,
+      unions: null,
+      local_fields: null,
+      users_pr: { complete: true, active_club_assignment_id: null },
+      users_roles: [
+        {
+          roles: {
+            role_name: roleName,
+            role_permissions: [],
+          },
+        },
+      ],
+      club_role_assignments: [],
+    });
+
+    it('should return true when user has super_admin role', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        buildUserWithRole('super_admin'),
+      );
+
+      await expect(service.isSuperAdmin('user-sa')).resolves.toBe(true);
+    });
+
+    it('should return false when user has a non-super_admin role', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        buildUserWithRole('admin'),
+      );
+
+      await expect(service.isSuperAdmin('user-sa')).resolves.toBe(false);
+    });
+  });
+
   it('should fall back to the first available assignment when persisted context is stale', async () => {
     mockPrismaService.users.findUnique.mockResolvedValue({
       user_id: 'user-123',
