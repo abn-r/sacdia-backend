@@ -207,13 +207,16 @@ describe('PermissionsGuard', () => {
 
     it.each([
       ['health:read', 'users:read_detail', 'read'],
-      ['health:update', 'users:update', 'update'],
+      // Phase 3 cleanup (`permission-scope-cleanup-phase-3`):
+      // legacy `users:update` was retired in favor of `users:update_profile`
+      // for sensitive-user subresources in `update` mode.
+      ['health:update', 'users:update_profile', 'update'],
       ['emergency_contacts:read', 'users:read_detail', 'read'],
-      ['emergency_contacts:update', 'users:update', 'update'],
+      ['emergency_contacts:update', 'users:update_profile', 'update'],
       ['legal_representative:read', 'users:read_detail', 'read'],
-      ['legal_representative:update', 'users:update', 'update'],
+      ['legal_representative:update', 'users:update_profile', 'update'],
       ['post_registration:read', 'users:read_detail', 'read'],
-      ['post_registration:update', 'users:update', 'update'],
+      ['post_registration:update', 'users:update_profile', 'update'],
     ] as const)(
       'allows fine permission, allows legacy fallback, and rejects club-only third-party access for %s',
       async (permission, legacyFallback, mode) => {

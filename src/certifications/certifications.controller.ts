@@ -108,7 +108,7 @@ export class UserCertificationsController {
   constructor(private readonly certificationsService: CertificationsService) {}
 
   @Post('users/:userId/certifications/enroll')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribirse en una certificación',
@@ -207,7 +207,7 @@ export class UserCertificationsController {
   }
 
   @Patch('users/:userId/certifications/:certificationId/progress')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
@@ -253,7 +253,7 @@ export class UserCertificationsController {
   }
 
   @Delete('users/:userId/certifications/:certificationId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Abandonar una certificación',

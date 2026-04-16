@@ -14,7 +14,7 @@ export type SensitiveUserSubresourcePolicy = {
 const LEGACY_PERMISSION_BY_MODE: Record<SensitiveUserSubresourceMode, string> =
   {
     read: 'users:read_detail',
-    update: 'users:update',
+    update: 'users:update_profile',
   };
 
 export function getSensitiveUserSubresourcePolicy(

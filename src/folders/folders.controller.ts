@@ -120,7 +120,7 @@ export class UserFoldersController {
   constructor(private readonly foldersService: FoldersService) {}
 
   @Post('users/:userId/folders/:folderId/enroll')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribirse en una carpeta',
@@ -226,7 +226,7 @@ export class UserFoldersController {
   @Patch(
     'users/:userId/folders/:folderId/modules/:moduleId/sections/:sectionId',
   )
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
@@ -286,7 +286,7 @@ export class UserFoldersController {
   }
 
   @Delete('users/:userId/folders/:folderId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Abandonar una carpeta',

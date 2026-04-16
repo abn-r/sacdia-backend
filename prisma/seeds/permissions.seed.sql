@@ -54,7 +54,9 @@ ON CONFLICT (permission_name) DO UPDATE SET
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('users:read', 'Read basic user list', true),
   ('users:read_detail', 'Read detailed user information', true),
-  ('users:update', 'Update user information', true)
+  ('users:update', 'Update user information', true),
+  ('users:update_profile', 'Update own profile and picture', true),
+  ('users:update_admin', 'Admin user management operations', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -65,7 +67,9 @@ ON CONFLICT (permission_name) DO UPDATE SET
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('classes:read', 'Read class information', true),
-  ('classes:update', 'Update class information and progress', true)
+  ('classes:update', 'Update class information and progress', true),
+  ('classes:submit_progress', 'Enroll, progress, submit class evidence', true),
+  ('classes:validate', 'Approve/reject class submissions', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -387,7 +391,9 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('user_honors:read', 'Read user honor records', true),
   ('user_honors:create', 'Create user honor records', true),
   ('user_honors:update', 'Update user honor records', true),
-  ('user_honors:delete', 'Delete user honor records', true)
+  ('user_honors:delete', 'Delete user honor records', true),
+  ('user_honors:submit', 'Update honor progress and evidence', true),
+  ('user_honors:validate', 'Approve/reject honor submissions', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -527,6 +533,23 @@ ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
   modified_at = now();
+
+-- ============================================================================
+-- LEGACY PERMISSION SOFT-DELETE (Phase 3 — permission-scope-cleanup-phase-3)
+-- ============================================================================
+-- Retire the three legacy strings (`users:update`, `classes:update`,
+-- `user_honors:update`) by flipping `active` to false. The rows remain in
+-- place to preserve audit-log FK integrity (`role_permissions.permission_id`
+-- and `users_permissions.permission_id` use ON DELETE CASCADE — a hard delete
+-- would silently nuke history). All controllers, sensitive-family policies,
+-- and seed grants have been migrated to the new intent-specific equivalents
+-- (`users:update_profile`, `classes:submit_progress` / `classes:validate`,
+-- `user_honors:submit` / `user_honors:validate`).
+-- Idempotent: re-running the UPDATE is a no-op once the rows are inactive.
+UPDATE permissions
+SET active = false, modified_at = now()
+WHERE permission_name IN ('users:update', 'classes:update', 'user_honors:update')
+  AND active = true;
 
 COMMIT;
 

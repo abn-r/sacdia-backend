@@ -14,6 +14,23 @@
 
 BEGIN;
 
+-- ============================================================================
+-- LEGACY PERMISSION CLEANUP (Phase 3 — permission-scope-cleanup-phase-3)
+-- ============================================================================
+-- Removes any role_permissions row that still references the retired legacy
+-- permissions (`users:update`, `classes:update`, `user_honors:update`).
+-- Phase 1+2 of the migration ensured every role that previously held these
+-- legacy strings ALSO holds the new intent-specific equivalents
+-- (`users:update_profile`, `classes:submit_progress`/`classes:validate`,
+-- `user_honors:submit`/`user_honors:validate`). Phase 3 also added
+-- `user_honors:submit` to the `user` and `member` role IN-arrays below to
+-- preserve their write capability after the legacy row is soft-deleted.
+-- Idempotent: re-runs are no-ops once rows are gone.
+DELETE FROM role_permissions
+USING permissions p
+WHERE role_permissions.permission_id = p.permission_id
+  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update');
+
 -- ============================
 -- USER role (GLOBAL)
 -- ============================
@@ -39,7 +56,7 @@ WHERE r.role_name = 'user'
   AND p.permission_name IN (
     -- Profile & personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -51,7 +68,7 @@ WHERE r.role_name = 'user'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
+    'user_honors:submit',
     'user_honors:delete',
 
     -- Catalogs (read only)
@@ -98,7 +115,7 @@ WHERE r.role_name = 'member'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
+    'user_honors:submit',
     'user_honors:delete',
 
     -- Club info (read only)
@@ -113,7 +130,7 @@ WHERE r.role_name = 'member'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -175,8 +192,9 @@ WHERE r.role_name = 'counselor'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
     'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
 
     -- Club info (read only)
     'clubs:read',
@@ -189,7 +207,7 @@ WHERE r.role_name = 'counselor'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -222,7 +240,8 @@ WHERE r.role_name = 'counselor'
     -- View detailed profile of club members (honors, classes, emergency, health)
     'users:read_detail',
     -- Validate/return class progress for members in their classes
-    'classes:update',
+    'classes:submit_progress',
+    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
     -- Submit members as investiture candidates to section leadership
@@ -265,8 +284,9 @@ WHERE r.role_name = 'secretary'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
     'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
 
     -- Club info (read only)
     'clubs:read',
@@ -279,7 +299,7 @@ WHERE r.role_name = 'secretary'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -312,7 +332,8 @@ WHERE r.role_name = 'secretary'
     -- View detailed profile of club members
     'users:read_detail',
     -- Validate/return class progress
-    'classes:update',
+    'classes:submit_progress',
+    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
     -- Submit members as investiture candidates
@@ -385,8 +406,9 @@ WHERE r.role_name = 'treasurer'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
     'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
 
     -- Club info (read only)
     'clubs:read',
@@ -399,7 +421,7 @@ WHERE r.role_name = 'treasurer'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -432,7 +454,8 @@ WHERE r.role_name = 'treasurer'
     -- View detailed profile of club members
     'users:read_detail',
     -- Validate/return class progress
-    'classes:update',
+    'classes:submit_progress',
+    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
     -- Submit members as investiture candidates
@@ -490,8 +513,9 @@ WHERE r.role_name = 'secretary-treasurer'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
     'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
 
     -- Club info (read only)
     'clubs:read',
@@ -504,7 +528,7 @@ WHERE r.role_name = 'secretary-treasurer'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -535,7 +559,8 @@ WHERE r.role_name = 'secretary-treasurer'
 
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
-    'classes:update',
+    'classes:submit_progress',
+    'classes:validate',
     'units:update',
     'investiture:submit',
     'club_roles:read',
@@ -611,8 +636,9 @@ WHERE r.role_name = 'deputy-director'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
     'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
 
     -- Club info (read only)
     'clubs:read',
@@ -625,7 +651,7 @@ WHERE r.role_name = 'deputy-director'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -656,7 +682,8 @@ WHERE r.role_name = 'deputy-director'
 
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
-    'classes:update',
+    'classes:submit_progress',
+    'classes:validate',
     'units:update',
     'investiture:submit',
     'club_roles:read',
@@ -713,8 +740,9 @@ WHERE r.role_name = 'director'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
     'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
 
     -- Club info (read only)
     'clubs:read',
@@ -727,7 +755,7 @@ WHERE r.role_name = 'director'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -758,7 +786,8 @@ WHERE r.role_name = 'director'
 
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
-    'classes:update',
+    'classes:submit_progress',
+    'classes:validate',
     'units:update',
     'investiture:submit',
     'club_roles:read',
@@ -857,7 +886,7 @@ WHERE r.role_name = 'coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:update',
+    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -866,7 +895,7 @@ WHERE r.role_name = 'coordinator'
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
     'user_honors:read',
-    'user_honors:update',
+    'user_honors:validate',
 
     -- Catalogs (read only)
     'catalogs:read',
@@ -918,7 +947,7 @@ WHERE r.role_name = 'zone-coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:update',
+    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -927,7 +956,7 @@ WHERE r.role_name = 'zone-coordinator'
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
     'user_honors:read',
-    'user_honors:update',
+    'user_honors:validate',
 
     -- Catalogs (read only)
     'catalogs:read',
@@ -987,7 +1016,7 @@ WHERE r.role_name = 'general-coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:update',
+    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -996,7 +1025,7 @@ WHERE r.role_name = 'general-coordinator'
     -- Evidence & honors (read + validate/reject)
     'evidence_folders:read',
     'user_honors:read',
-    'user_honors:update',
+    'user_honors:validate',
 
     -- Catalogs (read only)
     'catalogs:read',
@@ -1046,8 +1075,9 @@ WHERE r.role_name = 'assistant-lf'
     'classes:read',
     'user_honors:read',
     'user_honors:create',
-    'user_honors:update',
     'user_honors:delete',
+    'user_honors:submit',
+    'user_honors:validate',
 
     -- Club info (read only)
     'clubs:read',
@@ -1060,7 +1090,7 @@ WHERE r.role_name = 'assistant-lf'
 
     -- Personal data
     'users:read',
-    'users:update',
+    'users:update_profile',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -1123,7 +1153,8 @@ WHERE r.role_name = 'assistant-lf'
     'finances:delete',
 
     -- Director-level
-    'classes:update',
+    'classes:submit_progress',
+    'classes:validate',
     'club_roles:assign',
     'club_roles:revoke',
 
