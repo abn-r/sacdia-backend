@@ -886,6 +886,7 @@ model role_permissions {
 model roles {
   role_id                  String                     @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
   role_name                String                     @unique @db.VarChar(255)
+  description              String                     @db.VarChar(500)
   created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
   modified_at              DateTime?                  @default(now()) @db.Timestamptz(6)
   active                   Boolean                    @default(true)

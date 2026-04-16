@@ -2,12 +2,16 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
+import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
 import { maskEmail } from '../common/utils/mask-email.util';
 
 @Injectable()
@@ -112,11 +116,17 @@ export class RbacService {
 
   // ─── Roles ──────────────────────────────────────────────────
 
-  async listRoles() {
+  async listRoles(activeFilter: boolean | undefined = true) {
     // Small system table: roles are defined at deploy time and are expected
     // to remain well under 200 rows. Safety cap prevents runaway reads.
+    // activeFilter=true  → only active roles (default, existing behaviour)
+    // activeFilter=false → only inactive roles
+    // activeFilter=undefined → all roles (when caller passes 'all')
+    const whereClause =
+      activeFilter === undefined ? {} : { active: activeFilter };
+
     return this.prisma.roles.findMany({
-      where: { active: true },
+      where: whereClause,
       orderBy: { role_name: 'asc' },
       include: {
         role_permissions: {
@@ -134,6 +144,190 @@ export class RbacService {
       },
       take: 200,
     });
+  }
+
+  // ─── Role CRUD (super_admin only) ───────────────────────────
+
+  async createRole(dto: CreateRoleDto) {
+    if (dto.role_name === 'super_admin') {
+      throw new BadRequestException(
+        'El nombre de rol "super_admin" está reservado y no puede ser creado',
+      );
+    }
+
+    const existing = await this.prisma.roles.findUnique({
+      where: { role_name: dto.role_name },
+    });
+
+    if (existing) {
+      throw new ConflictException(
+        `Ya existe un rol con nombre "${dto.role_name}"`,
+      );
+    }
+
+    const permissionIds = dto.permission_ids ?? [];
+
+    // Validate all provided permission IDs exist before opening transaction
+    if (permissionIds.length > 0) {
+      const permissions = await this.prisma.permissions.findMany({
+        where: { permission_id: { in: permissionIds } },
+        select: { permission_id: true },
+      });
+
+      if (permissions.length !== permissionIds.length) {
+        const foundIds = new Set(permissions.map((p) => p.permission_id));
+        const missing = permissionIds.filter((id) => !foundIds.has(id));
+        throw new NotFoundException(
+          `Permisos no encontrados: ${missing.join(', ')}`,
+        );
+      }
+    }
+
+    const role = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.roles.create({
+        data: {
+          role_name: dto.role_name,
+          description: dto.description,
+          role_category: dto.role_category,
+        },
+      });
+
+      if (permissionIds.length > 0) {
+        await tx.role_permissions.createMany({
+          data: permissionIds.map((permissionId) => ({
+            role_id: created.role_id,
+            permission_id: permissionId,
+          })),
+        });
+      }
+
+      return tx.roles.findUnique({
+        where: { role_id: created.role_id },
+        include: {
+          role_permissions: {
+            where: { active: true },
+            include: {
+              permissions: {
+                select: {
+                  permission_id: true,
+                  permission_name: true,
+                  description: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    this.logger.log(
+      `Rol creado: ${role!.role_name} (${role!.role_id}) con ${permissionIds.length} permisos`,
+    );
+
+    return role;
+  }
+
+  async updateRole(roleId: string, dto: UpdateRoleDto) {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (!role) {
+      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+    }
+
+    if (role.role_name === 'super_admin') {
+      throw new ForbiddenException('El rol super_admin no puede ser modificado');
+    }
+
+    // role_name is immutable — reject if caller sent it
+    if ('role_name' in dto) {
+      throw new BadRequestException(
+        'role_name no puede ser modificado. Es inmutable después de la creación.',
+      );
+    }
+
+    const updateData: { description?: string; modified_at: Date } = {
+      modified_at: new Date(),
+    };
+
+    if (dto.description !== undefined) {
+      updateData.description = dto.description;
+    }
+
+    // Update description and optionally sync permissions
+    if (dto.permission_ids !== undefined) {
+      // Run description update + permission sync in sequence
+      if (Object.keys(updateData).length > 1) {
+        await this.prisma.roles.update({
+          where: { role_id: roleId },
+          data: updateData,
+        });
+      }
+
+      await this.syncRolePermissions(roleId, dto.permission_ids);
+    } else {
+      await this.prisma.roles.update({
+        where: { role_id: roleId },
+        data: updateData,
+      });
+    }
+
+    const updated = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      include: {
+        role_permissions: {
+          where: { active: true },
+          include: {
+            permissions: {
+              select: {
+                permission_id: true,
+                permission_name: true,
+                description: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    this.logger.log(`Rol actualizado: ${updated!.role_name} (${roleId})`);
+    return updated;
+  }
+
+  async deactivateRole(roleId: string) {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (!role) {
+      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+    }
+
+    if (role.role_name === 'super_admin') {
+      throw new ForbiddenException(
+        'El rol super_admin no puede ser desactivado',
+      );
+    }
+
+    // Count active user assignments for this role
+    const assignedCount = await this.prisma.users_roles.count({
+      where: { role_id: roleId, active: true },
+    });
+
+    if (assignedCount > 0) {
+      throw new ConflictException(
+        `Cannot deactivate role: ${assignedCount} user${assignedCount === 1 ? '' : 's'} are currently assigned. Reassign them first.`,
+      );
+    }
+
+    await this.prisma.roles.update({
+      where: { role_id: roleId },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    this.logger.log(`Rol desactivado: ${role.role_name} (${roleId})`);
+    return { success: true, role_id: roleId };
   }
 
   async getRoleWithPermissions(roleId: string) {

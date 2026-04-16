@@ -1,10 +1,17 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RbacService } from './rbac.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
+import { CreateRoleDto, RoleCategoryEnum } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -34,7 +41,18 @@ const basePermission2 = {
 const baseRole = {
   role_id: ROLE_ID,
   role_name: 'admin',
-  description: 'Administrador',
+  description: 'Administrador del sistema con acceso completo',
+  role_category: 'GLOBAL',
+  active: true,
+  created_at: new Date('2025-01-01'),
+  modified_at: new Date('2025-01-01'),
+};
+
+const superAdminRole = {
+  role_id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  role_name: 'super_admin',
+  description: 'Super administrador con control total del sistema',
+  role_category: 'GLOBAL',
   active: true,
   created_at: new Date('2025-01-01'),
   modified_at: new Date('2025-01-01'),
@@ -77,14 +95,33 @@ const mockPrismaService = {
   roles: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
   },
   role_permissions: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
+    createMany: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  users_roles: {
+    count: jest.fn(),
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  // Prisma interactive transaction mock: executes callback with a tx proxy
+  $transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+    // Pass a tx object that delegates to the same mocks
+    const txProxy = {
+      roles: mockPrismaService.roles,
+      role_permissions: mockPrismaService.role_permissions,
+    };
+    return fn(txProxy);
+  }),
 };
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
@@ -511,8 +548,262 @@ describe('RbacService', () => {
   });
 
   // ============================================================
-  // syncRolePermissions
+  // listRoles (active filter)
   // ============================================================
+
+  describe('listRoles — active filter', () => {
+    it('TC-LR1 - default (no arg): queries only active roles', async () => {
+      mockPrismaService.roles.findMany.mockResolvedValue([baseRoleWithPermissions]);
+
+      await service.listRoles();
+
+      expect(mockPrismaService.roles.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { active: true } }),
+      );
+    });
+
+    it('TC-LR2 - active=false: queries only inactive roles', async () => {
+      mockPrismaService.roles.findMany.mockResolvedValue([]);
+
+      await service.listRoles(false);
+
+      expect(mockPrismaService.roles.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { active: false } }),
+      );
+    });
+
+    it('TC-LR3 - active=undefined: queries all roles (no where clause active field)', async () => {
+      mockPrismaService.roles.findMany.mockResolvedValue([baseRoleWithPermissions]);
+
+      await service.listRoles(undefined);
+
+      expect(mockPrismaService.roles.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
+    });
+  });
+
+  // ============================================================
+  // createRole
+  // ============================================================
+
+  describe('createRole', () => {
+    const dto: CreateRoleDto = {
+      role_name: 'club_treasurer',
+      description: 'Rol encargado de la tesorería del club con acceso financiero',
+      role_category: RoleCategoryEnum.CLUB,
+    };
+
+    it('TC-CR1 - happy path: creates role without permissions', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(null);
+      mockPrismaService.roles.create.mockResolvedValue({
+        ...baseRole,
+        role_name: 'club_treasurer',
+        role_id: ROLE_ID,
+      });
+      // Second findUnique in transaction (returns created role with permissions)
+      mockPrismaService.roles.findUnique
+        .mockResolvedValueOnce(null) // uniqueness check
+        .mockResolvedValueOnce({ // tx findUnique after create
+          ...baseRole,
+          role_name: 'club_treasurer',
+          role_permissions: [],
+        });
+
+      const result = await service.createRole(dto);
+
+      expect(result!.role_name).toBe('club_treasurer');
+      expect(mockPrismaService.roles.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            role_name: 'club_treasurer',
+            description: dto.description,
+            role_category: RoleCategoryEnum.CLUB,
+          }),
+        }),
+      );
+    });
+
+    it('TC-CR2 - happy path: creates role with permission_ids', async () => {
+      const dtoWithPerms: CreateRoleDto = {
+        ...dto,
+        permission_ids: [PERMISSION_ID],
+      };
+
+      mockPrismaService.roles.findUnique.mockResolvedValue(null);
+      mockPrismaService.permissions.findMany.mockResolvedValue([basePermission]);
+      mockPrismaService.roles.create.mockResolvedValue({ ...baseRole, role_name: 'club_treasurer' });
+      mockPrismaService.role_permissions.createMany.mockResolvedValue({ count: 1 });
+      mockPrismaService.roles.findUnique
+        .mockResolvedValueOnce(null) // uniqueness check
+        .mockResolvedValueOnce({ ...baseRole, role_name: 'club_treasurer', role_permissions: [] });
+
+      await service.createRole(dtoWithPerms);
+
+      expect(mockPrismaService.role_permissions.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [{ role_id: ROLE_ID, permission_id: PERMISSION_ID }],
+        }),
+      );
+    });
+
+    it('TC-CR3 - error: throws BadRequestException when role_name is "super_admin"', async () => {
+      const reserved: CreateRoleDto = {
+        ...dto,
+        role_name: 'super_admin',
+      };
+
+      await expect(service.createRole(reserved)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockPrismaService.roles.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('TC-CR4 - error: throws ConflictException when role_name already exists', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+
+      await expect(service.createRole(dto)).rejects.toThrow(ConflictException);
+      expect(mockPrismaService.roles.create).not.toHaveBeenCalled();
+    });
+
+    it('TC-CR5 - error: throws NotFoundException when permission_id does not exist', async () => {
+      const dtoWithBadPerm: CreateRoleDto = {
+        ...dto,
+        permission_ids: ['ffffffff-ffff-ffff-ffff-ffffffffffff'],
+      };
+
+      mockPrismaService.roles.findUnique.mockResolvedValue(null);
+      mockPrismaService.permissions.findMany.mockResolvedValue([]); // no permissions found
+
+      await expect(service.createRole(dtoWithBadPerm)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('TC-CR6 - error: role_name pattern "super_admin" blocked even with different casing is still blocked at exact match', async () => {
+      // Pattern validation happens at DTO layer (via @Matches), but service also blocks exact 'super_admin'
+      await expect(
+        service.createRole({ ...dto, role_name: 'super_admin' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ============================================================
+  // updateRole
+  // ============================================================
+
+  describe('updateRole', () => {
+    it('TC-UR1 - happy path: updates description only', async () => {
+      const updateDto: UpdateRoleDto = {
+        description: 'Nueva descripción detallada del rol de administrador',
+      };
+      const updated = { ...baseRoleWithPermissions, description: updateDto.description };
+
+      mockPrismaService.roles.findUnique
+        .mockResolvedValueOnce(baseRole) // load check
+        .mockResolvedValueOnce(updated); // final fetch
+      mockPrismaService.roles.update.mockResolvedValue(updated);
+
+      const result = await service.updateRole(ROLE_ID, updateDto);
+
+      expect(mockPrismaService.roles.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { role_id: ROLE_ID },
+          data: expect.objectContaining({ description: updateDto.description }),
+        }),
+      );
+      expect(result!.description).toBe(updateDto.description);
+    });
+
+    it('TC-UR2 - error: throws ForbiddenException when updating super_admin role', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
+
+      await expect(
+        service.updateRole(superAdminRole.role_id, { description: 'Cambio' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('TC-UR3 - error: throws BadRequestException when body contains role_name', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+
+      // Simulate caller sneaking role_name into the body (bypass DTO — raw object)
+      const bodyWithName = { description: 'desc válida aquí hay más de diez chars', role_name: 'new_name' };
+
+      await expect(service.updateRole(ROLE_ID, bodyWithName as UpdateRoleDto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('TC-UR4 - error: throws NotFoundException when role does not exist', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateRole(ROLE_ID, { description: 'Descripción válida completa aquí' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ============================================================
+  // deactivateRole
+  // ============================================================
+
+  describe('deactivateRole', () => {
+    it('TC-DR1 - happy path: soft-deletes role when no users assigned', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.users_roles.count.mockResolvedValue(0);
+      mockPrismaService.roles.update.mockResolvedValue({ ...baseRole, active: false });
+
+      const result = await service.deactivateRole(ROLE_ID);
+
+      expect(result).toEqual({ success: true, role_id: ROLE_ID });
+      expect(mockPrismaService.roles.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { role_id: ROLE_ID },
+          data: expect.objectContaining({ active: false }),
+        }),
+      );
+    });
+
+    it('TC-DR2 - error: throws ForbiddenException when role is super_admin', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
+
+      await expect(service.deactivateRole(superAdminRole.role_id)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockPrismaService.users_roles.count).not.toHaveBeenCalled();
+    });
+
+    it('TC-DR3 - error: throws ConflictException when users are still assigned', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.users_roles.count.mockResolvedValue(3);
+
+      let caughtError: Error | null = null;
+      try {
+        await service.deactivateRole(ROLE_ID);
+      } catch (e) {
+        caughtError = e as Error;
+      }
+
+      expect(caughtError).toBeInstanceOf(ConflictException);
+      expect((caughtError as Error).message).toContain('3 users are currently assigned');
+      expect(mockPrismaService.roles.update).not.toHaveBeenCalled();
+    });
+
+    it('TC-DR4 - error: throws NotFoundException when role does not exist', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(null);
+
+      await expect(service.deactivateRole(ROLE_ID)).rejects.toThrow(NotFoundException);
+    });
+
+    it('TC-DR5 - singular grammar when exactly 1 user assigned', async () => {
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.users_roles.count.mockResolvedValue(1);
+
+      const error = await service.deactivateRole(ROLE_ID).catch((e) => e);
+      expect(error.message).toContain('1 user is currently assigned');
+    });
+  });
 
   describe('syncRolePermissions', () => {
     it('TC25 - happy path: adds new permissions and removes unlisted ones', async () => {
