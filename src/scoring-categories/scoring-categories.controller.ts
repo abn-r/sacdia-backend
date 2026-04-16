@@ -101,8 +101,12 @@ export class ScoringCategoriesController {
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   async findUnionCategories(
     @Param('unionId', ParseIntPipe) unionId: number,
+    @Req() req: any,
   ) {
-    return this.scoringCategoriesService.findUnionCategories(unionId);
+    return this.scoringCategoriesService.findUnionCategories(
+      unionId,
+      req.user.sub,
+    );
   }
 
   @Post('unions/:unionId/scoring-categories')
@@ -184,8 +188,12 @@ export class ScoringCategoriesController {
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   async findLocalFieldCategories(
     @Param('fieldId', ParseIntPipe) fieldId: number,
+    @Req() req: any,
   ) {
-    return this.scoringCategoriesService.findLocalFieldCategories(fieldId);
+    return this.scoringCategoriesService.findLocalFieldCategories(
+      fieldId,
+      req.user.sub,
+    );
   }
 
   @Post('local-fields/:fieldId/scoring-categories')

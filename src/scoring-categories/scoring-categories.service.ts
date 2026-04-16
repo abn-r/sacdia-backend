@@ -198,7 +198,12 @@ export class ScoringCategoriesService {
   // UNION level
   // ============================================================
 
-  async findUnionCategories(unionId: number): Promise<CategoryWithReadonly[]> {
+  async findUnionCategories(
+    unionId: number,
+    userId: string,
+  ): Promise<CategoryWithReadonly[]> {
+    await this.assertUserBelongsToUnion(userId, unionId);
+
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
         OR: [
@@ -317,6 +322,7 @@ export class ScoringCategoriesService {
 
   async findLocalFieldCategories(
     fieldId: number,
+    userId: string,
   ): Promise<CategoryWithReadonly[]> {
     // Resolve the parent union (and via it, division) for this local field
     const localField = await this.prisma.local_fields.findUnique({
@@ -329,6 +335,7 @@ export class ScoringCategoriesService {
     }
 
     const unionId = localField.union_id;
+    await this.assertUserBelongsToLocalField(userId, fieldId);
 
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
