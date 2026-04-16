@@ -43,7 +43,7 @@ export class ValidationController {
 
   @Post('submit')
   @AuthorizationResource({ type: 'active_assignment' })
-  @RequirePermissions('classes:update')
+  @RequirePermissions('classes:submit_progress')
   @ApiOperation({
     summary: 'Enviar clase/honor a revision',
     description:
@@ -72,7 +72,7 @@ export class ValidationController {
 
   @Post(':entityType/:entityId/review')
   @AuthorizationResource({ type: 'active_assignment' })
-  @RequirePermissions('classes:update')
+  @RequirePermissions('classes:validate')
   @ApiOperation({
     summary: 'Aprobar o rechazar clase/honor',
     description:

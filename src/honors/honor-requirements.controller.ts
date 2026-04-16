@@ -115,7 +115,7 @@ export class UserHonorRequirementsController {
 
   @Patch(':honorId/requirements/progress/batch')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @RequirePermissions('user_honors:update')
+  @RequirePermissions('user_honors:submit')
   @ApiOperation({
     summary: 'Actualizar progreso de múltiples requisitos',
     description:
@@ -148,7 +148,7 @@ export class UserHonorRequirementsController {
 
   @Patch(':honorId/requirements/:requirementId/progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @RequirePermissions('user_honors:update')
+  @RequirePermissions('user_honors:submit')
   @ApiOperation({
     summary: 'Actualizar progreso de un requisito individual',
     description:

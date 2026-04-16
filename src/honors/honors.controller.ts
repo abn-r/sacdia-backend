@@ -293,7 +293,7 @@ export class UserHonorsController {
 
   @Patch(':honorId')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @RequirePermissions('user_honors:update')
+  @RequirePermissions('user_honors:submit')
   @ApiOperation({
     summary: 'Actualizar progreso de honor',
     description: 'Actualiza evidencias, validación o certificado del honor',
