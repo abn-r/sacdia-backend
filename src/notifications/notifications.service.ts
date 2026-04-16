@@ -16,7 +16,13 @@
 // that source at all — the inbox is not an override of that intent.
 // =============================================================================
 
-import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { firebaseAdmin } from '../config/firebase-admin.module';
@@ -189,6 +195,10 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
+    if (isUuid(sentBy)) {
+      await this.assertExactClubAssignmentScope(sentBy, clubSectionId);
+    }
+
     if (!this.isFcmConfigured()) {
       return {
         success: false,
@@ -337,11 +347,9 @@ export class NotificationsService {
   /**
    * Obtener historial paginado de notificaciones.
    *
-   * - Admins (admin | super_admin | assistant_admin): devuelve TODOS los
-   *   notification_logs directamente (incluye sender info).
-   *   TODO [SECURITY M-2]: territory-scope filter pending — a local field admin
-   *   currently sees logs for all territories. Only super_admin should be
-   *   unfiltered. See controller comment for fix approach.
+   * - Admins (admin | super_admin | assistant_admin): devuelve audit log
+   *   territorialmente filtrado según el scope del caller. Only super_admin
+   *   receives the unfiltered audit trail.
    *
    * - Usuarios regulares: consulta notification_deliveries (mailbox-per-user).
    *   Esto resuelve el bug donde sendToSectionRole / broadcast / sendToClubMembers
@@ -361,11 +369,15 @@ export class NotificationsService {
     const skip = (page - 1) * limit;
 
     if (isAdmin) {
+      const resolved = await this.authorizationContext.resolveUserAuthorization(
+        callerUserId,
+      );
+      const where = this.buildAdminHistoryWhere(callerUserId, resolved);
+
       // Admin path: read directly from notification_logs (full audit log)
-      // TODO [SECURITY M-2]: restrict to admin's territory scope
       const [data, total] = await Promise.all([
         this.prisma.notification_logs.findMany({
-          where: {},
+          where,
           skip,
           take: limit,
           orderBy: { created_at: 'desc' },
@@ -380,7 +392,7 @@ export class NotificationsService {
             },
           },
         }),
-        this.prisma.notification_logs.count({ where: {} }),
+        this.prisma.notification_logs.count({ where }),
       ]);
 
       return {
@@ -425,6 +437,80 @@ export class NotificationsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  private async assertExactClubAssignmentScope(
+    userId: string,
+    clubSectionId: number,
+  ): Promise<void> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    const activeClubScope = resolved.authorization.effective.scope.club;
+
+    if (!activeClubScope || activeClubScope.section.club_section_id !== clubSectionId) {
+      throw new ForbiddenException(
+        'You need an active club assignment for this exact instance',
+      );
+    }
+  }
+
+  private buildAdminHistoryWhere(
+    callerUserId: string,
+    resolved: Awaited<
+      ReturnType<AuthorizationContextService['resolveUserAuthorization']>
+    >,
+  ) {
+    const globalRoleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (globalRoleNames.has('super_admin')) {
+      return {};
+    }
+
+    const globalScope = resolved.authorization.effective.scope.global;
+    const unionId = globalScope.union?.id;
+    if (typeof unionId === 'number') {
+      return {
+        deliveries: {
+          some: {
+            user: {
+              union_id: unionId,
+            },
+          },
+        },
+      };
+    }
+
+    const localFieldId = globalScope.local_field?.id;
+    if (typeof localFieldId === 'number') {
+      return {
+        deliveries: {
+          some: {
+            user: {
+              local_field_id: localFieldId,
+            },
+          },
+        },
+      };
+    }
+
+    const countryId = globalScope.country?.id;
+    if (typeof countryId === 'number') {
+      return {
+        deliveries: {
+          some: {
+            user: {
+              country_id: countryId,
+            },
+          },
+        },
+      };
+    }
+
+    return { sent_by: callerUserId };
   }
 
   // ---------------------------------------------------------------------------

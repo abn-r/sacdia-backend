@@ -1,9 +1,11 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { buildAuthorizationSnapshot } from '../../test/helpers/rbac-test-helpers';
 
 // ---------------------------------------------------------------------------
 // Mock firebase-admin module BEFORE importing the service under test.
@@ -43,6 +45,7 @@ describe('NotificationsService', () => {
 
   const mockAuthorizationContextService = {
     hasAnyGlobalRole: jest.fn().mockResolvedValue(false),
+    resolveUserAuthorization: jest.fn(),
   };
 
   const mockPrismaService = {
@@ -88,6 +91,21 @@ describe('NotificationsService', () => {
     mockPrismaService.notification_deliveries.create.mockResolvedValue({});
     mockPrismaService.notification_deliveries.createMany.mockResolvedValue({ count: 1 });
     mockPrismaService.notification_deliveries.count.mockResolvedValue(0);
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+      {
+        profile: { user_id: SENT_BY },
+        authorization: buildAuthorizationSnapshot({
+          assignmentId: 'assignment-1',
+          activePermissions: ['notifications:club'],
+          clubSectionId: 42,
+          clubId: 7,
+          clubTypeName: 'adventurers',
+          localFieldId: 10,
+          unionId: 20,
+          countryId: 30,
+        }),
+      } as any,
+    );
 
     // $transaction: simulate the interactive callback style — run callback with prisma mock as tx
     mockPrismaService.$transaction.mockImplementation(
@@ -382,6 +400,81 @@ describe('NotificationsService', () => {
     const clubSectionId = 42;
     const dto = { title: 'Club', body: 'Reunión hoy' };
 
+    it('should reject club sends when the active assignment does not match the target section', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+      ]);
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValueOnce(
+        {
+          profile: { user_id: SENT_BY },
+          authorization: buildAuthorizationSnapshot({
+            assignmentId: 'assignment-1',
+            activePermissions: ['notifications:club'],
+            clubSectionId: 11,
+            clubId: 7,
+            clubTypeName: 'adventurers',
+            localFieldId: 10,
+            unionId: 20,
+            countryId: 30,
+          }),
+        } as any,
+      );
+
+      await expect(
+        service.sendToClubMembers(clubSectionId, dto, SENT_BY),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.notification_logs.create).not.toHaveBeenCalled();
+    });
+
+    it('should not resolve system callers through user authorization and should still send to club members', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+      ]);
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+      mockAuthorizationContextService.resolveUserAuthorization.mockImplementation(
+        async (userId: string) => {
+          if (userId === 'system') {
+            throw new Error('system user must not be resolved');
+          }
+
+          return {
+            profile: { user_id: userId },
+            authorization: buildAuthorizationSnapshot({
+              assignmentId: 'assignment-1',
+              activePermissions: ['notifications:club'],
+              clubSectionId,
+              clubId: 7,
+              clubTypeName: 'adventurers',
+              localFieldId: 10,
+              unionId: 20,
+              countryId: 30,
+            }),
+          } as any;
+        },
+      );
+
+      const result = await service.sendToClubMembers(
+        clubSectionId,
+        dto,
+        'system',
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        skippedPush: true,
+        memberCount: 1,
+      });
+      expect(
+        mockAuthorizationContextService.resolveUserAuthorization,
+      ).not.toHaveBeenCalledWith('system');
+      expect(mockPrismaService.club_role_assignments.findMany).toHaveBeenCalled();
+    });
+
     it('should return failure when club section has no active members', async () => {
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
 
@@ -589,8 +682,230 @@ describe('NotificationsService', () => {
       expect(result.total).toBe(1);
     });
 
+    it('admin user with local-field scope should include system logs delivered to that territory and exclude others', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: CALLER_ID, local_field_id: 10 },
+          authorization: buildAuthorizationSnapshot({
+            globalPermissions: ['notifications:club'],
+            globalRoleName: 'admin',
+            localFieldId: 10,
+            countryId: 30,
+          }),
+        } as any,
+      );
+
+      const logs = [
+        {
+          log_id: 7,
+          title: 'Local field alert',
+          body: 'Allowed',
+          type: 'BROADCAST',
+          target_type: 'club_section',
+          target_id: '42',
+          sent_by: null,
+          tokens_sent: 3,
+          tokens_failed: 0,
+          created_at: new Date(),
+          deliveries: [
+            {
+              user: {
+                user_id: CALLER_ID,
+                local_field_id: 10,
+                name: 'Admin',
+                paternal_last_name: null,
+                email: 'local@test.com',
+              },
+            },
+          ],
+        },
+        {
+          log_id: 8,
+          title: 'Other field alert',
+          body: 'Should stay hidden',
+          type: 'BROADCAST',
+          target_type: 'club_section',
+          target_id: '99',
+          sent_by: null,
+          tokens_sent: 2,
+          tokens_failed: 0,
+          created_at: new Date(),
+          deliveries: [
+            {
+              user: {
+                user_id: '00000000-0000-0000-0000-000000000777',
+                local_field_id: 99,
+                name: 'Other Admin',
+                paternal_last_name: null,
+                email: 'other@test.com',
+              },
+            },
+          ],
+        },
+      ];
+
+      mockPrismaService.notification_logs.findMany.mockImplementation(
+        async ({ where }) =>
+          logs.filter(
+            (log) =>
+              log.deliveries?.some(
+                (delivery) =>
+                  delivery.user?.local_field_id ===
+                  where?.deliveries?.some?.user?.local_field_id,
+              ),
+          ),
+      );
+      mockPrismaService.notification_logs.count.mockImplementation(
+        async ({ where }) =>
+          logs.filter(
+            (log) =>
+              log.deliveries?.some(
+                (delivery) =>
+                  delivery.user?.local_field_id ===
+                  where?.deliveries?.some?.user?.local_field_id,
+              ),
+          ).length,
+      );
+
+      const result = await service.getNotificationHistory(CALLER_ID, 1, 20);
+
+      expect(mockPrismaService.notification_logs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            deliveries: {
+              some: {
+                user: {
+                  local_field_id: 10,
+                },
+              },
+            },
+          },
+        }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({ log_id: 7, title: 'Local field alert' });
+      expect(result.total).toBe(1);
+    });
+
+    it('admin user with broader union scope should not be narrowed to local-field and should include system logs from that union', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: CALLER_ID, local_field_id: 10, union_id: 20 },
+          authorization: buildAuthorizationSnapshot({
+            globalPermissions: ['notifications:club'],
+            globalRoleName: 'admin',
+            localFieldId: 10,
+            unionId: 20,
+            countryId: 30,
+          }),
+        } as any,
+      );
+
+      const logs = [
+        {
+          log_id: 11,
+          title: 'Union system alert',
+          body: 'Allowed for union',
+          type: 'CLUB',
+          target_type: 'club_section',
+          target_id: '88',
+          sent_by: null,
+          tokens_sent: 1,
+          tokens_failed: 0,
+          created_at: new Date(),
+          deliveries: [
+            {
+              user: { user_id: 'user-union', union_id: 20, local_field_id: 11 },
+            },
+          ],
+        },
+        {
+          log_id: 12,
+          title: 'Local field only alert',
+          body: 'Should be hidden for union scope when it belongs to another field',
+          type: 'CLUB',
+          target_type: 'club_section',
+          target_id: '99',
+          sent_by: null,
+          tokens_sent: 1,
+          tokens_failed: 0,
+          created_at: new Date(),
+          deliveries: [
+            {
+              user: { user_id: 'user-local', union_id: 999, local_field_id: 10 },
+            },
+          ],
+        },
+      ];
+
+      mockPrismaService.notification_logs.findMany.mockImplementation(
+        async ({ where }) =>
+          logs.filter(
+            (log) =>
+              log.deliveries?.some(
+                (delivery) =>
+                  delivery.user?.union_id === where?.deliveries?.some?.user?.union_id,
+              ) ||
+              log.deliveries?.some(
+                (delivery) =>
+                  delivery.user?.local_field_id ===
+                  where?.deliveries?.some?.user?.local_field_id,
+              ),
+          ),
+      );
+      mockPrismaService.notification_logs.count.mockImplementation(
+        async ({ where }) =>
+          logs.filter(
+            (log) =>
+              log.deliveries?.some(
+                (delivery) =>
+                  delivery.user?.union_id === where?.deliveries?.some?.user?.union_id,
+              ) ||
+              log.deliveries?.some(
+                (delivery) =>
+                  delivery.user?.local_field_id ===
+                  where?.deliveries?.some?.user?.local_field_id,
+              ),
+          ).length,
+      );
+
+      const result = await service.getNotificationHistory(CALLER_ID, 1, 20);
+
+      expect(mockPrismaService.notification_logs.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            deliveries: {
+              some: {
+                user: {
+                  union_id: 20,
+                },
+              },
+            },
+          },
+        }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        log_id: 11,
+        title: 'Union system alert',
+      });
+      expect(result.total).toBe(1);
+    });
+
     it('admin user: should return all logs with user relation included', async () => {
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: SENT_BY },
+          authorization: buildAuthorizationSnapshot({
+            globalPermissions: ['notifications:club'],
+            globalRoleName: 'super_admin',
+            countryId: 30,
+          }),
+        } as any,
+      );
 
       const mockLogs = [
         {
