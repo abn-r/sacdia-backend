@@ -22,6 +22,7 @@ import {
   NotificationsProcessor,
   REALTIME_INVALIDATE_JOB,
   RealtimeInvalidatePayload,
+  SendToClubMembersJobData,
 } from './notifications.processor';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
@@ -65,13 +66,25 @@ const mockPrismaService = {
     findMany: jest.fn(),
     updateMany: jest.fn(),
   },
+  club_role_assignments: {
+    findMany: jest.fn(),
+  },
+  notification_logs: {
+    create: jest.fn(),
+  },
+  notification_deliveries: {
+    createMany: jest.fn(),
+  },
+  $transaction: jest.fn(),
 };
 
 const mockFcmTokensService = {
   updateLastUsed: jest.fn().mockResolvedValue(undefined),
 };
 
-const mockPreferencesService = {};
+const mockPreferencesService = {
+  filterAllowedUsers: jest.fn(),
+};
 
 describe('NotificationsProcessor — realtime.invalidate', () => {
   let processor: NotificationsProcessor;
@@ -285,5 +298,214 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
     const unknownJob = { id: 'job-x', name: 'unknown.job', data: {} } as unknown as Job;
     await expect(processor.process(unknownJob as any)).resolves.toBeUndefined();
     expect(warnSpy).toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// send-to-club-members job — producer + worker unit tests
+// =============================================================================
+
+function makeClubMembersJob(
+  data: Partial<SendToClubMembersJobData> = {},
+  id = 'job-club-1',
+): Job<SendToClubMembersJobData> {
+  return {
+    id,
+    name: 'send-to-club-members',
+    data: {
+      clubSectionId: 5,
+      title: 'Test title',
+      body: 'Test body',
+      sentBy: ACTOR_ID,
+      source: 'activities:created',
+      ...data,
+    },
+  } as unknown as Job<SendToClubMembersJobData>;
+}
+
+describe('NotificationsProcessor — send-to-club-members', () => {
+  let processor: NotificationsProcessor;
+  let mockSendEachForMulticast: jest.Mock;
+  let firebaseAdminMock: any;
+
+  beforeEach(async () => {
+    firebaseAdminMock = jest.requireMock(
+      '../config/firebase-admin.module',
+    ).firebaseAdmin;
+    mockSendEachForMulticast = jest.fn();
+    (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
+      sendEachForMulticast: mockSendEachForMulticast,
+    });
+
+    // Reset all mocks
+    jest.clearAllMocks();
+    firebaseAdminMock.apps = ['mock-app'];
+
+    // Setup $transaction to invoke the callback immediately
+    mockPrismaService.$transaction.mockImplementation(
+      (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
+    );
+    mockPrismaService.notification_logs.create.mockResolvedValue({ log_id: 99 });
+    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({ count: 1 });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        NotificationsProcessor,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FcmTokensService, useValue: mockFcmTokensService },
+        {
+          provide: NotificationPreferencesService,
+          useValue: mockPreferencesService,
+        },
+      ],
+    }).compile();
+
+    processor = module.get<NotificationsProcessor>(NotificationsProcessor);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    firebaseAdminMock.apps = ['mock-app'];
+  });
+
+  it('skips when section has no active members', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+    const job = makeClubMembersJob({ clubSectionId: 99 });
+    const result = await processor.process(job as any);
+
+    expect(result).toMatchObject({ skipped: true, reason: 'no-members' });
+    expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+  });
+
+  it('skips when all members have opted out', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: MEMBER_ID_A },
+    ]);
+    mockPreferencesService.filterAllowedUsers.mockResolvedValue(new Set()); // all opted out
+
+    const job = makeClubMembersJob();
+    const result = await processor.process(job as any);
+
+    expect(result).toMatchObject({ skipped: true, reason: 'all-opted-out' });
+    expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+  });
+
+  it('creates log + deliveries before FCM push', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: MEMBER_ID_A },
+    ]);
+    mockPreferencesService.filterAllowedUsers.mockResolvedValue(
+      new Set([MEMBER_ID_A]),
+    );
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { token: 'token-a' },
+    ]);
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 0,
+      responses: [{ success: true }],
+    });
+
+    const job = makeClubMembersJob({ clubSectionId: 5 });
+    await processor.process(job as any);
+
+    expect(mockPrismaService.$transaction).toHaveBeenCalled();
+    expect(mockPrismaService.notification_logs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'CLUB',
+          target_type: 'club_section',
+          target_id: '5',
+        }),
+      }),
+    );
+    expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [{ log_id: 99, user_id: MEMBER_ID_A }],
+        skipDuplicates: true,
+      }),
+    );
+  });
+
+  it('sends FCM push to member tokens and returns counts', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: MEMBER_ID_A },
+      { user_id: MEMBER_ID_B },
+    ]);
+    mockPreferencesService.filterAllowedUsers.mockResolvedValue(
+      new Set([MEMBER_ID_A, MEMBER_ID_B]),
+    );
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { token: 'token-a' },
+      { token: 'token-b' },
+    ]);
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 2,
+      failureCount: 0,
+      responses: [{ success: true }, { success: true }],
+    });
+
+    const job = makeClubMembersJob();
+    const result = await processor.process(job as any);
+
+    expect(result).toMatchObject({
+      successCount: 2,
+      failureCount: 0,
+      memberCount: 2,
+      skippedPush: false,
+    });
+    expect(mockSendEachForMulticast).toHaveBeenCalledTimes(1);
+    expect(mockSendEachForMulticast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokens: ['token-a', 'token-b'],
+        notification: { title: 'Test title', body: 'Test body' },
+      }),
+    );
+  });
+
+  it('creates deliveries even when no FCM tokens exist (inbox-first)', async () => {
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: MEMBER_ID_A },
+    ]);
+    mockPreferencesService.filterAllowedUsers.mockResolvedValue(
+      new Set([MEMBER_ID_A]),
+    );
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]); // no tokens
+
+    const job = makeClubMembersJob();
+    const result = await processor.process(job as any);
+
+    expect(result).toMatchObject({
+      successCount: 0,
+      failureCount: 0,
+      skippedPush: true,
+    });
+    // Inbox delivery still created
+    expect(mockPrismaService.$transaction).toHaveBeenCalled();
+    expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates user_ids from role assignments before processing', async () => {
+    // Same user appears twice (multiple role assignments)
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+      { user_id: MEMBER_ID_A },
+      { user_id: MEMBER_ID_A },
+    ]);
+    mockPreferencesService.filterAllowedUsers.mockResolvedValue(
+      new Set([MEMBER_ID_A]),
+    );
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+
+    const job = makeClubMembersJob();
+    const result = await processor.process(job as any);
+
+    // memberCount must be 1 after dedup
+    expect(result).toMatchObject({ memberCount: 1 });
+    // filterAllowedUsers should receive deduped list
+    expect(mockPreferencesService.filterAllowedUsers).toHaveBeenCalledWith(
+      [MEMBER_ID_A],
+      'activities:created',
+    );
   });
 });

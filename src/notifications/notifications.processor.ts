@@ -37,6 +37,7 @@ export type NotificationJobType =
   | 'send-to-user'
   | 'send-to-section-role'
   | 'send-to-global-role'
+  | 'send-to-club-members'
   | 'broadcast'
   | 'realtime.invalidate';
 
@@ -68,6 +69,15 @@ export interface SendToGlobalRoleJobData {
   unionId?: number;
 }
 
+export interface SendToClubMembersJobData {
+  clubSectionId: number;
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+  sentBy: string;
+  source?: string;
+}
+
 export interface BroadcastJobData {
   title: string;
   body: string;
@@ -80,6 +90,7 @@ export type NotificationJobData =
   | SendToUserJobData
   | SendToSectionRoleJobData
   | SendToGlobalRoleJobData
+  | SendToClubMembersJobData
   | BroadcastJobData
   | RealtimeInvalidatePayload;
 
@@ -140,6 +151,10 @@ export class NotificationsProcessor
         );
       case 'send-to-global-role':
         return this.handleSendToGlobalRole(job as Job<SendToGlobalRoleJobData>);
+      case 'send-to-club-members':
+        return this.handleSendToClubMembers(
+          job as Job<SendToClubMembersJobData>,
+        );
       case 'broadcast':
         return this.handleBroadcast(job as Job<BroadcastJobData>);
       case REALTIME_INVALIDATE_JOB:
@@ -426,6 +441,120 @@ export class NotificationsProcessor
     }
 
     return { successCount: totalSuccess, failureCount: totalFailure, skippedPush: false };
+  }
+
+  // ---------------------------------------------------------------------------
+  // send-to-club-members
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Handles async fan-out to all active members of a club section.
+   * Mirrors the logic of sendToClubMembersSync but runs in the BullMQ worker.
+   * Opt-out preferences suppress BOTH push AND inbox delivery.
+   */
+  private async handleSendToClubMembers(job: Job<SendToClubMembersJobData>) {
+    const { clubSectionId, title, body, data, sentBy, source } = job.data;
+
+    // Step 1: Resolve members — genuine empty set is a hard stop.
+    const members = await this.prisma.club_role_assignments.findMany({
+      where: { club_section_id: clubSectionId, active: true },
+      select: { user_id: true },
+    });
+
+    const rawUserIds = [...new Set(members.map((m) => m.user_id))];
+    if (rawUserIds.length === 0) {
+      this.logger.debug(
+        `handleSendToClubMembers: no members for section ${clubSectionId} — job ${job.id}`,
+      );
+      return { skipped: true, reason: 'no-members' };
+    }
+
+    // Step 2: Apply opt-out preference filter.
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      rawUserIds,
+      source,
+    );
+    const userIds = [...allowedSet];
+
+    if (userIds.length === 0) {
+      this.logger.debug(
+        `handleSendToClubMembers: all members opted out for section ${clubSectionId} — job ${job.id}`,
+      );
+      return { skipped: true, reason: 'all-opted-out' };
+    }
+
+    // Step 3: Create log + deliveries for all allowed members atomically.
+    // This happens regardless of FCM token availability (inbox-first guarantee).
+    await this.prisma
+      .$transaction(async (tx) => {
+        const log = await tx.notification_logs.create({
+          data: {
+            title,
+            body,
+            type: 'CLUB',
+            target_type: 'club_section',
+            target_id: String(clubSectionId),
+            sent_by: isUuid(sentBy) ? sentBy : null,
+            source: source ?? null,
+            tokens_sent: 0,
+            tokens_failed: 0,
+          },
+        });
+        await tx.notification_deliveries.createMany({
+          data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+          skipDuplicates: true,
+        });
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `handleSendToClubMembers: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
+        );
+      });
+
+    // Step 4: FCM push — best effort, only to members with active tokens.
+    const tokenRows = await this.prisma.user_fcm_tokens.findMany({
+      where: { user_id: { in: userIds }, active: true },
+      select: { token: true },
+    });
+
+    if (tokenRows.length === 0) {
+      this.logger.debug(
+        `handleSendToClubMembers: no active FCM tokens for section ${clubSectionId} — deliveries created, push skipped (job ${job.id})`,
+      );
+      return {
+        successCount: 0,
+        failureCount: 0,
+        memberCount: rawUserIds.length,
+        skippedPush: true,
+      };
+    }
+
+    const tokenStrings = tokenRows.map((t) => t.token);
+    const batches = chunkArray(tokenStrings, 500);
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) => this.sendMulticast(batch, title, body, data)),
+    );
+
+    let totalSuccess = 0;
+    let totalFailure = 0;
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        totalSuccess += result.value.successCount;
+        totalFailure += result.value.failureCount;
+      } else {
+        this.logger.warn(
+          `handleSendToClubMembers batch failed: ${result.reason?.message ?? result.reason}`,
+        );
+      }
+    }
+
+    return {
+      successCount: totalSuccess,
+      failureCount: totalFailure,
+      memberCount: rawUserIds.length,
+      skippedPush: false,
+    };
   }
 
   // ---------------------------------------------------------------------------

@@ -4,6 +4,9 @@ import {
   NOTIFICATION_CATEGORIES,
   NotificationCategory,
 } from './notification-categories.constants';
+import {
+  getCategoryForSource,
+} from './notification-source-map.constants';
 
 export interface PreferenceEntry {
   category: string;
@@ -11,16 +14,29 @@ export interface PreferenceEntry {
 }
 
 /**
- * Extracts the category prefix from a source string.
- * e.g. "investiture:submitted" → "investiture"
- *      "admin:broadcast"       → "admin"
- *      "investiture"           → "investiture"
+ * Extracts the category for a notification source string.
+ *
+ * Resolution order:
+ * 1. Check NOTIFICATION_SOURCE_MAP for an explicit mapping (preferred).
+ *    This covers all known sources and returns the mobile category directly.
+ * 2. Fall back to prefix extraction ("investiture:submitted" → "investiture").
+ *    Used for backward-compatibility with legacy sources not yet in the map.
+ *
+ * e.g. "investiture:submitted" → "approvals" (via source map)
+ *      "admin:broadcast"       → "admin" (prefix fallback, then excluded)
+ *      "investiture"           → "investiture" (prefix fallback)
  *      undefined               → null
  */
 export function extractCategory(
   source: string | undefined | null,
 ): string | null {
   if (!source) return null;
+
+  // Try explicit source map first — this returns the mobile category directly.
+  const mapped = getCategoryForSource(source);
+  if (mapped) return mapped;
+
+  // Fall back to prefix extraction for admin and legacy sources.
   const colonIdx = source.indexOf(':');
   return colonIdx !== -1 ? source.substring(0, colonIdx) : source;
 }
@@ -77,6 +93,8 @@ export class NotificationPreferencesService {
    * Rules:
    * - "admin:*" sources always return true (never blocked)
    * - If source is undefined/null, always return true
+   * - If source is not in NOTIFICATION_SOURCE_MAP and not a known category prefix,
+   *   logs a warning and returns true (permissive fallback — add source to the map)
    * - If no preference row exists, default is enabled (opt-out model)
    */
   async isAllowedForUser(
@@ -92,6 +110,13 @@ export class NotificationPreferencesService {
 
     // Only check categories that are known and opt-outable
     if (!(NOTIFICATION_CATEGORIES as readonly string[]).includes(category)) {
+      if (source) {
+        this.logger.warn(
+          `isAllowedForUser: source "${source}" resolved to unknown category "${category}" — ` +
+            'add this source to NOTIFICATION_SOURCE_MAP to enable preference filtering. ' +
+            'Defaulting to allowed.',
+        );
+      }
       return true;
     }
 
@@ -130,6 +155,13 @@ export class NotificationPreferencesService {
     }
 
     if (!(NOTIFICATION_CATEGORIES as readonly string[]).includes(category)) {
+      if (source) {
+        this.logger.warn(
+          `filterAllowedUsers: source "${source}" resolved to unknown category "${category}" — ` +
+            'add this source to NOTIFICATION_SOURCE_MAP to enable preference filtering. ' +
+            'Defaulting to all allowed.',
+        );
+      }
       return new Set(userIds);
     }
 

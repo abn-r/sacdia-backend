@@ -35,6 +35,7 @@ import {
   REALTIME_INVALIDATE_JOB,
   RealtimeInvalidatePayload,
   SendToUserJobData,
+  SendToClubMembersJobData,
   SendToSectionRoleJobData,
   SendToGlobalRoleJobData,
   BroadcastJobData,
@@ -208,9 +209,20 @@ export class NotificationsService {
       };
     }
 
-    // sendToClubMembers is a legacy variant of sendToSectionRole without role
-    // filtering. We keep it synchronous-only for backward compatibility since
-    // it logs a distinct notification_logs entry with memberCount.
+    if (this.isQueueReady()) {
+      const jobData: SendToClubMembersJobData = {
+        clubSectionId,
+        title: dto.title,
+        body: dto.body,
+        data: dto.data,
+        sentBy,
+        source,
+      };
+      await this.queue!.add('send-to-club-members', jobData, DEFAULT_JOB_OPTIONS);
+      return { success: true, queued: true };
+    }
+
+    // Synchronous fallback
     return this.sendToClubMembersSync(clubSectionId, dto, sentBy, source);
   }
 
