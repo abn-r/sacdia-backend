@@ -146,8 +146,9 @@ export class ActivitiesController {
   async update(
     @Param('activityId', ParseIntPipe) activityId: number,
     @Body() dto: UpdateActivityDto,
+    @Request() req: any,
   ) {
-    return this.activitiesService.update(activityId, dto);
+    return this.activitiesService.update(activityId, dto, req.user.sub);
   }
 
   @Delete('activities/:activityId')
@@ -156,8 +157,11 @@ export class ActivitiesController {
   @ApiOperation({ summary: 'Desactivar actividad' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad desactivada' })
-  async remove(@Param('activityId', ParseIntPipe) activityId: number) {
-    return this.activitiesService.remove(activityId);
+  async remove(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @Request() req: any,
+  ) {
+    return this.activitiesService.remove(activityId, req.user.sub);
   }
 
   @Post('activities/:activityId/image')

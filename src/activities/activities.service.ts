@@ -221,6 +221,14 @@ export class ActivitiesService {
     // Fire-and-forget: notify section members about the new activity
     this.sendActivityCreatedNotification(created, section.club_section_id);
 
+    // Fire-and-forget: realtime cache invalidation for section peers
+    this.emitRealtimeInvalidation(
+      section.club_section_id,
+      created.activity_id,
+      'CREATED',
+      createdBy,
+    );
+
     return this.applySignedPrivateUrls(this.attachInstances(created));
   }
 
@@ -323,9 +331,48 @@ export class ActivitiesService {
         section.club_section_id,
         true,
       );
+      // Realtime cache invalidation per participating section
+      this.emitRealtimeInvalidation(
+        section.club_section_id,
+        created.activity_id,
+        'CREATED',
+        createdBy,
+      );
     }
 
     return this.applySignedPrivateUrls(this.attachInstances(created));
+  }
+
+  /**
+   * Fire-and-forget realtime cache invalidation.
+   * Enqueues a silent FCM push so active section peers can refresh their
+   * local activity cache without the actor triggering their own refresh.
+   *
+   * sectionId may be null for activities not yet assigned to a section;
+   * in that case the call is silently skipped.
+   */
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'activities',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 
   private sendActivityCreatedNotification(
@@ -361,7 +408,7 @@ export class ActivitiesService {
       );
   }
 
-  async update(activityId: number, dto: UpdateActivityDto) {
+  async update(activityId: number, dto: UpdateActivityDto, actorId?: string) {
     // Fetch the current record with its owner section so we can derive the club
     const existing = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
@@ -383,14 +430,28 @@ export class ActivitiesService {
     // Branch A: caller explicitly converts back to non-joint (is_joint: false)
     // -----------------------------------------------------------------------
     if (dto.is_joint === false && !dto.club_section_ids) {
-      return this.convertToSingleSection(activityId, existing, dto);
+      const result = await this.convertToSingleSection(activityId, existing, dto);
+      this.emitRealtimeInvalidation(
+        existing.club_section_id,
+        activityId,
+        'UPDATED',
+        actorId,
+      );
+      return result;
     }
 
     // -----------------------------------------------------------------------
     // Branch B: caller provides new section list — replace instances atomically
     // -----------------------------------------------------------------------
     if (dto.club_section_ids && dto.club_section_ids.length >= 2) {
-      return this.updateJointSections(activityId, existing, dto);
+      const result = await this.updateJointSections(activityId, existing, dto);
+      this.emitRealtimeInvalidation(
+        existing.club_section_id,
+        activityId,
+        'UPDATED',
+        actorId,
+      );
+      return result;
     }
 
     // -----------------------------------------------------------------------
@@ -437,7 +498,16 @@ export class ActivitiesService {
       include: this.activityInclude,
     });
 
-    return this.applySignedPrivateUrls(this.attachInstances(updated));
+    const result = await this.applySignedPrivateUrls(
+      this.attachInstances(updated),
+    );
+    this.emitRealtimeInvalidation(
+      existing.club_section_id,
+      activityId,
+      'UPDATED',
+      actorId,
+    );
+    return result;
   }
 
   /**
@@ -639,16 +709,32 @@ export class ActivitiesService {
     return this.applySignedPrivateUrls(this.attachInstances(updated));
   }
 
-  async remove(activityId: number) {
-    await this.findOne(activityId);
+  async remove(activityId: number, actorId?: string) {
+    const existing = await this.prisma.activities.findUnique({
+      where: { activity_id: activityId },
+      select: { activity_id: true, club_section_id: true, active: true },
+    });
 
-    return this.prisma.activities.update({
+    if (!existing) {
+      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+    }
+
+    const deleted = await this.prisma.activities.update({
       where: { activity_id: activityId },
       data: {
         active: false,
         modified_at: new Date(),
       },
     });
+
+    this.emitRealtimeInvalidation(
+      existing.club_section_id,
+      activityId,
+      'DELETED',
+      actorId,
+    );
+
+    return deleted;
   }
 
   // ========================================
