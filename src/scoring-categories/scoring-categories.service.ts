@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
   CreateScoringCategoryDto,
   UpdateScoringCategoryDto,
@@ -28,7 +29,10 @@ export interface CategoryWithReadonly {
 export class ScoringCategoriesService {
   private readonly logger = new Logger(ScoringCategoriesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ============================================================
   // DIVISION level (origin_id = 0 represents global division)
@@ -134,12 +138,19 @@ export class ScoringCategoriesService {
   /**
    * Verifies the requesting user has an active club assignment whose club
    * belongs to a local field that is under the given union.
-   * Super-admins and global admins with union scope bypass this check.
+   * Super-admins bypass this check (god-mode via AuthorizationContextService).
    */
   private async assertUserBelongsToUnion(
     userId: string,
     unionId: number,
   ): Promise<void> {
+    // Super-admin bypass — uses the canonical isSuperAdmin helper which is
+    // backed by the auth-context Redis cache (5 min TTL), so the extra call
+    // is cheap within a single request window.
+    if (await this.authorizationContext.isSuperAdmin(userId)) {
+      return;
+    }
+
     // Check via active club_role_assignment: club → local_field → union
     const assignment = await this.prisma.club_role_assignments.findFirst({
       where: {
@@ -167,12 +178,19 @@ export class ScoringCategoriesService {
   /**
    * Verifies the requesting user has an active club assignment whose club
    * belongs to the given local field.
-   * Super-admins and global admins with local-field scope bypass this check.
+   * Super-admins bypass this check (god-mode via AuthorizationContextService).
    */
   private async assertUserBelongsToLocalField(
     userId: string,
     fieldId: number,
   ): Promise<void> {
+    // Super-admin bypass — uses the canonical isSuperAdmin helper which is
+    // backed by the auth-context Redis cache (5 min TTL), so the extra call
+    // is cheap within a single request window.
+    if (await this.authorizationContext.isSuperAdmin(userId)) {
+      return;
+    }
+
     const assignment = await this.prisma.club_role_assignments.findFirst({
       where: {
         user_id: userId,
