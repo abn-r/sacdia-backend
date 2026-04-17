@@ -14,6 +14,12 @@ const MAGIC_BYTES: Record<string, { offset: number; bytes: number[] }> = {
 
 const DEFAULT_MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
+// image/heic is intentionally excluded: HEIC magic-byte detection requires
+// checking bytes 4-8 ("ftyp") AND bytes 8-12 (one of: heic, heix, mif1, heim,
+// heis, hevc, hevx). The MAGIC_BYTES structure only supports a single contiguous
+// byte sequence at a fixed offset, so verifying HEIC without multi-range checks
+// would produce a false sense of security. Clients must convert to JPEG/PNG/WebP
+// before uploading.
 const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const DOCUMENT_MIME_TYPES = ['application/pdf'];
 
