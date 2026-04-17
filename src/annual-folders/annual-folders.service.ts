@@ -1217,6 +1217,11 @@ export class AnnualFoldersService {
    * Creates or updates (upsert) a row in annual_folder_section_submissions.
    */
   async submitSection(folderId: string, sectionId: string, userId: string) {
+    // [M-01] Assert caller belongs to the club that owns this folder before
+    // performing any DB mutations. Prevents cross-club section submission by
+    // users whose evidence_folders:update permission was granted in a different club.
+    await this.assertFolderClubAccess(folderId, userId);
+
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },
     });
