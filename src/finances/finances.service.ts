@@ -49,6 +49,12 @@ export class FinancesService {
     clubId: number,
     filters?: FinanceFiltersDto,
     pagination?: PaginationDto,
+    /**
+     * When provided, results are scoped to finance records belonging to this
+     * specific section (mirrors the check in PermissionsGuard.validateInstanceScope).
+     * Pass `null` to skip section filtering (admin / club-manager bypass).
+     */
+    userSectionId?: number | null,
   ): Promise<PaginatedResult<any>> {
     // Obtener las secciones del club
     const club = await this.prisma.clubs.findUnique({
@@ -62,11 +68,22 @@ export class FinancesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const sectionIds = club.club_sections.map((s) => s.club_section_id);
+    // Build section filter.
+    // - Admin bypass (userSectionId === null): show all sections of the club,
+    //   optionally narrowed by clubTypeId filter — preserves original broad behaviour.
+    // - Regular member (userSectionId is a number): strict filter to their section only.
+    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+
+    if (userSectionId == null) {
+      const sectionIds = club.club_sections.map((s) => s.club_section_id);
+      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+    } else {
+      sectionFilter = { club_section_id: userSectionId };
+    }
 
     const where = {
       active: true,
-      club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      ...sectionFilter,
       ...(filters?.year && { year: filters.year }),
       ...(filters?.month && { month: filters.month }),
       ...(filters?.clubTypeId && { club_type_id: filters.clubTypeId }),
@@ -98,6 +115,12 @@ export class FinancesService {
   async getAllTransactions(
     clubId: number,
     dto: GetAllTransactionsDto,
+    /**
+     * When provided, results are scoped to finance records belonging to this
+     * specific section (mirrors the check in PermissionsGuard.validateInstanceScope).
+     * Pass `null` to skip section filtering (admin / club-manager bypass).
+     */
+    userSectionId?: number | null,
   ): Promise<PaginatedResult<any>> {
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
@@ -110,7 +133,18 @@ export class FinancesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const sectionIds = club.club_sections.map((s) => s.club_section_id);
+    // Build section filter.
+    // - Admin bypass (userSectionId === null): show all sections of the club,
+    //   preserving original broad behaviour.
+    // - Regular member (userSectionId is a number): strict filter to their section only.
+    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+
+    if (userSectionId == null) {
+      const sectionIds = club.club_sections.map((s) => s.club_section_id);
+      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+    } else {
+      sectionFilter = { club_section_id: userSectionId };
+    }
 
     // Type filter: finances_categories.type 0=ingreso, 1=egreso
     const typeFilter =
@@ -159,7 +193,7 @@ export class FinancesService {
 
     const where = {
       active: true,
-      club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      ...sectionFilter,
       ...typeFilter,
       ...searchFilter,
       ...dateRangeFilter,
@@ -244,7 +278,17 @@ export class FinancesService {
     };
   }
 
-  async getSummary(clubId: number, year?: number, month?: number) {
+  async getSummary(
+    clubId: number,
+    year?: number,
+    month?: number,
+    /**
+     * When provided, results are scoped to finance records belonging to this
+     * specific section (mirrors the check in PermissionsGuard.validateInstanceScope).
+     * Pass `null` to skip section filtering (admin / club-manager bypass).
+     */
+    userSectionId?: number | null,
+  ) {
     // Obtener las secciones del club
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
@@ -257,11 +301,21 @@ export class FinancesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const sectionIds = club.club_sections.map((s) => s.club_section_id);
+    // Build section filter.
+    // - Admin bypass (userSectionId === null): show all sections — original behaviour.
+    // - Regular member (userSectionId is a number): strict filter to their section only.
+    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+
+    if (userSectionId == null) {
+      const sectionIds = club.club_sections.map((s) => s.club_section_id);
+      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+    } else {
+      sectionFilter = { club_section_id: userSectionId };
+    }
 
     const where = {
       active: true,
-      club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      ...sectionFilter,
       ...(year && { year }),
       ...(month && { month }),
     };

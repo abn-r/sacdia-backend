@@ -12,12 +12,44 @@ export class InventoryService {
   // ========================================
 
   /**
-   * Listar items del inventario de una sección de club específica
+   * Listar items del inventario de un club.
+   *
+   * @param clubId       ID del club (clubs.club_id). Los items se agrupan en
+   *                     secciones cuyo main_club_id apunta a este club.
+   * @param categoryId   Filtro opcional por categoría.
+   * @param userSectionId
+   *   - `null`    → admin / bypass: devuelve items de TODAS las secciones del club.
+   *   - `number`  → miembro: filtra estrictamente a esa sección (RBAC).
    */
-  async findAllByClub(clubSectionId: number, categoryId?: number) {
+  async findAllByClub(
+    clubId: number,
+    categoryId?: number,
+    userSectionId?: number | null,
+  ) {
+    // Construir el filtro de sección según el perfil del usuario.
+    // club_inventory → club_sections (via club_section_id) → clubs (via main_club_id)
+    let sectionFilter: any;
+
+    if (userSectionId == null) {
+      // Admin / bypass: todos los items de las secciones que pertenecen a este club.
+      sectionFilter = {
+        club_sections: {
+          main_club_id: clubId,
+        },
+      };
+    } else {
+      // Miembro con sección asignada: solo items de su sección (y que ésta sea del club correcto).
+      sectionFilter = {
+        club_section_id: userSectionId,
+        club_sections: {
+          main_club_id: clubId,
+        },
+      };
+    }
+
     const whereClause: any = {
       active: true,
-      club_section_id: clubSectionId,
+      ...sectionFilter,
       ...(categoryId && { inventory_category_id: categoryId }),
     };
 
@@ -64,7 +96,8 @@ export class InventoryService {
       meta: {
         total_items: items.length,
         total_value_estimated: null,
-        club_section_id: clubSectionId,
+        club_id: clubId,
+        ...(userSectionId != null && { club_section_id: userSectionId }),
       },
     };
   }

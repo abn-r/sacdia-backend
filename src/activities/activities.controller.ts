@@ -80,10 +80,20 @@ export class ActivitiesController {
     activityTypeId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Request() req?: any,
   ) {
     const pagination = new PaginationDto();
     if (page) pagination.page = page;
     if (limit) pagination.limit = Math.min(limit, 100);
+
+    // PermissionsGuard sets req.authorization after resolving the user profile.
+    // For regular club members, effective.scope.club holds their active section.
+    // For admins / club-managers (canManageClub bypass), scope.club may be null —
+    // in that case we pass null so the service falls back to the broad club filter.
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        | number
+        | undefined) ?? null;
 
     return this.activitiesService.findByClub(
       clubId,
@@ -94,6 +104,7 @@ export class ActivitiesController {
         activityTypeId,
       },
       pagination,
+      userSectionId,
     );
   }
 

@@ -80,6 +80,12 @@ export class ActivitiesService {
     clubId: number,
     filters?: ActivityFiltersDto,
     pagination?: PaginationDto,
+    /**
+     * When provided, results are scoped to activity_instances belonging to
+     * this specific section (mirrors the check in PermissionsGuard.validateInstanceScope).
+     * Pass `null` to skip section filtering (admin / club-manager bypass).
+     */
+    userSectionId?: number | null,
   ): Promise<PaginatedResult<any>> {
     const club = await this.prisma.clubs.findUnique({
       where: { club_id: clubId },
@@ -94,24 +100,45 @@ export class ActivitiesService {
       throw new NotFoundException(`Club with ID ${clubId} not found`);
     }
 
-    const sectionIds = club.club_sections
-      .filter(
-        (section) =>
-          !filters?.clubTypeId || section.club_type_id === filters.clubTypeId,
-      )
-      .map((section) => section.club_section_id);
+    // Build the activity_instances filter.
+    // - Admin bypass (userSectionId === null): show all instances of the club.
+    // - Regular member (userSectionId is a number): show only instances belonging
+    //   to the user's active section (mirrors PermissionsGuard.validateInstanceScope).
+    let instancesFilter: Prisma.activitiesWhereInput['activity_instances'];
 
-    if (sectionIds.length === 0) {
-      return createPaginatedResult([], 0, pagination ?? new PaginationDto());
-    }
+    if (userSectionId == null) {
+      // Admin or club-manager: filter by all sections of the club (optionally
+      // narrowed by clubTypeId filter), preserving original broad behaviour.
+      const sectionIds = club.club_sections
+        .filter(
+          (section) =>
+            !filters?.clubTypeId ||
+            section.club_type_id === filters.clubTypeId,
+        )
+        .map((section) => section.club_section_id);
 
-    const where: Prisma.activitiesWhereInput = {
-      activity_instances: {
+      if (sectionIds.length === 0) {
+        return createPaginatedResult([], 0, pagination ?? new PaginationDto());
+      }
+
+      instancesFilter = {
         some: {
           active: true,
           club_section_id: { in: sectionIds },
         },
-      },
+      };
+    } else {
+      // Regular member: only activities that have an active instance for their section.
+      instancesFilter = {
+        some: {
+          active: true,
+          club_section_id: userSectionId,
+        },
+      };
+    }
+
+    const where: Prisma.activitiesWhereInput = {
+      activity_instances: instancesFilter,
       ...(filters?.active !== undefined && { active: filters.active }),
       ...(filters?.activityTypeId !== undefined && {
         activity_type_id: filters.activityTypeId,

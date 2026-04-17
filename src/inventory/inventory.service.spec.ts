@@ -116,26 +116,28 @@ describe('InventoryService', () => {
   // ============================================================
 
   describe('findAllByClub', () => {
-    it('TC03 - happy path: returns items with category info mapped', async () => {
+    it('TC03 - happy path (admin/null): returns items with category info, meta has club_id', async () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([baseItem]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([
         baseCategory,
       ]);
 
-      const result = await service.findAllByClub(10);
+      const result = await service.findAllByClub(5, undefined, null);
 
       expect(result.data).toHaveLength(1);
       expect(result.data[0].inventory_id).toBe(100);
       expect(result.data[0].category?.name).toBe('Camping');
       expect(result.meta.total_items).toBe(1);
-      expect(result.meta.club_section_id).toBe(10);
+      expect(result.meta.club_id).toBe(5);
+      // admin path: no club_section_id in meta
+      expect((result.meta as any).club_section_id).toBeUndefined();
     });
 
     it('TC04 - filters by categoryId when provided', async () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      await service.findAllByClub(10, 1);
+      await service.findAllByClub(5, 1, null);
 
       expect(mockPrismaService.club_inventory.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -151,7 +153,7 @@ describe('InventoryService', () => {
       ]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      const result = await service.findAllByClub(10);
+      const result = await service.findAllByClub(5, undefined, null);
 
       expect(result.data[0].category).toBeNull();
     });
@@ -160,10 +162,44 @@ describe('InventoryService', () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      const result = await service.findAllByClub(10);
+      const result = await service.findAllByClub(5, undefined, null);
 
       expect(result.data).toHaveLength(0);
       expect(result.meta.total_items).toBe(0);
+    });
+
+    it('TC07-rbac - member path: where clause filters by club_section_id + main_club_id', async () => {
+      mockPrismaService.club_inventory.findMany.mockResolvedValue([baseItem]);
+      mockPrismaService.inventory_categories.findMany.mockResolvedValue([
+        baseCategory,
+      ]);
+
+      const result = await service.findAllByClub(5, undefined, 10);
+
+      expect(mockPrismaService.club_inventory.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            club_section_id: 10,
+            club_sections: { main_club_id: 5 },
+          }),
+        }),
+      );
+      expect(result.meta.club_id).toBe(5);
+      expect((result.meta as any).club_section_id).toBe(10);
+    });
+
+    it('TC08-rbac - admin path (null): where clause filters only by main_club_id, no club_section_id', async () => {
+      mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
+      mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
+
+      await service.findAllByClub(5, undefined, null);
+
+      const calledWith =
+        mockPrismaService.club_inventory.findMany.mock.calls[0][0];
+      expect(calledWith.where).toMatchObject({
+        club_sections: { main_club_id: 5 },
+      });
+      expect(calledWith.where.club_section_id).toBeUndefined();
     });
   });
 

@@ -93,8 +93,14 @@ export class FinancesController {
   async getAllTransactions(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query() dto: GetAllTransactionsDto,
+    @Request() req?: any,
   ) {
-    return this.financesService.getAllTransactions(clubId, dto);
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        | number
+        | undefined) ?? null;
+
+    return this.financesService.getAllTransactions(clubId, dto, userSectionId);
   }
 
   @Get('clubs/:clubId/finances')
@@ -122,15 +128,22 @@ export class FinancesController {
     categoryId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Request() req?: any,
   ) {
     const pagination = new PaginationDto();
     if (page) pagination.page = page;
     if (limit) pagination.limit = Math.min(limit, 100);
 
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        | number
+        | undefined) ?? null;
+
     return this.financesService.findByClub(
       clubId,
       { year, month, clubTypeId, categoryId },
       pagination,
+      userSectionId,
     );
   }
 
@@ -149,8 +162,14 @@ export class FinancesController {
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
     @Query('month', new ParseIntPipe({ optional: true })) month?: number,
+    @Request() req?: any,
   ) {
-    return this.financesService.getSummary(clubId, year, month);
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        | number
+        | undefined) ?? null;
+
+    return this.financesService.getSummary(clubId, year, month, userSectionId);
   }
 
   @Post('clubs/:clubId/finances')

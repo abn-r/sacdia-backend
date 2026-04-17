@@ -80,10 +80,21 @@ export class InventoryController {
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('instanceType') instanceType: 'adv' | 'pathf' | 'mg',
     @Query('category', new ParseIntPipe({ optional: true })) categoryId?: number,
+    @Req() req?: any,
   ) {
+    // PermissionsGuard sets req.authorization after resolving the user profile.
+    // For regular club members, effective.scope.club holds their active section.
+    // For admins / club-managers (canManageClub bypass), scope.club may be null —
+    // in that case we pass null so the service falls back to the broad club filter.
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        | number
+        | undefined) ?? null;
+
     const result = await this.inventoryService.findAllByClub(
       clubId,
       categoryId,
+      userSectionId,
     );
     return {
       status: 'success',

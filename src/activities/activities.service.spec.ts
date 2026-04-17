@@ -69,7 +69,7 @@ describe('ActivitiesService', () => {
   });
 
   describe('findByClub', () => {
-    it('should return paginated activities for a club', async () => {
+    it('should return paginated activities scoped to userSectionId (member path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [
@@ -85,13 +85,54 @@ describe('ActivitiesService', () => {
       mockPrismaService.activities.findMany.mockResolvedValue(mockActivities);
       mockPrismaService.activities.count.mockResolvedValue(1);
 
-      const result = await service.findByClub(1);
+      // Member of section 1 — should only see activities with an instance in section 1.
+      const result = await service.findByClub(1, undefined, undefined, 1);
 
       expect(result.data).toEqual([{ ...mockActivities[0], instances: [] }]);
       expect(result.meta.total).toBe(1);
+      expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            activity_instances: {
+              some: { active: true, club_section_id: 1 },
+            },
+          }),
+        }),
+      );
     });
 
-    it('should return empty page when no sections match the clubTypeId filter', async () => {
+    it('should return all club activities when userSectionId is null (admin bypass)', async () => {
+      const mockClub = {
+        club_id: 1,
+        club_sections: [
+          { club_section_id: 1, club_type_id: 1 },
+          { club_section_id: 2, club_type_id: 2 },
+        ],
+      };
+      const mockActivities = [
+        { activity_id: 1, name: 'Campamento', active: true },
+      ];
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
+      mockPrismaService.activities.findMany.mockResolvedValue(mockActivities);
+      mockPrismaService.activities.count.mockResolvedValue(1);
+
+      // Admin — userSectionId null means broad club-level filter.
+      const result = await service.findByClub(1, undefined, undefined, null);
+
+      expect(result.data).toEqual([{ ...mockActivities[0], instances: [] }]);
+      expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            activity_instances: {
+              some: { active: true, club_section_id: { in: [1, 2] } },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('should return empty page when no sections match the clubTypeId filter (admin path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [{ club_section_id: 1, club_type_id: 1 }],
@@ -99,14 +140,20 @@ describe('ActivitiesService', () => {
 
       mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
 
-      const result = await service.findByClub(1, { clubTypeId: 99 });
+      // Admin with clubTypeId filter that matches nothing.
+      const result = await service.findByClub(
+        1,
+        { clubTypeId: 99 },
+        undefined,
+        null,
+      );
 
       expect(result.data).toEqual([]);
       expect(result.meta.total).toBe(0);
       expect(mockPrismaService.activities.findMany).not.toHaveBeenCalled();
     });
 
-    it('should filter by active flag when provided', async () => {
+    it('should filter by active flag when provided (member path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [{ club_section_id: 1, club_type_id: 1 }],
@@ -117,7 +164,12 @@ describe('ActivitiesService', () => {
       mockPrismaService.activities.findMany.mockResolvedValue(mockActivities);
       mockPrismaService.activities.count.mockResolvedValue(1);
 
-      const result = await service.findByClub(1, { active: true });
+      const result = await service.findByClub(
+        1,
+        { active: true },
+        undefined,
+        1,
+      );
 
       expect(result.data).toHaveLength(1);
       expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
@@ -127,7 +179,7 @@ describe('ActivitiesService', () => {
       );
     });
 
-    it('should filter by activityTypeId when provided', async () => {
+    it('should filter by activityTypeId when provided (member path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [{ club_section_id: 1, club_type_id: 1 }],
@@ -137,7 +189,7 @@ describe('ActivitiesService', () => {
       mockPrismaService.activities.findMany.mockResolvedValue([]);
       mockPrismaService.activities.count.mockResolvedValue(0);
 
-      await service.findByClub(1, { activityTypeId: 2 });
+      await service.findByClub(1, { activityTypeId: 2 }, undefined, 1);
 
       expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
