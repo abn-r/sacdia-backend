@@ -141,7 +141,10 @@ export class MfaController {
   async verifyMfa(@Req() req: Request, @Body() dto: VerifyMfaDto) {
     const userId = (req.user as any).userId as string;
     const email = (req.user as any).email as string;
-    return this.mfaService.verifyMfa(userId, email, dto.code);
+    // Forward the `sid` claim from the aal1 token so the resulting aal2 JWT
+    // preserves the BA session ID — required for is_current in GET /auth/sessions.
+    const sessionId = (req.user as any).sid as string | null | undefined;
+    return this.mfaService.verifyMfa(userId, email, dto.code, sessionId);
   }
 
   // ---------------------------------------------------------------------------

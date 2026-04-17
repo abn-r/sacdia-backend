@@ -101,7 +101,11 @@ export interface IBetterAuthService {
   ): Promise<BaAuthResult>;
 
   // -- JWT (Option C core — IMPLEMENTED) ------------------------------------
-  signJwt(user: Pick<BaUser, 'id' | 'email'>, mfaPending?: boolean): string;
+  signJwt(
+    user: Pick<BaUser, 'id' | 'email'>,
+    mfaPending?: boolean,
+    sessionId?: string,
+  ): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +268,7 @@ export class BetterAuthService implements IBetterAuthService {
     const session = await this.createSession(userId);
 
     const user = mapDbUserToBaUser(dbUser);
-    const accessToken = this.signJwt(user);
+    const accessToken = this.signJwt(user, false, session.id);
 
     this.logger.log(`User created: ${user.id}`);
     return { user, session, accessToken };
@@ -312,7 +316,7 @@ export class BetterAuthService implements IBetterAuthService {
     // 5. Create session + sign JWT
     const session = await this.createSession(dbUser.user_id);
     const user = mapDbUserToBaUser(dbUser);
-    const accessToken = this.signJwt(user, mfaEnabled);
+    const accessToken = this.signJwt(user, mfaEnabled, session.id);
 
     if (mfaEnabled) {
       this.logger.log(
@@ -440,7 +444,7 @@ export class BetterAuthService implements IBetterAuthService {
       modified_at: row.u_modified_at,
     });
 
-    const accessToken = this.signJwt(user);
+    const accessToken = this.signJwt(user, false, session.id);
 
     this.logger.log(`Session refreshed for user: ${user.id}`);
     return { user, session, accessToken };
@@ -827,7 +831,7 @@ export class BetterAuthService implements IBetterAuthService {
 
       const user = mapDbUserToBaUser(dbUser);
       const session = mapDbSessionToBaSession(dbSession);
-      const accessToken = this.signJwt(user);
+      const accessToken = this.signJwt(user, false, session.id);
 
       this.logger.log(
         `OAuth callback handled for provider: ${provider}, user: ${user.id}`,
@@ -850,7 +854,7 @@ export class BetterAuthService implements IBetterAuthService {
   /**
    * Signs a SACDIA HS256 JWT for API consumers.
    *
-   * Payload: { sub: user.id, email: user.email, [mfa_pending] }
+   * Payload: { sub: user.id, email: user.email, [sid], [mfa_pending] }
    * Algorithm: HS256 (via BETTER_AUTH_SECRET in JwtModule config)
    * Expiry: 8h (configured in BetterAuthModule JwtModule.registerAsync)
    *
@@ -860,12 +864,21 @@ export class BetterAuthService implements IBetterAuthService {
    *                      verified yet. Protected endpoints should reject these
    *                      tokens via MfaGuard until the user calls
    *                      POST /auth/mfa/verify successfully.
+   * @param sessionId   - Optional BA session DB row `id` (UUID). When present,
+   *                      enables `is_current` comparison in GET /auth/sessions.
    */
-  signJwt(user: Pick<BaUser, 'id' | 'email'>, mfaPending = false): string {
+  signJwt(
+    user: Pick<BaUser, 'id' | 'email'>,
+    mfaPending = false,
+    sessionId?: string,
+  ): string {
     const payload: Record<string, unknown> = {
       sub: user.id,
       email: user.email,
     };
+    if (sessionId) {
+      payload['sid'] = sessionId;
+    }
     if (mfaPending) {
       payload['mfa_pending'] = true;
     }

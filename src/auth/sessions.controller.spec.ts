@@ -1,101 +1,208 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SessionsController } from './sessions.controller';
-import { SessionManagementService } from '../common/services/session-management.service';
-import { TokenBlacklistService } from '../common/services/token-blacklist.service';
+import { SessionsService } from './sessions.service';
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const USER_ID = 'user-uuid-1';
+const SESSION_A = 'session-uuid-a';
+const SESSION_B = 'session-uuid-b';
+
+function makeUser(overrides: Record<string, unknown> = {}) {
+  return { user_id: USER_ID, sid: SESSION_A, email: 'u@test.com', ...overrides };
+}
+
+function makeReq(userOverrides: Record<string, unknown> = {}) {
+  return { user: makeUser(userOverrides) } as any;
+}
+
+const sessionListResponse = {
+  sessions: [
+    {
+      session_id: SESSION_A,
+      device_type: 'ios',
+      device_name: 'iPhone',
+      ip_address: '1.2.3.4',
+      location: null,
+      user_agent: 'Mozilla/5.0 (iPhone)',
+      created_at: '2026-04-17T10:00:00.000Z',
+      last_active_at: '2026-04-17T12:00:00.000Z',
+      is_current: true,
+      expires_at: '2026-04-24T10:00:00.000Z',
+    },
+  ],
+  current_session_id: SESSION_A,
+};
+
+// ---------------------------------------------------------------------------
+// Mock SessionsService
+// ---------------------------------------------------------------------------
+
+const mockSessionsService = {
+  listSessions: jest.fn(),
+  revokeSession: jest.fn(),
+  revokeAllOtherSessions: jest.fn(),
+};
+
+// ---------------------------------------------------------------------------
+// Test suite
+// ---------------------------------------------------------------------------
 
 describe('SessionsController', () => {
   let controller: SessionsController;
-
-  const mockSessionService = {
-    getSessionStats: jest.fn(),
-    removeSession: jest.fn(),
-    removeAllSessions: jest.fn(),
-  };
-
-  const mockTokenBlacklistService = {
-    blacklistAllUserTokens: jest.fn(),
-  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SessionsController],
       providers: [
-        { provide: SessionManagementService, useValue: mockSessionService },
-        { provide: TokenBlacklistService, useValue: mockTokenBlacklistService },
+        { provide: SessionsService, useValue: mockSessionsService },
       ],
     }).compile();
 
     controller = module.get<SessionsController>(SessionsController);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
+  afterEach(() => jest.clearAllMocks());
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
+  // -------------------------------------------------------------------------
+  // GET /auth/sessions
+  // -------------------------------------------------------------------------
+
   describe('listSessions', () => {
-    it('should return user session stats', async () => {
-      const req = { user: { user_id: 'user-123' } } as any;
-      const expected = {
-        activeSessions: 2,
-        maxSessions: 5,
-        sessions: [
-          { sessionId: 's1', deviceInfo: 'Chrome', ipAddress: '127.0.0.1' },
-          { sessionId: 's2', deviceInfo: 'Safari', ipAddress: '127.0.0.2' },
-        ],
-      };
-      mockSessionService.getSessionStats.mockResolvedValue(expected);
+    it('calls service with user_id and sid from JWT', async () => {
+      mockSessionsService.listSessions.mockResolvedValue(sessionListResponse);
 
-      const result = await controller.listSessions(req);
+      const result = await controller.listSessions(makeReq());
 
-      expect(mockSessionService.getSessionStats).toHaveBeenCalledWith(
-        'user-123',
+      expect(mockSessionsService.listSessions).toHaveBeenCalledWith(
+        USER_ID,
+        SESSION_A,
       );
-      expect(result).toEqual(expected);
+      expect(result).toEqual(sessionListResponse);
+    });
+
+    it('passes null sid when JWT has no sid claim (legacy token)', async () => {
+      mockSessionsService.listSessions.mockResolvedValue({
+        sessions: [],
+        current_session_id: null,
+      });
+
+      await controller.listSessions(makeReq({ sid: undefined }));
+
+      expect(mockSessionsService.listSessions).toHaveBeenCalledWith(
+        USER_ID,
+        null,
+      );
     });
   });
 
-  describe('closeSession', () => {
-    it('should close a specific session for current user', async () => {
-      const req = { user: { user_id: 'user-123' } } as any;
-      mockSessionService.removeSession.mockResolvedValue(undefined);
+  // -------------------------------------------------------------------------
+  // DELETE /auth/sessions/:sessionId
+  // -------------------------------------------------------------------------
 
-      const result = await controller.closeSession(req, 'session-abc');
+  describe('revokeSession', () => {
+    it('calls service with user_id, sid, and sessionId', async () => {
+      mockSessionsService.revokeSession.mockResolvedValue(undefined);
 
-      expect(mockSessionService.removeSession).toHaveBeenCalledWith(
-        'user-123',
-        'session-abc',
+      await controller.revokeSession(makeReq(), SESSION_B);
+
+      expect(mockSessionsService.revokeSession).toHaveBeenCalledWith(
+        USER_ID,
+        SESSION_A,
+        SESSION_B,
       );
-      expect(result).toEqual({
-        success: true,
-        message: 'Session closed',
-      });
+    });
+
+    it('propagates BadRequestException from service (self-revocation)', async () => {
+      mockSessionsService.revokeSession.mockRejectedValue(
+        new BadRequestException('use logout instead'),
+      );
+
+      await expect(
+        controller.revokeSession(makeReq(), SESSION_A),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('propagates ForbiddenException from service (wrong user)', async () => {
+      mockSessionsService.revokeSession.mockRejectedValue(
+        new ForbiddenException('not your session'),
+      );
+
+      await expect(
+        controller.revokeSession(makeReq(), SESSION_B),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('propagates NotFoundException from service', async () => {
+      mockSessionsService.revokeSession.mockRejectedValue(
+        new NotFoundException('session not found'),
+      );
+
+      await expect(
+        controller.revokeSession(makeReq(), 'nonexistent-id'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns void (204) on success', async () => {
+      mockSessionsService.revokeSession.mockResolvedValue(undefined);
+
+      const result = await controller.revokeSession(makeReq(), SESSION_B);
+
+      expect(result).toBeUndefined();
     });
   });
 
-  describe('closeAllSessions', () => {
-    it('should blacklist and close all sessions for current user', async () => {
-      const req = { user: { user_id: 'user-123' } } as any;
-      mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
-        undefined,
-      );
-      mockSessionService.removeAllSessions.mockResolvedValue(3);
+  // -------------------------------------------------------------------------
+  // DELETE /auth/sessions
+  // -------------------------------------------------------------------------
 
-      const result = await controller.closeAllSessions(req);
-
-      expect(
-        mockTokenBlacklistService.blacklistAllUserTokens,
-      ).toHaveBeenCalledWith('user-123');
-      expect(mockSessionService.removeAllSessions).toHaveBeenCalledWith(
-        'user-123',
-      );
-      expect(result).toEqual({
-        success: true,
-        message: '3 sessions closed. Please login again.',
+  describe('revokeAllSessions', () => {
+    it('calls service with user_id and sid', async () => {
+      mockSessionsService.revokeAllOtherSessions.mockResolvedValue({
+        revoked_count: 4,
       });
+
+      const result = await controller.revokeAllSessions(makeReq());
+
+      expect(mockSessionsService.revokeAllOtherSessions).toHaveBeenCalledWith(
+        USER_ID,
+        SESSION_A,
+      );
+      expect(result).toEqual({ revoked_count: 4 });
+    });
+
+    it('passes null sid for legacy JWT', async () => {
+      mockSessionsService.revokeAllOtherSessions.mockResolvedValue({
+        revoked_count: 2,
+      });
+
+      await controller.revokeAllSessions(makeReq({ sid: null }));
+
+      expect(mockSessionsService.revokeAllOtherSessions).toHaveBeenCalledWith(
+        USER_ID,
+        null,
+      );
+    });
+
+    it('returns zero count when nothing to revoke', async () => {
+      mockSessionsService.revokeAllOtherSessions.mockResolvedValue({
+        revoked_count: 0,
+      });
+
+      const result = await controller.revokeAllSessions(makeReq());
+
+      expect(result.revoked_count).toBe(0);
     });
   });
 });
