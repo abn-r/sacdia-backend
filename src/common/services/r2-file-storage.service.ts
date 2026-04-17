@@ -272,7 +272,7 @@ export class R2FileStorageService implements FileStorageService {
           bucket: this.getRequiredEnv('R2_BUCKET_USER_PROFILES'),
           publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_USER_PROFILES'),
           keyPrefix: this.getOptionalEnv('R2_KEY_PREFIX_USER_PROFILES'),
-          isPublic: false,
+          isPublic: true,
         };
       case StorageBucketAlias.HONORS_IMAGES:
         return {
