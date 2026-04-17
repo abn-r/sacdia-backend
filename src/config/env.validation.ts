@@ -75,6 +75,11 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_INSURANCE_EVIDENCE: Joi.string().uri().optional(),
   R2_KEY_PREFIX_INSURANCE_EVIDENCE: Joi.string().allow('').optional(),
 
+  // Cloudflare R2 — GDPR data exports bucket (private, presigned URLs only)
+  R2_BUCKET_DATA_EXPORTS: Joi.string().optional(),
+  R2_PUBLIC_URL_DATA_EXPORTS: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_DATA_EXPORTS: Joi.string().allow('').optional(),
+
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().allow('').optional(),

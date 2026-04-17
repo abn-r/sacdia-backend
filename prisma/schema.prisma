@@ -1087,6 +1087,7 @@ model users {
   resources                                   resources[]
   user_achievements                           user_achievements[]
   achievement_event_log                       achievement_event_log[]
+  data_export_requests                        data_export_requests[]
 }
 
 model notification_preferences {
@@ -1178,6 +1179,34 @@ model account_deletion_log {
   @@index([user_id], map: "idx_account_deletion_log_user_id")
   @@index([created_at], map: "idx_account_deletion_log_created_at")
   @@map("account_deletion_log")
+}
+
+/**
+ * GDPR "Download My Data" — tracks export request lifecycle.
+ * status flow: pending → processing → ready | failed
+ * ready rows expire after 48h (expires_at). Cleanup cron marks them 'expired'
+ * and deletes the R2 object. Expired rows are soft-deleted after 6 months.
+ */
+model data_export_requests {
+  export_id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id            String    @db.Uuid
+  status             String    @default("pending") @db.VarChar(16)
+  format             String    @default("json") @db.VarChar(16)
+  r2_key             String?   @db.VarChar(512)
+  file_size_bytes    BigInt?
+  sha256_checksum    String?   @db.VarChar(64)
+  failure_reason     String?
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  started_at         DateTime? @db.Timestamptz(6)
+  completed_at       DateTime? @db.Timestamptz(6)
+  expires_at         DateTime? @db.Timestamptz(6)
+  downloaded_count   Int       @default(0)
+  last_downloaded_at DateTime? @db.Timestamptz(6)
+
+  user users @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id, created_at(sort: Desc)], map: "idx_data_export_requests_user_created")
+  @@map("data_export_requests")
 }
 
 model users_pr {
