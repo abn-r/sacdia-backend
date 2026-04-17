@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -123,6 +124,9 @@ export class RankingsController {
 
   @Post('recalculate')
   @RequirePermissions('rankings:recalculate')
+  // Rate limit: 1 call per 5 minutes — this endpoint runs a full system-wide
+  // DB transaction; even a single extra concurrent run can DoS the DB.
+  @Throttle({ default: { ttl: 300_000, limit: 1 } })
   @ApiOperation({
     summary: 'Manually trigger a rankings recalculation',
     description:
@@ -148,6 +152,14 @@ export class RankingsController {
     },
   })
   @ApiResponse({ status: 404, description: 'Year not found or no active year' })
+  @ApiResponse({
+    status: 409,
+    description: 'Recalculation already in progress for this year (lock held)',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit exceeded — 1 call per 5 minutes per user',
+  })
   async recalculate(@Query('year_id') yearIdRaw?: string) {
     const yearId =
       yearIdRaw !== undefined ? parseInt(yearIdRaw, 10) : undefined;

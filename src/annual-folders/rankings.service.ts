@@ -1,6 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { DistributedLockService } from '../common/services/distributed-lock.service';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -48,7 +54,10 @@ export interface RecalculateResult {
 export class RankingsService {
   private readonly logger = new Logger(RankingsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly lockService: DistributedLockService,
+  ) {}
 
   // ========================================
   // CRON JOB — Nightly at 2:00 AM
@@ -83,6 +92,34 @@ export class RankingsService {
     // 1. Resolve the ecclesiastical year (outside the transaction — read-only)
     const year = await this.resolveYear(yearId);
 
+    // Acquire a per-year distributed lock so concurrent HTTP calls (or a
+    // manual trigger that overlaps the nightly cron) cannot run the same
+    // full-table transaction twice simultaneously.
+    // TTL = 10 minutes — generous upper bound for worst-case runtime across
+    // all folders in a single ecclesiastical year.
+    const lockKey = `rankings:recalculate:${year.year_id}`;
+    const acquired = await this.lockService.tryAcquire(lockKey, 10 * 60 * 1000);
+
+    if (!acquired) {
+      throw new ConflictException(
+        'Ranking recalculation already in progress for this year',
+      );
+    }
+
+    try {
+      return await this._runRecalculation(year);
+    } finally {
+      await this.lockService.release(lockKey);
+    }
+  }
+
+  /**
+   * Internal implementation — runs after the lock has been acquired.
+   * Separated so the lock acquire/release wrapper stays clean.
+   */
+  private async _runRecalculation(
+    year: { year_id: number },
+  ): Promise<RecalculateResult> {
     // 2. Fetch all evaluated/closed folders for that year, with club type
     const folders = await this.prisma.annual_folders.findMany({
       where: {
