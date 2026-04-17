@@ -39,6 +39,7 @@ import {
   UpdatePaymentDto,
   RejectEnrollmentDto,
   CamporeeStatusQueryDto,
+  UnionMembersPaginationDto,
 } from './dto';
 
 @ApiTags('camporees')
@@ -306,7 +307,8 @@ export class CamporeesController {
   @ApiOperation({
     summary: 'Listar miembros del camporee de unión',
     description:
-      'Obtiene la lista de miembros registrados en el camporee de unión',
+      'Obtiene la lista paginada de miembros registrados en el camporee de unión. ' +
+      'Página 1-indexed, límite 1-200 (default 100).',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiQuery({
@@ -320,13 +322,20 @@ export class CamporeesController {
       'cancelled',
     ],
   })
-  @ApiResponse({ status: 200, description: 'Lista de miembros' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página, máximo 200 (default: 100)' })
+  @ApiResponse({ status: 200, description: 'Lista paginada de miembros' })
   @ApiResponse({ status: 404, description: 'Camporee de unión no encontrado' })
   async getUnionMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: CamporeeStatusQueryDto,
+    @Query() pagination: UnionMembersPaginationDto,
   ) {
-    return this.camporeesService.getUnionMembers(camporeeId, query.status);
+    return this.camporeesService.getUnionMembers(
+      camporeeId,
+      query.status,
+      pagination,
+    );
   }
 
   @Delete('union/:camporeeId/members/:userId')
@@ -753,7 +762,9 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Listar miembros del camporee',
-    description: 'Obtiene la lista de miembros registrados en el camporee',
+    description:
+      'Obtiene la lista paginada de miembros registrados en el camporee. ' +
+      'Página 1-indexed, límite 1-100 (default 50).',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiQuery({
@@ -761,13 +772,16 @@ export class CamporeesController {
     required: false,
     enum: ['registered', 'pending_approval', 'approved', 'rejected'],
   })
-  @ApiResponse({ status: 200, description: 'Lista de miembros' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página, máximo 100 (default: 50)' })
+  @ApiResponse({ status: 200, description: 'Lista paginada de miembros' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: CamporeeStatusQueryDto,
+    @Query() pagination: PaginationDto,
   ) {
-    return this.camporeesService.getMembers(camporeeId, query.status);
+    return this.camporeesService.getMembers(camporeeId, query.status, pagination);
   }
 
   @Delete(':camporeeId/members/:userId')

@@ -13,6 +13,7 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import { UnionMembersPaginationDto } from './dto/union-members-pagination.dto';
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { CreateUnionCamporeeDto } from './dto/create-union-camporee.dto';
@@ -32,6 +33,14 @@ import type {
   GlobalAuthorizationGrant,
 } from '../common/services/authorization-context.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import pLimit from 'p-limit';
+
+// Module-level concurrency cap for applySignedPrivateUrls fan-out.
+// Phase 1 (USER_PROFILES public bucket) makes the call synchronous, so
+// this limiter is a no-op in practice. Kept as defense-in-depth for
+// future regressions where any other private bucket might re-enter the
+// same code path.
+const PROFILE_URL_LIMITER = pLimit(20);
 
 @Injectable()
 export class CamporeesService {
@@ -783,52 +792,72 @@ export class CamporeesService {
   }
 
   /**
-   * Get all members registered for a camporee
+   * Get all members registered for a camporee (paginated)
    * @param camporeeId - The local_camporee_id
    * @param status - Optional status filter. Defaults to excluding pending_approval
+   * @param pagination - Pagination parameters (page, limit). Default: page=1, limit=50
    */
-  async getMembers(camporeeId: number, status?: string) {
+  async getMembers(
+    camporeeId: number,
+    status?: string,
+    pagination?: PaginationDto,
+  ): Promise<PaginatedResult<any>> {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
-    // Safety cap: a single local camporee is not expected to have more than
-    // 1 000 registered members. Paginate at the controller level if needed.
-    const members = await this.prisma.camporee_members.findMany({
-      where: {
-        camporee_id: camporeeId,
-        active: true,
-        ...(status ? { status } : { status: { not: 'pending_approval' } }),
-      },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            email: true,
-            user_image: true,
-            birthday: true,
-          },
-        },
-        insurance: {
-          select: {
-            insurance_id: true,
-            insurance_type: true,
-            policy_number: true,
-            provider: true,
-            start_date: true,
-            end_date: true,
-          },
-        },
-      },
-      orderBy: { created_at: 'asc' },
-      take: 1000,
-    });
+    const page = pagination?.page ?? 1;
+    const limit = pagination?.limit ?? 50;
+    const skip = (page - 1) * limit;
 
-    return Promise.all(
-      members.map((member) => this.applySignedPrivateUrls(member)),
+    const where = {
+      camporee_id: camporeeId,
+      active: true,
+      ...(status ? { status } : { status: { not: 'pending_approval' } }),
+    };
+
+    const include = {
+      users: {
+        select: {
+          user_id: true,
+          name: true,
+          paternal_last_name: true,
+          maternal_last_name: true,
+          email: true,
+          user_image: true,
+          birthday: true,
+        },
+      },
+      insurance: {
+        select: {
+          insurance_id: true,
+          insurance_type: true,
+          policy_number: true,
+          provider: true,
+          start_date: true,
+          end_date: true,
+        },
+      },
+    };
+
+    const [members, total] = await this.prisma.$transaction([
+      this.prisma.camporee_members.findMany({
+        where,
+        include,
+        orderBy: { created_at: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.camporee_members.count({ where }),
+    ]);
+
+    const data = await Promise.all(
+      members.map((member) =>
+        PROFILE_URL_LIMITER(() => this.applySignedPrivateUrls(member)),
+      ),
     );
+
+    const paginationDto = Object.assign(new PaginationDto(), { page, limit });
+    return createPaginatedResult(data, total, paginationDto);
   }
 
   /**
@@ -1731,52 +1760,75 @@ export class CamporeesService {
   }
 
   /**
-   * Get all members registered for a union camporee
+   * Get all members registered for a union camporee (paginated)
    * @param unionCamporeeId - The union_camporee_id
    * @param status - Optional status filter. Defaults to excluding pending_approval
+   * @param pagination - Pagination parameters (page, limit). Default: page=1, limit=100. Max limit: 200
    */
-  async getUnionMembers(unionCamporeeId: number, status?: string) {
+  async getUnionMembers(
+    unionCamporeeId: number,
+    status?: string,
+    pagination?: UnionMembersPaginationDto,
+  ): Promise<PaginatedResult<any>> {
     // Validate union camporee exists
     await this.findOneUnion(unionCamporeeId);
 
-    // Safety cap: a union camporee aggregates multiple local fields.
-    // 5 000 covers a large union event with members from many clubs.
-    const members = await this.prisma.camporee_members.findMany({
-      where: {
-        union_camporee_id: unionCamporeeId,
-        active: true,
-        ...(status ? { status } : { status: { not: 'pending_approval' } }),
-      },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            email: true,
-            user_image: true,
-            birthday: true,
-          },
-        },
-        insurance: {
-          select: {
-            insurance_id: true,
-            insurance_type: true,
-            policy_number: true,
-            provider: true,
-            start_date: true,
-            end_date: true,
-          },
-        },
-      },
-      orderBy: { created_at: 'asc' },
-      take: 5000,
-    });
+    const page = pagination?.page ?? 1;
+    const limit = pagination?.limit ?? 100;
+    const skip = (page - 1) * limit;
 
-    return Promise.all(
-      members.map((member) => this.applySignedPrivateUrls(member)),
+    const where = {
+      union_camporee_id: unionCamporeeId,
+      active: true,
+      ...(status ? { status } : { status: { not: 'pending_approval' } }),
+    };
+
+    const include = {
+      users: {
+        select: {
+          user_id: true,
+          name: true,
+          paternal_last_name: true,
+          maternal_last_name: true,
+          email: true,
+          user_image: true,
+          birthday: true,
+        },
+      },
+      insurance: {
+        select: {
+          insurance_id: true,
+          insurance_type: true,
+          policy_number: true,
+          provider: true,
+          start_date: true,
+          end_date: true,
+        },
+      },
+    };
+
+    const [members, total] = await this.prisma.$transaction([
+      this.prisma.camporee_members.findMany({
+        where,
+        include,
+        orderBy: { created_at: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.camporee_members.count({ where }),
+    ]);
+
+    const data = await Promise.all(
+      members.map((member) =>
+        PROFILE_URL_LIMITER(() => this.applySignedPrivateUrls(member)),
+      ),
     );
+
+    const paginationDto = Object.assign(new UnionMembersPaginationDto(), {
+      page,
+      limit,
+    });
+    return createPaginatedResult(data, total, paginationDto);
   }
 
   /**
@@ -1964,25 +2016,14 @@ export class CamporeesService {
   }
 
   /**
-   * Legacy method - redirects to getMembers with pagination
+   * Legacy method - delegates to getMembers with pagination
    * @deprecated Use getMembers instead
    */
   async getParticipants(
     camporeeId: number,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
-    const members = await this.getMembers(camporeeId);
-
-    // Apply pagination manually
-    const skip = pagination?.skip ?? 0;
-    const take = pagination?.take ?? 20;
-    const paginatedMembers = members.slice(skip, skip + take);
-
-    return createPaginatedResult(
-      paginatedMembers,
-      members.length,
-      pagination ?? new PaginationDto(),
-    );
+    return this.getMembers(camporeeId, undefined, pagination);
   }
 
   private async applySignedPrivateUrls<T extends Record<string, any>>(

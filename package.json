@@ -59,6 +59,7 @@
     "multer": "^2.1.1",
     "nestjs-pino": "^4.6.0",
     "otplib": "^13.4.0",
+    "p-limit": "^5.0.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pdfkit": "^0.18.0",
@@ -123,7 +124,8 @@
     "transformIgnorePatterns": [],
     "moduleNameMapper": {
       "^better-auth$": "<rootDir>/../test/mocks/better-auth.mock.ts",
-      "^better-auth/(.*)$": "<rootDir>/../test/mocks/better-auth.mock.ts"
+      "^better-auth/(.*)$": "<rootDir>/../test/mocks/better-auth.mock.ts",
+      "^#async_hooks$": "<rootDir>/../test/mocks/async-hooks.mock.ts"
     }
   }
 }
