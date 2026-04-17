@@ -2,8 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CamporeesService } from './camporees.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AchievementsService } from '../achievements/achievements.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
@@ -22,6 +24,7 @@ describe('CamporeesService', () => {
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     },
     member_insurances: {
       findUnique: jest.fn(),
@@ -48,7 +51,22 @@ describe('CamporeesService', () => {
     sendToGlobalRole: jest.fn(),
   };
 
+  const mockAchievementsService = {
+    emitEvent: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
+    // Restore default $transaction implementation before each test.
+    // Tests that need the callback form override it via mockImplementation within the test.
+    // clearAllMocks() does NOT reset implementations, so we must re-apply here.
+    mockPrismaService.$transaction.mockImplementation((arg: unknown) => {
+      if (Array.isArray(arg)) {
+        return Promise.all(arg);
+      }
+      // callback form — should be overridden per-test for registerMember/enrollClub etc.
+      return Promise.resolve(arg);
+    });
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CamporeesService,
@@ -63,6 +81,10 @@ describe('CamporeesService', () => {
         {
           provide: NotificationsService,
           useValue: mockNotificationsService,
+        },
+        {
+          provide: AchievementsService,
+          useValue: mockAchievementsService,
         },
       ],
     }).compile();
@@ -545,7 +567,7 @@ describe('CamporeesService', () => {
   });
 
   describe('getMembers', () => {
-    it('should return all active members of a camporee', async () => {
+    it('should return paginated active members of a camporee', async () => {
       const mockCamporee = {
         local_camporee_id: 1,
         name: 'Test Camporee',
@@ -565,6 +587,7 @@ describe('CamporeesService', () => {
             user_id: 'user-uuid-1',
             name: 'User 1',
             email: 'user1@test.com',
+            user_image: null,
           },
           insurance: null,
         },
@@ -577,6 +600,7 @@ describe('CamporeesService', () => {
             user_id: 'user-uuid-2',
             name: 'User 2',
             email: 'user2@test.com',
+            user_image: null,
           },
           insurance: {
             insurance_id: 1,
@@ -588,27 +612,25 @@ describe('CamporeesService', () => {
       mockPrismaService.local_camporees.findUnique.mockResolvedValue(
         mockCamporee,
       );
-      mockPrismaService.camporee_members.findMany.mockResolvedValue(
-        mockMembers,
-      );
+      // getMembers uses $transaction([findMany, count]) — mock findMany and count individually
+      // $transaction in array form resolves Promise.all, so mock the individual calls
+      mockPrismaService.camporee_members.findMany.mockResolvedValue(mockMembers);
+      mockPrismaService.camporee_members.count.mockResolvedValue(2);
 
       const result = await service.getMembers(1);
 
-      expect(result).toEqual(mockMembers);
-      expect(mockPrismaService.camporee_members.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            camporee_id: 1,
-            active: true,
-            status: { not: 'pending_approval' },
-          }),
-        }),
-      );
+      expect(result.data).toHaveLength(2);
+      expect(result.meta.total).toBe(2);
+      expect(result.meta.page).toBe(1);
+      expect(result.meta.limit).toBe(50);
+      expect(result.meta.totalPages).toBe(1);
+      expect(result.meta.hasNextPage).toBe(false);
+      expect(result.meta.hasPreviousPage).toBe(false);
     });
   });
 
   describe('getParticipants (legacy)', () => {
-    it('should return paginated members', async () => {
+    it('should delegate to getMembers and return paginated result', async () => {
       const mockCamporee = {
         local_camporee_id: 1,
         name: 'Test Camporee',
@@ -627,6 +649,7 @@ describe('CamporeesService', () => {
           users: {
             user_id: 'user-uuid-1',
             name: 'User 1',
+            user_image: null,
           },
           insurance: null,
         },
@@ -635,14 +658,121 @@ describe('CamporeesService', () => {
       mockPrismaService.local_camporees.findUnique.mockResolvedValue(
         mockCamporee,
       );
-      mockPrismaService.camporee_members.findMany.mockResolvedValue(
-        mockMembers,
-      );
+      // getParticipants delegates to getMembers which uses $transaction([findMany, count])
+      // $transaction mock resolves Promise.all — mock the individual calls
+      mockPrismaService.camporee_members.findMany.mockResolvedValue(mockMembers);
+      mockPrismaService.camporee_members.count.mockResolvedValue(1);
 
       const result = await service.getParticipants(1);
 
-      expect(result.data).toEqual(mockMembers);
+      expect(result.data).toHaveLength(1);
       expect(result.meta.total).toBe(1);
+      expect(result.meta.page).toBe(1);
+      expect(result.meta.limit).toBe(50);
+      expect(result.meta.totalPages).toBe(1);
+      expect(result.meta.hasNextPage).toBe(false);
+      expect(result.meta.hasPreviousPage).toBe(false);
+    });
+  });
+
+  describe('getMembers pagination', () => {
+    const mockCamporee = {
+      local_camporee_id: 1,
+      name: 'Test Camporee',
+      active: true,
+      local_fields: {},
+      ecclesiastical_year_relation: {},
+      attending_members_camporees: [],
+    };
+
+    beforeEach(() => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue(
+        mockCamporee,
+      );
+    });
+
+    it('Test A — empty page beyond available data', async () => {
+      // count=30 but page 3 with limit 50 → skip=100, no results
+      mockPrismaService.camporee_members.findMany.mockResolvedValue([]);
+      mockPrismaService.camporee_members.count.mockResolvedValue(30);
+
+      const pagination = Object.assign(new PaginationDto(), {
+        page: 3,
+        limit: 50,
+      });
+      const result = await service.getMembers(1, undefined, pagination);
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(30);
+      expect(result.meta.page).toBe(3);
+      expect(result.meta.limit).toBe(50);
+      expect(result.meta.totalPages).toBe(1);
+      expect(result.meta.hasNextPage).toBe(false);
+      expect(result.meta.hasPreviousPage).toBe(true);
+    });
+
+    it('Test B — first page with results and multiple pages', async () => {
+      const mockMembers = Array.from({ length: 5 }, (_, i) => ({
+        camporee_member_id: i + 1,
+        camporee_id: 1,
+        user_id: `user-uuid-${i + 1}`,
+        active: true,
+        users: { user_id: `user-uuid-${i + 1}`, name: `User ${i + 1}`, user_image: null },
+        insurance: null,
+      }));
+      // count=120, limit=50 → totalPages=ceil(120/50)=3
+      mockPrismaService.camporee_members.findMany.mockResolvedValue(mockMembers);
+      mockPrismaService.camporee_members.count.mockResolvedValue(120);
+
+      const pagination = Object.assign(new PaginationDto(), {
+        page: 1,
+        limit: 50,
+      });
+      const result = await service.getMembers(1, undefined, pagination);
+
+      expect(result.data).toHaveLength(5);
+      expect(result.meta.total).toBe(120);
+      expect(result.meta.totalPages).toBe(3);
+      expect(result.meta.hasNextPage).toBe(true);
+      expect(result.meta.hasPreviousPage).toBe(false);
+    });
+
+    it('Test D — getParticipants delegates to getMembers without in-memory slicing', async () => {
+      mockPrismaService.camporee_members.findMany.mockResolvedValue([]);
+      mockPrismaService.camporee_members.count.mockResolvedValue(0);
+
+      const getMembers = jest.spyOn(service, 'getMembers');
+
+      const pagination = Object.assign(new PaginationDto(), {
+        page: 2,
+        limit: 10,
+      });
+      await service.getParticipants(1, pagination);
+
+      expect(getMembers).toHaveBeenCalledWith(1, undefined, pagination);
+    });
+
+    it('Test E (smoke) — getMembers returns paginated result for 25 mocked members', async () => {
+      const mockMembers = Array.from({ length: 25 }, (_, i) => ({
+        camporee_member_id: i + 1,
+        camporee_id: 1,
+        user_id: `user-uuid-${i + 1}`,
+        active: true,
+        users: {
+          user_id: `user-uuid-${i + 1}`,
+          name: `User ${i + 1}`,
+          user_image: null,
+        },
+        insurance: null,
+      }));
+      mockPrismaService.camporee_members.findMany.mockResolvedValue(mockMembers);
+      mockPrismaService.camporee_members.count.mockResolvedValue(25);
+
+      const result = await service.getMembers(1);
+
+      expect(result.data).toHaveLength(25);
+      expect(result.meta.total).toBe(25);
+      expect(result.meta.totalPages).toBe(1);
     });
   });
 
