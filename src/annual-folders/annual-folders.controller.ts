@@ -319,8 +319,9 @@ export class AnnualFoldersController {
   async updateEvidence(
     @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
     @Body() dto: UpdateEvidenceDto,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.service.updateEvidence(evidenceId, dto);
+    const data = await this.service.updateEvidence(evidenceId, dto, user.sub);
     return { status: 'success', data };
   }
 
@@ -331,8 +332,11 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 200, description: 'Evidence deleted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Evidence not found' })
-  async deleteEvidence(@Param('evidenceId', ParseUUIDPipe) evidenceId: string) {
-    const data = await this.service.deleteEvidence(evidenceId);
+  async deleteEvidence(
+    @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.deleteEvidence(evidenceId, user.sub);
     return { status: 'success', ...data };
   }
 
@@ -406,8 +410,11 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 200, description: 'Folder submitted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async submitFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
-    const data = await this.service.submitFolder(folderId);
+  async submitFolder(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.submitFolder(folderId, user.sub);
     return { status: 'success', data };
   }
 
@@ -425,8 +432,11 @@ export class AnnualFoldersController {
     description: "Folder is not in 'submitted' or 'evaluated' status",
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async closeFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
-    const data = await this.service.closeFolder(folderId);
+  async closeFolder(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.closeFolder(folderId, user.sub);
     return { status: 'success', data };
   }
 }

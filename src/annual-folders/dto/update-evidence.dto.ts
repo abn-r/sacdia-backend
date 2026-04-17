@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsUrl } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateEvidenceDto {
@@ -7,7 +7,7 @@ export class UpdateEvidenceDto {
     example: 'https://storage.example.com/evidence/file.pdf',
   })
   @IsOptional()
-  @IsString()
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
   file_url?: string;
 
   @ApiPropertyOptional({
