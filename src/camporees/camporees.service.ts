@@ -14,6 +14,7 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { UnionMembersPaginationDto } from './dto/union-members-pagination.dto';
+import { CamporeeMembersPaginationDto } from './dto/camporee-members-pagination.dto';
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { CreateUnionCamporeeDto } from './dto/create-union-camporee.dto';
@@ -40,7 +41,7 @@ import pLimit from 'p-limit';
 // this limiter is a no-op in practice. Kept as defense-in-depth for
 // future regressions where any other private bucket might re-enter the
 // same code path.
-const PROFILE_URL_LIMITER = pLimit(20);
+export const PROFILE_URL_LIMITER = pLimit(20);
 
 @Injectable()
 export class CamporeesService {
@@ -800,7 +801,7 @@ export class CamporeesService {
   async getMembers(
     camporeeId: number,
     status?: string,
-    pagination?: PaginationDto,
+    pagination?: CamporeeMembersPaginationDto,
   ): Promise<PaginatedResult<any>> {
     // Validate camporee exists
     await this.findOne(camporeeId);
@@ -856,7 +857,7 @@ export class CamporeesService {
       ),
     );
 
-    const paginationDto = Object.assign(new PaginationDto(), { page, limit });
+    const paginationDto = Object.assign(new CamporeeMembersPaginationDto(), { page, limit });
     return createPaginatedResult(data, total, paginationDto);
   }
 
@@ -2021,7 +2022,7 @@ export class CamporeesService {
    */
   async getParticipants(
     camporeeId: number,
-    pagination?: PaginationDto,
+    pagination?: CamporeeMembersPaginationDto,
   ): Promise<PaginatedResult<any>> {
     return this.getMembers(camporeeId, undefined, pagination);
   }

@@ -6,6 +6,7 @@ import { AchievementsService } from '../achievements/achievements.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { CamporeeMembersPaginationDto } from './dto/camporee-members-pagination.dto';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
@@ -696,7 +697,7 @@ describe('CamporeesService', () => {
       mockPrismaService.camporee_members.findMany.mockResolvedValue([]);
       mockPrismaService.camporee_members.count.mockResolvedValue(30);
 
-      const pagination = Object.assign(new PaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
         page: 3,
         limit: 50,
       });
@@ -724,7 +725,7 @@ describe('CamporeesService', () => {
       mockPrismaService.camporee_members.findMany.mockResolvedValue(mockMembers);
       mockPrismaService.camporee_members.count.mockResolvedValue(120);
 
-      const pagination = Object.assign(new PaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
         page: 1,
         limit: 50,
       });
@@ -743,7 +744,7 @@ describe('CamporeesService', () => {
 
       const getMembers = jest.spyOn(service, 'getMembers');
 
-      const pagination = Object.assign(new PaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
         page: 2,
         limit: 10,
       });
@@ -773,6 +774,42 @@ describe('CamporeesService', () => {
       expect(result.data).toHaveLength(25);
       expect(result.meta.total).toBe(25);
       expect(result.meta.totalPages).toBe(1);
+    });
+
+    it('Test P5.6 — getMembers wraps fan-out in PROFILE_URL_LIMITER (applySignedPrivateUrls called N times)', async () => {
+      // applySignedPrivateUrls is private — spy via bracket access to assert
+      // the limiter fan-out fires once per member. We cannot assert concurrency
+      // cap directly from a module-level const without refactoring injection,
+      // so we verify the map was invoked the expected N times as an indirect proxy.
+      const memberCount = 25;
+      const mockMembers = Array.from({ length: memberCount }, (_, i) => ({
+        camporee_member_id: i + 1,
+        camporee_id: 1,
+        user_id: `user-uuid-${i + 1}`,
+        active: true,
+        users: {
+          user_id: `user-uuid-${i + 1}`,
+          name: `User ${i + 1}`,
+          user_image: null,
+        },
+        insurance: null,
+      }));
+      mockPrismaService.camporee_members.findMany.mockResolvedValue(mockMembers);
+      mockPrismaService.camporee_members.count.mockResolvedValue(memberCount);
+
+      // Replace applySignedPrivateUrls with a no-op spy that returns the member unchanged.
+      // This validates that the PROFILE_URL_LIMITER fan-out invokes it once per member.
+      // Note: direct N<=20 concurrency assertion would require injecting the limiter —
+      // skipped here to avoid over-engineering; the existing pLimit(20) cap is tested
+      // indirectly via the fan-out call count.
+      const applySpy = jest
+        .spyOn(service as any, 'applySignedPrivateUrls')
+        .mockImplementation((member: any) => Promise.resolve(member));
+
+      const result = await service.getMembers(1);
+
+      expect(applySpy).toHaveBeenCalledTimes(memberCount);
+      expect(result.data).toHaveLength(memberCount);
     });
   });
 

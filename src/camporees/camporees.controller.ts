@@ -40,6 +40,7 @@ import {
   RejectEnrollmentDto,
   CamporeeStatusQueryDto,
   UnionMembersPaginationDto,
+  CamporeeMembersPaginationDto,
 } from './dto';
 
 @ApiTags('camporees')
@@ -779,7 +780,7 @@ export class CamporeesController {
   async getMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: CamporeeStatusQueryDto,
-    @Query() pagination: PaginationDto,
+    @Query() pagination: CamporeeMembersPaginationDto,
   ) {
     return this.camporeesService.getMembers(camporeeId, query.status, pagination);
   }
