@@ -1,3 +1,9 @@
+// Must be the first import: populates process.env from .env BEFORE any
+// @Module decorator body or top-level module code runs. Without this, all
+// isRedisConfigured() / buildBullRootConfig() checks execute at file-load
+// time with an empty process.env, causing BullMQ queue registration to be
+// skipped even when REDIS_URL is present in .env.
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';

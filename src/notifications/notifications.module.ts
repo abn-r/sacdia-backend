@@ -3,6 +3,7 @@ import {
   NotificationsController,
   FcmTokensController,
 } from './notifications.controller';
+import { UserNotificationPreferencesController } from './user-notification-preferences.controller';
 import { NotificationsService } from './notifications.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { FcmTokensService } from './fcm-tokens.service';
@@ -13,12 +14,19 @@ import {
 import { PrismaModule } from '../prisma/prisma.module';
 import { FirebaseAdminModule } from '../config/firebase-admin.module';
 import { BullModule } from '@nestjs/bullmq';
+import { isPlaceholderUrl } from '../config/bullmq.config';
 
+/**
+ * Checks whether a valid REDIS_URL is available in process.env.
+ *
+ * This function runs at file-load time (inside the @Module decorator body).
+ * It works correctly only when dotenv has already been loaded before this
+ * module file is imported. `main.ts` must have `import 'dotenv/config'` as
+ * its first import to guarantee this ordering.
+ */
 function isRedisConfigured(): boolean {
   const rawUrl = process.env.REDIS_URL?.trim();
-  if (!rawUrl) return false;
-  const placeholders = ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'];
-  if (placeholders.some((p) => rawUrl.includes(p))) return false;
+  if (!rawUrl || isPlaceholderUrl(rawUrl)) return false;
   try {
     new URL(rawUrl);
     return true;
@@ -31,14 +39,15 @@ function isRedisConfigured(): boolean {
   imports: [
     PrismaModule,
     FirebaseAdminModule,
-    // Evaluated lazily inside the decorator — after ConfigModule.forRoot() has
-    // already called dotenv.config() in AppModule. A top-level const would run
-    // at file-import time, before dotenv loads, and always resolve to [].
     ...(isRedisConfigured()
       ? [BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE })]
       : []),
   ],
-  controllers: [NotificationsController, FcmTokensController],
+  controllers: [
+    NotificationsController,
+    FcmTokensController,
+    UserNotificationPreferencesController,
+  ],
   providers: [
     NotificationsService,
     NotificationPreferencesService,
