@@ -18,6 +18,10 @@ export const envValidationSchema = Joi.object({
   ALLOWED_ORIGINS: Joi.string().optional(),
   AUTH_REJECT_SNAKE_CASE: Joi.boolean().default(false),
   SWAGGER_ENABLED: Joi.string().valid('true', 'false').optional(),
+  // Email feature flag — defaults to false (fail-safe: emails OFF unless explicitly enabled).
+  // Checked as process.env.EMAIL_ENABLED === 'true' in auth.service.ts and better-auth.service.ts.
+  EMAIL_ENABLED: Joi.string().valid('true', 'false').default('false'),
+  REQUEST_TIMEOUT_MS: Joi.number().integer().positive().optional(),
 
   // Logging
   LOG_LEVEL: Joi.string().valid('debug', 'info', 'warn', 'error').optional(),
