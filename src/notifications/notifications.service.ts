@@ -400,12 +400,16 @@ export class NotificationsService {
     page: number = 1,
     limit: number = 20,
   ) {
+    // Defense-in-depth: cap limit regardless of caller (controller already clamps,
+    // but this protects any future internal caller too).
+    const safeLimit = Math.min(limit, 100);
+
     const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
       callerUserId,
       ['admin', 'super_admin', 'assistant_admin'],
     );
 
-    const skip = (page - 1) * limit;
+    const skip = (page - 1) * safeLimit;
 
     if (isAdmin) {
       const resolved = await this.authorizationContext.resolveUserAuthorization(
@@ -418,7 +422,7 @@ export class NotificationsService {
         this.prisma.notification_logs.findMany({
           where,
           skip,
-          take: limit,
+          take: safeLimit,
           orderBy: { created_at: 'desc' },
           include: {
             users: {
@@ -438,8 +442,8 @@ export class NotificationsService {
         data,
         total,
         page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit),
       };
     }
 
@@ -450,7 +454,7 @@ export class NotificationsService {
         include: { notification_log: true },
         orderBy: { created_at: 'desc' },
         skip,
-        take: limit,
+        take: safeLimit,
       }),
       this.prisma.notification_deliveries.count({
         where: { user_id: callerUserId },
@@ -473,8 +477,8 @@ export class NotificationsService {
       data,
       total,
       page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
     };
   }
 

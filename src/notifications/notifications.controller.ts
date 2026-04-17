@@ -164,10 +164,11 @@ export class NotificationsController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Request() req,
   ) {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
     return this.notificationsService.getNotificationHistory(
       req.user.sub,
       page,
-      limit,
+      safeLimit,
     );
   }
 
