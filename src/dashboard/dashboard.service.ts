@@ -9,7 +9,10 @@ import type { FileStorageService } from '../common/services/file-storage.service
 export interface UpcomingActivityDto {
   id: number;
   title: string;
+  /** @deprecated Use `activity_date` + `activity_time` instead. Will be removed in a future version. */
   date: string;
+  activity_date: string | null;
+  activity_time: string | null;
   location: string | null;
 }
 
@@ -222,23 +225,28 @@ export class DashboardService {
       });
 
       for (const a of activities) {
-        // Combine activity_date (Date) with activity_time (HH:mm string) into a
-        // single ISO timestamp so the Flutter widget can display both day and time.
-        let activityDateTime: string;
-        if (a.activity_date) {
-          const dateStr = a.activity_date.toISOString().split('T')[0]; // YYYY-MM-DD
-          const timeStr = a.activity_time ?? '00:00';
-          activityDateTime = new Date(
-            `${dateStr}T${timeStr}:00.000Z`,
-          ).toISOString();
-        } else {
-          activityDateTime = new Date().toISOString();
-        }
+        // Extract date-only string (YYYY-MM-DD) directly from the UTC midnight
+        // Date value stored in the DB (@db.Date). Using split('T')[0] on the
+        // ISO string is safe because Prisma stores @db.Date as UTC midnight,
+        // so the date component is always correct regardless of the server TZ.
+        const activityDateOnly = a.activity_date
+          ? a.activity_date.toISOString().split('T')[0]
+          : null;
+
+        // Build the deprecated combined field using the date-only string to
+        // avoid the UTC-offset bug that treated local HH:mm as if it were UTC.
+        // Kept for backwards-compat — consumers should migrate to activity_date
+        // + activity_time fields.
+        const legacyDate = activityDateOnly
+          ? `${activityDateOnly}T${a.activity_time ?? '00:00'}:00`
+          : new Date().toISOString();
 
         upcomingActivities.push({
           id: a.activity_id,
           title: a.name,
-          date: activityDateTime,
+          date: legacyDate,
+          activity_date: activityDateOnly,
+          activity_time: a.activity_time ?? null,
           location: a.activity_place ?? null,
         });
       }
