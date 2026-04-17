@@ -1,9 +1,11 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import type { Cache } from 'cache-manager';
 import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
+import { GlobalRoles } from '../common/decorators';
 
 @ApiTags('health')
 @Controller('health')
@@ -14,8 +16,20 @@ export class HealthController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Check API status' })
-  async check() {
+  @ApiOperation({ summary: 'Public ping — returns ok if API is reachable' })
+  ping() {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  }
+
+  @Get('details')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('admin', 'super_admin')
+  @ApiOperation({
+    summary: 'Detailed health status (admin only)',
+    description:
+      'Returns database, cache, FCM and Sentry status. Requires admin or super_admin role.',
+  })
+  async details() {
     const dbStatus = await this.checkDatabase();
     const cacheStatus = await this.checkCache();
     const fcmConfigured = this.isFcmConfigured();

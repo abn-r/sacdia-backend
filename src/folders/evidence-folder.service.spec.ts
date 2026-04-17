@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   FILE_STORAGE_SERVICE,
@@ -36,8 +40,9 @@ describe('EvidenceFolderService', () => {
       url: `https://cdn.r2.example/${bucket.toLowerCase()}/${key}`,
     })),
     deleteMany: jest.fn().mockResolvedValue(undefined),
-    extractKeyFromPublicUrl: jest.fn((bucket: StorageBucketAlias, url: string) =>
-      url.replace(`https://cdn.r2.example/${bucket.toLowerCase()}/`, ''),
+    extractKeyFromPublicUrl: jest.fn(
+      (bucket: StorageBucketAlias, url: string) =>
+        url.replace(`https://cdn.r2.example/${bucket.toLowerCase()}/`, ''),
     ),
     getSignedDownloadUrl: jest.fn(),
   };
@@ -103,7 +108,7 @@ describe('EvidenceFolderService', () => {
           section_id: 11,
           points: 20,
           earned_points: 20,
-          status: 'validado',
+          status: 'VALIDATED',
           submitted_by: {
             name: 'Juan',
             paternal_last_name: 'Pérez',
@@ -119,7 +124,8 @@ describe('EvidenceFolderService', () => {
           evidence_files: [
             {
               evidence_file_id: 99,
-              file_url: 'https://cdn.r2.example/evidence_files/evidence-501-1.pdf',
+              file_url:
+                'https://cdn.r2.example/evidence_files/evidence-501-1.pdf',
               file_name: 'comprobante.pdf',
               file_type: 'pdf',
               uploaded_at: new Date('2026-03-10T12:00:00.000Z'),
@@ -162,7 +168,7 @@ describe('EvidenceFolderService', () => {
               name: 'Sección 1',
               point_value: 20,
               percentage: 0.2,
-              status: 'validado',
+              status: 'VALIDATED',
               earned_points: 20,
               submitted_by_name: 'Juan Pérez López',
               validated_by_name: 'Ana García',
@@ -188,7 +194,7 @@ describe('EvidenceFolderService', () => {
       );
     });
 
-    it('should default status to pendiente and earned_points to 0 when section has no record', async () => {
+    it('should default status to PENDING and earned_points to 0 when section has no record', async () => {
       mockPrismaService.folder_assignments.findFirst.mockResolvedValue({
         folder_assignment_id: 2,
         folder_id: 44,
@@ -229,7 +235,7 @@ describe('EvidenceFolderService', () => {
       expect(result.sections[0]).toEqual(
         expect.objectContaining({
           section_id: 20,
-          status: 'pendiente',
+          status: 'PENDING',
           earned_points: 0,
           files: [],
         }),
@@ -260,17 +266,19 @@ describe('EvidenceFolderService', () => {
     };
 
     it('should mark the section as sent and record the actor', async () => {
-      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(baseAssignment);
+      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
+        baseAssignment,
+      );
 
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'pendiente',
+        status: 'PENDING',
         evidence_files: [{ active: true }],
       });
 
       mockPrismaService.folders_section_records.update.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'enviado',
+        status: 'PENDING',
       });
 
       await service.submitSection('user-1', 9, 11);
@@ -292,7 +300,7 @@ describe('EvidenceFolderService', () => {
         expect.objectContaining({
           where: { folder_section_record_id: 501 },
           data: expect.objectContaining({
-            status: 'enviado',
+            status: 'PENDING',
             submitted_by_id: 'user-1',
             submitted_at: expect.any(Date),
           }),
@@ -301,19 +309,25 @@ describe('EvidenceFolderService', () => {
     });
 
     it('should throw NotFoundException when section record does not exist', async () => {
-      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(baseAssignment);
-      mockPrismaService.folders_section_records.findFirst.mockResolvedValue(null);
+      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
+        baseAssignment,
+      );
+      mockPrismaService.folders_section_records.findFirst.mockResolvedValue(
+        null,
+      );
 
       await expect(service.submitSection('user-1', 9, 11)).rejects.toThrow(
         NotFoundException,
       );
     });
 
-    it('should throw ConflictException when section is already enviado', async () => {
-      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(baseAssignment);
+    it('should throw ConflictException when section is already REJECTED', async () => {
+      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
+        baseAssignment,
+      );
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'enviado',
+        status: 'REJECTED',
         evidence_files: [{ active: true }],
       });
 
@@ -322,11 +336,13 @@ describe('EvidenceFolderService', () => {
       );
     });
 
-    it('should throw ConflictException when section is already validado', async () => {
-      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(baseAssignment);
+    it('should throw ConflictException when section is already VALIDATED', async () => {
+      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
+        baseAssignment,
+      );
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'validado',
+        status: 'VALIDATED',
         evidence_files: [{ active: true }],
       });
 
@@ -336,10 +352,12 @@ describe('EvidenceFolderService', () => {
     });
 
     it('should throw BadRequestException when there are no active evidence files', async () => {
-      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(baseAssignment);
+      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
+        baseAssignment,
+      );
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'pendiente',
+        status: 'PENDING',
         evidence_files: [],
       });
 
@@ -349,7 +367,9 @@ describe('EvidenceFolderService', () => {
     });
 
     it('should throw NotFoundException when sectionId does not exist in the folder template', async () => {
-      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(baseAssignment);
+      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
+        baseAssignment,
+      );
 
       await expect(service.submitSection('user-1', 9, 999)).rejects.toThrow(
         NotFoundException,
@@ -387,17 +407,22 @@ describe('EvidenceFolderService', () => {
         },
       };
 
-      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(baseAssignment);
+      mockPrismaService.folder_assignments.findFirst.mockResolvedValue(
+        baseAssignment,
+      );
       // getActiveSectionRecord returns null → triggers create path
-      mockPrismaService.folders_section_records.findFirst.mockResolvedValue(null);
+      mockPrismaService.folders_section_records.findFirst.mockResolvedValue(
+        null,
+      );
       mockPrismaService.folders_section_records.create.mockResolvedValue({
         folder_section_record_id: 502,
-        status: 'pendiente',
+        status: 'PENDING',
         evidence_files: [],
       });
       mockPrismaService.evidence_files.create.mockResolvedValue({
         evidence_file_id: 100,
-        file_url: 'https://cdn.r2.example/evidence_files/evidence-502-1710748800000.jpg',
+        file_url:
+          'https://cdn.r2.example/evidence_files/evidence-502-1710748800000.jpg',
         file_name: 'foto.jpg',
         file_type: 'image',
         uploaded_by_id: 'user-1',
@@ -406,18 +431,15 @@ describe('EvidenceFolderService', () => {
         uploaded_by: null,
       });
 
-      const result = await service.uploadFile(
-        'user-1',
-        9,
-        11,
-        {
-          buffer: Buffer.from('img'),
-          mimetype: 'image/jpeg',
-          originalname: 'foto.jpg',
-        } as Express.Multer.File,
-      );
+      const result = await service.uploadFile('user-1', 9, 11, {
+        buffer: Buffer.from('img'),
+        mimetype: 'image/jpeg',
+        originalname: 'foto.jpg',
+      } as Express.Multer.File);
 
-      expect(mockPrismaService.folders_section_records.create).toHaveBeenCalled();
+      expect(
+        mockPrismaService.folders_section_records.create,
+      ).toHaveBeenCalled();
       expect(mockFileStorageService.upload).toHaveBeenCalledWith(
         StorageBucketAlias.EVIDENCE_FILES,
         'evidence-502-1710748800000.jpg',
@@ -446,21 +468,16 @@ describe('EvidenceFolderService', () => {
       });
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'enviado',
+        status: 'VALIDATED',
         evidence_files: [],
       });
 
       await expect(
-        service.uploadFile(
-          'user-1',
-          9,
-          11,
-          {
-            buffer: Buffer.from('fake'),
-            mimetype: 'application/pdf',
-            originalname: 'doc.pdf',
-          } as Express.Multer.File,
-        ),
+        service.uploadFile('user-1', 9, 11, {
+          buffer: Buffer.from('fake'),
+          mimetype: 'application/pdf',
+          originalname: 'doc.pdf',
+        } as Express.Multer.File),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -489,7 +506,7 @@ describe('EvidenceFolderService', () => {
 
       mockPrismaService.folders_section_records.findFirst.mockResolvedValue({
         folder_section_record_id: 501,
-        status: 'pendiente',
+        status: 'PENDING',
       });
 
       mockPrismaService.evidence_files.create.mockResolvedValue({
@@ -503,16 +520,11 @@ describe('EvidenceFolderService', () => {
         active: true,
       });
 
-      const result = await service.uploadFile(
-        'user-1',
-        9,
-        11,
-        {
-          buffer: Buffer.from('fake'),
-          mimetype: 'application/pdf',
-          originalname: 'comprobante.pdf',
-        } as Express.Multer.File,
-      );
+      const result = await service.uploadFile('user-1', 9, 11, {
+        buffer: Buffer.from('fake'),
+        mimetype: 'application/pdf',
+        originalname: 'comprobante.pdf',
+      } as Express.Multer.File);
 
       expect(
         mockPrismaService.folder_assignments.findFirst,
@@ -602,7 +614,7 @@ describe('EvidenceFolderService', () => {
           folder_id: 44,
           section_id: 99, // wrong section
           club_section_id: 9,
-          status: 'pendiente',
+          status: 'PENDING',
         },
       });
 
@@ -636,7 +648,7 @@ describe('EvidenceFolderService', () => {
           folder_id: 44,
           section_id: 11,
           club_section_id: 9,
-          status: 'enviado',
+          status: 'VALIDATED',
         },
       });
 
@@ -677,7 +689,7 @@ describe('EvidenceFolderService', () => {
           folder_id: 44,
           section_id: 11,
           club_section_id: 9,
-          status: 'pendiente',
+          status: 'PENDING',
         },
       });
 

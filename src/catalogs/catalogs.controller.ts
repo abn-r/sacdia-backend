@@ -245,4 +245,17 @@ export class CatalogsController {
   async getDiseases() {
     return this.catalogsService.getDiseases();
   }
+
+  // ========================================
+  // MEDICINES
+  // ========================================
+  @Get('medicines')
+  @ApiOperation({
+    summary: 'Obtener catálogo de medicamentos',
+    description: 'Lista medicamentos activos para selección en formularios',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de medicamentos' })
+  async getMedicines() {
+    return this.catalogsService.getMedicines();
+  }
 }

@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { maskEmail } from '../utils/mask-email.util';
 
 /**
  * Filtro global de excepciones HTTP.
@@ -30,7 +31,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       url: request.url,
       status,
       message: exception.message,
-      validationDetails: exceptionResponse,
+      validationDetails: this.sanitizeValidationDetails(exceptionResponse),
       requestBody:
         process.env.NODE_ENV === 'development'
           ? this.sanitizeRequestBody(request.url, request.body)
@@ -77,6 +78,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
   }
 
+  /**
+   * Strips submitted user values from validation error details before logging.
+   * Keeps constraint names and counts so developers can diagnose failures,
+   * but never persists PII or arbitrary user input to the log stream.
+   */
+  private sanitizeValidationDetails(response: any): any {
+    if (typeof response === 'string') return response;
+    if (response?.message && Array.isArray(response.message)) {
+      // Only keep the constraint messages (field + rule), not submitted values
+      return { constraints: response.message.length, messages: response.message };
+    }
+    return { type: typeof response };
+  }
+
   private extractMessage(response: string | object): string {
     if (typeof response === 'string') {
       return response;
@@ -109,7 +124,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     for (const [key, raw] of Object.entries(source)) {
       if (key.toLowerCase() === 'email' && typeof raw === 'string') {
-        masked[key] = this.maskEmail(raw);
+        masked[key] = maskEmail(raw);
       } else {
         masked[key] = this.maskEmailInObject(raw);
       }
@@ -118,12 +133,4 @@ export class HttpExceptionFilter implements ExceptionFilter {
     return masked;
   }
 
-  private maskEmail(email: string): string {
-    const [localPart, domain] = email.split('@');
-    if (!localPart || !domain) return '***';
-
-    const visibleLocal =
-      localPart.length <= 2 ? (localPart[0] ?? '*') : localPart.slice(0, 2);
-    return `${visibleLocal}***@${domain}`;
-  }
 }

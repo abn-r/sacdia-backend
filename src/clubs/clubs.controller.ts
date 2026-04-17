@@ -9,6 +9,7 @@ import {
   Query,
   Body,
   ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -52,11 +53,10 @@ export class ClubsController {
   // ========================================
 
   @Get()
-  @RequirePermissions('clubs:read')
   @ApiOperation({
     summary: 'Listar clubs',
     description:
-      'Obtiene la lista de clubs con filtros opcionales y paginación',
+      'Obtiene la lista de clubs con filtros opcionales y paginación. No requiere permiso clubs:read — diseñado para permitir la selección de club durante el post-registro. Solo devuelve campos de identificación del club y un resumen mínimo de secciones (id, tipo, estado activo); no se exponen datos operacionales de las secciones.',
   })
   @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'districtId', required: false, type: Number })
@@ -114,6 +114,7 @@ export class ClubsController {
 
   @Post()
   @RequirePermissions('clubs:create')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear nuevo club' })
   @ApiResponse({ status: 201, description: 'Club creado' })
   async create(@Body() dto: CreateClubDto) {
@@ -156,14 +157,13 @@ export class ClubsController {
   // ========================================
 
   @Get(':clubId/sections')
-  @RequirePermissions('club_sections:read')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Obtener secciones del club',
-    description: 'Lista todas las secciones (Aventureros, Conquistadores, GM)',
+    description:
+      'Lista las secciones del club (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read — diseñado para permitir la selección de sección durante el post-registro. La respuesta es intencionalmente limitada a campos de identificación (id, nombre, tipo); los detalles operacionales (cuota, cupo, horarios, contacto) se omiten para reducir la superficie de exposición.',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 200, description: 'Secciones del club' })
+  @ApiResponse({ status: 200, description: 'Secciones del club (campos de identificación)' })
   async getSections(@Param('clubId', ParseIntPipe) clubId: number) {
     return this.clubsService.getSections(clubId);
   }
@@ -175,9 +175,7 @@ export class ClubsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Sección encontrada' })
-  async getSection(
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-  ) {
+  async getSection(@Param('sectionId', ParseIntPipe) sectionId: number) {
     return this.clubsService.getSection(sectionId);
   }
 
@@ -236,9 +234,7 @@ export class ClubsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de miembros' })
-  async getMembers(
-    @Param('sectionId', ParseIntPipe) sectionId: number,
-  ) {
+  async getMembers(@Param('sectionId', ParseIntPipe) sectionId: number) {
     return this.clubsService.getMembers(sectionId);
   }
 
@@ -289,7 +285,7 @@ export class ClubRolesController {
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Asignación actualizada' })
   async updateAssignment(
-    @Param('assignmentId') assignmentId: string,
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @Body() dto: UpdateRoleAssignmentDto,
   ) {
     return this.clubsService.updateRoleAssignment(assignmentId, dto);
@@ -301,7 +297,9 @@ export class ClubRolesController {
   @ApiOperation({ summary: 'Remover rol de miembro' })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Rol removido' })
-  async removeAssignment(@Param('assignmentId') assignmentId: string) {
+  async removeAssignment(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+  ) {
     return this.clubsService.removeRoleAssignment(assignmentId);
   }
 }

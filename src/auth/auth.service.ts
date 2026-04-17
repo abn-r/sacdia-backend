@@ -4,17 +4,22 @@ import {
   BadRequestException,
   UnauthorizedException,
   InternalServerErrorException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
+import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { SupabaseService } from '../common/supabase.service';
+import { BetterAuthService } from '../better-auth/better-auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { buildAuthTokenResponse } from './utils/auth-token-response.util';
+import { maskEmail } from '../common/utils/mask-email.util';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -34,55 +39,53 @@ export type LogoutRequest = {
   userAgent?: string;
 };
 
-type LogoutPath = 'access' | 'refresh' | 'none';
+type LogoutPath = 'session' | 'access_only' | 'none';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
 
+  // JWT access tokens are 1h (3600 s) — balances UX with token exposure window.
+  // Refresh flow extends sessions seamlessly. Used as the blacklist TTL.
+  private static readonly JWT_TTL_SECONDS = 3600;
+
   constructor(
     private prisma: PrismaService,
-    private supabase: SupabaseService,
+    private betterAuthService: BetterAuthService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly tokenBlacklist: TokenBlacklistService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
 
   async register(dto: RegisterDto) {
-    return await this.prisma.$transaction(async (tx) => {
-      // 1. Crear usuario en Supabase Auth
-      const { data: authUser, error: authError } =
-        await this.supabase.admin.auth.admin.createUser({
-          email: dto.email,
-          password: dto.password,
-          email_confirm: true, // Auto-confirmar email
-        });
+    // 1. Create user in Better Auth (outside transaction — BA manages its own DB writes).
+    //    BA creates the row in `users` (mapped via prismaAdapter: user_id, user_image, etc.)
+    //    and creates a BA session token.
+    const baResult = await this.betterAuthService.createUser(
+      dto.email,
+      dto.password,
+      dto.name,
+    );
 
-      if (authError) {
-        this.logger.error(
-          `Supabase auth error: ${authError.message}`,
-          authError,
-        );
-        throw new BadRequestException(authError.message);
-      }
-
-      try {
-        // 2. Crear en tabla users
-        const user = await tx.users.create({
+    // 2. Complete SACDIA-specific post-registration state in a Prisma transaction.
+    //    If this fails we roll back by revoking the BA session (soft cleanup).
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // 2a. Persist last names (BA only stores name; SACDIA needs granular fields)
+        await tx.users.update({
+          where: { user_id: baResult.user.id },
           data: {
-            user_id: authUser.user.id,
-            email: dto.email,
-            name: dto.name,
             paternal_last_name: dto.paternal_last_name,
             maternal_last_name: dto.maternal_last_name,
           },
         });
 
-        // 3. Crear en users_pr con tracking granular
+        // 2b. Create users_pr with granular tracking
         await tx.users_pr.create({
           data: {
-            user_id: user.user_id,
+            user_id: baResult.user.id,
             complete: false,
             profile_picture_complete: false,
             personal_info_complete: false,
@@ -90,7 +93,7 @@ export class AuthService {
           },
         });
 
-        // 4. Asignar rol "user" (GLOBAL)
+        // 2c. Assign global "user" role
         const userRole = await tx.roles.findFirst({
           where: {
             role_name: 'user',
@@ -104,45 +107,97 @@ export class AuthService {
 
         await tx.users_roles.create({
           data: {
-            user_id: user.user_id,
+            user_id: baResult.user.id,
             role_id: userRole.role_id,
           },
         });
-
-        this.logger.log(`User registered successfully: ${user.user_id}`);
-
-        return {
-          success: true,
-          userId: user.user_id,
-          message: 'Usuario registrado exitosamente',
-        };
-      } catch (dbError) {
-        // Rollback: Eliminar usuario de Supabase si falla BD
-        this.logger.error(
-          'Database error, rolling back Supabase user',
-          dbError,
+      });
+    } catch (dbError) {
+      // Rollback: revoke BA session so the user isn't left in a half-created state.
+      // NOTE: BA user record itself is NOT deleted here — the admin plugin is required
+      // for user deletion (updatePasswordById notes the same constraint). This is
+      // best-effort cleanup; a manual admin action may be needed if the session
+      // revocation is insufficient.
+      this.logger.error(
+        'Database error during post-registration, revoking BA session',
+        dbError,
+      );
+      await this.betterAuthService
+        .signOut(baResult.session.token)
+        .catch((e) =>
+          this.logger.warn('Failed to revoke BA session during rollback', e),
         );
-        await this.supabase.admin.auth.admin.deleteUser(authUser.user.id);
-        throw dbError;
-      }
-    });
+      throw dbError;
+    }
+
+    this.logger.log(`User registered successfully: ${baResult.user.id}`);
+
+    // Auto-send verification email after successful registration.
+    // Fire-and-forget: a failure here does NOT block registration.
+    this.createAndLogVerificationToken(baResult.user.email).catch((e) =>
+      this.logger.warn(
+        `Failed to create verification token during registration for ${baResult.user.id}: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+
+    // Build token response for auto-login (same structure as login())
+    const expiresAtSeconds = Math.floor(
+      baResult.session.expiresAt.getTime() / 1000,
+    );
+
+    return {
+      success: true,
+      userId: baResult.user.id,
+      message: 'Usuario registrado exitosamente',
+      emailVerificationPending: true,
+      status: 'success',
+      data: {
+        ...buildAuthTokenResponse({
+          accessToken: baResult.accessToken,
+          refreshToken: baResult.session.token,
+          expiresAt: expiresAtSeconds,
+          tokenType: 'bearer',
+        }),
+        user: {
+          id: baResult.user.id,
+          email: baResult.user.email,
+          name: baResult.user.name,
+          paternal_last_name: dto.paternal_last_name,
+          maternal_last_name: dto.maternal_last_name,
+          avatar: null,
+          roles: ['user'],
+        },
+        needsPostRegistration: true,
+        postRegistrationStatus: {
+          complete: false,
+          profile_picture_complete: false,
+          personal_info_complete: false,
+          club_selection_complete: false,
+        },
+      },
+    };
   }
 
   async login(dto: LoginDto) {
-    const maskedEmail = this.maskEmail(dto.email);
+    const maskedEmail = maskEmail(dto.email);
 
-    // 1. Autenticar con Supabase
-    const { data, error } = await this.supabase.admin.auth.signInWithPassword({
-      email: dto.email,
-      password: dto.password,
-    });
-
-    if (error) {
-      this.logger.warn(`Login failed for ${maskedEmail}: ${error.message}`);
+    // 1. Authenticate with Better Auth
+    let baResult: Awaited<
+      ReturnType<typeof this.betterAuthService.signInWithPassword>
+    >;
+    try {
+      baResult = await this.betterAuthService.signInWithPassword(
+        dto.email,
+        dto.password,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Login failed for ${maskedEmail}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    if (!data?.user || !data.session) {
+    if (!baResult?.user || !baResult.session) {
       this.logger.warn(
         JSON.stringify({
           event: 'auth_login_missing_session',
@@ -152,9 +207,9 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // 2. Obtener información del usuario y verificar post-registro
+    // 2. Load SACDIA user profile and verify post-registration state
     const user = await this.prisma.users.findUnique({
-      where: { user_id: data.user.id },
+      where: { user_id: baResult.user.id },
       select: {
         user_id: true,
         email: true,
@@ -192,17 +247,25 @@ export class AuthService {
       ? !user.users_pr.complete
       : true;
 
-    // Extraer roles como array plano de strings
+    // Extract roles as flat array of strings
     const roles = (user.users_roles ?? []).map((ur) => ur.roles.role_name);
+
+    // BA session expiry as unix epoch seconds (expiresAt is a Date)
+    const expiresAtSeconds = Math.floor(
+      baResult.session.expiresAt.getTime() / 1000,
+    );
 
     return {
       status: 'success',
       data: {
         ...buildAuthTokenResponse({
-          accessToken: data.session.access_token,
-          refreshToken: data.session.refresh_token,
-          expiresAt: data.session.expires_at ?? null,
-          tokenType: data.session.token_type ?? 'bearer',
+          // HS256 JWT signed by SACDIA (Option C) — short-lived (1h)
+          accessToken: baResult.accessToken,
+          // BA opaque session token — this IS the long-lived credential (7 days, sliding)
+          // Clients must send this as `refreshToken` to POST /auth/refresh
+          refreshToken: baResult.session.token,
+          expiresAt: expiresAtSeconds,
+          tokenType: 'bearer',
         }),
         user: {
           id: user.user_id,
@@ -268,15 +331,30 @@ export class AuthService {
       throw new BadRequestException('refreshToken es requerido');
     }
 
-    const { data, error } = await this.supabase.anon.auth.refreshSession({
-      refresh_token: refreshToken,
-    });
-
-    if (error || !data.session) {
+    // The "refresh token" sent by clients IS the BA opaque session token.
+    // BA does not have a separate refresh token — the session slides on each getSession call.
+    let baResult: Awaited<
+      ReturnType<typeof this.betterAuthService.refreshSession>
+    >;
+    try {
+      baResult = await this.betterAuthService.refreshSession(refreshToken);
+    } catch (error) {
       this.logger.warn(
         JSON.stringify({
           event: 'auth_refresh_failed',
-          reason: error?.message ?? 'session is null',
+          reason: error instanceof Error ? error.message : String(error),
+          payloadFormat,
+          userAgent: context?.userAgent ?? 'unknown',
+        }),
+      );
+      throw new UnauthorizedException('Refresh token inválido o expirado');
+    }
+
+    if (!baResult?.session) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_refresh_failed',
+          reason: 'session is null',
           payloadFormat,
           userAgent: context?.userAgent ?? 'unknown',
         }),
@@ -292,47 +370,49 @@ export class AuthService {
       }),
     );
 
+    const expiresAtSeconds = Math.floor(
+      baResult.session.expiresAt.getTime() / 1000,
+    );
+
     return {
       status: 'success',
       data: buildAuthTokenResponse({
-        accessToken: data.session.access_token,
-        refreshToken: data.session.refresh_token,
-        expiresAt: data.session.expires_at ?? null,
-        tokenType: data.session.token_type ?? 'bearer',
+        accessToken: baResult.accessToken,
+        // Return the same opaque session token — it is still valid and slides
+        refreshToken: baResult.session.token,
+        expiresAt: expiresAtSeconds,
+        tokenType: 'bearer',
       }),
     };
   }
 
   async logout(input: LogoutRequest = {}) {
-    const accessToken = this.normalizeToken(input.accessToken);
     const refreshToken = this.normalizeToken(input.refreshToken);
+    const accessToken = this.normalizeToken(input.accessToken);
     const userAgent = input.userAgent ?? 'unknown';
+
+    // In the Option C model:
+    // - accessToken = SACDIA HS256 JWT (BA doesn't know about it)
+    // - refreshToken = BA opaque session token (this is what BA can revoke)
+    //
+    // Strategy:
+    //   If refreshToken present → revoke BA session (best effort).
+    //   If only accessToken present → nothing to revoke on BA side; return success.
+    //   The JWT will expire naturally within 1h.
 
     let path: LogoutPath = 'none';
     let revocationAttempted = false;
     let revocationSucceeded = false;
     let reason: string | undefined;
-    let tokenToRevoke = accessToken;
 
-    if (tokenToRevoke) {
-      path = 'access';
-    } else if (refreshToken) {
-      path = 'refresh';
-      tokenToRevoke = await this.getAccessTokenForLogout(
-        refreshToken,
-        userAgent,
-      );
-      if (!tokenToRevoke) {
-        reason = 'refresh_failed';
-      }
-    }
-
-    if (tokenToRevoke) {
+    if (refreshToken) {
+      path = 'session';
       revocationAttempted = true;
-      const { error } =
-        await this.supabase.admin.auth.admin.signOut(tokenToRevoke);
-      if (error) {
-        reason = error.message;
+      try {
+        await this.betterAuthService.signOut(refreshToken);
+        revocationSucceeded = true;
+      } catch (error) {
+        reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(
           JSON.stringify({
             event: 'auth_logout_revoke_failed',
@@ -341,8 +421,38 @@ export class AuthService {
             userAgent,
           }),
         );
-      } else {
-        revocationSucceeded = true;
+      }
+    } else if (accessToken) {
+      // Access token is a SACDIA JWT — BA has no record of it.
+      // Best effort: mark as access-only logout (token expires in ≤1h naturally).
+      path = 'access_only';
+      revocationAttempted = false;
+      reason = 'no_session_token_provided';
+      this.logger.warn(
+        JSON.stringify({
+          event: 'auth_logout_access_only',
+          note: 'No BA session token provided; JWT will expire naturally',
+          userAgent,
+        }),
+      );
+    }
+
+    // Blacklist the SACDIA JWT access token so it is rejected immediately
+    // by JwtStrategy even if the client reuses it before the 1h natural expiry.
+    if (accessToken) {
+      try {
+        await this.tokenBlacklist.blacklistToken(
+          accessToken,
+          AuthService.JWT_TTL_SECONDS,
+        );
+      } catch (error) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth_logout_blacklist_failed',
+            reason: error instanceof Error ? error.message : String(error),
+            userAgent,
+          }),
+        );
       }
     }
 
@@ -367,22 +477,28 @@ export class AuthService {
   }
 
   async requestPasswordReset(dto: ResetPasswordRequestDto) {
-    const { error } = await this.supabase.admin.auth.resetPasswordForEmail(
-      dto.email,
-      {
-        redirectTo: `${process.env.FRONTEND_URL}/reset-password`,
-      },
-    );
+    const redirectTo = process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL}/reset-password`
+      : undefined;
 
-    if (error) {
+    try {
+      await this.betterAuthService.resetPasswordForEmail(dto.email, redirectTo);
+    } catch (error) {
+      // ServiceUnavailableException means email transport is disabled — propagate as-is
+      // so the HTTP layer returns 503 with the original message.
+      if (error instanceof ServiceUnavailableException) {
+        throw error;
+      }
       this.logger.error(
-        `Password reset request error: ${error.message}`,
+        `Password reset request error: ${error instanceof Error ? error.message : String(error)}`,
         error,
       );
       throw new BadRequestException('Error al solicitar recuperación');
     }
 
-    this.logger.log(`Password reset requested for: ${dto.email}`);
+    this.logger.log(
+      `Password reset requested for: ${maskEmail(dto.email)}`,
+    );
 
     return {
       success: true,
@@ -390,19 +506,19 @@ export class AuthService {
     };
   }
 
-  async updatePassword(userId: string, newPassword: string) {
-    const { error } = await this.supabase.admin.auth.admin.updateUserById(
-      userId,
-      { password: newPassword },
-    );
-
-    if (error) {
-      this.logger.error(
-        `Password update error for ${userId}: ${error.message}`,
-        error,
-      );
-      throw new InternalServerErrorException('Failed to update password');
-    }
+  /**
+   * Updates the password for the currently authenticated user (self-service).
+   *
+   * Delegates to BetterAuthService.updatePasswordById() which writes directly
+   * to the `account` table — no Better Auth admin plugin required.
+   *
+   * For admin-scoped password updates (setting another user's password without
+   * their current password), see AdminAuthService.setUserPassword() and
+   * POST /api/v1/admin/users/:userId/password.
+   */
+  async updatePassword(userId: string, newPassword: string): Promise<void> {
+    await this.betterAuthService.updatePasswordById(userId, newPassword);
+    this.logger.log(`Self-service password updated for user: ${userId}`);
   }
 
   async getProfile(userId: string) {
@@ -463,6 +579,11 @@ export class AuthService {
       },
     });
 
+    // Invalidate the cached authorization context so the next call to
+    // resolveUserAuthorization re-reads from DB and picks up the new
+    // active_club_assignment_id we just persisted.
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
 
@@ -518,19 +639,121 @@ export class AuthService {
     };
   }
 
-  private async getAccessTokenForLogout(
-    refreshToken: string,
-    userAgent?: string,
-  ): Promise<string | undefined> {
-    try {
-      const refreshed = await this.refreshSession(
-        { refreshToken },
-        { userAgent },
-      );
-      return this.normalizeToken(refreshed?.data?.accessToken);
-    } catch {
-      return undefined;
+  /**
+   * Sends a verification email to the authenticated user.
+   *
+   * Creates a token in the `verification` table (expires in 24h) and logs it.
+   * In production, replace the logger.log with an SMTP/SendGrid call.
+   */
+  async sendVerificationEmail(userId: string) {
+    const dbUser = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { email: true, email_verified: true },
+    });
+
+    if (!dbUser) {
+      throw new BadRequestException('Usuario no encontrado');
     }
+
+    if (dbUser.email_verified) {
+      return {
+        success: true,
+        message: 'El email ya está verificado',
+        alreadyVerified: true,
+      };
+    }
+
+    await this.createAndLogVerificationToken(dbUser.email);
+
+    return {
+      success: true,
+      message: 'Email de verificación enviado',
+    };
+  }
+
+  /**
+   * Confirms email ownership using a verification token.
+   *
+   * Validates the token against the `verification` table.
+   * If valid and not expired: sets `email_verified = true` and deletes the token.
+   */
+  async confirmEmailVerification(dto: VerifyEmailDto) {
+    const verification = await this.prisma.verification.findFirst({
+      where: { value: dto.token },
+    });
+
+    if (!verification) {
+      throw new BadRequestException('Token inválido o ya utilizado');
+    }
+
+    if (verification.expiresAt < new Date()) {
+      // Clean up expired token
+      await this.prisma.verification.delete({
+        where: { id: verification.id },
+      });
+      throw new BadRequestException('Token expirado. Solicitá uno nuevo');
+    }
+
+    // Mark user as verified and delete the token in a transaction
+    await this.prisma.$transaction([
+      this.prisma.users.update({
+        where: { email: verification.identifier },
+        data: { email_verified: true },
+      }),
+      this.prisma.verification.delete({
+        where: { id: verification.id },
+      }),
+    ]);
+
+    this.logger.log(
+      `Email verified for: ${maskEmail(verification.identifier)}`,
+    );
+
+    return {
+      success: true,
+      message: 'Email verificado exitosamente',
+    };
+  }
+
+  /**
+   * Creates a 24h verification token in the `verification` table.
+   *
+   * SECURITY: The raw token is NEVER logged — it is a credential. Only masked email
+   * and expiry are logged. The NODE_ENV guard was removed: even in development, logging
+   * a raw token creates a credential-in-logs risk that outweighs any debugging benefit.
+   *
+   * EMAIL_ENABLED guard: if no email transport is configured the method logs a warning
+   * but does NOT throw — the caller (register, sendVerificationEmail) treats this as
+   * fire-and-forget. Token is still persisted so it can be delivered once transport
+   * is enabled.
+   *
+   * TODO(production): replace the log statement with an actual email delivery call.
+   */
+  private async createAndLogVerificationToken(email: string): Promise<void> {
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+
+    await this.prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier: email,
+        value: token,
+        expiresAt,
+      },
+    });
+
+    if (process.env.EMAIL_ENABLED !== 'true') {
+      this.logger.warn(
+        `[EMAIL_DISABLED] Verification token created for ${maskEmail(email)} but EMAIL_ENABLED is not set — email not sent.`,
+      );
+      return;
+    }
+
+    // TODO(production): send verification email with link containing the token.
+    // SECURITY: Never log the raw token — it is a credential.
+    this.logger.log(
+      `Verification email queued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
+    );
   }
 
   private normalizeToken(token?: string | null): string | undefined {
@@ -564,14 +787,4 @@ export class AuthService {
     return process.env.AUTH_REJECT_SNAKE_CASE?.toLowerCase() !== 'false';
   }
 
-  private maskEmail(email?: string | null): string {
-    if (!email) return 'unknown';
-
-    const [localPart, domain] = email.split('@');
-    if (!localPart || !domain) return '***';
-
-    const visibleLocal =
-      localPart.length <= 2 ? (localPart[0] ?? '*') : localPart.slice(0, 2);
-    return `${visibleLocal}***@${domain}`;
-  }
 }

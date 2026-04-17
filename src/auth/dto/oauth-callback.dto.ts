@@ -1,30 +1,42 @@
 import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * DTO for the OAuth callback endpoint.
+ *
+ * After Better Auth processes the OAuth code exchange and sets a session cookie,
+ * the client must POST the opaque BA session token (read from the cookie or
+ * returned from the BA callback URL fragment) plus the provider name.
+ *
+ * The `code` / `state` fields are NOT handled here — BA's own HTTP handler
+ * at `GET /api/auth/callback/{provider}` processes those server-to-provider
+ * exchanges internally.  Our endpoint only finalises the SACDIA side once BA
+ * has already created the session.
+ */
 export class OAuthCallbackDto {
   @ApiProperty({
-    description: 'Access token de Supabase Auth',
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+    description:
+      'Opaque Better Auth session token (returned after BA OAuth callback)',
+    example: 'ba_session_abc123...',
   })
   @IsString()
   @IsNotEmpty()
-  access_token: string;
+  session_token: string;
 
   @ApiProperty({
-    description: 'Refresh token de Supabase',
-    example: 'v1.abc123...',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  refresh_token?: string;
-
-  @ApiProperty({
-    description: 'Provider utilizado (google, apple)',
+    description: 'OAuth provider used (google, apple)',
     example: 'google',
+  })
+  @IsString()
+  @IsNotEmpty()
+  provider: string;
+
+  @ApiProperty({
+    description: 'Redirect URI used during OAuth initiation (must match)',
+    example: 'https://sacdia.app/auth/callback',
     required: false,
   })
   @IsOptional()
   @IsString()
-  provider?: string;
+  redirect_uri?: string;
 }

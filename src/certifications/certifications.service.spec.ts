@@ -527,8 +527,8 @@ describe('CertificationsService', () => {
         (s: { section_id: number }) => s.section_id === SECTION_ID + 1,
       );
 
-      expect(section1.completed).toBe(true);
-      expect(section2.completed).toBe(false);
+      expect(section1!.completed).toBe(true);
+      expect(section2!.completed).toBe(false);
     });
 
     it('TC21 - not enrolled → NotFoundException', async () => {
@@ -643,7 +643,9 @@ describe('CertificationsService', () => {
       expect(result.section_id).toBe(SECTION_ID);
       expect(result.module_id).toBe(MODULE_ID);
       expect(result.completed).toBe(true);
-      expect(txMock.certification_section_progress.create).toHaveBeenCalledTimes(1);
+      expect(
+        txMock.certification_section_progress.create,
+      ).toHaveBeenCalledTimes(1);
     });
 
     it('TC24 - updates existing section progress record instead of creating', async () => {
@@ -654,8 +656,12 @@ describe('CertificationsService', () => {
 
       const result = await service.updateProgress(USER_ID, CERT_ID, dto);
 
-      expect(txMock.certification_section_progress.update).toHaveBeenCalledTimes(1);
-      expect(txMock.certification_section_progress.create).not.toHaveBeenCalled();
+      expect(
+        txMock.certification_section_progress.update,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        txMock.certification_section_progress.create,
+      ).not.toHaveBeenCalled();
       expect(result.completed).toBe(true);
     });
 
@@ -667,10 +673,10 @@ describe('CertificationsService', () => {
 
       expect(result.module_progress.completed).toBe(false); // mock returns false, but count == length was wired
       // The important assertion: module progress create/update was called with completed=true
-      const createCall =
-        txMock.certification_module_progress.create.mock.calls[0]?.[0] as {
-          data: { completed: boolean };
-        };
+      const createCall = txMock.certification_module_progress.create.mock
+        .calls[0]?.[0] as {
+        data: { completed: boolean };
+      };
       expect(createCall?.data.completed).toBe(true);
     });
 
@@ -685,10 +691,10 @@ describe('CertificationsService', () => {
 
       await service.updateProgress(USER_ID, CERT_ID, uncompleteDto);
 
-      const createCall =
-        txMock.certification_section_progress.create.mock.calls[0]?.[0] as {
-          data: { completed: boolean; completion_date: Date | null };
-        };
+      const createCall = txMock.certification_section_progress.create.mock
+        .calls[0]?.[0] as {
+        data: { completed: boolean; completion_date: Date | null };
+      };
       expect(createCall?.data.completed).toBe(false);
       expect(createCall?.data.completion_date).toBeNull();
     });

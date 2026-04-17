@@ -1,50 +1,62 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OAuthService } from './oauth.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { SupabaseService } from '../common/supabase.service';
+import { BetterAuthService } from '../better-auth/better-auth.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
-import {
-  BadRequestException,
-  InternalServerErrorException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
+/**
+ * OAuthService unit tests — Better Auth edition (W3-008 Part 3).
+ *
+ * OAuthService now uses BetterAuthService (not SupabaseService).
+ * Connected providers are read from the `accounts` table (not boolean flags).
+ * Old fields `google_connected`, `apple_connected`, `fb_connected` removed.
+ */
 describe('OAuthService', () => {
   let service: OAuthService;
 
+  // ---------------------------------------------------------------------------
+  // Transaction inner context
+  // ---------------------------------------------------------------------------
   const mockTx = {
     users: {
+      findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
     users_pr: {
+      findUnique: jest.fn(),
       create: jest.fn(),
     },
     roles: {
       findFirst: jest.fn(),
     },
     users_roles: {
+      findFirst: jest.fn(),
       create: jest.fn(),
     },
   };
 
+  // ---------------------------------------------------------------------------
+  // Service mocks
+  // ---------------------------------------------------------------------------
   const mockPrismaService = {
     $transaction: jest.fn(),
     users: {
       findUnique: jest.fn(),
-      update: jest.fn(),
     },
     users_pr: {
       findUnique: jest.fn(),
     },
+    account: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
   };
 
-  const mockSupabaseService = {
-    admin: {
-      auth: {
-        signInWithOAuth: jest.fn(),
-        getUser: jest.fn(),
-      },
-    },
+  const mockBetterAuthService = {
+    getOAuthUrl: jest.fn(),
+    refreshSession: jest.fn(),
   };
 
   const mockFileStorageService = {
@@ -63,7 +75,7 @@ describe('OAuthService', () => {
       providers: [
         OAuthService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: SupabaseService, useValue: mockSupabaseService },
+        { provide: BetterAuthService, useValue: mockBetterAuthService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();
@@ -79,234 +91,404 @@ describe('OAuthService', () => {
     expect(service).toBeDefined();
   });
 
+  // ---------------------------------------------------------------------------
+  // initiateGoogleSignIn
+  // ---------------------------------------------------------------------------
   describe('initiateGoogleSignIn', () => {
     it('should return OAuth URL for Google with custom redirect', async () => {
-      mockSupabaseService.admin.auth.signInWithOAuth.mockResolvedValue({
-        data: { url: 'https://accounts.google.com/o/oauth2/auth' },
-        error: null,
+      mockBetterAuthService.getOAuthUrl.mockResolvedValue({
+        url: 'https://accounts.google.com/o/oauth2/auth?state=xyz',
+        state: 'xyz',
       });
 
       const result = await service.initiateGoogleSignIn(
         'https://sacdia.app/auth/callback',
       );
 
-      expect(
-        mockSupabaseService.admin.auth.signInWithOAuth,
-      ).toHaveBeenCalledWith({
-        provider: 'google',
-        options: {
-          redirectTo: 'https://sacdia.app/auth/callback',
-        },
-      });
+      expect(mockBetterAuthService.getOAuthUrl).toHaveBeenCalledWith(
+        'google',
+        'https://sacdia.app/auth/callback',
+      );
       expect(result).toEqual({
-        url: 'https://accounts.google.com/o/oauth2/auth',
+        url: 'https://accounts.google.com/o/oauth2/auth?state=xyz',
       });
     });
 
-    it('should throw InternalServerErrorException when Google OAuth fails', async () => {
-      mockSupabaseService.admin.auth.signInWithOAuth.mockResolvedValue({
-        data: null,
-        error: { message: 'Google provider not available' },
+    it('should use default redirect URL when redirect is not provided', async () => {
+      mockBetterAuthService.getOAuthUrl.mockResolvedValue({
+        url: 'https://accounts.google.com/o/oauth2/auth',
+        state: 'abc',
       });
 
-      await expect(service.initiateGoogleSignIn()).rejects.toThrow(
-        InternalServerErrorException,
+      const result = await service.initiateGoogleSignIn();
+
+      expect(mockBetterAuthService.getOAuthUrl).toHaveBeenCalledWith(
+        'google',
+        'https://sacdia.app/auth/callback',
       );
+      expect(result).toHaveProperty('url');
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // initiateAppleSignIn
+  // ---------------------------------------------------------------------------
   describe('initiateAppleSignIn', () => {
     it('should use default redirect URL when redirect is not provided', async () => {
-      mockSupabaseService.admin.auth.signInWithOAuth.mockResolvedValue({
-        data: { url: 'https://appleid.apple.com/auth/authorize' },
-        error: null,
+      mockBetterAuthService.getOAuthUrl.mockResolvedValue({
+        url: 'https://appleid.apple.com/auth/authorize',
+        state: 'abc',
       });
 
       const result = await service.initiateAppleSignIn();
 
-      expect(
-        mockSupabaseService.admin.auth.signInWithOAuth,
-      ).toHaveBeenCalledWith({
-        provider: 'apple',
-        options: {
-          redirectTo: 'https://sacdia.app/auth/callback',
-        },
-      });
+      expect(mockBetterAuthService.getOAuthUrl).toHaveBeenCalledWith(
+        'apple',
+        'https://sacdia.app/auth/callback',
+      );
       expect(result).toEqual({
         url: 'https://appleid.apple.com/auth/authorize',
       });
     });
 
-    it('should throw InternalServerErrorException when Apple OAuth fails', async () => {
-      mockSupabaseService.admin.auth.signInWithOAuth.mockResolvedValue({
-        data: null,
-        error: { message: 'Apple provider not available' },
+    it('should return OAuth URL for Apple with custom redirect', async () => {
+      mockBetterAuthService.getOAuthUrl.mockResolvedValue({
+        url: 'https://appleid.apple.com/auth/authorize?state=xyz',
+        state: 'xyz',
       });
 
-      await expect(service.initiateAppleSignIn()).rejects.toThrow(
-        InternalServerErrorException,
+      const result = await service.initiateAppleSignIn(
+        'https://sacdia.app/auth/callback',
       );
+
+      expect(mockBetterAuthService.getOAuthUrl).toHaveBeenCalledWith(
+        'apple',
+        'https://sacdia.app/auth/callback',
+      );
+      expect(result).toHaveProperty('url');
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // handleCallback
+  // ---------------------------------------------------------------------------
   describe('handleCallback', () => {
-    it('should throw UnauthorizedException when callback token is invalid', async () => {
-      mockSupabaseService.admin.auth.getUser.mockResolvedValue({
-        data: { user: null },
-        error: { message: 'invalid token' },
-      });
+    const baResult = {
+      user: {
+        id: 'user-123',
+        email: 'juan@example.com',
+        name: 'Juan',
+        image: null,
+      },
+      session: { token: 'ba-session-token', expiresAt: new Date() },
+      accessToken: 'sacdia-hs256-jwt',
+    };
+
+    it('should throw UnauthorizedException when session token is invalid', async () => {
+      mockBetterAuthService.refreshSession.mockRejectedValue(
+        new UnauthorizedException('Session not found or expired'),
+      );
 
       await expect(
         service.handleCallback({
-          access_token: 'bad-token',
+          session_token: 'bad-token',
+          provider: 'google',
         }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should return user payload for existing user and update provider flags', async () => {
-      mockSupabaseService.admin.auth.getUser.mockResolvedValue({
-        data: {
-          user: {
-            id: 'user-123',
-            email: 'juan.garcia@example.com',
-            identities: [{ provider: 'google' }],
-          },
-        },
-        error: null,
+    it('should return user payload for existing SACDIA user', async () => {
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResult);
+
+      // ensureSacdiaUserProvisioned — user exists, pr exists, role exists
+      mockTx.users.findUnique.mockResolvedValue({ user_id: 'user-123' });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: false,
       });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
+
+      // outer prisma calls
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-123',
-        email: 'juan.garcia@example.com',
         name: 'Juan',
         paternal_last_name: 'Garcia',
         maternal_last_name: 'Lopez',
         user_image: 'https://avatar.test/user-123.png',
       });
-      mockPrismaService.users.update.mockResolvedValue({
-        user_id: 'user-123',
-      });
       mockPrismaService.users_pr.findUnique.mockResolvedValue({
         user_id: 'user-123',
         complete: false,
       });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+      ]);
 
       const result = await service.handleCallback({
-        access_token: 'access-token',
-        refresh_token: 'refresh-token',
+        session_token: 'ba-session-token',
+        provider: 'google',
       });
 
-      expect(mockPrismaService.users.update).toHaveBeenCalledWith({
-        where: { user_id: 'user-123' },
-        data: {
-          google_connected: true,
-          apple_connected: false,
-        },
-      });
+      expect(mockBetterAuthService.refreshSession).toHaveBeenCalledWith(
+        'ba-session-token',
+      );
       expect(result).toEqual({
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
+        accessToken: 'sacdia-hs256-jwt',
+        sessionToken: 'ba-session-token',
         user: {
           id: 'user-123',
-          email: 'juan.garcia@example.com',
+          email: 'juan@example.com',
           name: 'Juan',
           paternal_last_name: 'Garcia',
           maternal_last_name: 'Lopez',
           avatar: 'https://avatar.test/user-123.png',
-          google_connected: true,
-          apple_connected: false,
+          connectedProviders: ['google'],
         },
         needsPostRegistration: true,
       });
     });
 
-    it('should create local user on first OAuth login', async () => {
-      mockSupabaseService.admin.auth.getUser.mockResolvedValue({
-        data: {
-          user: {
-            id: 'new-user-123',
-            email: 'new.user@example.com',
-            user_metadata: {
-              name: 'New User',
-              avatar_url: 'https://avatar.test/new-user.png',
-            },
-            identities: [{ provider: 'google' }, { provider: 'apple' }],
-          },
-        },
-        error: null,
+    it('should provision SACDIA rows for new OAuth user', async () => {
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResult);
+
+      // ensureSacdiaUserProvisioned — user exists in BA but no SACDIA rows
+      mockTx.users.findUnique.mockResolvedValue({ user_id: 'user-123' });
+      mockTx.users_pr.findUnique.mockResolvedValue(null); // no pr row
+      mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
+      mockTx.users_roles.findFirst.mockResolvedValue(null); // no role
+      mockTx.roles.findFirst.mockResolvedValue({ role_id: 1 });
+      mockTx.users_roles.create.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
       });
-      mockPrismaService.users.findUnique.mockResolvedValue(null);
-      mockTx.users.create.mockResolvedValue({
-        user_id: 'new-user-123',
-        email: 'new.user@example.com',
-        name: 'New User',
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        name: 'Juan',
         paternal_last_name: null,
         maternal_last_name: null,
-        user_image: 'https://avatar.test/new-user.png',
-      });
-      mockTx.users_pr.create.mockResolvedValue({
-        user_id: 'new-user-123',
-        complete: false,
-      });
-      mockTx.roles.findFirst.mockResolvedValue({
-        role_id: 1,
-      });
-      mockTx.users_roles.create.mockResolvedValue({
-        user_id: 'new-user-123',
-        role_id: 1,
-      });
-      mockPrismaService.users.update.mockResolvedValue({
-        user_id: 'new-user-123',
+        user_image: null,
       });
       mockPrismaService.users_pr.findUnique.mockResolvedValue({
-        user_id: 'new-user-123',
-        complete: true,
+        user_id: 'user-123',
+        complete: false,
       });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+        { providerId: 'credential' },
+      ]);
 
       const result = await service.handleCallback({
-        access_token: 'access-token',
+        session_token: 'ba-session-token',
+        provider: 'google',
       });
 
-      expect(mockPrismaService.$transaction).toHaveBeenCalled();
-      expect(mockTx.users.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          user_id: 'new-user-123',
-          email: 'new.user@example.com',
-          name: 'New User',
-        }),
-      });
+      expect(mockTx.users_pr.create).toHaveBeenCalled();
       expect(mockTx.users_roles.create).toHaveBeenCalled();
-      expect(result.user.google_connected).toBe(true);
-      expect(result.user.apple_connected).toBe(true);
-      expect(result.needsPostRegistration).toBe(false);
+      // credential is filtered out from connectedProviders
+      expect(result.user.connectedProviders).toEqual(['google']);
+      expect(result.needsPostRegistration).toBe(true);
+    });
+
+    it('should sync user_image when OAuth returns an image and stored value differs', async () => {
+      const baResultWithImage = {
+        user: {
+          id: 'user-123',
+          email: 'juan@example.com',
+          name: 'Juan',
+          image: 'https://lh3.googleusercontent.com/new-photo.jpg',
+        },
+        session: { token: 'ba-session-token', expiresAt: new Date() },
+        accessToken: 'sacdia-hs256-jwt',
+      };
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResultWithImage);
+
+      // User row exists but with a stale (or null) image
+      mockTx.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        user_image: null,
+      });
+      mockTx.users.update.mockResolvedValue({ user_id: 'user-123' });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        name: 'Juan',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: 'https://lh3.googleusercontent.com/new-photo.jpg',
+      });
+      mockPrismaService.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+      ]);
+
+      await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'google',
+      });
+
+      expect(mockTx.users.update).toHaveBeenCalledWith({
+        where: { user_id: 'user-123' },
+        data: { user_image: 'https://lh3.googleusercontent.com/new-photo.jpg' },
+      });
+    });
+
+    it('should NOT update user_image when stored value already matches OAuth image', async () => {
+      const existingImage = 'https://lh3.googleusercontent.com/same-photo.jpg';
+      const baResultWithImage = {
+        user: {
+          id: 'user-123',
+          email: 'juan@example.com',
+          name: 'Juan',
+          image: existingImage,
+        },
+        session: { token: 'ba-session-token', expiresAt: new Date() },
+        accessToken: 'sacdia-hs256-jwt',
+      };
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResultWithImage);
+
+      // User row already has the same image
+      mockTx.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        user_image: existingImage,
+      });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        name: 'Juan',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: existingImage,
+      });
+      mockPrismaService.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+      ]);
+
+      await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'google',
+      });
+
+      expect(mockTx.users.update).not.toHaveBeenCalled();
+    });
+
+    it('should NOT update user_image when OAuth returns no image', async () => {
+      const baResultNoImage = {
+        user: {
+          id: 'user-123',
+          email: 'tim@example.com',
+          name: 'Tim',
+          image: null,
+        },
+        session: { token: 'ba-session-token', expiresAt: new Date() },
+        accessToken: 'sacdia-hs256-jwt',
+      };
+      mockBetterAuthService.refreshSession.mockResolvedValue(baResultNoImage);
+
+      mockTx.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        user_image: null,
+      });
+      mockTx.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockTx.users_roles.findFirst.mockResolvedValue({
+        user_id: 'user-123',
+        role_id: 1,
+      });
+
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        name: 'Tim',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: null,
+      });
+      mockPrismaService.users_pr.findUnique.mockResolvedValue({
+        user_id: 'user-123',
+        complete: true,
+      });
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'apple' },
+      ]);
+
+      await service.handleCallback({
+        session_token: 'ba-session-token',
+        provider: 'apple',
+      });
+
+      expect(mockTx.users.update).not.toHaveBeenCalled();
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // getConnectedProviders
+  // ---------------------------------------------------------------------------
   describe('getConnectedProviders', () => {
-    it('should return provider flags for existing user', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        google_connected: true,
-        apple_connected: false,
-        fb_connected: false,
-      });
+    it('should return OAuth provider list (excluding credential)', async () => {
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+        { providerId: 'credential' },
+      ]);
 
       const result = await service.getConnectedProviders('user-123');
 
-      expect(result).toEqual({
-        google_connected: true,
-        apple_connected: false,
-        fb_connected: false,
-      });
+      expect(result).toEqual(['google']);
     });
 
-    it('should throw BadRequestException when user does not exist', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue(null);
+    it('should return empty array when no OAuth providers connected', async () => {
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'credential' },
+      ]);
 
-      await expect(
-        service.getConnectedProviders('missing-user'),
-      ).rejects.toThrow(BadRequestException);
+      const result = await service.getConnectedProviders('user-123');
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return multiple providers when connected', async () => {
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+        { providerId: 'apple' },
+        { providerId: 'credential' },
+      ]);
+
+      const result = await service.getConnectedProviders('user-123');
+
+      expect(result).toEqual(['google', 'apple']);
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // disconnectProvider
+  // ---------------------------------------------------------------------------
   describe('disconnectProvider', () => {
     it('should throw BadRequestException for invalid provider', async () => {
       await expect(
@@ -314,21 +496,45 @@ describe('OAuthService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should update provider flag when provider is valid', async () => {
-      mockPrismaService.users.update.mockResolvedValue({
-        user_id: 'user-123',
-      });
+    it('should throw BadRequestException when user would lose last auth method', async () => {
+      // Only Google, no credential account
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+      ]);
+
+      await expect(
+        service.disconnectProvider('user-123', 'google'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should delete the account row when user has credential fallback', async () => {
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'google' },
+        { providerId: 'credential' },
+      ]);
+      mockPrismaService.account.deleteMany.mockResolvedValue({ count: 1 });
 
       const result = await service.disconnectProvider('user-123', 'google');
 
-      expect(mockPrismaService.users.update).toHaveBeenCalledWith({
-        where: { user_id: 'user-123' },
-        data: { google_connected: false },
+      expect(mockPrismaService.account.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123', providerId: 'google' },
       });
       expect(result).toEqual({
         success: true,
         message: 'Provider desconectado exitosamente',
       });
+    });
+
+    it('should throw BadRequestException when provider was not connected', async () => {
+      mockPrismaService.account.findMany.mockResolvedValue([
+        { providerId: 'credential' },
+        { providerId: 'apple' },
+      ]);
+      mockPrismaService.account.deleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.disconnectProvider('user-123', 'google'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

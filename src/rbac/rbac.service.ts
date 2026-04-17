@@ -2,23 +2,35 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
+import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
+import { maskEmail } from '../common/utils/mask-email.util';
 
 @Injectable()
 export class RbacService {
   private readonly logger = new Logger(RbacService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ─── Permisos ───────────────────────────────────────────────
 
   async listPermissions() {
+    // Small system table: permissions are defined at deploy time and are expected
+    // to remain well under 500 rows. Safety cap prevents runaway reads.
     return this.prisma.permissions.findMany({
       orderBy: { permission_name: 'asc' },
+      take: 500,
     });
   }
 
@@ -104,9 +116,17 @@ export class RbacService {
 
   // ─── Roles ──────────────────────────────────────────────────
 
-  async listRoles() {
+  async listRoles(activeFilter: boolean | undefined = true) {
+    // Small system table: roles are defined at deploy time and are expected
+    // to remain well under 200 rows. Safety cap prevents runaway reads.
+    // activeFilter=true  → only active roles (default, existing behaviour)
+    // activeFilter=false → only inactive roles
+    // activeFilter=undefined → all roles (when caller passes 'all')
+    const whereClause =
+      activeFilter === undefined ? {} : { active: activeFilter };
+
     return this.prisma.roles.findMany({
-      where: { active: true },
+      where: whereClause,
       orderBy: { role_name: 'asc' },
       include: {
         role_permissions: {
@@ -122,7 +142,192 @@ export class RbacService {
           },
         },
       },
+      take: 200,
     });
+  }
+
+  // ─── Role CRUD (super_admin only) ───────────────────────────
+
+  async createRole(dto: CreateRoleDto) {
+    if (dto.role_name === 'super_admin') {
+      throw new BadRequestException(
+        'El nombre de rol "super_admin" está reservado y no puede ser creado',
+      );
+    }
+
+    const existing = await this.prisma.roles.findUnique({
+      where: { role_name: dto.role_name },
+    });
+
+    if (existing) {
+      throw new ConflictException(
+        `Ya existe un rol con nombre "${dto.role_name}"`,
+      );
+    }
+
+    const permissionIds = dto.permission_ids ?? [];
+
+    // Validate all provided permission IDs exist before opening transaction
+    if (permissionIds.length > 0) {
+      const permissions = await this.prisma.permissions.findMany({
+        where: { permission_id: { in: permissionIds } },
+        select: { permission_id: true },
+      });
+
+      if (permissions.length !== permissionIds.length) {
+        const foundIds = new Set(permissions.map((p) => p.permission_id));
+        const missing = permissionIds.filter((id) => !foundIds.has(id));
+        throw new NotFoundException(
+          `Permisos no encontrados: ${missing.join(', ')}`,
+        );
+      }
+    }
+
+    const role = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.roles.create({
+        data: {
+          role_name: dto.role_name,
+          description: dto.description,
+          role_category: dto.role_category,
+        },
+      });
+
+      if (permissionIds.length > 0) {
+        await tx.role_permissions.createMany({
+          data: permissionIds.map((permissionId) => ({
+            role_id: created.role_id,
+            permission_id: permissionId,
+          })),
+        });
+      }
+
+      return tx.roles.findUnique({
+        where: { role_id: created.role_id },
+        include: {
+          role_permissions: {
+            where: { active: true },
+            include: {
+              permissions: {
+                select: {
+                  permission_id: true,
+                  permission_name: true,
+                  description: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    this.logger.log(
+      `Rol creado: ${role!.role_name} (${role!.role_id}) con ${permissionIds.length} permisos`,
+    );
+
+    return role;
+  }
+
+  async updateRole(roleId: string, dto: UpdateRoleDto) {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (!role) {
+      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+    }
+
+    if (role.role_name === 'super_admin') {
+      throw new ForbiddenException('El rol super_admin no puede ser modificado');
+    }
+
+    // role_name is immutable — reject if caller sent it
+    if ('role_name' in dto) {
+      throw new BadRequestException(
+        'role_name no puede ser modificado. Es inmutable después de la creación.',
+      );
+    }
+
+    const updateData: { description?: string; modified_at: Date } = {
+      modified_at: new Date(),
+    };
+
+    if (dto.description !== undefined) {
+      updateData.description = dto.description;
+    }
+
+    // Update description and optionally sync permissions
+    if (dto.permission_ids !== undefined) {
+      // Run description update + permission sync in sequence
+      if (Object.keys(updateData).length > 1) {
+        await this.prisma.roles.update({
+          where: { role_id: roleId },
+          data: updateData,
+        });
+      }
+
+      await this.syncRolePermissions(roleId, dto.permission_ids);
+    } else {
+      await this.prisma.roles.update({
+        where: { role_id: roleId },
+        data: updateData,
+      });
+    }
+
+    const updated = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      include: {
+        role_permissions: {
+          where: { active: true },
+          include: {
+            permissions: {
+              select: {
+                permission_id: true,
+                permission_name: true,
+                description: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    this.logger.log(`Rol actualizado: ${updated!.role_name} (${roleId})`);
+    return updated;
+  }
+
+  async deactivateRole(roleId: string) {
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (!role) {
+      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+    }
+
+    if (role.role_name === 'super_admin') {
+      throw new ForbiddenException(
+        'El rol super_admin no puede ser desactivado',
+      );
+    }
+
+    // Count active user assignments for this role
+    const assignedCount = await this.prisma.users_roles.count({
+      where: { role_id: roleId, active: true },
+    });
+
+    if (assignedCount > 0) {
+      throw new ConflictException(
+        `Cannot deactivate role: ${assignedCount} user${assignedCount === 1 ? '' : 's'} are currently assigned. Reassign them first.`,
+      );
+    }
+
+    await this.prisma.roles.update({
+      where: { role_id: roleId },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    this.logger.log(`Rol desactivado: ${role.role_name} (${roleId})`);
+    return { success: true, role_id: roleId };
   }
 
   async getRoleWithPermissions(roleId: string) {
@@ -238,6 +443,8 @@ export class RbacService {
   // ─── Permisos directos de usuario ───────────────────────────
 
   async getUserPermissions(userId: string) {
+    // Per-user direct permissions: bounded by the total number of permissions
+    // in the system. Safety cap matches listPermissions.
     return this.prisma.users_permissions.findMany({
       where: { user_id: userId, active: true },
       include: {
@@ -251,6 +458,7 @@ export class RbacService {
         },
       },
       orderBy: { permissions: { permission_name: 'asc' } },
+      take: 500,
     });
   }
 
@@ -270,18 +478,14 @@ export class RbacService {
         );
         return { success: true, message: 'Permiso reactivado' };
       }
-      throw new ConflictException(
-        'El usuario ya tiene este permiso asignado',
-      );
+      throw new ConflictException('El usuario ya tiene este permiso asignado');
     }
 
     await this.prisma.users_permissions.create({
       data: { user_id: userId, permission_id: permissionId },
     });
 
-    this.logger.log(
-      `Permiso ${permissionId} asignado a usuario ${userId}`,
-    );
+    this.logger.log(`Permiso ${permissionId} asignado a usuario ${userId}`);
     return { success: true, message: 'Permiso asignado' };
   }
 
@@ -301,10 +505,166 @@ export class RbacService {
       data: { active: false, modified_at: new Date() },
     });
 
-    this.logger.log(
-      `Permiso ${permissionId} removido del usuario ${userId}`,
-    );
+    this.logger.log(`Permiso ${permissionId} removido del usuario ${userId}`);
     return { success: true, message: 'Permiso removido del usuario' };
+  }
+
+  // ─── Roles de usuario ──────────────────────────────────────
+
+  async getUserRoles(userId: string) {
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { user_id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+    }
+
+    // Per-user role assignments: bounded by the total number of roles.
+    // Safety cap matches listRoles.
+    return this.prisma.users_roles.findMany({
+      where: { user_id: userId, active: true },
+      include: {
+        roles: {
+          select: {
+            role_id: true,
+            role_name: true,
+            role_category: true,
+            active: true,
+          },
+        },
+      },
+      orderBy: { roles: { role_name: 'asc' } },
+      take: 200,
+    });
+  }
+
+  async assignRoleToUser(userId: string, roleId: string) {
+    const [user, role] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: { user_id: true },
+      }),
+      this.prisma.roles.findUnique({
+        where: { role_id: roleId },
+        select: { role_id: true, role_name: true },
+      }),
+    ]);
+
+    if (!user) {
+      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+    }
+
+    if (!role) {
+      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+    }
+
+    const existing = await this.prisma.users_roles.findFirst({
+      where: { user_id: userId, role_id: roleId },
+    });
+
+    if (existing) {
+      if (!existing.active) {
+        await this.prisma.users_roles.update({
+          where: { user_role_id: existing.user_role_id },
+          data: { active: true, modified_at: new Date() },
+        });
+        this.logger.log(
+          `Rol ${role.role_name} reactivado para usuario ${userId}`,
+        );
+        await this.authorizationContext.invalidateUserAuthorizationCache(
+          userId,
+        );
+        return { success: true, message: 'Rol reactivado' };
+      }
+      throw new ConflictException('El usuario ya tiene este rol asignado');
+    }
+
+    await this.prisma.users_roles.create({
+      data: { user_id: userId, role_id: roleId },
+    });
+
+    this.logger.log(`Rol ${role.role_name} asignado a usuario ${userId}`);
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    return { success: true, message: 'Rol asignado' };
+  }
+
+  async removeRoleFromUser(userId: string, roleId: string) {
+    const assignment = await this.prisma.users_roles.findFirst({
+      where: { user_id: userId, role_id: roleId, active: true },
+    });
+
+    if (!assignment) {
+      throw new NotFoundException('Asignación de rol a usuario no encontrada');
+    }
+
+    await this.prisma.users_roles.update({
+      where: { user_role_id: assignment.user_role_id },
+      data: { active: false, modified_at: new Date() },
+    });
+
+    this.logger.log(`Rol ${roleId} removido del usuario ${userId}`);
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+    return { success: true, message: 'Rol removido del usuario' };
+  }
+
+  async bootstrapAdmin(userId: string) {
+    // Check if any super_admin already exists
+    const existingSuperAdmin = await this.prisma.users_roles.findFirst({
+      where: {
+        active: true,
+        roles: {
+          role_name: 'super_admin',
+          active: true,
+        },
+      },
+    });
+
+    if (existingSuperAdmin) {
+      throw new ConflictException(
+        'Ya existe un super_admin. Este endpoint solo funciona cuando no hay ninguno.',
+      );
+    }
+
+    const user = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { user_id: true, email: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+    }
+
+    const superAdminRole = await this.prisma.roles.findFirst({
+      where: { role_name: 'super_admin', active: true },
+    });
+
+    if (!superAdminRole) {
+      throw new NotFoundException(
+        'Rol super_admin no encontrado en la base de datos. Ejecutá el seed primero.',
+      );
+    }
+
+    await this.prisma.users_roles.create({
+      data: {
+        user_id: userId,
+        role_id: superAdminRole.role_id,
+      },
+    });
+
+    this.logger.warn(
+      `BOOTSTRAP: Usuario ${maskEmail(user.email)} (${userId}) asignado como primer super_admin`,
+    );
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+
+    return {
+      success: true,
+      message: `Usuario ${user.email} es ahora super_admin`,
+      user_id: userId,
+      role: 'super_admin',
+    };
   }
 
   async syncRolePermissions(roleId: string, permissionIds: string[]) {

@@ -7,6 +7,7 @@ export type AuthorizationResourceType =
   | 'active_assignment'
   | 'club'
   | 'camporee'
+  | 'union_camporee'
   | 'activity'
   | 'finance'
   | 'inventory_instance'

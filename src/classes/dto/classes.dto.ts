@@ -15,6 +15,7 @@ export class EnrollClassDto {
 
   @ApiProperty({ description: 'ID del año eclesiástico' })
   @IsInt()
+  @Min(1)
   ecclesiastical_year_id: number;
 }
 

@@ -106,12 +106,18 @@ export class EmergencyContactsService {
         primary: true,
         created_at: true,
         modified_at: true,
+        relationship_types: {
+          select: { name: true },
+        },
       },
     });
 
     return {
       status: 'success',
-      data: contacts,
+      data: contacts.map(({ relationship_types, ...rest }) => ({
+        ...rest,
+        relationship_type_name: relationship_types.name,
+      })),
       meta: {
         total: contacts.length,
         remaining: this.MAX_CONTACTS - contacts.length,
@@ -126,13 +132,22 @@ export class EmergencyContactsService {
         owner_id: userId,
         active: true,
       },
+      include: {
+        relationship_types: {
+          select: { name: true },
+        },
+      },
     });
 
     if (!contact) {
       throw new NotFoundException('Contacto de emergencia no encontrado');
     }
 
-    return { status: 'success', data: contact };
+    const { relationship_types, ...rest } = contact;
+    return {
+      status: 'success',
+      data: { ...rest, relationship_type_name: relationship_types.name },
+    };
   }
 
   async update(

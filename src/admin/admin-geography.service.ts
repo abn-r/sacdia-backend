@@ -6,6 +6,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+} from '../catalogs/catalog-cache.service';
+import {
   CreateChurchDto,
   CreateCountryDto,
   CreateDistrictDto,
@@ -22,7 +26,10 @@ import {
 export class AdminGeographyService {
   private readonly logger = new Logger(AdminGeographyService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly catalogCache: CatalogCacheService,
+  ) {}
 
   private normalizeName(value: string): string {
     return value.trim().replace(/\s+/g, ' ');
@@ -50,8 +57,10 @@ export class AdminGeographyService {
   }
 
   async listCountries() {
+    // Geography catalog: bounded by number of countries in the system (~250 max).
     return this.prisma.countries.findMany({
       orderBy: { name: 'asc' },
+      take: 300,
     });
   }
 
@@ -70,6 +79,9 @@ export class AdminGeographyService {
     });
 
     this.logMutation('create', 'countries', country.country_id, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.COUNTRIES);
+
     return country;
   }
 
@@ -100,6 +112,9 @@ export class AdminGeographyService {
     });
 
     this.logMutation('update', 'countries', countryId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.COUNTRIES);
+
     return country;
   }
 
@@ -128,13 +143,18 @@ export class AdminGeographyService {
     });
 
     this.logMutation('delete', 'countries', countryId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.COUNTRIES);
+
     return country;
   }
 
   async listUnions(countryId?: number) {
+    // Geography catalog: unions per country are in the tens at most.
     return this.prisma.unions.findMany({
       where: countryId ? { country_id: countryId } : undefined,
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -155,11 +175,18 @@ export class AdminGeographyService {
     });
 
     this.logMutation('create', 'unions', union.union_id, actorId);
+
+    // Invalidate both the unfiltered list and the country-filtered variant
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.UNIONS(),
+      CATALOG_CACHE_KEYS.UNIONS(dto.country_id),
+    ]);
+
     return union;
   }
 
   async updateUnion(unionId: number, dto: UpdateUnionDto, actorId: string) {
-    await this.ensureUnionExists(unionId);
+    const existing = await this.ensureUnionExists(unionId);
 
     if (dto.country_id) {
       await this.ensureCountryExists(dto.country_id);
@@ -186,11 +213,20 @@ export class AdminGeographyService {
     });
 
     this.logMutation('update', 'unions', unionId, actorId);
+
+    // Invalidate all union variants (original country, new country if changed)
+    const keysToInvalidate = [CATALOG_CACHE_KEYS.UNIONS()];
+    keysToInvalidate.push(CATALOG_CACHE_KEYS.UNIONS(existing.country_id));
+    if (dto.country_id && dto.country_id !== existing.country_id) {
+      keysToInvalidate.push(CATALOG_CACHE_KEYS.UNIONS(dto.country_id));
+    }
+    await this.catalogCache.invalidateMany(keysToInvalidate);
+
     return union;
   }
 
   async deleteUnion(unionId: number, actorId: string) {
-    await this.ensureUnionExists(unionId);
+    const existing = await this.ensureUnionExists(unionId);
 
     const activeLocalFields = await this.prisma.local_fields.count({
       where: {
@@ -214,13 +250,21 @@ export class AdminGeographyService {
     });
 
     this.logMutation('delete', 'unions', unionId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.UNIONS(),
+      CATALOG_CACHE_KEYS.UNIONS(existing.country_id),
+    ]);
+
     return union;
   }
 
   async listLocalFields(unionId?: number) {
+    // Geography catalog: local fields per union are in the tens to low hundreds.
     return this.prisma.local_fields.findMany({
       where: unionId ? { union_id: unionId } : undefined,
       orderBy: { name: 'asc' },
+      take: 1000,
     });
   }
 
@@ -246,6 +290,12 @@ export class AdminGeographyService {
       localField.local_field_id,
       actorId,
     );
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.LOCAL_FIELDS(),
+      CATALOG_CACHE_KEYS.LOCAL_FIELDS(dto.union_id),
+    ]);
+
     return localField;
   }
 
@@ -254,7 +304,7 @@ export class AdminGeographyService {
     dto: UpdateLocalFieldDto,
     actorId: string,
   ) {
-    await this.ensureLocalFieldExists(localFieldId);
+    const existing = await this.ensureLocalFieldExists(localFieldId);
 
     if (dto.union_id) {
       await this.ensureUnionExists(dto.union_id);
@@ -281,11 +331,19 @@ export class AdminGeographyService {
     });
 
     this.logMutation('update', 'local_fields', localFieldId, actorId);
+
+    const keysToInvalidate = [CATALOG_CACHE_KEYS.LOCAL_FIELDS()];
+    keysToInvalidate.push(CATALOG_CACHE_KEYS.LOCAL_FIELDS(existing.union_id));
+    if (dto.union_id && dto.union_id !== existing.union_id) {
+      keysToInvalidate.push(CATALOG_CACHE_KEYS.LOCAL_FIELDS(dto.union_id));
+    }
+    await this.catalogCache.invalidateMany(keysToInvalidate);
+
     return localField;
   }
 
   async deleteLocalField(localFieldId: number, actorId: string) {
-    await this.ensureLocalFieldExists(localFieldId);
+    const existing = await this.ensureLocalFieldExists(localFieldId);
 
     const activeDistricts = await this.prisma.districts.count({
       where: {
@@ -309,13 +367,21 @@ export class AdminGeographyService {
     });
 
     this.logMutation('delete', 'local_fields', localFieldId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.LOCAL_FIELDS(),
+      CATALOG_CACHE_KEYS.LOCAL_FIELDS(existing.union_id),
+    ]);
+
     return localField;
   }
 
   async listDistricts(localFieldId?: number) {
+    // Geography catalog: districts per local field are in the tens.
     return this.prisma.districts.findMany({
       where: localFieldId ? { local_field_id: localFieldId } : undefined,
       orderBy: { name: 'asc' },
+      take: 2000,
     });
   }
 
@@ -349,6 +415,12 @@ export class AdminGeographyService {
       district.districlub_type_id,
       actorId,
     );
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.DISTRICTS(),
+      CATALOG_CACHE_KEYS.DISTRICTS(dto.local_field_id),
+    ]);
+
     return district;
   }
 
@@ -367,7 +439,7 @@ export class AdminGeographyService {
     const nextLocalFieldId = dto.local_field_id ?? current.local_field_id;
 
     if (name) {
-      const existing = await this.prisma.districts.findFirst({
+      const existingDistrict = await this.prisma.districts.findFirst({
         where: {
           name: { equals: name, mode: 'insensitive' },
           local_field_id: nextLocalFieldId,
@@ -376,7 +448,7 @@ export class AdminGeographyService {
         },
       });
 
-      if (existing) {
+      if (existingDistrict) {
         throw new ConflictException('District with this name already exists');
       }
     }
@@ -392,11 +464,19 @@ export class AdminGeographyService {
     });
 
     this.logMutation('update', 'districts', districtId, actorId);
+
+    const keysToInvalidate = [CATALOG_CACHE_KEYS.DISTRICTS()];
+    keysToInvalidate.push(CATALOG_CACHE_KEYS.DISTRICTS(current.local_field_id));
+    if (dto.local_field_id && dto.local_field_id !== current.local_field_id) {
+      keysToInvalidate.push(CATALOG_CACHE_KEYS.DISTRICTS(dto.local_field_id));
+    }
+    await this.catalogCache.invalidateMany(keysToInvalidate);
+
     return district;
   }
 
   async deleteDistrict(districtId: number, actorId: string) {
-    await this.ensureDistrictExists(districtId);
+    const existing = await this.ensureDistrictExists(districtId);
 
     const activeChurches = await this.prisma.churches.count({
       where: {
@@ -420,13 +500,21 @@ export class AdminGeographyService {
     });
 
     this.logMutation('delete', 'districts', districtId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.DISTRICTS(),
+      CATALOG_CACHE_KEYS.DISTRICTS(existing.local_field_id),
+    ]);
+
     return district;
   }
 
   async listChurches(districtId?: number) {
+    // Geography catalog: churches per district are in the tens to low hundreds.
     return this.prisma.churches.findMany({
       where: districtId ? { districlub_type_id: districtId } : undefined,
       orderBy: { name: 'asc' },
+      take: 5000,
     });
   }
 
@@ -455,6 +543,12 @@ export class AdminGeographyService {
     });
 
     this.logMutation('create', 'churches', church.church_id, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.CHURCHES(),
+      CATALOG_CACHE_KEYS.CHURCHES(dto.district_id),
+    ]);
+
     return church;
   }
 
@@ -469,7 +563,7 @@ export class AdminGeographyService {
     const nextDistrictId = dto.district_id ?? current.districlub_type_id;
 
     if (name) {
-      const existing = await this.prisma.churches.findFirst({
+      const existingChurch = await this.prisma.churches.findFirst({
         where: {
           name: { equals: name, mode: 'insensitive' },
           districlub_type_id: nextDistrictId,
@@ -478,7 +572,7 @@ export class AdminGeographyService {
         },
       });
 
-      if (existing) {
+      if (existingChurch) {
         throw new ConflictException('Church with this name already exists');
       }
     }
@@ -494,11 +588,21 @@ export class AdminGeographyService {
     });
 
     this.logMutation('update', 'churches', churchId, actorId);
+
+    const keysToInvalidate = [CATALOG_CACHE_KEYS.CHURCHES()];
+    keysToInvalidate.push(
+      CATALOG_CACHE_KEYS.CHURCHES(current.districlub_type_id),
+    );
+    if (dto.district_id && dto.district_id !== current.districlub_type_id) {
+      keysToInvalidate.push(CATALOG_CACHE_KEYS.CHURCHES(dto.district_id));
+    }
+    await this.catalogCache.invalidateMany(keysToInvalidate);
+
     return church;
   }
 
   async deleteChurch(churchId: number, actorId: string) {
-    await this.ensureChurchExists(churchId);
+    const existing = await this.ensureChurchExists(churchId);
 
     const church = await this.prisma.churches.update({
       where: { church_id: churchId },
@@ -509,6 +613,12 @@ export class AdminGeographyService {
     });
 
     this.logMutation('delete', 'churches', churchId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.CHURCHES(),
+      CATALOG_CACHE_KEYS.CHURCHES(existing.districlub_type_id),
+    ]);
+
     return church;
   }
 

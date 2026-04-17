@@ -1,8 +1,4 @@
-import {
-  ApiProperty,
-  ApiPropertyOptional,
-  PartialType,
-} from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsInt,
@@ -50,4 +46,6 @@ export class CreateHonorCategoryDto {
   icon?: number | null;
 }
 
-export class UpdateHonorCategoryDto extends PartialType(CreateHonorCategoryDto) {}
+export class UpdateHonorCategoryDto extends PartialType(
+  CreateHonorCategoryDto,
+) {}

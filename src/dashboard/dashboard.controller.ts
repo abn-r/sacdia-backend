@@ -39,7 +39,9 @@ export class DashboardController {
           {
             id: 1,
             title: 'Campamento de Verano',
-            date: '2026-04-10T09:00:00.000Z',
+            date: '2026-04-10T09:00:00',
+            activity_date: '2026-04-10',
+            activity_time: '09:00',
             location: 'Parque Nacional',
           },
         ],

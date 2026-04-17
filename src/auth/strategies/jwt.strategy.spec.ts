@@ -1,19 +1,14 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-jest.mock('jwks-rsa', () => ({
-  passportJwtSecret: jest.fn(() => jest.fn()),
-}));
-
 import { JwtStrategy } from './jwt.strategy';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 
 describe('JwtStrategy', () => {
   const mockConfigService = {
-    get: jest.fn((key: string) => {
-      if (key === 'SUPABASE_JWT_SECRET') return 'test-secret';
-      if (key === 'SUPABASE_URL') return null; // use legacy HS256 in tests
-      return null;
+    getOrThrow: jest.fn((key: string) => {
+      if (key === 'BETTER_AUTH_SECRET')
+        return 'test-secret-min-32-chars-for-hs256';
+      throw new Error(`Missing env var: ${key}`);
     }),
   } as unknown as ConfigService;
 
@@ -54,6 +49,7 @@ describe('JwtStrategy', () => {
       userId: 'user-123',
       user_id: 'user-123',
       email: 'user@example.com',
+      mfa_pending: false,
     });
   });
 

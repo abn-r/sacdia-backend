@@ -10,12 +10,14 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
-  ParseFilePipe,
-  MaxFileSizeValidator,
-  FileTypeValidator,
   ParseIntPipe,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import {
   ApiTags,
   ApiOperation,
@@ -51,7 +53,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Obtener información de un usuario' })
   @ApiResponse({ status: 200, description: 'Usuario encontrado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async findOne(@Param('userId') userId: string) {
+  async findOne(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.findOne(userId);
   }
 
@@ -60,7 +62,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
   @ApiResponse({ status: 200, description: 'Alergias obtenidas' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async getAllergies(@Param('userId') userId: string) {
+  async getAllergies(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.getAllergies(userId);
   }
 
@@ -69,7 +71,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
   @ApiResponse({ status: 200, description: 'Enfermedades obtenidas' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async getDiseases(@Param('userId') userId: string) {
+  async getDiseases(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.getDiseases(userId);
   }
 
@@ -78,18 +80,18 @@ export class UsersController {
   @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
   @ApiResponse({ status: 200, description: 'Medicamentos obtenidos' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async getMedicines(@Param('userId') userId: string) {
+  async getMedicines(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.getMedicines(userId);
   }
 
   @Patch(':userId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Actualizar información personal del usuario' })
   @ApiResponse({ status: 200, description: 'Usuario actualizado' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async update(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() updateUserDto: UpdateUserDto,
   ) {
     return this.usersService.update(userId, updateUserDto);
@@ -106,7 +108,7 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   @ApiResponse({ status: 400, description: 'Alergia inválida' })
   async updateAllergies(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserAllergiesDto,
   ) {
     return this.usersService.updateAllergies(userId, dto);
@@ -123,7 +125,7 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   @ApiResponse({ status: 400, description: 'Enfermedad inválida' })
   async updateDiseases(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserDiseasesDto,
   ) {
     return this.usersService.updateDiseases(userId, dto);
@@ -140,7 +142,7 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   @ApiResponse({ status: 400, description: 'Medicamento inválido' })
   async updateMedicines(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserMedicinesDto,
   ) {
     return this.usersService.updateMedicines(userId, dto);
@@ -159,7 +161,7 @@ export class UsersController {
     description: 'Alergia no encontrada en el usuario',
   })
   async removeAllergy(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('allergyId', ParseIntPipe) allergyId: number,
   ) {
     return this.usersService.removeAllergy(userId, allergyId);
@@ -178,7 +180,7 @@ export class UsersController {
     description: 'Enfermedad no encontrada en el usuario',
   })
   async removeDisease(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('diseaseId', ParseIntPipe) diseaseId: number,
   ) {
     return this.usersService.removeDisease(userId, diseaseId);
@@ -197,14 +199,14 @@ export class UsersController {
     description: 'Medicamento no encontrado en el usuario',
   })
   async removeMedicine(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Param('medicineId', ParseIntPipe) medicineId: number,
   ) {
     return this.usersService.removeMedicine(userId, medicineId);
   }
 
   @Post(':userId/profile-picture')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
@@ -223,13 +225,10 @@ export class UsersController {
   @ApiResponse({ status: 201, description: 'Foto subida exitosamente' })
   @ApiResponse({ status: 400, description: 'Formato o tamaño inválido' })
   async uploadProfilePicture(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
-          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp)$/ }),
-        ],
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES,
       }),
     )
     file: Express.Multer.File,
@@ -238,12 +237,12 @@ export class UsersController {
   }
 
   @Delete(':userId/profile-picture')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Eliminar foto de perfil' })
   @ApiResponse({ status: 200, description: 'Foto eliminada' })
   @ApiResponse({ status: 404, description: 'Usuario sin foto de perfil' })
-  async deleteProfilePicture(@Param('userId') userId: string) {
+  async deleteProfilePicture(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.deleteProfilePicture(userId);
   }
 
@@ -252,7 +251,7 @@ export class UsersController {
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Calcular edad del usuario' })
   @ApiResponse({ status: 200, description: 'Edad calculada' })
-  async getAge(@Param('userId') userId: string) {
+  async getAge(@Param('userId', ParseUUIDPipe) userId: string) {
     const age = await this.usersService.calculateAge(userId);
     return {
       status: 'success',
@@ -270,7 +269,9 @@ export class UsersController {
     status: 200,
     description: 'Si requiere (edad < 18) o no',
   })
-  async requiresLegalRepresentative(@Param('userId') userId: string) {
+  async requiresLegalRepresentative(
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
     const age = await this.usersService.calculateAge(userId);
     const required =
       await this.usersService.requiresLegalRepresentative(userId);

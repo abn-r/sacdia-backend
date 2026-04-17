@@ -4,29 +4,34 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AccountDeletionService } from './account-deletion.service';
 import { OAuthController } from './oauth.controller';
 import { OAuthService } from './oauth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
-import { SupabaseService } from '../common/supabase.service';
 import { MfaController } from './mfa.controller';
+import { MfaGuard } from '../common/guards/mfa.guard';
 import { SessionsController } from './sessions.controller';
+import { BetterAuthModule } from '../better-auth/better-auth.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    // JwtModule is registered here only for test helpers that use jwtService.sign().
-    // Production auth uses JWKS (ES256) via jwt.strategy.ts — this secret is not used at runtime.
-    // SUPABASE_JWT_SECRET is optional; falls back to empty string when not set.
+    // JwtModule here is registered for JwtStrategy and any helpers that need
+    // token verification. Production auth uses BETTER_AUTH_SECRET (HS256) via
+    // JwtStrategy — aligned with BetterAuthService.signJwt().
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('SUPABASE_JWT_SECRET') ?? '',
+        secret: configService.get<string>('BETTER_AUTH_SECRET') ?? '',
         signOptions: {
-          expiresIn: '7d',
+          expiresIn: '8h',
+          algorithm: 'HS256',
         },
       }),
     }),
+    // BetterAuthModule provides BetterAuthService (Option C JWT signing + BA ops)
+    BetterAuthModule,
   ],
   controllers: [
     AuthController,
@@ -36,17 +41,20 @@ import { SessionsController } from './sessions.controller';
   ],
   providers: [
     AuthService,
+    AccountDeletionService,
     OAuthService,
     JwtStrategy,
-    SupabaseService,
     AuthorizationContextService,
+    MfaGuard,
   ],
   exports: [
     AuthService,
+    AccountDeletionService,
     OAuthService,
     JwtStrategy,
     PassportModule,
     AuthorizationContextService,
+    MfaGuard,
   ],
 })
 export class AuthModule {}

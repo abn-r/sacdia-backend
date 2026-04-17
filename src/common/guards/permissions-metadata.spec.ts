@@ -1,8 +1,12 @@
-/* eslint-disable @typescript-eslint/unbound-method */
-
 import { ActivitiesController } from '../../activities/activities.controller';
 import { AdminGeographyController } from '../../admin/admin-geography.controller';
 import { AdminReferenceController } from '../../admin/admin-reference.controller';
+import { UserCertificationsController } from '../../certifications/certifications.controller';
+import { UserFoldersController } from '../../folders/folders.controller';
+import {
+  getSensitiveUserSubresourceFallbackPermission,
+  type SensitiveUserSubresourceFamily,
+} from './sensitive-user-subresource-policy';
 import {
   SENSITIVE_USER_SUBRESOURCE_KEY,
   SensitiveUserSubresource,
@@ -649,12 +653,14 @@ describe('Permissions metadata', () => {
       ),
     ).toEqual({ family: 'post_registration', mode: 'read' });
 
+    // step-1/2/3 complete: use registration:complete directly (no sensitive subresource
+    // fallback) so that users:update does NOT grant third-party access to these endpoints.
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         PostRegistrationController.prototype.completeStep1,
       ),
-    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    ).toEqual({ permissions: ['registration:complete'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -666,14 +672,14 @@ describe('Permissions metadata', () => {
         SENSITIVE_USER_SUBRESOURCE_KEY,
         PostRegistrationController.prototype.completeStep1,
       ),
-    ).toEqual({ family: 'post_registration', mode: 'update' });
+    ).toBeUndefined();
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         PostRegistrationController.prototype.completeStep2,
       ),
-    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    ).toEqual({ permissions: ['registration:complete'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -685,14 +691,14 @@ describe('Permissions metadata', () => {
         SENSITIVE_USER_SUBRESOURCE_KEY,
         PostRegistrationController.prototype.completeStep2,
       ),
-    ).toEqual({ family: 'post_registration', mode: 'update' });
+    ).toBeUndefined();
 
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         PostRegistrationController.prototype.completeStep3,
       ),
-    ).toEqual({ permissions: ['post_registration:update'], mode: 'all' });
+    ).toEqual({ permissions: ['registration:complete'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -704,25 +710,25 @@ describe('Permissions metadata', () => {
         SENSITIVE_USER_SUBRESOURCE_KEY,
         PostRegistrationController.prototype.completeStep3,
       ),
-    ).toEqual({ family: 'post_registration', mode: 'update' });
+    ).toBeUndefined();
   });
 
-  it('keeps out-of-scope user routes on legacy users:* metadata', () => {
+  it('uses users:update_profile on self-service user routes', () => {
     expect(
       Reflect.getMetadata(PERMISSIONS_KEY, UsersController.prototype.update),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.uploadProfilePicture,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UsersController.prototype.deleteProfilePicture,
       ),
-    ).toEqual({ permissions: ['users:update'], mode: 'all' });
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
     expect(
       Reflect.getMetadata(PERMISSIONS_KEY, UsersController.prototype.getAge),
     ).toEqual({ permissions: ['users:read_detail'], mode: 'all' });
@@ -768,5 +774,110 @@ describe('Permissions metadata', () => {
         FinancesController.prototype.update,
       ),
     ).toEqual({ type: 'finance', idParam: 'financeId' });
+  });
+
+  // ==========================================================================
+  // Phase 3 cleanup (`permission-scope-cleanup-phase-3`):
+  // folders + certifications enrollment / progress / abandon endpoints MUST
+  // require `users:update_profile` (replaces the retired `users:update`).
+  // ==========================================================================
+
+  it('marks folder enroll/update/delete as users:update_profile (Phase 3 cleanup)', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UserFoldersController.prototype.enrollUser,
+      ),
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UserFoldersController.prototype.enrollUser,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UserFoldersController.prototype.updateSectionProgress,
+      ),
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UserFoldersController.prototype.updateSectionProgress,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UserFoldersController.prototype.deleteAssignment,
+      ),
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UserFoldersController.prototype.deleteAssignment,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+  });
+
+  it('marks certification enroll/update/delete as users:update_profile (Phase 3 cleanup)', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UserCertificationsController.prototype.enrollUser,
+      ),
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UserCertificationsController.prototype.enrollUser,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UserCertificationsController.prototype.updateProgress,
+      ),
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UserCertificationsController.prototype.updateProgress,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        UserCertificationsController.prototype.deleteCertification,
+      ),
+    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        UserCertificationsController.prototype.deleteCertification,
+      ),
+    ).toEqual({ type: 'user', ownerParam: 'userId' });
+  });
+
+  it('resolves sensitive-user-subresource update mode to users:update_profile (Phase 3 cleanup)', () => {
+    const families: SensitiveUserSubresourceFamily[] = [
+      'health',
+      'emergency_contacts',
+      'legal_representative',
+      'post_registration',
+    ];
+    for (const family of families) {
+      expect(
+        getSensitiveUserSubresourceFallbackPermission(family, 'update'),
+      ).toBe('users:update_profile');
+      expect(getSensitiveUserSubresourceFallbackPermission(family, 'read')).toBe(
+        'users:read_detail',
+      );
+    }
   });
 });

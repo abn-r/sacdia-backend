@@ -11,6 +11,8 @@ describe('AuthController', () => {
     refreshSession: jest.fn(),
     logout: jest.fn(),
     requestPasswordReset: jest.fn(),
+    sendVerificationEmail: jest.fn(),
+    confirmEmailVerification: jest.fn(),
     updatePassword: jest.fn(),
     getProfile: jest.fn(),
     getCompletionStatus: jest.fn(),
@@ -116,6 +118,56 @@ describe('AuthController', () => {
       const result = await controller.requestPasswordReset(dto);
 
       expect(mockAuthService.requestPasswordReset).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('sendVerificationEmail', () => {
+    it('should delegate to authService.sendVerificationEmail with userId from JWT', async () => {
+      const currentUser = { userId: 'user-123' };
+      const expected = {
+        success: true,
+        message: 'Email de verificación enviado',
+      };
+      mockAuthService.sendVerificationEmail.mockResolvedValue(expected);
+
+      const result = await controller.sendVerificationEmail(currentUser);
+
+      expect(mockAuthService.sendVerificationEmail).toHaveBeenCalledWith(
+        'user-123',
+      );
+      expect(result).toEqual(expected);
+    });
+
+    it('should return alreadyVerified response when email is already verified', async () => {
+      const currentUser = { userId: 'user-123' };
+      const expected = {
+        success: true,
+        message: 'El email ya está verificado',
+        alreadyVerified: true,
+      };
+      mockAuthService.sendVerificationEmail.mockResolvedValue(expected);
+
+      const result = await controller.sendVerificationEmail(currentUser);
+
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('confirmEmailVerification', () => {
+    it('should delegate to authService.confirmEmailVerification with the token DTO', async () => {
+      const dto = { token: 'valid-token-abc123' };
+      const expected = {
+        success: true,
+        message: 'Email verificado exitosamente',
+      };
+      mockAuthService.confirmEmailVerification.mockResolvedValue(expected);
+
+      const result = await controller.confirmEmailVerification(dto);
+
+      expect(mockAuthService.confirmEmailVerification).toHaveBeenCalledWith(
+        dto,
+      );
       expect(result).toEqual(expected);
     });
   });

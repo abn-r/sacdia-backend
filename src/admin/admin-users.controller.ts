@@ -7,6 +7,7 @@ import {
   Query,
   Request,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import {
@@ -18,8 +19,8 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { RequirePermissions } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
 import {
   AdminCurrentOperationalEnrollmentDto,
   AdminListUsersQueryDto,
@@ -32,7 +33,9 @@ import { AdminUsersService } from './admin-users.service';
 @ApiTags('admin-users')
 @ApiBearerAuth()
 @ApiExtraModels(AdminCurrentOperationalEnrollmentDto, AdminTrajectoryClassDto)
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
+@GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
@@ -110,7 +113,7 @@ export class AdminUsersController {
   @ApiParam({ name: 'userId', type: String })
   async getUserById(
     @Request() req: ExpressRequest & { user: { sub: string } },
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<{
     status: string;
     data: Awaited<ReturnType<AdminUsersService['getUserById']>>;
@@ -123,10 +126,10 @@ export class AdminUsersController {
   }
 
   @Patch('users/:userId/approval')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Approve or reject a user' })
   async updateUserApproval(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserApprovalDto,
   ) {
     const data = await this.adminUsersService.updateUserApproval(userId, dto);
@@ -134,10 +137,10 @@ export class AdminUsersController {
   }
 
   @Patch('users/:userId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Update user administrative fields' })
   async updateUser(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateAdminUserDto,
   ) {
     const data = await this.adminUsersService.updateUser(userId, dto);

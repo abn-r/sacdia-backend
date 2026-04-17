@@ -3,7 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { SupabaseService } from '../src/common/supabase.service';
+import { BetterAuthService } from '../src/better-auth/better-auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PermissionsGuard } from '../src/common/guards';
 import {
@@ -16,19 +16,20 @@ describe('Users E2E Tests', () => {
   let prisma: PrismaService;
   let jwtService: JwtService;
 
-  const mockSupabaseService = {
-    admin: {
-      auth: {
-        getUser: jest.fn().mockResolvedValue({
-          data: { user: { id: 'test-user-id' } },
-          error: null,
-        }),
-      },
-      storage: {
-        from: jest.fn().mockReturnThis(),
-        getPublicUrl: jest.fn().mockReturnValue({ data: { publicUrl: 'url' } }),
-      },
-    },
+  const mockBetterAuthService = {
+    signInWithPassword: jest.fn(),
+    refreshSession: jest.fn(),
+    signOut: jest.fn(),
+    createUser: jest.fn(),
+    signJwt: jest.fn().mockReturnValue('fake-jwt'),
+    resetPasswordForEmail: jest.fn(),
+    updatePasswordById: jest.fn(),
+    getOAuthUrl: jest.fn(),
+    handleOAuthCallback: jest.fn(),
+    enrollTotp: jest.fn(),
+    verifyTotp: jest.fn(),
+    disableTotp: jest.fn(),
+    hasTotpEnabled: jest.fn().mockResolvedValue({ enabled: false }),
   };
 
   const mockPermissionsGuard = {
@@ -41,8 +42,8 @@ describe('Users E2E Tests', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideProvider(SupabaseService)
-      .useValue(mockSupabaseService)
+      .overrideProvider(BetterAuthService)
+      .useValue(mockBetterAuthService)
       .overrideGuard(PermissionsGuard)
       .useValue(mockPermissionsGuard)
       .compile();

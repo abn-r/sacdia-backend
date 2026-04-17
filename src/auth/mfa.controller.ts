@@ -7,168 +7,201 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiHeader,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { MfaGuard } from '../common/guards/mfa.guard';
+import { SkipMfaCheck } from '../common/decorators/skip-mfa-check.decorator';
 import { MfaService } from '../common/services/mfa.service';
-import { VerifyMfaDto, UnenrollMfaDto } from './dto/mfa.dto';
+import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
 
+/**
+ * MfaController — Two-Factor Authentication endpoints.
+ *
+ * ## Authentication
+ *
+ * All endpoints are protected by JwtAuthGuard + MfaGuard.
+ * The user's UUID (`userId`) is extracted from the SACDIA HS256 JWT payload
+ * (`sub` field) — no separate session token is required.
+ *
+ * ## MFA enforcement
+ *
+ * POST /auth/mfa/verify is decorated with @SkipMfaCheck() so it is reachable
+ * with an aal1 token (mfa_pending: true). All other endpoints require a full
+ * aal2 token (mfa_pending absent or false). This prevents a user from
+ * enrolling or disabling MFA without having first completed the second factor
+ * in the current session.
+ *
+ * ## Storage
+ *
+ * TOTP secrets are stored in the `verification` table with identifier
+ * `totp:{userId}` and effectively never expire (expiresAt = 2099-01-01).
+ *
+ * ## One TOTP per user
+ *
+ * There is a single TOTP factor per user.  Re-enrolling overwrites the previous
+ * secret and generates new backup codes.
+ */
 @ApiTags('auth')
 @Controller('auth/mfa')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, MfaGuard)
 @ApiBearerAuth()
-@ApiHeader({
-  name: 'x-refresh-token',
-  required: false,
-  description:
-    'Refresh token opcional para ligar sesión MFA en entornos que lo requieran.',
-})
 export class MfaController {
   constructor(private readonly mfaService: MfaService) {}
 
+  // ---------------------------------------------------------------------------
+  // Enroll
+  // ---------------------------------------------------------------------------
+
   @Post('enroll')
   @ApiOperation({
-    summary: 'Iniciar enrolamiento de 2FA',
+    summary: 'Habilitar 2FA (TOTP)',
     description:
-      'Genera un QR code y secret para configurar en tu app de autenticación',
+      'Activa la autenticación de dos factores para la cuenta. ' +
+      'Retorna un `totpURI` desde el cual el cliente genera el QR code. ' +
+      'También retorna `backupCodes` de un solo uso (mostrados una sola vez). ' +
+      'Requiere la contraseña actual del usuario. ' +
+      'Re-enrolar sobreescribe el secreto anterior.',
   })
   @ApiResponse({
-    status: 200,
-    description: 'QR code y secret generados',
+    status: 201,
+    description: 'TOTP URI y backup codes generados',
     schema: {
       properties: {
-        factorId: { type: 'string' },
-        qrCode: { type: 'string', description: 'Base64 del QR code' },
-        secret: {
+        totpURI: {
           type: 'string',
-          description: 'Secret para configurar manualmente',
+          example:
+            'otpauth://totp/SACDIA:user@example.com?secret=BASE32SECRET&issuer=SACDIA',
+          description: 'URI otpauth:// para generar el QR code en el cliente',
         },
-        uri: { type: 'string', description: 'URI para apps de autenticación' },
+        backupCodes: {
+          type: 'array',
+          items: { type: 'string', example: 'AB3XYZ12' },
+          description:
+            'Códigos de respaldo de un solo uso (10 códigos de 8 chars). ' +
+            'Almacenados hasheados — estos son los únicos valores en claro.',
+        },
       },
     },
   })
-  async enrollMfa(@Req() req: Request) {
-    const token = this.extractToken(req);
-    const refreshToken = this.extractRefreshToken(req);
-    return this.mfaService.enrollMfa(token, refreshToken);
+  @ApiResponse({
+    status: 401,
+    description: 'Contraseña inválida o JWT expirado',
+  })
+  async enrollMfa(@Req() req: Request, @Body() dto: EnrollMfaDto) {
+    const userId = (req.user as any).userId as string;
+    return this.mfaService.enrollMfa(userId, dto.password);
   }
+
+  // ---------------------------------------------------------------------------
+  // Verify
+  // ---------------------------------------------------------------------------
 
   @Post('verify')
+  // SkipMfaCheck: this is the endpoint that CLEARS mfa_pending.
+  // It must be reachable with an aal1 token (mfa_pending: true).
+  @SkipMfaCheck()
+  // Strict rate limit: 5 attempts per minute — TOTP is 6-digit so brute force is feasible
+  // without this guard. Allows for reasonable typos while blocking automated attacks.
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({
-    summary: 'Verificar y activar 2FA',
-    description: 'Verifica el código TOTP y activa 2FA para la cuenta',
+    summary: 'Verificar código TOTP',
+    description:
+      'Verifica un código de 6 dígitos de la app de autenticación. ' +
+      'Si el código es válido, retorna un nuevo `accessToken` aal2 (sin mfa_pending) ' +
+      'que el cliente debe usar en lugar del token original. ' +
+      'Falla con 401 si TOTP no está enrolado.',
   })
-  @ApiResponse({ status: 200, description: '2FA activado exitosamente' })
-  @ApiResponse({ status: 401, description: 'Código inválido' })
+  @ApiResponse({
+    status: 201,
+    description: 'Resultado de la verificación',
+    schema: {
+      properties: {
+        verified: { type: 'boolean', example: true },
+        accessToken: {
+          type: 'string',
+          description:
+            'Nuevo JWT aal2 emitido tras verificación exitosa. ' +
+            'Reemplaza el token aal1 (mfa_pending) original. ' +
+            'Ausente cuando verified es false.',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'TOTP no enrolado o código inválido',
+  })
   async verifyMfa(@Req() req: Request, @Body() dto: VerifyMfaDto) {
-    const token = this.extractToken(req);
-    const refreshToken = this.extractRefreshToken(req);
-    return this.mfaService.verifyAndActivateMfa(
-      token,
-      dto.factorId,
-      dto.code,
-      refreshToken,
-    );
+    const userId = (req.user as any).userId as string;
+    const email = (req.user as any).email as string;
+    return this.mfaService.verifyMfa(userId, email, dto.code);
   }
 
-  @Get('factors')
+  // ---------------------------------------------------------------------------
+  // Disable
+  // ---------------------------------------------------------------------------
+
+  @Delete('disable')
   @ApiOperation({
-    summary: 'Listar factores MFA configurados',
-    description: 'Obtiene la lista de métodos 2FA configurados para el usuario',
+    summary: 'Deshabilitar 2FA',
+    description:
+      'Desactiva la autenticación de dos factores para la cuenta. ' +
+      'Elimina el secreto TOTP y los backup codes. ' +
+      'Requiere la contraseña actual del usuario para confirmar la operación.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de factores',
+    description: '2FA deshabilitado exitosamente',
     schema: {
-      type: 'array',
-      items: {
-        properties: {
-          id: { type: 'string' },
-          friendlyName: { type: 'string' },
-          factorType: { type: 'string' },
-          status: { type: 'string' },
-          createdAt: { type: 'string' },
-        },
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: '2FA disabled successfully' },
       },
     },
   })
-  async listFactors(@Req() req: Request) {
-    const token = this.extractToken(req);
-    const refreshToken = this.extractRefreshToken(req);
-    return this.mfaService.listFactors(token, refreshToken);
-  }
-
-  @Delete('unenroll')
-  @ApiOperation({
-    summary: 'Deshabilitar 2FA',
-    description: 'Elimina un factor MFA de la cuenta',
+  @ApiResponse({
+    status: 401,
+    description: 'Contraseña inválida o JWT expirado',
   })
-  @ApiResponse({ status: 200, description: '2FA deshabilitado' })
-  async unenrollMfa(@Req() req: Request, @Body() dto: UnenrollMfaDto) {
-    const token = this.extractToken(req);
-    const refreshToken = this.extractRefreshToken(req);
-    await this.mfaService.unenrollFactor(token, dto.factorId, refreshToken);
+  async disableMfa(@Req() req: Request, @Body() dto: DisableMfaDto) {
+    const userId = (req.user as any).userId as string;
+    await this.mfaService.disableMfa(userId, dto.password);
     return { success: true, message: '2FA disabled successfully' };
   }
 
+  // ---------------------------------------------------------------------------
+  // Status
+  // ---------------------------------------------------------------------------
+
   @Get('status')
+  // Status check is safe to expose with an aal1 token — no sensitive action is taken.
+  @SkipMfaCheck()
   @ApiOperation({
-    summary: 'Verificar estado de 2FA',
+    summary: 'Estado de 2FA',
     description:
-      'Indica si el usuario tiene 2FA habilitado y su nivel de autenticación',
+      'Indica si el usuario tiene 2FA habilitado. ' +
+      'El campo `enabled` es true cuando hay un secreto TOTP enrolado.',
   })
   @ApiResponse({
     status: 200,
     schema: {
       properties: {
-        mfaEnabled: { type: 'boolean' },
-        currentLevel: {
-          type: 'string',
-          description: 'aal1 = password, aal2 = password + MFA',
+        enabled: {
+          type: 'boolean',
+          description: 'true si TOTP está enrolado para este usuario',
         },
-        factors: { type: 'array' },
       },
     },
   })
   async getMfaStatus(@Req() req: Request) {
-    const token = this.extractToken(req);
-    const refreshToken = this.extractRefreshToken(req);
-    const [enabled, level, factors] = await Promise.all([
-      this.mfaService.hasMfaEnabled(token, refreshToken),
-      this.mfaService.getAuthenticatorAssuranceLevel(token, refreshToken),
-      this.mfaService.listFactors(token, refreshToken),
-    ]);
-
-    return {
-      mfaEnabled: enabled,
-      currentLevel: level.currentLevel,
-      nextLevel: level.nextLevel,
-      factors,
-    };
-  }
-
-  private extractToken(req: Request): string {
-    const authHeader = req.headers.authorization;
-    return authHeader?.replace('Bearer ', '') || '';
-  }
-
-  private extractRefreshToken(req: Request): string | undefined {
-    const header = req.headers['x-refresh-token'];
-
-    if (Array.isArray(header)) {
-      return header[0]?.trim() || undefined;
-    }
-
-    if (typeof header === 'string') {
-      return header.trim() || undefined;
-    }
-
-    return undefined;
+    const userId = (req.user as any).userId as string;
+    return this.mfaService.getMfaStatus(userId);
   }
 }

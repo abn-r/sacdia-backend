@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,6 +26,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 @Injectable()
 export class ClubsService {
@@ -35,6 +37,7 @@ export class ClubsService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly authorizationContext: AuthorizationContextService,
   ) {}
 
   // ========================================
@@ -67,7 +70,11 @@ export class ClubsService {
           districts: { select: { name: true } },
           local_fields: { select: { name: true } },
           club_sections: {
-            select: { club_section_id: true, active: true, club_types: { select: { name: true } } },
+            select: {
+              club_section_id: true,
+              active: true,
+              club_types: { select: { name: true } },
+            },
           },
         },
         orderBy: { name: 'asc' },
@@ -146,9 +153,18 @@ export class ClubsService {
 
   async getSections(clubId: number) {
     await this.findOne(clubId);
+    // Intentionally limited select: this endpoint is called without
+    // club_sections:read permission to support the post-registration flow.
+    // Only expose fields needed to identify and select a section — operational
+    // details (fee, souls_target, meeting_day/time, contact info) are omitted.
     return this.prisma.club_sections.findMany({
       where: { main_club_id: clubId },
-      include: { club_types: { select: { name: true } } },
+      select: {
+        club_section_id: true,
+        active: true,
+        name: true,
+        club_types: { select: { club_type_id: true, name: true } },
+      },
       orderBy: { club_section_id: 'asc' },
     });
   }
@@ -158,7 +174,8 @@ export class ClubsService {
       where: { club_section_id: sectionId },
       include: { club_types: { select: { name: true } } },
     });
-    if (!section) throw new NotFoundException(`Club section ${sectionId} not found`);
+    if (!section)
+      throw new NotFoundException(`Club section ${sectionId} not found`);
     return section;
   }
 
@@ -168,7 +185,9 @@ export class ClubsService {
       where: { club_type_id: dto.club_type_id },
     });
     if (!clubType || !clubType.active) {
-      throw new BadRequestException(`Club type ${dto.club_type_id} not found or inactive`);
+      throw new BadRequestException(
+        `Club type ${dto.club_type_id} not found or inactive`,
+      );
     }
     return this.prisma.club_sections.create({
       data: {
@@ -251,9 +270,7 @@ export class ClubsService {
 
   async assignRole(dto: AssignRoleDto) {
     if (!dto.club_section_id) {
-      throw new BadRequestException(
-        'club_section_id is required',
-      );
+      throw new BadRequestException('club_section_id is required');
     }
 
     const roleId = await this.resolveRoleId(dto);
@@ -261,6 +278,8 @@ export class ClubsService {
       dto.ecclesiastical_year_id ??
       (await this.getActiveEcclesiasticalYearId());
     const startDate = dto.start_date ?? new Date();
+
+    await this.validateRoleSlot(dto.club_section_id, roleId);
 
     const assignment = {
       user_id: dto.user_id,
@@ -273,13 +292,19 @@ export class ClubsService {
       club_section_id: dto.club_section_id,
     };
 
-    return this.prisma.club_role_assignments.create({
+    const created = await this.prisma.club_role_assignments.create({
       data: assignment,
       include: {
         users: { select: { name: true, paternal_last_name: true } },
         roles: { select: { role_name: true } },
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      dto.user_id,
+    );
+
+    return created;
   }
 
   async updateRoleAssignment(
@@ -310,14 +335,20 @@ export class ClubsService {
       updateData.status = dto.status;
     }
 
-    return this.prisma.club_role_assignments.update({
+    const updated = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: updateData,
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      updated.user_id,
+    );
+
+    return updated;
   }
 
   async removeRoleAssignment(assignmentId: string) {
-    return this.prisma.club_role_assignments.update({
+    const removed = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: {
         active: false,
@@ -326,11 +357,108 @@ export class ClubsService {
         modified_at: new Date(),
       },
     });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      removed.user_id,
+    );
+
+    return removed;
   }
 
   // ========================================
   // HELPERS
   // ========================================
+
+  private async validateRoleSlot(
+    sectionId: number,
+    roleId: string,
+  ): Promise<void> {
+    // 1. Check max_per_section from role_slot_limits
+    const slotLimit = await this.prisma.role_slot_limits.findUnique({
+      where: { role_id: roleId },
+    });
+
+    if (slotLimit?.max_per_section != null) {
+      const currentCount = await this.prisma.club_role_assignments.count({
+        where: {
+          club_section_id: sectionId,
+          role_id: roleId,
+          active: true,
+        },
+      });
+
+      if (currentCount >= slotLimit.max_per_section) {
+        const role = await this.prisma.roles.findUnique({
+          where: { role_id: roleId },
+          select: { role_name: true },
+        });
+        throw new ConflictException(
+          `Maximum ${slotLimit.max_per_section} "${role?.role_name ?? roleId}" per section reached`,
+        );
+      }
+    }
+
+    // 2. Mutual exclusivity: secretary / treasurer vs secretary-treasurer
+    const role = await this.prisma.roles.findUnique({
+      where: { role_id: roleId },
+      select: { role_name: true },
+    });
+
+    if (!role) return;
+
+    const roleName = role.role_name.toLowerCase();
+
+    if (roleName === 'secretary' || roleName === 'treasurer') {
+      const secTreasRole = await this.prisma.roles.findFirst({
+        where: { role_name: 'secretary-treasurer', active: true },
+        select: { role_id: true },
+      });
+
+      if (secTreasRole) {
+        const hasSecTreas = await this.prisma.club_role_assignments.findFirst({
+          where: {
+            club_section_id: sectionId,
+            role_id: secTreasRole.role_id,
+            active: true,
+          },
+        });
+
+        if (hasSecTreas) {
+          throw new ConflictException(
+            `Cannot assign "${roleName}" when "secretary-treasurer" already exists in this section`,
+          );
+        }
+      }
+    }
+
+    if (roleName === 'secretary-treasurer') {
+      const conflictingRoles = await this.prisma.roles.findMany({
+        where: { role_name: { in: ['secretary', 'treasurer'] }, active: true },
+        select: { role_id: true, role_name: true },
+      });
+
+      if (conflictingRoles.length > 0) {
+        const conflictingIds = conflictingRoles.map((r) => r.role_id);
+        const existingConflict =
+          await this.prisma.club_role_assignments.findFirst({
+            where: {
+              club_section_id: sectionId,
+              role_id: { in: conflictingIds },
+              active: true,
+            },
+            include: {
+              roles: { select: { role_name: true } },
+            },
+          });
+
+        if (existingConflict) {
+          throw new ConflictException(
+            `Cannot assign "secretary-treasurer" when "${existingConflict.roles.role_name}" already exists in this section`,
+          );
+        }
+      }
+    }
+  }
 
   private async getActiveEcclesiasticalYearId(): Promise<number> {
     const currentYear = await this.prisma.ecclesiastical_years.findFirst({

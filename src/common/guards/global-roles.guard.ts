@@ -45,6 +45,11 @@ export class GlobalRolesGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
+    // super_admin bypasses all role-based restrictions (god mode)
+    if (await this.authorizationContext.isSuperAdmin(user.sub)) {
+      return true;
+    }
+
     // Verificar si el usuario tiene alguno de los roles requeridos
     const acceptedRoles = Array.from(
       new Set(

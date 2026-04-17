@@ -1,289 +1,146 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BetterAuthService } from '../../better-auth/better-auth.service';
 
-const MFA_SESSION_BIND_FAILED = 'MFA_SESSION_BIND_FAILED';
+// ---------------------------------------------------------------------------
+// Response types
+// ---------------------------------------------------------------------------
 
+/**
+ * Returned by enrollMfa.
+ * The client is responsible for generating a QR code image from `totpURI`.
+ * There is ONE TOTP per user — no factorId concept.
+ */
 export interface MfaEnrollResponse {
-  factorId: string;
-  qrCode: string;
-  secret: string;
-  uri: string;
-}
-
-export interface MfaFactor {
-  id: string;
-  friendlyName: string;
-  factorType: string;
-  status: string;
-  createdAt: string;
+  totpURI: string;
+  backupCodes: string[];
 }
 
 /**
- * Servicio para manejar Autenticación de Dos Factores (2FA) con Supabase MFA.
- * Soporta TOTP (Time-based One-Time Password).
+ * Represents whether 2FA is enabled for the current user.
+ */
+export interface MfaStatus {
+  enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+/**
+ * MfaService — Autenticación de Dos Factores via direct Prisma + otplib.
+ *
+ * Design:
+ * - ONE TOTP per user — no factorId concept.
+ * - No challenge step — verify directly with the 6-digit code.
+ * - Enroll (enable) and disable both require the user's PASSWORD.
+ * - TOTP secrets stored in the `verification` table with identifier = `totp:{userId}`.
+ * - Backup codes: 10 random 8-char codes, bcrypt-hashed in DB, plain returned once.
+ * - All operations identified by userId from the SACDIA JWT (req.user.userId).
  */
 @Injectable()
 export class MfaService {
   private readonly logger = new Logger(MfaService.name);
-  private supabase: SupabaseClient;
 
-  constructor() {
-    this.supabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_ANON_KEY!,
-    );
-  }
+  constructor(private readonly betterAuthService: BetterAuthService) {}
+
+  // ---------------------------------------------------------------------------
+  // Enroll
+  // ---------------------------------------------------------------------------
 
   /**
-   * Iniciar el proceso de enrolamiento de 2FA para un usuario.
-   * Genera un QR code y secret para configurar en app de autenticación.
+   * Enable TOTP 2FA for the authenticated user.
+   *
+   * @param userId   - User's UUID from the SACDIA JWT (req.user.userId).
+   * @param password - User's current password (required for security).
+   * @returns `{ totpURI, backupCodes }` — client generates QR from `totpURI`.
+   *          backupCodes are shown ONCE — they are hashed in the DB.
    */
   async enrollMfa(
-    accessToken: string,
-    refreshToken?: string,
+    userId: string,
+    password: string,
   ): Promise<MfaEnrollResponse> {
-    try {
-      // Establecer sesión del usuario
-      await this.bindSession(accessToken, refreshToken);
-
-      // Enrolar nuevo factor TOTP
-      const { data, error } = await this.supabase.auth.mfa.enroll({
-        factorType: 'totp',
-        friendlyName: 'SACDIA Authenticator',
-      });
-
-      if (error) {
-        this.logger.error(`MFA enrollment failed: ${error.message}`);
-        throw new BadRequestException(error.message);
-      }
-
-      this.logger.log(`MFA enrollment initiated for user`);
-
-      return {
-        factorId: data.id,
-        qrCode: data.totp.qr_code,
-        secret: data.totp.secret,
-        uri: data.totp.uri,
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      this.logger.error(`MFA enrollment error: ${error}`);
-      throw new BadRequestException('Failed to enroll MFA');
-    }
+    const result = await this.betterAuthService.enrollTotp(userId, password);
+    this.logger.log(`TOTP enrollment completed for user: ${userId}`);
+    return result;
   }
 
+  // ---------------------------------------------------------------------------
+  // Verify
+  // ---------------------------------------------------------------------------
+
   /**
-   * Verificar el código TOTP y activar 2FA.
-   * El usuario debe proporcionar un código válido de su app de autenticación.
+   * Verify a TOTP code and, on success, issue a full aal2 JWT.
+   *
+   * This endpoint is intended to be called after a password-only login when the
+   * user has MFA enrolled. The caller provides the aal1 token (mfa_pending: true)
+   * in the Authorization header and a 6-digit TOTP code in the body. On success
+   * a new JWT without `mfa_pending` is returned, granting full aal2 access.
+   *
+   * @param userId - User's UUID from the SACDIA JWT (populated by JwtAuthGuard).
+   * @param email  - User's email from the SACDIA JWT (needed to re-sign).
+   * @param code   - 6-digit TOTP code from the authenticator app.
+   * @returns `{ verified: true, accessToken }` on success;
+   *          `{ verified: false }` on invalid TOTP code.
+   * @throws UnauthorizedException when TOTP is not enrolled.
    */
-  async verifyAndActivateMfa(
-    accessToken: string,
-    factorId: string,
+  async verifyMfa(
+    userId: string,
+    email: string,
     code: string,
-    refreshToken?: string,
-  ): Promise<{ verified: boolean }> {
-    try {
-      // Establecer sesión
-      await this.bindSession(accessToken, refreshToken);
-
-      // Crear challenge
-      const { data: challengeData, error: challengeError } =
-        await this.supabase.auth.mfa.challenge({ factorId });
-
-      if (challengeError) {
-        throw new BadRequestException(challengeError.message);
-      }
-
-      // Verificar el código
-      const { data, error } = await this.supabase.auth.mfa.verify({
-        factorId,
-        challengeId: challengeData.id,
-        code,
-      });
-
-      if (error) {
-        this.logger.warn(`MFA verification failed: ${error.message}`);
-        throw new UnauthorizedException('Invalid MFA code');
-      }
-
-      this.logger.log(`MFA verified and activated`);
-
-      return { verified: true };
-    } catch (error) {
-      if (
-        error instanceof BadRequestException ||
-        error instanceof UnauthorizedException
-      ) {
-        throw error;
-      }
-      throw new BadRequestException('MFA verification failed');
-    }
-  }
-
-  /**
-   * Verificar código MFA durante el login.
-   */
-  async verifyMfaCode(
-    accessToken: string,
-    factorId: string,
-    code: string,
-    refreshToken?: string,
-  ): Promise<boolean> {
-    try {
-      await this.bindSession(accessToken, refreshToken);
-
-      const { data: challengeData, error: challengeError } =
-        await this.supabase.auth.mfa.challenge({ factorId });
-
-      if (challengeError) {
-        return false;
-      }
-
-      const { error } = await this.supabase.auth.mfa.verify({
-        factorId,
-        challengeId: challengeData.id,
-        code,
-      });
-
-      return !error;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Obtener los factores MFA configurados para un usuario.
-   */
-  async listFactors(
-    accessToken: string,
-    refreshToken?: string,
-  ): Promise<MfaFactor[]> {
-    try {
-      await this.bindSession(accessToken, refreshToken);
-
-      const { data, error } = await this.supabase.auth.mfa.listFactors();
-
-      if (error) {
-        throw new BadRequestException(error.message);
-      }
-
-      return (data.totp || []).map((factor) => ({
-        id: factor.id,
-        friendlyName: factor.friendly_name || 'Authenticator',
-        factorType: factor.factor_type,
-        status: factor.status,
-        createdAt: factor.created_at,
-      }));
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException('Failed to list MFA factors');
-    }
-  }
-
-  /**
-   * Eliminar un factor MFA (deshabilitar 2FA).
-   */
-  async unenrollFactor(
-    accessToken: string,
-    factorId: string,
-    refreshToken?: string,
-  ): Promise<void> {
-    try {
-      await this.bindSession(accessToken, refreshToken);
-
-      const { error } = await this.supabase.auth.mfa.unenroll({ factorId });
-
-      if (error) {
-        throw new BadRequestException(error.message);
-      }
-
-      this.logger.log(`MFA factor ${factorId} unenrolled`);
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException('Failed to unenroll MFA factor');
-    }
-  }
-
-  /**
-   * Verificar si el usuario tiene MFA habilitado.
-   */
-  async hasMfaEnabled(
-    accessToken: string,
-    refreshToken?: string,
-  ): Promise<boolean> {
-    const factors = await this.listFactors(accessToken, refreshToken);
-    return factors.some((f) => f.status === 'verified');
-  }
-
-  /**
-   * Obtener el nivel de autenticación actual.
-   * aal1 = solo password, aal2 = password + MFA
-   */
-  async getAuthenticatorAssuranceLevel(
-    accessToken: string,
-    refreshToken?: string,
-  ): Promise<{ currentLevel: string; nextLevel: string | null }> {
-    try {
-      await this.bindSession(accessToken, refreshToken);
-
-      const { data, error } =
-        await this.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-
-      if (error) {
-        throw new BadRequestException(error.message);
-      }
-
-      return {
-        currentLevel: data.currentLevel || 'aal1',
-        nextLevel: data.nextLevel,
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      return { currentLevel: 'aal1', nextLevel: null };
-    }
-  }
-
-  private async bindSession(
-    accessToken: string,
-    refreshToken?: string,
-  ): Promise<void> {
-    if (!accessToken?.trim()) {
-      throw new BadRequestException({
-        code: MFA_SESSION_BIND_FAILED,
-        message: 'No access token found for MFA operation.',
-      });
-    }
-
-    const normalizedRefreshToken = refreshToken?.trim() ?? '';
-    const { error } = await this.supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: normalizedRefreshToken,
-    });
-
-    if (!error) return;
-
-    if (!normalizedRefreshToken) {
-      this.logger.warn(
-        JSON.stringify({
-          event: 'mfa_session_bind_failed',
-          reason: 'missing_refresh_token',
-          detail: error.message,
-        }),
+  ): Promise<{ verified: boolean; accessToken?: string }> {
+    const { enabled } = await this.betterAuthService.hasTotpEnabled(userId);
+    if (!enabled) {
+      throw new UnauthorizedException(
+        'TOTP is not enrolled for this user. Call POST /auth/mfa/enroll first.',
       );
-
-      throw new BadRequestException({
-        code: MFA_SESSION_BIND_FAILED,
-        message:
-          'No se pudo ligar la sesión MFA. Proporcione x-refresh-token y reintente.',
-        use: 'x-refresh-token',
-      });
     }
 
-    throw new BadRequestException('Invalid session');
+    const result = await this.betterAuthService.verifyTotp(userId, code);
+    this.logger.log(`TOTP verification for user ${userId}: ${result.verified}`);
+
+    if (!result.verified) {
+      return { verified: false };
+    }
+
+    // Issue a full aal2 JWT (no mfa_pending flag) to replace the aal1 token.
+    const accessToken = this.betterAuthService.signJwt(
+      { id: userId, email },
+      false,
+    );
+
+    this.logger.log(
+      `MFA verification complete (aal2 token issued) for user: ${userId}`,
+    );
+
+    return { verified: true, accessToken };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Disable / unenroll
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Disable TOTP 2FA for the authenticated user.
+   *
+   * @param userId   - User's UUID from the SACDIA JWT.
+   * @param password - User's current password (required for security).
+   */
+  async disableMfa(userId: string, password: string): Promise<void> {
+    await this.betterAuthService.disableTotp(userId, password);
+    this.logger.log(`TOTP disabled for user: ${userId}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Status
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns whether the user has 2FA enrolled.
+   *
+   * @param userId - User's UUID from the SACDIA JWT.
+   */
+  async getMfaStatus(userId: string): Promise<MfaStatus> {
+    const { enabled } = await this.betterAuthService.hasTotpEnabled(userId);
+    return { enabled };
   }
 }

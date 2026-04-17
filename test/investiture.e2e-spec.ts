@@ -79,10 +79,10 @@ describe('Investiture E2E', () => {
     delete process.env.FIREBASE_PRIVATE_KEY;
     delete process.env.FIREBASE_CLIENT_EMAIL;
 
-    process.env.SUPABASE_JWT_SECRET =
-      process.env.SUPABASE_JWT_SECRET || 'test-secret';
+    process.env.BETTER_AUTH_SECRET =
+      process.env.BETTER_AUTH_SECRET || 'test-secret';
 
-    jwtService = new JwtService({ secret: process.env.SUPABASE_JWT_SECRET });
+    jwtService = new JwtService({ secret: process.env.BETTER_AUTH_SECRET });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -102,6 +102,7 @@ describe('Investiture E2E', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api/v1');
     await app.init();
   });
 
@@ -287,7 +288,6 @@ describe('Investiture E2E', () => {
     });
 
     it('reject without comments — service throws BadRequestException → 400', async () => {
-
       mockInvestitureService.validateEnrollment.mockRejectedValue(
         new BadRequestException(
           'El campo comments es requerido para rechazar un enrollment',
@@ -302,7 +302,6 @@ describe('Investiture E2E', () => {
     });
 
     it('enrollment not in SUBMITTED_FOR_VALIDATION — ConflictException → 409', async () => {
-
       mockInvestitureService.validateEnrollment.mockRejectedValue(
         new ConflictException(
           'El enrollment no está en estado SUBMITTED_FOR_VALIDATION. Estado actual: IN_PROGRESS',
@@ -332,7 +331,9 @@ describe('Investiture E2E', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v1/enrollments/101/investiture')
         .set(authHeaders())
-        .send({ comments: 'Investidura realizada en el campamento de primavera 2026.' })
+        .send({
+          comments: 'Investidura realizada en el campamento de primavera 2026.',
+        })
         .expect(201);
 
       expect(response.body).toEqual({
@@ -353,7 +354,6 @@ describe('Investiture E2E', () => {
     });
 
     it('enrollment not APPROVED — service throws BadRequestException → 400', async () => {
-
       mockInvestitureService.markInvestido.mockRejectedValue(
         new BadRequestException(
           'El enrollment debe estar en estado APPROVED para ser investido. Estado actual: IN_PROGRESS',
@@ -368,7 +368,6 @@ describe('Investiture E2E', () => {
     });
 
     it('enrollment already investido — service throws ConflictException → 409', async () => {
-
       mockInvestitureService.markInvestido.mockRejectedValue(
         new ConflictException('El enrollment ya fue investido'),
       );
@@ -408,9 +407,17 @@ describe('Investiture E2E', () => {
         {
           enrollment_id: 101,
           investiture_status: 'SUBMITTED_FOR_VALIDATION',
-          users: { name: 'Juan', paternal_last_name: 'García', maternal_last_name: 'López', email: 'juan@test.com' },
+          users: {
+            name: 'Juan',
+            paternal_last_name: 'García',
+            maternal_last_name: 'López',
+            email: 'juan@test.com',
+          },
           classes: { name: 'Conquistador' },
-          ecclesiastical_year: { start_date: '2026-01-01', end_date: '2026-12-31' },
+          ecclesiastical_year: {
+            start_date: '2026-01-01',
+            end_date: '2026-12-31',
+          },
         },
       ],
       total: 1,
@@ -447,10 +454,18 @@ describe('Investiture E2E', () => {
     });
 
     it('forwards query params local_field_id and ecclesiastical_year_id', async () => {
-      mockInvestitureService.getPending.mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, total_pages: 0 });
+      mockInvestitureService.getPending.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        total_pages: 0,
+      });
 
       await request(app.getHttpServer())
-        .get('/api/v1/investiture/pending?local_field_id=3&ecclesiastical_year_id=2026&page=2&limit=10')
+        .get(
+          '/api/v1/investiture/pending?local_field_id=3&ecclesiastical_year_id=2026&page=2&limit=10',
+        )
         .set(authHeaders())
         .expect(200);
 
@@ -548,7 +563,6 @@ describe('Investiture E2E', () => {
     });
 
     it('unauthorized user — service throws ForbiddenException → 403', async () => {
-
       mockInvestitureService.getHistory.mockRejectedValue(
         new ForbiddenException('Sin acceso al historial de este enrollment'),
       );
@@ -560,7 +574,6 @@ describe('Investiture E2E', () => {
     });
 
     it('enrollment not found — service throws NotFoundException → 404', async () => {
-
       mockInvestitureService.getHistory.mockRejectedValue(
         new NotFoundException('Enrollment no encontrado'),
       );
@@ -586,7 +599,10 @@ describe('Investiture E2E', () => {
         investiture_date: '2026-06-01T00:00:00.000Z',
         active: true,
         local_fields: { name: 'Campo Local Sur' },
-        ecclesiastical_year: { start_date: '2026-01-01', end_date: '2026-12-31' },
+        ecclesiastical_year: {
+          start_date: '2026-01-01',
+          end_date: '2026-12-31',
+        },
       },
     ];
 
@@ -634,7 +650,10 @@ describe('Investiture E2E', () => {
         investiture_date: '2026-06-01T00:00:00.000Z',
         active: true,
         local_fields: { name: 'Campo Local Sur' },
-        ecclesiastical_year: { start_date: '2026-01-01', end_date: '2026-12-31' },
+        ecclesiastical_year: {
+          start_date: '2026-01-01',
+          end_date: '2026-12-31',
+        },
       });
 
       const response = await request(app.getHttpServer())
@@ -651,9 +670,10 @@ describe('Investiture E2E', () => {
     });
 
     it('config not found — service throws NotFoundException → 404', async () => {
-
       mockInvestitureService.getConfig.mockRejectedValue(
-        new NotFoundException('Configuración de investidura con ID 9999 no encontrada'),
+        new NotFoundException(
+          'Configuración de investidura con ID 9999 no encontrada',
+        ),
       );
 
       await request(app.getHttpServer())
@@ -683,7 +703,10 @@ describe('Investiture E2E', () => {
         investiture_date: new Date('2026-06-01'),
         active: true,
         local_fields: { name: 'Campo Local Sur' },
-        ecclesiastical_year: { start_date: '2026-01-01', end_date: '2026-12-31' },
+        ecclesiastical_year: {
+          start_date: '2026-01-01',
+          end_date: '2026-12-31',
+        },
       });
 
       const response = await request(app.getHttpServer())
@@ -707,7 +730,6 @@ describe('Investiture E2E', () => {
     });
 
     it('duplicate config — service throws ConflictException → 409', async () => {
-
       mockInvestitureService.createConfig.mockRejectedValue(
         new ConflictException(
           'Ya existe una configuración de investidura para este campo local y año eclesiástico',
@@ -736,7 +758,10 @@ describe('Investiture E2E', () => {
         investiture_date: new Date('2026-06-01'),
         active: true,
         local_fields: { name: 'Campo Local Sur' },
-        ecclesiastical_year: { start_date: '2026-01-01', end_date: '2026-12-31' },
+        ecclesiastical_year: {
+          start_date: '2026-01-01',
+          end_date: '2026-12-31',
+        },
       });
 
       const response = await request(app.getHttpServer())
@@ -765,7 +790,10 @@ describe('Investiture E2E', () => {
         investiture_date: new Date('2026-06-01'),
         active: false,
         local_fields: { name: 'Campo Local Sur' },
-        ecclesiastical_year: { start_date: '2026-01-01', end_date: '2026-12-31' },
+        ecclesiastical_year: {
+          start_date: '2026-01-01',
+          end_date: '2026-12-31',
+        },
       });
 
       const response = await request(app.getHttpServer())
@@ -778,9 +806,10 @@ describe('Investiture E2E', () => {
     });
 
     it('config not found — service throws NotFoundException → 404', async () => {
-
       mockInvestitureService.updateConfig.mockRejectedValue(
-        new NotFoundException('Configuración de investidura con ID 9999 no encontrada'),
+        new NotFoundException(
+          'Configuración de investidura con ID 9999 no encontrada',
+        ),
       );
 
       await request(app.getHttpServer())
@@ -816,9 +845,10 @@ describe('Investiture E2E', () => {
     });
 
     it('config not found — service throws NotFoundException → 404', async () => {
-
       mockInvestitureService.deleteConfig.mockRejectedValue(
-        new NotFoundException('Configuración de investidura con ID 9999 no encontrada'),
+        new NotFoundException(
+          'Configuración de investidura con ID 9999 no encontrada',
+        ),
       );
 
       await request(app.getHttpServer())

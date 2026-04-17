@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminReferenceService } from './admin-reference.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 
 describe('AdminReferenceService', () => {
   let service: AdminReferenceService;
@@ -24,11 +25,18 @@ describe('AdminReferenceService', () => {
     },
   };
 
+  const mockCatalogCacheService: Partial<CatalogCacheService> = {
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    invalidateMany: jest.fn().mockResolvedValue(undefined),
+    invalidateAll: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminReferenceService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CatalogCacheService, useValue: mockCatalogCacheService },
       ],
     }).compile();
 
@@ -156,13 +164,13 @@ describe('AdminReferenceService', () => {
       );
 
       expect(result).toEqual(created);
-      expect(mockPrismaService.honors_categories.findFirst).toHaveBeenCalledWith(
-        {
-          where: {
-            name: { equals: 'Naturaleza', mode: 'insensitive' },
-          },
+      expect(
+        mockPrismaService.honors_categories.findFirst,
+      ).toHaveBeenCalledWith({
+        where: {
+          name: { equals: 'Naturaleza', mode: 'insensitive' },
         },
-      );
+      });
       expect(mockPrismaService.honors_categories.create).toHaveBeenCalledWith({
         data: {
           name: 'Naturaleza',
@@ -218,11 +226,11 @@ describe('AdminReferenceService', () => {
       );
 
       expect(result).toEqual(updated);
-      expect(mockPrismaService.honors_categories.findUnique).toHaveBeenCalledWith(
-        {
-          where: { honor_category_id: 5 },
-        },
-      );
+      expect(
+        mockPrismaService.honors_categories.findUnique,
+      ).toHaveBeenCalledWith({
+        where: { honor_category_id: 5 },
+      });
       expect(mockPrismaService.honors_categories.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { honor_category_id: 5 },
@@ -260,7 +268,9 @@ describe('AdminReferenceService', () => {
         _count: { honors: 0 },
       };
 
-      mockPrismaService.honors_categories.findUnique.mockResolvedValue(existing);
+      mockPrismaService.honors_categories.findUnique.mockResolvedValue(
+        existing,
+      );
       mockPrismaService.honors.count.mockResolvedValue(0);
       mockPrismaService.honors_categories.update.mockResolvedValue(deleted);
 
@@ -323,6 +333,7 @@ describe('AdminReferenceService', () => {
       expect(result).toEqual(ideals);
       expect(mockPrismaService.club_ideals.findMany).toHaveBeenCalledWith({
         orderBy: [{ club_type_id: 'asc' }, { ideal_order: 'asc' }],
+        take: 200,
       });
     });
   });

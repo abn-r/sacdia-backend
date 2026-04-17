@@ -1,6 +1,6 @@
 # SACDIA Backend
 
-API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
+API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Neon).
 
 > Documentacion oficial del proyecto: `/Users/abner/Documents/development/sacdia/docs` (repositorio padre).
 > Este README es una vista operativa del backend y debe mantenerse sincronizado con esa fuente.
@@ -35,8 +35,8 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Supabase).
 
 - NestJS 11
 - Prisma 7 (`@prisma/adapter-pg`)
-- PostgreSQL (Supabase)
-- Auth JWT con Supabase
+- PostgreSQL (Neon)
+- Auth JWT con Better Auth (self-hosted)
 - Cache con Redis (fallback a in-memory)
 - Firebase Admin (FCM)
 - Sentry
@@ -65,7 +65,7 @@ src/
 
 - Node.js 20+
 - pnpm
-- Acceso a PostgreSQL (Supabase)
+- Acceso a PostgreSQL (Neon)
 
 ## Setup rápido
 
@@ -104,10 +104,12 @@ pnpm run migrate:storage-urls:r2
 ### Requeridas
 
 - `DATABASE_URL`
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_JWT_SECRET` _(opcional — legacy HS256 fallback, no requerido cuando se usa JWKS via `SUPABASE_URL`)_
+- `BETTER_AUTH_SECRET`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
+- `R2_PUBLIC_URL`
 
 ### Recomendadas para producción
 

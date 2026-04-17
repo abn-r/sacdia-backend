@@ -3,12 +3,15 @@ import {
   Post,
   Get,
   Patch,
+  Delete,
   Body,
   UseGuards,
   Headers,
   HttpCode,
   HttpStatus,
+  Ip,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -17,6 +20,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { AccountDeletionService } from './account-deletion.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
@@ -24,15 +28,22 @@ import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly accountDeletionService: AccountDeletionService,
+  ) {}
 
   @Post('register')
+  // Strict rate limit: 5 attempts per minute on registration
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Registrar nuevo usuario' })
   @ApiResponse({
     status: 201,
@@ -48,6 +59,8 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  // Strict rate limit: 5 attempts per minute on login (brute-force protection)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Iniciar sesión' })
   @ApiResponse({
     status: 200,
@@ -85,6 +98,8 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  // Strict rate limit: 5 attempts per minute — matches login (replay/token-stuffing protection)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Refrescar sesión con refresh token' })
   @ApiResponse({
     status: 200,
@@ -160,6 +175,8 @@ export class AuthController {
 
   @Post('password/reset-request')
   @HttpCode(HttpStatus.OK)
+  // Strict rate limit: 3 requests per minute to prevent email enumeration
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @ApiOperation({ summary: 'Solicitar recuperación de contraseña' })
   @ApiResponse({
     status: 200,
@@ -167,6 +184,53 @@ export class AuthController {
   })
   async requestPasswordReset(@Body() dto: ResetPasswordRequestDto) {
     return this.authService.requestPasswordReset(dto);
+  }
+
+  @Post('verify-email/send')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  // Rate limit: max 3 sends per minute to prevent token farming
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @ApiOperation({
+    summary: 'Enviar email de verificación al usuario autenticado',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Email de verificación enviado (o ya verificado)',
+    schema: {
+      example: {
+        success: true,
+        message: 'Email de verificación enviado',
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'No autenticado' })
+  async sendVerificationEmail(@CurrentUser() user: { userId: string }) {
+    return this.authService.sendVerificationEmail(user.userId);
+  }
+
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Post('verify-email/confirm')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirmar verificación de email con token' })
+  @ApiBody({ type: VerifyEmailDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Email verificado exitosamente',
+    schema: {
+      example: {
+        success: true,
+        message: 'Email verificado exitosamente',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Token inválido, ya utilizado, o expirado',
+  })
+  async confirmEmailVerification(@Body() dto: VerifyEmailDto) {
+    return this.authService.confirmEmailVerification(dto);
   }
 
   @Post('update-password')
@@ -271,6 +335,55 @@ export class AuthController {
   })
   async getCompletionStatus(@CurrentUser() user: { userId: string }) {
     return this.authService.getCompletionStatus(user.userId);
+  }
+
+  /**
+   * DELETE /auth/me — Account self-deletion (Apple guideline 5.1.1v)
+   *
+   * Requires current password in body for re-authentication.
+   * Rate limited to 1 request per hour per user to prevent abuse.
+   *
+   * On success:
+   *   - All BA sessions revoked
+   *   - User soft-deleted (active = false) + PII anonymized
+   *   - FCM tokens deactivated
+   *   - Profile picture removed from R2
+   *   - Audit log entry created
+   *
+   * Response: 204 No Content
+   */
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  // Strict rate limit: 1 request per hour — destructive action, no retry spam
+  @Throttle({ default: { ttl: 3600000, limit: 1 } })
+  @ApiOperation({
+    summary: 'Eliminar cuenta del usuario autenticado',
+    description:
+      'Elimina de forma permanente la cuenta. Requiere contraseña actual para confirmación. ' +
+      'Revoca todas las sesiones, anonimiza PII y elimina archivos de almacenamiento. ' +
+      'Requerido por Apple App Store guideline 5.1.1(v).',
+  })
+  @ApiBody({ type: DeleteAccountDto })
+  @ApiResponse({
+    status: 204,
+    description: 'Cuenta eliminada exitosamente',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Contraseña incorrecta o token inválido',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiadas solicitudes — límite de 1 por hora',
+  })
+  async deleteAccount(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: DeleteAccountDto,
+    @Ip() ip: string,
+  ): Promise<void> {
+    await this.accountDeletionService.deleteAccount(user.userId, dto.password, ip);
   }
 
   private extractBearerToken(authorization?: string): string | undefined {

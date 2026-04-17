@@ -26,6 +26,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -41,6 +42,7 @@ export class HonorsService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   // ========================================
@@ -87,6 +89,8 @@ export class HonorsService {
       ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
     };
 
+    // Safety cap: the honors catalog is expected to stay in the low thousands.
+    // A take of 2000 prevents a full-table scan if the catalog grows unexpectedly.
     const honors = await this.prisma.honors.findMany({
       where,
       select: {
@@ -95,6 +99,7 @@ export class HonorsService {
         description: true,
         honor_image: true,
         skill_level: true,
+        material_url: true,
         club_type_id: true,
         honors_category_id: true,
         honors_categories: {
@@ -108,6 +113,7 @@ export class HonorsService {
         club_types: { select: { name: true } },
       },
       orderBy: [{ honors_category_id: 'asc' }, { name: 'asc' }],
+      take: 2000,
     });
 
     const grouped = new Map<
@@ -125,6 +131,7 @@ export class HonorsService {
           description: string | null;
           honor_image: string | null;
           skill_level: number | null;
+          material_url: string | null;
           club_type_id: number | null;
           club_type_name: string | null;
         }>;
@@ -162,6 +169,7 @@ export class HonorsService {
         description: honor.description,
         honor_image: honor.honor_image,
         skill_level: honor.skill_level,
+        material_url: honor.material_url,
         club_type_id: honor.club_type_id,
         club_type_name: honor.club_types?.name ?? null,
       });
@@ -188,6 +196,8 @@ export class HonorsService {
   }
 
   async getCategories() {
+    // Small catalog table: expected to remain under ~100 rows.
+    // No pagination needed; a safety cap is applied as a precaution.
     return this.prisma.honors_categories.findMany({
       where: { active: true },
       select: {
@@ -197,6 +207,7 @@ export class HonorsService {
         icon: true,
       },
       orderBy: { name: 'asc' },
+      take: 200,
     });
   }
 
@@ -205,6 +216,8 @@ export class HonorsService {
   // ========================================
 
   async getUserHonors(userId: string, validated?: boolean) {
+    // A single user is not expected to have more than a few hundred honors.
+    // The cap of 500 prevents unbounded growth from becoming a problem.
     const honors = await this.prisma.users_honors.findMany({
       where: {
         user_id: userId,
@@ -223,6 +236,7 @@ export class HonorsService {
         },
       },
       orderBy: { created_at: 'desc' },
+      take: 500,
     });
 
     return Promise.all(
@@ -232,7 +246,7 @@ export class HonorsService {
 
   async startHonor(userId: string, honorId: number, dto?: StartHonorDto) {
     // Verificar que el honor existe y está activo
-    await this.findOne(honorId);
+    const honor = await this.findOne(honorId);
 
     // Buscar si existe un registro previo (activo o inactivo)
     const existing = await this.prisma.users_honors.findFirst({
@@ -255,9 +269,14 @@ export class HonorsService {
           active: true,
           date: dto?.date ? new Date(dto.date) : new Date(),
           validate: false,
+          validation_status: 'IN_PROGRESS',
           certificate: '',
           images: [],
           document: null,
+          submitted_at: null,
+          validated_by_id: null,
+          validated_at: null,
+          rejection_reason: null,
           modified_at: new Date(),
         },
         include: {
@@ -271,6 +290,21 @@ export class HonorsService {
         },
       });
 
+      try {
+        await this.achievementsService.emitEvent({
+          userId,
+          eventType: 'honor.started',
+          payload: {
+            honor_id: honor.honor_id,
+            category_id: honor.honors_category_id,
+            honor_name: honor.name,
+            club_type_id: honor.club_type_id,
+          },
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      }
+
       return this.mapUserHonorPrivateUrls(updated);
     }
 
@@ -281,6 +315,7 @@ export class HonorsService {
         honor_id: honorId,
         date: dto?.date ? new Date(dto.date) : new Date(),
         validate: false,
+        validation_status: 'IN_PROGRESS',
         certificate: '',
         images: [],
         active: true,
@@ -295,6 +330,21 @@ export class HonorsService {
         },
       },
     });
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId,
+        eventType: 'honor.started',
+        payload: {
+          honor_id: honor.honor_id,
+          category_id: honor.honors_category_id,
+          honor_name: honor.name,
+          club_type_id: honor.club_type_id,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
 
     return this.mapUserHonorPrivateUrls(created);
   }
@@ -750,22 +800,32 @@ export class HonorsService {
   // ========================================
 
   async getUserHonorStats(userId: string) {
-    const [total, validated, inProgress] = await Promise.all([
-      this.prisma.users_honors.count({
-        where: { user_id: userId, active: true },
-      }),
-      this.prisma.users_honors.count({
-        where: { user_id: userId, active: true, validate: true },
-      }),
-      this.prisma.users_honors.count({
-        where: { user_id: userId, active: true, validate: false },
-      }),
-    ]);
+    const where = { user_id: userId, active: true };
+
+    const [total, approved, pendingReview, rejected, inProgress] =
+      await Promise.all([
+        this.prisma.users_honors.count({ where }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'APPROVED' },
+        }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'PENDING_REVIEW' },
+        }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'REJECTED' },
+        }),
+        this.prisma.users_honors.count({
+          where: { ...where, validation_status: 'IN_PROGRESS' },
+        }),
+      ]);
 
     return {
       total,
-      validated,
+      validated: approved, // backward compat
       in_progress: inProgress,
+      pending_review: pendingReview,
+      rejected,
+      approved,
     };
   }
 
@@ -956,21 +1016,22 @@ export class HonorsService {
     );
     const hasImages = Object.prototype.hasOwnProperty.call(userHonor, 'images');
 
-    const certificate = hasCertificate
-      ? await this.resolvePrivateAssetUrl(
-          StorageBucketAlias.USERS_HONORS_CERT,
-          typeof userHonor.certificate === 'string'
-            ? userHonor.certificate
-            : null,
-        )
-      : null;
-
-    const document = hasDocument
-      ? await this.resolvePrivateAssetUrl(
-          StorageBucketAlias.USERS_HONORS,
-          typeof userHonor.document === 'string' ? userHonor.document : null,
-        )
-      : null;
+    const [certificate, document] = await Promise.all([
+      hasCertificate
+        ? this.resolvePrivateAssetUrl(
+            StorageBucketAlias.USERS_HONORS_CERT,
+            typeof userHonor.certificate === 'string'
+              ? userHonor.certificate
+              : null,
+          )
+        : Promise.resolve(null),
+      hasDocument
+        ? this.resolvePrivateAssetUrl(
+            StorageBucketAlias.USERS_HONORS,
+            typeof userHonor.document === 'string' ? userHonor.document : null,
+          )
+        : Promise.resolve(null),
+    ]);
 
     let images: unknown = userHonor.images;
     if (hasImages && Array.isArray(userHonor.images)) {

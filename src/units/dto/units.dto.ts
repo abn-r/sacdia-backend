@@ -4,6 +4,8 @@ import {
   IsString,
   IsBoolean,
   IsUUID,
+  IsArray,
+  ValidateNested,
   Min,
   Max,
 } from 'class-validator';
@@ -27,7 +29,9 @@ export class CreateUnitDto {
   @IsUUID()
   advisor_id: string;
 
-  @ApiPropertyOptional({ description: 'UUID del consejero suplente (opcional)' })
+  @ApiPropertyOptional({
+    description: 'UUID del consejero suplente (opcional)',
+  })
   @IsOptional()
   @IsUUID()
   substitute_advisor_id?: string;
@@ -96,6 +100,20 @@ export class AddUnitMemberDto {
   user_id: string;
 }
 
+export class ScoreEntryDto {
+  @ApiProperty({ description: 'ID de la categoría de puntuación' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  category_id: number;
+
+  @ApiProperty({ description: 'Puntos para esta categoría', minimum: 0 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  points: number;
+}
+
 export class CreateWeeklyRecordDto {
   @ApiProperty({ description: 'UUID del usuario' })
   @IsUUID()
@@ -105,26 +123,41 @@ export class CreateWeeklyRecordDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(52)
+  @Max(53)
   week: number;
 
-  @ApiProperty({ description: 'Asistencia (puntos)' })
+  @ApiProperty({ description: 'Año del registro (ej: 2026)' })
   @Type(() => Number)
   @IsInt()
-  @Min(0)
-  attendance: number;
+  @Min(2020)
+  @Max(2100)
+  year: number;
 
-  @ApiProperty({ description: 'Puntualidad (puntos)' })
+  @ApiPropertyOptional({ description: 'Asistencia (0 o 1)' })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  punctuality: number;
+  @Max(100)
+  attendance?: number;
 
-  @ApiProperty({ description: 'Puntos totales' })
+  @ApiPropertyOptional({ description: 'Puntualidad (puntos legacy)' })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  points: number;
+  @Max(100)
+  punctuality?: number;
+
+  @ApiPropertyOptional({
+    description: 'Array de puntos por categoría de puntuación',
+    type: [ScoreEntryDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScoreEntryDto)
+  scores?: ScoreEntryDto[];
 }
 
 export class UpdateWeeklyRecordDto {
@@ -133,6 +166,7 @@ export class UpdateWeeklyRecordDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100)
   attendance?: number;
 
   @ApiPropertyOptional({ description: 'Puntualidad (puntos)' })
@@ -140,17 +174,21 @@ export class UpdateWeeklyRecordDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100)
   punctuality?: number;
-
-  @ApiPropertyOptional({ description: 'Puntos totales' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  points?: number;
 
   @ApiPropertyOptional({ description: 'Estado activo del registro' })
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Array de puntos por categoría de puntuación (upsert)',
+    type: [ScoreEntryDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScoreEntryDto)
+  scores?: ScoreEntryDto[];
 }

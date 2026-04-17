@@ -1,8 +1,10 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface RegisterFcmTokenDto {
@@ -13,6 +15,8 @@ export interface RegisterFcmTokenDto {
 
 @Injectable()
 export class FcmTokensService {
+  private readonly logger = new Logger(FcmTokensService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -134,20 +138,49 @@ export class FcmTokensService {
   }
 
   /**
-   * Limpiar tokens viejos (no usados en 90 días)
+   * Actualizar `last_used` en bulk para los tokens entregados exitosamente.
+   * Recibe los valores de token (strings FCM) en lugar de IDs para evitar
+   * consultas adicionales en el path de envío.
+   * @internal — llamado por el processor y el fallback síncrono post-delivery.
    */
-  async cleanupOldTokens() {
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  async updateLastUsed(tokens: string[]): Promise<void> {
+    if (tokens.length === 0) return;
 
-    const result = await this.prisma.user_fcm_tokens.deleteMany({
-      where: {
-        last_used: {
-          lt: ninetyDaysAgo,
-        },
-      },
+    await this.prisma.user_fcm_tokens.updateMany({
+      where: { token: { in: tokens } },
+      data: { last_used: new Date() },
     });
+  }
 
-    return { deletedCount: result.count };
+  /**
+   * Limpiar tokens viejos (no usados en 90 días).
+   * Se ejecuta automáticamente todos los domingos a las 3 AM.
+   */
+  @Cron('0 3 * * 0', { name: 'fcm-tokens-cleanup' })
+  async cleanupOldTokens(): Promise<void> {
+    this.logger.log(
+      'FCM token cleanup cron triggered — removing tokens unused for 90+ days...',
+    );
+
+    try {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+      const result = await this.prisma.user_fcm_tokens.deleteMany({
+        where: {
+          last_used: {
+            lt: ninetyDaysAgo,
+          },
+        },
+      });
+
+      this.logger.log(
+        `FCM token cleanup complete — deleted ${result.count} stale token(s)`,
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(`FCM token cleanup failed: ${errorMessage}`);
+    }
   }
 }

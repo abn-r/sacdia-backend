@@ -7,6 +7,7 @@ import {
   Param,
   Body,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -40,7 +41,7 @@ export class LegalRepresentativesController {
     description: 'Usuario mayor de edad o ya tiene representante',
   })
   async create(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() createDto: CreateLegalRepresentativeDto,
   ) {
     return this.legalRepresentativesService.create(userId, createDto);
@@ -55,7 +56,7 @@ export class LegalRepresentativesController {
       'Respuesta exitosa. Retorna representante o data=null cuando no existe',
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  async findOne(@Param('userId') userId: string) {
+  async findOne(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.legalRepresentativesService.findOne(userId);
   }
 
@@ -65,7 +66,7 @@ export class LegalRepresentativesController {
   @ApiResponse({ status: 200, description: 'Representante actualizado' })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })
   async update(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() updateDto: UpdateLegalRepresentativeDto,
   ) {
     return this.legalRepresentativesService.update(userId, updateDto);
@@ -76,7 +77,7 @@ export class LegalRepresentativesController {
   @ApiOperation({ summary: 'Eliminar representante legal' })
   @ApiResponse({ status: 200, description: 'Representante eliminado' })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })
-  async remove(@Param('userId') userId: string) {
+  async remove(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.legalRepresentativesService.remove(userId);
   }
 }

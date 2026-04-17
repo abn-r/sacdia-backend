@@ -176,6 +176,22 @@ export class R2FileStorageService implements FileStorageService {
     }
   }
 
+  /**
+   * Resolve a stored object key to its public CDN URL synchronously.
+   * Only valid for buckets configured with isPublic: true (e.g. ACHIEVEMENTS_BADGES).
+   * Throws InternalServerErrorException if called on a private bucket.
+   */
+  resolvePublicUrl(bucketAlias: StorageBucketAlias, key: string): string {
+    const config = this.getBucketConfig(bucketAlias);
+    if (!config.isPublic) {
+      throw new InternalServerErrorException(
+        `resolvePublicUrl called on private bucket alias: ${bucketAlias}`,
+      );
+    }
+    const relativeKey = this.toRelativeKey(config.keyPrefix, this.normalizeKey(key));
+    return this.buildPublicUrl(config.publicBaseUrl, relativeKey);
+  }
+
   private buildPublicUrl(publicBaseUrl: string, relativeKey: string) {
     const normalizedBase = this.normalizeBaseUrl(publicBaseUrl);
     const normalizedKey = this.normalizeKey(relativeKey)
@@ -256,7 +272,7 @@ export class R2FileStorageService implements FileStorageService {
           bucket: this.getRequiredEnv('R2_BUCKET_USER_PROFILES'),
           publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_USER_PROFILES'),
           keyPrefix: this.getOptionalEnv('R2_KEY_PREFIX_USER_PROFILES'),
-          isPublic: false,
+          isPublic: true,
         };
       case StorageBucketAlias.HONORS_IMAGES:
         return {
@@ -325,6 +341,28 @@ export class R2FileStorageService implements FileStorageService {
             'class-evidence',
           ),
           isPublic: false,
+        };
+      case StorageBucketAlias.RESOURCES_FILES:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_RESOURCES_FILES'),
+          publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_RESOURCES_FILES'),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_RESOURCES_FILES',
+            'resources',
+          ),
+          isPublic: false,
+        };
+      case StorageBucketAlias.ACHIEVEMENTS_BADGES:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_ACHIEVEMENTS_BADGES'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_ACHIEVEMENTS_BADGES',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_ACHIEVEMENTS_BADGES',
+            'achievements/badges',
+          ),
+          isPublic: true,
         };
       default:
         throw new InternalServerErrorException(

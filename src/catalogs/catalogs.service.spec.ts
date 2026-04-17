@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CatalogsService } from './catalogs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CatalogCacheService } from './catalog-cache.service';
 
 describe('CatalogsService', () => {
   let service: CatalogsService;
@@ -49,11 +50,20 @@ describe('CatalogsService', () => {
     },
   };
 
+  // Simulate a permanent cache miss so all existing Prisma assertions
+  // continue to work: getOrSet always calls the loader (DB query).
+  const mockCatalogCacheService: Partial<CatalogCacheService> = {
+    getOrSet: jest.fn().mockImplementation((_key, loader) => loader()),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    invalidateMany: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CatalogsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CatalogCacheService, useValue: mockCatalogCacheService },
       ],
     }).compile();
 
@@ -208,7 +218,9 @@ describe('CatalogsService', () => {
 
       const result = await service.getRoles('CLUB');
 
-      expect(result).toEqual(mockRoles);
+      expect(result).toEqual([
+        { role_id: '1', name: 'director', role_category: 'CLUB' },
+      ]);
       expect(mockPrismaService.roles.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -216,6 +228,67 @@ describe('CatalogsService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('getEcclesiasticalYears', () => {
+    it('should return all ecclesiastical years with mapped shape', async () => {
+      const mockYears = [
+        {
+          year_id: 1,
+          start_date: new Date('2025-08-01'),
+          end_date: new Date('2026-07-31'),
+          active: true,
+        },
+        {
+          year_id: 2,
+          start_date: new Date('2024-08-01'),
+          end_date: new Date('2025-07-31'),
+          active: false,
+        },
+      ];
+
+      mockPrismaService.ecclesiastical_years.findMany.mockResolvedValue(
+        mockYears,
+      );
+
+      const result = await service.getEcclesiasticalYears();
+
+      expect(result).toEqual([
+        {
+          ecclesiastical_year_id: 1,
+          name: '2025-2026',
+          start_date: new Date('2025-08-01'),
+          end_date: new Date('2026-07-31'),
+          active: true,
+        },
+        {
+          ecclesiastical_year_id: 2,
+          name: '2024-2025',
+          start_date: new Date('2024-08-01'),
+          end_date: new Date('2025-07-31'),
+          active: false,
+        },
+      ]);
+      expect(mockPrismaService.ecclesiastical_years.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            year_id: true,
+            start_date: true,
+            end_date: true,
+            active: true,
+          }),
+          orderBy: { start_date: 'desc' },
+        }),
+      );
+    });
+
+    it('should return empty array when no ecclesiastical years exist', async () => {
+      mockPrismaService.ecclesiastical_years.findMany.mockResolvedValue([]);
+
+      const result = await service.getEcclesiasticalYears();
+
+      expect(result).toEqual([]);
     });
   });
 
@@ -234,7 +307,13 @@ describe('CatalogsService', () => {
 
       const result = await service.getCurrentEcclesiasticalYear();
 
-      expect(result).toEqual(mockYear);
+      expect(result).toEqual({
+        ecclesiastical_year_id: 1,
+        name: '2025-2026',
+        start_date: new Date('2025-08-01'),
+        end_date: new Date('2026-07-31'),
+        active: true,
+      });
       expect(
         mockPrismaService.ecclesiastical_years.findFirst,
       ).toHaveBeenCalledWith(
@@ -242,6 +321,91 @@ describe('CatalogsService', () => {
           where: expect.objectContaining({
             start_date: expect.any(Object),
             end_date: expect.any(Object),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getDistricts', () => {
+    it('should return districts with mapped shape', async () => {
+      const mockDistricts = [
+        {
+          districlub_type_id: 1,
+          name: 'Distrito Centro',
+          local_field_id: 10,
+        },
+        {
+          districlub_type_id: 2,
+          name: 'Distrito Norte',
+          local_field_id: 10,
+        },
+      ];
+
+      mockPrismaService.districts.findMany.mockResolvedValue(mockDistricts);
+
+      const result = await service.getDistricts();
+
+      expect(result).toEqual([
+        {
+          district_id: 1,
+          name: 'Distrito Centro',
+          local_field_id: 10,
+        },
+        {
+          district_id: 2,
+          name: 'Distrito Norte',
+          local_field_id: 10,
+        },
+      ]);
+      expect(mockPrismaService.districts.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+          }),
+          select: expect.objectContaining({
+            districlub_type_id: true,
+            name: true,
+            local_field_id: true,
+          }),
+          orderBy: { name: 'asc' },
+        }),
+      );
+    });
+
+    it('should return empty array when no districts exist', async () => {
+      mockPrismaService.districts.findMany.mockResolvedValue([]);
+
+      const result = await service.getDistricts();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should filter districts by localFieldId', async () => {
+      const mockDistricts = [
+        {
+          districlub_type_id: 1,
+          name: 'Distrito Centro',
+          local_field_id: 10,
+        },
+      ];
+
+      mockPrismaService.districts.findMany.mockResolvedValue(mockDistricts);
+
+      const result = await service.getDistricts(10);
+
+      expect(result).toEqual([
+        {
+          district_id: 1,
+          name: 'Distrito Centro',
+          local_field_id: 10,
+        },
+      ]);
+      expect(mockPrismaService.districts.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            local_field_id: 10,
           }),
         }),
       );

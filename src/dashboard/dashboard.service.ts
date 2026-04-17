@@ -1,10 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 export interface UpcomingActivityDto {
   id: number;
   title: string;
+  /** @deprecated Use `activity_date` + `activity_time` instead. Will be removed in a future version. */
   date: string;
+  activity_date: string | null;
+  activity_time: string | null;
   location: string | null;
 }
 
@@ -15,20 +23,28 @@ export interface DashboardSummaryDto {
   club_type: string | null;
   user_role: string | null;
   current_class_name: string | null;
+  current_class_id: number | null;
   class_progress: number;
   honors_completed: number;
   honors_in_progress: number;
   upcoming_activities: UpcomingActivityDto[];
 }
 
+// Signed URL TTL matches the one used by AuthService (5 minutes).
+const AVATAR_SIGNED_URL_TTL_SECONDS = 300;
+
 @Injectable()
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
+  ) {}
 
   async getSummary(userId: string): Promise<DashboardSummaryDto> {
-    const [user, enrollment, honors, clubAssignment] = await Promise.all([
+    const [user, enrollment, honors, userPr] = await Promise.all([
       this.prisma.users.findUnique({
         where: { user_id: userId },
         select: {
@@ -51,9 +67,55 @@ export class DashboardService {
         where: { user_id: userId, active: true },
         select: { validate: true },
       }),
-      this.prisma.club_role_assignments.findFirst({
-        where: { user_id: userId, active: true },
-        orderBy: { created_at: 'desc' },
+      // Read the persisted active context from users_pr — this is the single
+      // source of truth set by PATCH /auth/me/context. Mirrors exactly the
+      // logic used by AuthorizationContextService.resolveUserAuthorization().
+      this.prisma.users_pr.findUnique({
+        where: { user_id: userId },
+        select: { active_club_assignment_id: true },
+      }),
+    ]);
+
+    // Resolve the active club assignment using the same priority order as
+    // AuthorizationContextService: persisted ID first, then most-recent fallback.
+    const clubAssignment = await (async () => {
+      const activeAssignmentId = userPr?.active_club_assignment_id;
+
+      if (activeAssignmentId) {
+        // Try to fetch the explicitly chosen assignment first.
+        const explicit = await this.prisma.club_role_assignments.findFirst({
+          where: {
+            assignment_id: activeAssignmentId,
+            user_id: userId,
+            active: true,
+            status: 'active',
+          },
+          select: {
+            club_sections: {
+              select: {
+                club_section_id: true,
+                club_types: { select: { name: true } },
+                clubs: { select: { name: true } },
+              },
+            },
+            roles: { select: { role_name: true } },
+          },
+        });
+
+        if (explicit) return explicit;
+
+        // If the stored ID is no longer active (e.g. revoked), fall through to
+        // the same auto-select that AuthorizationContextService uses.
+        this.logger.warn(
+          `Dashboard: stored active_club_assignment_id ${activeAssignmentId} is no longer active for user ${userId}. Falling back to most recent.`,
+        );
+      }
+
+      // Fallback: most recently started active assignment — mirrors
+      // AuthorizationContextService's activeClubGrants[0] (ordered by start_date desc).
+      return this.prisma.club_role_assignments.findFirst({
+        where: { user_id: userId, active: true, status: 'active' },
+        orderBy: { start_date: 'desc' },
         select: {
           club_sections: {
             select: {
@@ -62,10 +124,10 @@ export class DashboardService {
               clubs: { select: { name: true } },
             },
           },
-          roles: { select: { name: true } },
+          roles: { select: { role_name: true } },
         },
-      }),
-    ]);
+      });
+    })();
 
     // ----------------------------------------
     // User name
@@ -87,11 +149,14 @@ export class DashboardService {
       currentClassName = enrollment.classes.name;
 
       const [completedSections, totalSections] = await Promise.all([
+        // A section is considered complete only when score >= 70,
+        // consistent with the business rule in ClassesService.
         this.prisma.class_section_progress.count({
           where: {
             enrollment_id: enrollment.enrollment_id,
             user_id: userId,
             active: true,
+            score: { gte: 70 },
           },
         }),
         this.prisma.class_sections.count({
@@ -129,7 +194,7 @@ export class DashboardService {
       const section = clubAssignment.club_sections;
       clubName = section?.clubs?.name ?? null;
       clubType = section?.club_types?.name ?? null;
-      userRole = clubAssignment.roles?.name ?? null;
+      userRole = clubAssignment.roles?.role_name ?? null;
       clubSectionId = section?.club_section_id ?? null;
     }
 
@@ -145,24 +210,43 @@ export class DashboardService {
         where: {
           club_section_id: clubSectionId,
           active: true,
-          created_at: { gte: now },
+          activity_date: { gte: now },
         },
-        orderBy: { created_at: 'asc' },
+        orderBy: { activity_date: 'asc' },
         take: 5,
         select: {
           activity_id: true,
           name: true,
-          created_at: true,
+          activity_date: true,
+          activity_time: true,
           activity_place: true,
           activity_types: { select: { name: true } },
         },
       });
 
       for (const a of activities) {
+        // Extract date-only string (YYYY-MM-DD) directly from the UTC midnight
+        // Date value stored in the DB (@db.Date). Using split('T')[0] on the
+        // ISO string is safe because Prisma stores @db.Date as UTC midnight,
+        // so the date component is always correct regardless of the server TZ.
+        const activityDateOnly = a.activity_date
+          ? a.activity_date.toISOString().split('T')[0]
+          : null;
+
+        // Build the deprecated combined field using the date-only string to
+        // avoid the UTC-offset bug that treated local HH:mm as if it were UTC.
+        // Kept for backwards-compat — consumers should migrate to activity_date
+        // + activity_time fields.
+        const legacyDate = activityDateOnly
+          ? `${activityDateOnly}T${a.activity_time ?? '00:00'}:00`
+          : new Date().toISOString();
+
         upcomingActivities.push({
           id: a.activity_id,
           title: a.name,
-          date: a.created_at?.toISOString() ?? new Date().toISOString(),
+          date: legacyDate,
+          activity_date: activityDateOnly,
+          activity_time: a.activity_time ?? null,
           location: a.activity_place ?? null,
         });
       }
@@ -170,15 +254,46 @@ export class DashboardService {
 
     return {
       user_name: userName,
-      user_avatar: user?.user_image ?? null,
+      user_avatar: await this.resolveAvatarUrl(user?.user_image),
       club_name: clubName,
       club_type: clubType,
       user_role: userRole,
       current_class_name: currentClassName,
+      current_class_id: enrollment?.class_id ?? null,
       class_progress: classProgress,
       honors_completed: honorsCompleted,
       honors_in_progress: honorsInProgress,
       upcoming_activities: upcomingActivities,
     };
+  }
+
+  // ----------------------------------------
+  // Private helpers
+  // ----------------------------------------
+
+  /**
+   * Generates a short-lived signed download URL for the user's profile picture
+   * stored in R2. Returns null when no image is set. Falls back to returning
+   * the stored value as-is if the signing step fails (avoids breaking the
+   * dashboard for a non-critical asset).
+   */
+  private async resolveAvatarUrl(
+    userImage: string | null | undefined,
+  ): Promise<string | null> {
+    if (!userImage) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        userImage,
+        { expiresInSeconds: AVATAR_SIGNED_URL_TTL_SECONDS },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for dashboard avatar. Returning stored value.',
+        error,
+      );
+      return userImage;
+    }
   }
 }

@@ -4,7 +4,6 @@ import {
   Get,
   Delete,
   Body,
-  Query,
   Param,
   UseGuards,
   Request,
@@ -14,7 +13,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
   ApiParam,
 } from '@nestjs/swagger';
 import { OAuthService } from './oauth.service';
@@ -22,19 +20,47 @@ import { OAuthInitiateDto } from './dto/oauth-initiate.dto';
 import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
+/**
+ * OAuthController — Better Auth edition (W3-008 Part 3)
+ *
+ * ## Endpoint changes from Supabase → BA
+ *
+ * | Old (Supabase)                          | New (BA)                               |
+ * |-----------------------------------------|----------------------------------------|
+ * | GET  /auth/oauth/callback?access_token= | POST /auth/oauth/callback (body)       |
+ * | GET  /auth/oauth/providers → { google_connected: bool, ... } | GET /auth/oauth/providers → string[] |
+ * | DELETE /auth/oauth/:provider (flag-only) | DELETE /auth/oauth/:provider (real delete) |
+ *
+ * ## OAuth flow (browser-facing BA callback)
+ *
+ * 1. Client POSTs to `POST /auth/oauth/google` or `POST /auth/oauth/apple`.
+ * 2. Server returns `{ url }` — client redirects browser there.
+ * 3. Provider authenticates user and redirects to BA callback:
+ *    `GET {BETTER_AUTH_BASE_URL}/api/auth/callback/{provider}?code=...&state=...`
+ * 4. BA processes the exchange, creates/updates `users` + `accounts` rows,
+ *    sets a `better-auth.session_token` cookie, and redirects to `callbackURL`.
+ * 5. Client reads the session token from the cookie and POSTs it to
+ *    `POST /auth/oauth/callback` to receive a SACDIA HS256 JWT.
+ */
 @ApiTags('OAuth')
 @Controller('auth/oauth')
 export class OAuthController {
   constructor(private readonly oauthService: OAuthService) {}
 
+  // ---------------------------------------------------------------------------
+  // OAuth initiation
+  // ---------------------------------------------------------------------------
+
   @Post('google')
   @ApiOperation({
     summary: 'Iniciar autenticación con Google',
     description:
-      'Retorna URL de OAuth de Google. Frontend debe redirigir al usuario a esta URL.',
+      'Retorna la URL de autorización de Google. ' +
+      'El cliente debe redirigir el browser del usuario a esta URL. ' +
+      'Better Auth maneja el code exchange en su callback interno.',
   })
   @ApiResponse({
-    status: 200,
+    status: 201,
     description: 'URL de OAuth generada',
     schema: {
       example: {
@@ -42,19 +68,21 @@ export class OAuthController {
       },
     },
   })
-  @ApiResponse({ status: 500, description: 'Error al iniciar OAuth' })
+  @ApiResponse({ status: 500, description: 'Error al generar URL de OAuth' })
   async googleSignIn(@Body() dto: OAuthInitiateDto) {
-    return await this.oauthService.initiateGoogleSignIn(dto.redirectUrl);
+    return this.oauthService.initiateGoogleSignIn(dto.redirectUrl);
   }
 
   @Post('apple')
   @ApiOperation({
     summary: 'Iniciar autenticación con Apple',
     description:
-      'Retorna URL de OAuth de Apple. Frontend debe redirigir al usuario a esta URL.',
+      'Retorna la URL de autorización de Apple. ' +
+      'El cliente debe redirigir el browser del usuario a esta URL. ' +
+      'Better Auth maneja el code exchange en su callback interno.',
   })
   @ApiResponse({
-    status: 200,
+    status: 201,
     description: 'URL de OAuth generada',
     schema: {
       example: {
@@ -62,49 +90,39 @@ export class OAuthController {
       },
     },
   })
-  @ApiResponse({ status: 500, description: 'Error al iniciar OAuth' })
+  @ApiResponse({ status: 500, description: 'Error al generar URL de OAuth' })
   async appleSignIn(@Body() dto: OAuthInitiateDto) {
-    return await this.oauthService.initiateAppleSignIn(dto.redirectUrl);
+    return this.oauthService.initiateAppleSignIn(dto.redirectUrl);
   }
 
-  @Get('callback')
+  // ---------------------------------------------------------------------------
+  // OAuth callback finalisation
+  // ---------------------------------------------------------------------------
+
+  @Post('callback')
   @ApiOperation({
-    summary: 'Manejar callback de OAuth',
+    summary: 'Finalizar callback de OAuth',
     description:
-      'Procesa el callback de Google/Apple después de autenticación exitosa. ' +
-      'Auto-crea usuario si es primera vez. Retorna accessToken y datos de usuario.',
-  })
-  @ApiQuery({
-    name: 'access_token',
-    required: true,
-    description: 'Access token de Supabase',
-  })
-  @ApiQuery({
-    name: 'refresh_token',
-    required: false,
-    description: 'Refresh token de Supabase',
-  })
-  @ApiQuery({
-    name: 'provider',
-    required: false,
-    description: 'Provider usado (google, apple)',
+      'Finaliza el flujo OAuth después de que Better Auth procesó el code exchange. ' +
+      'El cliente envía el opaque session token (de la cookie `better-auth.session_token` ' +
+      'o del fragment de la callbackURL). ' +
+      'Retorna un SACDIA JWT (HS256) listo para usar como Bearer token.',
   })
   @ApiResponse({
-    status: 200,
-    description: 'Autenticación exitosa',
+    status: 201,
+    description: 'Autenticación OAuth exitosa',
     schema: {
       example: {
         accessToken: 'eyJhbGc...',
-        refreshToken: 'v1.abc...',
+        sessionToken: 'ba_opaque_session_token',
         user: {
           id: 'uuid-123',
           email: 'user@gmail.com',
           name: 'Juan',
           paternal_last_name: 'Pérez',
           maternal_last_name: 'González',
-          avatar: 'https://lh3.googleusercontent.com/...',
-          google_connected: true,
-          apple_connected: false,
+          avatar: 'https://r2.sacdia.app/profiles/...',
+          connectedProviders: ['google'],
         },
         needsPostRegistration: true,
       },
@@ -112,49 +130,57 @@ export class OAuthController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Token de OAuth inválido',
+    description: 'Session token inválido o expirado',
   })
-  async handleCallback(@Query() query: OAuthCallbackDto) {
-    return await this.oauthService.handleCallback(query);
+  async handleCallback(@Body() dto: OAuthCallbackDto) {
+    return this.oauthService.handleCallback(dto);
   }
+
+  // ---------------------------------------------------------------------------
+  // Connected providers
+  // ---------------------------------------------------------------------------
 
   @Get('providers')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Obtener providers conectados',
+    summary: 'Obtener providers OAuth conectados',
     description:
-      'Retorna los providers de OAuth (Google, Apple, Facebook) conectados al usuario.',
+      'Retorna un array con los nombres de los providers OAuth (google, apple) ' +
+      'conectados al usuario. Fuente de verdad: tabla `accounts` (Better Auth). ' +
+      'El provider "credential" (email+password) es excluido.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Providers conectados',
+    description: 'Lista de providers conectados',
     schema: {
-      example: {
-        google_connected: true,
-        apple_connected: false,
-        fb_connected: false,
-      },
+      example: ['google'],
     },
   })
   @ApiResponse({ status: 401, description: 'No autenticado' })
   async getConnectedProviders(@Request() req) {
-    return await this.oauthService.getConnectedProviders(req.user.user_id);
+    return this.oauthService.getConnectedProviders(req.user.user_id);
   }
+
+  // ---------------------------------------------------------------------------
+  // Disconnect provider
+  // ---------------------------------------------------------------------------
 
   @Delete(':provider')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Desconectar un provider',
+    summary: 'Desconectar un provider OAuth',
     description:
-      'Desconecta un provider de OAuth (google, apple, fb) del usuario. ' +
-      'Nota: Esto solo actualiza el flag en BD, no desvincula la cuenta en Supabase.',
+      'Elimina la conexión OAuth (fila en tabla `accounts`) para el provider dado. ' +
+      'A diferencia de Supabase (que solo actualizaba un flag), esto REALMENTE ' +
+      'desvincula el provider. ' +
+      'Falla si es el único método de autenticación del usuario.',
   })
   @ApiParam({
     name: 'provider',
     description: 'Provider a desconectar',
-    enum: ['google', 'apple', 'fb'],
+    enum: ['google', 'apple'],
   })
   @ApiResponse({
     status: 200,
@@ -166,15 +192,12 @@ export class OAuthController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Provider inválido' })
+  @ApiResponse({ status: 400, description: 'Provider inválido o no conectado' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
   async disconnectProvider(
     @Param('provider') provider: string,
     @Request() req,
   ) {
-    return await this.oauthService.disconnectProvider(
-      req.user.user_id,
-      provider,
-    );
+    return this.oauthService.disconnectProvider(req.user.user_id, provider);
   }
 }

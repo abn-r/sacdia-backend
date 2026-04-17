@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, evidence_validation_enum } from '@prisma/client';
+import { AchievementsService } from '../achievements/achievements.service';
 import {
   PaginationDto,
   PaginatedResult,
@@ -27,11 +30,32 @@ const ALLOWED_MIME_TYPES = new Set([
 
 @Injectable()
 export class ClassesService {
+  private readonly logger = new Logger(ClassesService.name);
+  private siblingTypeIdsCache: Promise<number[]> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly achievementsService: AchievementsService,
   ) {}
+
+  private getSiblingClubTypeIds(): Promise<number[]> {
+    if (!this.siblingTypeIdsCache) {
+      this.siblingTypeIdsCache = this.prisma.club_types
+        .findMany({
+          where: {
+            OR: [
+              { name: { contains: 'venturer', mode: 'insensitive' } },
+              { name: { contains: 'conquistador', mode: 'insensitive' } },
+            ],
+          },
+          select: { club_type_id: true },
+        })
+        .then((rows) => rows.map((ct) => ct.club_type_id));
+    }
+    return this.siblingTypeIdsCache;
+  }
 
   private async resolveProgressEnrollment(params: {
     userId: string;
@@ -139,7 +163,7 @@ export class ClassesService {
           club_types: { select: { name: true } },
           _count: { select: { class_modules: true } },
         },
-        orderBy: [{ club_type_id: 'asc' }, { minimum_age: 'asc' }],
+        orderBy: [{ club_type_id: 'asc' }, { display_order: 'asc' }],
         skip: pagination?.skip ?? 0,
         take: pagination?.take ?? 50,
       }),
@@ -192,42 +216,179 @@ export class ClassesService {
     classId: number,
     ecclesiasticalYearId: number,
   ) {
-    // Check if already enrolled
-    const existing = await this.prisma.enrollments.findFirst({
-      where: {
-        user_id: userId,
-        class_id: classId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-      },
+    const enrollment = await this.prisma.$transaction(async (tx) => {
+      // 1. Get target class with its club type name so we can classify the pool
+      //    without relying on hardcoded exact-match strings that break under
+      //    encoding/collation differences in the DB.
+      const targetClass = await tx.classes.findUnique({
+        where: { class_id: classId },
+        include: { club_types: { select: { name: true } } },
+      });
+      if (!targetClass) {
+        throw new NotFoundException('Clase no encontrada');
+      }
+
+      const clubTypeName = targetClass.club_types?.name?.toLowerCase() ?? '';
+
+      // Classify the pool using case-insensitive partial matching.
+      // "guía" / "guia" covers both accented and unaccented variants.
+      const isGm = clubTypeName.includes('guia') || clubTypeName.includes('guía');
+      const isAventuConquis =
+        clubTypeName.includes('aventurer') ||
+        clubTypeName.includes('conquistador');
+
+      // 2. Check GM investiture pre-condition
+      if (targetClass.requires_invested_gm) {
+        const hasInvestiture = await tx.enrollments.findFirst({
+          where: {
+            user_id: userId,
+            investiture_status: 'INVESTIDO',
+            classes: {
+              club_types: {
+                name: { contains: 'uía', mode: 'insensitive' },
+              },
+            },
+          },
+        });
+        if (!hasInvestiture) {
+          throw new ForbiddenException(
+            'Necesitás haber sido investido en al menos una clase de Guías Mayores',
+          );
+        }
+      }
+
+      // 3. Display-order progression restriction
+      // Users can only enroll up to one class above their highest INVESTIDO class
+      // within the same club type. If no INVESTIDO exists, they can only enroll
+      // in their base class (the one selected during post-registration).
+      // Exception: if the ecclesiastical year has ended, allow the next class.
+      await this.validateDisplayOrderProgression(tx, {
+        userId,
+        targetClass,
+        ecclesiasticalYearId,
+      });
+
+      // 4. Enrollment limit by club type
+      const { club_type_id } = targetClass;
+
+      if (isAventuConquis) {
+        const siblingIds = await this.getSiblingClubTypeIds();
+
+        const activeCount = await tx.enrollments.count({
+          where: {
+            user_id: userId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+            active: true,
+            classes: {
+              club_type_id: { in: siblingIds },
+            },
+          },
+        });
+        if (activeCount >= 1) {
+          throw new ConflictException(
+            'Ya tenés una inscripción activa en Aventureros/Conquistadores',
+          );
+        }
+      } else if (isGm) {
+        const activeCount = await tx.enrollments.count({
+          where: {
+            user_id: userId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+            active: true,
+            classes: { club_type_id },
+          },
+        });
+        if (activeCount >= 2) {
+          throw new ConflictException(
+            'Ya tenés 2 inscripciones activas en Guías Mayores',
+          );
+        }
+      }
+
+      // 5. Duplicate check + create/reactivate
+      const existing = await tx.enrollments.findUnique({
+        where: {
+          user_id_class_id_ecclesiastical_year_id: {
+            user_id: userId,
+            class_id: classId,
+            ecclesiastical_year_id: ecclesiasticalYearId,
+          },
+        },
+      });
+
+      if (existing) {
+        if (existing.active) {
+          throw new ConflictException(
+            'El usuario ya tiene una inscripción activa para esta clase en el año eclesiástico indicado',
+          );
+        }
+
+        return tx.enrollments.update({
+          where: { enrollment_id: existing.enrollment_id },
+          data: { active: true },
+          include: {
+            classes: { select: { name: true, club_type_id: true } },
+            ecclesiastical_year: {
+              select: { start_date: true, end_date: true },
+            },
+          },
+        });
+      }
+
+      return tx.enrollments.create({
+        data: {
+          user_id: userId,
+          class_id: classId,
+          ecclesiastical_year_id: ecclesiasticalYearId,
+          enrollment_date: new Date(),
+        },
+        include: {
+          classes: { select: { name: true, club_type_id: true } },
+          ecclesiastical_year: { select: { start_date: true, end_date: true } },
+        },
+      });
     });
 
-    if (existing) {
-      return existing;
+    try {
+      await this.achievementsService.emitEvent({
+        userId,
+        eventType: 'class.started',
+        payload: {
+          class_id: classId,
+          class_name: enrollment.classes?.name ?? null,
+          club_type_id: enrollment.classes?.club_type_id ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
     }
 
-    return this.prisma.enrollments.create({
-      data: {
-        user_id: userId,
-        class_id: classId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-        enrollment_date: new Date(),
-      },
-      include: {
-        classes: { select: { name: true } },
-        ecclesiastical_year: { select: { start_date: true, end_date: true } },
-      },
-    });
+    return enrollment;
   }
 
   async getUserEnrollments(userId: string, ecclesiasticalYearId?: number) {
-    return this.prisma.enrollments.findMany({
+    const enrollments = await this.prisma.enrollments.findMany({
       where: {
         user_id: userId,
         ...(ecclesiasticalYearId && {
           ecclesiastical_year_id: ecclesiasticalYearId,
         }),
       },
-      include: {
+      select: {
+        enrollment_id: true,
+        user_id: true,
+        class_id: true,
+        ecclesiastical_year_id: true,
+        enrollment_date: true,
+        investiture_status: true,
+        submitted_for_validation: true,
+        submitted_at: true,
+        validated_by: true,
+        validated_at: true,
+        locked_for_validation: true,
+        cross_type_enrollment: true,
+        created_at: true,
+        modified_at: true,
         classes: {
           select: {
             class_id: true,
@@ -239,6 +400,75 @@ export class ClassesService {
         ecclesiastical_year: { select: { start_date: true, end_date: true } },
       },
       orderBy: { enrollment_date: 'desc' },
+    });
+
+    if (enrollments.length === 0) {
+      return [];
+    }
+
+    const enrollmentIds = enrollments.map((e) => e.enrollment_id);
+    const classIds = [...new Set(enrollments.map((e) => e.class_id))];
+
+    // Batch: completed sections per enrollment (score >= 70, active = true)
+    const completedByEnrollment =
+      await this.prisma.class_section_progress.groupBy({
+        by: ['enrollment_id'],
+        where: {
+          enrollment_id: { in: enrollmentIds },
+          active: true,
+          score: { gte: 70 },
+        },
+        _count: { section_progress_id: true },
+      });
+
+    // Batch: total active sections per class
+    const totalByClass = await this.prisma.class_sections.groupBy({
+      by: ['module_id'],
+      where: {
+        class_modules: { class_id: { in: classIds } },
+        active: true,
+      },
+      _count: { section_id: true },
+    });
+
+    // To map module_id -> class_id we need the modules
+    const modules = await this.prisma.class_modules.findMany({
+      where: { class_id: { in: classIds }, active: true },
+      select: { module_id: true, class_id: true },
+    });
+
+    const moduleToClass = new Map<number, number>(
+      modules.map((m) => [m.module_id, m.class_id]),
+    );
+
+    // Aggregate total sections per class_id
+    const totalSectionsPerClass = new Map<number, number>();
+    for (const row of totalByClass) {
+      const classId = moduleToClass.get(row.module_id);
+      if (classId !== undefined) {
+        totalSectionsPerClass.set(
+          classId,
+          (totalSectionsPerClass.get(classId) ?? 0) + row._count.section_id,
+        );
+      }
+    }
+
+    // Completed sections per enrollment_id
+    const completedPerEnrollment = new Map<number, number>(
+      completedByEnrollment.map((row) => [
+        row.enrollment_id!,
+        row._count.section_progress_id,
+      ]),
+    );
+
+    return enrollments.map((enrollment) => {
+      const total = totalSectionsPerClass.get(enrollment.class_id) ?? 0;
+      const completed =
+        completedPerEnrollment.get(enrollment.enrollment_id) ?? 0;
+      const overall_progress =
+        total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      return { ...enrollment, overall_progress };
     });
   }
 
@@ -260,13 +490,46 @@ export class ClassesService {
     // Get all sections for this class
     const classData = await this.findOne(classId);
 
-    // Get user's section progress
+    // Get user's section progress including evidence files
     const sectionProgress = await this.prisma.class_section_progress.findMany({
       where: {
         enrollment_id: resolvedEnrollment.enrollmentId,
         active: true,
       },
+      include: {
+        evidence_files: {
+          where: { active: true },
+          select: {
+            evidence_file_id: true,
+            file_url: true,
+            file_name: true,
+            file_type: true,
+            uploaded_at: true,
+            uploaded_by: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+          orderBy: { uploaded_at: 'asc' },
+        },
+      },
     });
+
+    // Pre-sign all evidence file URLs in a single parallel batch
+    const allEvidenceFiles = sectionProgress.flatMap((sp) => sp.evidence_files);
+    const signedUrlMap = new Map<number, string>();
+    await Promise.all(
+      allEvidenceFiles.map(async (ef) => {
+        const signedUrl = await this.fileStorage.getSignedDownloadUrl(
+          StorageBucketAlias.CLASS_EVIDENCE,
+          ef.file_url,
+        );
+        signedUrlMap.set(ef.evidence_file_id, signedUrl);
+      }),
+    );
 
     // Calculate completion
     let totalSections = 0;
@@ -294,12 +557,28 @@ export class ClassesService {
           const progress = sectionProgress.find(
             (sp) => sp.section_id === section.section_id,
           );
+          const evidenceFiles = (progress?.evidence_files ?? []).map((ef) => ({
+            id: String(ef.evidence_file_id),
+            file_id: ef.evidence_file_id,
+            file_name: ef.file_name,
+            file_type: ef.file_type,
+            file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
+            uploaded_at: ef.uploaded_at.toISOString(),
+            uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
+          }));
           return {
             section_id: section.section_id,
             section_name: section.name,
             completed: progress ? progress.score >= 70 : false,
             score: progress?.score || 0,
             evidences: progress?.evidences || null,
+            evidence_files: evidenceFiles,
+            status: progress?.status ?? evidence_validation_enum.PENDING,
+            submitted_by_name: null,
+            submitted_at: progress?.submitted_at?.toISOString() || null,
+            validated_by_name: null,
+            validated_at: progress?.validated_at?.toISOString() || null,
+            rejection_reason: progress?.rejection_reason || null,
           };
         }),
       };
@@ -437,7 +716,7 @@ export class ClassesService {
   async uploadSectionFile(
     userId: string,
     classId: number,
-    sectionProgressId: number,
+    sectionId: number,
     file: Express.Multer.File,
   ) {
     if (!file?.buffer) {
@@ -450,24 +729,54 @@ export class ClassesService {
       );
     }
 
-    // Validate that the section_progress_id belongs to userId and classId
-    const sectionProgress = await this.prisma.class_section_progress.findFirst({
+    // Validate the section belongs to this class and get its module_id
+    const section = await this.prisma.class_sections.findFirst({
       where: {
-        section_progress_id: sectionProgressId,
+        section_id: sectionId,
+        class_modules: { class_id: classId },
+        active: true,
+      },
+      select: { section_id: true, module_id: true },
+    });
+
+    if (!section) {
+      throw new NotFoundException(
+        `Section ${sectionId} not found in class ${classId}`,
+      );
+    }
+
+    // Find or create section progress (upsert pattern)
+    let sectionProgress = await this.prisma.class_section_progress.findFirst({
+      where: {
         user_id: userId,
         class_id: classId,
+        section_id: sectionId,
         active: true,
       },
     });
 
     if (!sectionProgress) {
-      throw new NotFoundException(
-        `Section progress ${sectionProgressId} not found for user ${userId} in class ${classId}`,
-      );
+      const resolved = await this.resolveProgressEnrollment({
+        userId,
+        classId,
+      });
+
+      sectionProgress = await this.prisma.class_section_progress.create({
+        data: {
+          user_id: userId,
+          class_id: classId,
+          enrollment_id: resolved.enrollmentId,
+          module_id: section.module_id,
+          section_id: sectionId,
+          score: 0,
+          active: true,
+        },
+      });
     }
 
+    const progressId = sectionProgress.section_progress_id;
     const extension = this.resolveFileExtension(file);
-    const objectKey = `${sectionProgressId}-${Date.now()}.${extension}`;
+    const objectKey = `${progressId}-${Date.now()}.${extension}`;
 
     const uploaded = await this.fileStorage.upload(
       StorageBucketAlias.CLASS_EVIDENCE,
@@ -478,7 +787,7 @@ export class ClassesService {
 
     const created = await (this.prisma as any).evidence_files.create({
       data: {
-        section_progress_id: sectionProgressId,
+        section_progress_id: progressId,
         file_url: uploaded.url,
         file_name: file.originalname || objectKey,
         file_type: this.resolveEvidenceFileType(file),
@@ -496,29 +805,104 @@ export class ClassesService {
       },
     });
 
-    return this.mapEvidenceFile(created);
+    const signedUrl = await this.fileStorage.getSignedDownloadUrl(
+      StorageBucketAlias.CLASS_EVIDENCE,
+      uploaded.url,
+    );
+
+    return this.mapEvidenceFile(created, signedUrl);
+  }
+
+  async submitSection(userId: string, classId: number, sectionId: number) {
+    // Find the section progress
+    const sectionProgress = await this.prisma.class_section_progress.findFirst({
+      where: {
+        user_id: userId,
+        class_id: classId,
+        section_id: sectionId,
+        active: true,
+      },
+      include: {
+        evidence_files: {
+          where: { active: true },
+        },
+      },
+    });
+
+    if (!sectionProgress) {
+      throw new NotFoundException(
+        `Section progress for section ${sectionId} not found for user ${userId} in class ${classId}`,
+      );
+    }
+
+    // Must be in PENDING or REJECTED status to submit
+    if (
+      sectionProgress.status !== evidence_validation_enum.PENDING &&
+      sectionProgress.status !== evidence_validation_enum.REJECTED
+    ) {
+      throw new BadRequestException(
+        `Section is already in status '${sectionProgress.status}' and cannot be submitted`,
+      );
+    }
+
+    // Must have at least one evidence file
+    if (
+      !sectionProgress.evidence_files ||
+      sectionProgress.evidence_files.length === 0
+    ) {
+      throw new BadRequestException(
+        'At least one evidence file is required to submit a section for validation',
+      );
+    }
+
+    const updated = await this.prisma.class_section_progress.update({
+      where: {
+        section_progress_id: sectionProgress.section_progress_id,
+      },
+      data: {
+        status: evidence_validation_enum.SUBMITTED,
+        submitted_by_id: userId,
+        submitted_at: new Date(),
+        modified_at: new Date(),
+      },
+    });
+
+    return {
+      section_progress_id: updated.section_progress_id,
+      section_id: updated.section_id,
+      status: updated.status,
+      submitted_at: updated.submitted_at?.toISOString() ?? null,
+    };
   }
 
   async deleteSectionFile(
     userId: string,
     classId: number,
-    sectionProgressId: number,
+    sectionId: number,
     fileId: number,
   ) {
+    // Resolve the section progress from sectionId
+    const sectionProgress = await this.prisma.class_section_progress.findFirst({
+      where: {
+        user_id: userId,
+        class_id: classId,
+        section_id: sectionId,
+        active: true,
+      },
+      select: { section_progress_id: true },
+    });
+
+    if (!sectionProgress) {
+      throw new NotFoundException('Evidence file not found');
+    }
+
     const fileRecord = await (this.prisma as any).evidence_files.findFirst({
       where: {
         evidence_file_id: fileId,
-        section_progress_id: sectionProgressId,
+        section_progress_id: sectionProgress.section_progress_id,
         active: true,
       },
       include: {
-        class_section_progress: {
-          select: {
-            user_id: true,
-            class_id: true,
-            active: true,
-          },
-        },
         uploaded_by: {
           select: {
             name: true,
@@ -529,12 +913,7 @@ export class ClassesService {
       },
     });
 
-    if (
-      !fileRecord ||
-      !fileRecord.class_section_progress ||
-      fileRecord.class_section_progress.user_id !== userId ||
-      fileRecord.class_section_progress.class_id !== classId
-    ) {
+    if (!fileRecord) {
       throw new NotFoundException('Evidence file not found');
     }
 
@@ -570,28 +949,112 @@ export class ClassesService {
     return this.mapEvidenceFile(updated);
   }
 
-  private mapEvidenceFile(file: {
-    evidence_file_id: number;
-    file_url: string;
-    file_name: string;
-    file_type: string;
-    uploaded_at: Date;
-    uploaded_by?: {
-      name?: string | null;
-      paternal_last_name?: string | null;
-      maternal_last_name?: string | null;
-    } | null;
-  }) {
+  private mapEvidenceFile(
+    file: {
+      evidence_file_id: number;
+      file_url: string;
+      file_name: string;
+      file_type: string;
+      uploaded_at: Date;
+      uploaded_by?: {
+        name?: string | null;
+        paternal_last_name?: string | null;
+        maternal_last_name?: string | null;
+      } | null;
+    },
+    signedUrl?: string,
+  ) {
+    const resolvedUrl = signedUrl ?? file.file_url;
     return {
       id: String(file.evidence_file_id),
       file_id: file.evidence_file_id,
-      url: file.file_url,
-      file_url: file.file_url,
+      url: resolvedUrl,
+      file_url: resolvedUrl,
       file_name: file.file_name,
       file_type: file.file_type,
       uploaded_by_name: this.formatUserName(file.uploaded_by ?? null),
       uploaded_at: file.uploaded_at.toISOString(),
     };
+  }
+
+  /**
+   * Validates that the user can enroll in the target class based on
+   * display_order progression rules:
+   *
+   * 1. Find the user's highest INVESTIDO class within the same club type.
+   *    If found, maxAllowedOrder = highestInvested.display_order + 1.
+   *
+   * 2. If no INVESTIDO class exists, find the user's base class (earliest
+   *    enrollment for the same club type — set during post-registration).
+   *    maxAllowedOrder = baseClass.display_order (they can only re-enroll
+   *    in the same class they originally picked).
+   *
+   * 3. Exception: if the ecclesiastical year has ended (end_date < today),
+   *    maxAllowedOrder is incremented by 1 (they can advance to the next).
+   *
+   * 4. If target display_order > maxAllowedOrder → throw BadRequestException.
+   */
+  private async validateDisplayOrderProgression(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      targetClass: {
+        class_id: number;
+        club_type_id: number;
+        display_order: number;
+      };
+      ecclesiasticalYearId: number;
+    },
+  ): Promise<void> {
+    const { userId, targetClass, ecclesiasticalYearId } = params;
+
+    const [highestInvested, year] = await Promise.all([
+      tx.enrollments.findFirst({
+        where: {
+          user_id: userId,
+          investiture_status: 'INVESTIDO',
+          active: true,
+          classes: { club_type_id: targetClass.club_type_id },
+        },
+        include: { classes: { select: { display_order: true } } },
+        orderBy: { classes: { display_order: 'desc' } },
+      }),
+      tx.ecclesiastical_years.findUnique({
+        where: { year_id: ecclesiasticalYearId },
+        select: { end_date: true },
+      }),
+    ]);
+
+    let maxAllowedOrder: number;
+
+    if (highestInvested) {
+      maxAllowedOrder = highestInvested.classes.display_order + 1;
+    } else {
+      const baseEnrollment = await tx.enrollments.findFirst({
+        where: {
+          user_id: userId,
+          classes: { club_type_id: targetClass.club_type_id },
+        },
+        include: { classes: { select: { display_order: true } } },
+        orderBy: { enrollment_date: 'asc' },
+      });
+
+      if (!baseEnrollment) {
+        return;
+      }
+
+      maxAllowedOrder = baseEnrollment.classes.display_order;
+    }
+
+    if (year && year.end_date < new Date()) {
+      maxAllowedOrder += 1;
+    }
+
+    if (targetClass.display_order > maxAllowedOrder) {
+      throw new BadRequestException(
+        'No puedes inscribirte en una clase superior a tu nivel actual',
+      );
+    }
   }
 
   private formatUserName(

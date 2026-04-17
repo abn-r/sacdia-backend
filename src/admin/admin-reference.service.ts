@@ -8,14 +8,24 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  CatalogCacheService,
+  CATALOG_CACHE_KEYS,
+} from '../catalogs/catalog-cache.service';
+import {
+  CreateActivityTypeDto,
   CreateAllergyDto,
+  CreateClubIdealDto,
+  CreateClubTypeDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
   CreateHonorCategoryDto,
   CreateMedicineDto,
   HonorCategoryListQueryDto,
   CreateRelationshipTypeDto,
+  UpdateActivityTypeDto,
   UpdateAllergyDto,
+  UpdateClubIdealDto,
+  UpdateClubTypeDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
   UpdateHonorCategoryDto,
@@ -31,7 +41,10 @@ type HonorCategoryRecord = Prisma.honors_categoriesGetPayload<{
 export class AdminReferenceService {
   private readonly logger = new Logger(AdminReferenceService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly catalogCache: CatalogCacheService,
+  ) {}
 
   private normalizeName(value: string): string {
     return value.trim().replace(/\s+/g, ' ');
@@ -54,9 +67,172 @@ export class AdminReferenceService {
     );
   }
 
+  // ========================================
+  // ACTIVITY TYPES
+  // ========================================
+
+  async listActivityTypes() {
+    // Small catalog table: expected to remain well under 50 rows.
+    return this.prisma.activity_types.findMany({
+      orderBy: { activity_type_id: 'asc' },
+      take: 200,
+    });
+  }
+
+  async createActivityType(dto: CreateActivityTypeDto, actorId: string) {
+    const name = this.normalizeName(dto.name);
+    const code = dto.code.trim();
+
+    await this.ensureActivityTypeUnique(name, code);
+
+    const activityType = await this.prisma.activity_types.create({
+      data: {
+        code,
+        name,
+        description: dto.description,
+        active: dto.active ?? true,
+      },
+    });
+
+    this.logMutation(
+      'create',
+      'activity_types',
+      activityType.activity_type_id,
+      actorId,
+    );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
+
+    return activityType;
+  }
+
+  async updateActivityType(
+    activityTypeId: number,
+    dto: UpdateActivityTypeDto,
+    actorId: string,
+  ) {
+    await this.ensureActivityTypeExists(activityTypeId);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+    const code = dto.code ? dto.code.trim() : undefined;
+
+    if (name || code) {
+      await this.ensureActivityTypeUnique(
+        name ?? undefined,
+        code ?? undefined,
+        activityTypeId,
+      );
+    }
+
+    const activityType = await this.prisma.activity_types.update({
+      where: { activity_type_id: activityTypeId },
+      data: {
+        ...(code ? { code } : {}),
+        ...(name ? { name } : {}),
+        ...(typeof dto.description === 'string'
+          ? { description: dto.description }
+          : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'update',
+      'activity_types',
+      activityTypeId,
+      actorId,
+    );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
+
+    return activityType;
+  }
+
+  async deleteActivityType(activityTypeId: number, actorId: string) {
+    await this.ensureActivityTypeExists(activityTypeId);
+
+    const inUseCount = await this.prisma.activities.count({
+      where: { activity_type_id: activityTypeId, active: true },
+    });
+
+    if (inUseCount > 0) {
+      throw new ConflictException(
+        'Cannot deactivate activity type because it is in use by active activities',
+      );
+    }
+
+    const activityType = await this.prisma.activity_types.update({
+      where: { activity_type_id: activityTypeId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'delete',
+      'activity_types',
+      activityTypeId,
+      actorId,
+    );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
+
+    return activityType;
+  }
+
+  private async ensureActivityTypeExists(activityTypeId: number) {
+    const entity = await this.prisma.activity_types.findUnique({
+      where: { activity_type_id: activityTypeId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(
+        `Activity type ${activityTypeId} not found`,
+      );
+    }
+
+    return entity;
+  }
+
+  private async ensureActivityTypeUnique(
+    name?: string,
+    code?: string,
+    excludeId?: number,
+  ) {
+    if (name) {
+      const existingByName = await this.prisma.activity_types.findFirst({
+        where: {
+          name: { equals: name, mode: 'insensitive' },
+          ...(excludeId ? { NOT: { activity_type_id: excludeId } } : {}),
+        },
+      });
+
+      if (existingByName) {
+        throw new ConflictException('Activity type name already exists');
+      }
+    }
+
+    if (code) {
+      const existingByCode = await this.prisma.activity_types.findFirst({
+        where: {
+          code: { equals: code, mode: 'insensitive' },
+          ...(excludeId ? { NOT: { activity_type_id: excludeId } } : {}),
+        },
+      });
+
+      if (existingByCode) {
+        throw new ConflictException('Activity type code already exists');
+      }
+    }
+  }
+
   async listRelationshipTypes() {
+    // Small catalog table: expected to remain well under 100 rows.
     return this.prisma.relationship_types.findMany({
       orderBy: { name: 'asc' },
+      take: 200,
     });
   }
 
@@ -81,6 +257,9 @@ export class AdminReferenceService {
       relationshipType.relationship_type_id,
       actorId,
     );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.RELATIONSHIP_TYPES);
+
     return relationshipType;
   }
 
@@ -114,6 +293,9 @@ export class AdminReferenceService {
       relationshipTypeId,
       actorId,
     );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.RELATIONSHIP_TYPES);
+
     return relationshipType;
   }
 
@@ -144,12 +326,17 @@ export class AdminReferenceService {
       relationshipTypeId,
       actorId,
     );
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.RELATIONSHIP_TYPES);
+
     return relationshipType;
   }
 
   async listAllergies() {
+    // Small catalog table: expected to remain well under 500 rows.
     return this.prisma.allergies.findMany({
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -166,6 +353,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('create', 'allergies', allergy.allergy_id, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ALLERGIES);
+
     return allergy;
   }
 
@@ -194,6 +384,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('update', 'allergies', allergyId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ALLERGIES);
+
     return allergy;
   }
 
@@ -222,12 +415,17 @@ export class AdminReferenceService {
     });
 
     this.logMutation('delete', 'allergies', allergyId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ALLERGIES);
+
     return allergy;
   }
 
   async listDiseases() {
+    // Small catalog table: expected to remain well under 500 rows.
     return this.prisma.diseases.findMany({
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -244,6 +442,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('create', 'diseases', disease.disease_id, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DISEASES);
+
     return disease;
   }
 
@@ -272,6 +473,9 @@ export class AdminReferenceService {
     });
 
     this.logMutation('update', 'diseases', diseaseId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DISEASES);
+
     return disease;
   }
 
@@ -300,12 +504,17 @@ export class AdminReferenceService {
     });
 
     this.logMutation('delete', 'diseases', diseaseId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DISEASES);
+
     return disease;
   }
 
   async listMedicines() {
+    // Small catalog table: expected to remain well under 500 rows.
     return this.prisma.medicines.findMany({
       orderBy: { name: 'asc' },
+      take: 500,
     });
   }
 
@@ -382,15 +591,233 @@ export class AdminReferenceService {
   }
 
   async listEcclesiasticalYears() {
+    // One record per year: expected to grow by at most one row per year.
     return this.prisma.ecclesiastical_years.findMany({
       orderBy: { start_date: 'desc' },
+      take: 100,
     });
   }
 
   async listClubIdeals() {
+    // Static catalog defined per club type: expected to remain under 200 rows.
     return this.prisma.club_ideals.findMany({
       orderBy: [{ club_type_id: 'asc' }, { ideal_order: 'asc' }],
+      take: 200,
     });
+  }
+
+  // ========================================
+  // CLUB TYPES
+  // ========================================
+
+  async listClubTypes() {
+    return this.prisma.club_types.findMany({
+      orderBy: { name: 'asc' },
+      take: 50,
+    });
+  }
+
+  async createClubType(dto: CreateClubTypeDto, actorId: string) {
+    const name = this.normalizeName(dto.name);
+    await this.ensureClubTypeUnique(name);
+
+    const clubType = await this.prisma.club_types.create({
+      data: {
+        name,
+        active: dto.active ?? true,
+      },
+    });
+
+    this.logMutation('create', 'club_types', clubType.club_type_id, actorId);
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+
+    return clubType;
+  }
+
+  async updateClubType(
+    clubTypeId: number,
+    dto: UpdateClubTypeDto,
+    actorId: string,
+  ) {
+    await this.ensureClubTypeExists(clubTypeId);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+    if (name) {
+      await this.ensureClubTypeUnique(name, clubTypeId);
+    }
+
+    const clubType = await this.prisma.club_types.update({
+      where: { club_type_id: clubTypeId },
+      data: {
+        ...(name ? { name } : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation('update', 'club_types', clubTypeId, actorId);
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+
+    return clubType;
+  }
+
+  async deleteClubType(clubTypeId: number, actorId: string) {
+    await this.ensureClubTypeExists(clubTypeId);
+
+    const inUseCount = await this.prisma.club_sections.count({
+      where: { club_type_id: clubTypeId, active: true },
+    });
+
+    if (inUseCount > 0) {
+      throw new ConflictException(
+        'Cannot deactivate club type because it has active club sections',
+      );
+    }
+
+    const clubType = await this.prisma.club_types.update({
+      where: { club_type_id: clubTypeId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation('delete', 'club_types', clubTypeId, actorId);
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_TYPES);
+
+    return clubType;
+  }
+
+  private async ensureClubTypeExists(clubTypeId: number) {
+    const entity = await this.prisma.club_types.findUnique({
+      where: { club_type_id: clubTypeId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(`Club type ${clubTypeId} not found`);
+    }
+
+    return entity;
+  }
+
+  private async ensureClubTypeUnique(name: string, excludeId?: number) {
+    const existing = await this.prisma.club_types.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        ...(excludeId ? { NOT: { club_type_id: excludeId } } : {}),
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('Club type name already exists');
+    }
+  }
+
+  // ========================================
+  // CLUB IDEALS (admin CRUD)
+  // ========================================
+
+  async createClubIdeal(dto: CreateClubIdealDto, actorId: string) {
+    const name = this.normalizeName(dto.name);
+
+    // Ensure referenced club type exists
+    await this.ensureClubTypeExists(dto.club_type_id);
+
+    const clubIdeal = await this.prisma.club_ideals.create({
+      data: {
+        name,
+        club_type_id: dto.club_type_id,
+        ideal_order: dto.ideal_order,
+        ideal: dto.ideal ?? null,
+        active: dto.active ?? true,
+      },
+    });
+
+    this.logMutation(
+      'create',
+      'club_ideals',
+      clubIdeal.club_ideal_id,
+      actorId,
+    );
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.CLUB_IDEALS(dto.club_type_id),
+    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_IDEALS());
+
+    return clubIdeal;
+  }
+
+  async updateClubIdeal(
+    clubIdealId: number,
+    dto: UpdateClubIdealDto,
+    actorId: string,
+  ) {
+    const existing = await this.ensureClubIdealExists(clubIdealId);
+
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+
+    const clubIdeal = await this.prisma.club_ideals.update({
+      where: { club_ideal_id: clubIdealId },
+      data: {
+        ...(name ? { name } : {}),
+        ...(typeof dto.ideal_order === 'number'
+          ? { ideal_order: dto.ideal_order }
+          : {}),
+        ...(typeof dto.ideal === 'string' ? { ideal: dto.ideal } : {}),
+        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'update',
+      'club_ideals',
+      clubIdealId,
+      actorId,
+    );
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.CLUB_IDEALS(existing.club_type_id),
+    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_IDEALS());
+
+    return clubIdeal;
+  }
+
+  async deleteClubIdeal(clubIdealId: number, actorId: string) {
+    const existing = await this.ensureClubIdealExists(clubIdealId);
+
+    const clubIdeal = await this.prisma.club_ideals.update({
+      where: { club_ideal_id: clubIdealId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+
+    this.logMutation(
+      'delete',
+      'club_ideals',
+      clubIdealId,
+      actorId,
+    );
+    await this.catalogCache.invalidate(
+      CATALOG_CACHE_KEYS.CLUB_IDEALS(existing.club_type_id),
+    );
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.CLUB_IDEALS());
+
+    return clubIdeal;
+  }
+
+  private async ensureClubIdealExists(clubIdealId: number) {
+    const entity = await this.prisma.club_ideals.findUnique({
+      where: { club_ideal_id: clubIdealId },
+    });
+
+    if (!entity) {
+      throw new NotFoundException(`Club ideal ${clubIdealId} not found`);
+    }
+
+    return entity;
   }
 
   async createEcclesiasticalYear(
@@ -419,6 +846,12 @@ export class AdminReferenceService {
     });
 
     this.logMutation('create', 'ecclesiastical_years', year.year_id, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
+    ]);
+
     return year;
   }
 
@@ -455,6 +888,12 @@ export class AdminReferenceService {
     });
 
     this.logMutation('update', 'ecclesiastical_years', yearId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
+    ]);
+
     return year;
   }
 
@@ -483,10 +922,18 @@ export class AdminReferenceService {
     });
 
     this.logMutation('delete', 'ecclesiastical_years', yearId, actorId);
+
+    await this.catalogCache.invalidateMany([
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS,
+      CATALOG_CACHE_KEYS.ECCLESIASTICAL_YEARS_CURRENT,
+    ]);
+
     return year;
   }
 
-  async listHonorCategories(query: HonorCategoryListQueryDto = new HonorCategoryListQueryDto()) {
+  async listHonorCategories(
+    query: HonorCategoryListQueryDto = new HonorCategoryListQueryDto(),
+  ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const search = query.search?.trim();
@@ -597,7 +1044,10 @@ export class AdminReferenceService {
     return category;
   }
 
-  async deleteHonorCategory(id: number, actorId: string): Promise<HonorCategoryRecord> {
+  async deleteHonorCategory(
+    id: number,
+    actorId: string,
+  ): Promise<HonorCategoryRecord> {
     await this.ensureHonorCategoryExists(id);
 
     const inUseCount = await this.prisma.honors.count({
@@ -780,7 +1230,9 @@ export class AdminReferenceService {
     const existing = await this.prisma.honors_categories.findFirst({
       where: {
         name: { equals: name, mode: 'insensitive' },
-        ...(honorCategoryId ? { NOT: { honor_category_id: honorCategoryId } } : {}),
+        ...(honorCategoryId
+          ? { NOT: { honor_category_id: honorCategoryId } }
+          : {}),
       },
     });
 

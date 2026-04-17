@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthorizationContextService } from './authorization-context.service';
 
@@ -17,6 +18,10 @@ describe('AuthorizationContextService', () => {
       providers: [
         AuthorizationContextService,
         { provide: PrismaService, useValue: mockPrismaService },
+        {
+          provide: CACHE_MANAGER,
+          useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -56,12 +61,10 @@ describe('AuthorizationContextService', () => {
       countries: { country_id: 1, name: 'México' },
       unions: { union_id: 2, name: 'Unión Norte' },
       local_fields: { local_field_id: 3, name: 'Campo Centro' },
-      users_pr: [
-        {
-          complete: true,
-          active_club_assignment_id: 'assignment-2',
-        },
-      ],
+      users_pr: {
+        complete: true,
+        active_club_assignment_id: 'assignment-2',
+      },
       users_roles: [
         {
           roles: {
@@ -79,6 +82,7 @@ describe('AuthorizationContextService', () => {
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
+          expires_at: null,
           roles: {
             role_name: 'director',
             role_permissions: [
@@ -111,6 +115,7 @@ describe('AuthorizationContextService', () => {
           status: 'active',
           start_date: new Date('2026-02-01'),
           end_date: null,
+          expires_at: null,
           roles: {
             role_name: 'treasurer',
             role_permissions: [
@@ -185,6 +190,54 @@ describe('AuthorizationContextService', () => {
     });
   });
 
+  describe('isSuperAdmin', () => {
+    const buildUserWithRole = (roleName: string) => ({
+      user_id: 'user-sa',
+      email: 'sa@test.com',
+      name: 'Super',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: null,
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      user_image: null,
+      country_id: null,
+      union_id: null,
+      local_field_id: null,
+      created_at: new Date('2026-01-01'),
+      countries: null,
+      unions: null,
+      local_fields: null,
+      users_pr: { complete: true, active_club_assignment_id: null },
+      users_roles: [
+        {
+          roles: {
+            role_name: roleName,
+            role_permissions: [],
+          },
+        },
+      ],
+      club_role_assignments: [],
+    });
+
+    it('should return true when user has super_admin role', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        buildUserWithRole('super_admin'),
+      );
+
+      await expect(service.isSuperAdmin('user-sa')).resolves.toBe(true);
+    });
+
+    it('should return false when user has a non-super_admin role', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue(
+        buildUserWithRole('admin'),
+      );
+
+      await expect(service.isSuperAdmin('user-sa')).resolves.toBe(false);
+    });
+  });
+
   it('should fall back to the first available assignment when persisted context is stale', async () => {
     mockPrismaService.users.findUnique.mockResolvedValue({
       user_id: 'user-123',
@@ -204,12 +257,10 @@ describe('AuthorizationContextService', () => {
       countries: null,
       unions: null,
       local_fields: null,
-      users_pr: [
-        {
-          complete: false,
-          active_club_assignment_id: 'missing-assignment',
-        },
-      ],
+      users_pr: {
+        complete: false,
+        active_club_assignment_id: 'missing-assignment',
+      },
       users_roles: [],
       club_role_assignments: [
         {
@@ -217,6 +268,7 @@ describe('AuthorizationContextService', () => {
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
+          expires_at: null,
           roles: {
             role_name: 'director',
             role_permissions: [],

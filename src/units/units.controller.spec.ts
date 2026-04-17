@@ -23,9 +23,7 @@ describe('UnitsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UnitsController],
-      providers: [
-        { provide: UnitsService, useValue: mockUnitsService },
-      ],
+      providers: [{ provide: UnitsService, useValue: mockUnitsService }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
@@ -138,7 +136,11 @@ describe('UnitsController', () => {
   describe('addMember', () => {
     it('should call service.addMember with unitId and dto', async () => {
       const dto = { user_id: 'uuid-user-1' };
-      const mockMember = { unit_member_id: 1, unit_id: 5, user_id: dto.user_id };
+      const mockMember = {
+        unit_member_id: 1,
+        unit_id: 5,
+        user_id: dto.user_id,
+      };
       mockUnitsService.addMember.mockResolvedValue(mockMember);
 
       const result = await controller.addMember(1, 5, dto as any);
@@ -211,13 +213,17 @@ describe('UnitsController', () => {
 
   describe('updateWeeklyRecord', () => {
     it('should call service.updateWeeklyRecord with unitId, recordId and dto', async () => {
-      const dto = { points: 20 };
+      const dto = { attendance: 1 };
       const mockRecord = { record_id: 10, points: 20 };
       mockUnitsService.updateWeeklyRecord.mockResolvedValue(mockRecord);
 
       const result = await controller.updateWeeklyRecord(1, 5, 10, dto);
 
-      expect(mockUnitsService.updateWeeklyRecord).toHaveBeenCalledWith(5, 10, dto);
+      expect(mockUnitsService.updateWeeklyRecord).toHaveBeenCalledWith(
+        5,
+        10,
+        dto,
+      );
       expect(result).toEqual(mockRecord);
     });
   });

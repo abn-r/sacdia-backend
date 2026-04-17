@@ -8,6 +8,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -18,7 +19,11 @@ import {
 } from '@nestjs/swagger';
 import { PostRegistrationService } from './post-registration.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
-import { SensitiveUserSubresource } from '../common/decorators';
+import {
+  SensitiveUserSubresource,
+  RequirePermissions,
+  AuthorizationResource,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type AuthenticatedRequest = Request & {
@@ -47,11 +52,11 @@ export class PostRegistrationController {
 
   @Get('photo-status')
   @SensitiveUserSubresource('post_registration', 'read')
-  @ApiOperation({ summary: 'Verificar si el usuario tiene foto de perfil subida' })
+  @ApiOperation({
+    summary: 'Verificar si el usuario tiene foto de perfil subida',
+  })
   @ApiResponse({ status: 200, description: 'Estado de la foto de perfil' })
-  async getPhotoStatus(
-    @Param('userId') userId: string,
-  ) {
+  async getPhotoStatus(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.postRegistrationService.getPhotoStatus(userId);
   }
 
@@ -60,7 +65,7 @@ export class PostRegistrationController {
   @ApiOperation({ summary: 'Obtener estado del post-registro' })
   @ApiResponse({ status: 200, description: 'Estado actual' })
   async getStatus(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Req() request: AuthenticatedRequest,
   ) {
     return this.postRegistrationService.getStatus(
@@ -70,7 +75,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-1/complete')
-  @SensitiveUserSubresource('post_registration', 'update')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 1: Foto de perfil',
@@ -82,7 +88,7 @@ export class PostRegistrationController {
     description: 'Usuario no tiene foto de perfil',
   })
   async completeStep1(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Req() request: AuthenticatedRequest,
   ) {
     return this.postRegistrationService.completeStep1(
@@ -92,7 +98,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-2/complete')
-  @SensitiveUserSubresource('post_registration', 'update')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 2: Información personal',
@@ -105,7 +112,7 @@ export class PostRegistrationController {
     description: 'Faltan datos requeridos',
   })
   async completeStep2(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Req() request: AuthenticatedRequest,
   ) {
     return this.postRegistrationService.completeStep2(
@@ -115,7 +122,8 @@ export class PostRegistrationController {
   }
 
   @Post('step-3/complete')
-  @SensitiveUserSubresource('post_registration', 'update')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Completar Paso 3: Selección de club',
@@ -131,7 +139,7 @@ export class PostRegistrationController {
     description: 'Club no encontrado o datos inválidos',
   })
   async completeStep3(
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: CompleteClubSelectionDto,
     @Req() request: AuthenticatedRequest,
   ) {

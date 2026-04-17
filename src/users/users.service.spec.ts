@@ -674,7 +674,9 @@ describe('UsersService', () => {
 
       expect(result.status).toBe('success');
       expect(result.data.user_id).toBe('u1');
-      expect(mockFileStorageService.getSignedDownloadUrl).not.toHaveBeenCalled();
+      expect(
+        mockFileStorageService.getSignedDownloadUrl,
+      ).not.toHaveBeenCalled();
     });
 
     it('TC-F02 - happy path: generates signed URL when user has image', async () => {
@@ -781,9 +783,9 @@ describe('UsersService', () => {
     it('TC-U02 - error: user not found → NotFoundException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.update('missing', { gender: 'F' }),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.update('missing', { gender: 'F' })).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('TC-U03 - error: baptism=false with baptism_date → BadRequestException', async () => {
@@ -801,18 +803,18 @@ describe('UsersService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
       mockPrismaService.countries.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.update('u1', { country_id: 999 }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update('u1', { country_id: 999 })).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('TC-U05 - geography: invalid union → BadRequestException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
       mockPrismaService.unions.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.update('u1', { union_id: 999 }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update('u1', { union_id: 999 })).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('TC-U06 - geography: invalid local_field → BadRequestException', async () => {
@@ -827,7 +829,9 @@ describe('UsersService', () => {
     it('TC-U07 - geography: union does not belong to country → BadRequestException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
       // country valid
-      mockPrismaService.countries.findFirst.mockResolvedValue({ country_id: 5 });
+      mockPrismaService.countries.findFirst.mockResolvedValue({
+        country_id: 5,
+      });
       // union valid but belongs to a different country
       mockPrismaService.unions.findFirst.mockResolvedValue({
         union_id: 10,
@@ -1065,9 +1069,9 @@ describe('UsersService', () => {
         buffer: Buffer.from('gif'),
       } as Express.Multer.File;
 
-      await expect(
-        service.uploadProfilePicture('u1', file),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('TC-PP02 - error: file exceeds 5MB → BadRequestException', async () => {
@@ -1078,9 +1082,9 @@ describe('UsersService', () => {
         buffer: Buffer.alloc(6 * 1024 * 1024),
       } as Express.Multer.File;
 
-      await expect(
-        service.uploadProfilePicture('u1', file),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('TC-PP03 - error: user not found → NotFoundException', async () => {
@@ -1093,9 +1097,9 @@ describe('UsersService', () => {
         buffer: Buffer.from('image'),
       } as Express.Multer.File;
 
-      await expect(
-        service.uploadProfilePicture('u1', file),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

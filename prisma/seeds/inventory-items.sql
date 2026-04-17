@@ -1,0 +1,16 @@
+INSERT INTO club_inventory (name, description, inventory_category_id, amount, active, club_section_id, created_at, modified_at) VALUES
+('Carpas 4 personas', 'Carpas Coleman resistentes al agua para 4 personas', 1, 8, true, 1, NOW(), NOW()),
+('Sleeping bags', 'Bolsas de dormir térmicas -5°C', 1, 15, true, 1, NOW(), NOW()),
+('Colchonetas aislantes', 'Colchonetas de espuma de alta densidad', 1, 12, true, 1, NOW(), NOW()),
+('Lámparas de camping', 'Lámparas LED recargables 800 lúmenes', 1, 6, true, 1, NOW(), NOW()),
+('Ollas grandes', 'Ollas de aluminio 20L para cocinar en campamento', 2, 4, true, 1, NOW(), NOW()),
+('Cocina a gas portátil', 'Cocina 2 hornallas con encendido automático', 2, 2, true, 1, NOW(), NOW()),
+('Juego de cubiertos', 'Set de cubiertos acero inoxidable x6 personas', 2, 10, true, 1, NOW(), NOW()),
+('Uniformes clase A', 'Camisas de uniforme oficial talle M', 3, 5, true, 1, NOW(), NOW()),
+('Pañoletas', 'Pañoletas oficiales color azul', 3, 20, true, 1, NOW(), NOW()),
+('Botiquín completo', 'Botiquín de primeros auxilios con 50 insumos', 5, 3, true, 1, NOW(), NOW()),
+('Férulas inflables', 'Kit de férulas inflables para extremidades', 5, 2, true, 1, NOW(), NOW()),
+('Cuerdas de escalada', 'Cuerdas dinámicas 50m certificadas', 4, 4, true, 1, NOW(), NOW()),
+('Brújulas', 'Brújulas de orientación profesional Silva', 4, 10, true, 1, NOW(), NOW()),
+('Radios walkie-talkie', 'Radios Motorola alcance 5km con cargador', 7, 6, true, 1, NOW(), NOW()),
+('Bandera del club', 'Bandera oficial del club con asta', 8, 1, true, 1, NOW(), NOW());

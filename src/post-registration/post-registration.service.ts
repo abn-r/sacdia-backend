@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
@@ -83,7 +84,7 @@ export class PostRegistrationService {
     });
 
     return {
-      has_photo: !!(user?.user_image),
+      has_photo: !!user?.user_image,
     };
   }
 
@@ -386,6 +387,41 @@ export class PostRegistrationService {
       assignmentStartDate: Date;
     },
   ) {
+    // --- Multi-club same-type validation ---
+    const targetSection = await tx.club_sections.findUnique({
+      where: { club_section_id: params.clubInstanceId },
+      select: { club_type_id: true },
+    });
+
+    if (!targetSection) {
+      throw new BadRequestException('Club no encontrado');
+    }
+
+    const existingSameType = await tx.club_role_assignments.findFirst({
+      where: {
+        user_id: params.userId,
+        status: { in: ['active', 'pending'] },
+        active: true,
+        club_sections: {
+          club_type_id: targetSection.club_type_id,
+        },
+        // Exclude the exact same club section (re-registration case)
+        NOT: {
+          club_section_id: params.clubInstanceId,
+        },
+      },
+    });
+
+    if (existingSameType) {
+      throw new ConflictException(
+        'Ya tienes una membresía activa o pendiente en un club del mismo tipo',
+      );
+    }
+
+    // --- Create or reactivate assignment with pending status ---
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 8);
+
     const where: Prisma.club_role_assignmentsWhereInput = {
       user_id: params.userId,
       role_id: params.roleId,
@@ -401,7 +437,7 @@ export class PostRegistrationService {
     if (existingAssignment) {
       if (
         !existingAssignment.active ||
-        existingAssignment.status !== 'active'
+        existingAssignment.status !== 'pending'
       ) {
         await tx.club_role_assignments.update({
           where: {
@@ -409,7 +445,8 @@ export class PostRegistrationService {
           },
           data: {
             active: true,
-            status: 'active',
+            status: 'pending',
+            expires_at: expiresAt,
             end_date: null,
           },
         });
@@ -427,7 +464,8 @@ export class PostRegistrationService {
           ecclesiastical_year_id: params.ecclesiasticalYearId,
           start_date: params.assignmentStartDate,
           active: true,
-          status: 'active',
+          status: 'pending',
+          expires_at: expiresAt,
         },
       });
     } catch (error) {
@@ -447,7 +485,7 @@ export class PostRegistrationService {
 
       if (
         !recoveredAssignment.active ||
-        recoveredAssignment.status !== 'active'
+        recoveredAssignment.status !== 'pending'
       ) {
         await tx.club_role_assignments.update({
           where: {
@@ -455,7 +493,8 @@ export class PostRegistrationService {
           },
           data: {
             active: true,
-            status: 'active',
+            status: 'pending',
+            expires_at: expiresAt,
             end_date: null,
           },
         });

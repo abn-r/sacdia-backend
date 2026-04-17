@@ -5,11 +5,47 @@ import {
   IsBoolean,
   IsNumber,
   IsArray,
+  ArrayMinSize,
+  IsDateString,
+  ValidateIf,
+  registerDecorator,
+  ValidationOptions,
+  ValidationArguments,
   Min,
   Max,
+  Matches,
+  IsUrl,
+  IsUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+function IsAfterOrEqualDate(
+  property: string,
+  validationOptions?: ValidationOptions,
+) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isAfterOrEqualDate',
+      target: (object as any).constructor,
+      propertyName,
+      options: validationOptions,
+      constraints: [property],
+      validator: {
+        validate(value: any, args: ValidationArguments) {
+          const [relatedPropertyName] = args.constraints as string[];
+          const relatedValue = (args.object as any)[relatedPropertyName];
+          if (!value || !relatedValue) return true;
+          return new Date(value) >= new Date(relatedValue);
+        },
+        defaultMessage(args: ValidationArguments) {
+          const [relatedPropertyName] = args.constraints as string[];
+          return `${args.property} must be greater than or equal to ${relatedPropertyName}`;
+        },
+      },
+    });
+  };
+}
 
 export class CreateActivityDto {
   @ApiProperty({ description: 'Nombre de la actividad' })
@@ -21,11 +57,13 @@ export class CreateActivityDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({
-    description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
+  @ApiPropertyOptional({
+    description:
+      'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM). Opcional: si se omite se deriva de la sección.',
   })
+  @IsOptional()
   @IsInt()
-  club_type_id: number;
+  club_type_id?: number;
 
   @ApiProperty({ description: 'Latitud del lugar' })
   @IsNumber()
@@ -45,15 +83,38 @@ export class CreateActivityDto {
   })
   @IsOptional()
   @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'activity_time must be in HH:mm format' })
   activity_time?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha de la actividad (ISO date: YYYY-MM-DD)',
+    example: '2025-06-15',
+  })
+  @IsOptional()
+  @IsDateString()
+  activity_date?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha de fin de la actividad (ISO date: YYYY-MM-DD). Debe ser >= activity_date.',
+    example: '2025-06-17',
+  })
+  @IsOptional()
+  @ValidateIf((o) => o.activity_end_date !== undefined)
+  @IsDateString()
+  @IsAfterOrEqualDate('activity_date', {
+    message: 'activity_end_date debe ser mayor o igual a activity_date',
+  })
+  activity_end_date?: string;
 
   @ApiProperty({ description: 'Lugar de la actividad' })
   @IsString()
   activity_place: string;
 
-  @ApiProperty({ description: 'URL de la imagen de la actividad' })
-  @IsString()
-  image: string;
+  @ApiPropertyOptional({ description: 'URL de la imagen de la actividad' })
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { message: 'image must be a valid URL' })
+  image?: string;
 
   @ApiPropertyOptional({
     description: 'Plataforma (0=Presencial, 1=Virtual, 2=Híbrido)',
@@ -85,12 +146,37 @@ export class CreateActivityDto {
   @IsArray()
   classes?: number[];
 
-  @ApiProperty({
-    description: 'ID de la sección del club (FK a club_sections)',
+  @ApiPropertyOptional({
+    description:
+      'ID de la sección del club (FK a club_sections). Requerido para actividades de una sola sección.',
   })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  club_section_id: number;
+  club_section_id?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'IDs de las secciones participantes en la actividad conjunta (mínimo 2). Cuando se envía, crea una actividad joint con is_joint=true.',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2, {
+    message:
+      'club_section_ids debe tener al menos 2 secciones para una actividad conjunta',
+  })
+  @IsInt({ each: true })
+  club_section_ids?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'Indica si la actividad es conjunta entre múltiples secciones. Se establece automáticamente en true cuando se provee club_section_ids.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  is_joint?: boolean;
 }
 
 export class UpdateActivityDto {
@@ -117,7 +203,29 @@ export class UpdateActivityDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'activity_time must be in HH:mm format' })
   activity_time?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha de la actividad (ISO date: YYYY-MM-DD)',
+    example: '2025-06-15',
+  })
+  @IsOptional()
+  @IsDateString()
+  activity_date?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha de fin de la actividad (ISO date: YYYY-MM-DD). Debe ser >= activity_date.',
+    example: '2025-06-17',
+  })
+  @IsOptional()
+  @ValidateIf((o) => o.activity_end_date !== undefined)
+  @IsDateString()
+  @IsAfterOrEqualDate('activity_date', {
+    message: 'activity_end_date debe ser mayor o igual a activity_date',
+  })
+  activity_end_date?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -126,7 +234,7 @@ export class UpdateActivityDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { message: 'image must be a valid URL' })
   image?: string;
 
   @ApiPropertyOptional()
@@ -153,11 +261,34 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsArray()
   classes?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'IDs de las secciones participantes en la actividad conjunta (mínimo 2). Reemplaza las instancias actuales de forma atómica.',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2, {
+    message:
+      'club_section_ids debe tener al menos 2 secciones para una actividad conjunta',
+  })
+  @IsInt({ each: true })
+  club_section_ids?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'Indica si la actividad es conjunta. Enviar false para convertir una actividad conjunta en actividad de sección única (se desactivan las instancias extra).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  is_joint?: boolean;
 }
 
 export class RecordAttendanceDto {
   @ApiProperty({ description: 'Lista de IDs de usuarios que asistieron' })
   @IsArray()
+  @IsUUID('4', { each: true })
   user_ids: string[];
 }
 

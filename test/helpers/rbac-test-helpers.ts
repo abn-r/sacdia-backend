@@ -1,7 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
-import type {
-  AuthorizationSnapshot,
-} from '../../src/common/services/authorization-context.service';
+import type { AuthorizationSnapshot } from '../../src/common/services/authorization-context.service';
 
 type AuthorizationFixtureOptions = {
   globalPermissions?: string[];
@@ -22,14 +20,14 @@ type AuthorizationFixtureOptions = {
 };
 
 export function ensureTestJwtSecret() {
-  process.env.SUPABASE_JWT_SECRET =
-    process.env.SUPABASE_JWT_SECRET || 'test-secret';
+  process.env.BETTER_AUTH_SECRET =
+    process.env.BETTER_AUTH_SECRET || 'test-secret';
 }
 
 export function createTestJwtService() {
   ensureTestJwtSecret();
   return new JwtService({
-    secret: process.env.SUPABASE_JWT_SECRET,
+    secret: process.env.BETTER_AUTH_SECRET,
   });
 }
 

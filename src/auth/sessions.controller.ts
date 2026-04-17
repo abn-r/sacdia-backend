@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Param,
-  UseGuards,
-  Req,
-  ParseUUIDPipe,
-} from '@nestjs/common';
+import { Controller, Get, Delete, Param, ParseUUIDPipe, UseGuards, Req } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -71,7 +62,7 @@ export class SessionsController {
   @ApiResponse({ status: 200, description: 'Sesión cerrada' })
   async closeSession(
     @Req() req: Request,
-    @Param('sessionId') sessionId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
     const userId = (req.user as any)?.user_id;
     await this.sessionService.removeSession(userId, sessionId);

@@ -1,4 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  Inject,
+  Logger,
+} from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type AuthorizationScopeNode = {
@@ -34,6 +41,7 @@ export type ClubAuthorizationGrant = {
   status: string;
   start_date?: Date | null;
   end_date?: Date | null;
+  expires_at?: Date | null;
 };
 
 export type EffectiveClubAuthorization = {
@@ -138,6 +146,7 @@ type ClubAssignmentRecord = {
   status: string | null;
   start_date: Date | null;
   end_date: Date | null;
+  expires_at: Date | null;
   roles: {
     role_name: string;
     role_permissions: RolePermissionRecord[];
@@ -148,6 +157,20 @@ type ClubAssignmentRecord = {
     clubs?: ClubHierarchyRecord | null;
   } | null;
 };
+
+/**
+ * Cache key for a user's resolved authorization context.
+ * Convention mirrors CATALOG_CACHE_KEYS: `auth:context:{userId}`
+ */
+export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
+  `auth:context:${userId}`;
+
+/**
+ * TTL for user authorization context — 5 minutes in milliseconds.
+ * Auth context changes infrequently (role/assignment mutations are rare),
+ * so a mid-range TTL balances freshness with DB load reduction.
+ */
+const AUTH_CONTEXT_TTL_MS = 300_000; // 5 minutes
 
 const CLUB_SCOPE_SELECT = {
   club_id: true,
@@ -174,11 +197,62 @@ const CLUB_SCOPE_SELECT = {
 
 @Injectable()
 export class AuthorizationContextService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AuthorizationContextService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
+
+  /**
+   * Invalidate the cached authorization context for a specific user.
+   * Call this whenever a user's roles, global permissions, or club assignments
+   * are mutated so that the next request reflects the updated state.
+   *
+   * Mutation points that MUST call this method:
+   *   - RbacService.assignRoleToUser / removeRoleFromUser / bootstrapAdmin
+   *   - RbacService.assignPermissionsToRole / removePermissionFromRole / syncRolePermissions
+   *     (affects all users that hold the modified role — per-role invalidation is not
+   *      implemented; rely on TTL expiry for role-level permission changes)
+   *   - ClubsService.assignRole / updateRoleAssignment / removeRoleAssignment
+   *   - MembershipRequestsService.approve / reject
+   *   - RequestsService / PostRegistrationService when creating or mutating assignments
+   */
+  async invalidateUserAuthorizationCache(userId: string): Promise<void> {
+    const key = AUTH_CONTEXT_CACHE_KEY(userId);
+    try {
+      await this.cacheManager.del(key);
+      this.logger.debug(`Auth context cache INVALIDATED — ${key}`);
+    } catch (err) {
+      this.logger.warn(
+        `Auth context cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
+      );
+    }
+  }
 
   async resolveUserAuthorization(
     userId: string,
   ): Promise<ResolvedAuthorizationProfile> {
+    const cacheKey = AUTH_CONTEXT_CACHE_KEY(userId);
+
+    // ── Cache HIT path ──────────────────────────────────────────────────────
+    try {
+      const cached =
+        await this.cacheManager.get<ResolvedAuthorizationProfile>(cacheKey);
+      if (cached !== null && cached !== undefined) {
+        this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
+        return cached;
+      }
+    } catch (err) {
+      // Redis down or deserialization error — degrade gracefully to DB
+      this.logger.warn(
+        `Auth context cache GET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
+      );
+    }
+
+    this.logger.debug(`Auth context cache MISS — ${cacheKey}`);
+
+    // ── DB query (unchanged) ────────────────────────────────────────────────
     const user = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: {
@@ -247,13 +321,14 @@ export class AuthorizationContextService {
           },
         },
         club_role_assignments: {
-          where: { active: true, status: 'active' },
+          where: { active: true },
           orderBy: { start_date: 'desc' },
           select: {
             assignment_id: true,
             status: true,
             start_date: true,
             end_date: true,
+            expires_at: true,
             roles: {
               select: {
                 role_name: true,
@@ -292,20 +367,26 @@ export class AuthorizationContextService {
       scope: globalScope,
     }));
 
+    // All grants (active + pending) — exposed in authorization.grants.club_assignments
     const clubGrants = (user.club_role_assignments ?? [])
       .map((assignment) => this.buildClubGrant(assignment))
       .filter((assignment): assignment is ClubAuthorizationGrant =>
         Boolean(assignment),
       );
 
+    // Only status:'active' grants are used for permission resolution and active context
+    const activeClubGrants = clubGrants.filter(
+      (grant) => grant.status === 'active',
+    );
+
     const persistedActiveAssignmentId =
-      user.users_pr?.[0]?.active_club_assignment_id ?? null;
+      user.users_pr?.active_club_assignment_id ?? null;
     const activeClubGrant =
-      clubGrants.find(
+      activeClubGrants.find(
         (assignment) =>
           assignment.assignment_id === persistedActiveAssignmentId,
       ) ??
-      clubGrants[0] ??
+      activeClubGrants[0] ??
       null;
 
     const globalPermissions = this.uniqueSorted(
@@ -320,7 +401,7 @@ export class AuthorizationContextService {
       ? this.toLegacyAssignmentContext(activeClubGrant)
       : null;
 
-    return {
+    const result: ResolvedAuthorizationProfile = {
       profile: {
         user_id: user.user_id,
         email: user.email,
@@ -337,7 +418,7 @@ export class AuthorizationContextService {
         local_field_id: user.local_field_id,
         created_at: user.created_at,
       },
-      post_register_complete: user.users_pr?.[0]?.complete ?? false,
+      post_register_complete: user.users_pr?.complete ?? false,
       authorization: {
         grants: {
           global_roles: globalGrants,
@@ -374,12 +455,27 @@ export class AuthorizationContextService {
         club_context: {
           active_assignment_id: activeClubGrant?.assignment_id ?? null,
           active: activeLegacyContext,
-          available: clubGrants.map((grant) =>
+          available: activeClubGrants.map((grant) =>
             this.toLegacyAssignmentContext(grant),
           ),
         },
       },
     };
+
+    // ── Cache SET path ──────────────────────────────────────────────────────
+    try {
+      await this.cacheManager.set(cacheKey, result, AUTH_CONTEXT_TTL_MS);
+      this.logger.debug(
+        `Auth context cache SET  — ${cacheKey} (TTL ${AUTH_CONTEXT_TTL_MS}ms)`,
+      );
+    } catch (err) {
+      // Redis down — return DB result without caching, degrade gracefully
+      this.logger.warn(
+        `Auth context cache SET fallido para "${cacheKey}": ${this.extractMessage(err)}`,
+      );
+    }
+
+    return result;
   }
 
   async hasAnyGlobalRole(
@@ -394,6 +490,23 @@ export class AuthorizationContextService {
     return resolved.authorization.grants.global_roles.some((grant) =>
       normalizedRequired.has(grant.role_name.toLowerCase()),
     );
+  }
+
+  /**
+   * Returns true if the user holds the `super_admin` global role.
+   *
+   * `super_admin` is the god-mode role in SACDIA: it bypasses every
+   * role-based and territory-based restriction in the system.
+   * This method is the single canonical check for that concept —
+   * use it instead of inlining `hasAnyGlobalRole(userId, ['super_admin'])`
+   * or checking `roleNames.has('super_admin')` directly on a snapshot.
+   *
+   * Delegates internally to `hasAnyGlobalRole`, which leverages the
+   * existing auth-context cache (TTL 5 min), so repeated calls within
+   * the same request window are cheap.
+   */
+  async isSuperAdmin(userId: string): Promise<boolean> {
+    return this.hasAnyGlobalRole(userId, ['super_admin']);
   }
 
   async canManageClub(userId: string, clubId: number): Promise<boolean> {
@@ -425,7 +538,7 @@ export class AuthorizationContextService {
     const localFieldId = scope.local_field?.id;
     const unionId = scope.union?.id;
 
-    if (roleNames.has('super_admin')) {
+    if (await this.isSuperAdmin(userId)) {
       return true;
     }
 
@@ -502,6 +615,7 @@ export class AuthorizationContextService {
         status: assignment.status ?? 'active',
         start_date: assignment.start_date,
         end_date: assignment.end_date,
+        expires_at: assignment.expires_at,
       };
     }
 
@@ -565,5 +679,9 @@ export class AuthorizationContextService {
       club_name: assignment.club.club_name,
       club_type: assignment.section.club_type_name ?? null,
     };
+  }
+
+  private extractMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
   }
 }

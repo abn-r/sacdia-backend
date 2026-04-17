@@ -1,9 +1,16 @@
-import { IsInt, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsPositive,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SubmitForValidationDto {
   @ApiProperty({
-    description: 'ID del club desde el que se envía (requerido por ClubRolesGuard)',
+    description:
+      'ID del club desde el que se envía (requerido por ClubRolesGuard)',
     example: 1,
   })
   @IsInt()

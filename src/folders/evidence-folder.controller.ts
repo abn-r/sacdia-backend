@@ -11,6 +11,10 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
+import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
@@ -18,8 +22,12 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../common/decorators';
-import { JwtAuthGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  CurrentUser,
+  RequirePermissions,
+} from '../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { EvidenceFolderService } from './evidence-folder.service';
 
 type CurrentUserPayload = {
@@ -28,14 +36,14 @@ type CurrentUserPayload = {
 
 @ApiTags('Evidence Folder')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('club-sections/:sectionId/evidence-folder')
 export class EvidenceFolderController {
-  constructor(
-    private readonly evidenceFolderService: EvidenceFolderService,
-  ) {}
+  constructor(private readonly evidenceFolderService: EvidenceFolderService) {}
 
   @Get()
+  @RequirePermissions('evidence_folders:read')
   @ApiOperation({ summary: 'Get evidence folder for club section' })
   @ApiParam({
     name: 'sectionId',
@@ -46,11 +54,15 @@ export class EvidenceFolderController {
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.evidenceFolderService.getFolder(user.sub, sectionId);
+    const data = await this.evidenceFolderService.getFolder(
+      user.sub,
+      sectionId,
+    );
     return { status: 'success', data };
   }
 
   @Post('sections/:efSectionId/submit')
+  @RequirePermissions('evidence_folders:update')
   @ApiOperation({ summary: 'Submit evidence folder section' })
   @ApiParam({
     name: 'sectionId',
@@ -76,6 +88,7 @@ export class EvidenceFolderController {
   }
 
   @Post('sections/:efSectionId/files')
+  @RequirePermissions('evidence_folders:update')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload evidence file' })
@@ -103,7 +116,12 @@ export class EvidenceFolderController {
   async uploadFile(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('efSectionId', ParseIntPipe) efSectionId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+      }),
+    )
+    file: Express.Multer.File,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.evidenceFolderService.uploadFile(
@@ -116,6 +134,7 @@ export class EvidenceFolderController {
   }
 
   @Delete('sections/:efSectionId/files/:fileId')
+  @RequirePermissions('evidence_folders:update')
   @ApiOperation({ summary: 'Delete evidence file' })
   @ApiParam({
     name: 'sectionId',

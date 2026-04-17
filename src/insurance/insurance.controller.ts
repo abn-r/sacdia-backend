@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -12,6 +13,10 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -22,8 +27,17 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser, GlobalRoles } from '../common/decorators';
-import { GlobalRolesGuard, JwtAuthGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  CurrentUser,
+  GlobalRoles,
+  RequirePermissions,
+} from '../common/decorators';
+import {
+  GlobalRolesGuard,
+  JwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
 import { CreateInsuranceDto } from './dto/create-insurance.dto';
 import { UpdateInsuranceDto } from './dto/update-insurance.dto';
 import { InsuranceService } from './insurance.service';
@@ -35,13 +49,15 @@ type CurrentUserPayload = {
 };
 
 @ApiTags('insurance')
-@Controller('api/v1')
-@UseGuards(JwtAuthGuard)
+@Controller()
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class InsuranceController {
   constructor(private readonly service: InsuranceService) {}
 
   @Get('clubs/:clubId/sections/:sectionId/members/insurance')
+  @RequirePermissions('insurance:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Listar seguros de miembros por sección' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
@@ -77,9 +93,13 @@ export class InsuranceController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de seguros próximos a vencer, ordenados por end_date ASC',
+    description:
+      'Lista de seguros próximos a vencer, ordenados por end_date ASC',
   })
-  @ApiResponse({ status: 403, description: 'Forbidden — requiere rol admin o coordinator' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requiere rol admin o coordinator',
+  })
   async getExpiringInsurances(
     @Query('days_ahead') daysAhead?: string,
     @Query('local_field_id') localFieldId?: string,
@@ -97,15 +117,19 @@ export class InsuranceController {
   }
 
   @Get('users/:memberId/insurance')
+  @RequirePermissions('insurance:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Obtener seguro activo del miembro' })
   @ApiParam({ name: 'memberId', type: String })
   @ApiResponse({ status: 200, description: 'Seguro del miembro' })
-  async getMemberInsurance(@Param('memberId') memberId: string) {
+  async getMemberInsurance(@Param('memberId', ParseUUIDPipe) memberId: string) {
     const data = await this.service.getMemberInsurance(memberId);
     return { status: 'success', data };
   }
 
   @Post('users/:memberId/insurance')
+  @RequirePermissions('insurance:create')
+  @AuthorizationResource({ type: 'active_assignment' })
   @UseInterceptors(FileInterceptor('evidence'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Crear seguro para un miembro' })
@@ -126,9 +150,14 @@ export class InsuranceController {
   })
   @ApiResponse({ status: 201, description: 'Seguro creado' })
   async createInsurance(
-    @Param('memberId') memberId: string,
+    @Param('memberId', ParseUUIDPipe) memberId: string,
     @Body() dto: CreateInsuranceDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+      }),
+    )
+    file?: Express.Multer.File,
     @CurrentUser() user?: CurrentUserPayload,
   ) {
     const currentUserId = this.extractCurrentUserId(user);
@@ -142,6 +171,8 @@ export class InsuranceController {
   }
 
   @Patch('insurance/:insuranceId')
+  @RequirePermissions('insurance:update')
+  @AuthorizationResource({ type: 'active_assignment' })
   @UseInterceptors(FileInterceptor('evidence'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Actualizar seguro' })
@@ -164,7 +195,12 @@ export class InsuranceController {
   async updateInsurance(
     @Param('insuranceId', ParseIntPipe) insuranceId: number,
     @Body() dto: UpdateInsuranceDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+      }),
+    )
+    file?: Express.Multer.File,
     @CurrentUser() user?: CurrentUserPayload,
   ) {
     const currentUserId = this.extractCurrentUserId(user);

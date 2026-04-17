@@ -114,12 +114,13 @@ export class InsuranceService {
     });
 
     const uniqueMembers = this.uniqueMembers(assignments);
-    const result: Record<string, any>[] = [];
 
-    for (const member of uniqueMembers) {
-      const insurance = await this.loadLatestActiveInsurance(member.user_id);
-      result.push(await this.mapMemberInsurance(member, insurance));
-    }
+    const result = await Promise.all(
+      uniqueMembers.map(async (member) => {
+        const insurance = await this.loadLatestActiveInsurance(member.user_id);
+        return this.mapMemberInsurance(member, insurance);
+      }),
+    );
 
     return result;
   }
@@ -213,16 +214,15 @@ export class InsuranceService {
       return {
         insurance_id: ins.insurance_id,
         user_id: ins.user_id,
-        user_name: [user?.name, user?.paternal_last_name, user?.maternal_last_name]
-          .filter(Boolean)
-          .join(' ') || null,
+        user_name:
+          [user?.name, user?.paternal_last_name, user?.maternal_last_name]
+            .filter(Boolean)
+            .join(' ') || null,
         name: user?.name ?? null,
         paternal_last_name: user?.paternal_last_name ?? null,
         maternal_last_name: user?.maternal_last_name ?? null,
         local_field_id: user?.local_field_id ?? null,
-        club: club
-          ? { club_id: club.club_id, name: club.name }
-          : null,
+        club: club ? { club_id: club.club_id, name: club.name } : null,
         club_section: section
           ? { club_section_id: section.club_section_id, name: section.name }
           : null,

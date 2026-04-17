@@ -7,14 +7,21 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   PaginationDto,
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
+import { UnionMembersPaginationDto } from './dto/union-members-pagination.dto';
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
+import { CreateUnionCamporeeDto } from './dto/create-union-camporee.dto';
+import { UpdateUnionCamporeeDto } from './dto/update-union-camporee.dto';
 import { RegisterMemberDto } from './dto/register-member.dto';
+import { EnrollClubDto } from './dto/enroll-club.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
+import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { buildPartialUpdate } from '../common/utils/dto.utils';
 import {
   FILE_STORAGE_SERVICE,
@@ -25,6 +32,15 @@ import type {
   AuthorizationSnapshot,
   GlobalAuthorizationGrant,
 } from '../common/services/authorization-context.service';
+import { AchievementsService } from '../achievements/achievements.service';
+import pLimit from 'p-limit';
+
+// Module-level concurrency cap for applySignedPrivateUrls fan-out.
+// Phase 1 (USER_PROFILES public bucket) makes the call synchronous, so
+// this limiter is a no-op in practice. Kept as defense-in-depth for
+// future regressions where any other private bucket might re-enter the
+// same code path.
+const PROFILE_URL_LIMITER = pLimit(20);
 
 @Injectable()
 export class CamporeesService {
@@ -35,6 +51,8 @@ export class CamporeesService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly notificationsService: NotificationsService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   // ========================================
@@ -254,6 +272,362 @@ export class CamporeesService {
   }
 
   // ========================================
+  // CRUD FOR UNION_CAMPOREES
+  // ========================================
+
+  /**
+   * Find all union camporees with pagination and filters
+   * @param filters - Filter by union_id, active status, or ecclesiastical year
+   * @param pagination - Pagination parameters
+   * @param authorization - Authorization snapshot for scoping
+   */
+  async findAllUnion(
+    filters?: { union_id?: number; active?: boolean; year?: number },
+    pagination?: PaginationDto,
+    authorization?: AuthorizationSnapshot,
+  ): Promise<PaginatedResult<any>> {
+    const where: any = {};
+
+    if (filters?.active !== undefined) {
+      where.active = filters.active;
+    }
+
+    if (filters?.union_id !== undefined) {
+      where.union_id = filters.union_id;
+    }
+
+    if (filters?.year !== undefined) {
+      where.ecclesiastical_year = filters.year;
+    }
+
+    this.applyUnionCamporeeScope(where, authorization);
+
+    const [data, total] = await Promise.all([
+      this.prisma.union_camporees.findMany({
+        where,
+        include: {
+          unions: {
+            select: {
+              union_id: true,
+              name: true,
+              abbreviation: true,
+            },
+          },
+          ecclesiastical_year_relation: {
+            select: {
+              year_id: true,
+              start_date: true,
+              end_date: true,
+            },
+          },
+          union_camporee_local_fields: {
+            where: { active: true },
+            include: {
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  abbreviation: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+        skip: pagination?.skip ?? 0,
+        take: pagination?.take ?? 20,
+      }),
+      this.prisma.union_camporees.count({ where }),
+    ]);
+
+    return createPaginatedResult(
+      data,
+      total,
+      pagination ?? new PaginationDto(),
+    );
+  }
+
+  /**
+   * Find a single union camporee by ID with local fields
+   * @param camporeeId - The union_camporee_id
+   */
+  async findOneUnion(camporeeId: number) {
+    const camporee = await this.prisma.union_camporees.findUnique({
+      where: { union_camporee_id: camporeeId },
+      include: {
+        unions: {
+          select: {
+            union_id: true,
+            name: true,
+            abbreviation: true,
+          },
+        },
+        ecclesiastical_year_relation: {
+          select: {
+            year_id: true,
+            start_date: true,
+            end_date: true,
+          },
+        },
+        union_camporee_local_fields: {
+          where: { active: true },
+          include: {
+            local_fields: {
+              select: {
+                local_field_id: true,
+                name: true,
+                abbreviation: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!camporee) {
+      throw new NotFoundException(
+        `Union camporee with ID ${camporeeId} not found`,
+      );
+    }
+
+    return camporee;
+  }
+
+  /**
+   * Create a new union camporee with optional local field associations
+   * @param dto - Create union camporee DTO
+   * @param createdBy - User ID creating the camporee
+   * @param authorization - Authorization snapshot for scope validation
+   */
+  async createUnion(
+    dto: CreateUnionCamporeeDto,
+    createdBy: string,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    await this.assertCanManageUnion(dto.union_id, authorization);
+
+    // Get the active ecclesiastical year
+    const activeYear = await this.prisma.ecclesiastical_years.findFirst({
+      where: { active: true },
+      orderBy: { start_date: 'desc' },
+    });
+
+    if (!activeYear) {
+      throw new BadRequestException(
+        'No active ecclesiastical year found. Please activate an ecclesiastical year first.',
+      );
+    }
+
+    // Validate union exists
+    const union = await this.prisma.unions.findUnique({
+      where: { union_id: dto.union_id },
+    });
+
+    if (!union) {
+      throw new BadRequestException(`Union with ID ${dto.union_id} not found`);
+    }
+
+    // Validate local fields belong to the union (if provided)
+    if (dto.local_field_ids?.length) {
+      const localFields = await this.prisma.local_fields.findMany({
+        where: {
+          local_field_id: { in: dto.local_field_ids },
+          union_id: dto.union_id,
+        },
+      });
+
+      if (localFields.length !== dto.local_field_ids.length) {
+        throw new BadRequestException(
+          'Some local field IDs are invalid or do not belong to this union',
+        );
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Create the union camporee
+      const camporee = await tx.union_camporees.create({
+        data: {
+          name: dto.name,
+          description: dto.description,
+          start_date: new Date(dto.start_date),
+          end_date: new Date(dto.end_date),
+          union_id: dto.union_id,
+          includes_adventurers: dto.includes_adventurers,
+          includes_pathfinders: dto.includes_pathfinders,
+          includes_master_guides: dto.includes_master_guides,
+          union_camporee_place: dto.union_camporee_place,
+          registration_cost: dto.registration_cost,
+          ecclesiastical_year: activeYear.year_id,
+          active: true,
+        },
+      });
+
+      // Create local field associations if provided
+      if (dto.local_field_ids?.length) {
+        await tx.union_camporee_local_fields.createMany({
+          data: dto.local_field_ids.map((localFieldId) => ({
+            union_camporee_lf_id: camporee.union_camporee_id,
+            local_field_id: localFieldId,
+            active: true,
+          })),
+        });
+      }
+
+      // Return with relations
+      return tx.union_camporees.findUnique({
+        where: { union_camporee_id: camporee.union_camporee_id },
+        include: {
+          unions: {
+            select: {
+              union_id: true,
+              name: true,
+              abbreviation: true,
+            },
+          },
+          ecclesiastical_year_relation: {
+            select: {
+              year_id: true,
+              start_date: true,
+              end_date: true,
+            },
+          },
+          union_camporee_local_fields: {
+            where: { active: true },
+            include: {
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  abbreviation: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Update a union camporee
+   * @param camporeeId - The union_camporee_id
+   * @param dto - Update union camporee DTO
+   */
+  async updateUnion(camporeeId: number, dto: UpdateUnionCamporeeDto) {
+    await this.findOneUnion(camporeeId);
+
+    const { local_field_ids, ...fieldsToUpdate } = dto;
+
+    // Build update object with only defined fields, converting date fields
+    const updateData = {
+      ...buildPartialUpdate(fieldsToUpdate, ['start_date', 'end_date']),
+      modified_at: new Date(),
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      // Update the camporee itself
+      const camporee = await tx.union_camporees.update({
+        where: { union_camporee_id: camporeeId },
+        data: updateData,
+      });
+
+      // Update local field associations if provided
+      if (local_field_ids !== undefined) {
+        // Validate local fields belong to the union
+        if (local_field_ids.length) {
+          const localFields = await tx.local_fields.findMany({
+            where: {
+              local_field_id: { in: local_field_ids },
+              union_id: camporee.union_id,
+            },
+          });
+
+          if (localFields.length !== local_field_ids.length) {
+            throw new BadRequestException(
+              'Some local field IDs are invalid or do not belong to this union',
+            );
+          }
+        }
+
+        // Soft-delete existing associations
+        await tx.union_camporee_local_fields.updateMany({
+          where: { union_camporee_lf_id: camporeeId },
+          data: { active: false, modified_at: new Date() },
+        });
+
+        // Create new associations
+        if (local_field_ids.length) {
+          for (const localFieldId of local_field_ids) {
+            await tx.union_camporee_local_fields.upsert({
+              where: {
+                union_camporee_lf_id_local_field_id: {
+                  union_camporee_lf_id: camporeeId,
+                  local_field_id: localFieldId,
+                },
+              },
+              update: { active: true, modified_at: new Date() },
+              create: {
+                union_camporee_lf_id: camporeeId,
+                local_field_id: localFieldId,
+                active: true,
+              },
+            });
+          }
+        }
+      }
+
+      // Return with relations
+      return tx.union_camporees.findUnique({
+        where: { union_camporee_id: camporeeId },
+        include: {
+          unions: {
+            select: {
+              union_id: true,
+              name: true,
+              abbreviation: true,
+            },
+          },
+          ecclesiastical_year_relation: {
+            select: {
+              year_id: true,
+              start_date: true,
+              end_date: true,
+            },
+          },
+          union_camporee_local_fields: {
+            where: { active: true },
+            include: {
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  abbreviation: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Soft delete a union camporee (set active = false)
+   * @param camporeeId - The union_camporee_id
+   */
+  async removeUnion(camporeeId: number) {
+    await this.findOneUnion(camporeeId);
+
+    return this.prisma.union_camporees.update({
+      where: { union_camporee_id: camporeeId },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  // ========================================
   // MEMBER REGISTRATION WITH TRANSACTIONS
   // ========================================
 
@@ -264,6 +638,10 @@ export class CamporeesService {
    * @param dto - Register member DTO
    */
   async registerMember(camporeeId: number, dto: RegisterMemberDto) {
+    let isLate = false;
+    let camporeeLocalFieldId: number | null = null;
+    let camporeeName: string | null = null;
+
     const member = await this.prisma.$transaction(async (tx) => {
       // 1. Validate camporee exists
       const camporee = await tx.local_camporees.findUnique({
@@ -278,6 +656,10 @@ export class CamporeesService {
       if (!camporee.active) {
         throw new BadRequestException('Camporee is not active');
       }
+
+      isLate = this.isAfterDeadline(camporee.member_registration_deadline);
+      camporeeLocalFieldId = camporee.local_field_id;
+      camporeeName = camporee.name;
 
       // 2. Validate user exists
       const user = await tx.users.findUnique({
@@ -348,6 +730,7 @@ export class CamporeesService {
           club_name: dto.club_name,
           insurance_verified: !!dto.insurance_id,
           insurance_id: dto.insurance_id,
+          status: isLate ? 'pending_approval' : 'registered',
           active: true,
         },
         include: {
@@ -377,51 +760,104 @@ export class CamporeesService {
       return member;
     });
 
+    if (isLate && camporeeLocalFieldId) {
+      setImmediate(() => {
+        void this.notificationsService.sendToGlobalRole(
+          ['director-lf', 'assistant-lf'],
+          'Inscripción tardía de miembro',
+          `Un miembro se inscribió fuera de plazo al camporee y requiere aprobación`,
+          { camporeeId: String(camporeeId), type: 'member_enrollment' },
+          camporeeLocalFieldId ?? undefined,
+          'camporees:late_enrollment',
+        );
+      });
+    }
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId: dto.user_id,
+        eventType: 'camporee.participated',
+        payload: {
+          camporee_id: camporeeId,
+          camporee_name: camporeeName,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
+
+    // TODO: emit camporee.completed when a dedicated camporee completion action is added
+
     return this.applySignedPrivateUrls(member);
   }
 
   /**
-   * Get all members registered for a camporee
+   * Get all members registered for a camporee (paginated)
    * @param camporeeId - The local_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   * @param pagination - Pagination parameters (page, limit). Default: page=1, limit=50
    */
-  async getMembers(camporeeId: number) {
+  async getMembers(
+    camporeeId: number,
+    status?: string,
+    pagination?: PaginationDto,
+  ): Promise<PaginatedResult<any>> {
     // Validate camporee exists
     await this.findOne(camporeeId);
 
-    const members = await this.prisma.camporee_members.findMany({
-      where: {
-        camporee_id: camporeeId,
-        active: true,
-      },
-      include: {
-        users: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-            maternal_last_name: true,
-            email: true,
-            user_image: true,
-            birthday: true,
-          },
-        },
-        insurance: {
-          select: {
-            insurance_id: true,
-            insurance_type: true,
-            policy_number: true,
-            provider: true,
-            start_date: true,
-            end_date: true,
-          },
-        },
-      },
-      orderBy: { created_at: 'asc' },
-    });
+    const page = pagination?.page ?? 1;
+    const limit = pagination?.limit ?? 50;
+    const skip = (page - 1) * limit;
 
-    return Promise.all(
-      members.map((member) => this.applySignedPrivateUrls(member)),
+    const where = {
+      camporee_id: camporeeId,
+      active: true,
+      ...(status ? { status } : { status: { not: 'pending_approval' } }),
+    };
+
+    const include = {
+      users: {
+        select: {
+          user_id: true,
+          name: true,
+          paternal_last_name: true,
+          maternal_last_name: true,
+          email: true,
+          user_image: true,
+          birthday: true,
+        },
+      },
+      insurance: {
+        select: {
+          insurance_id: true,
+          insurance_type: true,
+          policy_number: true,
+          provider: true,
+          start_date: true,
+          end_date: true,
+        },
+      },
+    };
+
+    const [members, total] = await this.prisma.$transaction([
+      this.prisma.camporee_members.findMany({
+        where,
+        include,
+        orderBy: { created_at: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.camporee_members.count({ where }),
+    ]);
+
+    const data = await Promise.all(
+      members.map((member) =>
+        PROFILE_URL_LIMITER(() => this.applySignedPrivateUrls(member)),
+      ),
     );
+
+    const paginationDto = Object.assign(new PaginationDto(), { page, limit });
+    return createPaginatedResult(data, total, paginationDto);
   }
 
   /**
@@ -461,6 +897,1109 @@ export class CamporeesService {
   }
 
   // ========================================
+  // CLUB ENROLLMENT
+  // ========================================
+
+  /**
+   * Enroll a club section in a camporee
+   * @param camporeeId - The local_camporee_id
+   * @param dto - Enroll club DTO
+   * @param registeredBy - User ID performing the enrollment
+   */
+  async enrollClub(
+    camporeeId: number,
+    dto: EnrollClubDto,
+    registeredBy: string,
+  ) {
+    let isLate = false;
+    let camporeeLocalFieldId: number | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Validate camporee exists and is active
+      const camporee = await tx.local_camporees.findUnique({
+        where: { local_camporee_id: camporeeId },
+      });
+
+      if (!camporee) {
+        throw new NotFoundException('Camporee not found');
+      }
+
+      if (!camporee.active) {
+        throw new BadRequestException('Camporee is not active');
+      }
+
+      isLate = this.isAfterDeadline(camporee.club_registration_deadline);
+      camporeeLocalFieldId = camporee.local_field_id;
+
+      // 2. Validate club section exists
+      const clubSection = await tx.club_sections.findUnique({
+        where: { club_section_id: dto.club_section_id },
+        include: {
+          club_types: { select: { club_type_id: true, name: true } },
+          clubs: { select: { club_id: true, name: true } },
+        },
+      });
+
+      if (!clubSection) {
+        throw new BadRequestException(
+          `Club section with ID ${dto.club_section_id} not found`,
+        );
+      }
+
+      // 3. Check for duplicate enrollment
+      const existingEnrollment = await tx.camporee_clubs.findFirst({
+        where: {
+          camporee_id: camporeeId,
+          club_section_id: dto.club_section_id,
+          active: true,
+        },
+      });
+
+      if (existingEnrollment) {
+        throw new BadRequestException(
+          'This club section is already enrolled in this camporee',
+        );
+      }
+
+      // 4. Create enrollment
+      return tx.camporee_clubs.create({
+        data: {
+          camporee_id: camporeeId,
+          camporee_type: 'local',
+          club_section_id: dto.club_section_id,
+          club_id: clubSection.main_club_id,
+          status: isLate ? 'pending_approval' : 'registered',
+          registered_by: registeredBy,
+          active: true,
+        },
+        include: {
+          club_sections: {
+            include: {
+              club_types: { select: { club_type_id: true, name: true } },
+              clubs: { select: { club_id: true, name: true } },
+            },
+          },
+          registrar: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      });
+    });
+
+    if (isLate && camporeeLocalFieldId) {
+      setImmediate(() => {
+        void this.notificationsService.sendToGlobalRole(
+          ['director-lf', 'assistant-lf'],
+          'Inscripción tardía de club',
+          `Un club se inscribió fuera de plazo al camporee y requiere aprobación`,
+          { camporeeId: String(camporeeId), type: 'club_enrollment' },
+          camporeeLocalFieldId ?? undefined,
+          'camporees:late_enrollment',
+        );
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all enrolled clubs for a camporee
+   * @param camporeeId - The local_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   */
+  async getEnrolledClubs(camporeeId: number, status?: string) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    // Safety cap: a single local camporee is not expected to have more than
+    // 500 enrolled clubs. Paginate at the controller level if needed.
+    return this.prisma.camporee_clubs.findMany({
+      where: {
+        camporee_id: camporeeId,
+        active: true,
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
+      },
+      include: {
+        club_sections: {
+          include: {
+            club_types: { select: { club_type_id: true, name: true } },
+            clubs: { select: { club_id: true, name: true } },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'asc' },
+      take: 500,
+    });
+  }
+
+  /**
+   * Cancel a club enrollment (soft delete)
+   * @param camporeeId - The local_camporee_id
+   * @param camporeeClubId - The camporee_club_id to cancel
+   */
+  async cancelClubEnrollment(camporeeId: number, camporeeClubId: number) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    const enrollment = await this.prisma.camporee_clubs.findFirst({
+      where: {
+        camporee_club_id: camporeeClubId,
+        camporee_id: camporeeId,
+        active: true,
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException(
+        `Club enrollment with ID ${camporeeClubId} not found in camporee ${camporeeId}`,
+      );
+    }
+
+    return this.prisma.camporee_clubs.update({
+      where: { camporee_club_id: camporeeClubId },
+      data: {
+        active: false,
+        status: 'cancelled',
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  // ========================================
+  // PAYMENTS
+  // ========================================
+
+  /**
+   * Register a payment for a camporee member
+   * @param camporeeId - The local_camporee_id
+   * @param memberId - The camporee_member_id
+   * @param dto - Create payment DTO
+   * @param registeredBy - User ID performing the registration
+   */
+  async createPayment(
+    camporeeId: number,
+    memberId: number,
+    dto: CreatePaymentDto,
+    registeredBy: string,
+  ) {
+    let isLate = false;
+    let camporeeLocalFieldId: number | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Validate camporee exists
+      const camporee = await tx.local_camporees.findUnique({
+        where: { local_camporee_id: camporeeId },
+      });
+
+      if (!camporee) {
+        throw new NotFoundException('Camporee not found');
+      }
+
+      isLate = this.isAfterDeadline(camporee.payment_deadline);
+      camporeeLocalFieldId = camporee.local_field_id;
+
+      // 2. Validate member is registered in this camporee
+      const member = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: memberId,
+          camporee_id: camporeeId,
+          active: true,
+        },
+      });
+
+      if (!member) {
+        throw new NotFoundException(
+          `Member with ID ${memberId} not found in camporee ${camporeeId}`,
+        );
+      }
+
+      // 3. Create payment
+      return tx.camporee_payments.create({
+        data: {
+          camporee_member_id: memberId,
+          amount: dto.amount,
+          payment_type: dto.payment_type,
+          reference: dto.reference,
+          notes: dto.notes,
+          registered_by: registeredBy,
+          paid_at: new Date(dto.paid_at),
+          status: isLate ? 'pending_approval' : 'registered',
+        },
+        include: {
+          camporee_member: {
+            select: {
+              camporee_member_id: true,
+              user_id: true,
+              users: {
+                select: {
+                  name: true,
+                  paternal_last_name: true,
+                  maternal_last_name: true,
+                },
+              },
+            },
+          },
+          registrar: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      });
+    });
+
+    if (isLate && camporeeLocalFieldId) {
+      setImmediate(() => {
+        void this.notificationsService.sendToGlobalRole(
+          ['director-lf', 'assistant-lf'],
+          'Pago tardío de camporee',
+          `Se registró un pago fuera de plazo y requiere aprobación`,
+          { camporeeId: String(camporeeId), type: 'payment' },
+          camporeeLocalFieldId ?? undefined,
+          'camporees:late_payment',
+        );
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all payments for a specific camporee member
+   * @param camporeeId - The local_camporee_id
+   * @param memberId - The camporee_member_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   */
+  async getMemberPayments(
+    camporeeId: number,
+    memberId: number,
+    status?: string,
+  ) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    // Validate member belongs to this camporee
+    const member = await this.prisma.camporee_members.findFirst({
+      where: {
+        camporee_member_id: memberId,
+        camporee_id: camporeeId,
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException(
+        `Member with ID ${memberId} not found in camporee ${camporeeId}`,
+      );
+    }
+
+    // Safety cap: a single member is unlikely to have more than 200 payments.
+    return this.prisma.camporee_payments.findMany({
+      where: {
+        camporee_member_id: memberId,
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
+      },
+      include: {
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { paid_at: 'desc' },
+      take: 200,
+    });
+  }
+
+  /**
+   * Get all payments for a camporee (summary)
+   * @param camporeeId - The local_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   */
+  async getCamporeePayments(camporeeId: number, status?: string) {
+    // Validate camporee exists
+    await this.findOne(camporeeId);
+
+    // Safety cap: a camporee payment list grows proportionally to member count.
+    // 5 000 covers 1 000 members × 5 payment installments each.
+    return this.prisma.camporee_payments.findMany({
+      where: {
+        camporee_member: {
+          camporee_id: camporeeId,
+        },
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
+      },
+      include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            user_id: true,
+            club_name: true,
+            users: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { paid_at: 'desc' },
+      take: 5000,
+    });
+  }
+
+  /**
+   * Update an existing payment
+   * @param paymentId - The camporee_payment_id (UUID)
+   * @param dto - Update payment DTO
+   */
+  async updatePayment(paymentId: string, dto: UpdatePaymentDto) {
+    const payment = await this.prisma.camporee_payments.findUnique({
+      where: { camporee_payment_id: paymentId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException(`Payment with ID ${paymentId} not found`);
+    }
+
+    const updateData: Record<string, any> = {};
+
+    if (dto.amount !== undefined) updateData.amount = dto.amount;
+    if (dto.payment_type !== undefined)
+      updateData.payment_type = dto.payment_type;
+    if (dto.reference !== undefined) updateData.reference = dto.reference;
+    if (dto.notes !== undefined) updateData.notes = dto.notes;
+    if (dto.paid_at !== undefined) updateData.paid_at = new Date(dto.paid_at);
+
+    return this.prisma.camporee_payments.update({
+      where: { camporee_payment_id: paymentId },
+      data: updateData,
+      include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            user_id: true,
+            users: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
+  }
+
+  // ========================================
+  // UNION CAMPOREE ENROLLMENT
+  // ========================================
+
+  /**
+   * Enroll a club section in a union camporee
+   * @param unionCamporeeId - The union_camporee_id
+   * @param dto - Enroll club DTO
+   * @param registeredBy - User ID performing the enrollment
+   */
+  async enrollClubToUnion(
+    unionCamporeeId: number,
+    dto: EnrollClubDto,
+    registeredBy: string,
+  ) {
+    let isLate = false;
+    let camporeeUnionId: number | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Validate union camporee exists and is active
+      const camporee = await tx.union_camporees.findUnique({
+        where: { union_camporee_id: unionCamporeeId },
+      });
+
+      if (!camporee) {
+        throw new NotFoundException('Camporee not found');
+      }
+
+      if (!camporee.active) {
+        throw new BadRequestException('Camporee is not active');
+      }
+
+      isLate = this.isAfterDeadline(camporee.club_registration_deadline);
+      camporeeUnionId = camporee.union_id;
+
+      // 2. Validate club section exists and get club info
+      const clubSection = await tx.club_sections.findUnique({
+        where: { club_section_id: dto.club_section_id },
+        include: {
+          clubs: { select: { local_field_id: true, club_id: true } },
+        },
+      });
+
+      if (!clubSection) {
+        throw new BadRequestException(
+          `Club section with ID ${dto.club_section_id} not found`,
+        );
+      }
+
+      // 3. Ensure we can determine the club's local field
+      if (clubSection.clubs?.local_field_id == null) {
+        throw new BadRequestException("Cannot determine club's local field");
+      }
+
+      // 4. Validate that the club's local field participates in this union camporee
+      const fieldParticipation = await tx.union_camporee_local_fields.findFirst(
+        {
+          where: {
+            union_camporee_lf_id: unionCamporeeId,
+            local_field_id: clubSection.clubs.local_field_id,
+            active: true,
+          },
+        },
+      );
+
+      if (!fieldParticipation) {
+        throw new ForbiddenException(
+          "Club's local field does not participate in this union camporee",
+        );
+      }
+
+      // 5. Check for duplicate enrollment
+      const existingEnrollment = await tx.camporee_clubs.findFirst({
+        where: {
+          union_camporee_id: unionCamporeeId,
+          club_section_id: dto.club_section_id,
+          active: true,
+        },
+      });
+
+      if (existingEnrollment) {
+        throw new BadRequestException(
+          'This club section is already enrolled in this camporee',
+        );
+      }
+
+      // 6. Create enrollment
+      return tx.camporee_clubs.create({
+        data: {
+          union_camporee_id: unionCamporeeId,
+          camporee_type: 'union',
+          club_section_id: dto.club_section_id,
+          club_id: clubSection.clubs?.club_id,
+          local_field_id: clubSection.clubs?.local_field_id,
+          status: isLate ? 'pending_approval' : 'registered',
+          registered_by: registeredBy,
+          active: true,
+        },
+        include: {
+          club_sections: {
+            include: {
+              club_types: { select: { club_type_id: true, name: true } },
+              clubs: { select: { club_id: true, name: true } },
+            },
+          },
+          registrar: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      });
+    });
+
+    if (isLate && camporeeUnionId) {
+      setImmediate(() => {
+        void this.notificationsService.sendToGlobalRole(
+          ['director-union', 'assistant-union'],
+          'Inscripción tardía de club (camporee unión)',
+          'Un club se inscribió fuera de plazo al camporee de unión y requiere aprobación',
+          { camporeeId: String(unionCamporeeId), type: 'club_enrollment' },
+          undefined,
+          'camporees:late_enrollment',
+          camporeeUnionId ?? undefined,
+        );
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Register a member in a union camporee with insurance validation
+   * @param unionCamporeeId - The union_camporee_id
+   * @param dto - Register member DTO
+   */
+  async registerMemberToUnion(unionCamporeeId: number, dto: RegisterMemberDto) {
+    let isLate = false;
+    let camporeeUnionId: number | null = null;
+    let camporeeName: string | null = null;
+
+    const member = await this.prisma.$transaction(async (tx) => {
+      // 1. Validate union camporee exists
+      const camporee = await tx.union_camporees.findUnique({
+        where: { union_camporee_id: unionCamporeeId },
+      });
+
+      if (!camporee) {
+        throw new NotFoundException('Camporee not found');
+      }
+
+      // Validate camporee is active
+      if (!camporee.active) {
+        throw new BadRequestException('Camporee is not active');
+      }
+
+      isLate = this.isAfterDeadline(camporee.member_registration_deadline);
+      camporeeUnionId = camporee.union_id;
+      camporeeName = camporee.name;
+
+      // 2. Validate user exists
+      const user = await tx.users.findUnique({
+        where: { user_id: dto.user_id },
+      });
+
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+
+      // 3. Check for duplicate registration
+      const existingRegistration = await tx.camporee_members.findFirst({
+        where: {
+          union_camporee_id: unionCamporeeId,
+          user_id: dto.user_id,
+          active: true,
+        },
+      });
+
+      if (existingRegistration) {
+        throw new BadRequestException(
+          'User is already registered for this camporee',
+        );
+      }
+
+      // 4. If insurance_id is provided, validate insurance
+      if (dto.insurance_id) {
+        const insurance = await tx.member_insurances.findUnique({
+          where: { insurance_id: dto.insurance_id },
+        });
+
+        // Validate insurance exists
+        if (!insurance) {
+          throw new BadRequestException('Insurance not found');
+        }
+
+        // Validate insurance belongs to the user
+        if (insurance.user_id !== dto.user_id) {
+          throw new BadRequestException(
+            'Insurance does not belong to this user',
+          );
+        }
+
+        // Validate insurance type is CAMPOREE
+        if (insurance.insurance_type !== 'CAMPOREE') {
+          throw new BadRequestException('Insurance type must be CAMPOREE');
+        }
+
+        // Validate insurance is not expired before camporee ends
+        if (insurance.end_date < camporee.end_date) {
+          throw new BadRequestException(
+            'Insurance expires before camporee ends',
+          );
+        }
+
+        // Validate insurance is active
+        if (!insurance.active) {
+          throw new BadRequestException('Insurance is not active');
+        }
+      }
+
+      // 5. Create registration in camporee_members
+      const member = await tx.camporee_members.create({
+        data: {
+          union_camporee_id: unionCamporeeId,
+          camporee_type: 'union',
+          user_id: dto.user_id,
+          club_name: dto.club_name,
+          insurance_verified: !!dto.insurance_id,
+          insurance_id: dto.insurance_id,
+          status: isLate ? 'pending_approval' : 'registered',
+          active: true,
+        },
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+              email: true,
+              user_image: true,
+            },
+          },
+          insurance: {
+            select: {
+              insurance_id: true,
+              insurance_type: true,
+              policy_number: true,
+              provider: true,
+              start_date: true,
+              end_date: true,
+            },
+          },
+        },
+      });
+
+      return member;
+    });
+
+    if (isLate && camporeeUnionId) {
+      setImmediate(() => {
+        void this.notificationsService.sendToGlobalRole(
+          ['director-union', 'assistant-union'],
+          'Inscripción tardía de miembro (camporee unión)',
+          'Un miembro se inscribió fuera de plazo al camporee de unión y requiere aprobación',
+          { camporeeId: String(unionCamporeeId), type: 'member_enrollment' },
+          undefined,
+          'camporees:late_enrollment',
+          camporeeUnionId ?? undefined,
+        );
+      });
+    }
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId: dto.user_id,
+        eventType: 'camporee.participated',
+        payload: {
+          camporee_id: unionCamporeeId,
+          camporee_name: camporeeName,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+    }
+
+    // TODO: emit camporee.completed when a dedicated camporee completion action is added
+
+    return this.applySignedPrivateUrls(member);
+  }
+
+  /**
+   * Register a payment for a union camporee member
+   * @param unionCamporeeId - The union_camporee_id
+   * @param memberId - The camporee_member_id
+   * @param dto - Create payment DTO
+   * @param registeredBy - User ID performing the registration
+   */
+  async createUnionPayment(
+    unionCamporeeId: number,
+    memberId: number,
+    dto: CreatePaymentDto,
+    registeredBy: string,
+  ) {
+    let isLate = false;
+    let camporeeUnionId: number | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Validate union camporee exists
+      const camporee = await tx.union_camporees.findUnique({
+        where: { union_camporee_id: unionCamporeeId },
+      });
+
+      if (!camporee) {
+        throw new NotFoundException('Camporee not found');
+      }
+
+      isLate = this.isAfterDeadline(camporee.payment_deadline);
+      camporeeUnionId = camporee.union_id;
+
+      // 2. Validate member is registered in this union camporee
+      const member = await tx.camporee_members.findFirst({
+        where: {
+          camporee_member_id: memberId,
+          union_camporee_id: unionCamporeeId,
+          active: true,
+        },
+      });
+
+      if (!member) {
+        throw new NotFoundException(
+          `Member with ID ${memberId} not found in camporee ${unionCamporeeId}`,
+        );
+      }
+
+      // 3. Create payment
+      return tx.camporee_payments.create({
+        data: {
+          camporee_member_id: memberId,
+          amount: dto.amount,
+          payment_type: dto.payment_type,
+          reference: dto.reference,
+          notes: dto.notes,
+          registered_by: registeredBy,
+          paid_at: new Date(dto.paid_at),
+          status: isLate ? 'pending_approval' : 'registered',
+        },
+        include: {
+          camporee_member: {
+            select: {
+              camporee_member_id: true,
+              user_id: true,
+              users: {
+                select: {
+                  name: true,
+                  paternal_last_name: true,
+                  maternal_last_name: true,
+                },
+              },
+            },
+          },
+          registrar: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+        },
+      });
+    });
+
+    if (isLate && camporeeUnionId) {
+      setImmediate(() => {
+        void this.notificationsService.sendToGlobalRole(
+          ['director-union', 'assistant-union'],
+          'Pago tardío de camporee unión',
+          'Se registró un pago fuera de plazo y requiere aprobación',
+          { camporeeId: String(unionCamporeeId), type: 'payment' },
+          undefined,
+          'camporees:late_payment',
+          camporeeUnionId ?? undefined,
+        );
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all enrolled clubs for a union camporee
+   * @param unionCamporeeId - The union_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   */
+  async getUnionEnrolledClubs(unionCamporeeId: number, status?: string) {
+    // Validate union camporee exists
+    await this.findOneUnion(unionCamporeeId);
+
+    // Safety cap: a union camporee aggregates multiple local fields.
+    // 2 000 covers a large union with many clubs across sections.
+    return this.prisma.camporee_clubs.findMany({
+      where: {
+        union_camporee_id: unionCamporeeId,
+        active: true,
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
+      },
+      include: {
+        club_sections: {
+          include: {
+            club_types: { select: { club_type_id: true, name: true } },
+            clubs: { select: { club_id: true, name: true } },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'asc' },
+      take: 2000,
+    });
+  }
+
+  /**
+   * Get all members registered for a union camporee (paginated)
+   * @param unionCamporeeId - The union_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   * @param pagination - Pagination parameters (page, limit). Default: page=1, limit=100. Max limit: 200
+   */
+  async getUnionMembers(
+    unionCamporeeId: number,
+    status?: string,
+    pagination?: UnionMembersPaginationDto,
+  ): Promise<PaginatedResult<any>> {
+    // Validate union camporee exists
+    await this.findOneUnion(unionCamporeeId);
+
+    const page = pagination?.page ?? 1;
+    const limit = pagination?.limit ?? 100;
+    const skip = (page - 1) * limit;
+
+    const where = {
+      union_camporee_id: unionCamporeeId,
+      active: true,
+      ...(status ? { status } : { status: { not: 'pending_approval' } }),
+    };
+
+    const include = {
+      users: {
+        select: {
+          user_id: true,
+          name: true,
+          paternal_last_name: true,
+          maternal_last_name: true,
+          email: true,
+          user_image: true,
+          birthday: true,
+        },
+      },
+      insurance: {
+        select: {
+          insurance_id: true,
+          insurance_type: true,
+          policy_number: true,
+          provider: true,
+          start_date: true,
+          end_date: true,
+        },
+      },
+    };
+
+    const [members, total] = await this.prisma.$transaction([
+      this.prisma.camporee_members.findMany({
+        where,
+        include,
+        orderBy: { created_at: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.camporee_members.count({ where }),
+    ]);
+
+    const data = await Promise.all(
+      members.map((member) =>
+        PROFILE_URL_LIMITER(() => this.applySignedPrivateUrls(member)),
+      ),
+    );
+
+    const paginationDto = Object.assign(new UnionMembersPaginationDto(), {
+      page,
+      limit,
+    });
+    return createPaginatedResult(data, total, paginationDto);
+  }
+
+  /**
+   * Get all payments for a union camporee (summary)
+   * @param unionCamporeeId - The union_camporee_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   */
+  async getUnionCamporeePayments(unionCamporeeId: number, status?: string) {
+    // Validate union camporee exists
+    await this.findOneUnion(unionCamporeeId);
+
+    // Safety cap: union camporee aggregates many local fields; 5 000 payments
+    // covers 1 000 members × 5 installments.
+    return this.prisma.camporee_payments.findMany({
+      where: {
+        camporee_member: {
+          union_camporee_id: unionCamporeeId,
+        },
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
+      },
+      include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            user_id: true,
+            club_name: true,
+            users: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { paid_at: 'desc' },
+      take: 5000,
+    });
+  }
+
+  /**
+   * Get all payments for a specific union camporee member
+   * @param unionCamporeeId - The union_camporee_id
+   * @param memberId - The camporee_member_id
+   * @param status - Optional status filter. Defaults to excluding pending_approval
+   */
+  async getUnionMemberPayments(
+    unionCamporeeId: number,
+    memberId: number,
+    status?: string,
+  ) {
+    // Validate union camporee exists
+    await this.findOneUnion(unionCamporeeId);
+
+    // Validate member belongs to this union camporee
+    const member = await this.prisma.camporee_members.findFirst({
+      where: {
+        camporee_member_id: memberId,
+        union_camporee_id: unionCamporeeId,
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException(
+        `Member with ID ${memberId} not found in camporee ${unionCamporeeId}`,
+      );
+    }
+
+    // Safety cap: a single member is unlikely to have more than 200 payments.
+    return this.prisma.camporee_payments.findMany({
+      where: {
+        camporee_member_id: memberId,
+        ...(status ? { status } : { status: { not: 'pending_approval' } }),
+      },
+      include: {
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+      orderBy: { paid_at: 'desc' },
+      take: 200,
+    });
+  }
+
+  /**
+   * Cancel a club enrollment in a union camporee (soft delete)
+   * @param unionCamporeeId - The union_camporee_id
+   * @param camporeeClubId - The camporee_club_id to cancel
+   */
+  async cancelUnionClubEnrollment(
+    unionCamporeeId: number,
+    camporeeClubId: number,
+  ) {
+    // Validate union camporee exists
+    await this.findOneUnion(unionCamporeeId);
+
+    const enrollment = await this.prisma.camporee_clubs.findFirst({
+      where: {
+        camporee_club_id: camporeeClubId,
+        union_camporee_id: unionCamporeeId,
+        active: true,
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException(
+        `Club enrollment with ID ${camporeeClubId} not found in camporee ${unionCamporeeId}`,
+      );
+    }
+
+    return this.prisma.camporee_clubs.update({
+      where: { camporee_club_id: camporeeClubId },
+      data: {
+        active: false,
+        status: 'cancelled',
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Remove a member from a union camporee (soft delete)
+   * @param unionCamporeeId - The union_camporee_id
+   * @param userId - The user_id to remove
+   */
+  async removeUnionMember(unionCamporeeId: number, userId: string) {
+    // Validate union camporee exists
+    await this.findOneUnion(unionCamporeeId);
+
+    // Find the registration
+    const registration = await this.prisma.camporee_members.findFirst({
+      where: {
+        union_camporee_id: unionCamporeeId,
+        user_id: userId,
+        active: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException(
+        `Member with user ID ${userId} not found in camporee ${unionCamporeeId}`,
+      );
+    }
+
+    // Soft delete the registration
+    return await this.prisma.camporee_members.update({
+      where: {
+        camporee_member_id: registration.camporee_member_id,
+      },
+      data: {
+        active: false,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  // ========================================
   // LEGACY METHODS (for controller compatibility)
   // ========================================
 
@@ -477,25 +2016,14 @@ export class CamporeesService {
   }
 
   /**
-   * Legacy method - redirects to getMembers with pagination
+   * Legacy method - delegates to getMembers with pagination
    * @deprecated Use getMembers instead
    */
   async getParticipants(
     camporeeId: number,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
-    const members = await this.getMembers(camporeeId);
-
-    // Apply pagination manually
-    const skip = pagination?.skip ?? 0;
-    const take = pagination?.take ?? 20;
-    const paginatedMembers = members.slice(skip, skip + take);
-
-    return createPaginatedResult(
-      paginatedMembers,
-      members.length,
-      pagination ?? new PaginationDto(),
-    );
+    return this.getMembers(camporeeId, undefined, pagination);
   }
 
   private async applySignedPrivateUrls<T extends Record<string, any>>(
@@ -556,6 +2084,49 @@ export class CamporeesService {
     where.local_fields = {
       union_id: scope.id,
     };
+  }
+
+  private applyUnionCamporeeScope(
+    where: Record<string, unknown>,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    const scope = this.resolveCamporeeAccessScope(authorization);
+    if (!scope) {
+      return;
+    }
+
+    if (scope.type === 'union') {
+      where.union_id = scope.id;
+      return;
+    }
+
+    // local_field scope: show union camporees where the local field participates
+    if (scope.type === 'local_field') {
+      where.union_camporee_local_fields = {
+        some: {
+          local_field_id: scope.id,
+          active: true,
+        },
+      };
+    }
+  }
+
+  private async assertCanManageUnion(
+    unionId: number,
+    authorization?: AuthorizationSnapshot,
+  ) {
+    const scope = this.resolveCamporeeAccessScope(authorization);
+    if (!scope) {
+      return;
+    }
+
+    if (scope.type === 'union' && scope.id === unionId) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      'You do not have access to manage union camporees',
+    );
   }
 
   private async assertCanManageLocalField(
@@ -650,5 +2221,10 @@ export class CamporeesService {
     return grants.some((grant) =>
       normalized.has(grant.role_name.toLowerCase()),
     );
+  }
+
+  private isAfterDeadline(deadline: Date | null | undefined): boolean {
+    if (!deadline) return false;
+    return new Date() > new Date(deadline);
   }
 }

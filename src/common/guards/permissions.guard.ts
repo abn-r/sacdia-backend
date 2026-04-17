@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -33,10 +34,20 @@ type ResolvedInstanceScope = {
   instanceId: number;
 };
 
+type ResolvedJointActivityScope = {
+  mainClubId: number;
+  participatingSectionIds: number[];
+};
+
 type ResolvedTerritoryScope = {
   localFieldId: number;
   unionId?: number | null;
   countryId?: number | null;
+};
+
+type ResolvedUnionCamporeeScope = {
+  unionId: number;
+  countryId: number | null;
 };
 
 @Injectable()
@@ -68,7 +79,15 @@ export class PermissionsGuard implements CanActivate {
       this.reflector.getAllAndOverride<AuthorizationResourceMetadata>(
         AUTHORIZATION_RESOURCE_KEY,
         [context.getHandler(), context.getClass()],
-      ) ?? { type: 'global' };
+      );
+
+    if (!resource) {
+      const className = context.getClass().name;
+      const handlerName = context.getHandler().name;
+      throw new InternalServerErrorException(
+        `RBAC misconfiguration: Handler ${className}.${handlerName} has @RequirePermissions but no @AuthorizationResource. Add @AuthorizationResource({ type: ... }) to declare the permission scope explicitly.`,
+      );
+    }
     const sensitiveUserSubresource =
       this.reflector.getAllAndOverride<SensitiveUserSubresourceMetadata>(
         SENSITIVE_USER_SUBRESOURCE_KEY,
@@ -112,12 +131,29 @@ export class PermissionsGuard implements CanActivate {
           await this.resolveCamporeeScope(request, resource),
           'You need an active assignment or global scope for this camporee',
         );
-      case 'activity':
+      case 'union_camporee':
+        return this.validateUnionCamporeeScope(
+          resolved,
+          await this.resolveUnionCamporeeScope(request, resource),
+        );
+      case 'activity': {
+        const activityScopeResult = await this.resolveActivityScope(
+          request,
+          resource,
+        );
+        if ('participatingSectionIds' in activityScopeResult) {
+          return this.validateJointActivityScope(
+            userId,
+            resolved,
+            activityScopeResult,
+          );
+        }
         return this.validateInstanceScope(
           userId,
           resolved,
-          await this.resolveActivityScope(request, resource),
+          activityScopeResult,
         );
+      }
       case 'finance':
         return this.validateInstanceScope(
           userId,
@@ -298,6 +334,48 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 
+  /**
+   * Authorization check for joint activities.
+   * The user is authorized if they have a club-level admin override OR
+   * if their active section assignment is ANY of the participating sections.
+   * This enables directors of any participating section to manage the joint activity.
+   */
+  private async validateJointActivityScope(
+    userId: string,
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: ResolvedJointActivityScope,
+  ): Promise<boolean> {
+    if (
+      await this.authorizationContext.canManageClub(
+        userId,
+        resourceScope.mainClubId,
+      )
+    ) {
+      return true;
+    }
+
+    const activeClubScope = resolved.authorization.effective.scope.club;
+
+    if (
+      !activeClubScope ||
+      activeClubScope.club.club_id !== resourceScope.mainClubId
+    ) {
+      throw new ForbiddenException(
+        'You need an active club assignment for this club',
+      );
+    }
+
+    const activeSectionId = activeClubScope.section.club_section_id;
+
+    if (!resourceScope.participatingSectionIds.includes(activeSectionId)) {
+      throw new ForbiddenException(
+        'You need an active club assignment in one of the participating sections of this joint activity',
+      );
+    }
+
+    return true;
+  }
+
   private validateTerritoryScope(
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedTerritoryScope,
@@ -375,7 +453,7 @@ export class PermissionsGuard implements CanActivate {
   private async resolveActivityScope(
     request: any,
     resource: AuthorizationResourceMetadata,
-  ): Promise<ResolvedInstanceScope> {
+  ): Promise<ResolvedInstanceScope | ResolvedJointActivityScope> {
     const activityId = this.getRequiredNumericValue(
       this.getRequestValue(request, 'param', resource.idParam ?? 'activityId'),
       'Activity ID not found in request',
@@ -384,6 +462,7 @@ export class PermissionsGuard implements CanActivate {
     const activity = await this.prisma.activities.findUnique({
       where: { activity_id: activityId },
       select: {
+        is_joint: true,
         club_section_id: true,
         club_sections: {
           select: {
@@ -392,11 +471,43 @@ export class PermissionsGuard implements CanActivate {
             club_type_id: true,
           },
         },
+        activity_instances: {
+          where: { active: true },
+          select: {
+            club_section_id: true,
+            club_sections: {
+              select: {
+                club_section_id: true,
+                main_club_id: true,
+              },
+            },
+          },
+        },
       },
     });
 
     if (!activity) {
       throw new NotFoundException('Activity not found');
+    }
+
+    // For joint activities, resolve authorization using all participating sections
+    if (activity.is_joint) {
+      const mainClubId = activity.club_sections?.main_club_id;
+
+      if (!mainClubId) {
+        throw new ForbiddenException(
+          'Unable to resolve the club for this joint activity',
+        );
+      }
+
+      const participatingSectionIds = activity.activity_instances
+        .map((instance) => instance.club_section_id)
+        .filter((id): id is number => id !== null);
+
+      return {
+        mainClubId,
+        participatingSectionIds,
+      };
     }
 
     return this.buildInstanceScopeFromSection(activity.club_sections);
@@ -437,6 +548,105 @@ export class PermissionsGuard implements CanActivate {
       unionId: camporee.local_fields?.union_id ?? null,
       countryId: camporee.local_fields?.unions?.country_id ?? null,
     };
+  }
+
+  private async resolveUnionCamporeeScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedUnionCamporeeScope> {
+    const camporeeId = this.getRequiredNumericValue(
+      this.getRequestValue(
+        request,
+        'param',
+        resource.idParam ?? 'unionCamporeeId',
+      ),
+      'Union camporee ID not found in request',
+    );
+
+    const camporee = await this.prisma.union_camporees.findUnique({
+      where: { union_camporee_id: camporeeId },
+      select: {
+        union_id: true,
+        unions: { select: { country_id: true } },
+      },
+    });
+
+    if (!camporee) {
+      throw new NotFoundException('Union camporee not found');
+    }
+
+    return {
+      unionId: camporee.union_id,
+      countryId: camporee.unions?.country_id ?? null,
+    };
+  }
+
+  private validateUnionCamporeeScope(
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: ResolvedUnionCamporeeScope,
+  ): boolean {
+    const globalRoleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (globalRoleNames.has('super_admin')) {
+      return true;
+    }
+
+    const globalScope = resolved.authorization.effective.scope.global;
+    const globalUnionId = globalScope.union?.id;
+    const globalCountryId = globalScope.country?.id;
+
+    if (
+      typeof globalUnionId === 'number' &&
+      globalUnionId === resourceScope.unionId &&
+      (globalRoleNames.has('admin') || globalRoleNames.has('assistant_admin'))
+    ) {
+      return true;
+    }
+
+    if (
+      typeof resourceScope.countryId === 'number' &&
+      typeof globalCountryId === 'number' &&
+      globalCountryId === resourceScope.countryId &&
+      globalRoleNames.has('admin')
+    ) {
+      return true;
+    }
+
+    // Local-field-level actors (admin, coordinator, director-lf, assistant-lf)
+    // and club-assignment actors with a local field are permitted through —
+    // the service layer enforces that the local field participates in this
+    // union camporee via union_camporee_local_fields.
+    const globalLocalFieldId = globalScope.local_field?.id;
+
+    if (
+      typeof globalLocalFieldId === 'number' &&
+      (globalRoleNames.has('admin') ||
+        globalRoleNames.has('assistant_admin') ||
+        globalRoleNames.has('coordinator') ||
+        globalRoleNames.has('director-lf') ||
+        globalRoleNames.has('assistant-lf'))
+    ) {
+      return true;
+    }
+
+    const activeAssignmentId =
+      resolved.authorization.active_assignment.assignment_id;
+    const activeGrant = resolved.authorization.grants.club_assignments.find(
+      (assignment) => assignment.assignment_id === activeAssignmentId,
+    );
+    const activeGrantLocalFieldId = activeGrant?.scope.local_field?.id;
+
+    if (typeof activeGrantLocalFieldId === 'number') {
+      return true;
+    }
+
+    throw new ForbiddenException(
+      'You need a union-level or higher assignment for this union camporee',
+    );
   }
 
   private async resolveFinanceScope(
@@ -580,7 +790,9 @@ export class PermissionsGuard implements CanActivate {
     };
   }
 
-  private clubTypeIdToInstanceType(clubTypeId: number): AuthorizationSectionType {
+  private clubTypeIdToInstanceType(
+    clubTypeId: number,
+  ): AuthorizationSectionType {
     // These mappings follow the club_types catalog convention
     switch (clubTypeId) {
       case 1:
