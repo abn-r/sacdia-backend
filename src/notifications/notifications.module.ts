@@ -27,12 +27,17 @@ function isRedisConfigured(): boolean {
   }
 }
 
-const queueImports = isRedisConfigured()
-  ? [BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE })]
-  : [];
-
 @Module({
-  imports: [PrismaModule, FirebaseAdminModule, ...queueImports],
+  imports: [
+    PrismaModule,
+    FirebaseAdminModule,
+    // Evaluated lazily inside the decorator — after ConfigModule.forRoot() has
+    // already called dotenv.config() in AppModule. A top-level const would run
+    // at file-import time, before dotenv loads, and always resolve to [].
+    ...(isRedisConfigured()
+      ? [BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE })]
+      : []),
+  ],
   controllers: [NotificationsController, FcmTokensController],
   providers: [
     NotificationsService,
