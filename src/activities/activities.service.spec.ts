@@ -7,6 +7,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 describe('ActivitiesService', () => {
   let service: ActivitiesService;
@@ -38,6 +39,11 @@ describe('ActivitiesService', () => {
 
   const mockNotificationsService = {
     sendToClubMembers: jest.fn().mockResolvedValue(undefined),
+    sendSilentToSection: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockAchievementsService = {
+    emitEvent: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -47,6 +53,7 @@ describe('ActivitiesService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: AchievementsService, useValue: mockAchievementsService },
       ],
     }).compile();
 
@@ -446,6 +453,170 @@ describe('ActivitiesService', () => {
       );
       expect(result.attendees[0].user_image).toBe(
         'https://signed.example/profiles/juan.jpg',
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.5 — realtime invalidation hooks
+  // ---------------------------------------------------------------------------
+  describe('realtime invalidation (sendSilentToSection hook)', () => {
+    const ACTOR = 'actor-uuid-0001';
+    const SECTION_ID = 10;
+
+    it('create(): calls sendSilentToSection with CREATED action after successful DB write', async () => {
+      const createDto = {
+        name: 'Campamento',
+        club_type_id: 1,
+        lat: 19.4326,
+        long: -99.1332,
+        activity_place: 'Parque Nacional',
+        image: 'img.jpg',
+        activity_type_id: 1,
+        club_section_id: SECTION_ID,
+      };
+      const mockActivity = {
+        activity_id: 7,
+        ...createDto,
+        activity_instances: [],
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: SECTION_ID,
+        main_club_id: 1,
+        club_type_id: 1,
+      });
+      mockPrismaService.activities.create.mockResolvedValue(mockActivity);
+
+      await service.create(1, createDto, ACTOR);
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sectionId: SECTION_ID,
+          resource: 'activities',
+          action: 'CREATED',
+          entityId: 7,
+          actorId: ACTOR,
+        }),
+      );
+    });
+
+    it('create(): does NOT call sendSilentToSection when DB write throws', async () => {
+      const createDto = {
+        name: 'Campamento',
+        club_type_id: 1,
+        lat: 0,
+        long: 0,
+        activity_place: 'X',
+        image: '',
+        activity_type_id: 1,
+        club_section_id: SECTION_ID,
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: SECTION_ID,
+        main_club_id: 1,
+        club_type_id: 1,
+      });
+      mockPrismaService.activities.create.mockRejectedValue(
+        new Error('DB constraint violation'),
+      );
+
+      await expect(service.create(1, createDto, ACTOR)).rejects.toThrow(
+        'DB constraint violation',
+      );
+      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+    });
+
+    it('update(): calls sendSilentToSection with UPDATED action after successful DB write', async () => {
+      const existing = {
+        activity_id: 3,
+        club_section_id: SECTION_ID,
+        is_joint: false,
+        club_sections: { main_club_id: 1 },
+        activity_instances: [],
+      };
+      const updated = { ...existing, name: 'Retiro', activity_instances: [] };
+
+      mockPrismaService.activities.findUnique.mockResolvedValueOnce(existing);
+      mockPrismaService.activities.update.mockResolvedValue(updated);
+
+      await service.update(3, { name: 'Retiro' }, ACTOR);
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sectionId: SECTION_ID,
+          resource: 'activities',
+          action: 'UPDATED',
+          entityId: 3,
+          actorId: ACTOR,
+        }),
+      );
+    });
+
+    it('update(): does NOT call sendSilentToSection when activity not found', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue(null);
+
+      await expect(service.update(999, { name: 'X' }, ACTOR)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+    });
+
+    it('remove(): calls sendSilentToSection with DELETED action after successful soft-delete', async () => {
+      const existing = {
+        activity_id: 5,
+        club_section_id: SECTION_ID,
+        active: true,
+      };
+
+      mockPrismaService.activities.findUnique.mockResolvedValue(existing);
+      mockPrismaService.activities.update.mockResolvedValue({
+        ...existing,
+        active: false,
+      });
+
+      await service.remove(5, ACTOR);
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sectionId: SECTION_ID,
+          resource: 'activities',
+          action: 'DELETED',
+          entityId: 5,
+          actorId: ACTOR,
+        }),
+      );
+    });
+
+    it('remove(): does NOT call sendSilentToSection when activity not found', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue(null);
+
+      await expect(service.remove(999, ACTOR)).rejects.toThrow(NotFoundException);
+      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+    });
+
+    it('remove(): uses fallback actorId "system" when actorId is not provided', async () => {
+      const existing = {
+        activity_id: 6,
+        club_section_id: SECTION_ID,
+        active: true,
+      };
+
+      mockPrismaService.activities.findUnique.mockResolvedValue(existing);
+      mockPrismaService.activities.update.mockResolvedValue({
+        ...existing,
+        active: false,
+      });
+
+      await service.remove(6); // no actorId
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'system',
+        }),
       );
     });
   });

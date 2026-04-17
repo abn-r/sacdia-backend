@@ -1089,4 +1089,52 @@ describe('NotificationsService', () => {
       expect(result).toEqual({ updated: 4 });
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // sendSilentToSection — T1.6
+  // ---------------------------------------------------------------------------
+  describe('sendSilentToSection', () => {
+    const ACTOR_ID = '00000000-0000-0000-0000-000000000010';
+
+    const payload = {
+      sectionId: 5,
+      resource: 'activities' as const,
+      action: 'CREATED' as const,
+      entityId: 42,
+      actorId: ACTOR_ID,
+      timestamp: new Date().toISOString(),
+    };
+
+    it('should enqueue a realtime.invalidate job with the correct name and payload when queue is ready', async () => {
+      // Arrange: inject a mock queue
+      const mockAdd = jest.fn().mockResolvedValue({ id: 'job-1' });
+      const mockQueue = { add: mockAdd };
+      // Access private property via reflection
+      (service as any).queue = mockQueue;
+
+      await service.sendSilentToSection(payload);
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        'realtime.invalidate',
+        payload,
+        expect.objectContaining({ attempts: 2 }),
+      );
+    });
+
+    it('should not throw when queue.add rejects', async () => {
+      const mockQueue = {
+        add: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
+      };
+      (service as any).queue = mockQueue;
+
+      await expect(service.sendSilentToSection(payload)).resolves.toBeUndefined();
+    });
+
+    it('should silently skip (no enqueue) when queue is not available', async () => {
+      // Ensure queue is undefined (simulates no-Redis environment)
+      (service as any).queue = undefined;
+
+      await expect(service.sendSilentToSection(payload)).resolves.toBeUndefined();
+    });
+  });
 });
