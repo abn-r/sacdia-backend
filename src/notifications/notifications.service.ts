@@ -32,6 +32,8 @@ import { NotificationPreferencesService } from './notification-preferences.servi
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
   NOTIFICATIONS_QUEUE,
+  REALTIME_INVALIDATE_JOB,
+  RealtimeInvalidatePayload,
   SendToUserJobData,
   SendToSectionRoleJobData,
   SendToGlobalRoleJobData,
@@ -338,6 +340,43 @@ export class NotificationsService {
         `Failed to enqueue notification to user ${userId}: ${error.message}`,
       );
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // sendSilentToSection — realtime cache invalidation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Enqueues a silent (data-only) FCM push to all active members of the
+   * given section (excluding the actor). Used to trigger client-side cache
+   * invalidation after an activity mutation.
+   *
+   * This method is fire-and-forget by design:
+   * - It never throws — errors are caught and logged.
+   * - It does NOT create notification_logs or notification_deliveries rows.
+   * - When Redis is unavailable the job is silently dropped (invalidation is
+   *   best-effort; the client will sync on next foreground fetch).
+   */
+  async sendSilentToSection(input: RealtimeInvalidatePayload): Promise<void> {
+    if (!this.isQueueReady()) {
+      this.logger.debug(
+        `sendSilentToSection: queue not available — skipping realtime invalidation for section ${input.sectionId}`,
+      );
+      return;
+    }
+
+    await this.queue!
+      .add(REALTIME_INVALIDATE_JOB, input, {
+        attempts: 2,
+        backoff: { type: 'exponential' as const, delay: 1000 },
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 25 },
+      })
+      .catch((err: Error) => {
+        this.logger.error(
+          `sendSilentToSection: failed to enqueue realtime.invalidate for section ${input.sectionId}: ${err.message}`,
+        );
+      });
   }
 
   // ---------------------------------------------------------------------------

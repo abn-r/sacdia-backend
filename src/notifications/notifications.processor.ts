@@ -18,11 +18,27 @@ import { isUuid, chunkArray } from '../common/utils/notification.utils';
 
 export const NOTIFICATIONS_QUEUE = 'notifications';
 
+// ---------------------------------------------------------------------------
+// Realtime invalidation — silent push to trigger client cache refresh
+// ---------------------------------------------------------------------------
+
+export const REALTIME_INVALIDATE_JOB = 'realtime.invalidate';
+
+export interface RealtimeInvalidatePayload {
+  sectionId: number;
+  resource: 'activities'; // extensible later
+  action: 'CREATED' | 'UPDATED' | 'DELETED';
+  entityId: number;
+  actorId: string;
+  timestamp: string; // ISO
+}
+
 export type NotificationJobType =
   | 'send-to-user'
   | 'send-to-section-role'
   | 'send-to-global-role'
-  | 'broadcast';
+  | 'broadcast'
+  | 'realtime.invalidate';
 
 export interface SendToUserJobData {
   userId: string;
@@ -64,7 +80,8 @@ export type NotificationJobData =
   | SendToUserJobData
   | SendToSectionRoleJobData
   | SendToGlobalRoleJobData
-  | BroadcastJobData;
+  | BroadcastJobData
+  | RealtimeInvalidatePayload;
 
 /**
  * FCM error codes that indicate a token is permanently invalid and should be
@@ -125,6 +142,10 @@ export class NotificationsProcessor
         return this.handleSendToGlobalRole(job as Job<SendToGlobalRoleJobData>);
       case 'broadcast':
         return this.handleBroadcast(job as Job<BroadcastJobData>);
+      case REALTIME_INVALIDATE_JOB:
+        return this.handleRealtimeInvalidate(
+          job as Job<RealtimeInvalidatePayload>,
+        );
       default:
         this.logger.warn(`Unknown notification job type: ${job.name}`);
     }
@@ -505,6 +526,140 @@ export class NotificationsProcessor
       failureCount: totalFailure,
       deliveriesCreated: allowedUserIds.length,
       skippedPush: false,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // realtime.invalidate
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Handles a realtime cache-invalidation job.
+   *
+   * Resolves FCM tokens for all active members of the target section
+   * (excluding the actor), then sends a silent data-only push so clients
+   * can invalidate their local cache without showing a visible notification.
+   *
+   * Design choices:
+   * - No notification_logs / notification_deliveries rows are created — this
+   *   is a transport-layer signal, not a user-visible notification.
+   * - Empty recipient list → early return (FCM rejects empty token arrays).
+   * - Permanently invalid tokens are revoked in DB.
+   */
+  private async handleRealtimeInvalidate(
+    job: Job<RealtimeInvalidatePayload>,
+  ): Promise<{ recipientCount: number; successCount: number; failureCount: number; skipped?: boolean }> {
+    const { sectionId, actorId, resource, action, entityId } = job.data;
+
+    // Resolve FCM tokens for section members, excluding the actor.
+    // Uses club_role_assignments as the membership source (active: true).
+    const tokenRows = await this.prisma.user_fcm_tokens.findMany({
+      where: {
+        active: true,
+        users: {
+          club_role_assignments: {
+            some: {
+              club_section_id: sectionId,
+              active: true,
+            },
+          },
+          user_id: { not: actorId },
+        },
+      },
+      select: { token: true },
+    });
+
+    if (tokenRows.length === 0) {
+      this.logger.log(
+        `handleRealtimeInvalidate: no recipients for section ${sectionId} (action=${action}, entity=${entityId}) — job ${job.id}`,
+      );
+      return { recipientCount: 0, successCount: 0, failureCount: 0, skipped: true };
+    }
+
+    const tokens = tokenRows.map((r) => r.token);
+    const { successCount, failureCount } = await this.sendSilentMulticast(
+      tokens,
+      job.data,
+    );
+
+    this.logger.log(
+      JSON.stringify({
+        job_id: job.id,
+        section_id: sectionId,
+        resource,
+        action,
+        entity_id: entityId,
+        recipient_count: tokens.length,
+        success_count: successCount,
+        failure_count: failureCount,
+      }),
+    );
+
+    return { recipientCount: tokens.length, successCount, failureCount };
+  }
+
+  /**
+   * Sends a data-only (silent) FCM multicast message.
+   * Does NOT include a `notification` key — prevents OS-level visible alerts.
+   * All payload values are coerced to strings as required by FCM data messages.
+   * APNS content-available:1 + Android high priority ensure background wake-up.
+   */
+  private async sendSilentMulticast(
+    tokens: string[],
+    payload: RealtimeInvalidatePayload,
+  ): Promise<{ successCount: number; failureCount: number }> {
+    const data: Record<string, string> = {
+      type: 'cache_invalidate',
+      sectionId: String(payload.sectionId),
+      resource: payload.resource,
+      action: payload.action,
+      entityId: String(payload.entityId),
+      actorId: payload.actorId,
+      timestamp: payload.timestamp,
+    };
+
+    const response = await firebaseAdmin.messaging().sendEachForMulticast({
+      tokens,
+      data,
+      apns: {
+        headers: { 'apns-priority': '5' },
+        payload: { aps: { 'content-available': 1 } },
+      },
+      android: { priority: 'high' },
+    });
+
+    if (response.failureCount > 0) {
+      const permanentlyFailedTokens: string[] = [];
+
+      response.responses.forEach((resp, idx) => {
+        if (resp.success) return;
+        const code = resp.error?.code;
+        if (PERMANENT_FCM_ERROR_CODES.has(code ?? '')) {
+          permanentlyFailedTokens.push(tokens[idx]);
+        } else {
+          this.logger.warn(
+            `sendSilentMulticast: transient FCM error for token ${tokens[idx]}: ${code ?? 'unknown'} — not deactivating`,
+          );
+        }
+      });
+
+      if (permanentlyFailedTokens.length > 0) {
+        await this.prisma.user_fcm_tokens
+          .updateMany({
+            where: { token: { in: permanentlyFailedTokens } },
+            data: { active: false },
+          })
+          .catch((err: Error) => {
+            this.logger.warn(
+              `sendSilentMulticast: failed to revoke invalid tokens: ${err.message}`,
+            );
+          });
+      }
+    }
+
+    return {
+      successCount: response.successCount,
+      failureCount: response.failureCount,
     };
   }
 
