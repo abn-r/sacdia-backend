@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AccountDeletionService } from './account-deletion.service';
 import { OAuthController } from './oauth.controller';
 import { OAuthService } from './oauth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -40,6 +41,7 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
   ],
   providers: [
     AuthService,
+    AccountDeletionService,
     OAuthService,
     JwtStrategy,
     AuthorizationContextService,
@@ -47,6 +49,7 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
   ],
   exports: [
     AuthService,
+    AccountDeletionService,
     OAuthService,
     JwtStrategy,
     PassportModule,

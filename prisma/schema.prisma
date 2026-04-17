@@ -1159,6 +1159,27 @@ model user_fcm_tokens {
   @@map("user_fcm_tokens")
 }
 
+/**
+ * Audit log for account self-deletion requests.
+ * Required for Apple App Store guideline 5.1.1(v) compliance and GDPR audit trail.
+ *
+ * Note: user_id is stored as a plain VarChar (not FK) because the users row
+ * will be soft-deleted/anonymized — a FK with Cascade would delete this record,
+ * defeating the audit purpose.
+ */
+model account_deletion_log {
+  deletion_id  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String    @db.Uuid
+  requested_at DateTime  @db.Timestamptz(6)
+  completed_at DateTime? @db.Timestamptz(6)
+  ip_address   String?   @db.VarChar(45)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id], map: "idx_account_deletion_log_user_id")
+  @@index([created_at], map: "idx_account_deletion_log_created_at")
+  @@map("account_deletion_log")
+}
+
 model users_pr {
   user_pr_id                Int       @id @default(autoincrement())
   user_id                   String    @unique @db.Uuid
