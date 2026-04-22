@@ -1,5 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, OnApplicationBootstrap } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { achievements } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -54,6 +55,20 @@ export class AchievementsProcessor
       this.logger.error(
         `Job ${job?.id ?? 'unknown'} (${job?.name ?? 'unknown'}) failed: ${err.message}`,
       );
+      if (process.env.SENTRY_DSN) {
+        Sentry.captureException(err, {
+          tags: {
+            bullmq: true,
+            queue: job?.queueName ?? 'unknown',
+            job_name: job?.name ?? 'unknown',
+          },
+          extra: {
+            job_id: job?.id,
+            attempts: job?.attemptsMade,
+            failed_reason: job?.failedReason,
+          },
+        });
+      }
     });
   }
 

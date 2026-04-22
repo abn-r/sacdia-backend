@@ -1,5 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, OnApplicationBootstrap, Inject } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -49,6 +50,20 @@ export class DataExportProcessor
       this.logger.error(
         `DataExport job ${job?.id ?? 'unknown'} failed: ${err.message}`,
       );
+      if (process.env.SENTRY_DSN) {
+        Sentry.captureException(err, {
+          tags: {
+            bullmq: true,
+            queue: job?.queueName ?? 'unknown',
+            job_name: job?.name ?? 'unknown',
+          },
+          extra: {
+            job_id: job?.id,
+            attempts: job?.attemptsMade,
+            failed_reason: job?.failedReason,
+          },
+        });
+      }
     });
   }
 

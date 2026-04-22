@@ -10,6 +10,7 @@ import { R2FileStorageService } from './services/r2-file-storage.service';
 import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { DistributedLockService } from './services/distributed-lock.service';
+import { CronRunLogger } from './services/cron-run-logger.service';
 
 function isPlaceholderRedisUrl(value: string): boolean {
   return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
@@ -91,6 +92,10 @@ function isPlaceholderRedisUrl(value: string): boolean {
     // MANTENIMIENTO - Limpieza de registros expirados
     // ==========================================
     CleanupService,
+    // ==========================================
+    // OBSERVABILIDAD - Logging de ejecución de crons
+    // ==========================================
+    CronRunLogger,
   ],
   exports: [
     CacheModule,
@@ -101,6 +106,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     PermissionsGuard,
     FILE_STORAGE_SERVICE,
     DistributedLockService,
+    CronRunLogger,
   ],
 })
 export class CommonModule {}
