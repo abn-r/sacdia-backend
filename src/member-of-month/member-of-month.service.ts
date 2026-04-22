@@ -4,8 +4,10 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 export interface MemberResult {
   user_id: string;
@@ -19,6 +21,7 @@ export class MemberOfMonthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly authorizationContext: AuthorizationContextService,
   ) {}
 
   // ============================================================
@@ -154,6 +157,124 @@ export class MemberOfMonthService {
       data,
       pagination: { page: safePage, limit: safeLimit, total },
     };
+  }
+
+  async listForAdmin(
+    userId: string,
+    filters: {
+      clubTypeId?: number;
+      localFieldId?: number;
+      clubId?: number;
+      sectionId?: number;
+      year?: number;
+      month?: number;
+      notified?: boolean;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+
+    const globalRoles = new Set(
+      resolved.authorization.grants.global_roles.map((g: { role_name: string }) =>
+        g.role_name.toLowerCase(),
+      ),
+    );
+    const isAdmin =
+      globalRoles.has('admin') || globalRoles.has('super_admin');
+
+    const userLocalFieldId =
+      resolved.authorization.effective.scope.global.local_field?.id as
+        | number
+        | undefined;
+
+    const scopedLocalFieldId: number | undefined = isAdmin
+      ? filters.localFieldId
+      : userLocalFieldId;
+
+    const page = Math.max(1, filters.page ?? 1);
+    const limit = Math.min(Math.max(1, filters.limit ?? 20), 100);
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.member_of_monthWhereInput = {
+      ...(filters.year !== undefined && { year: filters.year }),
+      ...(filters.month !== undefined && { month: filters.month }),
+      ...(filters.notified !== undefined && { notified: filters.notified }),
+      club_section: {
+        ...(filters.sectionId !== undefined && {
+          club_section_id: filters.sectionId,
+        }),
+        ...(filters.clubTypeId !== undefined && {
+          club_type_id: filters.clubTypeId,
+        }),
+        clubs: {
+          ...(filters.clubId !== undefined && { club_id: filters.clubId }),
+          ...(scopedLocalFieldId !== undefined && {
+            local_field_id: scopedLocalFieldId,
+          }),
+        },
+      },
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.member_of_month.count({ where }),
+      this.prisma.member_of_month.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              user_image: true,
+            },
+          },
+          club_section: {
+            include: {
+              club_types: { select: { name: true } },
+              clubs: {
+                select: {
+                  club_id: true,
+                  name: true,
+                  local_field_id: true,
+                  local_fields: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const items = rows.map((r) => {
+      const fullName =
+        `${r.users.name ?? ''} ${r.users.paternal_last_name ?? ''}`.trim();
+      return {
+        member_of_month_id: r.member_of_month_id,
+        user_id: r.user_id,
+        user_name: fullName || null,
+        user_image: r.users.user_image ?? null,
+        club_section_id: r.club_section_id,
+        section_name:
+          r.club_section.name ?? r.club_section.club_types?.name ?? null,
+        club_type: r.club_section.club_types?.name ?? null,
+        club_id: r.club_section.clubs?.club_id ?? null,
+        club_name: r.club_section.clubs?.name ?? null,
+        local_field: r.club_section.clubs?.local_fields?.name ?? null,
+        local_field_id: r.club_section.clubs?.local_field_id ?? null,
+        month: r.month,
+        year: r.year,
+        total_points: r.total_points,
+        notified: r.notified,
+        created_at: r.created_at,
+      };
+    });
+
+    return { total, page, limit, items };
   }
 
   // ============================================================

@@ -43,7 +43,7 @@ export class ValidationController {
 
   @Post('submit')
   @AuthorizationResource({ type: 'active_assignment' })
-  @RequirePermissions('classes:submit_progress')
+  @RequirePermissions('validation:submit')
   @ApiOperation({
     summary: 'Enviar clase/honor a revision',
     description:
@@ -72,7 +72,7 @@ export class ValidationController {
 
   @Post(':entityType/:entityId/review')
   @AuthorizationResource({ type: 'active_assignment' })
-  @RequirePermissions('classes:validate')
+  @RequirePermissions('validation:review')
   @ApiOperation({
     summary: 'Aprobar o rechazar clase/honor',
     description:
@@ -115,7 +115,7 @@ export class ValidationController {
 
   @Get('pending')
   @AuthorizationResource({ type: 'active_assignment' })
-  @RequirePermissions('classes:read')
+  @RequirePermissions('validation:read')
   @ApiOperation({
     summary: 'Listar items pendientes de revision',
     description:
@@ -151,7 +151,7 @@ export class ValidationController {
 
   @Get(':entityType/:entityId/history')
   @AuthorizationResource({ type: 'active_assignment' })
-  @RequirePermissions('classes:read')
+  @RequirePermissions('validation:read')
   @ApiOperation({
     summary: 'Historial de validacion',
     description:
@@ -181,7 +181,7 @@ export class ValidationController {
   // ========================================
 
   @Get('eligibility/:userId')
-  @RequirePermissions('users:read_detail')
+  @RequirePermissions('validation:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Verificar elegibilidad para investidura',

@@ -2337,3 +2337,19 @@ model achievement_event_log {
   @@index([processed, created_at], map: "idx_achievement_events_processed")
   @@map("achievement_event_log")
 }
+
+model cron_run_log {
+  run_id          Int       @id @default(autoincrement())
+  job_name        String    @db.VarChar(100)
+  started_at      DateTime  @db.Timestamptz(6)
+  ended_at        DateTime? @db.Timestamptz(6)
+  duration_ms     Int?
+  status          String    @db.VarChar(20)
+  items_processed Int?
+  error_message   String?
+  metadata        Json?     @db.JsonB
+
+  @@index([job_name, started_at(sort: Desc)], map: "idx_cron_run_log_job_started")
+  @@index([status, started_at(sort: Desc)],   map: "idx_cron_run_log_status_started")
+  @@map("cron_run_log")
+}

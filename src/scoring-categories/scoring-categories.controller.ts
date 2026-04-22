@@ -46,6 +46,7 @@ export class ScoringCategoriesController {
   @Get('divisions/scoring-categories')
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super_admin')
+  @RequirePermissions('scoring_categories:read')
   @ApiOperation({ summary: 'Listar categorías de puntuación a nivel división' })
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   async findDivisionCategories() {
@@ -55,6 +56,7 @@ export class ScoringCategoriesController {
   @Post('divisions/scoring-categories')
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super_admin')
+  @RequirePermissions('scoring_categories:manage')
   @ApiOperation({ summary: 'Crear categoría de puntuación a nivel división' })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
   async createDivisionCategory(@Body() dto: CreateScoringCategoryDto) {
@@ -64,6 +66,7 @@ export class ScoringCategoriesController {
   @Patch('divisions/scoring-categories/:id')
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super_admin')
+  @RequirePermissions('scoring_categories:manage')
   @ApiOperation({ summary: 'Actualizar categoría de puntuación a nivel división' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría actualizada' })
@@ -79,6 +82,7 @@ export class ScoringCategoriesController {
   @Delete('divisions/scoring-categories/:id')
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super_admin')
+  @RequirePermissions('scoring_categories:manage')
   @ApiOperation({ summary: 'Desactivar categoría de puntuación a nivel división (soft delete)' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría desactivada' })
@@ -94,7 +98,7 @@ export class ScoringCategoriesController {
 
   @Get('unions/:unionId/scoring-categories')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:read')
+  @RequirePermissions('scoring_categories:read')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Listar categorías de puntuación para una unión (heredadas + propias)' })
   @ApiParam({ name: 'unionId', type: Number })
@@ -111,7 +115,7 @@ export class ScoringCategoriesController {
 
   @Post('unions/:unionId/scoring-categories')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:update')
+  @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Crear categoría de puntuación para una unión' })
   @ApiParam({ name: 'unionId', type: Number })
@@ -131,7 +135,7 @@ export class ScoringCategoriesController {
 
   @Patch('unions/:unionId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:update')
+  @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Actualizar categoría de puntuación propia de una unión' })
   @ApiParam({ name: 'unionId', type: Number })
@@ -155,7 +159,7 @@ export class ScoringCategoriesController {
 
   @Delete('unions/:unionId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:update')
+  @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Desactivar categoría de puntuación propia de una unión (soft delete)' })
   @ApiParam({ name: 'unionId', type: Number })
@@ -181,7 +185,7 @@ export class ScoringCategoriesController {
 
   @Get('local-fields/:fieldId/scoring-categories')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:read')
+  @RequirePermissions('scoring_categories:read')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Listar categorías de puntuación para un campo local (división + unión + propias)' })
   @ApiParam({ name: 'fieldId', type: Number })
@@ -198,7 +202,7 @@ export class ScoringCategoriesController {
 
   @Post('local-fields/:fieldId/scoring-categories')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:update')
+  @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Crear categoría de puntuación para un campo local' })
   @ApiParam({ name: 'fieldId', type: Number })
@@ -218,7 +222,7 @@ export class ScoringCategoriesController {
 
   @Patch('local-fields/:fieldId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:update')
+  @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Actualizar categoría de puntuación propia de un campo local' })
   @ApiParam({ name: 'fieldId', type: Number })
@@ -242,7 +246,7 @@ export class ScoringCategoriesController {
 
   @Delete('local-fields/:fieldId/scoring-categories/:id')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions('units:update')
+  @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Desactivar categoría de puntuación propia de un campo local (soft delete)' })
   @ApiParam({ name: 'fieldId', type: Number })

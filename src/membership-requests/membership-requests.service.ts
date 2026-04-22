@@ -1,16 +1,21 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class MembershipRequestsService {
+  private readonly logger = new Logger(MembershipRequestsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -83,6 +88,8 @@ export class MembershipRequestsService {
       assignment!.user_id,
     );
 
+    this.emitRealtimeInvalidation(assignment!.club_section_id, assignment!.assignment_id, 'UPDATED', approvedById);
+
     return assignment;
   }
 
@@ -129,6 +136,8 @@ export class MembershipRequestsService {
       assignment!.user_id,
     );
 
+    this.emitRealtimeInvalidation(assignment!.club_section_id, assignment!.assignment_id, 'DELETED', rejectedById);
+
     return assignment;
   }
 
@@ -160,5 +169,28 @@ export class MembershipRequestsService {
     });
 
     return result.count;
+  }
+
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number | string,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'members',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 }

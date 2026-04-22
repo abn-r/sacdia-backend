@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MembershipRequestsService } from './membership-requests.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
+import { CronRunLogger } from '../common/services/cron-run-logger.service';
 
 @Injectable()
 export class MembershipRequestsCronService {
@@ -10,13 +11,14 @@ export class MembershipRequestsCronService {
   constructor(
     private readonly membershipRequestsService: MembershipRequestsService,
     private readonly lockService: DistributedLockService,
+    private readonly cronLogger: CronRunLogger,
   ) {}
 
   /**
    * Runs every hour to expire stale pending membership requests.
    * Reads timeout from system_config (default: 8 days).
    */
-  @Cron('0 * * * *', { name: 'membership-requests-expiry' })
+  @Cron('0 * * * *', { name: 'membership-requests-expiry', timeZone: 'UTC' })
   async handleExpiry(): Promise<void> {
     const acquired = await this.lockService.tryAcquire(
       'cron:membership-requests-expiry',
@@ -26,15 +28,20 @@ export class MembershipRequestsCronService {
       this.logger.debug(
         'Another instance is handling membership request expiry — skipping',
       );
+      await this.cronLogger.trackSkipped('membership-requests-expiry', 'lock_not_acquired');
       return;
     }
 
     try {
-      const count = await this.membershipRequestsService.expireStaleRequests();
+      await this.cronLogger.track('membership-requests-expiry', async () => {
+        const count = await this.membershipRequestsService.expireStaleRequests();
 
-      if (count > 0) {
-        this.logger.log(`Expired ${count} stale membership request(s)`);
-      }
+        if (count > 0) {
+          this.logger.log(`Expired ${count} stale membership request(s)`);
+        }
+
+        return { itemsProcessed: count };
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);

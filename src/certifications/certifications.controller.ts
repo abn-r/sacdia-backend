@@ -108,7 +108,7 @@ export class UserCertificationsController {
   constructor(private readonly certificationsService: CertificationsService) {}
 
   @Post('users/:userId/certifications/enroll')
-  @RequirePermissions('users:update_profile')
+  @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribirse en una certificación',
@@ -142,7 +142,7 @@ export class UserCertificationsController {
   }
 
   @Get('users/:userId/certifications')
-  @RequirePermissions('users:read_detail')
+  @RequirePermissions('user_certifications:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Listar certificaciones del usuario',
@@ -167,7 +167,7 @@ export class UserCertificationsController {
   }
 
   @Get('users/:userId/certifications/:certificationId/progress')
-  @RequirePermissions('users:read_detail')
+  @RequirePermissions('user_certifications:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Ver progreso detallado de una certificación',
@@ -207,7 +207,7 @@ export class UserCertificationsController {
   }
 
   @Patch('users/:userId/certifications/:certificationId/progress')
-  @RequirePermissions('users:update_profile')
+  @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de una sección',
@@ -253,7 +253,7 @@ export class UserCertificationsController {
   }
 
   @Delete('users/:userId/certifications/:certificationId')
-  @RequirePermissions('users:update_profile')
+  @RequirePermissions('user_certifications:manage')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Abandonar una certificación',

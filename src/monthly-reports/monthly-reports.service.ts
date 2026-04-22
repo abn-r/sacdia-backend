@@ -4,14 +4,19 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { UpdateManualDataDto } from './dto';
 
 @Injectable()
 export class MonthlyReportsService {
   private readonly logger = new Logger(MonthlyReportsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -308,6 +313,133 @@ export class MonthlyReportsService {
       },
       orderBy: [{ year: 'desc' }, { month: 'desc' }],
     });
+  }
+
+  // ========================================
+  // LIST REPORTS FOR ADMIN (multi-club supervision)
+  // ========================================
+
+  /**
+   * Paginated list of monthly reports across clubs.
+   * - super_admin / admin: can filter by any local_field_id supplied in filters.
+   * - coordinator: scope is forced to their own local_field_id (filters.localFieldId ignored).
+   * Roles and territory scope are derived from the resolved authorization profile
+   * so that this method never trusts unverified JWT claims directly.
+   */
+  async listForAdmin(
+    userId: string,
+    filters: {
+      clubTypeId?: number;
+      localFieldId?: number;
+      year?: number;
+      month?: number;
+      status?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const resolved = await this.authorizationContext.resolveUserAuthorization(userId);
+
+    const globalRoleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    const isAdmin =
+      globalRoleNames.has('admin') || globalRoleNames.has('super_admin');
+
+    const userLocalFieldId =
+      resolved.authorization.effective.scope.global.local_field?.id as
+        | number
+        | undefined;
+
+    const scopedLocalFieldId: number | undefined = isAdmin
+      ? filters.localFieldId
+      : userLocalFieldId;
+
+    const page = filters.page ?? 1;
+    const limit = Math.min(filters.limit ?? 25, 100);
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.monthly_reportsWhereInput = {
+      ...(filters.year !== undefined && { year: filters.year }),
+      ...(filters.month !== undefined && { month: filters.month }),
+      ...(filters.status && { status: filters.status }),
+      club_enrollment: {
+        club_section: {
+          ...(filters.clubTypeId !== undefined && {
+            club_type_id: filters.clubTypeId,
+          }),
+          ...(scopedLocalFieldId !== undefined && {
+            clubs: { local_field_id: scopedLocalFieldId },
+          }),
+        },
+      },
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.monthly_reports.count({ where }),
+      this.prisma.monthly_reports.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        include: {
+          club_enrollment: {
+            include: {
+              club_section: {
+                include: {
+                  club_types: { select: { club_type_id: true, name: true } },
+                  clubs: {
+                    select: {
+                      name: true,
+                      local_field_id: true,
+                      local_fields: { select: { name: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          submitter: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const items = rows.map((r) => {
+      const section = r.club_enrollment.club_section;
+      const submitterName = r.submitter
+        ? `${r.submitter.name ?? ''} ${r.submitter.paternal_last_name ?? ''}`.trim() || null
+        : null;
+      const memberCount =
+        (r.snapshot_data as { member_count?: number } | null)?.member_count ??
+        null;
+      return {
+        monthly_report_id: r.monthly_report_id,
+        club_enrollment_id: r.club_enrollment_id,
+        month: r.month,
+        year: r.year,
+        status: r.status,
+        generated_at: r.generated_at,
+        submitted_at: r.submitted_at,
+        club_name: section.clubs?.name ?? null,
+        club_type: section.club_types?.name ?? null,
+        club_type_id: section.club_types?.club_type_id ?? null,
+        local_field: section.clubs?.local_fields?.name ?? null,
+        local_field_id: section.clubs?.local_field_id ?? null,
+        submitter_name: submitterName,
+        member_count: memberCount,
+      };
+    });
+
+    return { total, page, limit, items };
   }
 
   // ========================================
