@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/node';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -9,7 +10,7 @@ export class CronRunLogger {
   async track<T>(
     jobName: string,
     fn: () => Promise<T>,
-    meta?: Record<string, unknown>,
+    meta?: Prisma.InputJsonValue,
   ): Promise<T> {
     const startedAt = new Date();
     const row = await this.prisma.cron_run_log.create({
@@ -17,7 +18,7 @@ export class CronRunLogger {
         job_name: jobName,
         started_at: startedAt,
         status: 'running',
-        metadata: meta ?? undefined,
+        metadata: meta ?? Prisma.JsonNull,
       },
     });
 
@@ -70,7 +71,7 @@ export class CronRunLogger {
         ended_at: now,
         duration_ms: 0,
         status: 'skipped',
-        metadata: reason ? { reason } : undefined,
+        metadata: reason ? { reason } : Prisma.JsonNull,
       },
     });
   }

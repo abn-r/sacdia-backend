@@ -27,9 +27,9 @@ export const REALTIME_INVALIDATE_JOB = 'realtime.invalidate';
 
 export interface RealtimeInvalidatePayload {
   sectionId: number;
-  resource: 'activities'; // extensible later
+  resource: 'activities' | 'members';
   action: 'CREATED' | 'UPDATED' | 'DELETED';
-  entityId: number;
+  entityId: number | string;
   actorId: string;
   timestamp: string; // ISO
 }
