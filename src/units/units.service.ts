@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -14,12 +15,16 @@ import {
   UpdateWeeklyRecordDto,
 } from './dto';
 import { ScoringCategoriesService } from '../scoring-categories/scoring-categories.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class UnitsService {
+  private readonly logger = new Logger(UnitsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly scoringCategoriesService: ScoringCategoriesService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private readonly unitInclude = {
@@ -252,6 +257,7 @@ export class UnitsService {
       where: { unit_id: unitId, user_id: dto.user_id },
     });
 
+    let result;
     if (existingInThisUnit) {
       if (existingInThisUnit.active) {
         throw new ConflictException(
@@ -259,7 +265,7 @@ export class UnitsService {
         );
       }
 
-      return this.prisma.unit_members.update({
+      result = await this.prisma.unit_members.update({
         where: { unit_member_id: existingInThisUnit.unit_member_id },
         data: {
           unit_id: unitId,
@@ -267,21 +273,25 @@ export class UnitsService {
           modified_at: new Date(),
         },
       });
+    } else {
+      result = await this.prisma.unit_members.create({
+        data: {
+          unit_id: unitId,
+          user_id: dto.user_id,
+          active: true,
+          created_at: new Date(),
+          modified_at: new Date(),
+        },
+      });
     }
 
-    return this.prisma.unit_members.create({
-      data: {
-        unit_id: unitId,
-        user_id: dto.user_id,
-        active: true,
-        created_at: new Date(),
-        modified_at: new Date(),
-      },
-    });
+    this.emitRealtimeInvalidation(unit.club_section_id, unitId, 'UPDATED', dto.user_id);
+
+    return result;
   }
 
   async removeMember(unitId: number, memberId: number) {
-    await this.findOne(unitId);
+    const unit = await this.findOne(unitId);
 
     const member = await this.prisma.unit_members.findFirst({
       where: { unit_member_id: memberId, unit_id: unitId },
@@ -293,10 +303,14 @@ export class UnitsService {
       );
     }
 
-    return this.prisma.unit_members.update({
+    const removed = await this.prisma.unit_members.update({
       where: { unit_member_id: memberId },
       data: { active: false, modified_at: new Date() },
     });
+
+    this.emitRealtimeInvalidation(unit.club_section_id, unitId, 'UPDATED');
+
+    return removed;
   }
 
   // ========================================
@@ -614,5 +628,28 @@ export class UnitsService {
     const localFieldId =
       unit.club_sections?.clubs?.local_field_id ?? null;
     return localFieldId;
+  }
+
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number | string,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'members',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 }

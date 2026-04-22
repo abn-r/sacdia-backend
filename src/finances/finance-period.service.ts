@@ -2,6 +2,7 @@ import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CronRunLogger } from '../common/services/cron-run-logger.service';
 
 type CategoryBreakdownItem = {
   finance_category_id: number;
@@ -28,6 +29,7 @@ export class FinancePeriodService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly cronLogger: CronRunLogger,
   ) {}
 
   async closeMonthForClub(
@@ -119,63 +121,67 @@ export class FinancePeriodService {
     }
   }
 
-  @Cron('0 0 1 * *', { name: 'finance-period-closing' })
+  @Cron('0 0 1 * *', { name: 'finance-period-closing', timeZone: 'UTC' })
   async handleMonthlyClosing(): Promise<void> {
     const { month, year } = this.getPreviousMonth(new Date());
     const period = `${year}-${String(month).padStart(2, '0')}`;
 
     this.logger.log(`Starting monthly period closing for ${period}...`);
 
-    const BATCH_SIZE = 50;
-    let offset = 0;
-    let totalProcessed = 0;
-    let successCount = 0;
-    let skipCount = 0;
-    let errorCount = 0;
+    await this.cronLogger.track('finance-period-closing', async () => {
+      const BATCH_SIZE = 50;
+      let offset = 0;
+      let totalProcessed = 0;
+      let successCount = 0;
+      let skipCount = 0;
+      let errorCount = 0;
 
-    while (true) {
-      const clubs = await this.prisma.clubs.findMany({
-        where: { active: true },
-        select: { club_id: true, name: true },
-        skip: offset,
-        take: BATCH_SIZE,
-        orderBy: { club_id: 'asc' },
-      });
+      while (true) {
+        const clubs = await this.prisma.clubs.findMany({
+          where: { active: true },
+          select: { club_id: true, name: true },
+          skip: offset,
+          take: BATCH_SIZE,
+          orderBy: { club_id: 'asc' },
+        });
 
-      if (clubs.length === 0) break;
+        if (clubs.length === 0) break;
 
-      for (const club of clubs) {
-        totalProcessed++;
-        try {
-          const result = await this.closeMonthForClub(
-            club.club_id,
-            year,
-            month,
-          );
-          if (result) {
-            successCount++;
-            this.logger.log(
-              `Closed period ${period} for club "${club.name}" (ID: ${club.club_id})`,
+        for (const club of clubs) {
+          totalProcessed++;
+          try {
+            const result = await this.closeMonthForClub(
+              club.club_id,
+              year,
+              month,
             );
-          } else {
-            skipCount++;
+            if (result) {
+              successCount++;
+              this.logger.log(
+                `Closed period ${period} for club "${club.name}" (ID: ${club.club_id})`,
+              );
+            } else {
+              skipCount++;
+            }
+          } catch (error) {
+            errorCount++;
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              `Failed to close period ${period} for club "${club.name}" (ID: ${club.club_id}): ${message}`,
+            );
           }
-        } catch (error) {
-          errorCount++;
-          const message =
-            error instanceof Error ? error.message : String(error);
-          this.logger.error(
-            `Failed to close period ${period} for club "${club.name}" (ID: ${club.club_id}): ${message}`,
-          );
         }
+
+        offset += BATCH_SIZE;
       }
 
-      offset += BATCH_SIZE;
-    }
+      this.logger.log(
+        `Period closing complete for ${period}: ${successCount} closed, ${skipCount} skipped (already closed), ${errorCount} errors, ${totalProcessed} total`,
+      );
 
-    this.logger.log(
-      `Period closing complete for ${period}: ${successCount} closed, ${skipCount} skipped (already closed), ${errorCount} errors, ${totalProcessed} total`,
-    );
+      return { itemsProcessed: totalProcessed };
+    });
   }
 
   private getPreviousMonth(date: Date): { month: number; year: number } {

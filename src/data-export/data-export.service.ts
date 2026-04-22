@@ -26,6 +26,7 @@ import type {
   DataExportItemDto,
   DataExportStatus,
 } from './dto/data-export-response.dto';
+import { CronRunLogger } from '../common/services/cron-run-logger.service';
 
 const PRESIGNED_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 const EXPORT_COOLDOWN_HOURS = 24;
@@ -40,6 +41,7 @@ export class DataExportService {
     private readonly fileStorage: FileStorageService,
     @InjectQueue(DATA_EXPORTS_QUEUE)
     private readonly dataExportsQueue: Queue,
+    private readonly cronLogger: CronRunLogger,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -259,67 +261,71 @@ export class DataExportService {
   async cleanupExpiredExports(): Promise<void> {
     this.logger.log('DataExport cleanup cron started');
 
-    const now = new Date();
+    await this.cronLogger.track('data-export-cleanup', async () => {
+      const now = new Date();
 
-    // 1. Find ready exports that have passed their expires_at → mark as expired + delete R2
-    const expiredReady = await this.prisma.data_export_requests.findMany({
-      where: {
-        status: 'ready',
-        expires_at: { lt: now },
-      },
-      select: { export_id: true, r2_key: true },
-    });
+      // 1. Find ready exports that have passed their expires_at → mark as expired + delete R2
+      const expiredReady = await this.prisma.data_export_requests.findMany({
+        where: {
+          status: 'ready',
+          expires_at: { lt: now },
+        },
+        select: { export_id: true, r2_key: true },
+      });
 
-    let markedExpiredCount = 0;
-    let r2DeletedCount = 0;
+      let markedExpiredCount = 0;
+      let r2DeletedCount = 0;
 
-    for (const row of expiredReady) {
-      // Delete R2 object first (best effort)
-      if (row.r2_key) {
-        await this.fileStorage
-          .deleteMany(StorageBucketAlias.DATA_EXPORTS, [row.r2_key])
-          .then(() => r2DeletedCount++)
+      for (const row of expiredReady) {
+        // Delete R2 object first (best effort)
+        if (row.r2_key) {
+          await this.fileStorage
+            .deleteMany(StorageBucketAlias.DATA_EXPORTS, [row.r2_key])
+            .then(() => r2DeletedCount++)
+            .catch((err: Error) => {
+              this.logger.warn(
+                `Failed to delete R2 object for exportId=${row.export_id}: ${err.message}`,
+              );
+            });
+        }
+
+        // Mark as expired
+        await this.prisma.data_export_requests
+          .update({
+            where: { export_id: row.export_id },
+            data: { status: 'expired' },
+          })
+          .then(() => markedExpiredCount++)
           .catch((err: Error) => {
             this.logger.warn(
-              `Failed to delete R2 object for exportId=${row.export_id}: ${err.message}`,
+              `Failed to mark exportId=${row.export_id} as expired: ${err.message}`,
             );
           });
       }
 
-      // Mark as expired
-      await this.prisma.data_export_requests
-        .update({
-          where: { export_id: row.export_id },
-          data: { status: 'expired' },
-        })
-        .then(() => markedExpiredCount++)
-        .catch((err: Error) => {
-          this.logger.warn(
-            `Failed to mark exportId=${row.export_id} as expired: ${err.message}`,
-          );
+      // 2. Hard-delete expired rows older than 6 months
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+      const { count: hardDeletedCount } =
+        await this.prisma.data_export_requests.deleteMany({
+          where: {
+            status: 'expired',
+            completed_at: { lt: sixMonthsAgo },
+          },
         });
-    }
 
-    // 2. Hard-delete expired rows older than 6 months
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      this.logger.log(
+        JSON.stringify({
+          event: 'data_export_cleanup',
+          marked_expired: markedExpiredCount,
+          r2_deleted: r2DeletedCount,
+          hard_deleted: hardDeletedCount,
+          ran_at: now.toISOString(),
+        }),
+      );
 
-    const { count: hardDeletedCount } =
-      await this.prisma.data_export_requests.deleteMany({
-        where: {
-          status: 'expired',
-          completed_at: { lt: sixMonthsAgo },
-        },
-      });
-
-    this.logger.log(
-      JSON.stringify({
-        event: 'data_export_cleanup',
-        marked_expired: markedExpiredCount,
-        r2_deleted: r2DeletedCount,
-        hard_deleted: hardDeletedCount,
-        ran_at: now.toISOString(),
-      }),
-    );
+      return { itemsProcessed: markedExpiredCount };
+    });
   }
 }

@@ -7,6 +7,7 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
+import { CronRunLogger } from '../common/services/cron-run-logger.service';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -57,17 +58,21 @@ export class RankingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lockService: DistributedLockService,
+    private readonly cronLogger: CronRunLogger,
   ) {}
 
   // ========================================
   // CRON JOB — Nightly at 2:00 AM
   // ========================================
 
-  @Cron('0 2 * * *')
+  @Cron('0 2 * * *', { timeZone: 'UTC' })
   async handleRankingsRecalculation() {
     this.logger.log('Starting nightly rankings recalculation...');
-    const result = await this.recalculateRankings();
-    this.logger.log(`Rankings recalculated: ${result.updated} records`);
+    await this.cronLogger.track('rankings-recalculate', async () => {
+      const result = await this.recalculateRankings();
+      this.logger.log(`Rankings recalculated: ${result.updated} records`);
+      return { itemsProcessed: result.updated };
+    });
   }
 
   // ========================================

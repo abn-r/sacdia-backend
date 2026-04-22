@@ -27,6 +27,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ClubsService {
@@ -38,6 +39,7 @@ export class ClubsService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ========================================
@@ -304,6 +306,8 @@ export class ClubsService {
       dto.user_id,
     );
 
+    this.emitRealtimeInvalidation(dto.club_section_id, created.assignment_id, 'CREATED', dto.user_id);
+
     return created;
   }
 
@@ -338,11 +342,18 @@ export class ClubsService {
     const updated = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: updateData,
+      select: {
+        assignment_id: true,
+        user_id: true,
+        club_section_id: true,
+      },
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
       updated.user_id,
     );
+
+    this.emitRealtimeInvalidation(updated.club_section_id, updated.assignment_id, 'UPDATED');
 
     return updated;
   }
@@ -356,11 +367,18 @@ export class ClubsService {
         end_date: new Date(),
         modified_at: new Date(),
       },
+      select: {
+        assignment_id: true,
+        user_id: true,
+        club_section_id: true,
+      },
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
       removed.user_id,
     );
+
+    this.emitRealtimeInvalidation(removed.club_section_id, removed.assignment_id, 'DELETED');
 
     return removed;
   }
@@ -530,5 +548,28 @@ export class ClubsService {
       );
       return value;
     }
+  }
+
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number | string,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'members',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 }

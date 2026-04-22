@@ -153,6 +153,7 @@ export class NotificationsController {
     );
   }
 
+  @RequirePermissions('notifications:send')
   @Get('history')
   @ApiOperation({
     summary: 'Get paginated notification history',
