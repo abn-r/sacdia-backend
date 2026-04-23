@@ -25,6 +25,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { EmailService } from '../common/email/email.service';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -57,6 +58,7 @@ export class AuthService {
     private readonly tokenBlacklist: TokenBlacklistService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly emailService: EmailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -134,7 +136,7 @@ export class AuthService {
 
     // Auto-send verification email after successful registration.
     // Fire-and-forget: a failure here does NOT block registration.
-    this.createAndLogVerificationToken(baResult.user.email).catch((e) =>
+    this.createAndLogVerificationToken(baResult.user.email, baResult.user.name).catch((e) =>
       this.logger.warn(
         `Failed to create verification token during registration for ${baResult.user.id}: ${e instanceof Error ? e.message : String(e)}`,
       ),
@@ -716,20 +718,21 @@ export class AuthService {
   }
 
   /**
-   * Creates a 24h verification token in the `verification` table.
+   * Creates a 24h verification token in the `verification` table and enqueues
+   * a verification email via the emails BullMQ queue.
    *
-   * SECURITY: The raw token is NEVER logged — it is a credential. Only masked email
-   * and expiry are logged. The NODE_ENV guard was removed: even in development, logging
-   * a raw token creates a credential-in-logs risk that outweighs any debugging benefit.
+   * SECURITY: The raw token is NEVER logged — it is a credential. The token is
+   * embedded in a deep link passed to EmailService (not logged by EmailService either).
    *
-   * EMAIL_ENABLED guard: if no email transport is configured the method logs a warning
-   * but does NOT throw — the caller (register, sendVerificationEmail) treats this as
-   * fire-and-forget. Token is still persisted so it can be delivered once transport
-   * is enabled.
-   *
-   * TODO(production): replace the log statement with an actual email delivery call.
+   * EMAIL_ENABLED gate: enforced at the EmailProcessor level. This method always
+   * enqueues — if EMAIL_ENABLED=false, the processor silently drops the job.
+   * The token is still persisted so it can be verified if the user receives the
+   * email through other means (e.g., resend flow).
    */
-  private async createAndLogVerificationToken(email: string): Promise<void> {
+  private async createAndLogVerificationToken(
+    email: string,
+    userName?: string,
+  ): Promise<void> {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
@@ -742,17 +745,21 @@ export class AuthService {
       },
     });
 
-    if (process.env.EMAIL_ENABLED !== 'true') {
-      this.logger.warn(
-        `[EMAIL_DISABLED] Verification token created for ${maskEmail(email)} but EMAIL_ENABLED is not set — email not sent.`,
-      );
-      return;
-    }
+    // Build deep link — token is embedded in URL, never logged separately.
+    // The mobile app handles sacdia://verify-email?token=<token> internally
+    // and calls POST /api/v1/auth/verify-email/confirm with the token in the body.
+    const verificationUrl = `sacdia://verify-email?token=${token}`;
 
-    // TODO(production): send verification email with link containing the token.
-    // SECURITY: Never log the raw token — it is a credential.
+    // Enqueue email — fire-and-forget from the processor's perspective.
+    // The caller wraps this entire method in .catch() already.
+    await this.emailService.sendEmailVerification({
+      email,
+      verificationUrl,
+      userName,
+    });
+
     this.logger.log(
-      `Verification email queued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
+      `Verification email enqueued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
     );
   }
 

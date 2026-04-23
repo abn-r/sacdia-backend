@@ -15,6 +15,7 @@ import { generateSecret, generateURI, verifySync } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BetterAuthInstance } from './better-auth.config';
 import { maskEmail } from '../common/utils/mask-email.util';
+import { EmailService } from '../common/email/email.service';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -187,6 +188,7 @@ export class BetterAuthService implements IBetterAuthService {
     // Keep the BA instance injected for OAuth and TOTP (future use)
     @Inject('BETTER_AUTH_INSTANCE')
     private readonly ba: BetterAuthInstance,
+    private readonly emailService: EmailService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -513,8 +515,20 @@ export class BetterAuthService implements IBetterAuthService {
       },
     });
 
-    // TODO(production): send email with reset link containing the token.
-    // SECURITY: Never log the raw token — it is a credential.
+    // Build deep link — token embedded in URL, never logged separately.
+    // The mobile app handles sacdia://reset-password?token=<token> and calls
+    // POST /api/v1/auth/password/reset with the token in the body.
+    // SECURITY: raw token is NEVER logged.
+    const resetUrl = `sacdia://reset-password?token=${token}`;
+
+    // Enqueue email — fire-and-forget from caller's perspective.
+    // EMAIL_ENABLED gate is enforced at processor level; no need to check here.
+    this.emailService.sendPasswordReset({ email, resetUrl }).catch((err: Error) => {
+      this.logger.warn(
+        `Failed to enqueue password reset email for ${maskEmail(email)}: ${err.message}`,
+      );
+    });
+
     this.logger.log(
       `Password reset token generated for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
     );

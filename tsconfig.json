@@ -5,6 +5,7 @@
     "resolvePackageJsonExports": true,
     "esModuleInterop": true,
     "isolatedModules": true,
+    "jsx": "react",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,

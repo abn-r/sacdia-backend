@@ -13,6 +13,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { Inject } from '@nestjs/common';
+import { EmailService } from '../common/email/email.service';
 
 /**
  * Handles the full account deletion lifecycle for self-service requests
@@ -46,6 +47,7 @@ export class AccountDeletionService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -109,6 +111,8 @@ export class AccountDeletionService {
     // -------------------------------------------------------------------------
     // 2. Transactional soft-delete + PII anonymization
     // -------------------------------------------------------------------------
+    // Capture original email BEFORE anonymization — needed for the confirmation email.
+    const originalEmail = user.email;
     const anonymizedEmail = `deleted-${userId}@sacdia.deleted`;
     const now = new Date();
 
@@ -166,6 +170,21 @@ export class AccountDeletionService {
           `Failed to delete profile picture from R2 for deleted user ${userId}: ${err instanceof Error ? err.message : String(err)}`,
         );
       });
+    }
+
+    // -------------------------------------------------------------------------
+    // 3b. Deletion confirmation email (fire-and-forget)
+    //     Sent to the ORIGINAL email captured before anonymization.
+    //     EMAIL_ENABLED gate is enforced at processor level.
+    // -------------------------------------------------------------------------
+    if (originalEmail) {
+      this.emailService
+        .sendAccountDeletionConfirmed({ email: originalEmail })
+        .catch((err: Error) => {
+          this.logger.warn(
+            `Failed to enqueue account deletion email for deleted user ${userId}: ${err.message}`,
+          );
+        });
     }
 
     // -------------------------------------------------------------------------

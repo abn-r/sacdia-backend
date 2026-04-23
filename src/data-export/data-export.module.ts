@@ -3,7 +3,6 @@ import { BullModule } from '@nestjs/bullmq';
 import { DataExportController } from './data-export.controller';
 import { DataExportService } from './data-export.service';
 import { DataExportProcessor, DATA_EXPORTS_QUEUE } from './data-export.processor';
-import { EmailService } from './email.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
@@ -36,7 +35,6 @@ function isRedisConfigured(): boolean {
   controllers: [DataExportController],
   providers: [
     DataExportService,
-    EmailService,
     ...(isRedisConfigured() ? [DataExportProcessor] : []),
   ],
   exports: [DataExportService],

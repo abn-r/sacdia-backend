@@ -9,7 +9,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
-import { EmailService } from './email.service';
+import { EmailService } from '../common/email/email.service';
 
 export const DATA_EXPORTS_QUEUE = 'data-exports';
 export const DATA_EXPORT_GENERATE_JOB = 'data-export.generate';

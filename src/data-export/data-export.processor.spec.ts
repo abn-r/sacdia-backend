@@ -5,7 +5,7 @@ import {
   DATA_EXPORT_GENERATE_JOB,
 } from './data-export.processor';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
-import { EmailService } from './email.service';
+import { EmailService } from '../common/email/email.service';
 
 const MOCK_USER_ID = 'user-uuid-123';
 const MOCK_EXPORT_ID = 'export-uuid-456';
