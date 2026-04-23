@@ -15,21 +15,23 @@
 BEGIN;
 
 -- ============================================================================
--- LEGACY PERMISSION CLEANUP (Phase 3 — permission-scope-cleanup-phase-3)
+-- LEGACY PERMISSION CLEANUP
 -- ============================================================================
--- Removes any role_permissions row that still references the retired legacy
--- permissions (`users:update`, `classes:update`, `user_honors:update`).
--- Phase 1+2 of the migration ensured every role that previously held these
--- legacy strings ALSO holds the new intent-specific equivalents
--- (`users:update_profile`, `classes:submit_progress`/`classes:validate`,
--- `user_honors:submit`/`user_honors:validate`). Phase 3 also added
--- `user_honors:submit` to the `user` and `member` role IN-arrays below to
--- preserve their write capability after the legacy row is soft-deleted.
+-- Phase 3 (permission-scope-cleanup-phase-3): retired broad legacy permissions
+-- (`users:update`, `classes:update`, `user_honors:update`) superseded by
+-- intent-specific ones (`users:update_profile`, `classes:submit_progress`,
+-- `user_honors:submit`/`user_honors:validate`).
+--
+-- Phase 4 (2026-04-22): retired `classes:validate` — superseded by
+-- `validation:review` after the validation domain was canonized. Permission
+-- row marked `active=false` in permissions.seed.sql; this DELETE purges any
+-- surviving grants in role_permissions.
+--
 -- Idempotent: re-runs are no-ops once rows are gone.
 DELETE FROM role_permissions
 USING permissions p
 WHERE role_permissions.permission_id = p.permission_id
-  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update');
+  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update', 'classes:validate');
 
 -- ============================
 -- USER role (GLOBAL)
@@ -263,7 +265,6 @@ WHERE r.role_name = 'counselor'
     'users:read_detail',
     -- Validate/return class progress for members in their classes
     'classes:submit_progress',
-    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
     -- Scoring Categories (manage)
@@ -375,7 +376,6 @@ WHERE r.role_name = 'secretary'
     'users:read_detail',
     -- Validate/return class progress
     'classes:submit_progress',
-    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
     -- Scoring Categories (manage)
@@ -520,7 +520,6 @@ WHERE r.role_name = 'treasurer'
     'users:read_detail',
     -- Validate/return class progress
     'classes:submit_progress',
-    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
     -- Scoring Categories (manage)
@@ -648,7 +647,6 @@ WHERE r.role_name = 'secretary-treasurer'
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
     'classes:submit_progress',
-    'classes:validate',
     'units:update',
     -- Scoring Categories (manage)
     'scoring_categories:manage',
@@ -794,7 +792,6 @@ WHERE r.role_name = 'deputy-director'
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
     'classes:submit_progress',
-    'classes:validate',
     'units:update',
     -- Scoring Categories (manage)
     'scoring_categories:manage',
@@ -923,7 +920,6 @@ WHERE r.role_name = 'director'
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
     'classes:submit_progress',
-    'classes:validate',
     'units:update',
     -- Scoring Categories (manage)
     'scoring_categories:manage',
@@ -1046,7 +1042,6 @@ WHERE r.role_name = 'coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -1114,7 +1109,6 @@ WHERE r.role_name = 'zone-coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -1190,7 +1184,6 @@ WHERE r.role_name = 'general-coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -1348,7 +1341,6 @@ WHERE r.role_name = 'assistant-lf'
 
     -- Director-level
     'classes:submit_progress',
-    'classes:validate',
     'club_roles:assign',
     'club_roles:revoke',
 

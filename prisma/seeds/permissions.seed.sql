@@ -69,7 +69,7 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('classes:read', 'Read class information', true),
   ('classes:update', 'Update class information and progress', true),
   ('classes:submit_progress', 'Enroll, progress, submit class evidence', true),
-  ('classes:validate', 'Approve/reject class submissions', true)
+  ('classes:validate', 'DEPRECATED — superseded by validation:review (2026-04-22)', false)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
