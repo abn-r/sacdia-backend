@@ -50,7 +50,9 @@ export class CronRunLogger {
       });
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {
-          tags: { job_name: jobName, cron: true },
+          level: 'error',
+          tags: { job_name: jobName, cron: 'true', source: 'cron' },
+          fingerprint: ['cron-failure', jobName],
           extra: {
             duration_ms: endedAt.getTime() - startedAt.getTime(),
             metadata: meta ?? {},
