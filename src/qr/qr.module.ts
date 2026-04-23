@@ -1,11 +1,15 @@
 import { Module, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { AchievementsModule } from '../achievements/achievements.module';
+import { PrismaModule } from '../prisma/prisma.module';
 import { QrController } from './qr.controller';
 import { QrService } from './qr.service';
 
 @Module({
   imports: [
+    PrismaModule,
+    AchievementsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
