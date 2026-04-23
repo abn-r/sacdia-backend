@@ -190,6 +190,19 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Honors (admin CRUD on honor definitions)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('honors:read', 'Read honor definitions (admin)', true),
+  ('honors:create', 'Create honor definitions (admin)', true),
+  ('honors:update', 'Update honor definitions (admin)', true),
+  ('honors:delete', 'Delete honor definitions (admin)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Ecclesiastical Years
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
