@@ -200,9 +200,10 @@ describe('UnitsController', () => {
       const mockRecord = { record_id: 1, ...dto };
       mockUnitsService.createWeeklyRecord.mockResolvedValue(mockRecord);
 
-      const result = await controller.createWeeklyRecord(1, 5, dto as any);
+      const mockReq = { user: { sub: 'uuid-user-1' } };
+      const result = await controller.createWeeklyRecord(1, 5, dto as any, mockReq as any);
 
-      expect(mockUnitsService.createWeeklyRecord).toHaveBeenCalledWith(5, dto);
+      expect(mockUnitsService.createWeeklyRecord).toHaveBeenCalledWith(5, dto, 'uuid-user-1');
       expect(result).toEqual(mockRecord);
     });
   });

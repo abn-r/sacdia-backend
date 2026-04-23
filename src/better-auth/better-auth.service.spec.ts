@@ -7,6 +7,14 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { BetterAuthService } from './better-auth.service';
 
+const mockEmailService = {
+  sendDataExportReady: jest.fn(),
+  sendEmailVerification: jest.fn(),
+  sendPasswordReset: jest.fn(),
+  sendAccountDeletionConfirmed: jest.fn(),
+  enqueue: jest.fn(),
+};
+
 /**
  * BetterAuthService unit tests — Option C custom HS256 JWT.
  *
@@ -111,6 +119,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -130,6 +139,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -151,6 +161,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -172,6 +183,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -193,6 +205,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const before = Math.floor(Date.now() / 1000);
@@ -226,6 +239,7 @@ describe('BetterAuthService', () => {
       mockJwtService,
       mockPrisma as any,
       mockBaInstance as any,
+      mockEmailService as any,
     );
     return { svc, mockJwtService };
   }

@@ -33,9 +33,8 @@ function isRedisConfigured(): boolean {
  *
  * BullMQ registration:
  *   - Queue name: 'emails'
- *   - Rate limiter: 90 emails/day (protects Resend free tier of 100/day,
- *     leaving 10 headroom for manual/dashboard sends)
- *   - Limiter duration is set in ms: 86_400_000 = 24h
+ *   - Rate limiter: 90 emails/day is enforced at the @Processor decorator level
+ *     (protects Resend free tier of 100/day, leaving 10 headroom for manual sends)
  *
  * When Redis is unavailable, the queue and processor are skipped. EmailService
  * is still exported so callers don't break — but enqueue() will throw at
@@ -49,10 +48,6 @@ function isRedisConfigured(): boolean {
       ? [
           BullModule.registerQueue({
             name: EMAIL_QUEUE,
-            limiter: {
-              max: 90,
-              duration: 86_400_000, // 24 hours in ms
-            },
           }),
         ]
       : []),

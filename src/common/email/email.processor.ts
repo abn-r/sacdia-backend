@@ -18,10 +18,8 @@ import {
   AccountDeletionConfirmedJobPayload,
   EmailJobPayload,
 } from './email.queue';
-import {
-  EMAIL_PROVIDER,
-  IEmailProvider,
-} from './providers/email-provider.interface';
+import { EMAIL_PROVIDER } from './providers/email-provider.interface';
+import type { IEmailProvider } from './providers/email-provider.interface';
 import { DataExportReadyEmail } from './templates/data-export-ready';
 import { EmailVerificationEmail } from './templates/email-verification';
 import { PasswordResetEmail } from './templates/password-reset';

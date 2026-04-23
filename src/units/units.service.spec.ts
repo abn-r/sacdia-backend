@@ -516,7 +516,7 @@ describe('UnitsService', () => {
         .mockResolvedValueOnce(mockRecord); // final fetch inside transaction
       mockPrismaService.weekly_records.create.mockResolvedValue(mockRecord);
 
-      const result = await service.createWeeklyRecord(1, dto);
+      const result = await service.createWeeklyRecord(1, dto, dto.user_id);
 
       expect(result).toBeDefined();
     });
@@ -525,7 +525,7 @@ describe('UnitsService', () => {
       const mockUnit = { unit_id: 1, unit_members: [] };
       mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
 
-      await expect(service.createWeeklyRecord(1, dto)).rejects.toThrow(
+      await expect(service.createWeeklyRecord(1, dto, dto.user_id)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -542,7 +542,7 @@ describe('UnitsService', () => {
         existingRecord,
       );
 
-      await expect(service.createWeeklyRecord(1, dto)).rejects.toThrow(
+      await expect(service.createWeeklyRecord(1, dto, dto.user_id)).rejects.toThrow(
         ConflictException,
       );
     });

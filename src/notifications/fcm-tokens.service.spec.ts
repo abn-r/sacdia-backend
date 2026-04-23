@@ -8,7 +8,7 @@ import { FcmTokensService } from './fcm-tokens.service';
  * The callback passed to $transaction receives the same inner mock so tests
  * can configure findFirst / create / update / findMany / deleteMany on it.
  */
-function buildTxMock(inner: Record<string, jest.Mock>) {
+function buildTxMock(inner: Record<string, unknown>) {
   return jest.fn().mockImplementation((fn: (tx: typeof inner) => unknown) =>
     fn(inner),
   );

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupportReportDto } from './dto/create-support-report.dto';
 import { SupportReportResponseDto } from './dto/support-report-response.dto';
@@ -32,7 +33,9 @@ export class SupportService {
         // Prisma InputJsonValue — castear a `any` para esquivar la firma
         // estricta (`JsonValue` no acepta Record<string, unknown> directo).
         device_info: dto.deviceInfo as unknown as object,
-        user_context: (dto.userContext ?? null) as unknown as object | null,
+        user_context: dto.userContext !== undefined
+          ? (dto.userContext as unknown as object)
+          : Prisma.JsonNull,
       },
       select: {
         id: true,

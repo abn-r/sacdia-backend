@@ -27,11 +27,16 @@ const mockQueue = {
   add: jest.fn(),
 };
 
+const mockCronLogger = {
+  log: jest.fn(),
+};
+
 function makeService(): DataExportService {
   return new DataExportService(
     mockPrisma as any,
     mockFileStorage as any,
     mockQueue as any,
+    mockCronLogger as any,
   );
 }
 
