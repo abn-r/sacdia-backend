@@ -146,10 +146,12 @@ WHERE r.role_name = 'member'
     'legal_representative:read',
     'legal_representative:update',
 
-    -- Activities
+    -- Activities (read only — attendance:manage intentionally withheld:
+    -- members must not be able to mark attendance for other members via
+    -- the QR scanner or the legacy attendance endpoint. Scoped to director+
+    -- roles only.)
     'activities:read',
     'attendance:read',
-    'attendance:manage',
 
     -- Evidence & progress
     'evidence_folders:read',

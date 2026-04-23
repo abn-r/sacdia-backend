@@ -56,7 +56,15 @@ export class QrController {
   @ApiResponse({ status: 401, description: 'Invalid/expired QR or missing JWT' })
   @ApiResponse({ status: 403, description: 'Caller lacks attendance:manage' })
   @ApiResponse({ status: 404, description: 'Member or activity not found' })
-  scan(@Body() dto: ScanQrDto): Promise<ScanResponseDto> {
-    return this.qrService.scanMemberToken(dto.token, dto.activity_id);
+  scan(
+    @Req() req: Request,
+    @Body() dto: ScanQrDto,
+  ): Promise<ScanResponseDto> {
+    const user = req.user as { user_id: string };
+    return this.qrService.scanMemberToken(
+      dto.token,
+      user.user_id,
+      dto.activity_id,
+    );
   }
 }
