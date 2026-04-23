@@ -742,7 +742,17 @@ export class UsersService {
       throw new InternalServerErrorException('Error al actualizar la imagen');
     }
 
-    await this.cleanupPreviousProfilePicture(user.user_image, uploaded.key);
+    // Fire-and-forget: do NOT await — old-file cleanup must not block the
+    // response or risk rolling back an already-committed DB row.
+    // Failures are logged at WARN level for manual sweeps.
+    this.cleanupPreviousProfilePicture(user.user_image, uploaded.key).catch(
+      (err: unknown) => {
+        this.logger.warn(
+          `Unexpected error during profile picture cleanup for user ${userId}`,
+          err,
+        );
+      },
+    );
 
     this.logger.log(`Profile picture uploaded for user: ${userId}`);
 

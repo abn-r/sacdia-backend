@@ -552,6 +552,32 @@ describe('UsersService', () => {
         ['photo-u1-999.jpeg'],
       );
     });
+
+    it('should succeed even when best-effort old-file cleanup fails (fire-and-forget)', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'u1',
+        user_image: 'https://cdn.r2.example/user-profiles/photo-u1-old.jpeg',
+      });
+      mockPrismaService.users.update.mockResolvedValue({ user_id: 'u1' });
+      // First deleteMany call (cleanup of old file) throws; should not surface
+      mockFileStorageService.deleteMany.mockRejectedValueOnce(
+        new Error('r2 cleanup failed'),
+      );
+
+      const result = await service.uploadProfilePicture('u1', file);
+
+      // Response succeeds despite cleanup failure
+      expect(result.status).toBe('success');
+      // DB update was committed
+      expect(mockPrismaService.users.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ user_image: expect.stringContaining('https://cdn.r2.example/') }) }),
+      );
+      // deleteMany was attempted for the old key (fire-and-forget)
+      expect(mockFileStorageService.deleteMany).toHaveBeenCalledWith(
+        StorageBucketAlias.USER_PROFILES,
+        expect.arrayContaining(['photo-u1-122.jpeg']),
+      );
+    });
   });
 
   describe('deleteProfilePicture', () => {
