@@ -37,21 +37,17 @@ export class QrService {
   ) {}
 
   generateMemberToken(userId: string): QrMemberTokenDto {
-    const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + QR_MEMBER_TTL_SECONDS;
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + QR_MEMBER_TTL_SECONDS;
 
-    const token = this.jwtService.sign(
-      {
-        sub: userId,
-        aud: QR_MEMBER_AUDIENCE,
-        iat,
-        exp,
-        ver: QR_MEMBER_VERSION,
-      },
-      {
-        algorithm: 'HS256',
-      },
-    );
+    // Do NOT include `iat` or `exp` in the payload — JwtModule already sets
+    // expiresIn via signOptions. Passing exp here would cause jsonwebtoken to
+    // throw "Bad options.expiresIn: payload already has an exp property".
+    const token = this.jwtService.sign({
+      sub: userId,
+      aud: QR_MEMBER_AUDIENCE,
+      ver: QR_MEMBER_VERSION,
+    });
 
     return {
       token,
