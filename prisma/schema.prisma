@@ -1088,6 +1088,7 @@ model users {
   user_achievements                           user_achievements[]
   achievement_event_log                       achievement_event_log[]
   data_export_requests                        data_export_requests[]
+  support_reports                             support_reports[]
 }
 
 model notification_preferences {
@@ -1207,6 +1208,28 @@ model data_export_requests {
 
   @@index([user_id, created_at(sort: Desc)], map: "idx_data_export_requests_user_created")
   @@map("data_export_requests")
+}
+
+/// Reportes de Soporte/Ayuda enviados desde la app móvil.
+/// Creados vía POST /api/v1/support/reports. No se eliminan automáticamente:
+/// triage se hace mediante `status` (open -> in_progress -> resolved -> closed).
+model support_reports {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String   @db.Uuid
+  category     String   @db.VarChar(32)
+  title        String   @db.VarChar(120)
+  description  String   @db.Text
+  device_info  Json
+  user_context Json?
+  status       String   @default("open") @db.VarChar(16)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user users @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id], map: "idx_support_reports_user_id")
+  @@index([status, created_at], map: "idx_support_reports_status_created")
+  @@map("support_reports")
 }
 
 model users_pr {

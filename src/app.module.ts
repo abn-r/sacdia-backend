@@ -48,6 +48,7 @@ import { MemberOfMonthModule } from './member-of-month/member-of-month.module';
 import { AchievementsModule } from './achievements/achievements.module';
 import { DataExportModule } from './data-export/data-export.module';
 import { QrModule } from './qr/qr.module';
+import { SupportModule } from './support/support.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 
@@ -199,6 +200,7 @@ import { buildBullRootConfig } from './config/bullmq.config';
     AchievementsModule,
     DataExportModule,
     QrModule,
+    SupportModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
