@@ -24,11 +24,37 @@
 import 'dotenv/config';
 
 import { writeFile } from 'node:fs/promises';
-import { createInterface } from 'node:readline';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import pLimit from 'p-limit';
+
+function createLimiter(concurrency: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+  const next = () => {
+    active--;
+    const fn = queue.shift();
+    if (fn) fn();
+  };
+  return <T>(task: () => Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const run = () => {
+        active++;
+        task().then(
+          (v) => {
+            resolve(v);
+            next();
+          },
+          (e) => {
+            reject(e);
+            next();
+          },
+        );
+      };
+      if (active < concurrency) run();
+      else queue.push(run);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -183,7 +209,7 @@ async function main() {
     // --- 2. HEAD each URL with bounded concurrency ---
     console.log(`[2/4] Performing HEAD requests (concurrency=${CONCURRENCY})...`);
 
-    const limit = pLimit(CONCURRENCY);
+    const limit = createLimiter(CONCURRENCY);
     const audit: AuditEntry[] = [];
     let done = 0;
 
