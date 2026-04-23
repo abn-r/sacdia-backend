@@ -7,6 +7,8 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 
+const MAX_ACTIVE_TOKENS_PER_USER = 5;
+
 export interface RegisterFcmTokenDto {
   token: string;
   device_type?: string;
@@ -33,39 +35,73 @@ export class FcmTokensService {
   } as const;
 
   /**
-   * Registrar o actualizar token FCM
+   * Registrar o actualizar token FCM.
+   * Caps active tokens per user at MAX_ACTIVE_TOKENS_PER_USER (5).
+   * If the cap is exceeded after registration, the oldest tokens (by last_used ASC)
+   * are deleted inside the same transaction.
    */
   async registerToken(userId: string, dto: RegisterFcmTokenDto) {
-    // Verificar si el token ya existe
-    const existing = await this.prisma.user_fcm_tokens.findFirst({
-      where: { token: dto.token },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // Verificar si el token ya existe
+      const existing = await tx.user_fcm_tokens.findFirst({
+        where: { token: dto.token },
+      });
 
-    if (existing) {
-      // Si existe, re-activar token y asociarlo al usuario autenticado actual
-      return this.prisma.user_fcm_tokens.update({
-        where: { fcm_token_id: existing.fcm_token_id },
-        data: {
+      let result: any;
+
+      if (existing) {
+        // Si existe, re-activar token y asociarlo al usuario autenticado actual
+        result = await tx.user_fcm_tokens.update({
+          where: { fcm_token_id: existing.fcm_token_id },
+          data: {
+            user_id: userId,
+            active: true,
+            last_used: new Date(),
+            device_type: dto.device_type,
+            device_name: dto.device_name,
+          },
+          select: this.safeSelect,
+        });
+      } else {
+        // Si no existe, crear nuevo
+        result = await tx.user_fcm_tokens.create({
+          data: {
+            user_id: userId,
+            token: dto.token,
+            device_type: dto.device_type,
+            device_name: dto.device_name,
+            active: true,
+          },
+          select: this.safeSelect,
+        });
+      }
+
+      // Cap: keep only the MAX_ACTIVE_TOKENS_PER_USER most recent active tokens.
+      // Fetch top-N by last_used DESC, then delete any that fall outside that set.
+      const topTokens = await tx.user_fcm_tokens.findMany({
+        where: { user_id: userId, active: true },
+        orderBy: { last_used: 'desc' },
+        take: MAX_ACTIVE_TOKENS_PER_USER,
+        select: { fcm_token_id: true },
+      });
+
+      const topIds = topTokens.map((t) => t.fcm_token_id);
+
+      const pruned = await tx.user_fcm_tokens.deleteMany({
+        where: {
           user_id: userId,
           active: true,
-          last_used: new Date(),
-          device_type: dto.device_type,
-          device_name: dto.device_name,
+          fcm_token_id: { notIn: topIds },
         },
-        select: this.safeSelect,
       });
-    }
 
-    // Si no existe, crear nuevo
-    return this.prisma.user_fcm_tokens.create({
-      data: {
-        user_id: userId,
-        token: dto.token,
-        device_type: dto.device_type,
-        device_name: dto.device_name,
-        active: true,
-      },
-      select: this.safeSelect,
+      if (pruned.count > 0) {
+        this.logger.debug(
+          `FCM token cap enforced — pruned ${pruned.count} oldest active token(s) for user ${userId} (limit: ${MAX_ACTIVE_TOKENS_PER_USER})`,
+        );
+      }
+
+      return result;
     });
   }
 

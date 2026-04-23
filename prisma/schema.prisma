@@ -1141,6 +1141,11 @@ model notification_deliveries {
   @@unique([log_id, user_id])
   @@index([user_id, read_at])
   @@index([user_id, created_at(sort: Desc)])
+  // NOTE: A partial index `idx_notification_deliveries_user_unread` on
+  // (user_id, created_at DESC) WHERE read_at IS NULL exists in the database
+  // (migration 20260423155416_notification_deliveries_unread_index).
+  // Prisma does not support WHERE clauses in @@index, so it is managed
+  // manually via raw SQL and applied via psql to each branch.
   @@map("notification_deliveries")
 }
 
