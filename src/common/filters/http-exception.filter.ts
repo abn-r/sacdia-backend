@@ -5,18 +5,30 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Injectable,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { I18nService, I18nContext } from 'nestjs-i18n';
 import { maskEmail } from '../utils/mask-email.util';
+import { AppException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 /**
  * Filtro global de excepciones HTTP.
+ *
+ * - Si la excepción es AppException (domain error): traduce el mensaje vía
+ *   I18nService y añade el campo `code` a la respuesta.
+ * - Si es una HttpException vanilla: ruta existente sin `code` (backward compat).
+ *
  * En producción oculta detalles de implementación.
  * En desarrollo muestra errores detallados.
  */
+@Injectable()
 @Catch(HttpException)
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('HttpException');
+
+  constructor(private readonly i18n: I18nService) {}
 
   catch(exception: HttpException, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -50,7 +62,45 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.error(logPayload);
     }
 
-    // En producción: errores genéricos para >= 500
+    // ── AppException: domain error with ErrorCode ──────────────────────────
+    if (exception instanceof AppException) {
+      const { code, namedArgs, details } = exception.getResponse();
+      const lang = this.resolveLang(host);
+
+      let translatedMessage: string;
+      try {
+        translatedMessage = this.i18n.translate(`errors.${code}`, {
+          lang,
+          args: namedArgs ?? {},
+        }) as string;
+      } catch {
+        // Fallback: use code itself if translation key is missing
+        translatedMessage = code;
+      }
+
+      // Production: mask 5xx even for domain errors
+      const maskedMessage =
+        process.env.NODE_ENV === 'production' &&
+        status >= HttpStatus.INTERNAL_SERVER_ERROR
+          ? (this.i18n.translate(`errors.${ErrorCode.INTERNAL_SERVER_ERROR}`, {
+              lang,
+            }) as string)
+          : translatedMessage;
+
+      return response.status(status).json({
+        status: 'error',
+        statusCode: status,
+        code,
+        message: maskedMessage,
+        ...(process.env.NODE_ENV !== 'production' && details !== undefined
+          ? { details }
+          : {}),
+        timestamp: new Date().toISOString(),
+        path: request.url,
+      });
+    }
+
+    // ── Vanilla HttpException: backward-compatible path, no `code` field ───
     if (process.env.NODE_ENV === 'production') {
       response.status(status).json({
         status: 'error',
@@ -76,6 +126,28 @@ export class HttpExceptionFilter implements ExceptionFilter {
         path: request.url,
       });
     }
+  }
+
+  /**
+   * Resolves the request locale using I18nContext (set by nestjs-i18n middleware)
+   * with a fallback chain: I18nContext → Accept-Language header → 'es'.
+   */
+  private resolveLang(host: ArgumentsHost): string {
+    // I18nContext.current() works when nestjs-i18n middleware has populated CLS
+    const i18nCtx = I18nContext.current(host);
+    if (i18nCtx?.lang) {
+      return i18nCtx.lang;
+    }
+
+    // Fallback: read Accept-Language header directly
+    const request = host.switchToHttp().getRequest<Request>();
+    const acceptLang = request.headers['accept-language'];
+    if (acceptLang) {
+      const primary = acceptLang.split(',')[0].trim().split(';')[0].trim();
+      return primary || 'es';
+    }
+
+    return 'es';
   }
 
   /**
@@ -132,5 +204,4 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     return masked;
   }
-
 }

@@ -1,0 +1,10 @@
+{
+  "AUTH_REFRESH_TOKEN_REQUIRED": "El token de refresco es requerido",
+  "AUTH_INVALID_TOKEN": "Token inválido o expirado",
+  "GENERIC_ERROR": "Ha ocurrido un error. Intentalo de nuevo",
+  "INTERNAL_SERVER_ERROR": "Error interno del servidor",
+  "RECORD_NOT_FOUND": "El registro no fue encontrado",
+  "RECORD_CONFLICT": "El registro ya existe",
+  "RECORD_FK_VIOLATION": "La operación viola una restricción de integridad referencial",
+  "RECORD_RELATED_NOT_FOUND": "El registro relacionado no fue encontrado"
+}

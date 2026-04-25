@@ -1,0 +1,10 @@
+{
+  "AUTH_REFRESH_TOKEN_REQUIRED": "O token de atualização é obrigatório",
+  "AUTH_INVALID_TOKEN": "Token inválido ou expirado",
+  "GENERIC_ERROR": "Ocorreu um erro. Tente novamente",
+  "INTERNAL_SERVER_ERROR": "Erro interno do servidor",
+  "RECORD_NOT_FOUND": "Registro não encontrado",
+  "RECORD_CONFLICT": "O registro já existe",
+  "RECORD_FK_VIOLATION": "A operação viola uma restrição de integridade referencial",
+  "RECORD_RELATED_NOT_FOUND": "Registro relacionado não encontrado"
+}

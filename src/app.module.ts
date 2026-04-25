@@ -1,6 +1,12 @@
 import { Module, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import {
+  I18nModule,
+  AcceptLanguageResolver,
+  QueryResolver,
+} from 'nestjs-i18n';
+import * as path from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { MulterModule } from '@nestjs/platform-express';
@@ -64,6 +70,26 @@ import { buildBullRootConfig } from './config/bullmq.config';
       validationOptions: {
         abortEarly: false,
       },
+    }),
+
+    // ==========================================
+    // INTERNACIONALIZACIÓN - nestjs-i18n
+    // Resolver order: ?lang= query param → Accept-Language header → fallback 'es'
+    // Supported locales: es, pt-BR, en, fr
+    // ==========================================
+    I18nModule.forRoot({
+      fallbackLanguage: 'es',
+      loaderOptions: {
+        // Assets are copied to dist/i18n/ (one level above dist/src/ where __dirname resolves).
+        // In dev (ts-node): __dirname = src/ → ../i18n = the project root … which is wrong.
+        // Use process.cwd() as anchor since it's always the project root in both modes.
+        path: path.join(process.cwd(), 'dist', 'i18n'),
+        watch: true,
+      },
+      resolvers: [
+        { use: QueryResolver, options: ['lang'] },
+        AcceptLanguageResolver,
+      ],
     }),
 
     // ==========================================

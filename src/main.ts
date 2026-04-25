@@ -17,8 +17,9 @@ import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+// NOTE: HttpExceptionFilter and AllExceptionsFilter are registered via APP_FILTER
+// in CommonModule so they receive I18nService via DI. Do NOT use useGlobalFilters()
+// here — that would instantiate them without injection and break i18n.
 
 // ==========================================
 // PROCESS-LEVEL SAFETY NET
@@ -235,15 +236,11 @@ async function bootstrap() {
   // ==========================================
   // SEGURIDAD - Global Filters (Exception Handling)
   // ==========================================
-  // Filters are evaluated top-down; the first whose @Catch() metadata matches
-  // wins. The specific filter (HttpException) MUST precede the catch-all,
-  // otherwise AllExceptionsFilter swallows every HttpException and converts
-  // 400/404/403 into generic 500s — losing masking, validation details, and
-  // the real status code at the client.
-  app.useGlobalFilters(
-    new HttpExceptionFilter(), // Specific: HttpException + subclasses with safe logging
-    new AllExceptionsFilter(), // Catch-all fallback for non-HTTP exceptions
-  );
+  // Filters are registered via APP_FILTER providers in CommonModule so that
+  // I18nService can be injected via NestJS DI. The specificity guarantee
+  // (@Catch(HttpException) > @Catch()) ensures HttpExceptionFilter handles
+  // all HttpException subclasses (including AppException) before AllExceptionsFilter.
+  // DO NOT call app.useGlobalFilters() here — it bypasses DI and breaks i18n injection.
 
   // ==========================================
   // AUDITORÍA - Global Interceptors

@@ -1,0 +1,10 @@
+{
+  "AUTH_REFRESH_TOKEN_REQUIRED": "Le jeton de rafraîchissement est requis",
+  "AUTH_INVALID_TOKEN": "Jeton invalide ou expiré",
+  "GENERIC_ERROR": "Une erreur est survenue. Veuillez réessayer",
+  "INTERNAL_SERVER_ERROR": "Erreur interne du serveur",
+  "RECORD_NOT_FOUND": "Enregistrement introuvable",
+  "RECORD_CONFLICT": "L’enregistrement existe déjà",
+  "RECORD_FK_VIOLATION": "L’opération viole une contrainte d’intégrité référentielle",
+  "RECORD_RELATED_NOT_FOUND": "L’enregistrement associé est introuvable"
+}

@@ -26,6 +26,10 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { EmailService } from '../common/email/email.service';
+import {
+  AppBadRequestException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -330,7 +334,7 @@ export class AuthService {
     }
 
     if (!refreshToken) {
-      throw new BadRequestException('refreshToken es requerido');
+      throw new AppBadRequestException(ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED);
     }
 
     // The "refresh token" sent by clients IS the BA opaque session token.

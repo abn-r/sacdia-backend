@@ -1,0 +1,10 @@
+{
+  "AUTH_REFRESH_TOKEN_REQUIRED": "A refresh token is required",
+  "AUTH_INVALID_TOKEN": "Invalid or expired token",
+  "GENERIC_ERROR": "An error occurred. Please try again",
+  "INTERNAL_SERVER_ERROR": "Internal server error",
+  "RECORD_NOT_FOUND": "Record not found",
+  "RECORD_CONFLICT": "Record already exists",
+  "RECORD_FK_VIOLATION": "Operation violates a referential integrity constraint",
+  "RECORD_RELATED_NOT_FOUND": "Related record not found"
+}

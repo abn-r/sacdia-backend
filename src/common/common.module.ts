@@ -1,4 +1,5 @@
 import { Module, Global } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AuthorizationContextService } from './services/authorization-context.service';
 import { TokenBlacklistService } from './services/token-blacklist.service';
@@ -11,6 +12,8 @@ import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { DistributedLockService } from './services/distributed-lock.service';
 import { CronRunLogger } from './services/cron-run-logger.service';
+import { HttpExceptionFilter } from './filters/http-exception.filter';
+import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 
 function isPlaceholderRedisUrl(value: string): boolean {
   return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
@@ -96,6 +99,21 @@ function isPlaceholderRedisUrl(value: string): boolean {
     // OBSERVABILIDAD - Logging de ejecución de crons
     // ==========================================
     CronRunLogger,
+    // ==========================================
+    // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
+    // Order: AllExceptionsFilter registered FIRST (lower priority),
+    // HttpExceptionFilter registered SECOND (higher priority for @Catch(HttpException)).
+    // NestJS routes by specificity: @Catch(HttpException) wins over @Catch() for
+    // HttpException subclasses, preserving the original filter contract.
+    // ==========================================
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
+    },
   ],
   exports: [
     CacheModule,
