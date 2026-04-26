@@ -310,5 +310,15 @@
   "MONTHLY_REPORT_NOT_DRAFT": "Solo los informes en estado borrador pueden ser editados o generados",
   "MONTHLY_REPORT_NOT_GENERATED": "Solo los informes generados pueden ser enviados",
   "MONTHLY_REPORT_INVALID_MONTH": "El mes debe estar entre 1 y 12",
-  "MONTHLY_REPORT_INVALID_YEAR": "El año debe estar entre 2020 y 2100"
+  "MONTHLY_REPORT_INVALID_YEAR": "El año debe estar entre 2020 y 2100",
+  "VALIDATION_ENROLLMENT_NOT_FOUND": "Inscripción no encontrada",
+  "VALIDATION_ENROLLMENT_NOT_OWNED": "La inscripción no pertenece al usuario autenticado",
+  "VALIDATION_ENROLLMENT_NOT_IN_PROGRESS": "La inscripción debe estar en estado IN_PROGRESS para enviarse a revisión",
+  "VALIDATION_ENROLLMENT_NOT_SUBMITTED": "La inscripción debe estar en estado SUBMITTED_FOR_VALIDATION para ser revisada",
+  "VALIDATION_USER_HONOR_NOT_FOUND": "Honor de usuario no encontrado",
+  "VALIDATION_HONOR_NOT_OWNED": "El honor no pertenece al usuario autenticado",
+  "VALIDATION_HONOR_ALREADY_VALIDATED": "El honor ya se encuentra validado",
+  "VALIDATION_HONOR_ALREADY_PENDING": "El honor ya se encuentra pendiente de revisión",
+  "VALIDATION_HONOR_INVALID_STATUS": "El honor debe estar en estado IN_PROGRESS o REJECTED para enviarse a revisión",
+  "VALIDATION_REJECT_COMMENT_REQUIRED": "Se requiere un comentario al rechazar una validación"
 }

@@ -310,5 +310,15 @@
   "MONTHLY_REPORT_NOT_DRAFT": "Seuls les rapports en état de brouillon peuvent être modifiés ou générés",
   "MONTHLY_REPORT_NOT_GENERATED": "Seuls les rapports générés peuvent être soumis",
   "MONTHLY_REPORT_INVALID_MONTH": "Le mois doit être compris entre 1 et 12",
-  "MONTHLY_REPORT_INVALID_YEAR": "L'année doit être comprise entre 2020 et 2100"
+  "MONTHLY_REPORT_INVALID_YEAR": "L'année doit être comprise entre 2020 et 2100",
+  "VALIDATION_ENROLLMENT_NOT_FOUND": "Inscription introuvable",
+  "VALIDATION_ENROLLMENT_NOT_OWNED": "L'inscription n'appartient pas à l'utilisateur authentifié",
+  "VALIDATION_ENROLLMENT_NOT_IN_PROGRESS": "L'inscription doit être en statut IN_PROGRESS pour être soumise à révision",
+  "VALIDATION_ENROLLMENT_NOT_SUBMITTED": "L'inscription doit être en statut SUBMITTED_FOR_VALIDATION pour être révisée",
+  "VALIDATION_USER_HONOR_NOT_FOUND": "Honneur utilisateur introuvable",
+  "VALIDATION_HONOR_NOT_OWNED": "L'honneur n'appartient pas à l'utilisateur authentifié",
+  "VALIDATION_HONOR_ALREADY_VALIDATED": "L'honneur est déjà validé",
+  "VALIDATION_HONOR_ALREADY_PENDING": "L'honneur est déjà en attente de révision",
+  "VALIDATION_HONOR_INVALID_STATUS": "L'honneur doit être en statut IN_PROGRESS ou REJECTED pour être soumis à révision",
+  "VALIDATION_REJECT_COMMENT_REQUIRED": "Un commentaire est requis lors du rejet d'une validation"
 }

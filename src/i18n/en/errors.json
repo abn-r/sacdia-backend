@@ -310,5 +310,15 @@
   "MONTHLY_REPORT_NOT_DRAFT": "Only draft reports can be edited or generated",
   "MONTHLY_REPORT_NOT_GENERATED": "Only generated reports can be submitted",
   "MONTHLY_REPORT_INVALID_MONTH": "Month must be between 1 and 12",
-  "MONTHLY_REPORT_INVALID_YEAR": "Year must be between 2020 and 2100"
+  "MONTHLY_REPORT_INVALID_YEAR": "Year must be between 2020 and 2100",
+  "VALIDATION_ENROLLMENT_NOT_FOUND": "Enrollment not found",
+  "VALIDATION_ENROLLMENT_NOT_OWNED": "The enrollment does not belong to the authenticated user",
+  "VALIDATION_ENROLLMENT_NOT_IN_PROGRESS": "The enrollment must be in IN_PROGRESS status to be submitted for review",
+  "VALIDATION_ENROLLMENT_NOT_SUBMITTED": "The enrollment must be in SUBMITTED_FOR_VALIDATION status to be reviewed",
+  "VALIDATION_USER_HONOR_NOT_FOUND": "User honor not found",
+  "VALIDATION_HONOR_NOT_OWNED": "The honor does not belong to the authenticated user",
+  "VALIDATION_HONOR_ALREADY_VALIDATED": "The honor is already validated",
+  "VALIDATION_HONOR_ALREADY_PENDING": "The honor is already pending review",
+  "VALIDATION_HONOR_INVALID_STATUS": "The honor must be in IN_PROGRESS or REJECTED status to be submitted for review",
+  "VALIDATION_REJECT_COMMENT_REQUIRED": "A comment is required when rejecting a validation"
 }
