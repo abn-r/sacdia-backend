@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
@@ -11,6 +6,11 @@ import {
   UpdateScoringCategoryDto,
 } from './dto/scoring-categories.dto';
 import { origin_level_enum } from '@prisma/client';
+import {
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 export interface CategoryWithReadonly {
   scoring_category_id: number;
@@ -77,16 +77,14 @@ export class ScoringCategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Scoring category ${id} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_CATEGORY_NOT_FOUND);
     }
 
     if (category.origin_level !== 'DIVISION') {
       this.logger.warn(
         `Unauthorized attempt to modify category ${id} by user ${userId ?? 'system'}`,
       );
-      throw new ForbiddenException(
-        'No puede modificar una categoría que no pertenece a este nivel',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
 
     const result = await this.prisma.scoring_categories.update({
@@ -109,16 +107,14 @@ export class ScoringCategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Scoring category ${id} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_CATEGORY_NOT_FOUND);
     }
 
     if (category.origin_level !== 'DIVISION') {
       this.logger.warn(
         `Unauthorized attempt to modify category ${id} by user ${userId ?? 'system'}`,
       );
-      throw new ForbiddenException(
-        'No puede eliminar una categoría que no pertenece a este nivel',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
 
     const result = await this.prisma.scoring_categories.update({
@@ -169,9 +165,7 @@ export class ScoringCategoriesService {
     });
 
     if (!assignment) {
-      throw new ForbiddenException(
-        'No tiene permisos para gestionar categorías de esta unión',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_UNION_FORBIDDEN);
     }
   }
 
@@ -206,9 +200,7 @@ export class ScoringCategoriesService {
     });
 
     if (!assignment) {
-      throw new ForbiddenException(
-        'No tiene permisos para gestionar categorías de este campo local',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN);
     }
   }
 
@@ -278,16 +270,14 @@ export class ScoringCategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Scoring category ${id} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_CATEGORY_NOT_FOUND);
     }
 
     if (category.origin_level !== 'UNION' || category.origin_id !== unionId) {
       this.logger.warn(
         `Unauthorized attempt to modify category ${id} by user ${userId}`,
       );
-      throw new ForbiddenException(
-        'No puede modificar una categoría heredada o de otro nivel',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
 
     const result = await this.prisma.scoring_categories.update({
@@ -312,16 +302,14 @@ export class ScoringCategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Scoring category ${id} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_CATEGORY_NOT_FOUND);
     }
 
     if (category.origin_level !== 'UNION' || category.origin_id !== unionId) {
       this.logger.warn(
         `Unauthorized attempt to modify category ${id} by user ${userId}`,
       );
-      throw new ForbiddenException(
-        'No puede eliminar una categoría heredada o de otro nivel',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
 
     const result = await this.prisma.scoring_categories.update({
@@ -349,7 +337,7 @@ export class ScoringCategoriesService {
     });
 
     if (!localField) {
-      throw new NotFoundException(`Local field ${fieldId} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_LOCAL_FIELD_NOT_FOUND);
     }
 
     const unionId = localField.union_id;
@@ -395,7 +383,7 @@ export class ScoringCategoriesService {
     });
 
     if (!localField) {
-      throw new NotFoundException(`Local field ${fieldId} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_LOCAL_FIELD_NOT_FOUND);
     }
 
     const result = await this.prisma.scoring_categories.create({
@@ -425,7 +413,7 @@ export class ScoringCategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Scoring category ${id} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_CATEGORY_NOT_FOUND);
     }
 
     if (
@@ -435,9 +423,7 @@ export class ScoringCategoriesService {
       this.logger.warn(
         `Unauthorized attempt to modify category ${id} by user ${userId}`,
       );
-      throw new ForbiddenException(
-        'No puede modificar una categoría heredada o de otro nivel',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
 
     const result = await this.prisma.scoring_categories.update({
@@ -462,7 +448,7 @@ export class ScoringCategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Scoring category ${id} not found`);
+      throw new AppNotFoundException(ErrorCode.SCORING_CATEGORY_NOT_FOUND);
     }
 
     if (
@@ -472,9 +458,7 @@ export class ScoringCategoriesService {
       this.logger.warn(
         `Unauthorized attempt to modify category ${id} by user ${userId}`,
       );
-      throw new ForbiddenException(
-        'No puede eliminar una categoría heredada o de otro nivel',
-      );
+      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
 
     const result = await this.prisma.scoring_categories.update({

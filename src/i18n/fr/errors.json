@@ -299,5 +299,10 @@
   "REQUEST_ASSIGNMENT_NOT_FOUND": "Demande d'attribution introuvable",
   "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "La demande d'attribution a déjà été traitée",
   "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Le nombre maximum d'attributions de rôle par section a été atteint",
-  "REQUEST_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée"
+  "REQUEST_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
+  "SCORING_CATEGORY_NOT_FOUND": "Catégorie de score introuvable",
+  "SCORING_CATEGORY_WRONG_LEVEL": "Impossible de modifier ou supprimer une catégorie qui n'appartient pas à ce niveau",
+  "SCORING_CATEGORY_UNION_FORBIDDEN": "Vous n'avez pas la permission de gérer les catégories de cette union",
+  "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "Vous n'avez pas la permission de gérer les catégories de ce champ local",
+  "SCORING_LOCAL_FIELD_NOT_FOUND": "Champ local introuvable"
 }

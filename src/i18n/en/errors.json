@@ -299,5 +299,10 @@
   "REQUEST_ASSIGNMENT_NOT_FOUND": "Assignment request not found",
   "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "Assignment request has already been reviewed",
   "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Maximum role assignments per section reached",
-  "REQUEST_NO_ACTIVE_YEAR": "No active ecclesiastical year configured"
+  "REQUEST_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
+  "SCORING_CATEGORY_NOT_FOUND": "Scoring category not found",
+  "SCORING_CATEGORY_WRONG_LEVEL": "Cannot modify or delete a category that does not belong to this level",
+  "SCORING_CATEGORY_UNION_FORBIDDEN": "You do not have permission to manage categories for this union",
+  "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "You do not have permission to manage categories for this local field",
+  "SCORING_LOCAL_FIELD_NOT_FOUND": "Local field not found"
 }

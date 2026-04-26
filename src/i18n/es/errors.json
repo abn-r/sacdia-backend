@@ -299,5 +299,10 @@
   "REQUEST_ASSIGNMENT_NOT_FOUND": "Solicitud de asignación no encontrada",
   "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "La solicitud de asignación ya fue procesada",
   "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Se alcanzó el máximo de asignaciones permitidas para este rol en la sección",
-  "REQUEST_NO_ACTIVE_YEAR": "No hay un año eclesiástico activo configurado"
+  "REQUEST_NO_ACTIVE_YEAR": "No hay un año eclesiástico activo configurado",
+  "SCORING_CATEGORY_NOT_FOUND": "Categoría de puntuación no encontrada",
+  "SCORING_CATEGORY_WRONG_LEVEL": "No puede modificar o eliminar una categoría que no pertenece a este nivel",
+  "SCORING_CATEGORY_UNION_FORBIDDEN": "No tiene permisos para gestionar categorías de esta unión",
+  "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "No tiene permisos para gestionar categorías de este campo local",
+  "SCORING_LOCAL_FIELD_NOT_FOUND": "Campo local no encontrado"
 }
