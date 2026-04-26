@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
 import { AnnualFoldersService } from '../annual-folders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
+import { ErrorCode } from '../../common/errors/error-codes';
 
 /**
  * Unit tests for AnnualFoldersService.resolveTemplateForClub (private method
@@ -228,12 +228,12 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
   // ---------------------------------------------------------------
   // 3. Neither exists → NotFoundException
   // ---------------------------------------------------------------
-  it('throws NotFoundException when neither union nor LF template exists', async () => {
+  it('throws AppNotFoundException when neither union nor LF template exists', async () => {
     mockPrismaService.folder_templates.findFirst.mockResolvedValue(null);
 
     await expect(
       service.createFolderForEnrollment(ENROLLMENT_ID),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH });
   });
 
   // ---------------------------------------------------------------
@@ -255,12 +255,12 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
   // ---------------------------------------------------------------
   // 5. Enrollment not found → NotFoundException
   // ---------------------------------------------------------------
-  it('throws NotFoundException when enrollment does not exist', async () => {
+  it('throws AppNotFoundException when enrollment does not exist', async () => {
     mockPrismaService.club_enrollments.findUnique.mockResolvedValue(null);
 
     await expect(
       service.createFolderForEnrollment(ENROLLMENT_ID),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND });
   });
 
   // ---------------------------------------------------------------

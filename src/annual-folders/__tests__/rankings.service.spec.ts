@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { RankingsService, GENERAL_CATEGORY_ID } from '../rankings.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DistributedLockService } from '../../common/services/distributed-lock.service';
+import { CronRunLogger } from '../../common/services/cron-run-logger.service';
+import { ErrorCode } from '../../common/errors/error-codes';
 
 describe('RankingsService', () => {
   let service: RankingsService;
@@ -64,6 +66,14 @@ describe('RankingsService', () => {
         {
           provide: SchedulerRegistry,
           useValue: { addCronJob: jest.fn(), getCronJob: jest.fn() },
+        },
+        {
+          provide: DistributedLockService,
+          useValue: { tryAcquire: jest.fn().mockResolvedValue(true), release: jest.fn() },
+        },
+        {
+          provide: CronRunLogger,
+          useValue: { track: jest.fn().mockImplementation((_key: string, fn: () => Promise<unknown>) => fn()) },
         },
       ],
     }).compile();
@@ -132,19 +142,16 @@ describe('RankingsService', () => {
     it('should throw NotFoundException when provided yearId does not exist', async () => {
       mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(null);
 
-      await expect(service.recalculateRankings(9999)).rejects.toThrow(
-        NotFoundException,
+      await expect(service.recalculateRankings(9999)).rejects.toMatchObject(
+        { code: ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND },
       );
     });
 
     it('should throw NotFoundException when no active year exists', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
 
-      await expect(service.recalculateRankings()).rejects.toThrow(
-        NotFoundException,
-      );
-      await expect(service.recalculateRankings()).rejects.toThrow(
-        'No active ecclesiastical year found',
+      await expect(service.recalculateRankings()).rejects.toMatchObject(
+        { code: ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND },
       );
     });
 
@@ -651,10 +658,7 @@ describe('RankingsService', () => {
 
       await expect(
         service.getRankingForClub('non-existent', 2026),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        service.getRankingForClub('non-existent', 2026),
-      ).rejects.toThrow('Club enrollment with ID non-existent not found');
+      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND });
     });
 
     it('should return both general and empty by_category when no rankings at all', async () => {
