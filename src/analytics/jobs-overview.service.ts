@@ -1,10 +1,13 @@
 import {
   Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import {
+  AppNotFoundException,
+  AppConflictException,
+  AppBadRequestException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
@@ -110,19 +113,17 @@ export class JobsOverviewService {
       [DATA_EXPORTS_QUEUE]: this.dataExportsQueue,
     };
     const queue = queueMap[queueName];
-    if (!queue) throw new NotFoundException(`Queue "${queueName}" no encontrada`);
+    if (!queue) throw new AppNotFoundException(ErrorCode.ANALYTICS_QUEUE_NOT_FOUND);
 
     const job = await queue.getJob(jobId);
-    if (!job) throw new NotFoundException(`Job "${jobId}" no encontrado`);
+    if (!job) throw new AppNotFoundException(ErrorCode.ANALYTICS_JOB_NOT_FOUND);
 
     const state = await job.getState();
     if (state === 'active') {
-      throw new ConflictException('Job actualmente activo, no se puede reintentar');
+      throw new AppConflictException(ErrorCode.ANALYTICS_JOB_ACTIVE);
     }
     if (state !== 'failed') {
-      throw new BadRequestException(
-        `Job en estado "${state}", sólo se pueden reintentar jobs fallidos`,
-      );
+      throw new AppBadRequestException(ErrorCode.ANALYTICS_JOB_RETRY_FAILED);
     }
 
     await job.retry();

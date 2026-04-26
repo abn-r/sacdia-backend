@@ -1,4 +1,6 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -117,7 +119,7 @@ export class FinancePeriodService {
     ]);
 
     if (!isAdmin) {
-      throw new ForbiddenException(`El periodo ${month}/${year} está cerrado`);
+      throw new AppForbiddenException(ErrorCode.FINANCE_PERIOD_CLOSED);
     }
   }
 

@@ -1,12 +1,15 @@
 import {
-  ConflictException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+  AppNotFoundException,
+  AppConflictException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class MembershipRequestsService {
@@ -75,13 +78,9 @@ export class MembershipRequestsService {
 
     if (result.count === 0) {
       if (!assignment) {
-        throw new NotFoundException(
-          `Membership request ${assignmentId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
-      throw new ConflictException(
-        `Request already ${assignment.status}`,
-      );
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
@@ -123,13 +122,9 @@ export class MembershipRequestsService {
 
     if (result.count === 0) {
       if (!assignment) {
-        throw new NotFoundException(
-          `Membership request ${assignmentId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
-      throw new ConflictException(
-        `Request already ${assignment.status}`,
-      );
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
 
     await this.authorizationContext.invalidateUserAuthorizationCache(

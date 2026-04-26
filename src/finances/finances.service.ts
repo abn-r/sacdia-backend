@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import {
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateFinanceDto,
@@ -65,7 +69,7 @@ export class FinancesService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
     }
 
     // Build section filter.
@@ -130,7 +134,7 @@ export class FinancesService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
     }
 
     // Build section filter.
@@ -298,7 +302,7 @@ export class FinancesService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
     }
 
     // Build section filter.
@@ -363,9 +367,7 @@ export class FinancesService {
     });
 
     if (!finance) {
-      throw new NotFoundException(
-        `Finance record with ID ${financeId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.FINANCE_TRANSACTION_NOT_FOUND);
     }
 
     return finance;

@@ -1,13 +1,16 @@
 import {
   Injectable,
-  BadRequestException,
-  NotFoundException,
-  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmergencyContactDto } from './dto/create-emergency-contact.dto';
 import { UpdateEmergencyContactDto } from './dto/update-emergency-contact.dto';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+  AppConflictException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class EmergencyContactsService {
@@ -23,7 +26,7 @@ export class EmergencyContactsService {
     });
 
     if (!relationshipType) {
-      throw new BadRequestException('Tipo de relación no válido');
+      throw new AppBadRequestException(ErrorCode.EC_INVALID_RELATIONSHIP_TYPE);
     }
   }
 
@@ -37,9 +40,7 @@ export class EmergencyContactsService {
     });
 
     if (activeCount >= this.MAX_CONTACTS) {
-      throw new BadRequestException(
-        `Máximo ${this.MAX_CONTACTS} contactos de emergencia permitidos`,
-      );
+      throw new AppBadRequestException(ErrorCode.EC_MAX_CONTACTS_REACHED);
     }
 
     // Validar que no exista duplicado (mismo nombre y teléfono)
@@ -53,7 +54,7 @@ export class EmergencyContactsService {
     });
 
     if (duplicate) {
-      throw new ConflictException('Este contacto ya existe');
+      throw new AppConflictException(ErrorCode.EC_ALREADY_EXISTS);
     }
 
     await this.validateRelationshipTypeExists(createDto.relationship_type_id);
@@ -140,7 +141,7 @@ export class EmergencyContactsService {
     });
 
     if (!contact) {
-      throw new NotFoundException('Contacto de emergencia no encontrado');
+      throw new AppNotFoundException(ErrorCode.EC_NOT_FOUND);
     }
 
     const { relationship_types, ...rest } = contact;
@@ -165,7 +166,7 @@ export class EmergencyContactsService {
     });
 
     if (!existingContact) {
-      throw new NotFoundException('Contacto de emergencia no encontrado');
+      throw new AppNotFoundException(ErrorCode.EC_NOT_FOUND);
     }
 
     if (updateDto.relationship_type_id) {
@@ -211,7 +212,7 @@ export class EmergencyContactsService {
     });
 
     if (!contact) {
-      throw new NotFoundException('Contacto de emergencia no encontrado');
+      throw new AppNotFoundException(ErrorCode.EC_NOT_FOUND);
     }
 
     // Soft delete

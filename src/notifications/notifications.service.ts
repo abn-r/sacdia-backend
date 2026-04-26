@@ -19,10 +19,13 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
   Optional,
-  ForbiddenException,
 } from '@nestjs/common';
+import {
+  AppNotFoundException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { firebaseAdmin } from '../config/firebase-admin.module';
@@ -503,9 +506,7 @@ export class NotificationsService {
     const activeClubScope = resolved.authorization.effective.scope.club;
 
     if (!activeClubScope || activeClubScope.section.club_section_id !== clubSectionId) {
-      throw new ForbiddenException(
-        'You need an active club assignment for this exact instance',
-      );
+      throw new AppForbiddenException(ErrorCode.NOTIF_SEND_FORBIDDEN);
     }
   }
 
@@ -591,9 +592,7 @@ export class NotificationsService {
       where: { delivery_id: deliveryId, user_id: callerUserId },
     });
     if (!delivery) {
-      throw new NotFoundException(
-        `Delivery ${deliveryId} not found or not owned by caller`,
-      );
+      throw new AppNotFoundException(ErrorCode.NOTIF_NOT_FOUND);
     }
     return this.prisma.notification_deliveries.update({
       where: { delivery_id: deliveryId },

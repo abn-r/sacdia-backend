@@ -1,14 +1,17 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
-  ConflictException,
   GoneException,
   UnprocessableEntityException,
   HttpException,
   HttpStatus,
   Inject,
 } from '@nestjs/common';
+import {
+  AppNotFoundException,
+  AppConflictException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Cron } from '@nestjs/schedule';
@@ -183,7 +186,7 @@ export class DataExportService {
 
     // 404: not found or cross-user
     if (!exportRow || exportRow.user_id !== userId) {
-      throw new NotFoundException('Export not found');
+      throw new AppNotFoundException(ErrorCode.EXPORT_NOT_FOUND);
     }
 
     const status = exportRow.status as DataExportStatus;
@@ -191,9 +194,7 @@ export class DataExportService {
     switch (status) {
       case 'pending':
       case 'processing':
-        throw new ConflictException(
-          `Export is ${status}. Please wait and try again.`,
-        );
+        throw new AppConflictException(ErrorCode.EXPORT_ALREADY_PROCESSING);
       case 'expired':
         throw new GoneException('This export has expired and is no longer available.');
       case 'failed':

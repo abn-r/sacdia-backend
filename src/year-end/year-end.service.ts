@@ -1,9 +1,12 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
+import {
+  AppNotFoundException,
+  AppBadRequestException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { MonthlyReportsService } from '../monthly-reports/monthly-reports.service';
 
@@ -56,9 +59,7 @@ export class YearEndService {
     const year = await this.validateYearExists(yearId);
 
     if (!year.active) {
-      throw new BadRequestException(
-        `Ecclesiastical year ${yearId} is already inactive. It may have been closed previously.`,
-      );
+      throw new AppBadRequestException(ErrorCode.YEAR_END_YEAR_CLOSED);
     }
 
     this.logger.log(`Starting year-end closure for year ID ${yearId}...`);
@@ -252,9 +253,7 @@ export class YearEndService {
     });
 
     if (!year) {
-      throw new NotFoundException(
-        `Ecclesiastical year with ID ${yearId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND);
     }
 
     return year;

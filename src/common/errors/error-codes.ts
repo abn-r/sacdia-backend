@@ -441,4 +441,70 @@ export enum ErrorCode {
   ACHIEVEMENT_INACTIVE = 'ACHIEVEMENT_INACTIVE',
   ACHIEVEMENT_PREREQUISITE_NOT_FOUND = 'ACHIEVEMENT_PREREQUISITE_NOT_FOUND',
   ACHIEVEMENT_CIRCULAR_PREREQUISITE = 'ACHIEVEMENT_CIRCULAR_PREREQUISITE',
+
+  // ── Inventory ──────────────────────────────────────────────────────────────
+  INVENTORY_NOT_FOUND = 'INVENTORY_NOT_FOUND',
+  INVENTORY_CATEGORY_NOT_FOUND = 'INVENTORY_CATEGORY_NOT_FOUND',
+  INVENTORY_SECTION_NOT_FOUND = 'INVENTORY_SECTION_NOT_FOUND',
+
+  // ── Emergency Contacts ─────────────────────────────────────────────────────
+  EC_INVALID_RELATIONSHIP_TYPE = 'EC_INVALID_RELATIONSHIP_TYPE',
+  EC_MAX_CONTACTS_REACHED = 'EC_MAX_CONTACTS_REACHED',
+  EC_ALREADY_EXISTS = 'EC_ALREADY_EXISTS',
+  EC_NOT_FOUND = 'EC_NOT_FOUND',
+
+  // ── Club Enrollments ───────────────────────────────────────────────────────
+  CE_SECTION_NOT_FOUND = 'CE_SECTION_NOT_FOUND',
+  CE_CLASS_NOT_FOUND = 'CE_CLASS_NOT_FOUND',
+  CE_ALREADY_ENROLLED = 'CE_ALREADY_ENROLLED',
+  CE_ENROLLMENT_NOT_FOUND = 'CE_ENROLLMENT_NOT_FOUND',
+  CE_ECCLESIASTICAL_YEAR_REQUIRED = 'CE_ECCLESIASTICAL_YEAR_REQUIRED',
+  CE_NO_ACTIVE_YEAR = 'CE_NO_ACTIVE_YEAR',
+
+  // ── FCM Tokens ─────────────────────────────────────────────────────────────
+  FCM_TOKEN_NOT_FOUND = 'FCM_TOKEN_NOT_FOUND',
+  FCM_TOKEN_FORBIDDEN = 'FCM_TOKEN_FORBIDDEN',
+
+  // ── Membership Requests ────────────────────────────────────────────────────
+  MR_NOT_FOUND = 'MR_NOT_FOUND',
+  MR_ALREADY_PENDING = 'MR_ALREADY_PENDING',
+
+  // ── Finances ───────────────────────────────────────────────────────────────
+  FINANCE_CLUB_NOT_FOUND = 'FINANCE_CLUB_NOT_FOUND',
+  FINANCE_TRANSACTION_NOT_FOUND = 'FINANCE_TRANSACTION_NOT_FOUND',
+  FINANCE_PERIOD_CLOSED = 'FINANCE_PERIOD_CLOSED',
+
+  // ── Analytics ──────────────────────────────────────────────────────────────
+  ANALYTICS_QUEUE_NOT_FOUND = 'ANALYTICS_QUEUE_NOT_FOUND',
+  ANALYTICS_JOB_NOT_FOUND = 'ANALYTICS_JOB_NOT_FOUND',
+  ANALYTICS_JOB_ACTIVE = 'ANALYTICS_JOB_ACTIVE',
+  ANALYTICS_JOB_RETRY_FAILED = 'ANALYTICS_JOB_RETRY_FAILED',
+
+  // ── Member of Month ────────────────────────────────────────────────────────
+  MOM_FORBIDDEN = 'MOM_FORBIDDEN',
+  MOM_SECTION_NOT_FOUND = 'MOM_SECTION_NOT_FOUND',
+  MOM_PERIOD_NOT_FOUND = 'MOM_PERIOD_NOT_FOUND',
+
+  // ── Monthly Reports PDF ────────────────────────────────────────────────────
+  REPORT_PDF_NOT_FOUND = 'REPORT_PDF_NOT_FOUND',
+  REPORT_PDF_NOT_GENERATED = 'REPORT_PDF_NOT_GENERATED',
+  REPORT_PDF_NO_SNAPSHOT = 'REPORT_PDF_NO_SNAPSHOT',
+
+  // ── Year End ───────────────────────────────────────────────────────────────
+  YEAR_END_YEAR_CLOSED = 'YEAR_END_YEAR_CLOSED',
+  YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND = 'YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND',
+
+  // ── System Config ──────────────────────────────────────────────────────────
+  SYSTEM_CONFIG_NOT_FOUND = 'SYSTEM_CONFIG_NOT_FOUND',
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+  NOTIF_SEND_FORBIDDEN = 'NOTIF_SEND_FORBIDDEN',
+  NOTIF_NOT_FOUND = 'NOTIF_NOT_FOUND',
+
+  // ── Data Export ────────────────────────────────────────────────────────────
+  EXPORT_NOT_FOUND = 'EXPORT_NOT_FOUND',
+  EXPORT_ALREADY_PROCESSING = 'EXPORT_ALREADY_PROCESSING',
+
+  // ── MFA ────────────────────────────────────────────────────────────────────
+  MFA_CODE_INVALID = 'MFA_CODE_INVALID',
 }

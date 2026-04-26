@@ -1,9 +1,12 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
+import {
+  AppNotFoundException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -580,9 +583,7 @@ export class MemberOfMonthService {
       });
 
     if (!directorAssignment) {
-      throw new ForbiddenException(
-        'Solo directores del club pueden ejecutar la evaluación de Miembro del Mes',
-      );
+      throw new AppForbiddenException(ErrorCode.MOM_FORBIDDEN);
     }
   }
 
@@ -596,13 +597,11 @@ export class MemberOfMonthService {
     });
 
     if (!section) {
-      throw new NotFoundException(`Section ${sectionId} not found`);
+      throw new AppNotFoundException(ErrorCode.MOM_SECTION_NOT_FOUND);
     }
 
     if (section.main_club_id !== clubId) {
-      throw new NotFoundException(
-        `Section ${sectionId} does not belong to club ${clubId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.MOM_SECTION_NOT_FOUND);
     }
   }
 }

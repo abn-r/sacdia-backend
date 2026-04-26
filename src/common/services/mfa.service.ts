@@ -1,4 +1,6 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AppUnauthorizedException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import { BetterAuthService } from '../../better-auth/better-auth.service';
 
 // ---------------------------------------------------------------------------
@@ -95,9 +97,7 @@ export class MfaService {
   ): Promise<{ verified: boolean; accessToken?: string }> {
     const { enabled } = await this.betterAuthService.hasTotpEnabled(userId);
     if (!enabled) {
-      throw new UnauthorizedException(
-        'TOTP is not enrolled for this user. Call POST /auth/mfa/enroll first.',
-      );
+      throw new AppUnauthorizedException(ErrorCode.MFA_CODE_INVALID);
     }
 
     const result = await this.betterAuthService.verifyTotp(userId, code);

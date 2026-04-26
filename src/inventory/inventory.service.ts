@@ -1,7 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
+import {
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class InventoryService {
@@ -111,9 +115,7 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     // Obtener categoría si existe
@@ -160,7 +162,7 @@ export class InventoryService {
     });
 
     if (!category || !category.active) {
-      throw new NotFoundException('Inventory category not found');
+      throw new AppNotFoundException(ErrorCode.INVENTORY_CATEGORY_NOT_FOUND);
     }
 
     // Validar que la sección de club existe
@@ -169,7 +171,7 @@ export class InventoryService {
     });
 
     if (!section) {
-      throw new NotFoundException('Club section not found');
+      throw new AppNotFoundException(ErrorCode.INVENTORY_SECTION_NOT_FOUND);
     }
 
     // Crear item
@@ -221,9 +223,7 @@ export class InventoryService {
     });
 
     if (!existingItem) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     // Si se actualiza la categoría, validar que existe
@@ -233,7 +233,7 @@ export class InventoryService {
       });
 
       if (!category || !category.active) {
-        throw new NotFoundException('Inventory category not found');
+        throw new AppNotFoundException(ErrorCode.INVENTORY_CATEGORY_NOT_FOUND);
       }
     }
 
@@ -337,9 +337,7 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     await this.prisma.club_inventory.update({
@@ -399,9 +397,7 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     const records = await this.prisma.inventory_history.findMany({

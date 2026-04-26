@@ -1,9 +1,12 @@
 import {
   Injectable,
-  NotFoundException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
+import {
+  AppNotFoundException,
+  AppBadRequestException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import PDFDocument from 'pdfkit';
 
@@ -144,21 +147,15 @@ export class MonthlyReportsPdfService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.REPORT_PDF_NOT_FOUND);
     }
 
     if (!['generated', 'submitted'].includes(report.status)) {
-      throw new BadRequestException(
-        `Cannot generate PDF for a report with status '${report.status}'. Only generated or submitted reports can be downloaded.`,
-      );
+      throw new AppBadRequestException(ErrorCode.REPORT_PDF_NOT_GENERATED);
     }
 
     if (!report.snapshot_data) {
-      throw new BadRequestException(
-        'Report has no snapshot data. Generate the report first.',
-      );
+      throw new AppBadRequestException(ErrorCode.REPORT_PDF_NO_SNAPSHOT);
     }
 
     // Cast to any to access include relations (Prisma types are inferred at compile time)

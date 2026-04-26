@@ -1,11 +1,14 @@
 import {
-  ForbiddenException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  AppNotFoundException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 const MAX_ACTIVE_TOKENS_PER_USER = 5;
 
@@ -114,11 +117,11 @@ export class FcmTokensService {
     });
 
     if (!existing) {
-      throw new NotFoundException('FCM token not found');
+      throw new AppNotFoundException(ErrorCode.FCM_TOKEN_NOT_FOUND);
     }
 
     if (existing.user_id !== userId) {
-      throw new ForbiddenException('You can only unregister your own tokens');
+      throw new AppForbiddenException(ErrorCode.FCM_TOKEN_FORBIDDEN);
     }
 
     await this.prisma.user_fcm_tokens.update({
@@ -142,11 +145,11 @@ export class FcmTokensService {
     });
 
     if (!existing) {
-      throw new NotFoundException('FCM token not found');
+      throw new AppNotFoundException(ErrorCode.FCM_TOKEN_NOT_FOUND);
     }
 
     if (existing.user_id !== userId) {
-      throw new ForbiddenException('You can only unregister your own tokens');
+      throw new AppForbiddenException(ErrorCode.FCM_TOKEN_FORBIDDEN);
     }
 
     await this.prisma.user_fcm_tokens.updateMany({

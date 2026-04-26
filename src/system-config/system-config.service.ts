@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { AppNotFoundException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -17,9 +19,7 @@ export class SystemConfigService {
     });
 
     if (!config) {
-      throw new NotFoundException(
-        `Configuracion con clave '${key}' no encontrada`,
-      );
+      throw new AppNotFoundException(ErrorCode.SYSTEM_CONFIG_NOT_FOUND);
     }
 
     return config;
@@ -31,9 +31,7 @@ export class SystemConfigService {
     });
 
     if (!existing) {
-      throw new NotFoundException(
-        `Configuracion con clave '${key}' no encontrada`,
-      );
+      throw new AppNotFoundException(ErrorCode.SYSTEM_CONFIG_NOT_FOUND);
     }
 
     return this.prisma.system_config.update({
