@@ -255,5 +255,21 @@
   "FOLDER_EVIDENCE_FILE_REQUIRED": "Um arquivo é obrigatório",
   "FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT": "A seção deve ter pelo menos um arquivo de evidência antes de enviar",
   "FOLDER_EVIDENCE_FILE_NOT_FOUND": "Arquivo de evidência não encontrado",
-  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Pasta de evidência não encontrada"
+  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Pasta de evidência não encontrada",
+  "CLASS_ENROLLMENT_NOT_FOUND": "Inscrição anual não encontrada para esta classe",
+  "CLASS_ACTIVE_YEAR_NOT_FOUND": "Não existe uma inscrição anual ativa para esta classe",
+  "CLASS_ENROLLMENT_AMBIGUOUS": "A solicitação é ambígua. Envie enrollmentId para selecionar a inscrição correta",
+  "CLASS_NOT_FOUND": "Classe não encontrada",
+  "CLASS_GM_INVESTITURE_REQUIRED": "Você precisa ter sido investido em pelo menos uma classe de Guias Maiores",
+  "CLASS_MAX_AVENTU_CONQUIS_ACTIVE": "Você já possui uma inscrição ativa em Aventureiros/Conquistadores",
+  "CLASS_MAX_GM_ACTIVE": "Você já possui 2 inscrições ativas em Guias Maiores",
+  "CLASS_ALREADY_ENROLLED": "O usuário já possui uma inscrição ativa para esta classe no ano eclesiástico indicado",
+  "CLASS_FILE_REQUIRED": "Um arquivo é obrigatório",
+  "CLASS_FILE_INVALID_TYPE": "Tipo de arquivo inválido. Permitidos: PDF, JPG, PNG, WEBP",
+  "CLASS_SECTION_NOT_FOUND": "Seção não encontrada nesta classe",
+  "CLASS_SECTION_PROGRESS_NOT_FOUND": "Progresso de seção não encontrado",
+  "CLASS_SECTION_ALREADY_SUBMITTED": "A seção já está com status '{status}' e não pode ser enviada",
+  "CLASS_SECTION_NO_EVIDENCE": "É necessário pelo menos um arquivo de evidência para enviar a seção para validação",
+  "CLASS_EVIDENCE_FILE_NOT_FOUND": "Arquivo de evidência não encontrado",
+  "CLASS_LEVEL_TOO_HIGH": "Você não pode se inscrever em uma classe superior ao seu nível atual"
 }

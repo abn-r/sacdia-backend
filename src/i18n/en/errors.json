@@ -255,5 +255,21 @@
   "FOLDER_EVIDENCE_FILE_REQUIRED": "File is required",
   "FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT": "Section must have at least one evidence file before submit",
   "FOLDER_EVIDENCE_FILE_NOT_FOUND": "Evidence file not found",
-  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Evidence folder not found"
+  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Evidence folder not found",
+  "CLASS_ENROLLMENT_NOT_FOUND": "Annual enrollment not found for this class",
+  "CLASS_ACTIVE_YEAR_NOT_FOUND": "No active annual enrollment exists for this class",
+  "CLASS_ENROLLMENT_AMBIGUOUS": "The request is ambiguous. Send enrollmentId to select the correct enrollment",
+  "CLASS_NOT_FOUND": "Class not found",
+  "CLASS_GM_INVESTITURE_REQUIRED": "You must have been invested in at least one Senior Guide class",
+  "CLASS_MAX_AVENTU_CONQUIS_ACTIVE": "You already have an active enrollment in Adventurers/Pathfinders",
+  "CLASS_MAX_GM_ACTIVE": "You already have 2 active enrollments in Senior Guides",
+  "CLASS_ALREADY_ENROLLED": "User already has an active enrollment for this class in the indicated ecclesiastical year",
+  "CLASS_FILE_REQUIRED": "File is required",
+  "CLASS_FILE_INVALID_TYPE": "Invalid file type. Allowed: PDF, JPG, PNG, WEBP",
+  "CLASS_SECTION_NOT_FOUND": "Section not found in this class",
+  "CLASS_SECTION_PROGRESS_NOT_FOUND": "Section progress not found",
+  "CLASS_SECTION_ALREADY_SUBMITTED": "Section is already in status '{status}' and cannot be submitted",
+  "CLASS_SECTION_NO_EVIDENCE": "At least one evidence file is required to submit a section for validation",
+  "CLASS_EVIDENCE_FILE_NOT_FOUND": "Evidence file not found",
+  "CLASS_LEVEL_TOO_HIGH": "You cannot enroll in a class above your current level"
 }

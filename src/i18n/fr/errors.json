@@ -255,5 +255,21 @@
   "FOLDER_EVIDENCE_FILE_REQUIRED": "Un fichier est requis",
   "FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT": "La section doit avoir au moins un fichier de preuve avant la soumission",
   "FOLDER_EVIDENCE_FILE_NOT_FOUND": "Fichier de preuve introuvable",
-  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Dossier de preuve introuvable"
+  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Dossier de preuve introuvable",
+  "CLASS_ENROLLMENT_NOT_FOUND": "Inscription annuelle introuvable pour cette classe",
+  "CLASS_ACTIVE_YEAR_NOT_FOUND": "Aucune inscription annuelle active n'existe pour cette classe",
+  "CLASS_ENROLLMENT_AMBIGUOUS": "La requête est ambiguë. Envoyez enrollmentId pour sélectionner l'inscription correcte",
+  "CLASS_NOT_FOUND": "Classe introuvable",
+  "CLASS_GM_INVESTITURE_REQUIRED": "Vous devez avoir été investi dans au moins une classe de Guides Supérieurs",
+  "CLASS_MAX_AVENTU_CONQUIS_ACTIVE": "Vous avez déjà une inscription active en Aventuriers/Conquérants",
+  "CLASS_MAX_GM_ACTIVE": "Vous avez déjà 2 inscriptions actives en Guides Supérieurs",
+  "CLASS_ALREADY_ENROLLED": "L'utilisateur a déjà une inscription active pour cette classe dans l'année ecclésiastique indiquée",
+  "CLASS_FILE_REQUIRED": "Un fichier est requis",
+  "CLASS_FILE_INVALID_TYPE": "Type de fichier invalide. Autorisés : PDF, JPG, PNG, WEBP",
+  "CLASS_SECTION_NOT_FOUND": "Section introuvable dans cette classe",
+  "CLASS_SECTION_PROGRESS_NOT_FOUND": "Progression de section introuvable",
+  "CLASS_SECTION_ALREADY_SUBMITTED": "La section est déjà au statut '{status}' et ne peut pas être soumise",
+  "CLASS_SECTION_NO_EVIDENCE": "Au moins un fichier de preuve est requis pour soumettre une section à la validation",
+  "CLASS_EVIDENCE_FILE_NOT_FOUND": "Fichier de preuve introuvable",
+  "CLASS_LEVEL_TOO_HIGH": "Vous ne pouvez pas vous inscrire dans une classe supérieure à votre niveau actuel"
 }
