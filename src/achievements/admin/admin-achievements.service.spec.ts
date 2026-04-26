@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { AdminAchievementsService } from './admin-achievements.service';
 import { AchievementsService } from '../achievements.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ErrorCode } from '../../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -120,7 +120,9 @@ describe('AdminAchievementsService', () => {
     it('should throw NotFoundException when category does not exist', async () => {
       mockPrismaService.achievement_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.updateCategory(999, { name: 'X' })).rejects.toThrow(NotFoundException);
+      await expect(service.updateCategory(999, { name: 'X' })).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -144,13 +146,17 @@ describe('AdminAchievementsService', () => {
       mockPrismaService.achievement_categories.findUnique.mockResolvedValue(mockCategory);
       mockPrismaService.achievements.count.mockResolvedValue(3); // 3 active achievements
 
-      await expect(service.deleteCategory(1)).rejects.toThrow(ConflictException);
+      await expect(service.deleteCategory(1)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_HAS_ACTIVE,
+      });
     });
 
     it('should throw NotFoundException when category to delete does not exist', async () => {
       mockPrismaService.achievement_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.deleteCategory(999)).rejects.toThrow(NotFoundException);
+      await expect(service.deleteCategory(999)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -193,7 +199,9 @@ describe('AdminAchievementsService', () => {
     it('should throw NotFoundException when category does not exist', async () => {
       mockPrismaService.achievement_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.createAchievement(createDto)).rejects.toThrow(NotFoundException);
+      await expect(service.createAchievement(createDto)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -221,7 +229,9 @@ describe('AdminAchievementsService', () => {
     it('should throw NotFoundException when achievement does not exist', async () => {
       mockAchievementsService.getAchievementDetail.mockResolvedValue(null);
 
-      await expect(service.updateAchievement(999, { name: 'X' })).rejects.toThrow(NotFoundException);
+      await expect(service.updateAchievement(999, { name: 'X' })).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_NOT_FOUND,
+      });
     });
 
     it('should re-validate criteria when both type and criteria are provided in update', async () => {
@@ -297,7 +307,7 @@ describe('AdminAchievementsService', () => {
 
       await expect(
         service.updateAchievement(1, { prerequisite_id: 2 }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.ACHIEVEMENT_CIRCULAR_PREREQUISITE });
     });
 
     it('should allow setting a valid (non-circular) prerequisite', async () => {
@@ -336,7 +346,7 @@ describe('AdminAchievementsService', () => {
 
       await expect(
         service.updateAchievement(1, { prerequisite_id: 999 }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.ACHIEVEMENT_PREREQUISITE_NOT_FOUND });
     });
   });
 
@@ -402,7 +412,9 @@ describe('AdminAchievementsService', () => {
         buffer: Buffer.from('jpg-data'),
       } as Express.Multer.File;
 
-      await expect(service.uploadBadgeImage(1, jpgFile)).rejects.toThrow(BadRequestException);
+      await expect(service.uploadBadgeImage(1, jpgFile)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE,
+      });
     });
 
     it('should throw BadRequestException when file size exceeds 2 MB', async () => {
@@ -422,7 +434,9 @@ describe('AdminAchievementsService', () => {
         buffer: Buffer.from('big-data'),
       } as Express.Multer.File;
 
-      await expect(service.uploadBadgeImage(1, oversizedFile)).rejects.toThrow(BadRequestException);
+      await expect(service.uploadBadgeImage(1, oversizedFile)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_BADGE_TOO_LARGE,
+      });
     });
 
     it('should support SVG file upload', async () => {

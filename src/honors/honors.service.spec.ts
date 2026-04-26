@@ -1,12 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HonorsService } from './honors.service';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { AchievementsService } from '../achievements/achievements.service';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -68,6 +64,14 @@ describe('HonorsService', () => {
         HonorsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        {
+          provide: AchievementsService,
+          useValue: {
+            emitEvent: jest
+              .fn()
+              .mockResolvedValue({ eventLogId: 1, queued: true }),
+          },
+        },
       ],
     }).compile();
 
@@ -127,7 +131,9 @@ describe('HonorsService', () => {
     it('should throw NotFoundException when honor not found', async () => {
       mockPrismaService.honors.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.HONOR_NOT_FOUND,
+      });
     });
   });
 
@@ -270,9 +276,9 @@ describe('HonorsService', () => {
         existingUserHonor,
       );
 
-      await expect(service.startHonor('user-123', 1)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.startHonor('user-123', 1)).rejects.toMatchObject({
+        code: ErrorCode.HONOR_USER_ALREADY_IN_PROGRESS,
+      });
     });
   });
 
@@ -348,7 +354,7 @@ describe('HonorsService', () => {
         service.createUserHonorsBulk('user-123', {
           honors: [{ honorId: 10 }, { honorId: 10 }],
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_BULK_DUPLICATE_IDS });
     });
 
     it('should create or update honors in bulk', async () => {
@@ -391,7 +397,7 @@ describe('HonorsService', () => {
     it('should throw when no files are provided', async () => {
       await expect(
         service.uploadUserHonorFiles('user-123', 15, {}),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_REQUIRED });
     });
 
     it('should upload files to R2 and persist generated URLs', async () => {
@@ -520,7 +526,7 @@ describe('HonorsService', () => {
           certificate: [certificateFile],
           images: [image1],
         }),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_UPLOAD_FAILED });
 
       expect(mockPrismaService.users_honors.upsert).not.toHaveBeenCalled();
       expect(mockFileStorageService.deleteMany).toHaveBeenCalledWith(
@@ -574,7 +580,7 @@ describe('HonorsService', () => {
           certificate: [certificateFile],
           images: [image1],
         }),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_UPLOAD_FAILED });
 
       expect(mockFileStorageService.deleteMany).toHaveBeenNthCalledWith(
         1,
