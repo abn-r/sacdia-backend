@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FinancesService } from './finances.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { FinancePeriodService } from './finance-period.service';
 
 describe('FinancesService', () => {
@@ -106,7 +107,9 @@ describe('FinancesService', () => {
     it('should throw NotFoundException when club not found', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.findByClub(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findByClub(999)).rejects.toMatchObject({
+        code: ErrorCode.FINANCE_CLUB_NOT_FOUND,
+      });
     });
   });
 
@@ -169,7 +172,9 @@ describe('FinancesService', () => {
     it('should throw NotFoundException when not found', async () => {
       mockPrismaService.finances.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.FINANCE_TRANSACTION_NOT_FOUND,
+      });
     });
   });
 
