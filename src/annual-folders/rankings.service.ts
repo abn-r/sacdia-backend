@@ -1,13 +1,16 @@
 import {
-  ConflictException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -106,9 +109,7 @@ export class RankingsService {
     const acquired = await this.lockService.tryAcquire(lockKey, 10 * 60 * 1000);
 
     if (!acquired) {
-      throw new ConflictException(
-        'Ranking recalculation already in progress for this year',
-      );
+      throw new AppConflictException(ErrorCode.ANNUAL_FOLDER_RANKINGS_LOCK_CONFLICT);
     }
 
     try {
@@ -337,9 +338,7 @@ export class RankingsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${clubEnrollmentId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND, { id: clubEnrollmentId });
     }
 
     const records = await this.prisma.club_annual_rankings.findMany({
@@ -394,9 +393,7 @@ export class RankingsService {
         where: { year_id: yearId },
       });
       if (!year) {
-        throw new NotFoundException(
-          `Ecclesiastical year with ID ${yearId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, { id: yearId });
       }
       return year;
     }
@@ -407,7 +404,7 @@ export class RankingsService {
     });
 
     if (!activeYear) {
-      throw new NotFoundException('No active ecclesiastical year found');
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, { id: 'active' });
     }
 
     return activeYear;

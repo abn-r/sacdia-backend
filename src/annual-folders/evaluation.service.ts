@@ -1,9 +1,6 @@
 import {
-  BadRequestException,
-  ForbiddenException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import {
   annual_folder_section_status_enum,
@@ -11,6 +8,12 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfirmUnionDto, EvaluateSectionDto } from './dto';
+import {
+  AppBadRequestException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class EvaluationService {
@@ -61,9 +64,7 @@ export class EvaluationService {
       });
 
       if (!folder) {
-        throw new NotFoundException(
-          `Annual folder with ID ${folderId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
       }
 
       // Validate folder status allows evaluation
@@ -71,9 +72,7 @@ export class EvaluationService {
         folder.status !== 'submitted' &&
         folder.status !== 'under_evaluation'
       ) {
-        throw new BadRequestException(
-          `Cannot evaluate a folder with status '${folder.status}'. Folder must be 'submitted' or 'under_evaluation'.`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE, { status: folder.status });
       }
 
       // Validate section belongs to folder's template
@@ -82,16 +81,15 @@ export class EvaluationService {
       );
 
       if (!section) {
-        throw new NotFoundException(
-          `Section ${sectionId} does not belong to this folder's template`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE, { sectionId });
       }
 
       // Validate earned_points does not exceed section max_points
       if (dto.earned_points > section.max_points) {
-        throw new BadRequestException(
-          `earned_points (${dto.earned_points}) exceeds section max_points (${section.max_points})`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_EARNED_POINTS_EXCEED_MAX, {
+          earnedPoints: dto.earned_points,
+          maxPoints: section.max_points,
+        });
       }
 
       // Fetch pre-existing row (created eagerly at folder creation by T-B2-1)
@@ -106,27 +104,24 @@ export class EvaluationService {
         });
 
       if (!existingEval) {
-        throw new BadRequestException(
-          `Evaluation row for section ${sectionId} not found — eager creation (T-B2-1) may not have run`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND, { sectionId });
       }
 
       // Guard: only SUBMITTED and PREAPPROVED_LF rows may be evaluated by LF
       if (
         existingEval.status === annual_folder_section_status_enum.PENDING
       ) {
-        throw new BadRequestException(
-          `Section ${sectionId} is in PENDING state — it must be submitted by the club user before evaluation`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_PENDING, { sectionId });
       }
 
       if (
         existingEval.status === annual_folder_section_status_enum.VALIDATED ||
         existingEval.status === annual_folder_section_status_enum.REJECTED
       ) {
-        throw new BadRequestException(
-          `Section ${sectionId} is in ${existingEval.status} state — reopen required before re-evaluation`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_TERMINAL, {
+          sectionId,
+          status: existingEval.status,
+        });
       }
 
       // Compute new status based on union confirmation requirement
@@ -271,9 +266,7 @@ export class EvaluationService {
     const hasUnionRole = UNION_TIER_ROLES.some((r) => actorRoleNames.has(r));
 
     if (!hasUnionRole) {
-      throw new ForbiddenException(
-        'Only director-union or assistant-union can confirm evaluations at the union tier',
-      );
+      throw new AppForbiddenException(ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED);
     }
     // ──────────────────────────────────────────────────────────────────────
 
@@ -298,16 +291,12 @@ export class EvaluationService {
       });
 
       if (!folder) {
-        throw new NotFoundException(
-          `Annual folder with ID ${folderId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
       }
 
       // Precondition: folder must require union confirmation
       if (!folder.requires_union_confirmation) {
-        throw new BadRequestException(
-          'This folder does not require union confirmation',
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_UNION_CONFIRMATION_NOT_REQUIRED);
       }
 
       // Load the evaluation row
@@ -322,9 +311,7 @@ export class EvaluationService {
         });
 
       if (!existingEval) {
-        throw new BadRequestException(
-          `Evaluation row for section ${sectionId} not found — eager creation (T-B2-1) may not have run`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND, { sectionId });
       }
 
       // Precondition: evaluation must be in PREAPPROVED_LF
@@ -332,16 +319,12 @@ export class EvaluationService {
         existingEval.status !==
         annual_folder_section_status_enum.PREAPPROVED_LF
       ) {
-        throw new BadRequestException(
-          `Section must be in PREAPPROVED_LF state to be confirmed by union (current: ${existingEval.status})`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_PREAPPROVED, { status: existingEval.status });
       }
 
       // Defensive sanity check: LF fields must be populated
       if (!existingEval.lf_approved_at || !existingEval.lf_approved_by) {
-        throw new BadRequestException(
-          `Section ${sectionId} is missing LF approval data — lf_approved_by and lf_approved_at must be set`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_MISSING_LF_DATA, { sectionId });
       }
 
       // Compute new status
@@ -454,9 +437,7 @@ export class EvaluationService {
       });
 
       if (!folder) {
-        throw new NotFoundException(
-          `Annual folder with ID ${folderId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
       }
 
       // Validate folder status allows reopening
@@ -464,9 +445,7 @@ export class EvaluationService {
         folder.status !== 'under_evaluation' &&
         folder.status !== 'evaluated'
       ) {
-        throw new BadRequestException(
-          `Cannot reopen a section in a folder with status '${folder.status}'. Folder must be 'under_evaluation' or 'evaluated'.`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN, { status: folder.status });
       }
 
       // Find the existing evaluation
@@ -480,9 +459,7 @@ export class EvaluationService {
       });
 
       if (!existing) {
-        throw new NotFoundException(
-          `No evaluation found for section ${sectionId} in this folder`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND, { sectionId });
       }
 
       // Guard: cannot reopen a row already in PENDING or SUBMITTED
@@ -492,9 +469,7 @@ export class EvaluationService {
         annual_folder_section_status_enum.PREAPPROVED_LF,
       ];
       if (!reopenableStatuses.includes(existing.status)) {
-        throw new BadRequestException(
-          `Cannot reopen section evaluation with status '${existing.status}'. Only VALIDATED, REJECTED, or PREAPPROVED_LF rows can be reopened.`,
-        );
+        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_REOPENABLE, { status: existing.status });
       }
 
       this.logger.log(
@@ -564,9 +539,7 @@ export class EvaluationService {
     });
 
     if (!folder) {
-      throw new NotFoundException(
-        `Annual folder with ID ${folderId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
     }
 
     const evaluations =
@@ -626,7 +599,7 @@ export class EvaluationService {
     });
 
     if (!folder) {
-      throw new NotFoundException(`Annual folder ${folderId} not found`);
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
     }
 
     const sections = await tx.folder_template_sections.findMany({
