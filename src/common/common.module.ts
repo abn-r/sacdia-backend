@@ -12,6 +12,7 @@ import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { DistributedLockService } from './services/distributed-lock.service';
 import { CronRunLogger } from './services/cron-run-logger.service';
+import { TranslationService } from './services/translation.service';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 
@@ -100,6 +101,10 @@ function isPlaceholderRedisUrl(value: string): boolean {
     // ==========================================
     CronRunLogger,
     // ==========================================
+    // I18N — Pilot translation helper (Approach X)
+    // ==========================================
+    TranslationService,
+    // ==========================================
     // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
     // Order: AllExceptionsFilter registered FIRST (lower priority),
     // HttpExceptionFilter registered SECOND (higher priority for @Catch(HttpException)).
@@ -125,6 +130,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     FILE_STORAGE_SERVICE,
     DistributedLockService,
     CronRunLogger,
+    TranslationService,
   ],
 })
 export class CommonModule {}
