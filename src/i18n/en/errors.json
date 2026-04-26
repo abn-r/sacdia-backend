@@ -350,5 +350,12 @@
   "POST_REG_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
   "POST_REG_MEMBER_ROLE_NOT_FOUND": "Role 'member' not found in the system",
   "POST_REG_ASSIGNMENT_FAILED": "Could not resolve club membership assignment",
-  "POST_REG_ENROLLMENT_FAILED": "Could not resolve the operational annual enrollment"
+  "POST_REG_ENROLLMENT_FAILED": "Could not resolve the operational annual enrollment",
+  "LEGAL_REP_NOT_REQUIRED": "User is over 18 years old and does not require a legal representative",
+  "LEGAL_REP_ALREADY_EXISTS": "User already has a registered legal representative",
+  "LEGAL_REP_DATA_REQUIRED": "You must provide the registered representative ID or complete data (name, paternal last name, phone)",
+  "LEGAL_REP_USER_NOT_FOUND": "Representative user not found",
+  "LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND": "Relationship type not found",
+  "LEGAL_REP_OWNER_NOT_FOUND": "User not found",
+  "LEGAL_REP_NOT_FOUND": "Legal representative not found"
 }

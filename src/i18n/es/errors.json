@@ -350,5 +350,12 @@
   "POST_REG_NO_ACTIVE_YEAR": "No hay año eclesiástico activo configurado",
   "POST_REG_MEMBER_ROLE_NOT_FOUND": "El rol 'member' no fue encontrado en el sistema",
   "POST_REG_ASSIGNMENT_FAILED": "No se pudo resolver la asignación de membresía del club",
-  "POST_REG_ENROLLMENT_FAILED": "No se pudo resolver la inscripción anual operativa"
+  "POST_REG_ENROLLMENT_FAILED": "No se pudo resolver la inscripción anual operativa",
+  "LEGAL_REP_NOT_REQUIRED": "El usuario es mayor de 18 años y no requiere representante legal",
+  "LEGAL_REP_ALREADY_EXISTS": "El usuario ya tiene un representante legal registrado",
+  "LEGAL_REP_DATA_REQUIRED": "Debe proporcionar el ID del representante registrado o los datos completos (nombre, apellido paterno, teléfono)",
+  "LEGAL_REP_USER_NOT_FOUND": "Usuario representante no encontrado",
+  "LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND": "Tipo de relación no encontrado",
+  "LEGAL_REP_OWNER_NOT_FOUND": "Usuario no encontrado",
+  "LEGAL_REP_NOT_FOUND": "Representante legal no encontrado"
 }
