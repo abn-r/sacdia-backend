@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
 
@@ -218,7 +218,7 @@ describe('FcmTokensService', () => {
 
       await expect(
         service.unregisterToken('missing-token', 'user-1'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.FCM_TOKEN_NOT_FOUND });
     });
 
     it('should throw ForbiddenException when token belongs to another user', async () => {
@@ -229,7 +229,7 @@ describe('FcmTokensService', () => {
 
       await expect(
         service.unregisterToken('fcm-token', 'user-1'),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.FCM_TOKEN_FORBIDDEN });
     });
 
     it('should unregister token when user owns it', async () => {

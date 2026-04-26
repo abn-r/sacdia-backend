@@ -1,10 +1,9 @@
 import {
-  ConflictException,
   GoneException,
   HttpException,
-  NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { DataExportService } from './data-export.service';
 
 const mockPrisma = {
@@ -200,7 +199,9 @@ describe('DataExportService', () => {
 
     it('throws NotFoundException when export not found', async () => {
       mockPrisma.data_export_requests.findUnique.mockResolvedValueOnce(null);
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toThrow(NotFoundException);
+      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+        code: ErrorCode.EXPORT_NOT_FOUND,
+      });
     });
 
     it('throws NotFoundException on cross-user access', async () => {
@@ -211,7 +212,9 @@ describe('DataExportService', () => {
         r2_key: 'some/key',
         expires_at: new Date(Date.now() + 3600 * 1000),
       });
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toThrow(NotFoundException);
+      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+        code: ErrorCode.EXPORT_NOT_FOUND,
+      });
     });
 
     it('throws ConflictException when status is pending', async () => {
@@ -222,7 +225,9 @@ describe('DataExportService', () => {
         r2_key: null,
         expires_at: null,
       });
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toThrow(ConflictException);
+      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+        code: ErrorCode.EXPORT_ALREADY_PROCESSING,
+      });
     });
 
     it('throws ConflictException when status is processing', async () => {
@@ -233,7 +238,9 @@ describe('DataExportService', () => {
         r2_key: null,
         expires_at: null,
       });
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toThrow(ConflictException);
+      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+        code: ErrorCode.EXPORT_ALREADY_PROCESSING,
+      });
     });
 
     it('throws GoneException when status is expired', async () => {
