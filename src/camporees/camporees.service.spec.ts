@@ -3,7 +3,7 @@ import { CamporeesService } from './camporees.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AchievementsService } from '../achievements/achievements.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CamporeeMembersPaginationDto } from './dto/camporee-members-pagination.dto';
@@ -183,7 +183,7 @@ describe('CamporeesService', () => {
     it('should throw NotFoundException if camporee not found', async () => {
       mockPrismaService.local_camporees.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
     });
   });
 
@@ -270,9 +270,7 @@ describe('CamporeesService', () => {
 
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
 
-      await expect(service.create(createDto, 'user1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.create(createDto, 'user1')).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_YEAR_NOT_ACTIVE });
     });
 
     it('should throw BadRequestException if local field not found', async () => {
@@ -295,9 +293,7 @@ describe('CamporeesService', () => {
       });
       mockPrismaService.local_fields.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(createDto, 'user1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.create(createDto, 'user1')).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_LOCAL_FIELD_NOT_FOUND });
     });
   });
 
@@ -334,9 +330,7 @@ describe('CamporeesService', () => {
     it('should throw NotFoundException if camporee not found', async () => {
       mockPrismaService.local_camporees.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(999, { name: 'Test' })).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.update(999, { name: 'Test' })).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
     });
   });
 
@@ -455,9 +449,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(999, registerDto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.registerMember(999, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
     });
 
     it('should throw BadRequestException if camporee is not active', async () => {
@@ -479,9 +471,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_ACTIVE });
     });
 
     it('should throw BadRequestException if insurance type is not CAMPOREE', async () => {
@@ -520,9 +510,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID });
     });
 
     it('should throw BadRequestException if insurance expires before camporee ends', async () => {
@@ -561,9 +549,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_EXPIRED });
     });
   });
 
@@ -854,9 +840,7 @@ describe('CamporeesService', () => {
     it('should throw NotFoundException if camporee does not exist', async () => {
       mockPrismaService.local_camporees.findUnique.mockResolvedValue(null);
 
-      await expect(service.removeMember(999, 'user-uuid-1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.removeMember(999, 'user-uuid-1')).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
     });
 
     it('should throw NotFoundException if member is not registered in camporee', async () => {
@@ -865,9 +849,7 @@ describe('CamporeesService', () => {
       );
       mockPrismaService.camporee_members.findFirst.mockResolvedValue(null);
 
-      await expect(service.removeMember(1, 'nonexistent-user')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.removeMember(1, 'nonexistent-user')).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_MEMBER_NOT_FOUND });
     });
 
     it('should search registration with correct filter (active: true)', async () => {
@@ -920,9 +902,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_USER_NOT_FOUND });
     });
 
     it('should throw BadRequestException if user is already registered', async () => {
@@ -956,9 +936,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_MEMBER_ALREADY_REGISTERED });
     });
 
     it('should throw BadRequestException if insurance not found', async () => {
@@ -991,9 +969,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND });
     });
 
     it('should throw BadRequestException if insurance belongs to a different user', async () => {
@@ -1032,9 +1008,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER });
     });
 
     it('should throw BadRequestException if insurance is not active', async () => {
@@ -1073,9 +1047,7 @@ describe('CamporeesService', () => {
         return callback(tx);
       });
 
-      await expect(service.registerMember(1, registerDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.registerMember(1, registerDto)).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE });
     });
 
     it('should register member without insurance when insurance_id is not provided', async () => {

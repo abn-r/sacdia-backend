@@ -1,13 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClassesService } from './classes.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
+import { AchievementsService } from '../achievements/achievements.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 describe('ClassesService', () => {
   let service: ClassesService;
@@ -34,6 +30,12 @@ describe('ClassesService', () => {
     ecclesiastical_years: { findFirst: jest.fn() },
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
     class_section_progress: { findMany: jest.fn() },
+    club_types: {
+      findMany: jest.fn().mockResolvedValue([
+        { club_type_id: 1 },
+        { club_type_id: 2 },
+      ]),
+    },
   };
 
   beforeEach(async () => {
@@ -76,6 +78,7 @@ describe('ClassesService', () => {
         ClassesService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        { provide: AchievementsService, useValue: { emitEvent: jest.fn().mockResolvedValue({ eventLogId: 1, queued: true }) } },
       ],
     }).compile();
 
@@ -163,9 +166,7 @@ describe('ClassesService', () => {
       });
       mockPrismaService.enrollments.findMany.mockResolvedValue([]);
 
-      await expect(service.getUserProgress('user-1', 7)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getUserProgress('user-1', 7)).rejects.toMatchObject({ code: ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND });
     });
 
     it('throws conflict when class-scoped resolution is ambiguous', async () => {
@@ -177,9 +178,7 @@ describe('ClassesService', () => {
         { enrollment_id: 2 },
       ]);
 
-      await expect(service.getUserProgress('user-1', 7)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.getUserProgress('user-1', 7)).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_AMBIGUOUS });
     });
   });
 
@@ -357,9 +356,7 @@ describe('ClassesService', () => {
         activeCount: 1,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE });
     });
 
     it('should block Aventureros enrollment when 1 active Conquistadores enrollment exists', async () => {
@@ -375,9 +372,7 @@ describe('ClassesService', () => {
         activeCount: 1,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE });
     });
 
     it('should block GM class with requires_invested_gm when no prior investiture', async () => {
@@ -393,9 +388,7 @@ describe('ClassesService', () => {
         findFirstResults: [null],
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_GM_INVESTITURE_REQUIRED });
     });
 
     it('should allow GM class with requires_invested_gm when INVESTIDO exists', async () => {
@@ -460,9 +453,7 @@ describe('ClassesService', () => {
         activeCount: 2,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_GM_ACTIVE });
     });
 
     it('should block reactivation when enrollment limit is reached', async () => {
@@ -479,9 +470,7 @@ describe('ClassesService', () => {
         existingEnrollment: { enrollment_id: 5, active: false },
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE });
     });
 
     it('should allow reactivation when under enrollment limit', async () => {
@@ -528,9 +517,7 @@ describe('ClassesService', () => {
         targetClass: null,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_NOT_FOUND });
     });
 
     it('should throw ConflictException when enrollment already exists and is active (regression)', async () => {
@@ -546,9 +533,7 @@ describe('ClassesService', () => {
         existingEnrollment: { enrollment_id: 7, active: true },
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
     });
 
     // ========================================
@@ -579,7 +564,7 @@ describe('ClassesService', () => {
 
         await expect(
           service.enrollUser(userId, classId, yearId),
-        ).rejects.toThrow(BadRequestException);
+        ).rejects.toMatchObject({ code: ErrorCode.CLASS_LEVEL_TOO_HIGH });
       });
 
       it('should allow enrollment when target display_order equals highest INVESTIDO + 1', async () => {
@@ -653,7 +638,7 @@ describe('ClassesService', () => {
 
         await expect(
           service.enrollUser(userId, classId, yearId),
-        ).rejects.toThrow(BadRequestException);
+        ).rejects.toMatchObject({ code: ErrorCode.CLASS_LEVEL_TOO_HIGH });
       });
 
       it('should allow enrollment at base class level when no INVESTIDO exists', async () => {
@@ -720,7 +705,7 @@ describe('ClassesService', () => {
 
         await expect(
           service.enrollUser(userId, classId, yearId),
-        ).rejects.toThrow(BadRequestException);
+        ).rejects.toMatchObject({ code: ErrorCode.CLASS_LEVEL_TOO_HIGH });
       });
 
       it('should allow first-ever enrollment regardless of display_order (post-registration)', async () => {

@@ -1,10 +1,6 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
+import { AchievementsService } from '../achievements/achievements.service';
 import { InvestitureService } from './investiture.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -133,6 +129,10 @@ describe('InvestitureService', () => {
           provide: NotificationsService,
           useValue: mockNotificationsService,
         },
+        {
+          provide: AchievementsService,
+          useValue: { emitEvent: jest.fn().mockResolvedValue({ eventLogId: 1, queued: true }) },
+        },
       ],
     }).compile();
 
@@ -182,7 +182,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.submitForValidation(999, 'user-abc', dto),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC04 - error: enrollment inactive -> NotFoundException', async () => {
@@ -193,7 +193,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.submitForValidation(1, 'user-abc', dto),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC05 - error: wrong state (CLUB_APPROVED) -> BadRequestException', async () => {
@@ -204,7 +204,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.submitForValidation(1, 'user-abc', dto),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
 
     it('TC06 - error: no investiture_config -> NotFoundException', async () => {
@@ -216,7 +216,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.submitForValidation(1, 'user-abc', dto),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_CONFIG_NOT_FOUND });
     });
 
     it('TC07 - soft deadline: past deadline returns is_late=true but succeeds', async () => {
@@ -269,9 +269,7 @@ describe('InvestitureService', () => {
         investiture_status: 'IN_PROGRESS',
       });
 
-      await expect(service.clubApprove(1, 'director-123', dto)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.clubApprove(1, 'director-123', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
 
     it('TC10 - error: enrollment not found -> NotFoundException', async () => {
@@ -279,7 +277,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.clubApprove(999, 'director-123', dto),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND });
     });
   });
 
@@ -324,7 +322,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.coordinatorApprove(1, 'coordinator-456', dto),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
   });
 
@@ -365,7 +363,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.fieldApprove(1, 'field-admin-789', dto),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
   });
 
@@ -453,9 +451,7 @@ describe('InvestitureService', () => {
         investiture_status: 'IN_PROGRESS',
       });
 
-      await expect(service.reject(1, 'admin-xyz', dto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.reject(1, 'admin-xyz', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
 
     it('TC20 - error: cannot reject INVESTIDO -> BadRequestException', async () => {
@@ -464,17 +460,13 @@ describe('InvestitureService', () => {
         investiture_status: 'INVESTIDO',
       });
 
-      await expect(service.reject(1, 'admin-xyz', dto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.reject(1, 'admin-xyz', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
 
     it('TC21 - error: enrollment not found -> NotFoundException', async () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
 
-      await expect(service.reject(999, 'admin-xyz', dto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.reject(999, 'admin-xyz', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC22 - verify: rejection unlocks enrollment', async () => {
@@ -543,7 +535,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.markInvestido(999, 'admin-xyz', dto),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC25 - error: already INVESTIDO -> ConflictException', async () => {
@@ -552,9 +544,7 @@ describe('InvestitureService', () => {
         investiture_status: 'INVESTIDO',
       });
 
-      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_ALREADY_INVESTIDO });
     });
 
     it('TC26 - error: wrong state (SUBMITTED_FOR_VALIDATION) -> BadRequestException', async () => {
@@ -563,9 +553,7 @@ describe('InvestitureService', () => {
         investiture_status: 'SUBMITTED_FOR_VALIDATION',
       });
 
-      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
 
     it('TC27 - error: wrong state (COORDINATOR_APPROVED) -> BadRequestException', async () => {
@@ -574,9 +562,7 @@ describe('InvestitureService', () => {
         investiture_status: 'COORDINATOR_APPROVED',
       });
 
-      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
 
     it('TC28 - error: no investiture_config -> NotFoundException', async () => {
@@ -585,9 +571,7 @@ describe('InvestitureService', () => {
       );
       mockPrismaService.investiture_config.findFirst.mockResolvedValue(null);
 
-      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.markInvestido(1, 'admin-xyz', dto)).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_CONFIG_NOT_FOUND });
     });
   });
 
@@ -657,7 +641,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.validateEnrollment(999, 'admin-xyz', dto),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC32 - error: wrong state (IN_PROGRESS) -> ConflictException', async () => {
@@ -672,7 +656,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.validateEnrollment(1, 'admin-xyz', dto),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION });
     });
 
     it('TC33 - error: REJECTED without comments -> BadRequestException', async () => {
@@ -687,7 +671,7 @@ describe('InvestitureService', () => {
 
       await expect(
         service.validateEnrollment(1, 'admin-xyz', dto),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVESTITURE_REJECT_COMMENTS_REQUIRED });
     });
   });
 
