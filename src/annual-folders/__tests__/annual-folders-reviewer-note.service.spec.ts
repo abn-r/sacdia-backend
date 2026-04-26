@@ -68,6 +68,7 @@ describe('AnnualFoldersService — setReviewerNote', () => {
 
   const mockFileStorageService = {
     upload: jest.fn(),
+    getSignedDownloadUrl: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -85,6 +86,11 @@ describe('AnnualFoldersService — setReviewerNote', () => {
 
     // Default: super_admin bypass (simplest path through territory check)
     mockPrismaService.users_roles.findFirst.mockResolvedValue({ user_role_id: 'sa-role-id' });
+
+    // Default: presign returns the key unchanged (keeps existing assertions valid)
+    mockFileStorageService.getSignedDownloadUrl.mockImplementation(
+      (_bucket: unknown, key: string) => Promise.resolve(key),
+    );
   });
 
   it('should be defined', () => {

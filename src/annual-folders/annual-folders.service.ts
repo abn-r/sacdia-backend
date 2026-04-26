@@ -543,7 +543,7 @@ export class AnnualFoldersService {
       { contentType: file.mimetype },
     );
 
-    return this.prisma.annual_folder_evidences.create({
+    const created = await this.prisma.annual_folder_evidences.create({
       data: {
         annual_folder_id: folderId,
         section_id: sectionId,
@@ -563,6 +563,8 @@ export class AnnualFoldersService {
         },
       },
     });
+
+    return this.presignSingleEvidence(created);
   }
 
   /**
@@ -917,7 +919,7 @@ export class AnnualFoldersService {
       throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_MUTATION, { status: evidence.annual_folder.status });
     }
 
-    return this.prisma.annual_folder_evidences.update({
+    const updated = await this.prisma.annual_folder_evidences.update({
       where: { evidence_id: evidenceId },
       data: {
         ...(dto.file_url !== undefined && { file_url: dto.file_url }),
@@ -935,6 +937,8 @@ export class AnnualFoldersService {
         },
       },
     });
+
+    return this.presignSingleEvidence(updated);
   }
 
   /**
@@ -1002,7 +1006,7 @@ export class AnnualFoldersService {
       dto.reviewer_note !== undefined &&
       dto.reviewer_note.trim().length > 0;
 
-    return this.prisma.annual_folder_evidences.update({
+    const noted = await this.prisma.annual_folder_evidences.update({
       where: { evidence_id: evidenceId },
       data: {
         reviewer_note: hasNote ? dto.reviewer_note!.trim() : null,
@@ -1027,6 +1031,8 @@ export class AnnualFoldersService {
         },
       },
     });
+
+    return this.presignSingleEvidence(noted);
   }
 
   // ========================================
@@ -1400,6 +1406,30 @@ export class AnnualFoldersService {
         }),
       ),
     );
+  }
+
+  /**
+   * Presign the file_url of a single evidence record in-place.
+   *
+   * Mirrors presignFolderEvidences for single-evidence return paths
+   * (uploadEvidence, updateEvidence, setReviewerNote). Uses the same
+   * EVIDENCE_FILES_URL_LIMITER pool so all presign calls share one cap.
+   * Failure is non-fatal: the original key is kept on error.
+   */
+  private async presignSingleEvidence<T extends { file_url: string }>(
+    evidence: T,
+  ): Promise<T> {
+    await EVIDENCE_FILES_URL_LIMITER(async () => {
+      try {
+        evidence.file_url = await this.fileStorage.getSignedDownloadUrl(
+          StorageBucketAlias.EVIDENCE_FILES,
+          evidence.file_url,
+        );
+      } catch {
+        // Non-fatal: keep original key so the client knows a file exists.
+      }
+    });
+    return evidence;
   }
 
   /**
