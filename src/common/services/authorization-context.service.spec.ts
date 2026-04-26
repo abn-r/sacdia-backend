@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthorizationContextService } from './authorization-context.service';
+import { ErrorCode } from '../errors/error-codes';
 
 describe('AuthorizationContextService', () => {
   let service: AuthorizationContextService;
@@ -39,7 +39,7 @@ describe('AuthorizationContextService', () => {
 
     await expect(
       service.resolveUserAuthorization('missing-user'),
-    ).rejects.toThrow(UnauthorizedException);
+    ).rejects.toMatchObject({ code: ErrorCode.AUTH_CONTEXT_USER_NOT_FOUND });
   });
 
   it('should resolve canonical authorization payload with active assignment and structured scope', async () => {

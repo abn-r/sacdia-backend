@@ -1,7 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ClubRolesGuard } from './club-roles.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
+import { ErrorCode } from '../errors/error-codes';
 
 describe('ClubRolesGuard', () => {
   const mockReflector = {
@@ -92,7 +92,7 @@ describe('ClubRolesGuard', () => {
 
     await expect(
       guard.canActivate(createContext({ user: { sub: 'user-123' } })),
-    ).rejects.toThrow(new ForbiddenException('Club ID not found in request'));
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_ID_REQUIRED });
   });
 
   it('should reject when the active assignment belongs to another club', async () => {
@@ -124,11 +124,7 @@ describe('ClubRolesGuard', () => {
       guard.canActivate(
         createContext({ user: { sub: 'user-123' }, params: { clubId: '10' } }),
       ),
-    ).rejects.toThrow(
-      new ForbiddenException(
-        'You need an active club assignment for this club',
-      ),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
   });
 
   it('should reject when the active club role does not satisfy the required roles', async () => {
@@ -160,8 +156,6 @@ describe('ClubRolesGuard', () => {
       guard.canActivate(
         createContext({ user: { sub: 'user-123' }, params: { clubId: '10' } }),
       ),
-    ).rejects.toThrow(
-      new ForbiddenException('You need one of these club roles: treasurer'),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
   });
 });

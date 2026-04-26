@@ -1,7 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { GlobalRolesGuard } from './global-roles.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
+import { ErrorCode } from '../errors/error-codes';
 
 describe('GlobalRolesGuard', () => {
   const mockReflector = {
@@ -52,7 +52,7 @@ describe('GlobalRolesGuard', () => {
 
     await expect(
       guard.canActivate(createContext({})),
-    ).rejects.toThrow(new ForbiddenException('User not authenticated'));
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED });
   });
 
   it('should throw ForbiddenException when user has no sub claim', async () => {
@@ -60,7 +60,7 @@ describe('GlobalRolesGuard', () => {
 
     await expect(
       guard.canActivate(createContext({ user: {} })),
-    ).rejects.toThrow(new ForbiddenException('User not authenticated'));
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED });
   });
 
   it('should allow super_admin user when roles list does not include super_admin', async () => {
@@ -88,9 +88,7 @@ describe('GlobalRolesGuard', () => {
 
     await expect(
       guard.canActivate(createContext({ user: { sub: 'regular-user' } })),
-    ).rejects.toThrow(
-      new ForbiddenException('You need one of these global roles: admin, coordinator'),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
 
     expect(mockAuthorizationContext.isSuperAdmin).toHaveBeenCalledTimes(1);
     expect(mockAuthorizationContext.hasAnyGlobalRole).toHaveBeenCalledTimes(1);
@@ -132,8 +130,6 @@ describe('GlobalRolesGuard', () => {
 
     await expect(
       guard.canActivate(createContext({ user: { sub: 'user-123' } })),
-    ).rejects.toThrow(
-      new ForbiddenException('You need one of these global roles: admin'),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
   });
 });
