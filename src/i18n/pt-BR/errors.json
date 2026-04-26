@@ -161,5 +161,15 @@
   "AUTH_OAUTH_PROVIDER_NOT_CONNECTED": "O provedor OAuth não está conectado a esta conta",
   "AUTH_SESSION_NOT_FOUND": "Sessão não encontrada ou já expirada",
   "AUTH_SESSION_NOT_OWNED": "Você não é o proprietário desta sessão",
-  "AUTH_SESSION_IS_CURRENT": "Você não pode revogar sua sessão atual por este endpoint. Use POST /auth/logout"
+  "AUTH_SESSION_IS_CURRENT": "Você não pode revogar sua sessão atual por este endpoint. Use POST /auth/logout",
+  "EVIDENCE_REVIEW_TYPE_INVALID": "Tipo de evidência inválido: {type}",
+  "EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND": "Registro de pasta não encontrado",
+  "EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND": "Progresso de seção de classe não encontrado",
+  "EVIDENCE_REVIEW_RECORD_NOT_PENDING": "O registro não está em estado pendente para ser processado. Estado atual : {status}",
+  "EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED": "O registro já está rejeitado",
+  "EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED": "O registro já foi validado",
+  "EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND": "Honra do usuário não encontrada",
+  "EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING": "A honra não está em estado pendente para ser aprovada. Estado atual : {status}",
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED": "A honra já está rejeitada",
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "A honra já foi aprovada"
 }

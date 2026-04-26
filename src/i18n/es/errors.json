@@ -161,5 +161,15 @@
   "AUTH_OAUTH_PROVIDER_NOT_CONNECTED": "El proveedor OAuth no está conectado a esta cuenta",
   "AUTH_SESSION_NOT_FOUND": "Sesión no encontrada o ya expirada",
   "AUTH_SESSION_NOT_OWNED": "No sos el propietario de esta sesión",
-  "AUTH_SESSION_IS_CURRENT": "No podés revocar tu sesión actual desde este endpoint. Usá POST /auth/logout"
+  "AUTH_SESSION_IS_CURRENT": "No podés revocar tu sesión actual desde este endpoint. Usá POST /auth/logout",
+  "EVIDENCE_REVIEW_TYPE_INVALID": "Tipo de evidencia no válido: {type}",
+  "EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND": "Registro de carpeta no encontrado",
+  "EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND": "Progreso de sección de clase no encontrado",
+  "EVIDENCE_REVIEW_RECORD_NOT_PENDING": "El registro no está en estado pendiente para ser procesado. Estado actual : {status}",
+  "EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED": "El registro ya está rechazado",
+  "EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED": "El registro ya fue validado",
+  "EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND": "Honor de usuario no encontrado",
+  "EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING": "El honor no está en estado pendiente para ser aprobado. Estado actual : {status}",
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED": "El honor ya está rechazado",
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "El honor ya fue aprobado"
 }

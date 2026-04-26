@@ -161,5 +161,15 @@
   "AUTH_OAUTH_PROVIDER_NOT_CONNECTED": "OAuth provider is not connected to this account",
   "AUTH_SESSION_NOT_FOUND": "Session not found or already expired",
   "AUTH_SESSION_NOT_OWNED": "You do not own this session",
-  "AUTH_SESSION_IS_CURRENT": "Cannot revoke your current session via this endpoint. Use POST /auth/logout instead"
+  "AUTH_SESSION_IS_CURRENT": "Cannot revoke your current session via this endpoint. Use POST /auth/logout instead",
+  "EVIDENCE_REVIEW_TYPE_INVALID": "Invalid evidence type: {type}",
+  "EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND": "Folder record not found",
+  "EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND": "Class section progress not found",
+  "EVIDENCE_REVIEW_RECORD_NOT_PENDING": "Record is not in pending state for processing. Current status: {status}",
+  "EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED": "Record has already been rejected",
+  "EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED": "Record has already been validated",
+  "EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND": "User honor not found",
+  "EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING": "Honor is not in pending state for approval. Current status: {status}",
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED": "Honor has already been rejected",
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "Honor has already been approved"
 }
