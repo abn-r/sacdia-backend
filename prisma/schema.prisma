@@ -175,17 +175,33 @@ model class_module_progress {
 }
 
 model class_modules {
-  module_id      Int              @id @default(autoincrement())
-  name           String           @db.VarChar(255)
-  description    String?
-  class_id       Int
-  active         Boolean
-  created_at     DateTime         @default(now()) @db.Timestamptz(6)
-  modified_at    DateTime         @default(now()) @db.Timestamptz(6)
-  classes        classes          @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
-  class_sections class_sections[]
+  module_id              Int                          @id @default(autoincrement())
+  name                   String                       @db.VarChar(255)
+  description            String?
+  class_id               Int
+  active                 Boolean
+  created_at             DateTime                     @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime                     @default(now()) @db.Timestamptz(6)
+  classes                classes                      @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
+  class_sections         class_sections[]
+  translations           class_modules_translations[]
 
   @@unique([name, class_id])
+}
+
+model class_modules_translations {
+  id          Int           @id @default(autoincrement())
+  module_id   Int
+  locale      String        @db.VarChar(10)
+  name        String?       @db.VarChar(255)
+  description String?
+  created_at  DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime?     @default(now()) @db.Timestamptz(6)
+  class_modules class_modules @relation(fields: [module_id], references: [module_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([module_id, locale])
+  @@index([locale])
+  @@index([module_id])
 }
 
 model class_section_progress {
@@ -218,16 +234,32 @@ model class_section_progress {
 }
 
 model class_sections {
-  section_id    Int           @id @default(autoincrement())
-  name          String        @db.VarChar(255)
-  description   String?
-  module_id     Int
-  active        Boolean
-  created_at    DateTime      @default(now()) @db.Timestamptz(6)
-  modified_at   DateTime      @default(now()) @db.Timestamptz(6)
-  class_modules class_modules @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
+  section_id     Int                           @id @default(autoincrement())
+  name           String                        @db.VarChar(255)
+  description    String?
+  module_id      Int
+  active         Boolean
+  created_at     DateTime                      @default(now()) @db.Timestamptz(6)
+  modified_at    DateTime                      @default(now()) @db.Timestamptz(6)
+  class_modules  class_modules                 @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
+  translations   class_sections_translations[]
 
   @@unique([name, module_id])
+}
+
+model class_sections_translations {
+  id          Int            @id @default(autoincrement())
+  section_id  Int
+  locale      String         @db.VarChar(10)
+  name        String?        @db.VarChar(255)
+  description String?
+  created_at  DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime?      @default(now()) @db.Timestamptz(6)
+  class_sections class_sections @relation(fields: [section_id], references: [section_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([section_id, locale])
+  @@index([locale])
+  @@index([section_id])
 }
 
 model classes {
@@ -247,6 +279,22 @@ model classes {
   class_section_progress class_section_progress[]
   club_types             club_types               @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   enrollments            enrollments[]
+  translations           classes_translations[]
+}
+
+model classes_translations {
+  id          Int      @id @default(autoincrement())
+  class_id    Int
+  locale      String   @db.VarChar(10)
+  name        String?  @db.VarChar(255)
+  description String?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  classes     classes   @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([class_id, locale])
+  @@index([locale])
+  @@index([class_id])
 }
 
 model club_ideals {

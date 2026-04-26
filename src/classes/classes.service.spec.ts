@@ -3,6 +3,7 @@ import { ClassesService } from './classes.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { TranslationService } from '../common/services/translation.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { EVIDENCE_URL_LIMITER } from './classes.service';
 
@@ -74,12 +75,18 @@ describe('ClassesService', () => {
       getSignedDownloadUrl: jest.fn(),
     };
 
+    const mockTranslationService: Partial<TranslationService> = {
+      getCurrentLocale: jest.fn().mockReturnValue('es'),
+      translateMany: jest.fn().mockImplementation((records) => records),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClassesService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         { provide: AchievementsService, useValue: { emitEvent: jest.fn().mockResolvedValue({ eventLogId: 1, queued: true }) } },
+        { provide: TranslationService, useValue: mockTranslationService },
       ],
     }).compile();
 

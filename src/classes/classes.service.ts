@@ -8,6 +8,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, evidence_validation_enum } from '@prisma/client';
+import { TranslationService } from '../common/services/translation.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import {
   PaginationDto,
@@ -44,6 +45,7 @@ export class ClassesService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly achievementsService: AchievementsService,
+    private readonly translationService: TranslationService,
   ) {}
 
   private getSiblingClubTypeIds(): Promise<number[]> {
@@ -147,6 +149,7 @@ export class ClassesService {
     clubTypeId?: number,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
+    const locale = this.translationService.getCurrentLocale();
     const where = {
       active: true,
       ...(clubTypeId && { club_type_id: clubTypeId }),
@@ -158,6 +161,10 @@ export class ClassesService {
         include: {
           club_types: { select: { name: true } },
           _count: { select: { class_modules: true } },
+          translations: {
+            where: { locale },
+            select: { locale: true, name: true, description: true },
+          },
         },
         orderBy: [{ club_type_id: 'asc' }, { display_order: 'asc' }],
         skip: pagination?.skip ?? 0,
@@ -166,23 +173,45 @@ export class ClassesService {
       this.prisma.classes.count({ where }),
     ]);
 
-    return createPaginatedResult(
+    const translated = this.translationService.translateMany(
       data,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
+
+    return createPaginatedResult(
+      translated,
       total,
       pagination ?? new PaginationDto(),
     );
   }
 
   async findOne(classId: number) {
+    const locale = this.translationService.getCurrentLocale();
     const classData = await this.prisma.classes.findUnique({
       where: { class_id: classId },
       include: {
         club_types: { select: { name: true } },
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
         class_modules: {
           where: { active: true },
           include: {
+            translations: {
+              where: { locale },
+              select: { locale: true, name: true, description: true },
+            },
             class_sections: {
               where: { active: true },
+              include: {
+                translations: {
+                  where: { locale },
+                  select: { locale: true, name: true, description: true },
+                },
+              },
               orderBy: { section_id: 'asc' },
             },
           },
@@ -195,7 +224,35 @@ export class ClassesService {
       throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
     }
 
-    return classData;
+    // Translate the top-level class
+    const translatedClass = this.translationService.translateMany(
+      [classData],
+      locale,
+      ['name', 'description'],
+      'translations',
+    )[0];
+
+    // Translate nested modules and sections
+    if (translatedClass.class_modules) {
+      translatedClass.class_modules = this.translationService.translateMany(
+        translatedClass.class_modules,
+        locale,
+        ['name', 'description'],
+        'translations',
+      );
+      for (const mod of translatedClass.class_modules) {
+        if (mod.class_sections) {
+          mod.class_sections = this.translationService.translateMany(
+            mod.class_sections,
+            locale,
+            ['name', 'description'],
+            'translations',
+          );
+        }
+      }
+    }
+
+    return translatedClass;
   }
 
   async getModules(classId: number) {
