@@ -337,5 +337,18 @@
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Impossible d'attribuer ce rôle en raison d'un conflit d'exclusivité avec un autre rôle dans cette section",
   "CLUB_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role est requis pour cette opération",
-  "CLUB_ROLE_NOT_FOUND": "Rôle introuvable dans la catégorie CLUB"
+  "CLUB_ROLE_NOT_FOUND": "Rôle introuvable dans la catégorie CLUB",
+  "POST_REG_NOT_INITIATED": "Le post-enregistrement n'a pas été initié",
+  "POST_REG_PHOTO_REQUIRED": "Vous devez télécharger une photo de profil avant de terminer cette étape",
+  "POST_REG_USER_NOT_FOUND": "Utilisateur introuvable",
+  "POST_REG_PERSONAL_INFO_INCOMPLETE": "Vous devez compléter les informations personnelles (genre, anniversaire, baptême)",
+  "POST_REG_EMERGENCY_CONTACT_REQUIRED": "Vous devez ajouter au moins un contact d'urgence",
+  "POST_REG_LEGAL_REP_REQUIRED": "Les mineurs de 18 ans doivent enregistrer un représentant légal",
+  "POST_REG_CLUB_NOT_FOUND": "Club introuvable",
+  "POST_REG_CLASS_NOT_FOUND": "Classe introuvable ou inactive",
+  "POST_REG_DUPLICATE_MEMBERSHIP": "Vous avez déjà une adhésion active ou en attente dans un club du même type",
+  "POST_REG_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
+  "POST_REG_MEMBER_ROLE_NOT_FOUND": "Le rôle 'member' n'a pas été trouvé dans le système",
+  "POST_REG_ASSIGNMENT_FAILED": "Impossible de résoudre l'attribution d'adhésion au club",
+  "POST_REG_ENROLLMENT_FAILED": "Impossible de résoudre l'inscription annuelle opérationnelle"
 }

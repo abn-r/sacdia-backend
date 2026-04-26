@@ -337,5 +337,18 @@
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "No se puede asignar este rol porque hay un conflicto de exclusividad con otro rol en esta sección",
   "CLUB_NO_ACTIVE_YEAR": "No hay un año eclesiástico activo configurado",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "Se requiere role_id o role para esta operación",
-  "CLUB_ROLE_NOT_FOUND": "Rol no encontrado en la categoría CLUB"
+  "CLUB_ROLE_NOT_FOUND": "Rol no encontrado en la categoría CLUB",
+  "POST_REG_NOT_INITIATED": "El post-registro no ha sido iniciado",
+  "POST_REG_PHOTO_REQUIRED": "Debe subir una foto de perfil antes de completar este paso",
+  "POST_REG_USER_NOT_FOUND": "Usuario no encontrado",
+  "POST_REG_PERSONAL_INFO_INCOMPLETE": "Debe completar la información personal (género, cumpleaños, bautismo)",
+  "POST_REG_EMERGENCY_CONTACT_REQUIRED": "Debe agregar al menos un contacto de emergencia",
+  "POST_REG_LEGAL_REP_REQUIRED": "Los menores de 18 años deben registrar un representante legal",
+  "POST_REG_CLUB_NOT_FOUND": "Club no encontrado",
+  "POST_REG_CLASS_NOT_FOUND": "Clase no encontrada o inactiva",
+  "POST_REG_DUPLICATE_MEMBERSHIP": "Ya tienes una membresía activa o pendiente en un club del mismo tipo",
+  "POST_REG_NO_ACTIVE_YEAR": "No hay año eclesiástico activo configurado",
+  "POST_REG_MEMBER_ROLE_NOT_FOUND": "El rol 'member' no fue encontrado en el sistema",
+  "POST_REG_ASSIGNMENT_FAILED": "No se pudo resolver la asignación de membresía del club",
+  "POST_REG_ENROLLMENT_FAILED": "No se pudo resolver la inscripción anual operativa"
 }

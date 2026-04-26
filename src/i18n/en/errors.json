@@ -337,5 +337,18 @@
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Cannot assign this role due to an exclusivity conflict with another role in this section",
   "CLUB_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id or role is required for this operation",
-  "CLUB_ROLE_NOT_FOUND": "Role not found in CLUB category"
+  "CLUB_ROLE_NOT_FOUND": "Role not found in CLUB category",
+  "POST_REG_NOT_INITIATED": "Post-registration has not been initiated",
+  "POST_REG_PHOTO_REQUIRED": "You must upload a profile photo before completing this step",
+  "POST_REG_USER_NOT_FOUND": "User not found",
+  "POST_REG_PERSONAL_INFO_INCOMPLETE": "You must complete personal information (gender, birthday, baptism)",
+  "POST_REG_EMERGENCY_CONTACT_REQUIRED": "You must add at least one emergency contact",
+  "POST_REG_LEGAL_REP_REQUIRED": "Minors under 18 must register a legal representative",
+  "POST_REG_CLUB_NOT_FOUND": "Club not found",
+  "POST_REG_CLASS_NOT_FOUND": "Class not found or inactive",
+  "POST_REG_DUPLICATE_MEMBERSHIP": "You already have an active or pending membership in a club of the same type",
+  "POST_REG_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
+  "POST_REG_MEMBER_ROLE_NOT_FOUND": "Role 'member' not found in the system",
+  "POST_REG_ASSIGNMENT_FAILED": "Could not resolve club membership assignment",
+  "POST_REG_ENROLLMENT_FAILED": "Could not resolve the operational annual enrollment"
 }

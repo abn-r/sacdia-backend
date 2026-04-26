@@ -1,15 +1,16 @@
-import {
-  Injectable,
-  BadRequestException,
-  ConflictException,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppException,
+  AppInternalServerErrorException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 export type PostRegistrationActorContext = {
   actorUserId: string;
@@ -37,7 +38,7 @@ export class PostRegistrationService {
     });
 
     if (!userPr) {
-      throw new BadRequestException('Post-registro no iniciado');
+      throw new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
     }
 
     let nextStep: string | null = null;
@@ -100,9 +101,7 @@ export class PostRegistrationService {
       });
 
       if (!user?.user_image) {
-        throw new BadRequestException(
-          'Debe subir una foto de perfil antes de completar este paso',
-        );
+        throw new AppBadRequestException(ErrorCode.POST_REG_PHOTO_REQUIRED);
       }
 
       await this.prisma.users_pr.update({
@@ -146,13 +145,11 @@ export class PostRegistrationService {
       });
 
       if (!user) {
-        throw new BadRequestException('Usuario no encontrado');
+        throw new AppBadRequestException(ErrorCode.POST_REG_USER_NOT_FOUND);
       }
 
       if (!user.gender || !user.birthday || user.baptism === null) {
-        throw new BadRequestException(
-          'Debe completar información personal (género, cumpleaños, bautismo)',
-        );
+        throw new AppBadRequestException(ErrorCode.POST_REG_PERSONAL_INFO_INCOMPLETE);
       }
 
       // Validar contactos de emergencia (al menos 1)
@@ -164,9 +161,7 @@ export class PostRegistrationService {
       });
 
       if (contactsCount === 0) {
-        throw new BadRequestException(
-          'Debe agregar al menos un contacto de emergencia',
-        );
+        throw new AppBadRequestException(ErrorCode.POST_REG_EMERGENCY_CONTACT_REQUIRED);
       }
 
       // Si es menor de 18, validar representante legal
@@ -177,9 +172,7 @@ export class PostRegistrationService {
         try {
           await this.legalRepService.findOne(userId);
         } catch {
-          throw new BadRequestException(
-            'Menores de 18 años deben registrar un representante legal',
-          );
+          throw new AppBadRequestException(ErrorCode.POST_REG_LEGAL_REP_REQUIRED);
         }
       }
 
@@ -316,9 +309,7 @@ export class PostRegistrationService {
     });
 
     if (!currentYear) {
-      throw new InternalServerErrorException(
-        'No hay año eclesiástico activo configurado',
-      );
+      throw new AppInternalServerErrorException(ErrorCode.POST_REG_NO_ACTIVE_YEAR);
     }
 
     return currentYear;
@@ -338,9 +329,7 @@ export class PostRegistrationService {
     });
 
     if (!memberRole) {
-      throw new InternalServerErrorException(
-        'Rol "member" no encontrado en el sistema',
-      );
+      throw new AppInternalServerErrorException(ErrorCode.POST_REG_MEMBER_ROLE_NOT_FOUND);
     }
 
     return memberRole.role_id;
@@ -355,7 +344,7 @@ export class PostRegistrationService {
     });
 
     if (!section) {
-      throw new BadRequestException('Club no encontrado');
+      throw new AppBadRequestException(ErrorCode.POST_REG_CLUB_NOT_FOUND);
     }
   }
 
@@ -372,7 +361,7 @@ export class PostRegistrationService {
     });
 
     if (!selectedClass || !selectedClass.active) {
-      throw new BadRequestException('Clase no encontrada');
+      throw new AppBadRequestException(ErrorCode.POST_REG_CLASS_NOT_FOUND);
     }
   }
 
@@ -394,7 +383,7 @@ export class PostRegistrationService {
     });
 
     if (!targetSection) {
-      throw new BadRequestException('Club no encontrado');
+      throw new AppBadRequestException(ErrorCode.POST_REG_CLUB_NOT_FOUND);
     }
 
     const existingSameType = await tx.club_role_assignments.findFirst({
@@ -413,9 +402,7 @@ export class PostRegistrationService {
     });
 
     if (existingSameType) {
-      throw new ConflictException(
-        'Ya tienes una membresía activa o pendiente en un club del mismo tipo',
-      );
+      throw new AppConflictException(ErrorCode.POST_REG_DUPLICATE_MEMBERSHIP);
     }
 
     // --- Create or reactivate assignment with pending status ---
@@ -478,9 +465,7 @@ export class PostRegistrationService {
       });
 
       if (!recoveredAssignment) {
-        throw new InternalServerErrorException(
-          'No se pudo resolver la asignación de membresía del club',
-        );
+        throw new AppInternalServerErrorException(ErrorCode.POST_REG_ASSIGNMENT_FAILED);
       }
 
       if (
@@ -562,9 +547,7 @@ export class PostRegistrationService {
       });
 
       if (!recoveredEnrollment) {
-        throw new InternalServerErrorException(
-          'No se pudo resolver la inscripción anual operativa',
-        );
+        throw new AppInternalServerErrorException(ErrorCode.POST_REG_ENROLLMENT_FAILED);
       }
     }
   }
@@ -590,10 +573,20 @@ export class PostRegistrationService {
     actor: PostRegistrationActorContext,
     genericMessage: string,
   ): Error {
-    if (actor.isOwner || !(error instanceof BadRequestException)) {
+    // Owner always sees the real error (specific code or message)
+    if (actor.isOwner) {
       return error as Error;
     }
-
-    return new BadRequestException(genericMessage);
+    // Non-owner: hide specific validation details — return a generic AppException
+    // that produces a 400 without exposing business logic
+    if (error instanceof AppException) {
+      return new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
+    }
+    // Legacy fallback for any remaining plain NestJS exceptions
+    if (error instanceof Error && error.constructor.name.includes('Exception')) {
+      return new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
+    }
+    // Unknown errors propagate as-is
+    return error as Error;
   }
 }

@@ -337,5 +337,18 @@
   "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Não é possível atribuir esta função porque há um conflito de exclusividade com outra função nesta seção",
   "CLUB_NO_ACTIVE_YEAR": "Não há um ano eclesiástico ativo configurado",
   "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role é obrigatório para esta operação",
-  "CLUB_ROLE_NOT_FOUND": "Função não encontrada na categoria CLUB"
+  "CLUB_ROLE_NOT_FOUND": "Função não encontrada na categoria CLUB",
+  "POST_REG_NOT_INITIATED": "O pós-registro não foi iniciado",
+  "POST_REG_PHOTO_REQUIRED": "Você deve enviar uma foto de perfil antes de concluir esta etapa",
+  "POST_REG_USER_NOT_FOUND": "Usuário não encontrado",
+  "POST_REG_PERSONAL_INFO_INCOMPLETE": "Você deve completar as informações pessoais (gênero, aniversário, batismo)",
+  "POST_REG_EMERGENCY_CONTACT_REQUIRED": "Você deve adicionar pelo menos um contato de emergência",
+  "POST_REG_LEGAL_REP_REQUIRED": "Menores de 18 anos devem registrar um representante legal",
+  "POST_REG_CLUB_NOT_FOUND": "Clube não encontrado",
+  "POST_REG_CLASS_NOT_FOUND": "Classe não encontrada ou inativa",
+  "POST_REG_DUPLICATE_MEMBERSHIP": "Você já possui uma associação ativa ou pendente em um clube do mesmo tipo",
+  "POST_REG_NO_ACTIVE_YEAR": "Nenhum ano eclesiástico ativo configurado",
+  "POST_REG_MEMBER_ROLE_NOT_FOUND": "O papel 'member' não foi encontrado no sistema",
+  "POST_REG_ASSIGNMENT_FAILED": "Não foi possível resolver a atribuição de membro do clube",
+  "POST_REG_ENROLLMENT_FAILED": "Não foi possível resolver a inscrição anual operacional"
 }
