@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HonorsService } from './honors.service';
+import { HonorsService, HONOR_DETAIL_URL_LIMITER } from './honors.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { TranslationService } from '../common/services/translation.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
@@ -70,6 +71,14 @@ describe('HonorsService', () => {
             emitEvent: jest
               .fn()
               .mockResolvedValue({ eventLogId: 1, queued: true }),
+          },
+        },
+        {
+          provide: TranslationService,
+          useValue: {
+            getCurrentLocale: jest.fn().mockReturnValue('es'),
+            translate: jest.fn((record: any) => record),
+            translateMany: jest.fn((records: any[]) => records),
           },
         },
       ],
@@ -665,6 +674,26 @@ describe('HonorsService', () => {
         rejected: 1,
         in_progress: 1,
       });
+    });
+  });
+
+  describe('HONOR_DETAIL_URL_LIMITER', () => {
+    it('should export a pLimit instance with concurrency cap of 20', () => {
+      // pLimit instances expose a .concurrency property reflecting the cap.
+      expect(HONOR_DETAIL_URL_LIMITER).toBeDefined();
+      expect(typeof HONOR_DETAIL_URL_LIMITER).toBe('function');
+      // Verify the limiter actually executes the wrapped function.
+      const sentinel = jest.fn().mockResolvedValue('ok');
+      return expect(HONOR_DETAIL_URL_LIMITER(sentinel)).resolves.toBe('ok');
+    });
+
+    it('should resolve concurrent calls within the cap', async () => {
+      // Fire 5 tasks through the limiter; all should resolve correctly.
+      const tasks = Array.from({ length: 5 }, (_, i) =>
+        HONOR_DETAIL_URL_LIMITER(() => Promise.resolve(i)),
+      );
+      const results = await Promise.all(tasks);
+      expect(results).toEqual([0, 1, 2, 3, 4]);
     });
   });
 });

@@ -29,7 +29,16 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { TranslationService } from '../common/services/translation.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import pLimit from 'p-limit';
+
+// Cap concurrent presign calls for USERS_HONORS bucket images. A single honor
+// detail request resolves certificate + document + N image URLs. Without the
+// cap, a bulk getUserHonors response (up to 500 honors × N images each) would
+// fire thousands of simultaneous HMAC presigns. Cap is 20, matching the pattern
+// used by PROFILE_URL_LIMITER in camporees.service.ts.
+export const HONOR_DETAIL_URL_LIMITER = pLimit(20);
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -46,6 +55,7 @@ export class HonorsService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly achievementsService: AchievementsService,
+    private readonly translationService: TranslationService,
   ) {}
 
   // ========================================
@@ -201,17 +211,34 @@ export class HonorsService {
   async getCategories() {
     // Small catalog table: expected to remain under ~100 rows.
     // No pagination needed; a safety cap is applied as a precaution.
-    return this.prisma.honors_categories.findMany({
+    //
+    // Approach X i18n: Spanish (es) lives in main table columns.
+    // For non-es locales, JOIN honors_categories_translations and overlay fields.
+    // If no translation row exists for the requested locale, fall back to Spanish.
+    const locale = this.translationService.getCurrentLocale();
+
+    const records = await this.prisma.honors_categories.findMany({
       where: { active: true },
       select: {
         honor_category_id: true,
         name: true,
         description: true,
         icon: true,
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
       },
       orderBy: { name: 'asc' },
       take: 200,
     });
+
+    return this.translationService.translateMany(
+      records,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
   }
 
   // ========================================
@@ -243,7 +270,9 @@ export class HonorsService {
     });
 
     return Promise.all(
-      honors.map((userHonor) => this.mapUserHonorPrivateUrls(userHonor)),
+      honors.map((userHonor) =>
+        HONOR_DETAIL_URL_LIMITER(() => this.mapUserHonorPrivateUrls(userHonor)),
+      ),
     );
   }
 
@@ -497,7 +526,7 @@ export class HonorsService {
     const createdOrUpdated = await Promise.all(operations);
     return Promise.all(
       createdOrUpdated.map((userHonor) =>
-        this.mapUserHonorPrivateUrls(userHonor),
+        HONOR_DETAIL_URL_LIMITER(() => this.mapUserHonorPrivateUrls(userHonor)),
       ),
     );
   }
@@ -1049,7 +1078,9 @@ export class HonorsService {
       );
       images = await Promise.all(
         urls.map((url) =>
-          this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+          HONOR_DETAIL_URL_LIMITER(() =>
+            this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+          ),
         ),
       );
     }
