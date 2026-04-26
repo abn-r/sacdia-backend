@@ -2,10 +2,11 @@ import {
   Injectable,
   ExecutionContext,
   Logger,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
+import { AppUnauthorizedException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -29,7 +30,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         }),
       );
 
-      throw new UnauthorizedException('Unauthorized');
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
     }
 
     return user;

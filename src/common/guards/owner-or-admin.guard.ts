@@ -2,9 +2,10 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
 } from '@nestjs/common';
 import { AuthorizationContextService } from '../services/authorization-context.service';
+import { AppForbiddenException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 /**
  * Guard que permite acceso si:
@@ -22,14 +23,14 @@ export class OwnerOrAdminGuard implements CanActivate {
     const user = request.user;
 
     if (!user || !user.sub) {
-      throw new ForbiddenException('User not authenticated');
+      throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
     }
 
     // Obtener userId de los parámetros de la ruta
     const resourceUserId = request.params?.userId;
 
     if (!resourceUserId) {
-      throw new ForbiddenException('User ID not found in request parameters');
+      throw new AppForbiddenException(ErrorCode.GUARD_USER_ID_PARAM_MISSING);
     }
 
     // Caso 1: El usuario es el propietario
@@ -49,8 +50,6 @@ export class OwnerOrAdminGuard implements CanActivate {
       return true;
     }
 
-    throw new ForbiddenException(
-      'You can only access your own resources unless you have admin privileges',
-    );
+    throw new AppForbiddenException(ErrorCode.GUARD_OWNER_OR_ADMIN_REQUIRED);
   }
 }

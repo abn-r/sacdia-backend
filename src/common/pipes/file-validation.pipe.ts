@@ -1,4 +1,6 @@
-import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { PipeTransform, Injectable } from '@nestjs/common';
+import { AppBadRequestException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 export type FileValidationOptions = {
   maxSize?: number;
@@ -52,16 +54,13 @@ export class FileValidationPipe implements PipeTransform {
 
   private validateSize(file: Express.Multer.File) {
     if (file.size > this.maxSize) {
-      const maxMB = (this.maxSize / (1024 * 1024)).toFixed(1);
-      throw new BadRequestException(`File size exceeds maximum of ${maxMB}MB`);
+      throw new AppBadRequestException(ErrorCode.FILE_TOO_LARGE);
     }
   }
 
   private validateMimeType(file: Express.Multer.File) {
     if (!this.allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        `File type '${file.mimetype}' is not allowed. Allowed types: ${this.allowedMimeTypes.join(', ')}`,
-      );
+      throw new AppBadRequestException(ErrorCode.FILE_TYPE_INVALID);
     }
   }
 
@@ -71,17 +70,13 @@ export class FileValidationPipe implements PipeTransform {
 
     const { offset, bytes } = expected;
     if (file.buffer.length < offset + bytes.length) {
-      throw new BadRequestException(
-        'File content does not match its declared type',
-      );
+      throw new AppBadRequestException(ErrorCode.FILE_TYPE_INVALID);
     }
 
     const matches = bytes.every((byte, i) => file.buffer[offset + i] === byte);
 
     if (!matches) {
-      throw new BadRequestException(
-        'File content does not match its declared type',
-      );
+      throw new AppBadRequestException(ErrorCode.FILE_TYPE_INVALID);
     }
   }
 }
@@ -102,7 +97,7 @@ export class FilesValidationPipe implements PipeTransform {
     for (const [field, fileList] of Object.entries(files)) {
       const pipe = this.fieldRules[field];
       if (!pipe) {
-        throw new BadRequestException(`Unexpected file field: '${field}'`);
+        throw new AppBadRequestException(ErrorCode.FILE_FIELD_UNEXPECTED);
       }
       for (const file of fileList) {
         pipe.transform(file);

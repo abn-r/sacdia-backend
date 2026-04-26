@@ -2,10 +2,11 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthorizationContextService } from '../services/authorization-context.service';
+import { AppForbiddenException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 export const CLUB_ROLES_KEY = 'club_roles';
 
@@ -53,14 +54,14 @@ export class ClubRolesGuard implements CanActivate {
     const user = request.user;
 
     if (!user || !user.sub) {
-      throw new ForbiddenException('User not authenticated');
+      throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
     }
 
     // Obtener el clubId del request (params o body)
     const clubId = this.extractClubId(request);
 
     if (!clubId) {
-      throw new ForbiddenException('Club ID not found in request');
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_ID_REQUIRED);
     }
 
     if (await this.authorizationContext.canManageClub(user.sub, clubId)) {
@@ -73,9 +74,7 @@ export class ClubRolesGuard implements CanActivate {
     const activeClubScope = resolved.authorization.effective.scope.club;
 
     if (!activeClubScope || activeClubScope.club.club_id !== clubId) {
-      throw new ForbiddenException(
-        'You need an active club assignment for this club',
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     const hasRole = requiredRoles
@@ -83,9 +82,7 @@ export class ClubRolesGuard implements CanActivate {
       .includes(normalizeClubRoleName(activeClubScope.role_name));
 
     if (!hasRole) {
-      throw new ForbiddenException(
-        `You need one of these club roles: ${requiredRoles.join(', ')}`,
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
 
     return true;

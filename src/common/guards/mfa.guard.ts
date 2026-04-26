@@ -2,9 +2,10 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AppForbiddenException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 /**
  * Key used to mark an endpoint as MFA-exempt via @SkipMfaCheck().
@@ -60,9 +61,7 @@ export class MfaGuard implements CanActivate {
     }
 
     if (user.mfa_pending === true) {
-      throw new ForbiddenException(
-        'MFA verification required. Please complete TOTP verification at POST /auth/mfa/verify.',
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_MFA_REQUIRED);
     }
 
     return true;

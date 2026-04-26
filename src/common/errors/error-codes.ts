@@ -507,4 +507,52 @@ export enum ErrorCode {
 
   // ── MFA ────────────────────────────────────────────────────────────────────
   MFA_CODE_INVALID = 'MFA_CODE_INVALID',
+
+  // ── Auth (additional) ─────────────────────────────────────────────────────
+  AUTH_EMAIL_ALREADY_IN_USE = 'AUTH_EMAIL_ALREADY_IN_USE',
+  AUTH_SESSION_EXPIRED = 'AUTH_SESSION_EXPIRED',
+  AUTH_TOTP_NOT_ENROLLED = 'AUTH_TOTP_NOT_ENROLLED',
+  AUTH_TOTP_ENROLLMENT_FAILED = 'AUTH_TOTP_ENROLLMENT_FAILED',
+  AUTH_OAUTH_CALLBACK_FAILED = 'AUTH_OAUTH_CALLBACK_FAILED',
+
+  // ── Guards ─────────────────────────────────────────────────────────────────
+  GUARD_USER_NOT_AUTHENTICATED = 'GUARD_USER_NOT_AUTHENTICATED',
+  GUARD_RBAC_MISCONFIGURATION = 'GUARD_RBAC_MISCONFIGURATION',
+  GUARD_PERMISSION_DENIED = 'GUARD_PERMISSION_DENIED',
+  GUARD_CLUB_SCOPE_REQUIRED = 'GUARD_CLUB_SCOPE_REQUIRED',
+  GUARD_CLUB_ID_REQUIRED = 'GUARD_CLUB_ID_REQUIRED',
+  GUARD_MFA_REQUIRED = 'GUARD_MFA_REQUIRED',
+  GUARD_JWT_UNAUTHORIZED = 'GUARD_JWT_UNAUTHORIZED',
+  GUARD_OWNER_OR_ADMIN_REQUIRED = 'GUARD_OWNER_OR_ADMIN_REQUIRED',
+  GUARD_USER_ID_PARAM_MISSING = 'GUARD_USER_ID_PARAM_MISSING',
+  GUARD_ASSIGNMENT_SCOPE_INVALID = 'GUARD_ASSIGNMENT_SCOPE_INVALID',
+  GUARD_ASSIGNMENT_NOT_FOUND = 'GUARD_ASSIGNMENT_NOT_FOUND',
+
+  // ── File Validation ───────────────────────────────────────────────────────
+  FILE_TOO_LARGE = 'FILE_TOO_LARGE',
+  FILE_TYPE_INVALID = 'FILE_TYPE_INVALID',
+  FILE_REQUIRED = 'FILE_REQUIRED',
+  FILE_FIELD_UNEXPECTED = 'FILE_FIELD_UNEXPECTED',
+
+  // ── R2 Storage ────────────────────────────────────────────────────────────
+  R2_UPLOAD_FAILED = 'R2_UPLOAD_FAILED',
+  R2_DELETE_FAILED = 'R2_DELETE_FAILED',
+  R2_SIGNED_URL_FAILED = 'R2_SIGNED_URL_FAILED',
+  R2_VALIDATION_FAILED = 'R2_VALIDATION_FAILED',
+
+  // ── Authorization Context ─────────────────────────────────────────────────
+  AUTH_CONTEXT_USER_NOT_FOUND = 'AUTH_CONTEXT_USER_NOT_FOUND',
+
+  // ── RBAC Controller ───────────────────────────────────────────────────────
+  RBAC_BOOTSTRAP_FORBIDDEN = 'RBAC_BOOTSTRAP_FORBIDDEN',
+  RBAC_BOOTSTRAP_SECRET_INVALID = 'RBAC_BOOTSTRAP_SECRET_INVALID',
+
+  // ── Notifications Controller ──────────────────────────────────────────────
+  NOTIF_BROADCAST_USER_ID_FORBIDDEN = 'NOTIF_BROADCAST_USER_ID_FORBIDDEN',
+
+  // ── System Config Controller ──────────────────────────────────────────────
+  SYSTEM_CONFIG_VALUE_REQUIRED = 'SYSTEM_CONFIG_VALUE_REQUIRED',
+
+  // ── Achievements Controller ───────────────────────────────────────────────
+  ACHIEVEMENT_BADGE_UPLOAD_MISSING = 'ACHIEVEMENT_BADGE_UPLOAD_MISSING',
 }
