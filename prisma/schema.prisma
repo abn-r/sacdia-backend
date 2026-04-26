@@ -628,23 +628,55 @@ model folders {
   folders_modules         folders_modules[]
   folders_modules_records folders_modules_records[]
   folders_section_records folders_section_records[]
+  translations            folders_translations[]
+}
+
+model folders_translations {
+  id          Int      @id @default(autoincrement())
+  folder_id   Int
+  locale      String   @db.VarChar(10)
+  name        String?  @db.VarChar(255)
+  description String?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  folders     folders   @relation(fields: [folder_id], references: [folder_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([folder_id, locale])
+  @@index([locale])
+  @@index([folder_id])
 }
 
 model folders_modules {
-  folder_module_id        Int                       @id @default(autoincrement())
-  name                    String                    @db.VarChar(255)
+  folder_module_id        Int                          @id @default(autoincrement())
+  name                    String                       @db.VarChar(255)
   description             String?
   folder_id               Int?
-  total_points            Int?                      @default(0)
-  max_points              Int?                      @default(0)
-  minimum_points          Int?                      @default(0)
-  active                  Boolean                   @default(true)
-  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
-  modified_at             DateTime?                 @default(now()) @db.Timestamptz(6)
-  folders                 folders?                  @relation(fields: [folder_id], references: [folder_id], onDelete: NoAction, onUpdate: NoAction)
+  total_points            Int?                         @default(0)
+  max_points              Int?                         @default(0)
+  minimum_points          Int?                         @default(0)
+  active                  Boolean                      @default(true)
+  created_at              DateTime?                    @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime?                    @default(now()) @db.Timestamptz(6)
+  folders                 folders?                     @relation(fields: [folder_id], references: [folder_id], onDelete: NoAction, onUpdate: NoAction)
   folders_modules_records folders_modules_records[]
   folders_section_records folders_section_records[]
   folders_sections        folders_sections[]
+  translations            folders_modules_translations[]
+}
+
+model folders_modules_translations {
+  id               Int             @id @default(autoincrement())
+  folder_module_id Int
+  locale           String          @db.VarChar(10)
+  name             String?         @db.VarChar(255)
+  description      String?
+  created_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  folders_modules  folders_modules @relation(fields: [folder_module_id], references: [folder_module_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([folder_module_id, locale])
+  @@index([locale])
+  @@index([folder_module_id])
 }
 
 model folders_modules_records {
@@ -697,18 +729,34 @@ model folders_section_records {
 }
 
 model folders_sections {
-  folder_section_id       Int                       @id @default(autoincrement())
-  name                    String                    @db.VarChar(255)
+  folder_section_id       Int                           @id @default(autoincrement())
+  name                    String                        @db.VarChar(255)
   description             String?
   module_id               Int?
-  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
-  modified_at             DateTime?                 @default(now()) @db.Timestamptz(6)
-  total_points            Int?                      @default(0)
-  max_points              Int?                      @default(0)
-  minimum_points          Int?                      @default(0)
-  active                  Boolean                   @default(true)
+  created_at              DateTime?                     @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime?                     @default(now()) @db.Timestamptz(6)
+  total_points            Int?                          @default(0)
+  max_points              Int?                          @default(0)
+  minimum_points          Int?                          @default(0)
+  active                  Boolean                       @default(true)
   folders_section_records folders_section_records[]
-  folders_modules         folders_modules?          @relation(fields: [module_id], references: [folder_module_id], onDelete: NoAction, onUpdate: NoAction)
+  folders_modules         folders_modules?              @relation(fields: [module_id], references: [folder_module_id], onDelete: NoAction, onUpdate: NoAction)
+  translations            folders_sections_translations[]
+}
+
+model folders_sections_translations {
+  id                Int             @id @default(autoincrement())
+  folder_section_id Int
+  locale            String          @db.VarChar(10)
+  name              String?         @db.VarChar(255)
+  description       String?
+  created_at        DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?       @default(now()) @db.Timestamptz(6)
+  folders_sections  folders_sections @relation(fields: [folder_section_id], references: [folder_section_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([folder_section_id, locale])
+  @@index([locale])
+  @@index([folder_section_id])
 }
 
 model evidence_files {

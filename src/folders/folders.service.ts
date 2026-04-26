@@ -12,10 +12,14 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { UpdateSectionRecordDto } from './dto/update-section-record.dto';
+import { TranslationService } from '../common/services/translation.service';
 
 @Injectable()
 export class FoldersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly translationService: TranslationService,
+  ) {}
 
   // ========================================
   // FOLDER TEMPLATES
@@ -28,6 +32,7 @@ export class FoldersService {
     clubTypeId?: number,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
+    const locale = this.translationService.getCurrentLocale();
     const where = {
       active: true,
       ...(clubTypeId && { club_type: clubTypeId }),
@@ -45,6 +50,10 @@ export class FoldersService {
           max_points: true,
           minimum_points: true,
           active: true,
+          translations: {
+            where: { locale },
+            select: { locale: true, name: true, description: true },
+          },
           _count: {
             select: {
               folders_modules: true,
@@ -58,9 +67,16 @@ export class FoldersService {
       this.prisma.folders.count({ where }),
     ]);
 
-    const transformedData = data.map((folder) => ({
+    const translated = this.translationService.translateMany(
+      data,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
+
+    const transformedData = translated.map((folder) => ({
       ...folder,
-      modules_count: folder._count.folders_modules,
+      modules_count: (folder as any)._count?.folders_modules,
       _count: undefined,
     }));
 
@@ -75,12 +91,27 @@ export class FoldersService {
    * Obtener detalles de un template de carpeta con módulos y secciones
    */
   async findOne(folderId: number) {
+    const locale = this.translationService.getCurrentLocale();
     const folder = await this.prisma.folders.findUnique({
       where: { folder_id: folderId },
       include: {
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
         folders_modules: {
           include: {
+            translations: {
+              where: { locale },
+              select: { locale: true, name: true, description: true },
+            },
             folders_sections: {
+              include: {
+                translations: {
+                  where: { locale },
+                  select: { locale: true, name: true, description: true },
+                },
+              },
               orderBy: { folder_section_id: 'asc' },
             },
           },
@@ -93,22 +124,46 @@ export class FoldersService {
       throw new AppNotFoundException(ErrorCode.FOLDER_NOT_FOUND);
     }
 
+    // Translate folder
+    const translatedFolder = this.translationService.translateMany(
+      [folder],
+      locale,
+      ['name', 'description'],
+      'translations',
+    )[0];
+
+    // Translate modules and their sections
+    const translatedModules = this.translationService.translateMany(
+      translatedFolder.folders_modules,
+      locale,
+      ['name', 'description'],
+      'translations',
+    ).map((module) => {
+      const translatedSections = this.translationService.translateMany(
+        (module as any).folders_sections ?? [],
+        locale,
+        ['name', 'description'],
+        'translations',
+      );
+      return { ...module, folders_sections: translatedSections };
+    });
+
     return {
-      folder_id: folder.folder_id,
-      name: folder.name,
-      description: folder.description,
-      club_type: folder.club_type,
-      ecclesiastical_year_id: folder.ecclesiastical_year_id,
-      max_points: folder.max_points,
-      minimum_points: folder.minimum_points,
-      active: folder.active,
-      modules: folder.folders_modules.map((module) => ({
+      folder_id: translatedFolder.folder_id,
+      name: translatedFolder.name,
+      description: translatedFolder.description,
+      club_type: translatedFolder.club_type,
+      ecclesiastical_year_id: translatedFolder.ecclesiastical_year_id,
+      max_points: translatedFolder.max_points,
+      minimum_points: translatedFolder.minimum_points,
+      active: translatedFolder.active,
+      modules: translatedModules.map((module: any) => ({
         module_id: module.folder_module_id,
         name: module.name,
         description: module.description,
         max_points: module.max_points,
         minimum_points: module.minimum_points,
-        sections: module.folders_sections.map((section) => ({
+        sections: module.folders_sections.map((section: any) => ({
           section_id: section.folder_section_id,
           name: section.name,
           description: section.description,
