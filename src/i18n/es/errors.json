@@ -242,5 +242,18 @@
   "USER_IMAGE_UPLOAD_FAILED": "Error al subir la foto de perfil",
   "USER_IMAGE_UPDATE_FAILED": "Error al actualizar la foto de perfil",
   "USER_NO_PROFILE_PICTURE": "El usuario no tiene foto de perfil",
-  "USER_IMAGE_DELETE_FAILED": "Error al eliminar la foto de perfil"
+  "USER_IMAGE_DELETE_FAILED": "Error al eliminar la foto de perfil",
+  "FOLDER_NOT_FOUND": "Carpeta no encontrada",
+  "FOLDER_ALREADY_ENROLLED": "El usuario ya tiene una asignación activa para esta carpeta",
+  "FOLDER_USER_NO_CLUB_TYPE": "El usuario no pertenece a un club del tipo requerido",
+  "FOLDER_ASSIGNMENT_NOT_FOUND": "Asignación de carpeta no encontrada",
+  "FOLDER_USER_NOT_FOUND": "Usuario no encontrado",
+  "FOLDER_SECTION_INVALID": "Módulo o sección no válidos para esta carpeta",
+  "FOLDER_POINTS_EXCEED_MAX": "Los puntos superan el máximo permitido para la sección",
+  "FOLDER_EVIDENCE_SECTION_NOT_FOUND": "Sección de evidencia no encontrada",
+  "FOLDER_EVIDENCE_SECTION_NOT_PENDING": "La sección no está en estado pendiente",
+  "FOLDER_EVIDENCE_FILE_REQUIRED": "Se requiere un archivo",
+  "FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT": "La sección debe tener al menos un archivo de evidencia antes de enviar",
+  "FOLDER_EVIDENCE_FILE_NOT_FOUND": "Archivo de evidencia no encontrado",
+  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Carpeta de evidencia no encontrada"
 }

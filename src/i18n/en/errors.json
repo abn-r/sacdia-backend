@@ -242,5 +242,18 @@
   "USER_IMAGE_UPLOAD_FAILED": "Failed to upload profile picture",
   "USER_IMAGE_UPDATE_FAILED": "Failed to update profile picture",
   "USER_NO_PROFILE_PICTURE": "User has no profile picture",
-  "USER_IMAGE_DELETE_FAILED": "Failed to delete profile picture"
+  "USER_IMAGE_DELETE_FAILED": "Failed to delete profile picture",
+  "FOLDER_NOT_FOUND": "Folder not found",
+  "FOLDER_ALREADY_ENROLLED": "User already has an active assignment for this folder",
+  "FOLDER_USER_NO_CLUB_TYPE": "User does not belong to a club of the required type",
+  "FOLDER_ASSIGNMENT_NOT_FOUND": "Folder assignment not found",
+  "FOLDER_USER_NOT_FOUND": "User not found",
+  "FOLDER_SECTION_INVALID": "Invalid module or section for this folder",
+  "FOLDER_POINTS_EXCEED_MAX": "Points exceed the section maximum",
+  "FOLDER_EVIDENCE_SECTION_NOT_FOUND": "Evidence section not found",
+  "FOLDER_EVIDENCE_SECTION_NOT_PENDING": "Section is not in pending state",
+  "FOLDER_EVIDENCE_FILE_REQUIRED": "File is required",
+  "FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT": "Section must have at least one evidence file before submit",
+  "FOLDER_EVIDENCE_FILE_NOT_FOUND": "Evidence file not found",
+  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Evidence folder not found"
 }

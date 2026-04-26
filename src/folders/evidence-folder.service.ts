@@ -1,10 +1,10 @@
+import { Inject, Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   FILE_STORAGE_SERVICE,
@@ -141,11 +141,11 @@ export class EvidenceFolderService {
     );
 
     if (!sectionRecord) {
-      throw new NotFoundException('Evidence section record not found');
+      throw new AppNotFoundException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND);
     }
 
     if ((sectionRecord.status ?? 'PENDING') !== 'PENDING') {
-      throw new ConflictException('Section is not pending');
+      throw new AppConflictException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING);
     }
 
     const activeFiles = (sectionRecord.evidence_files ?? []).filter(
@@ -153,9 +153,7 @@ export class EvidenceFolderService {
     );
 
     if (activeFiles.length === 0) {
-      throw new BadRequestException(
-        'Section must have at least one evidence file before submit',
-      );
+      throw new AppBadRequestException(ErrorCode.FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT);
     }
 
     return this.db.folders_section_records.update({
@@ -177,7 +175,7 @@ export class EvidenceFolderService {
     file: Express.Multer.File,
   ) {
     if (!file?.buffer) {
-      throw new BadRequestException('File is required');
+      throw new AppBadRequestException(ErrorCode.FOLDER_EVIDENCE_FILE_REQUIRED);
     }
 
     const assignment = await this.getAssignment(userId, clubSectionId);
@@ -191,7 +189,7 @@ export class EvidenceFolderService {
     });
 
     if ((sectionRecord.status ?? 'PENDING') !== 'PENDING') {
-      throw new ConflictException('Section is not pending');
+      throw new AppConflictException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING);
     }
 
     const extension = this.resolveFileExtension(file);
@@ -286,11 +284,11 @@ export class EvidenceFolderService {
       fileRecord.section_record.club_section_id !== clubSectionId ||
       fileRecord.section_record.section_id !== sectionId
     ) {
-      throw new NotFoundException('Evidence file not found');
+      throw new AppNotFoundException(ErrorCode.FOLDER_EVIDENCE_FILE_NOT_FOUND);
     }
 
     if ((fileRecord.section_record.status ?? 'PENDING') !== 'PENDING') {
-      throw new ConflictException('Section is not pending');
+      throw new AppConflictException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING);
     }
 
     const r2Key = this.fileStorage.extractKeyFromPublicUrl(
@@ -349,7 +347,7 @@ export class EvidenceFolderService {
     });
 
     if (!assignment?.folders) {
-      throw new NotFoundException('Evidence folder not found');
+      throw new AppNotFoundException(ErrorCode.FOLDER_EVIDENCE_FOLDER_NOT_FOUND);
     }
 
     return assignment;
@@ -484,7 +482,7 @@ export class EvidenceFolderService {
       }
     }
 
-    throw new NotFoundException(`Evidence section ${sectionId} not found`);
+    throw new AppNotFoundException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND);
   }
 
   private mapSection(

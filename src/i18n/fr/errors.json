@@ -242,5 +242,18 @@
   "USER_IMAGE_UPLOAD_FAILED": "Échec du téléversement de la photo de profil",
   "USER_IMAGE_UPDATE_FAILED": "Échec de la mise à jour de la photo de profil",
   "USER_NO_PROFILE_PICTURE": "L'utilisateur n'a pas de photo de profil",
-  "USER_IMAGE_DELETE_FAILED": "Échec de la suppression de la photo de profil"
+  "USER_IMAGE_DELETE_FAILED": "Échec de la suppression de la photo de profil",
+  "FOLDER_NOT_FOUND": "Dossier introuvable",
+  "FOLDER_ALREADY_ENROLLED": "L'utilisateur a déjà une affectation active pour ce dossier",
+  "FOLDER_USER_NO_CLUB_TYPE": "L'utilisateur n'appartient pas à un club du type requis",
+  "FOLDER_ASSIGNMENT_NOT_FOUND": "Affectation de dossier introuvable",
+  "FOLDER_USER_NOT_FOUND": "Utilisateur introuvable",
+  "FOLDER_SECTION_INVALID": "Module ou section invalide pour ce dossier",
+  "FOLDER_POINTS_EXCEED_MAX": "Les points dépassent le maximum autorisé pour la section",
+  "FOLDER_EVIDENCE_SECTION_NOT_FOUND": "Section de preuve introuvable",
+  "FOLDER_EVIDENCE_SECTION_NOT_PENDING": "La section n'est pas en état d'attente",
+  "FOLDER_EVIDENCE_FILE_REQUIRED": "Un fichier est requis",
+  "FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT": "La section doit avoir au moins un fichier de preuve avant la soumission",
+  "FOLDER_EVIDENCE_FILE_NOT_FOUND": "Fichier de preuve introuvable",
+  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Dossier de preuve introuvable"
 }

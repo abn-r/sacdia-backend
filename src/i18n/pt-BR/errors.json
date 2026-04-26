@@ -242,5 +242,18 @@
   "USER_IMAGE_UPLOAD_FAILED": "Erro ao enviar a foto de perfil",
   "USER_IMAGE_UPDATE_FAILED": "Erro ao atualizar a foto de perfil",
   "USER_NO_PROFILE_PICTURE": "O usuário não possui foto de perfil",
-  "USER_IMAGE_DELETE_FAILED": "Erro ao excluir a foto de perfil"
+  "USER_IMAGE_DELETE_FAILED": "Erro ao excluir a foto de perfil",
+  "FOLDER_NOT_FOUND": "Pasta não encontrada",
+  "FOLDER_ALREADY_ENROLLED": "O usuário já possui uma atribuição ativa para esta pasta",
+  "FOLDER_USER_NO_CLUB_TYPE": "O usuário não pertence a um clube do tipo necessário",
+  "FOLDER_ASSIGNMENT_NOT_FOUND": "Atribuição de pasta não encontrada",
+  "FOLDER_USER_NOT_FOUND": "Usuário não encontrado",
+  "FOLDER_SECTION_INVALID": "Módulo ou seção inválidos para esta pasta",
+  "FOLDER_POINTS_EXCEED_MAX": "Os pontos excedem o máximo permitido para a seção",
+  "FOLDER_EVIDENCE_SECTION_NOT_FOUND": "Seção de evidência não encontrada",
+  "FOLDER_EVIDENCE_SECTION_NOT_PENDING": "A seção não está em estado pendente",
+  "FOLDER_EVIDENCE_FILE_REQUIRED": "Um arquivo é obrigatório",
+  "FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT": "A seção deve ter pelo menos um arquivo de evidência antes de enviar",
+  "FOLDER_EVIDENCE_FILE_NOT_FOUND": "Arquivo de evidência não encontrado",
+  "FOLDER_EVIDENCE_FOLDER_NOT_FOUND": "Pasta de evidência não encontrada"
 }

@@ -1,9 +1,10 @@
+import { Injectable } from '@nestjs/common';
 import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PaginationDto,
@@ -89,7 +90,7 @@ export class FoldersService {
     });
 
     if (!folder) {
-      throw new NotFoundException(`Folder with ID ${folderId} not found`);
+      throw new AppNotFoundException(ErrorCode.FOLDER_NOT_FOUND);
     }
 
     return {
@@ -132,7 +133,7 @@ export class FoldersService {
     });
 
     if (!folder || !folder.active) {
-      throw new NotFoundException('Folder not found');
+      throw new AppNotFoundException(ErrorCode.FOLDER_NOT_FOUND);
     }
 
     // 2. Verificar si ya está inscrito
@@ -145,9 +146,7 @@ export class FoldersService {
     });
 
     if (existingAssignment) {
-      throw new ConflictException(
-        'User already has an active assignment for this folder',
-      );
+      throw new AppConflictException(ErrorCode.FOLDER_ALREADY_ENROLLED);
     }
 
     // 3. Obtener sección de club del usuario según el tipo de club
@@ -158,9 +157,7 @@ export class FoldersService {
 
     // Validar que el usuario pertenece a un club del tipo requerido
     if (!clubSectionId) {
-      throw new BadRequestException(
-        `User does not belong to a club of the required type`,
-      );
+      throw new AppBadRequestException(ErrorCode.FOLDER_USER_NO_CLUB_TYPE);
     }
 
     // 4. Crear assignment
@@ -202,7 +199,7 @@ export class FoldersService {
     });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppNotFoundException(ErrorCode.FOLDER_USER_NOT_FOUND);
     }
 
     // Find a club_role_assignment that has a club_section matching the folder's club_type
@@ -286,7 +283,7 @@ export class FoldersService {
     });
 
     if (!assignment) {
-      throw new NotFoundException('Folder assignment not found');
+      throw new AppNotFoundException(ErrorCode.FOLDER_ASSIGNMENT_NOT_FOUND);
     }
 
     // Obtener registros de módulos (por club section)
@@ -382,7 +379,7 @@ export class FoldersService {
       });
 
       if (!assignment) {
-        throw new NotFoundException('Folder assignment not found');
+        throw new AppNotFoundException(ErrorCode.FOLDER_ASSIGNMENT_NOT_FOUND);
       }
 
       // 2. Validar que la sección pertenece al módulo y carpeta
@@ -397,15 +394,13 @@ export class FoldersService {
       });
 
       if (!section) {
-        throw new BadRequestException(
-          'Invalid module or section for this folder',
-        );
+        throw new AppBadRequestException(ErrorCode.FOLDER_SECTION_INVALID);
       }
 
       // 3. Validar que los puntos no excedan el máximo de la sección
       const sectionMaxPoints = section.max_points ?? 0;
       if (dto.points > sectionMaxPoints) {
-        throw new BadRequestException('Points exceed section maximum');
+        throw new AppBadRequestException(ErrorCode.FOLDER_POINTS_EXCEED_MAX);
       }
 
       // 4. Buscar o crear registro de sección (por club section)
@@ -550,7 +545,7 @@ export class FoldersService {
     });
 
     if (!assignment) {
-      throw new NotFoundException('Folder assignment not found');
+      throw new AppNotFoundException(ErrorCode.FOLDER_ASSIGNMENT_NOT_FOUND);
     }
 
     await this.prisma.folder_assignments.update({
