@@ -16,6 +16,9 @@ pnpm prisma migrate deploy
 pnpm run verify:fcm-migration
 ```
 
+**Variables de entorno**: `.env.example` es la fuente de verdad para todos los nombres de env vars.
+Copiar a `.env` y completar los valores. Claves marcadas `# <SECRET>` nunca deben commitearse.
+
 ## Módulos principales
 
 ```text
