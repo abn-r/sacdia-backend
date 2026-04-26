@@ -171,5 +171,22 @@
   "EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND": "Honra do usuário não encontrada",
   "EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING": "A honra não está em estado pendente para ser aprovada. Estado atual : {status}",
   "EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED": "A honra já está rejeitada",
-  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "A honra já foi aprovada"
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "A honra já foi aprovada",
+  "RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID": "Recursos de escopo sistema não devem ter scope_id",
+  "RESOURCE_SCOPE_NON_SYSTEM_MISSING_SCOPE_ID": "Recursos de escopo {scope_level} requerem um scope_id",
+  "RESOURCE_CATEGORY_NOT_FOUND": "Categoria de recurso não encontrada",
+  "RESOURCE_CATEGORY_IN_USE": "A categoria possui recursos associados e não pode ser excluída",
+  "RESOURCE_CLUB_TYPE_NOT_FOUND": "Tipo de clube não encontrado",
+  "RESOURCE_NOT_FOUND": "Recurso não encontrado",
+  "RESOURCE_NO_FILE": "Nenhum arquivo foi fornecido",
+  "RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM": "Somente administradores do sistema podem gerenciar recursos de escopo sistema",
+  "RESOURCE_SCOPE_ACCESS_DENIED_UNION": "Você não tem autorização para gerenciar recursos da união {scope_id}",
+  "RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD": "Você não tem autorização para gerenciar recursos do campo local {scope_id}",
+  "RESOURCE_SCOPE_LEVEL_INVALID": "Nível de escopo inválido: {scope_level}",
+  "RESOURCE_FILE_CONTENT_MISMATCH": "O conteúdo do arquivo não corresponde ao tipo declarado. Tipo detectado: {detected}",
+  "RESOURCE_FILE_NOT_REQUIRED": "O tipo de recurso {resource_type} não requer arquivo",
+  "RESOURCE_FILE_REQUIRED": "O tipo de recurso {resource_type} requer um arquivo",
+  "RESOURCE_FILE_TOO_LARGE": "O arquivo excede o tamanho máximo permitido de {max_mb} MB",
+  "RESOURCE_FILE_TYPE_INVALID": "Tipo de arquivo não permitido para o tipo de recurso {resource_type}. Tipos permitidos: {allowed}",
+  "RESOURCE_FILE_MIME_INVALID": "O arquivo não é um {mime_type} válido"
 }

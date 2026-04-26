@@ -1,4 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  AppBadRequestException,
+} from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -116,8 +119,9 @@ function validateMagicBytes(file: Express.Multer.File): void {
   const requiredLength = offset + bytes.length;
 
   if (file.buffer.length < requiredLength) {
-    throw new BadRequestException(
-      'File content does not match its declared type',
+    throw new AppBadRequestException(
+      ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH,
+      { detected: 'unknown' },
     );
   }
 
@@ -128,8 +132,9 @@ function validateMagicBytes(file: Express.Multer.File): void {
 
   if (altBytes && altBytes.some((alt) => matchesSequence(alt))) return;
 
-  throw new BadRequestException(
-    'File content does not match its declared type',
+  throw new AppBadRequestException(
+    ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH,
+    { detected: file.mimetype },
   );
 }
 
@@ -150,8 +155,9 @@ export function validateResourceFile(
   // text and video_link must NOT have a file attached
   if (FILE_FREE_TYPES.has(resourceType)) {
     if (file) {
-      throw new BadRequestException(
-        `Resource type '${resourceType}' must not include a file upload`,
+      throw new AppBadRequestException(
+        ErrorCode.RESOURCE_FILE_NOT_REQUIRED,
+        { resource_type: resourceType },
       );
     }
     return;
@@ -159,26 +165,33 @@ export function validateResourceFile(
 
   // document, audio, image MUST have a file attached
   if (!file) {
-    throw new BadRequestException(
-      `Resource type '${resourceType}' requires a file upload`,
+    throw new AppBadRequestException(
+      ErrorCode.RESOURCE_FILE_REQUIRED,
+      { resource_type: resourceType },
     );
   }
 
   // Size check
   if (file.size > MAX_FILE_SIZE) {
-    throw new BadRequestException('File size exceeds maximum of 50MB');
+    throw new AppBadRequestException(
+      ErrorCode.RESOURCE_FILE_TOO_LARGE,
+      { max_mb: '50' },
+    );
   }
 
   // MIME type check
   const allowedTypes = ALLOWED_MIME_TYPES[resourceType];
   if (!allowedTypes) {
-    throw new BadRequestException(`Invalid resource type: ${resourceType}`);
+    throw new AppBadRequestException(
+      ErrorCode.RESOURCE_FILE_MIME_INVALID,
+      { mime_type: resourceType },
+    );
   }
 
   if (!allowedTypes.includes(file.mimetype)) {
-    throw new BadRequestException(
-      `Invalid file type '${file.mimetype}' for resource type '${resourceType}'. ` +
-        `Allowed: ${allowedTypes.join(', ')}`,
+    throw new AppBadRequestException(
+      ErrorCode.RESOURCE_FILE_TYPE_INVALID,
+      { resource_type: resourceType, allowed: allowedTypes.join(', ') },
     );
   }
 

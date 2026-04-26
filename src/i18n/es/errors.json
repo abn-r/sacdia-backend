@@ -171,5 +171,22 @@
   "EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND": "Honor de usuario no encontrado",
   "EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING": "El honor no está en estado pendiente para ser aprobado. Estado actual : {status}",
   "EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED": "El honor ya está rechazado",
-  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "El honor ya fue aprobado"
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "El honor ya fue aprobado",
+  "RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID": "Los recursos de alcance sistema no deben tener scope_id",
+  "RESOURCE_SCOPE_NON_SYSTEM_MISSING_SCOPE_ID": "Los recursos de alcance {scope_level} requieren un scope_id",
+  "RESOURCE_CATEGORY_NOT_FOUND": "Categoría de recurso no encontrada",
+  "RESOURCE_CATEGORY_IN_USE": "La categoría tiene recursos asociados y no puede ser eliminada",
+  "RESOURCE_CLUB_TYPE_NOT_FOUND": "Tipo de club no encontrado",
+  "RESOURCE_NOT_FOUND": "Recurso no encontrado",
+  "RESOURCE_NO_FILE": "No se proporcionó ningún archivo",
+  "RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM": "Solo los administradores del sistema pueden gestionar recursos de alcance sistema",
+  "RESOURCE_SCOPE_ACCESS_DENIED_UNION": "No tiene autorización para gestionar recursos de la unión {scope_id}",
+  "RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD": "No tiene autorización para gestionar recursos del campo local {scope_id}",
+  "RESOURCE_SCOPE_LEVEL_INVALID": "Nivel de alcance no válido: {scope_level}",
+  "RESOURCE_FILE_CONTENT_MISMATCH": "El contenido del archivo no coincide con el tipo declarado. Tipo detectado: {detected}",
+  "RESOURCE_FILE_NOT_REQUIRED": "El tipo de recurso {resource_type} no requiere archivo",
+  "RESOURCE_FILE_REQUIRED": "El tipo de recurso {resource_type} requiere un archivo",
+  "RESOURCE_FILE_TOO_LARGE": "El archivo supera el tamaño máximo permitido de {max_mb} MB",
+  "RESOURCE_FILE_TYPE_INVALID": "Tipo de archivo no permitido para el tipo de recurso {resource_type}. Tipos permitidos: {allowed}",
+  "RESOURCE_FILE_MIME_INVALID": "El archivo no es un {mime_type} válido"
 }

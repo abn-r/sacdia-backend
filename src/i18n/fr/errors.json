@@ -171,5 +171,22 @@
   "EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND": "Honneur de l'utilisateur introuvable",
   "EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING": "L'honneur n'est pas en attente d'approbation. Statut actuel : {status}",
   "EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED": "L'honneur a déjà été rejeté",
-  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "L'honneur a déjà été approuvé"
+  "EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED": "L'honneur a déjà été approuvé",
+  "RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID": "Les ressources de portée système ne doivent pas avoir de scope_id",
+  "RESOURCE_SCOPE_NON_SYSTEM_MISSING_SCOPE_ID": "Les ressources de portée {scope_level} nécessitent un scope_id",
+  "RESOURCE_CATEGORY_NOT_FOUND": "Catégorie de ressource introuvable",
+  "RESOURCE_CATEGORY_IN_USE": "La catégorie possède des ressources associées et ne peut pas être supprimée",
+  "RESOURCE_CLUB_TYPE_NOT_FOUND": "Type de club introuvable",
+  "RESOURCE_NOT_FOUND": "Ressource introuvable",
+  "RESOURCE_NO_FILE": "Aucun fichier n'a été fourni",
+  "RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM": "Seuls les administrateurs système peuvent gérer les ressources de portée système",
+  "RESOURCE_SCOPE_ACCESS_DENIED_UNION": "Vous n'êtes pas autorisé à gérer les ressources de l'union {scope_id}",
+  "RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD": "Vous n'êtes pas autorisé à gérer les ressources du champ local {scope_id}",
+  "RESOURCE_SCOPE_LEVEL_INVALID": "Niveau de portée invalide : {scope_level}",
+  "RESOURCE_FILE_CONTENT_MISMATCH": "Le contenu du fichier ne correspond pas au type déclaré. Type détecté : {detected}",
+  "RESOURCE_FILE_NOT_REQUIRED": "Le type de ressource {resource_type} ne nécessite pas de fichier",
+  "RESOURCE_FILE_REQUIRED": "Le type de ressource {resource_type} nécessite un fichier",
+  "RESOURCE_FILE_TOO_LARGE": "Le fichier dépasse la taille maximale autorisée de {max_mb} MB",
+  "RESOURCE_FILE_TYPE_INVALID": "Type de fichier non autorisé pour le type de ressource {resource_type}. Types autorisés : {allowed}",
+  "RESOURCE_FILE_MIME_INVALID": "Le fichier n'est pas un {mime_type} valide"
 }

@@ -1,11 +1,14 @@
 import {
-  BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
+import {
+  AppBadRequestException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { randomUUID } from 'crypto';
 import {
   FILE_STORAGE_SERVICE,
@@ -49,13 +52,12 @@ export class ResourcesService {
 
     // 3. Validar coherencia scope_level / scope_id
     if (dto.scope_level === 'system' && dto.scope_id != null) {
-      throw new BadRequestException(
-        'Los recursos de alcance sistema no deben tener scope_id',
-      );
+      throw new AppBadRequestException(ErrorCode.RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID);
     }
     if (dto.scope_level !== 'system' && dto.scope_id == null) {
-      throw new BadRequestException(
-        'Los recursos de alcance union o campo local requieren scope_id',
+      throw new AppBadRequestException(
+        ErrorCode.RESOURCE_SCOPE_NON_SYSTEM_MISSING_SCOPE_ID,
+        { scope_level: dto.scope_level },
       );
     }
 
@@ -66,7 +68,7 @@ export class ResourcesService {
         select: { resource_category_id: true, active: true },
       });
       if (!category || !category.active) {
-        throw new BadRequestException('Categoría de recurso no encontrada');
+        throw new AppNotFoundException(ErrorCode.RESOURCE_CATEGORY_NOT_FOUND);
       }
     }
 
@@ -77,7 +79,7 @@ export class ResourcesService {
         select: { club_type_id: true },
       });
       if (!clubType) {
-        throw new BadRequestException('Tipo de club no encontrado');
+        throw new AppNotFoundException(ErrorCode.RESOURCE_CLUB_TYPE_NOT_FOUND);
       }
     }
 
@@ -217,7 +219,7 @@ export class ResourcesService {
     });
 
     if (!resource) {
-      throw new NotFoundException('Recurso no encontrado');
+      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
     let signedUrl: string | null = null;
@@ -315,7 +317,7 @@ export class ResourcesService {
     });
 
     if (!existing) {
-      throw new NotFoundException('Recurso no encontrado');
+      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
     const updateData: Record<string, any> = {};
@@ -358,7 +360,7 @@ export class ResourcesService {
     });
 
     if (!existing) {
-      throw new NotFoundException('Recurso no encontrado');
+      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
     await this.prisma.resources.update({
@@ -380,13 +382,11 @@ export class ResourcesService {
     });
 
     if (!resource) {
-      throw new NotFoundException('Recurso no encontrado');
+      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
     if (!resource.file_key) {
-      throw new BadRequestException(
-        'Este recurso no tiene un archivo asociado',
-      );
+      throw new AppBadRequestException(ErrorCode.RESOURCE_NO_FILE);
     }
 
     const url = await this.resolveSignedUrl(resource.file_key);
@@ -411,9 +411,7 @@ export class ResourcesService {
 
     if (scopeLevel === 'system') {
       if (!globalScope?.country?.id) {
-        throw new ForbiddenException(
-          'Solo administradores de nivel sistema pueden crear recursos de alcance sistema',
-        );
+        throw new AppForbiddenException(ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM);
       }
       return;
     }
@@ -424,8 +422,9 @@ export class ResourcesService {
       // Administrador de país puede gestionar cualquier unión
       if (userCountryId) return;
       if (userUnionId !== scopeId) {
-        throw new ForbiddenException(
-          'No tiene permiso para crear recursos en esta unión',
+        throw new AppForbiddenException(
+          ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_UNION,
+          { scope_id: String(scopeId) },
         );
       }
       return;
@@ -441,14 +440,18 @@ export class ResourcesService {
       // (el guard de scope ya restringe qué campos son visibles)
       if (userUnionId) return;
       if (userLfId !== scopeId) {
-        throw new ForbiddenException(
-          'No tiene permiso para crear recursos en este campo local',
+        throw new AppForbiddenException(
+          ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD,
+          { scope_id: String(scopeId) },
         );
       }
       return;
     }
 
-    throw new BadRequestException('Nivel de alcance inválido');
+    throw new AppBadRequestException(
+      ErrorCode.RESOURCE_SCOPE_LEVEL_INVALID,
+      { scope_level: scopeLevel },
+    );
   }
 
   /** Genera una URL firmada para un file_key en R2. */
