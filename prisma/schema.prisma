@@ -576,17 +576,33 @@ model finances {
 }
 
 model finances_categories {
-  finance_category_id Int        @id @default(autoincrement())
-  name                String     @db.VarChar(100)
+  finance_category_id Int                               @id @default(autoincrement())
+  name                String                            @db.VarChar(100)
   description         String?
-  icon                Int?       @default(0)
+  icon                Int?                              @default(0)
   type                Int
-  active              Boolean    @default(false)
-  created_at          DateTime?  @default(now()) @db.Timestamptz(6)
-  modified_at         DateTime?  @default(now()) @db.Timestamptz(6)
+  active              Boolean                           @default(false)
+  created_at          DateTime?                         @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime?                         @default(now()) @db.Timestamptz(6)
   finances            finances[]
+  translations        finances_categories_translations[]
 
   @@unique([name, type], map: "unique_name_type")
+}
+
+model finances_categories_translations {
+  id                  Int                 @id @default(autoincrement())
+  finance_category_id Int
+  locale              String              @db.VarChar(10)
+  name                String?             @db.VarChar(100)
+  description         String?
+  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  finances_categories finances_categories @relation(fields: [finance_category_id], references: [finance_category_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([finance_category_id, locale])
+  @@index([locale])
+  @@index([finance_category_id])
 }
 
 model FinancePeriodClosing {

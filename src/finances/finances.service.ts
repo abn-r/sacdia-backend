@@ -16,12 +16,14 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { FinancePeriodService } from './finance-period.service';
+import { TranslationService } from '../common/services/translation.service';
 
 @Injectable()
 export class FinancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly financePeriodService: FinancePeriodService,
+    private readonly translationService: TranslationService,
   ) {}
 
   // ========================================
@@ -29,7 +31,8 @@ export class FinancesService {
   // ========================================
 
   async getCategories(type?: number) {
-    return this.prisma.finances_categories.findMany({
+    const locale = this.translationService.getCurrentLocale();
+    const records = await this.prisma.finances_categories.findMany({
       where: {
         active: true,
         ...(type !== undefined && { type }),
@@ -40,9 +43,14 @@ export class FinancesService {
         description: true,
         icon: true,
         type: true, // 0=ingreso, 1=egreso
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
       },
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
     });
+    return this.translationService.translateMany(records, locale, ['name', 'description'], 'translations');
   }
 
   // ========================================

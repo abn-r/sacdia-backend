@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ForbiddenException } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FinancePeriodService } from './finance-period.service';
+import { TranslationService } from '../common/services/translation.service';
 
 describe('FinancesService', () => {
   let service: FinancesService;
@@ -31,12 +32,18 @@ describe('FinancesService', () => {
     validatePeriodOpen: jest.fn(),
   };
 
+  const mockTranslationService: Partial<TranslationService> = {
+    getCurrentLocale: jest.fn().mockReturnValue('es'),
+    translateMany: jest.fn().mockImplementation((records) => records),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancesService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FinancePeriodService, useValue: mockFinancePeriodService },
+        { provide: TranslationService, useValue: mockTranslationService },
       ],
     }).compile();
 
