@@ -362,5 +362,13 @@
   "CERT_ALREADY_ENROLLED": "User is already enrolled in this certification",
   "CERT_ELIGIBILITY_REQUIRED": "Only invested Senior Guides can enroll in certifications",
   "CERT_ENROLLMENT_NOT_FOUND": "Certification enrollment not found",
-  "CERT_SECTION_INVALID": "Invalid module or section for this certification"
+  "CERT_SECTION_INVALID": "Invalid module or section for this certification",
+  "ACHIEVEMENT_CATEGORY_NOT_FOUND": "Achievement category not found",
+  "ACHIEVEMENT_CATEGORY_HAS_ACTIVE": "Cannot delete category: it has active achievements. Deactivate or reassign them first",
+  "ACHIEVEMENT_NOT_FOUND": "Achievement not found",
+  "ACHIEVEMENT_BADGE_INVALID_TYPE": "Invalid file type. Allowed: PNG, SVG, WebP",
+  "ACHIEVEMENT_BADGE_TOO_LARGE": "File too large. Maximum allowed is 2 MB",
+  "ACHIEVEMENT_INACTIVE": "Achievement is inactive. Activate it before running retroactive evaluation",
+  "ACHIEVEMENT_PREREQUISITE_NOT_FOUND": "Prerequisite achievement not found or is inactive",
+  "ACHIEVEMENT_CIRCULAR_PREREQUISITE": "Circular prerequisite dependency detected"
 }

@@ -362,5 +362,13 @@
   "CERT_ALREADY_ENROLLED": "El usuario ya está inscrito en esta certificación",
   "CERT_ELIGIBILITY_REQUIRED": "Solo los Guías Mayores investidos pueden inscribirse en certificaciones",
   "CERT_ENROLLMENT_NOT_FOUND": "Inscripción en certificación no encontrada",
-  "CERT_SECTION_INVALID": "Módulo o sección inválido para esta certificación"
+  "CERT_SECTION_INVALID": "Módulo o sección inválido para esta certificación",
+  "ACHIEVEMENT_CATEGORY_NOT_FOUND": "Categoría de logro no encontrada",
+  "ACHIEVEMENT_CATEGORY_HAS_ACTIVE": "No se puede eliminar la categoría porque tiene logros activos. Desactívelos o reasígnelos primero",
+  "ACHIEVEMENT_NOT_FOUND": "Logro no encontrado",
+  "ACHIEVEMENT_BADGE_INVALID_TYPE": "Tipo de archivo inválido. Permitidos: PNG, SVG, WebP",
+  "ACHIEVEMENT_BADGE_TOO_LARGE": "El archivo es demasiado grande. El máximo permitido es 2 MB",
+  "ACHIEVEMENT_INACTIVE": "El logro está inactivo. Actívelo antes de ejecutar la evaluación retroactiva",
+  "ACHIEVEMENT_PREREQUISITE_NOT_FOUND": "El logro prerrequisito no fue encontrado o está inactivo",
+  "ACHIEVEMENT_CIRCULAR_PREREQUISITE": "Dependencia circular detectada en los prerrequisitos"
 }

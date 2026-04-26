@@ -362,5 +362,13 @@
   "CERT_ALREADY_ENROLLED": "L'utilisateur est déjà inscrit dans cette certification",
   "CERT_ELIGIBILITY_REQUIRED": "Seuls les Guides Supérieurs investis peuvent s'inscrire aux certifications",
   "CERT_ENROLLMENT_NOT_FOUND": "Inscription à la certification introuvable",
-  "CERT_SECTION_INVALID": "Module ou section invalide pour cette certification"
+  "CERT_SECTION_INVALID": "Module ou section invalide pour cette certification",
+  "ACHIEVEMENT_CATEGORY_NOT_FOUND": "Catégorie de réussite introuvable",
+  "ACHIEVEMENT_CATEGORY_HAS_ACTIVE": "Impossible de supprimer la catégorie car elle a des réussites actives. Désactivez-les ou réaffectez-les d'abord",
+  "ACHIEVEMENT_NOT_FOUND": "Réussite introuvable",
+  "ACHIEVEMENT_BADGE_INVALID_TYPE": "Type de fichier invalide. Autorisés : PNG, SVG, WebP",
+  "ACHIEVEMENT_BADGE_TOO_LARGE": "Fichier trop volumineux. Le maximum autorisé est 2 Mo",
+  "ACHIEVEMENT_INACTIVE": "La réussite est inactive. Activez-la avant d'exécuter l'évaluation rétroactive",
+  "ACHIEVEMENT_PREREQUISITE_NOT_FOUND": "La réussite prérequise est introuvable ou inactive",
+  "ACHIEVEMENT_CIRCULAR_PREREQUISITE": "Dépendance circulaire détectée dans les prérequis"
 }

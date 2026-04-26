@@ -362,5 +362,13 @@
   "CERT_ALREADY_ENROLLED": "O usuário já está inscrito nesta certificação",
   "CERT_ELIGIBILITY_REQUIRED": "Apenas os Guias Maiores investidos podem se inscrever em certificações",
   "CERT_ENROLLMENT_NOT_FOUND": "Inscrição em certificação não encontrada",
-  "CERT_SECTION_INVALID": "Módulo ou seção inválido para esta certificação"
+  "CERT_SECTION_INVALID": "Módulo ou seção inválido para esta certificação",
+  "ACHIEVEMENT_CATEGORY_NOT_FOUND": "Categoria de conquista não encontrada",
+  "ACHIEVEMENT_CATEGORY_HAS_ACTIVE": "Não é possível excluir a categoria porque ela tem conquistas ativas. Desative-as ou reatribua-as primeiro",
+  "ACHIEVEMENT_NOT_FOUND": "Conquista não encontrada",
+  "ACHIEVEMENT_BADGE_INVALID_TYPE": "Tipo de arquivo inválido. Permitidos: PNG, SVG, WebP",
+  "ACHIEVEMENT_BADGE_TOO_LARGE": "O arquivo é muito grande. O máximo permitido é 2 MB",
+  "ACHIEVEMENT_INACTIVE": "A conquista está inativa. Ative-a antes de executar a avaliação retroativa",
+  "ACHIEVEMENT_PREREQUISITE_NOT_FOUND": "A conquista pré-requisito não foi encontrada ou está inativa",
+  "ACHIEVEMENT_CIRCULAR_PREREQUISITE": "Dependência circular detectada nos pré-requisitos"
 }

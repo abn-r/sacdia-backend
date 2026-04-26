@@ -1,12 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
@@ -28,6 +20,12 @@ import {
   StorageBucketAlias,
 } from '../../common/services/file-storage.service';
 import type { FileStorageService } from '../../common/services/file-storage.service';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,9 +81,7 @@ export class AdminAchievementsService {
     });
 
     if (!category) {
-      throw new NotFoundException(
-        `Achievement category with ID ${categoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ACHIEVEMENT_CATEGORY_NOT_FOUND);
     }
 
     return category;
@@ -130,10 +126,7 @@ export class AdminAchievementsService {
     });
 
     if (activeCount > 0) {
-      throw new ConflictException(
-        `Cannot delete category ${categoryId}: it has ${activeCount} active achievement(s). ` +
-          'Deactivate or reassign them first.',
-      );
+      throw new AppConflictException(ErrorCode.ACHIEVEMENT_CATEGORY_HAS_ACTIVE);
     }
 
     return this.prisma.achievement_categories.update({
@@ -170,9 +163,7 @@ export class AdminAchievementsService {
     );
 
     if (!result) {
-      throw new NotFoundException(
-        `Achievement with ID ${achievementId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ACHIEVEMENT_NOT_FOUND);
     }
 
     return result.achievement;
@@ -284,16 +275,12 @@ export class AdminAchievementsService {
     // Validate MIME type
     const mimeType = file.mimetype as ImageMimeType;
     if (!ALLOWED_IMAGE_MIME_TYPES.includes(mimeType)) {
-      throw new BadRequestException(
-        `Invalid file type "${file.mimetype}". Allowed: PNG, SVG, WebP.`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE);
     }
 
     // Validate file size
     if (file.size > MAX_BADGE_SIZE_BYTES) {
-      throw new BadRequestException(
-        `File too large (${(file.size / 1024 / 1024).toFixed(2)} MB). Maximum allowed is 2 MB.`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_BADGE_TOO_LARGE);
     }
 
     const ext = MIME_TO_EXT[mimeType];
@@ -329,9 +316,7 @@ export class AdminAchievementsService {
     const achievement = await this.getAchievementById(achievementId);
 
     if (!achievement.active) {
-      throw new BadRequestException(
-        `Achievement ${achievementId} is inactive. Activate it before running retroactive evaluation.`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_INACTIVE);
     }
 
     // Fetch all users who don't already have this achievement completed
@@ -545,9 +530,7 @@ export class AdminAchievementsService {
     });
 
     if (!prereq || !prereq.active) {
-      throw new NotFoundException(
-        `Prerequisite achievement with ID ${prerequisiteId} not found or is inactive`,
-      );
+      throw new AppNotFoundException(ErrorCode.ACHIEVEMENT_PREREQUISITE_NOT_FOUND);
     }
 
     // Circular dependency detection — walk the prerequisite chain
@@ -557,9 +540,7 @@ export class AdminAchievementsService {
 
       while (cursor !== null) {
         if (cursor === currentId) {
-          throw new BadRequestException(
-            `Circular prerequisite detected: achievement ${currentId} cannot require itself through a chain.`,
-          );
+          throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_CIRCULAR_PREREQUISITE);
         }
 
         if (visited.has(cursor)) break; // cycle not involving currentId, safe to stop
