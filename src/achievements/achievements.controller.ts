@@ -1,13 +1,14 @@
 import {
   Controller,
   Get,
-  NotFoundException,
   Param,
   ParseIntPipe,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { AppNotFoundException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -205,9 +206,7 @@ export class AchievementsController {
     );
 
     if (!result || !result.achievement.active) {
-      throw new NotFoundException(
-        `Achievement with ID ${achievementId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ACHIEVEMENT_NOT_FOUND);
     }
 
     const isCompleted = result.userProgress?.completed === true;

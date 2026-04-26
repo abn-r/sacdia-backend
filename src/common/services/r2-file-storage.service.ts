@@ -1,8 +1,6 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AppInternalServerErrorException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectsCommand,
@@ -64,7 +62,7 @@ export class R2FileStorageService implements FileStorageService {
         `Error uploading object to R2 bucket=${config.bucket} key=${objectKey}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error uploading file to R2');
+      throw new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED);
     }
 
     return {
@@ -104,14 +102,15 @@ export class R2FileStorageService implements FileStorageService {
             (item) => `${item.Key || 'unknown'} (${item.Code || 'unknown'})`,
           ).join(', ')}`,
         );
-        throw new InternalServerErrorException('Error deleting files from R2');
+        throw new AppInternalServerErrorException(ErrorCode.R2_DELETE_FAILED);
       }
     } catch (error) {
+      if (error instanceof AppInternalServerErrorException) throw error;
       this.logger.error(
         `Error deleting objects from R2 bucket=${bucket}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error deleting files from R2');
+      throw new AppInternalServerErrorException(ErrorCode.R2_DELETE_FAILED);
     }
   }
 
@@ -184,7 +183,7 @@ export class R2FileStorageService implements FileStorageService {
         `Error generating signed URL for R2 bucket=${config.bucket} key=${objectKey}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error generating signed URL');
+      throw new AppInternalServerErrorException(ErrorCode.R2_SIGNED_URL_FAILED);
     }
   }
 
@@ -196,9 +195,7 @@ export class R2FileStorageService implements FileStorageService {
   resolvePublicUrl(bucketAlias: StorageBucketAlias, key: string): string {
     const config = this.getBucketConfig(bucketAlias);
     if (!config.isPublic) {
-      throw new InternalServerErrorException(
-        `resolvePublicUrl called on private bucket alias: ${bucketAlias}`,
-      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
     // Normalize the incoming key and ensure it carries the bucket prefix.
     // - If the key already starts with the prefix (full object key), use it as-is.
@@ -303,12 +300,10 @@ export class R2FileStorageService implements FileStorageService {
           Key: key,
         }),
       );
-      throw new InternalServerErrorException(
-        `R2 object already exists: ${key}`,
-      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED);
     } catch (error) {
       if (
-        error instanceof InternalServerErrorException ||
+        error instanceof AppInternalServerErrorException ||
         this.isNotFoundError(error)
       ) {
         if (this.isNotFoundError(error)) return;
@@ -319,7 +314,7 @@ export class R2FileStorageService implements FileStorageService {
         `Error checking object existence in R2 bucket=${bucket} key=${key}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error validating R2 object key');
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
   }
 
@@ -466,18 +461,14 @@ export class R2FileStorageService implements FileStorageService {
           isPublic: false,
         };
       default:
-        throw new InternalServerErrorException(
-          `Unsupported storage bucket alias: ${bucketAlias}`,
-        );
+        throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
   }
 
   private getRequiredEnv(name: string) {
     const value = this.configService.get<string>(name)?.trim();
     if (!value) {
-      throw new InternalServerErrorException(
-        `Missing required env var: ${name}`,
-      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
     return value;
   }

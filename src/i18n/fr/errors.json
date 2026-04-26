@@ -438,5 +438,6 @@
   "RBAC_BOOTSTRAP_SECRET_INVALID": "Secret de bootstrap invalide",
   "NOTIF_BROADCAST_USER_ID_FORBIDDEN": "userId ne peut pas être inclus dans les notifications de diffusion",
   "SYSTEM_CONFIG_VALUE_REQUIRED": "La valeur de la configuration est requise",
-  "ACHIEVEMENT_BADGE_UPLOAD_MISSING": "Un fichier de badge est requis pour le téléversement"
+  "ACHIEVEMENT_BADGE_UPLOAD_MISSING": "Un fichier de badge est requis pour le téléversement",
+  "NOTIF_INVALID_CATEGORY": "Catégorie de notification invalide."
 }

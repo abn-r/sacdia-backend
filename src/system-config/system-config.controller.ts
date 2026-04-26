@@ -5,8 +5,9 @@ import {
   Param,
   Body,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiTags,
   ApiOperation,
@@ -92,9 +93,7 @@ export class SystemConfigController {
     @Body() dto: UpdateSystemConfigDto,
   ) {
     if (!key || key.length > 100) {
-      throw new BadRequestException(
-        'config_key must be a non-empty string with a maximum length of 100 characters',
-      );
+      throw new AppBadRequestException(ErrorCode.SYSTEM_CONFIG_VALUE_REQUIRED);
     }
     return this.systemConfigService.updateByKey(key, dto.config_value);
   }

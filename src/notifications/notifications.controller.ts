@@ -13,9 +13,10 @@ import {
   Query,
   ParseIntPipe,
   DefaultValuePipe,
-  BadRequestException,
   ParseEnumPipe,
 } from '@nestjs/common';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiTags,
   ApiOperation,
@@ -250,9 +251,7 @@ export class NotificationsController {
   ) {
     const validCategory = NOTIFICATION_CATEGORIES.find((c) => c === category);
     if (!validCategory) {
-      throw new BadRequestException(
-        `Unknown category "${category}". Valid categories: ${NOTIFICATION_CATEGORIES.join(', ')}`,
-      );
+      throw new AppBadRequestException(ErrorCode.NOTIF_INVALID_CATEGORY);
     }
     const preferences = await this.preferencesService.setPreference(
       req.user.sub,

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,6 +13,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AppBadRequestException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -308,9 +309,7 @@ export class AdminAchievementsController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) {
-      throw new BadRequestException(
-        'No file provided. Use multipart/form-data with field name "file".',
-      );
+      throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_BADGE_UPLOAD_MISSING);
     }
     const data = await this.adminAchievementsService.uploadBadgeImage(
       achievementId,

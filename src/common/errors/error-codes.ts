@@ -549,6 +549,7 @@ export enum ErrorCode {
 
   // ── Notifications Controller ──────────────────────────────────────────────
   NOTIF_BROADCAST_USER_ID_FORBIDDEN = 'NOTIF_BROADCAST_USER_ID_FORBIDDEN',
+  NOTIF_INVALID_CATEGORY = 'NOTIF_INVALID_CATEGORY',
 
   // ── System Config Controller ──────────────────────────────────────────────
   SYSTEM_CONFIG_VALUE_REQUIRED = 'SYSTEM_CONFIG_VALUE_REQUIRED',

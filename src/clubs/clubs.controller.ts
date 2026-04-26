@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   Post,
@@ -12,6 +11,8 @@ import {
   ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiTags,
   ApiOperation,
@@ -255,9 +256,7 @@ export class ClubsController {
     @Body() dto: AssignRoleDto,
   ) {
     if (dto.club_section_id && dto.club_section_id !== sectionId) {
-      throw new BadRequestException(
-        'club_section_id in body must match route sectionId',
-      );
+      throw new AppBadRequestException(ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID);
     }
 
     return this.clubsService.assignRole({
