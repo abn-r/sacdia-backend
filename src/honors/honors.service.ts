@@ -66,6 +66,7 @@ export class HonorsService {
     filters?: HonorFiltersDto,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
+    const locale = this.translationService.getCurrentLocale();
     const where = {
       active: true,
       ...(filters?.categoryId && { honors_category_id: filters.categoryId }),
@@ -79,6 +80,10 @@ export class HonorsService {
         include: {
           honors_categories: { select: { name: true, icon: true } },
           club_types: { select: { name: true } },
+          translations: {
+            where: { locale },
+            select: { locale: true, name: true, description: true },
+          },
         },
         orderBy: [{ honors_category_id: 'asc' }, { name: 'asc' }],
         skip: pagination?.skip ?? 0,
@@ -87,14 +92,22 @@ export class HonorsService {
       this.prisma.honors.count({ where }),
     ]);
 
-    return createPaginatedResult(
+    const translated = this.translationService.translateMany(
       data,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
+
+    return createPaginatedResult(
+      translated,
       total,
       pagination ?? new PaginationDto(),
     );
   }
 
   async getGroupedByCategory(filters?: HonorFiltersDto) {
+    const locale = this.translationService.getCurrentLocale();
     const where = {
       active: true,
       ...(filters?.categoryId && { honors_category_id: filters.categoryId }),
@@ -115,6 +128,10 @@ export class HonorsService {
         material_url: true,
         club_type_id: true,
         honors_category_id: true,
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
         honors_categories: {
           select: {
             honor_category_id: true,
@@ -151,7 +168,15 @@ export class HonorsService {
       }
     >();
 
-    for (const honor of honors) {
+    // Apply translations to honors before grouping
+    const translatedHonors = this.translationService.translateMany(
+      honors,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
+
+    for (const honor of translatedHonors as any[]) {
       const category = honor.honors_categories;
       const key = category?.honor_category_id
         ? String(category.honor_category_id)
@@ -192,12 +217,25 @@ export class HonorsService {
   }
 
   async findOne(honorId: number) {
+    const locale = this.translationService.getCurrentLocale();
     const honor = await this.prisma.honors.findUnique({
       where: { honor_id: honorId, active: true },
       include: {
         honors_categories: true,
         club_types: { select: { name: true } },
-        master_honors: { select: { name: true } },
+        master_honors: {
+          select: {
+            name: true,
+            translations: {
+              where: { locale },
+              select: { locale: true, name: true },
+            },
+          },
+        },
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
       },
     });
 
@@ -205,7 +243,26 @@ export class HonorsService {
       throw new AppNotFoundException(ErrorCode.HONOR_NOT_FOUND);
     }
 
-    return honor;
+    // Translate honor
+    const translatedHonor = this.translationService.translateMany(
+      [honor],
+      locale,
+      ['name', 'description'],
+      'translations',
+    )[0];
+
+    // Translate master_honor name if present
+    if (translatedHonor.master_honors) {
+      const masterTranslated = this.translationService.translateMany(
+        [translatedHonor.master_honors],
+        locale,
+        ['name'],
+        'translations',
+      )[0];
+      (translatedHonor as any).master_honors = masterTranslated;
+    }
+
+    return translatedHonor;
   }
 
   async getCategories() {

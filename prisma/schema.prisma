@@ -817,6 +817,22 @@ model honors {
   master_honors      master_honors?       @relation(fields: [master_honors_id], references: [master_honor_id], onDelete: NoAction, onUpdate: NoAction)
   users_honors       users_honors[]
   honor_requirements honor_requirements[]
+  translations       honors_translations[]
+}
+
+model honors_translations {
+  id          Int      @id @default(autoincrement())
+  honor_id    Int
+  locale      String   @db.VarChar(10)
+  name        String?  @db.VarChar(100)
+  description String?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  honors      honors    @relation(fields: [honor_id], references: [honor_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([honor_id, locale])
+  @@index([locale])
+  @@index([honor_id])
 }
 
 model honor_requirements {
@@ -973,13 +989,28 @@ model local_fields {
 }
 
 model master_honors {
-  master_honor_id Int       @id @default(autoincrement())
-  name            String    @unique @db.VarChar(100)
+  master_honor_id Int                        @id @default(autoincrement())
+  name            String                     @unique @db.VarChar(100)
   master_image    String?
-  active          Boolean   @default(false)
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  modified_at     DateTime? @default(now()) @db.Timestamptz(6)
+  active          Boolean                    @default(false)
+  created_at      DateTime?                  @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime?                  @default(now()) @db.Timestamptz(6)
   honors          honors[]
+  translations    master_honors_translations[]
+}
+
+model master_honors_translations {
+  id              Int           @id @default(autoincrement())
+  master_honor_id Int
+  locale          String        @db.VarChar(10)
+  name            String?       @db.VarChar(100)
+  created_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  master_honors   master_honors @relation(fields: [master_honor_id], references: [master_honor_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([master_honor_id, locale])
+  @@index([locale])
+  @@index([master_honor_id])
 }
 
 model permissions {
