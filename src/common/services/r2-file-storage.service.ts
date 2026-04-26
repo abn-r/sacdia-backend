@@ -69,11 +69,10 @@ export class R2FileStorageService implements FileStorageService {
 
     return {
       key: objectKey,
-      // objectKey already includes the keyPrefix — pass it directly so the
-      // public URL contains the full path (e.g. user-profiles/photo-x.jpeg).
-      // Using normalizedKey here was Bug #1: it stripped the prefix, producing
-      // a broken URL for prefixed buckets (USER_PROFILES, HONORS_IMAGES, etc.).
-      url: this.buildPublicUrl(config.publicBaseUrl, objectKey),
+      // objectKey already includes the keyPrefix. buildPublicUrl will detect
+      // whether the prefix is already embedded in publicBaseUrl (embedded-prefix
+      // pattern) and avoid doubling it, or prepend it when the base URL is bare.
+      url: this.buildPublicUrl(config.publicBaseUrl, objectKey, config.keyPrefix),
     };
   }
 
@@ -163,10 +162,9 @@ export class R2FileStorageService implements FileStorageService {
     }
 
     if (config.isPublic) {
-      // objectKey already carries the full key with prefix — pass it directly.
-      // The former toRelativeKey→buildPublicUrl round-trip stripped the prefix,
-      // producing a broken URL for prefixed buckets (Bug #1 same root cause).
-      return this.buildPublicUrl(config.publicBaseUrl, objectKey);
+      // objectKey carries the full key with prefix. buildPublicUrl handles the
+      // embedded-vs-bare publicBaseUrl distinction automatically.
+      return this.buildPublicUrl(config.publicBaseUrl, objectKey, config.keyPrefix);
     }
 
     const expiresIn = this.resolveSignedUrlExpiration(
@@ -210,16 +208,91 @@ export class R2FileStorageService implements FileStorageService {
     const objectKey = this.hasKeyPrefix(config.keyPrefix, normalized)
       ? normalized
       : this.toObjectKey(config.keyPrefix, normalized);
-    return this.buildPublicUrl(config.publicBaseUrl, objectKey);
+    return this.buildPublicUrl(config.publicBaseUrl, objectKey, config.keyPrefix);
   }
 
-  private buildPublicUrl(publicBaseUrl: string, relativeKey: string) {
+  /**
+   * Build the CDN public URL for an object stored in R2.
+   *
+   * ENV INCONSISTENCY (2026-04):
+   *   Some buckets embed the keyPrefix as a path segment in publicBaseUrl
+   *   (e.g. HONORS_IMAGES → "https://pub.r2.dev/honors", prefix = "honors").
+   *   Others expose a bare domain and rely on the prefix being prepended here
+   *   (e.g. USER_PROFILES → "https://pub-xxx.r2.dev", prefix = "user-profiles").
+   *
+   *   When the prefix is already embedded in publicBaseUrl we must NOT inject it
+   *   again — doing so produces double-prefix paths like ".../honors/honors/img.png".
+   *   When it is NOT embedded we must prepend it so the full object key appears in
+   *   the URL (Bug #1 regression: omitting it broke prefixed buckets).
+   *
+   *   Future cleanup: standardise all R2_PUBLIC_URL_* vars to bare domain form so
+   *   the service always controls the full path.
+   *
+   * @param publicBaseUrl  Configured public base URL for the bucket.
+   * @param objectKey      Full R2 object key — already includes the keyPrefix
+   *                       (e.g. "user-profiles/photo.jpg", "honors/badge.png").
+   * @param keyPrefix      The bucket's keyPrefix as configured.
+   */
+  private buildPublicUrl(
+    publicBaseUrl: string,
+    objectKey: string,
+    keyPrefix: string,
+  ): string {
     const normalizedBase = this.normalizeBaseUrl(publicBaseUrl);
-    const normalizedKey = this.normalizeKey(relativeKey)
+    const normalizedPrefix = keyPrefix.trim().replace(/^\/+|\/+$/g, '');
+
+    // Determine which key segment to append after the base URL.
+    // If the prefix is already embedded in publicBaseUrl (e.g. ".../honors"),
+    // we strip the prefix from objectKey so it isn't duplicated.
+    // Otherwise we use objectKey as-is (it already carries the prefix).
+    let pathKey: string;
+    if (
+      normalizedPrefix &&
+      this.isKeyPrefixInPublicBaseUrl(normalizedBase, normalizedPrefix)
+    ) {
+      pathKey = this.toRelativeKey(normalizedPrefix, objectKey);
+    } else {
+      pathKey = objectKey;
+    }
+
+    const normalizedKey = this.normalizeKey(pathKey)
       .split('/')
       .map((segment) => encodeURIComponent(segment))
       .join('/');
     return `${normalizedBase}/${normalizedKey}`;
+  }
+
+  /**
+   * Returns true when the keyPrefix is already embedded as the last path
+   * segment of publicBaseUrl (or part of its path).
+   *
+   * Examples:
+   *   isKeyPrefixInPublicBaseUrl("https://pub.r2.dev/honors", "honors") → true
+   *   isKeyPrefixInPublicBaseUrl("https://pub.r2.dev/secure-documents/activities", "activities") → true
+   *   isKeyPrefixInPublicBaseUrl("https://pub-xxx.r2.dev", "user-profiles") → false
+   *   isKeyPrefixInPublicBaseUrl("https://pub.r2.dev", "") → false
+   */
+  private isKeyPrefixInPublicBaseUrl(
+    publicBaseUrl: string,
+    keyPrefix: string,
+  ): boolean {
+    const normalizedPrefix = keyPrefix.trim().replace(/^\/+|\/+$/g, '');
+    if (!normalizedPrefix) return false;
+    try {
+      const url = new URL(publicBaseUrl);
+      const basePath = url.pathname
+        .trim()
+        .replace(/^\/+|\/+$/g, '');
+      if (!basePath) return false;
+      // Match if the basePath IS the prefix, ends with /prefix, or starts with prefix/
+      return (
+        basePath === normalizedPrefix ||
+        basePath.endsWith(`/${normalizedPrefix}`) ||
+        basePath.startsWith(`${normalizedPrefix}/`)
+      );
+    } catch {
+      return false;
+    }
   }
 
   private async assertKeyDoesNotExist(bucket: string, key: string) {

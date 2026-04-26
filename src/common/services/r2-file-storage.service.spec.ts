@@ -2,8 +2,16 @@
  * r2-file-storage.service.spec.ts
  *
  * Unit tests for R2FileStorageService.
- * Focus: regression coverage for Bug #1 — buildPublicUrl must include the
- * keyPrefix in the returned URL for prefixed buckets (USER_PROFILES, HONORS_*).
+ *
+ * ENV INCONSISTENCY (production reality as of 2026-04):
+ *   Two publicBaseUrl patterns coexist:
+ *     - Bare pattern   (USER_PROFILES): "https://pub-xxx.r2.dev"
+ *       → prefix must be PREPENDED by buildPublicUrl
+ *     - Embedded pattern (HONORS_*, ACTIVITIES_*, etc.): "https://pub.r2.dev/honors"
+ *       → prefix is ALREADY in the base URL; buildPublicUrl must NOT prepend it again
+ *
+ * Commit fcf04c7 fixed Bug #1 (bare pattern) but introduced a regression for
+ * the embedded pattern (double prefix). This suite covers both.
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -354,6 +362,150 @@ describe('R2FileStorageService', () => {
         '',
       );
       expect(key).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // EMBEDDED-PREFIX pattern — regression for commit fcf04c7
+  //
+  // These tests mirror the REAL production env where publicBaseUrl already
+  // contains the keyPrefix as a path segment.  buildPublicUrl must NOT
+  // prepend the prefix again.
+  // =========================================================================
+
+  describe('upload — embedded-prefix publicBaseUrl must NOT double-prefix (fcf04c7 regression)', () => {
+    const buffer = Buffer.from('fake-image');
+    const imgOpts = { contentType: 'image/jpeg' };
+
+    it('HONORS_IMAGES embedded pattern: URL is pub.r2.dev/honors/img.jpg (single prefix)', async () => {
+      // Simulate real prod env: publicBaseUrl already contains "/honors"
+      const svc = await buildService({
+        R2_PUBLIC_URL_HONORS_IMAGES: 'https://pub-embed.r2.dev/honors',
+        R2_KEY_PREFIX_HONORS_IMAGES: 'honors',
+      });
+
+      mockS3Send
+        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockResolvedValueOnce({});
+
+      const result = await svc.upload(
+        StorageBucketAlias.HONORS_IMAGES,
+        'badge.png',
+        buffer,
+        imgOpts,
+      );
+
+      // objectKey in R2 must still carry the prefix
+      expect(result.key).toBe('honors/badge.png');
+      // Public URL must NOT double-prefix
+      expect(result.url).toBe('https://pub-embed.r2.dev/honors/badge.png');
+      expect(result.url).not.toContain('/honors/honors/');
+    });
+
+    it('HONORS_PDF embedded pattern: URL is pub.r2.dev/honors_pdf/manual.pdf (single prefix)', async () => {
+      const svc = await buildService({
+        R2_PUBLIC_URL_HONORS_PDF: 'https://pub-embed.r2.dev/honors_pdf',
+        R2_KEY_PREFIX_HONORS_PDF: 'honors_pdf',
+      });
+
+      mockS3Send
+        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockResolvedValueOnce({});
+
+      const result = await svc.upload(
+        StorageBucketAlias.HONORS_PDF,
+        'manual.pdf',
+        buffer,
+        { contentType: 'application/pdf' },
+      );
+
+      expect(result.key).toBe('honors_pdf/manual.pdf');
+      expect(result.url).toBe('https://pub-embed.r2.dev/honors_pdf/manual.pdf');
+      expect(result.url).not.toContain('/honors_pdf/honors_pdf/');
+    });
+
+    it('ACTIVITIES_IMAGES long-path embedded pattern: /secure-documents/activities (single prefix)', async () => {
+      // publicBaseUrl has a multi-segment path; prefix is only the last segment
+      const svc = await buildService({
+        R2_PUBLIC_URL_ACTIVITIES_IMAGES:
+          'https://pub-embed.r2.dev/secure-documents/activities',
+        R2_KEY_PREFIX_ACTIVITIES_IMAGES: 'activities',
+      });
+
+      mockS3Send
+        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockResolvedValueOnce({});
+
+      const result = await svc.upload(
+        StorageBucketAlias.ACTIVITIES_IMAGES,
+        'event.jpg',
+        buffer,
+        imgOpts,
+      );
+
+      expect(result.key).toBe('activities/event.jpg');
+      expect(result.url).toBe(
+        'https://pub-embed.r2.dev/secure-documents/activities/event.jpg',
+      );
+      expect(result.url).not.toContain('/activities/activities/');
+    });
+
+    it('USER_PROFILES bare pattern still works when run alongside embedded-pattern buckets', async () => {
+      // Confirm bare pattern is unaffected by the new helper
+      mockS3Send
+        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockResolvedValueOnce({});
+
+      const result = await service.upload(
+        StorageBucketAlias.USER_PROFILES,
+        'photo-x.jpeg',
+        buffer,
+        imgOpts,
+      );
+
+      // Bare pattern: prefix is prepended by buildPublicUrl
+      expect(result.key).toBe('user-profiles/photo-x.jpeg');
+      expect(result.url).toBe('https://pub-xxx.r2.dev/user-profiles/photo-x.jpeg');
+    });
+  });
+
+  // =========================================================================
+  // resolvePublicUrl — embedded-prefix variant
+  // =========================================================================
+
+  describe('resolvePublicUrl — embedded-prefix pattern must NOT double-prefix', () => {
+    it('HONORS_IMAGES embedded: bare filename is NOT double-prefixed', async () => {
+      const svc = await buildService({
+        R2_PUBLIC_URL_HONORS_IMAGES: 'https://pub-embed.r2.dev/honors',
+        R2_KEY_PREFIX_HONORS_IMAGES: 'honors',
+      });
+
+      const url = svc.resolvePublicUrl(
+        StorageBucketAlias.HONORS_IMAGES,
+        'honors/badge.png',
+      );
+      expect(url).toBe('https://pub-embed.r2.dev/honors/badge.png');
+      expect(url).not.toContain('/honors/honors/');
+    });
+  });
+
+  // =========================================================================
+  // extractKeyFromPublicUrl — embedded-prefix pattern
+  // =========================================================================
+
+  describe('extractKeyFromPublicUrl — embedded-prefix pattern', () => {
+    it('HONORS_IMAGES embedded: extracts correct object key from URL', async () => {
+      const svc = await buildService({
+        R2_PUBLIC_URL_HONORS_IMAGES: 'https://pub-embed.r2.dev/honors',
+        R2_KEY_PREFIX_HONORS_IMAGES: 'honors',
+      });
+
+      const key = svc.extractKeyFromPublicUrl(
+        StorageBucketAlias.HONORS_IMAGES,
+        'https://pub-embed.r2.dev/honors/badge.png',
+      );
+      // The object key stored in R2 is "honors/badge.png"
+      expect(key).toBe('honors/badge.png');
     });
   });
 });
