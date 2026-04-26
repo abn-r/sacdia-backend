@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PaginationDto,
@@ -13,6 +7,13 @@ import {
 } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
 import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class CertificationsService {
@@ -80,9 +81,7 @@ export class CertificationsService {
     });
 
     if (!certification) {
-      throw new NotFoundException(
-        `Certification with ID ${certificationId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
     }
 
     // Transformar a formato del walkthrough
@@ -122,7 +121,7 @@ export class CertificationsService {
     });
 
     if (!certification || !certification.active) {
-      throw new NotFoundException('Certification not found');
+      throw new AppNotFoundException(ErrorCode.CERT_NOT_FOUND);
     }
 
     // 3. Verificar si ya está inscrito
@@ -137,9 +136,7 @@ export class CertificationsService {
     );
 
     if (existingEnrollment) {
-      throw new ConflictException(
-        'User already enrolled in this certification',
-      );
+      throw new AppConflictException(ErrorCode.CERT_ALREADY_ENROLLED);
     }
 
     // 4. Crear enrollment
@@ -197,9 +194,7 @@ export class CertificationsService {
     });
 
     if (!enrollment) {
-      throw new ForbiddenException(
-        'Only invested Guías Mayores can enroll in certifications',
-      );
+      throw new AppForbiddenException(ErrorCode.CERT_ELIGIBILITY_REQUIRED);
     }
 
     return true;
@@ -298,7 +293,7 @@ export class CertificationsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException('Certification enrollment not found');
+      throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
     }
 
     // Obtener progreso de módulos
@@ -392,7 +387,7 @@ export class CertificationsService {
       });
 
       if (!enrollment) {
-        throw new NotFoundException('Certification enrollment not found');
+        throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
       }
 
       // 2. Validar que la sección pertenece al módulo y certificación
@@ -407,9 +402,7 @@ export class CertificationsService {
       });
 
       if (!section) {
-        throw new BadRequestException(
-          'Invalid module or section for this certification',
-        );
+        throw new AppBadRequestException(ErrorCode.CERT_SECTION_INVALID);
       }
 
       // 3. Crear o actualizar registro de sección
@@ -562,7 +555,7 @@ export class CertificationsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException('Certification enrollment not found');
+      throw new AppNotFoundException(ErrorCode.CERT_ENROLLMENT_NOT_FOUND);
     }
 
     await this.prisma.users_certifications.update({

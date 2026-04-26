@@ -357,5 +357,10 @@
   "LEGAL_REP_USER_NOT_FOUND": "Usuário representante não encontrado",
   "LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND": "Tipo de relacionamento não encontrado",
   "LEGAL_REP_OWNER_NOT_FOUND": "Usuário não encontrado",
-  "LEGAL_REP_NOT_FOUND": "Representante legal não encontrado"
+  "LEGAL_REP_NOT_FOUND": "Representante legal não encontrado",
+  "CERT_NOT_FOUND": "Certificação não encontrada",
+  "CERT_ALREADY_ENROLLED": "O usuário já está inscrito nesta certificação",
+  "CERT_ELIGIBILITY_REQUIRED": "Apenas os Guias Maiores investidos podem se inscrever em certificações",
+  "CERT_ENROLLMENT_NOT_FOUND": "Inscrição em certificação não encontrada",
+  "CERT_SECTION_INVALID": "Módulo ou seção inválido para esta certificação"
 }

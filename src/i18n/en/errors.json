@@ -357,5 +357,10 @@
   "LEGAL_REP_USER_NOT_FOUND": "Representative user not found",
   "LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND": "Relationship type not found",
   "LEGAL_REP_OWNER_NOT_FOUND": "User not found",
-  "LEGAL_REP_NOT_FOUND": "Legal representative not found"
+  "LEGAL_REP_NOT_FOUND": "Legal representative not found",
+  "CERT_NOT_FOUND": "Certification not found",
+  "CERT_ALREADY_ENROLLED": "User is already enrolled in this certification",
+  "CERT_ELIGIBILITY_REQUIRED": "Only invested Senior Guides can enroll in certifications",
+  "CERT_ENROLLMENT_NOT_FOUND": "Certification enrollment not found",
+  "CERT_SECTION_INVALID": "Invalid module or section for this certification"
 }
