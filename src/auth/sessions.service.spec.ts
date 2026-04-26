@@ -1,11 +1,7 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SessionsService } from './sessions.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -191,7 +187,7 @@ describe('SessionsService', () => {
     it('throws BadRequestException when sessionId matches currentSid', async () => {
       await expect(
         service.revokeSession(USER_ID, SESSION_A, SESSION_A),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_SESSION_IS_CURRENT });
     });
 
     it('throws NotFoundException when session does not exist', async () => {
@@ -199,7 +195,7 @@ describe('SessionsService', () => {
 
       await expect(
         service.revokeSession(USER_ID, null, SESSION_A),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_SESSION_NOT_FOUND });
     });
 
     it('throws NotFoundException when session is already expired', async () => {
@@ -209,7 +205,7 @@ describe('SessionsService', () => {
 
       await expect(
         service.revokeSession(USER_ID, null, SESSION_A),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_SESSION_NOT_FOUND });
     });
 
     it('throws ForbiddenException when session belongs to another user', async () => {
@@ -219,7 +215,7 @@ describe('SessionsService', () => {
 
       await expect(
         service.revokeSession(USER_ID, null, SESSION_A),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_SESSION_NOT_OWNED });
     });
 
     it('deletes the session on success', async () => {

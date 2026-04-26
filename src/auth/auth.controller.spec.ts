@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AccountDeletionService } from './account-deletion.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -19,10 +20,17 @@ describe('AuthController', () => {
     setActiveClubContext: jest.fn(),
   };
 
+  const mockAccountDeletionService = {
+    deleteAccount: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: mockAuthService }],
+      providers: [
+        { provide: AuthService, useValue: mockAuthService },
+        { provide: AccountDeletionService, useValue: mockAccountDeletionService },
+      ],
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
