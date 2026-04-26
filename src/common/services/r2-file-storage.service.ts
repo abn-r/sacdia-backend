@@ -69,7 +69,11 @@ export class R2FileStorageService implements FileStorageService {
 
     return {
       key: objectKey,
-      url: this.buildPublicUrl(config.publicBaseUrl, normalizedKey),
+      // objectKey already includes the keyPrefix — pass it directly so the
+      // public URL contains the full path (e.g. user-profiles/photo-x.jpeg).
+      // Using normalizedKey here was Bug #1: it stripped the prefix, producing
+      // a broken URL for prefixed buckets (USER_PROFILES, HONORS_IMAGES, etc.).
+      url: this.buildPublicUrl(config.publicBaseUrl, objectKey),
     };
   }
 
@@ -131,6 +135,14 @@ export class R2FileStorageService implements FileStorageService {
     if (!encodedRelativeKey) return null;
     const relativeKey = decodeURIComponent(encodedRelativeKey);
 
+    // relativeKey is the path segment extracted directly from the URL.
+    // For a correctly-stored URL it already includes the keyPrefix
+    // (e.g. "user-profiles/photo-abc.jpeg"). toObjectKey would double-prepend
+    // the prefix in that case, so we guard with hasKeyPrefix first.
+    if (this.hasKeyPrefix(keyPrefix, relativeKey)) {
+      return this.normalizeKey(relativeKey);
+    }
+
     return this.toObjectKey(keyPrefix, relativeKey);
   }
 
@@ -151,8 +163,10 @@ export class R2FileStorageService implements FileStorageService {
     }
 
     if (config.isPublic) {
-      const relativeKey = this.toRelativeKey(config.keyPrefix, objectKey);
-      return this.buildPublicUrl(config.publicBaseUrl, relativeKey);
+      // objectKey already carries the full key with prefix — pass it directly.
+      // The former toRelativeKey→buildPublicUrl round-trip stripped the prefix,
+      // producing a broken URL for prefixed buckets (Bug #1 same root cause).
+      return this.buildPublicUrl(config.publicBaseUrl, objectKey);
     }
 
     const expiresIn = this.resolveSignedUrlExpiration(
@@ -188,8 +202,15 @@ export class R2FileStorageService implements FileStorageService {
         `resolvePublicUrl called on private bucket alias: ${bucketAlias}`,
       );
     }
-    const relativeKey = this.toRelativeKey(config.keyPrefix, this.normalizeKey(key));
-    return this.buildPublicUrl(config.publicBaseUrl, relativeKey);
+    // Normalize the incoming key and ensure it carries the bucket prefix.
+    // - If the key already starts with the prefix (full object key), use it as-is.
+    // - If it is a bare filename (no prefix), prepend the prefix via toObjectKey.
+    // We must NOT use toRelativeKey here — that was Bug #1 (stripped the prefix).
+    const normalized = this.normalizeKey(key);
+    const objectKey = this.hasKeyPrefix(config.keyPrefix, normalized)
+      ? normalized
+      : this.toObjectKey(config.keyPrefix, normalized);
+    return this.buildPublicUrl(config.publicBaseUrl, objectKey);
   }
 
   private buildPublicUrl(publicBaseUrl: string, relativeKey: string) {
