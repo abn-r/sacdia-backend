@@ -1,5 +1,5 @@
-import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
@@ -423,7 +423,7 @@ describe('NotificationsService', () => {
 
       await expect(
         service.sendToClubMembers(clubSectionId, dto, SENT_BY),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.NOTIF_SEND_FORBIDDEN });
 
       expect(
         mockPrismaService.club_role_assignments.findMany,
@@ -1069,7 +1069,7 @@ describe('NotificationsService', () => {
 
       await expect(
         service.markDeliveryRead(deliveryId, 'other-user'),
-      ).rejects.toThrow('not found');
+      ).rejects.toMatchObject({ code: ErrorCode.NOTIF_NOT_FOUND });
     });
   });
 

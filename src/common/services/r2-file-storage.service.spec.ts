@@ -16,7 +16,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { InternalServerErrorException } from '@nestjs/common';
+import { ErrorCode } from '../errors/error-codes';
 import {
   S3Client,
   PutObjectCommand,
@@ -290,7 +290,7 @@ describe('R2FileStorageService', () => {
           StorageBucketAlias.USERS_HONORS,
           'some-key.pdf',
         ),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(expect.objectContaining({ code: ErrorCode.R2_VALIDATION_FAILED }));
     });
   });
 
@@ -314,7 +314,7 @@ describe('R2FileStorageService', () => {
           Buffer.from('x'),
           { contentType: 'image/jpeg' },
         ),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toMatchObject({ code: ErrorCode.R2_UPLOAD_FAILED });
     });
 
     it('throws InternalServerErrorException when key already exists (overwrite=false)', async () => {
@@ -330,7 +330,7 @@ describe('R2FileStorageService', () => {
           Buffer.from('x'),
           { contentType: 'image/jpeg', overwrite: false },
         ),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toMatchObject({ code: ErrorCode.R2_UPLOAD_FAILED });
     });
   });
 

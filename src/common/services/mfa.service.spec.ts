@@ -1,4 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { ErrorCode } from '../errors/error-codes';
 import { MfaService } from './mfa.service';
 
 /**
@@ -129,7 +130,7 @@ describe('MfaService', () => {
 
       await expect(
         service.verifyMfa(USER_ID, 'user@example.com', '123456'),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toMatchObject({ code: ErrorCode.MFA_CODE_INVALID });
       expect(mockVerifyTotp).not.toHaveBeenCalled();
     });
   });

@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { ScoringCategoriesService } from './scoring-categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
@@ -36,10 +36,8 @@ describe('ScoringCategoriesService', () => {
       mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
-      await expect(service.findUnionCategories(20, 'user-1')).rejects.toThrow(
-        new ForbiddenException(
-          'No tiene permisos para gestionar categorías de esta unión',
-        ),
+      await expect(service.findUnionCategories(20, 'user-1')).rejects.toMatchObject(
+        { code: ErrorCode.SCORING_CATEGORY_UNION_FORBIDDEN },
       );
     });
 
@@ -98,10 +96,8 @@ describe('ScoringCategoriesService', () => {
       mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
-      await expect(service.findLocalFieldCategories(99, 'user-1')).rejects.toThrow(
-        new ForbiddenException(
-          'No tiene permisos para gestionar categorías de este campo local',
-        ),
+      await expect(service.findLocalFieldCategories(99, 'user-1')).rejects.toMatchObject(
+        { code: ErrorCode.SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN },
       );
     });
 
