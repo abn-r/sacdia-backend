@@ -1,10 +1,13 @@
 import {
   Injectable,
   Logger,
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
 } from '@nestjs/common';
+import {
+  AppBadRequestException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   DeviceType,
@@ -145,9 +148,7 @@ export class SessionsService {
     sessionId: string,
   ): Promise<void> {
     if (currentSid !== null && sessionId === currentSid) {
-      throw new BadRequestException(
-        'Cannot revoke your current session via this endpoint. Use POST /auth/logout instead.',
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_SESSION_IS_CURRENT, { sessionId });
     }
 
     const row = await this.prisma.session.findUnique({
@@ -156,7 +157,7 @@ export class SessionsService {
     });
 
     if (!row || row.expiresAt <= new Date()) {
-      throw new NotFoundException(`Session ${sessionId} not found or already expired.`);
+      throw new AppNotFoundException(ErrorCode.AUTH_SESSION_NOT_FOUND, { sessionId });
     }
 
     if (row.userId !== userId) {
@@ -169,7 +170,7 @@ export class SessionsService {
           sessionId,
         }),
       );
-      throw new ForbiddenException('You do not own this session.');
+      throw new AppForbiddenException(ErrorCode.AUTH_SESSION_NOT_OWNED, { sessionId });
     }
 
     await this.prisma.session.delete({ where: { id: sessionId } });

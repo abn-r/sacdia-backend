@@ -1,9 +1,6 @@
 import {
   Inject,
   Injectable,
-  BadRequestException,
-  UnauthorizedException,
-  InternalServerErrorException,
   ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
@@ -28,6 +25,8 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { EmailService } from '../common/email/email.service';
 import {
   AppBadRequestException,
+  AppNotFoundException,
+  AppUnauthorizedException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
@@ -108,7 +107,7 @@ export class AuthService {
         });
 
         if (!userRole) {
-          throw new InternalServerErrorException('User role not found');
+          throw new AppBadRequestException(ErrorCode.AUTH_USER_ROLE_NOT_FOUND);
         }
 
         await tx.users_roles.create({
@@ -200,7 +199,7 @@ export class AuthService {
       this.logger.warn(
         `Login failed for ${maskedEmail}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     if (!baResult?.user || !baResult.session) {
@@ -210,7 +209,7 @@ export class AuthService {
           email: maskedEmail,
         }),
       );
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     // 2. Load SACDIA user profile and verify post-registration state
@@ -246,7 +245,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Usuario no encontrado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     const needsPostRegistration = user.users_pr
@@ -313,9 +312,7 @@ export class AuthService {
           }),
         );
 
-        throw new BadRequestException({
-          message:
-            'refresh_token was removed. Use refreshToken in request body.',
+        throw new AppBadRequestException(ErrorCode.AUTH_REFRESH_TOKEN_LEGACY_REMOVED, {
           code: LEGACY_SNAKE_CASE_REMOVED_CODE,
           removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
           use: 'refreshToken',
@@ -353,7 +350,7 @@ export class AuthService {
           userAgent: context?.userAgent ?? 'unknown',
         }),
       );
-      throw new UnauthorizedException('Refresh token inválido o expirado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
     }
 
     if (!baResult?.session) {
@@ -365,7 +362,7 @@ export class AuthService {
           userAgent: context?.userAgent ?? 'unknown',
         }),
       );
-      throw new UnauthorizedException('Refresh token inválido o expirado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
     }
 
     this.logger.log(
@@ -499,7 +496,7 @@ export class AuthService {
         `Password reset request error: ${error instanceof Error ? error.message : String(error)}`,
         error,
       );
-      throw new BadRequestException('Error al solicitar recuperación');
+      throw new AppBadRequestException(ErrorCode.AUTH_PASSWORD_RESET_FAILED);
     }
 
     this.logger.log(
@@ -571,9 +568,7 @@ export class AuthService {
     });
 
     if (!assignment) {
-      throw new BadRequestException(
-        'La asignación no pertenece al usuario o no está activa',
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND, { assignmentId: dto.assignment_id });
     }
 
     await this.prisma.users_pr.upsert({
@@ -618,7 +613,7 @@ export class AuthService {
     });
 
     if (!userPr) {
-      throw new BadRequestException('Post-registro no iniciado');
+      throw new AppBadRequestException(ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED);
     }
 
     let nextStep: string | null = null;
@@ -658,7 +653,7 @@ export class AuthService {
     });
 
     if (!dbUser) {
-      throw new BadRequestException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.AUTH_USER_NOT_FOUND, { userId });
     }
 
     if (dbUser.email_verified) {
@@ -689,7 +684,7 @@ export class AuthService {
     });
 
     if (!verification) {
-      throw new BadRequestException('Token inválido o ya utilizado');
+      throw new AppBadRequestException(ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID);
     }
 
     if (verification.expiresAt < new Date()) {
@@ -697,7 +692,7 @@ export class AuthService {
       await this.prisma.verification.delete({
         where: { id: verification.id },
       });
-      throw new BadRequestException('Token expirado. Solicitá uno nuevo');
+      throw new AppBadRequestException(ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED);
     }
 
     // Mark user as verified and delete the token in a transaction

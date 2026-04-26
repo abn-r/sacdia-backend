@@ -1,9 +1,6 @@
 import {
   Injectable,
   Logger,
-  UnauthorizedException,
-  BadRequestException,
-  NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +11,12 @@ import {
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { Inject } from '@nestjs/common';
 import { EmailService } from '../common/email/email.service';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 /**
  * Handles the full account deletion lifecycle for self-service requests
@@ -76,11 +79,11 @@ export class AccountDeletionService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.AUTH_ACCOUNT_NOT_FOUND, { userId });
     }
 
     if (!user.active) {
-      throw new BadRequestException('La cuenta ya fue eliminada');
+      throw new AppBadRequestException(ErrorCode.AUTH_ACCOUNT_ALREADY_DELETED, { userId });
     }
 
     // Re-authenticate: require credential account with a valid password
@@ -102,9 +105,7 @@ export class AccountDeletionService {
         credentialAccount.password,
       );
       if (!isPasswordValid) {
-        throw new UnauthorizedException(
-          'Contraseña incorrecta. No se puede eliminar la cuenta.',
-        );
+        throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_PASSWORD);
       }
     }
 
