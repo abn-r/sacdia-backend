@@ -933,13 +933,28 @@ model honors_categories_translations {
 }
 
 model inventory_categories {
-  name                  String           @db.VarChar(100)
-  icon                  Int?             @default(0)
-  active                Boolean          @default(false)
-  created_at            DateTime?        @default(now()) @db.Timestamptz(6)
-  modified_at           DateTime?        @default(now()) @db.Timestamptz(6)
-  inventory_category_id Int              @id @default(autoincrement())
+  name                  String                              @db.VarChar(100)
+  icon                  Int?                                @default(0)
+  active                Boolean                             @default(false)
+  created_at            DateTime?                           @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime?                           @default(now()) @db.Timestamptz(6)
+  inventory_category_id Int                                 @id @default(autoincrement())
   club_inventory        club_inventory[]
+  translations          inventory_categories_translations[]
+}
+
+model inventory_categories_translations {
+  id                    Int                  @id @default(autoincrement())
+  inventory_category_id Int
+  locale                String               @db.VarChar(10)
+  name                  String?              @db.VarChar(100)
+  created_at            DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?            @default(now()) @db.Timestamptz(6)
+  inventory_categories  inventory_categories @relation(fields: [inventory_category_id], references: [inventory_category_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([inventory_category_id, locale])
+  @@index([locale])
+  @@index([inventory_category_id])
 }
 
 model local_camporees {

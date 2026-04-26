@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TranslationService } from '../common/services/translation.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 
@@ -57,10 +58,16 @@ describe('InventoryService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    const mockTranslationService: Partial<TranslationService> = {
+      getCurrentLocale: jest.fn().mockReturnValue('es'),
+      translateMany: jest.fn().mockImplementation((records) => records),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: TranslationService, useValue: mockTranslationService },
       ],
     }).compile();
 
