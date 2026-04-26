@@ -439,5 +439,10 @@
   "NOTIF_BROADCAST_USER_ID_FORBIDDEN": "userId no puede incluirse en notificaciones broadcast",
   "SYSTEM_CONFIG_VALUE_REQUIRED": "El valor de la configuración es requerido",
   "ACHIEVEMENT_BADGE_UPLOAD_MISSING": "Se requiere un archivo de badge para subir",
-  "NOTIF_INVALID_CATEGORY": "Categoría de notificación no válida."
+  "NOTIF_INVALID_CATEGORY": "Categoría de notificación no válida.",
+  "QR_MEMBER_NOT_FOUND": "El miembro del QR no existe.",
+  "QR_TOKEN_INVALID": "QR inválido o expirado.",
+  "QR_ACTIVITY_NOT_FOUND": "Actividad del QR no encontrada.",
+  "QR_ACTIVITY_SCOPE_INVALID": "La actividad no tiene sección asignada.",
+  "QR_ACCESS_DENIED": "No tienes acceso a esta actividad."
 }

@@ -1,10 +1,10 @@
+import { Injectable, Logger } from '@nestjs/common';
 import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+  AppForbiddenException,
+  AppNotFoundException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -96,7 +96,7 @@ export class QrService {
     });
 
     if (!user) {
-      throw new NotFoundException('El miembro del QR no existe');
+      throw new AppNotFoundException(ErrorCode.QR_MEMBER_NOT_FOUND);
     }
 
     const fullName = [
@@ -142,17 +142,17 @@ export class QrService {
       });
     } catch (error) {
       this.logger.debug(`QR token verify failed: ${(error as Error).message}`);
-      throw new UnauthorizedException('QR invalido o expirado');
+      throw new AppUnauthorizedException(ErrorCode.QR_TOKEN_INVALID);
     }
 
     if (decoded.aud !== QR_MEMBER_AUDIENCE) {
-      throw new UnauthorizedException('QR con audiencia invalida');
+      throw new AppUnauthorizedException(ErrorCode.QR_TOKEN_INVALID);
     }
     if (decoded.ver !== QR_MEMBER_VERSION) {
-      throw new UnauthorizedException('QR con version no soportada');
+      throw new AppUnauthorizedException(ErrorCode.QR_TOKEN_INVALID);
     }
     if (!decoded.sub) {
-      throw new UnauthorizedException('QR sin sujeto');
+      throw new AppUnauthorizedException(ErrorCode.QR_TOKEN_INVALID);
     }
     return decoded;
   }
@@ -185,7 +185,7 @@ export class QrService {
     });
 
     if (!activity) {
-      throw new NotFoundException(`Activity ${activityId} no encontrada`);
+      throw new AppNotFoundException(ErrorCode.QR_ACTIVITY_NOT_FOUND);
     }
 
     await this.assertCallerCanManageActivity(callerUserId, activity);
@@ -283,9 +283,7 @@ export class QrService {
     }
 
     if (allowedSections.size === 0) {
-      throw new ForbiddenException(
-        'Actividad sin seccion asignada — no se puede verificar alcance',
-      );
+      throw new AppForbiddenException(ErrorCode.QR_ACTIVITY_SCOPE_INVALID);
     }
 
     const callerSections = new Set(
@@ -298,9 +296,7 @@ export class QrService {
       allowedSections.has(id),
     );
     if (!intersects) {
-      throw new ForbiddenException(
-        'No tienes acceso a esta actividad',
-      );
+      throw new AppForbiddenException(ErrorCode.QR_ACCESS_DENIED);
     }
   }
 }

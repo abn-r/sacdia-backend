@@ -1,4 +1,6 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AppUnauthorizedException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -53,7 +55,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           sub: payload.sub,
         }),
       );
-      throw new UnauthorizedException('revoked');
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
     }
 
     if (
@@ -70,7 +72,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           sub: payload.sub,
         }),
       );
-      throw new UnauthorizedException('revoked');
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
     }
 
     return {

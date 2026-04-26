@@ -556,4 +556,11 @@ export enum ErrorCode {
 
   // ── Achievements Controller ───────────────────────────────────────────────
   ACHIEVEMENT_BADGE_UPLOAD_MISSING = 'ACHIEVEMENT_BADGE_UPLOAD_MISSING',
+
+  // ── QR ────────────────────────────────────────────────────────────────────
+  QR_MEMBER_NOT_FOUND = 'QR_MEMBER_NOT_FOUND',
+  QR_TOKEN_INVALID = 'QR_TOKEN_INVALID',
+  QR_ACTIVITY_NOT_FOUND = 'QR_ACTIVITY_NOT_FOUND',
+  QR_ACTIVITY_SCOPE_INVALID = 'QR_ACTIVITY_SCOPE_INVALID',
+  QR_ACCESS_DENIED = 'QR_ACCESS_DENIED',
 }
