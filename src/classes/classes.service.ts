@@ -19,6 +19,13 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import pLimit from 'p-limit';
+
+// Concurrency cap for the evidence URL presign fan-out in getUserProgress.
+// Worst case: 10 sections × 20 evidence files = 200 concurrent HMAC presigns
+// against the private CLASS_EVIDENCE bucket. Cap matches the pattern established
+// in camporees.service.ts (PROFILE_URL_LIMITER = pLimit(20)).
+export const EVIDENCE_URL_LIMITER = pLimit(20);
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -499,17 +506,23 @@ export class ClassesService {
       },
     });
 
-    // Pre-sign all evidence file URLs in a single parallel batch
+    // Pre-sign all evidence file URLs with a concurrency cap.
+    // Without the cap, a worst-case request (10 sections × 20 files) would fire
+    // 200 simultaneous HMAC presigns against the private CLASS_EVIDENCE bucket,
+    // blocking the event loop for 1-4 seconds. Cap is 20, matching the pattern
+    // used by PROFILE_URL_LIMITER in camporees.service.ts.
     const allEvidenceFiles = sectionProgress.flatMap((sp) => sp.evidence_files);
     const signedUrlMap = new Map<number, string>();
     await Promise.all(
-      allEvidenceFiles.map(async (ef) => {
-        const signedUrl = await this.fileStorage.getSignedDownloadUrl(
-          StorageBucketAlias.CLASS_EVIDENCE,
-          ef.file_url,
-        );
-        signedUrlMap.set(ef.evidence_file_id, signedUrl);
-      }),
+      allEvidenceFiles.map((ef) =>
+        EVIDENCE_URL_LIMITER(async () => {
+          const signedUrl = await this.fileStorage.getSignedDownloadUrl(
+            StorageBucketAlias.CLASS_EVIDENCE,
+            ef.file_url,
+          );
+          signedUrlMap.set(ef.evidence_file_id, signedUrl);
+        }),
+      ),
     );
 
     // Calculate completion
