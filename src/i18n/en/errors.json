@@ -320,5 +320,13 @@
   "VALIDATION_HONOR_ALREADY_VALIDATED": "The honor is already validated",
   "VALIDATION_HONOR_ALREADY_PENDING": "The honor is already pending review",
   "VALIDATION_HONOR_INVALID_STATUS": "The honor must be in IN_PROGRESS or REJECTED status to be submitted for review",
-  "VALIDATION_REJECT_COMMENT_REQUIRED": "A comment is required when rejecting a validation"
+  "VALIDATION_REJECT_COMMENT_REQUIRED": "A comment is required when rejecting a validation",
+  "INSURANCE_MEMBER_NOT_FOUND": "Member not found",
+  "INSURANCE_NOT_FOUND": "Insurance not found",
+  "INSURANCE_CURRENT_USER_REQUIRED": "Current user is required for this operation",
+  "INSURANCE_TYPE_REQUIRED": "Insurance type is required",
+  "INSURANCE_TYPE_INVALID": "Invalid insurance type",
+  "INSURANCE_COVERAGE_AMOUNT_INVALID": "Coverage amount must be numeric",
+  "INSURANCE_DATE_REQUIRED": "Date is required",
+  "INSURANCE_DATE_INVALID": "Date is invalid"
 }

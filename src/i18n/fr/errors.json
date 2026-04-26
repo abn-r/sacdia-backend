@@ -320,5 +320,13 @@
   "VALIDATION_HONOR_ALREADY_VALIDATED": "L'honneur est déjà validé",
   "VALIDATION_HONOR_ALREADY_PENDING": "L'honneur est déjà en attente de révision",
   "VALIDATION_HONOR_INVALID_STATUS": "L'honneur doit être en statut IN_PROGRESS ou REJECTED pour être soumis à révision",
-  "VALIDATION_REJECT_COMMENT_REQUIRED": "Un commentaire est requis lors du rejet d'une validation"
+  "VALIDATION_REJECT_COMMENT_REQUIRED": "Un commentaire est requis lors du rejet d'une validation",
+  "INSURANCE_MEMBER_NOT_FOUND": "Membre introuvable",
+  "INSURANCE_NOT_FOUND": "Assurance introuvable",
+  "INSURANCE_CURRENT_USER_REQUIRED": "L'utilisateur actuel est requis pour cette opération",
+  "INSURANCE_TYPE_REQUIRED": "Le type d'assurance est requis",
+  "INSURANCE_TYPE_INVALID": "Type d'assurance invalide",
+  "INSURANCE_COVERAGE_AMOUNT_INVALID": "Le montant de couverture doit être numérique",
+  "INSURANCE_DATE_REQUIRED": "La date est requise",
+  "INSURANCE_DATE_INVALID": "La date est invalide"
 }
