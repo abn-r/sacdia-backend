@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import pLimit from 'p-limit';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   FILE_STORAGE_SERVICE,
@@ -25,6 +26,13 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+
+// Cap concurrent presign calls for EVIDENCE_FILES bucket. A folder can contain
+// many sections × many files each — without the cap, a single getFolder request
+// could fire hundreds of simultaneous HMAC presigns, blocking the event loop.
+// Cap is 20, matching the pattern used by PROFILE_URL_LIMITER in
+// camporees.service.ts and EVIDENCE_URL_LIMITER in classes.service.ts.
+export const EVIDENCE_FILES_URL_LIMITER = pLimit(20);
 
 @Injectable()
 export class AnnualFoldersService {
@@ -386,6 +394,7 @@ export class AnnualFoldersService {
       throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
     }
 
+    await this.presignFolderEvidences(folder.evidences);
     return this.formatFolderResponse(folder);
   }
 
@@ -478,6 +487,7 @@ export class AnnualFoldersService {
       throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND, { id: enrollmentId });
     }
 
+    await this.presignFolderEvidences(folder.evidences);
     return this.formatFolderResponse(folder);
   }
 
@@ -1360,6 +1370,37 @@ export class AnnualFoldersService {
   // ========================================
   // PRIVATE HELPERS
   // ========================================
+
+  /**
+   * Presign all evidence file_url fields in-place using the module-level
+   * EVIDENCE_FILES_URL_LIMITER (cap = 20). Mutates the evidences array so
+   * that callers (getFolder, getFolderByEnrollment) can pass the same object
+   * to formatFolderResponse without any further transformation.
+   *
+   * Evidence files are stored in the private EVIDENCE_FILES R2 bucket; the
+   * stored value is the object key (not a public URL). Failing to sign a
+   * single file is non-fatal: the original key is kept so the client at
+   * least knows a file exists.
+   */
+  private async presignFolderEvidences(
+    evidences: { file_url: string }[],
+  ): Promise<void> {
+    if (evidences.length === 0) return;
+    await Promise.all(
+      evidences.map((evidence) =>
+        EVIDENCE_FILES_URL_LIMITER(async () => {
+          try {
+            evidence.file_url = await this.fileStorage.getSignedDownloadUrl(
+              StorageBucketAlias.EVIDENCE_FILES,
+              evidence.file_url,
+            );
+          } catch {
+            // Non-fatal: keep original key so the client knows a file exists.
+          }
+        }),
+      ),
+    );
+  }
 
   /**
    * Resolve the active folder template for a club enrollment using the
