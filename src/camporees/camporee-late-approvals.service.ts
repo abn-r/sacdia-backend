@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AppNotFoundException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class CamporeeLateApprovalsService {
@@ -151,7 +153,7 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new NotFoundException('Inscripción de club no encontrada');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
       }
 
       return tx.camporee_clubs.update({
@@ -181,7 +183,7 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new NotFoundException('Inscripción de club no encontrada');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
       }
 
       return tx.camporee_clubs.update({
@@ -215,7 +217,7 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new NotFoundException('Inscripción de miembro no encontrada');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
       }
 
       return tx.camporee_members.update({
@@ -248,7 +250,7 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new NotFoundException('Inscripción de miembro no encontrada');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
       }
 
       return tx.camporee_members.update({
@@ -286,9 +288,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de club no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -321,9 +321,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de club no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -360,9 +358,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -395,9 +391,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -434,9 +428,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de club no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -469,9 +461,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de club no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -508,9 +498,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -543,9 +531,7 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new NotFoundException(
-          'Inscripción de miembro no encontrada o no está pendiente de aprobación',
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -579,7 +565,7 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new NotFoundException('Pago no encontrado');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_PAYMENT_PENDING_NOT_FOUND);
       }
 
       return tx.camporee_payments.update({
@@ -612,7 +598,7 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new NotFoundException('Pago no encontrado');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_PAYMENT_PENDING_NOT_FOUND);
       }
 
       return tx.camporee_payments.update({
