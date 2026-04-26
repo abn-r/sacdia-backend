@@ -1,12 +1,15 @@
 import {
   Inject,
   Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -189,7 +192,7 @@ export class HonorsService {
     });
 
     if (!honor) {
-      throw new NotFoundException(`Honor with ID ${honorId} not found`);
+      throw new AppNotFoundException(ErrorCode.HONOR_NOT_FOUND);
     }
 
     return honor;
@@ -258,7 +261,7 @@ export class HonorsService {
 
     // Si ya está activo, rechazar
     if (existing && existing.active) {
-      throw new ConflictException('User already has this honor in progress');
+      throw new AppConflictException(ErrorCode.HONOR_USER_ALREADY_IN_PROGRESS);
     }
 
     // Si existe pero está inactivo, reactivar; si no, crear nuevo
@@ -413,8 +416,9 @@ export class HonorsService {
     }
 
     if (duplicated.size > 0) {
-      throw new BadRequestException(
-        `Duplicate honorId values in payload: ${Array.from(duplicated).join(', ')}`,
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_BULK_DUPLICATE_IDS,
+        { ids: Array.from(duplicated).join(', ') },
       );
     }
 
@@ -431,8 +435,9 @@ export class HonorsService {
       (honorId) => !activeHonorIds.has(honorId),
     );
     if (missingHonorIds.length > 0) {
-      throw new NotFoundException(
-        `Honors not found or inactive: ${missingHonorIds.join(', ')}`,
+      throw new AppNotFoundException(
+        ErrorCode.HONOR_BULK_NOT_FOUND,
+        { ids: missingHonorIds.join(', ') },
       );
     }
 
@@ -511,9 +516,7 @@ export class HonorsService {
     const imageFiles = files.images ?? [];
 
     if (!certificateFile && !documentFile && imageFiles.length === 0) {
-      throw new BadRequestException(
-        'At least one file is required: certificate, document or images',
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_REQUIRED);
     }
 
     await this.findOne(honorId);
@@ -616,9 +619,7 @@ export class HonorsService {
       }
     } catch (error) {
       await this.rollbackUploadedObjects(uploadedObjects);
-      throw new InternalServerErrorException(
-        'Error al subir archivos del honor',
-      );
+      throw new AppInternalServerErrorException(ErrorCode.HONOR_FILE_UPLOAD_FAILED);
     }
 
     const finalImages = [...currentImages, ...uploadedImageUrls];
@@ -670,9 +671,7 @@ export class HonorsService {
       );
     } catch (error) {
       await this.rollbackUploadedObjects(uploadedObjects);
-      throw new InternalServerErrorException(
-        'Error al guardar evidencias del honor',
-      );
+      throw new AppInternalServerErrorException(ErrorCode.HONOR_FILE_UPLOAD_FAILED);
     }
 
     if (
@@ -734,7 +733,7 @@ export class HonorsService {
     });
 
     if (!userHonor) {
-      throw new NotFoundException('User honor not found');
+      throw new AppNotFoundException(ErrorCode.HONOR_USER_HONOR_NOT_FOUND);
     }
 
     const updateData: any = {
@@ -783,7 +782,7 @@ export class HonorsService {
     });
 
     if (!userHonor) {
-      throw new NotFoundException('User honor not found');
+      throw new AppNotFoundException(ErrorCode.HONOR_USER_HONOR_NOT_FOUND);
     }
 
     return this.prisma.users_honors.update({
@@ -889,15 +888,17 @@ export class HonorsService {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Invalid certificate format. Allowed: PDF, JPG, PNG, WEBP',
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_FILE_INVALID_FORMAT,
+        { allowed: 'PDF, JPG, PNG, WEBP' },
       );
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException(
-        'Certificate file too large. Max size: 10MB',
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_FILE_TOO_LARGE,
+        { max_mb: '10' },
       );
     }
   }
@@ -905,14 +906,18 @@ export class HonorsService {
   private validateImageFile(file: Express.Multer.File) {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Invalid image format. Allowed: JPG, PNG, WEBP',
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_FILE_INVALID_FORMAT,
+        { allowed: 'JPG, PNG, WEBP' },
       );
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException('Image file too large. Max size: 10MB');
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_FILE_TOO_LARGE,
+        { max_mb: '10' },
+      );
     }
   }
 
@@ -926,14 +931,18 @@ export class HonorsService {
       'image/webp',
     ];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Invalid document format. Allowed: PDF, DOC, DOCX, JPG, PNG, WEBP',
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_FILE_INVALID_FORMAT,
+        { allowed: 'PDF, DOC, DOCX, JPG, PNG, WEBP' },
       );
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException('Document file too large. Max size: 10MB');
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_FILE_TOO_LARGE,
+        { max_mb: '10' },
+      );
     }
   }
 

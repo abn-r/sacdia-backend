@@ -188,5 +188,18 @@
   "RESOURCE_FILE_REQUIRED": "El tipo de recurso {resource_type} requiere un archivo",
   "RESOURCE_FILE_TOO_LARGE": "El archivo supera el tamaño máximo permitido de {max_mb} MB",
   "RESOURCE_FILE_TYPE_INVALID": "Tipo de archivo no permitido para el tipo de recurso {resource_type}. Tipos permitidos: {allowed}",
-  "RESOURCE_FILE_MIME_INVALID": "El archivo no es un {mime_type} válido"
+  "RESOURCE_FILE_MIME_INVALID": "El archivo no es un {mime_type} válido",
+  "HONOR_NOT_FOUND": "Honor no encontrado",
+  "HONOR_USER_ALREADY_IN_PROGRESS": "El usuario ya tiene este honor en progreso",
+  "HONOR_BULK_DUPLICATE_IDS": "El payload contiene IDs de honor duplicados: {ids}",
+  "HONOR_BULK_NOT_FOUND": "Honores no encontrados o inactivos: {ids}",
+  "HONOR_FILE_REQUIRED": "Se requiere al menos un archivo: certificado, documento o imágenes",
+  "HONOR_USER_HONOR_NOT_FOUND": "Registro de honor del usuario no encontrado",
+  "HONOR_FILE_UPLOAD_FAILED": "Error al subir los archivos del honor",
+  "HONOR_FILE_INVALID_FORMAT": "Formato de archivo no válido. Permitidos: {allowed}",
+  "HONOR_FILE_TOO_LARGE": "El archivo supera el tamaño máximo de {max_mb} MB",
+  "HONOR_USER_NOT_ENROLLED": "El usuario no está inscrito en este honor",
+  "HONOR_REQUIREMENT_NOT_IN_HONOR": "El requisito no pertenece a este honor",
+  "HONOR_EVIDENCE_MAX_REACHED": "Se alcanzó el máximo de {max} evidencias de tipo {evidence_type} por requisito",
+  "HONOR_EVIDENCE_NOT_FOUND": "Evidencia no encontrada"
 }

@@ -188,5 +188,18 @@
   "RESOURCE_FILE_REQUIRED": "Le type de ressource {resource_type} nécessite un fichier",
   "RESOURCE_FILE_TOO_LARGE": "Le fichier dépasse la taille maximale autorisée de {max_mb} MB",
   "RESOURCE_FILE_TYPE_INVALID": "Type de fichier non autorisé pour le type de ressource {resource_type}. Types autorisés : {allowed}",
-  "RESOURCE_FILE_MIME_INVALID": "Le fichier n'est pas un {mime_type} valide"
+  "RESOURCE_FILE_MIME_INVALID": "Le fichier n'est pas un {mime_type} valide",
+  "HONOR_NOT_FOUND": "Honneur introuvable",
+  "HONOR_USER_ALREADY_IN_PROGRESS": "L'utilisateur a déjà cet honneur en cours",
+  "HONOR_BULK_DUPLICATE_IDS": "Le payload contient des IDs d'honneur en double : {ids}",
+  "HONOR_BULK_NOT_FOUND": "Honneurs introuvables ou inactifs : {ids}",
+  "HONOR_FILE_REQUIRED": "Au moins un fichier est requis : certificat, document ou images",
+  "HONOR_USER_HONOR_NOT_FOUND": "Enregistrement d'honneur de l'utilisateur introuvable",
+  "HONOR_FILE_UPLOAD_FAILED": "Échec du téléversement des fichiers d'honneur",
+  "HONOR_FILE_INVALID_FORMAT": "Format de fichier invalide. Autorisés : {allowed}",
+  "HONOR_FILE_TOO_LARGE": "Le fichier dépasse la taille maximale de {max_mb} MB",
+  "HONOR_USER_NOT_ENROLLED": "L'utilisateur n'est pas inscrit à cet honneur",
+  "HONOR_REQUIREMENT_NOT_IN_HONOR": "L'exigence n'appartient pas à cet honneur",
+  "HONOR_EVIDENCE_MAX_REACHED": "Maximum de {max} preuves de type {evidence_type} par exigence atteint",
+  "HONOR_EVIDENCE_NOT_FOUND": "Preuve introuvable"
 }

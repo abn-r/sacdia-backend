@@ -188,5 +188,18 @@
   "RESOURCE_FILE_REQUIRED": "Resource type {resource_type} requires a file",
   "RESOURCE_FILE_TOO_LARGE": "File exceeds the maximum allowed size of {max_mb} MB",
   "RESOURCE_FILE_TYPE_INVALID": "File type not allowed for resource type {resource_type}. Allowed types: {allowed}",
-  "RESOURCE_FILE_MIME_INVALID": "The file is not a valid {mime_type}"
+  "RESOURCE_FILE_MIME_INVALID": "The file is not a valid {mime_type}",
+  "HONOR_NOT_FOUND": "Honor not found",
+  "HONOR_USER_ALREADY_IN_PROGRESS": "User already has this honor in progress",
+  "HONOR_BULK_DUPLICATE_IDS": "Payload contains duplicate honor IDs: {ids}",
+  "HONOR_BULK_NOT_FOUND": "Honors not found or inactive: {ids}",
+  "HONOR_FILE_REQUIRED": "At least one file is required: certificate, document or images",
+  "HONOR_USER_HONOR_NOT_FOUND": "User honor record not found",
+  "HONOR_FILE_UPLOAD_FAILED": "Failed to upload honor files",
+  "HONOR_FILE_INVALID_FORMAT": "Invalid file format. Allowed: {allowed}",
+  "HONOR_FILE_TOO_LARGE": "File exceeds the maximum size of {max_mb} MB",
+  "HONOR_USER_NOT_ENROLLED": "User is not enrolled in this honor",
+  "HONOR_REQUIREMENT_NOT_IN_HONOR": "Requirement does not belong to this honor",
+  "HONOR_EVIDENCE_MAX_REACHED": "Maximum of {max} evidences of type {evidence_type} per requirement reached",
+  "HONOR_EVIDENCE_NOT_FOUND": "Evidence not found"
 }

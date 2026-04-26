@@ -85,3 +85,9 @@ export class AppConflictException extends AppException {
     super(code, HttpStatus.CONFLICT, namedArgs);
   }
 }
+
+export class AppInternalServerErrorException extends AppException {
+  constructor(code: ErrorCode, namedArgs?: Record<string, unknown>) {
+    super(code, HttpStatus.INTERNAL_SERVER_ERROR, namedArgs);
+  }
+}
