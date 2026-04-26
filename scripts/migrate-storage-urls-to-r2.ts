@@ -357,7 +357,15 @@ function loadStorageTargets() {
     bucket: getRequiredEnv('R2_BUCKET_USER_PROFILES'),
     publicBaseUrl: getRequiredEnv('R2_PUBLIC_URL_USER_PROFILES'),
     keyPrefix: getOptionalEnv('R2_KEY_PREFIX_USER_PROFILES', ''),
-    legacyPrefixes: ['user-profiles', 'profile-pictures'],
+    // IMPORTANT: 'user-profiles' is NOT a legacy prefix — it is the active
+    // keyPrefix for this bucket (R2_KEY_PREFIX_USER_PROFILES=user-profiles).
+    // If it were listed here, deriveRelativeKey would strip it from working
+    // URLs and buildPublicUrl would reconstruct them WITHOUT the prefix,
+    // breaking every stored URL that is currently valid.
+    //
+    // 'profile-pictures' was the Supabase storage bucket name used before
+    // the R2 migration and is a genuine legacy path to rewrite.
+    legacyPrefixes: ['profile-pictures'],
   };
 
   const honorsImages: StorageTarget = {
