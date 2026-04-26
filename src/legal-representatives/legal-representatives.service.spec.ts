@@ -2,11 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LegalRepresentativesService } from './legal-representatives.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
-import {
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 
 describe('LegalRepresentativesService', () => {
   let service: LegalRepresentativesService;
@@ -65,9 +61,9 @@ describe('LegalRepresentativesService', () => {
     it('should throw NotFoundException when user does not exist', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(userId)).rejects.toThrow(
-        new NotFoundException('Usuario no encontrado'),
-      );
+      await expect(service.findOne(userId)).rejects.toMatchObject({
+        code: ErrorCode.LEGAL_REP_OWNER_NOT_FOUND,
+      });
     });
 
     it('should return success with null data when user exists without legal representative', async () => {
@@ -123,11 +119,7 @@ describe('LegalRepresentativesService', () => {
           paternal_last_name: 'López',
           phone: '1234567890',
         }),
-      ).rejects.toThrow(
-        new BadRequestException(
-          'Usuario mayor de 18 años no requiere representante legal',
-        ),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_NOT_REQUIRED });
     });
 
     it('should throw ConflictException when user already has a representative', async () => {
@@ -143,9 +135,7 @@ describe('LegalRepresentativesService', () => {
           paternal_last_name: 'López',
           phone: '1234567890',
         }),
-      ).rejects.toThrow(
-        new ConflictException('El usuario ya tiene un representante legal'),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_ALREADY_EXISTS });
     });
 
     it('should throw BadRequestException when neither representative_user_id nor manual data is provided', async () => {
@@ -157,7 +147,7 @@ describe('LegalRepresentativesService', () => {
       // No representative_user_id, no name, no paternal_last_name, no phone
       await expect(
         service.create(userId, { relationship_type_id: relTypeId }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_DATA_REQUIRED });
     });
 
     it('should throw BadRequestException when manual data is incomplete (missing phone)', async () => {
@@ -173,7 +163,7 @@ describe('LegalRepresentativesService', () => {
           paternal_last_name: 'López',
           // phone intentionally omitted
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_DATA_REQUIRED });
     });
 
     it('should throw NotFoundException when representative_user_id does not exist', async () => {
@@ -188,9 +178,7 @@ describe('LegalRepresentativesService', () => {
           relationship_type_id: relTypeId,
           representative_user_id: repUserId,
         }),
-      ).rejects.toThrow(
-        new NotFoundException('Usuario representante no encontrado'),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_USER_NOT_FOUND });
     });
 
     it('should throw NotFoundException when relationship_type_id does not exist', async () => {
@@ -208,9 +196,7 @@ describe('LegalRepresentativesService', () => {
           relationship_type_id: relTypeId,
           representative_user_id: repUserId,
         }),
-      ).rejects.toThrow(
-        new NotFoundException('Tipo de relación no encontrado'),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND });
     });
 
     it('should create representative with a registered user (representative_user_id path)', async () => {
@@ -313,9 +299,7 @@ describe('LegalRepresentativesService', () => {
 
       await expect(
         service.update(userId, { name: 'Nuevo nombre' }),
-      ).rejects.toThrow(
-        new NotFoundException('Representante legal no encontrado'),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_NOT_FOUND });
     });
 
     it('should throw NotFoundException when representative_user_id is provided but does not exist', async () => {
@@ -326,9 +310,7 @@ describe('LegalRepresentativesService', () => {
 
       await expect(
         service.update(userId, { representative_user_id: repUserId }),
-      ).rejects.toThrow(
-        new NotFoundException('Usuario representante no encontrado'),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_USER_NOT_FOUND });
     });
 
     it('should throw NotFoundException when relationship_type_id is provided but does not exist', async () => {
@@ -339,9 +321,7 @@ describe('LegalRepresentativesService', () => {
 
       await expect(
         service.update(userId, { relationship_type_id: relTypeId }),
-      ).rejects.toThrow(
-        new NotFoundException('Tipo de relación no encontrado'),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND });
     });
 
     it('should update representative successfully (name-only update)', async () => {
@@ -418,9 +398,9 @@ describe('LegalRepresentativesService', () => {
         null,
       );
 
-      await expect(service.remove(userId)).rejects.toThrow(
-        new NotFoundException('Representante legal no encontrado'),
-      );
+      await expect(service.remove(userId)).rejects.toMatchObject({
+        code: ErrorCode.LEGAL_REP_NOT_FOUND,
+      });
     });
 
     it('should delete representative and return success message', async () => {

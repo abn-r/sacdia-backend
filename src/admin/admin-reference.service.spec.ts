@@ -1,5 +1,5 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { AdminReferenceService } from './admin-reference.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
@@ -193,7 +193,7 @@ describe('AdminReferenceService', () => {
 
       await expect(
         service.createHonorCategory({ name: 'Naturaleza' }, 'actor-1'),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_HONOR_CATEGORY_NAME_CONFLICT });
     });
   });
 
@@ -254,7 +254,7 @@ describe('AdminReferenceService', () => {
 
       await expect(
         service.updateHonorCategory(9, { name: 'Nuevo nombre' }, 'actor-2'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_HONOR_CATEGORY_NOT_FOUND });
     });
   });
 
@@ -303,9 +303,9 @@ describe('AdminReferenceService', () => {
       });
       mockPrismaService.honors.count.mockResolvedValue(1);
 
-      await expect(service.deleteHonorCategory(12, 'actor-3')).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.deleteHonorCategory(12, 'actor-3')).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_HONOR_CATEGORY_IN_USE,
+      });
     });
   });
 

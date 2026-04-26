@@ -1,5 +1,5 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { user_approval_status } from '@prisma/client';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
@@ -325,7 +325,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.listUsers('actor-admin', buildListQuery()),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
 
     it('should reject coordinator without local_field_id', async () => {
@@ -338,7 +338,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.listUsers('actor-coordinator', buildListQuery()),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
 
     it('should enforce UNION scope for assistant_admin with union_id', async () => {
@@ -370,7 +370,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.listUsers('actor-assistant-admin', buildListQuery()),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
   });
 
@@ -449,7 +449,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.getUserById('actor-admin', 'user-outside-scope'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_NOT_FOUND });
 
       const findFirstCalls = mockPrismaService.users.findFirst.mock
         .calls as Array<[unknown?]>;

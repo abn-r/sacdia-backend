@@ -1,11 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  BadRequestException,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -183,9 +179,9 @@ describe('UsersService', () => {
     it('should throw when the user does not exist', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.getAllergies('missing-user')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getAllergies('missing-user')).rejects.toMatchObject({
+        code: ErrorCode.USER_NOT_FOUND,
+      });
     });
   });
 
@@ -246,9 +242,9 @@ describe('UsersService', () => {
     it('should throw when the user does not exist', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.getDiseases('missing-user')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getDiseases('missing-user')).rejects.toMatchObject({
+        code: ErrorCode.USER_NOT_FOUND,
+      });
     });
   });
 
@@ -350,9 +346,7 @@ describe('UsersService', () => {
 
       await expect(
         service.updateMedicines('u1', { medicine_ids: [3, 99] }),
-      ).rejects.toThrow(
-        new BadRequestException('Medicamentos inválidos o inactivos: 99'),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.USER_MEDICINE_INVALID });
     });
   });
 
@@ -422,9 +416,9 @@ describe('UsersService', () => {
         count: 0,
       });
 
-      await expect(service.removeAllergy('u1', 7)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.removeAllergy('u1', 7)).rejects.toMatchObject({
+        code: ErrorCode.USER_ALLERGY_NOT_IN_PROFILE,
+      });
     });
   });
 
@@ -524,9 +518,9 @@ describe('UsersService', () => {
         new Error('upload failed'),
       );
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+        code: ErrorCode.USER_IMAGE_UPLOAD_FAILED,
+      });
       expect(mockPrismaService.users.update).not.toHaveBeenCalled();
     });
 
@@ -543,9 +537,9 @@ describe('UsersService', () => {
         new Error('db fail'),
       );
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+        code: ErrorCode.USER_IMAGE_UPDATE_FAILED,
+      });
 
       expect(mockFileStorageService.deleteMany).toHaveBeenCalledWith(
         StorageBucketAlias.USER_PROFILES,
@@ -616,9 +610,9 @@ describe('UsersService', () => {
         new Error('r2 delete failed'),
       );
 
-      await expect(service.deleteProfilePicture('u1')).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(service.deleteProfilePicture('u1')).rejects.toMatchObject({
+        code: ErrorCode.USER_IMAGE_DELETE_FAILED,
+      });
 
       expect(mockPrismaService.users.update).toHaveBeenNthCalledWith(1, {
         where: { user_id: 'u1' },
@@ -635,9 +629,9 @@ describe('UsersService', () => {
     it('should throw NotFoundException when user does not exist', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.deleteProfilePicture('missing')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.deleteProfilePicture('missing')).rejects.toMatchObject({
+        code: ErrorCode.USER_NOT_FOUND,
+      });
     });
 
     it('should throw BadRequestException when user has no profile picture', async () => {
@@ -645,9 +639,9 @@ describe('UsersService', () => {
         user_image: null,
       });
 
-      await expect(service.deleteProfilePicture('u1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.deleteProfilePicture('u1')).rejects.toMatchObject({
+        code: ErrorCode.USER_NO_PROFILE_PICTURE,
+      });
     });
 
     it('should skip R2 delete and log warning for non-R2 legacy urls', async () => {
@@ -730,9 +724,9 @@ describe('UsersService', () => {
     it('TC-F03 - error: user not found → NotFoundException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('missing')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.findOne('missing')).rejects.toMatchObject({
+        code: ErrorCode.USER_NOT_FOUND,
+      });
     });
 
     it('TC-F04 - fallback: returns original URL when signed URL generation fails', async () => {
@@ -809,9 +803,9 @@ describe('UsersService', () => {
     it('TC-U02 - error: user not found → NotFoundException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('missing', { gender: 'F' })).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.update('missing', { gender: 'F' })).rejects.toMatchObject({
+        code: ErrorCode.USER_NOT_FOUND,
+      });
     });
 
     it('TC-U03 - error: baptism=false with baptism_date → BadRequestException', async () => {
@@ -822,25 +816,25 @@ describe('UsersService', () => {
           baptism: false,
           baptism_date: '2015-06-20',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_BAPTISM_DATE_CONFLICT });
     });
 
     it('TC-U04 - geography: invalid country → BadRequestException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
       mockPrismaService.countries.findFirst.mockResolvedValue(null);
 
-      await expect(service.update('u1', { country_id: 999 })).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.update('u1', { country_id: 999 })).rejects.toMatchObject({
+        code: ErrorCode.USER_COUNTRY_INVALID,
+      });
     });
 
     it('TC-U05 - geography: invalid union → BadRequestException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
       mockPrismaService.unions.findFirst.mockResolvedValue(null);
 
-      await expect(service.update('u1', { union_id: 999 })).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.update('u1', { union_id: 999 })).rejects.toMatchObject({
+        code: ErrorCode.USER_UNION_INVALID,
+      });
     });
 
     it('TC-U06 - geography: invalid local_field → BadRequestException', async () => {
@@ -849,7 +843,7 @@ describe('UsersService', () => {
 
       await expect(
         service.update('u1', { local_field_id: 999 }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_LOCAL_FIELD_INVALID });
     });
 
     it('TC-U07 - geography: union does not belong to country → BadRequestException', async () => {
@@ -866,7 +860,7 @@ describe('UsersService', () => {
 
       await expect(
         service.update('u1', { country_id: 5, union_id: 10 }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_UNION_COUNTRY_MISMATCH });
     });
 
     it('TC-U08 - geography: local field does not belong to union → BadRequestException', async () => {
@@ -887,7 +881,7 @@ describe('UsersService', () => {
 
       await expect(
         service.update('u1', { local_field_id: 50 }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_LOCAL_FIELD_UNION_MISMATCH });
     });
   });
 
@@ -940,7 +934,7 @@ describe('UsersService', () => {
 
       await expect(
         service.updateAllergies('u1', { allergy_ids: [1, 99] }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_ALLERGY_INVALID });
     });
 
     it('TC-UA04 - error: user not found → NotFoundException', async () => {
@@ -948,7 +942,7 @@ describe('UsersService', () => {
 
       await expect(
         service.updateAllergies('missing', { allergy_ids: [1] }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_NOT_FOUND });
     });
 
     it('TC-UA05 - deduplicates duplicate ids before validation', async () => {
@@ -1022,7 +1016,7 @@ describe('UsersService', () => {
 
       await expect(
         service.updateDiseases('u1', { disease_ids: [4, 77] }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_DISEASE_INVALID });
     });
 
     it('TC-UD04 - error: user not found → NotFoundException', async () => {
@@ -1030,7 +1024,7 @@ describe('UsersService', () => {
 
       await expect(
         service.updateDiseases('missing', { disease_ids: [4] }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_NOT_FOUND });
     });
   });
 
@@ -1045,9 +1039,9 @@ describe('UsersService', () => {
         count: 0,
       });
 
-      await expect(service.removeDisease('u1', 99)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.removeDisease('u1', 99)).rejects.toMatchObject({
+        code: ErrorCode.USER_DISEASE_NOT_IN_PROFILE,
+      });
     });
   });
 
@@ -1062,9 +1056,9 @@ describe('UsersService', () => {
         count: 0,
       });
 
-      await expect(service.removeMedicine('u1', 99)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.removeMedicine('u1', 99)).rejects.toMatchObject({
+        code: ErrorCode.USER_MEDICINE_NOT_IN_PROFILE,
+      });
     });
   });
 
@@ -1076,9 +1070,9 @@ describe('UsersService', () => {
     it('TC-GM01 - should throw NotFoundException when user does not exist', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.getMedicines('missing')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getMedicines('missing')).rejects.toMatchObject({
+        code: ErrorCode.USER_NOT_FOUND,
+      });
     });
   });
 
@@ -1095,9 +1089,9 @@ describe('UsersService', () => {
         buffer: Buffer.from('gif'),
       } as Express.Multer.File;
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+        code: ErrorCode.USER_IMAGE_INVALID_FORMAT,
+      });
     });
 
     it('TC-PP02 - error: file exceeds 5MB → BadRequestException', async () => {
@@ -1108,9 +1102,9 @@ describe('UsersService', () => {
         buffer: Buffer.alloc(6 * 1024 * 1024),
       } as Express.Multer.File;
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+        code: ErrorCode.USER_IMAGE_TOO_LARGE,
+      });
     });
 
     it('TC-PP03 - error: user not found → NotFoundException', async () => {
@@ -1123,9 +1117,9 @@ describe('UsersService', () => {
         buffer: Buffer.from('image'),
       } as Express.Multer.File;
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+        code: ErrorCode.USER_NOT_FOUND,
+      });
     });
   });
 
