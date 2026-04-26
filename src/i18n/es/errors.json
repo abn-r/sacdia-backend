@@ -201,5 +201,14 @@
   "HONOR_USER_NOT_ENROLLED": "El usuario no está inscrito en este honor",
   "HONOR_REQUIREMENT_NOT_IN_HONOR": "El requisito no pertenece a este honor",
   "HONOR_EVIDENCE_MAX_REACHED": "Se alcanzó el máximo de {max} evidencias de tipo {evidence_type} por requisito",
-  "HONOR_EVIDENCE_NOT_FOUND": "Evidencia no encontrada"
+  "HONOR_EVIDENCE_NOT_FOUND": "Evidencia no encontrada",
+  "INVESTITURE_ENROLLMENT_NOT_FOUND": "Enrollment no encontrado",
+  "INVESTITURE_INVALID_STATE_TRANSITION": "Transición de estado no válida. Estado actual: {status}",
+  "INVESTITURE_ALREADY_INVESTIDO": "El enrollment ya fue investido",
+  "INVESTITURE_REJECT_COMMENTS_REQUIRED": "El campo comments es requerido para rechazar un enrollment",
+  "INVESTITURE_ACCESS_DENIED": "Sin acceso al historial de este enrollment",
+  "INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN": "La acción field-approve en bloque requiere rol admin",
+  "INVESTITURE_CONFIG_NOT_FOUND": "Configuración de investidura no encontrada",
+  "INVESTITURE_CONFIG_DUPLICATE": "Ya existe una configuración de investidura para este campo local y año eclesiástico",
+  "INVESTITURE_CONCURRENT_UPDATE": "El estado del enrollment fue modificado por otra solicitud concurrente. Reintentá la operación"
 }

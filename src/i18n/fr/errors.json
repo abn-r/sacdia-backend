@@ -201,5 +201,14 @@
   "HONOR_USER_NOT_ENROLLED": "L'utilisateur n'est pas inscrit à cet honneur",
   "HONOR_REQUIREMENT_NOT_IN_HONOR": "L'exigence n'appartient pas à cet honneur",
   "HONOR_EVIDENCE_MAX_REACHED": "Maximum de {max} preuves de type {evidence_type} par exigence atteint",
-  "HONOR_EVIDENCE_NOT_FOUND": "Preuve introuvable"
+  "HONOR_EVIDENCE_NOT_FOUND": "Preuve introuvable",
+  "INVESTITURE_ENROLLMENT_NOT_FOUND": "Enrollment introuvable",
+  "INVESTITURE_INVALID_STATE_TRANSITION": "Transition d'état invalide. Statut actuel : {status}",
+  "INVESTITURE_ALREADY_INVESTIDO": "L'enrollment a déjà été investi",
+  "INVESTITURE_REJECT_COMMENTS_REQUIRED": "Le champ comments est requis pour rejeter un enrollment",
+  "INVESTITURE_ACCESS_DENIED": "Accès refusé à l'historique de cet enrollment",
+  "INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN": "L'action field-approve en masse requiert le rôle admin",
+  "INVESTITURE_CONFIG_NOT_FOUND": "Configuration d'investiture introuvable",
+  "INVESTITURE_CONFIG_DUPLICATE": "Une configuration d'investiture existe déjà pour ce champ local et cette année ecclésiastique",
+  "INVESTITURE_CONCURRENT_UPDATE": "Le statut de l'enrollment a été modifié par une requête concurrente. Veuillez réessayer"
 }

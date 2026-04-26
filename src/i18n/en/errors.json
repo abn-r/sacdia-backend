@@ -201,5 +201,14 @@
   "HONOR_USER_NOT_ENROLLED": "User is not enrolled in this honor",
   "HONOR_REQUIREMENT_NOT_IN_HONOR": "Requirement does not belong to this honor",
   "HONOR_EVIDENCE_MAX_REACHED": "Maximum of {max} evidences of type {evidence_type} per requirement reached",
-  "HONOR_EVIDENCE_NOT_FOUND": "Evidence not found"
+  "HONOR_EVIDENCE_NOT_FOUND": "Evidence not found",
+  "INVESTITURE_ENROLLMENT_NOT_FOUND": "Enrollment not found",
+  "INVESTITURE_INVALID_STATE_TRANSITION": "Invalid state transition. Current status: {status}",
+  "INVESTITURE_ALREADY_INVESTIDO": "The enrollment has already been invested",
+  "INVESTITURE_REJECT_COMMENTS_REQUIRED": "The comments field is required to reject an enrollment",
+  "INVESTITURE_ACCESS_DENIED": "Access denied to this enrollment history",
+  "INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN": "Bulk field-approve action requires admin role",
+  "INVESTITURE_CONFIG_NOT_FOUND": "Investiture configuration not found",
+  "INVESTITURE_CONFIG_DUPLICATE": "An investiture configuration already exists for this local field and ecclesiastical year",
+  "INVESTITURE_CONCURRENT_UPDATE": "The enrollment status was modified by a concurrent request. Please retry the operation"
 }

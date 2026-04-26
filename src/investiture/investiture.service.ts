@@ -1,11 +1,11 @@
+import { Injectable, Logger } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppConflictException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   Prisma,
   investiture_status_enum,
@@ -121,7 +121,7 @@ export class InvestitureService {
 
     // Step 2: Not found or inactive
     if (!enrollment || enrollment.active === false) {
-      throw new NotFoundException('Enrollment no encontrado');
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
     }
 
     // Step 3: Validate state transition
@@ -130,8 +130,9 @@ export class InvestitureService {
       investiture_status_enum.REJECTED,
     ];
     if (!validSourceStatuses.includes(enrollment.investiture_status)) {
-      throw new BadRequestException(
-        `Transición inválida. El enrollment está en estado ${enrollment.investiture_status}`,
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        { status: enrollment.investiture_status },
       );
     }
 
@@ -300,14 +301,14 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException('Enrollment no encontrado');
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
     }
 
     // 2. Validate that current status allows rejection
     if (!REJECTABLE_STATUSES.includes(enrollment.investiture_status)) {
-      throw new BadRequestException(
-        `No se puede rechazar un enrollment en estado ${enrollment.investiture_status}. ` +
-          `Estados rechazables: ${REJECTABLE_STATUSES.join(', ')}`,
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        { status: enrollment.investiture_status },
       );
     }
 
@@ -425,19 +426,20 @@ export class InvestitureService {
 
     // Step 2: Throw if not found or inactive
     if (!enrollment || enrollment.active === false) {
-      throw new NotFoundException('Enrollment no encontrado');
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
     }
 
     // Step 3: Validate state — must be FIELD_APPROVED
     const currentStatus = enrollment.investiture_status;
 
     if (currentStatus === investiture_status_enum.INVESTIDO) {
-      throw new ConflictException('El enrollment ya fue investido');
+      throw new AppConflictException(ErrorCode.INVESTITURE_ALREADY_INVESTIDO);
     }
 
     if (currentStatus !== investiture_status_enum.FIELD_APPROVED) {
-      throw new BadRequestException(
-        `El enrollment debe estar en estado FIELD_APPROVED para ser investido. Estado actual: ${currentStatus}`,
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        { status: currentStatus },
       );
     }
 
@@ -627,7 +629,7 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException('Enrollment no encontrado');
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
     }
 
     // 2. Authorization check — query DB for actual global roles (JWT payload does NOT carry roles)
@@ -675,9 +677,7 @@ export class InvestitureService {
       if (!isClubStaff) {
         // Fall through to enrollment owner check
         if (actorId !== enrollment.user_id) {
-          throw new ForbiddenException(
-            'Sin acceso al historial de este enrollment',
-          );
+          throw new AppForbiddenException(ErrorCode.INVESTITURE_ACCESS_DENIED);
         }
       }
     }
@@ -743,7 +743,7 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException('Enrollment no encontrado');
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
     }
 
     // 2. Validate state
@@ -751,8 +751,9 @@ export class InvestitureService {
       enrollment.investiture_status !==
       investiture_status_enum.SUBMITTED_FOR_VALIDATION
     ) {
-      throw new ConflictException(
-        `El enrollment no está en estado SUBMITTED_FOR_VALIDATION. Estado actual: ${enrollment.investiture_status}`,
+      throw new AppConflictException(
+        ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        { status: enrollment.investiture_status },
       );
     }
 
@@ -761,9 +762,7 @@ export class InvestitureService {
       dto.action === 'REJECTED' &&
       (!dto.comments || dto.comments.trim() === '')
     ) {
-      throw new BadRequestException(
-        'El campo comments es requerido para rechazar un enrollment',
-      );
+      throw new AppBadRequestException(ErrorCode.INVESTITURE_REJECT_COMMENTS_REQUIRED);
     }
 
     // 4. Transaction
@@ -881,9 +880,7 @@ export class InvestitureService {
         ['admin', 'assistant_admin', 'super_admin'],
       );
       if (!isAdmin) {
-        throw new ForbiddenException(
-          'La acción field-approve en bloque requiere rol admin',
-        );
+        throw new AppForbiddenException(ErrorCode.INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN);
       }
     }
 
@@ -1318,9 +1315,7 @@ export class InvestitureService {
     });
 
     if (!config) {
-      throw new NotFoundException(
-        `Configuración de investidura con ID ${configId} no encontrada`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_CONFIG_NOT_FOUND);
     }
 
     return config;
@@ -1349,9 +1344,7 @@ export class InvestitureService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException(
-          'Ya existe una configuración de investidura para este campo local y año eclesiástico',
-        );
+        throw new AppConflictException(ErrorCode.INVESTITURE_CONFIG_DUPLICATE);
       }
       throw error;
     }
@@ -1427,22 +1420,23 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException('Enrollment no encontrado');
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
     }
 
     // 2. Validate current status matches expected
     if (enrollment.investiture_status !== expectedSourceStatus) {
-      throw new ConflictException(
-        `El enrollment debe estar en estado ${expectedSourceStatus} para esta operación. ` +
-          `Estado actual: ${enrollment.investiture_status}`,
+      throw new AppConflictException(
+        ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        { status: enrollment.investiture_status },
       );
     }
 
     // 3. Look up the transition
     const transition = APPROVAL_TRANSITIONS[expectedSourceStatus];
     if (!transition) {
-      throw new BadRequestException(
-        `No existe transición de aprobación desde el estado ${expectedSourceStatus}`,
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        { status: expectedSourceStatus },
       );
     }
 
@@ -1467,9 +1461,7 @@ export class InvestitureService {
       });
 
       if (updateResult.count === 0) {
-        throw new ConflictException(
-          'El estado del enrollment fue modificado por otra solicitud concurrente. Reintentá la operación.',
-        );
+        throw new AppConflictException(ErrorCode.INVESTITURE_CONCURRENT_UPDATE);
       }
 
       await tx.investiture_validation_history.create({
@@ -1566,9 +1558,7 @@ export class InvestitureService {
     const yearId = enrollment.ecclesiastical_year_id;
 
     if (!localFieldId) {
-      throw new NotFoundException(
-        'No existe configuración de investidura para este campo local y año eclesiástico',
-      );
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_CONFIG_NOT_FOUND);
     }
 
     const config = await this.prisma.investiture_config.findFirst({
@@ -1580,9 +1570,7 @@ export class InvestitureService {
     });
 
     if (!config) {
-      throw new NotFoundException(
-        'No existe configuración de investidura para este campo local y año eclesiástico',
-      );
+      throw new AppNotFoundException(ErrorCode.INVESTITURE_CONFIG_NOT_FOUND);
     }
 
     return config;
