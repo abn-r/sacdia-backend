@@ -548,6 +548,14 @@ export class HonorsService {
       throw new AppBadRequestException(ErrorCode.HONOR_FILE_REQUIRED);
     }
 
+    // Hard cap: reject requests that exceed the maximum number of images per
+    // upload. The controller enforces maxCount: 10 via Multer, but this guard
+    // defends against direct service calls (tests, CLI, future callers) that
+    // bypass the HTTP layer. Keeps the presign fan-out bounded at 10 URLs max.
+    if (imageFiles.length > 10) {
+      throw new AppBadRequestException(ErrorCode.HONOR_EVIDENCE_MAX_REACHED);
+    }
+
     await this.findOne(honorId);
 
     if (certificateFile) {
@@ -738,8 +746,10 @@ export class HonorsService {
                 )
               : null,
           images: await Promise.all(
-            uploadedImageUrls.map(async (url) =>
-              this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+            uploadedImageUrls.map((url) =>
+              HONOR_DETAIL_URL_LIMITER(() =>
+                this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+              ),
             ),
           ),
         },

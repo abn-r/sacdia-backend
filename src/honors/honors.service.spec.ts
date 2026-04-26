@@ -409,6 +409,55 @@ describe('HonorsService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_REQUIRED });
     });
 
+    it('should throw HONOR_EVIDENCE_MAX_REACHED when more than 10 images are provided', async () => {
+      const mockImage = {
+        originalname: 'img.jpg',
+        mimetype: 'image/jpeg',
+        size: 1024,
+        buffer: Buffer.from('img'),
+      } as Express.Multer.File;
+      // 11 images — one over the hard cap
+      const images = Array.from({ length: 11 }, () => mockImage);
+      await expect(
+        service.uploadUserHonorFiles('user-123', 15, { images }),
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_EVIDENCE_MAX_REACHED });
+    });
+
+    it('should accept exactly 10 images without throwing the cap error', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        honor_id: 15,
+        active: true,
+      } as any);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        user_id: 'user-123',
+        honor_id: 15,
+        certificate: '',
+        images: [],
+        document: null,
+      });
+      mockPrismaService.users_honors.upsert.mockResolvedValue({
+        user_honor_id: 70,
+        user_id: 'user-123',
+        honor_id: 15,
+        certificate: '',
+        images: [],
+        document: null,
+      });
+      // 10 images — exactly at the cap, should NOT throw HONOR_EVIDENCE_MAX_REACHED
+      const mockImage = {
+        originalname: 'img.jpg',
+        mimetype: 'image/jpeg',
+        size: 100 * 1024, // 100 KB — within the 5 MB limit
+        buffer: Buffer.from('img'),
+      } as Express.Multer.File;
+      const images = Array.from({ length: 10 }, () => mockImage);
+      // We only assert it does not reject with the cap error; upload proceeds normally.
+      await expect(
+        service.uploadUserHonorFiles('user-123', 15, { images }),
+      ).resolves.toBeDefined();
+    });
+
     it('should upload files to R2 and persist generated URLs', async () => {
       jest.spyOn(service, 'findOne').mockResolvedValue({
         honor_id: 15,
