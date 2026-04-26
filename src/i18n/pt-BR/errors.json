@@ -124,5 +124,22 @@
   "ADMIN_CLUB_IDEAL_NOT_FOUND": "Ideal de clube não encontrado",
   "ADMIN_HONOR_CATEGORY_NOT_FOUND": "Categoria de honra não encontrada",
   "ADMIN_HONOR_CATEGORY_NAME_CONFLICT": "Já existe uma categoria de honra com esse nome",
-  "ADMIN_HONOR_CATEGORY_IN_USE": "Não é possível desativar a categoria de honra porque está em uso"
+  "ADMIN_HONOR_CATEGORY_IN_USE": "Não é possível desativar a categoria de honra porque está em uso",
+  "RBAC_PERMISSION_NOT_FOUND": "Permissão não encontrada",
+  "RBAC_PERMISSION_NAME_CONFLICT": "Já existe uma permissão com esse nome",
+  "RBAC_ROLE_NOT_FOUND": "Papel não encontrado",
+  "RBAC_ROLE_NAME_CONFLICT": "Já existe um papel com esse nome",
+  "RBAC_ROLE_NAME_RESERVED": "O nome do papel está reservado e não pode ser criado",
+  "RBAC_ROLE_NAME_IMMUTABLE": "O nome do papel não pode ser modificado",
+  "RBAC_ROLE_PROTECTED": "O papel super_admin está protegido e não pode ser modificado ou desativado",
+  "RBAC_ROLE_HAS_ASSIGNMENTS": "Não é possível desativar o papel porque há usuários atribuídos",
+  "RBAC_PERMISSIONS_NOT_FOUND": "Uma ou mais permissões não foram encontradas",
+  "RBAC_ROLE_PERMISSION_NOT_FOUND": "Atribuição de permissão ao papel não encontrada",
+  "RBAC_USER_NOT_FOUND": "Usuário não encontrado",
+  "RBAC_USER_PERMISSION_ALREADY_ASSIGNED": "O usuário já possui esta permissão atribuída",
+  "RBAC_USER_PERMISSION_NOT_FOUND": "Atribuição de permissão ao usuário não encontrada",
+  "RBAC_USER_ROLE_ALREADY_ASSIGNED": "O usuário já possui este papel atribuído",
+  "RBAC_USER_ROLE_NOT_FOUND": "Atribuição de papel ao usuário não encontrada",
+  "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "Já existe um super_admin. Este endpoint só funciona quando não há nenhum",
+  "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "Papel super_admin não encontrado no banco de dados. Execute o seed primeiro"
 }

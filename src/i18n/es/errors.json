@@ -124,5 +124,22 @@
   "ADMIN_CLUB_IDEAL_NOT_FOUND": "Ideal de club no encontrado",
   "ADMIN_HONOR_CATEGORY_NOT_FOUND": "Categoría de honor no encontrada",
   "ADMIN_HONOR_CATEGORY_NAME_CONFLICT": "Ya existe una categoría de honor con ese nombre",
-  "ADMIN_HONOR_CATEGORY_IN_USE": "No se puede desactivar la categoría de honor porque está en uso"
+  "ADMIN_HONOR_CATEGORY_IN_USE": "No se puede desactivar la categoría de honor porque está en uso",
+  "RBAC_PERMISSION_NOT_FOUND": "Permiso no encontrado",
+  "RBAC_PERMISSION_NAME_CONFLICT": "Ya existe un permiso con ese nombre",
+  "RBAC_ROLE_NOT_FOUND": "Rol no encontrado",
+  "RBAC_ROLE_NAME_CONFLICT": "Ya existe un rol con ese nombre",
+  "RBAC_ROLE_NAME_RESERVED": "El nombre de rol está reservado y no puede ser creado",
+  "RBAC_ROLE_NAME_IMMUTABLE": "El nombre del rol no puede ser modificado",
+  "RBAC_ROLE_PROTECTED": "El rol super_admin está protegido y no puede ser modificado ni desactivado",
+  "RBAC_ROLE_HAS_ASSIGNMENTS": "No se puede desactivar el rol porque tiene usuarios asignados",
+  "RBAC_PERMISSIONS_NOT_FOUND": "Uno o más permisos no fueron encontrados",
+  "RBAC_ROLE_PERMISSION_NOT_FOUND": "Asignación de permiso a rol no encontrada",
+  "RBAC_USER_NOT_FOUND": "Usuario no encontrado",
+  "RBAC_USER_PERMISSION_ALREADY_ASSIGNED": "El usuario ya tiene este permiso asignado",
+  "RBAC_USER_PERMISSION_NOT_FOUND": "Asignación de permiso a usuario no encontrada",
+  "RBAC_USER_ROLE_ALREADY_ASSIGNED": "El usuario ya tiene este rol asignado",
+  "RBAC_USER_ROLE_NOT_FOUND": "Asignación de rol a usuario no encontrada",
+  "RBAC_SUPER_ADMIN_ALREADY_EXISTS": "Ya existe un super_admin. Este endpoint solo funciona cuando no hay ninguno",
+  "RBAC_SUPER_ADMIN_ROLE_NOT_FOUND": "Rol super_admin no encontrado en la base de datos. Ejecutá el seed primero"
 }
