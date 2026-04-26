@@ -1,13 +1,13 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { UpdateManualDataDto } from './dto';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class MonthlyReportsService {
@@ -81,9 +81,7 @@ export class MonthlyReportsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${enrollmentId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND);
     }
 
     const clubSectionId = enrollment.club_section_id;
@@ -137,15 +135,11 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     if (report.status !== 'draft') {
-      throw new BadRequestException(
-        `Cannot update manual data for a report with status '${report.status}'. Only draft reports can be edited.`,
-      );
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
     }
 
     // Build update data, filtering out undefined values
@@ -181,15 +175,11 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     if (report.status !== 'draft') {
-      throw new BadRequestException(
-        `Cannot generate a report with status '${report.status}'. Only draft reports can be generated.`,
-      );
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
     }
 
     // Get live preview data to freeze
@@ -223,15 +213,11 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     if (report.status !== 'generated') {
-      throw new BadRequestException(
-        `Cannot submit a report with status '${report.status}'. Only generated reports can be submitted.`,
-      );
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_GENERATED);
     }
 
     return this.prisma.monthly_reports.update({
@@ -278,9 +264,7 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     return report;
@@ -686,10 +670,10 @@ export class MonthlyReportsService {
 
   private validateMonthYear(month: number, year: number) {
     if (month < 1 || month > 12) {
-      throw new BadRequestException('Month must be between 1 and 12');
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_MONTH);
     }
     if (year < 2020 || year > 2100) {
-      throw new BadRequestException('Year must be between 2020 and 2100');
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_YEAR);
     }
   }
 
@@ -699,9 +683,7 @@ export class MonthlyReportsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${enrollmentId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND);
     }
 
     return enrollment;
