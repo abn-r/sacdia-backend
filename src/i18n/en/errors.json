@@ -328,5 +328,14 @@
   "INSURANCE_TYPE_INVALID": "Invalid insurance type",
   "INSURANCE_COVERAGE_AMOUNT_INVALID": "Coverage amount must be numeric",
   "INSURANCE_DATE_REQUIRED": "Date is required",
-  "INSURANCE_DATE_INVALID": "Date is invalid"
+  "INSURANCE_DATE_INVALID": "Date is invalid",
+  "CLUB_NOT_FOUND": "Club not found",
+  "CLUB_SECTION_NOT_FOUND": "Club section not found",
+  "CLUB_TYPE_NOT_FOUND": "Club type not found or inactive",
+  "CLUB_SECTION_ID_REQUIRED": "Club section ID is required",
+  "CLUB_ROLE_SLOT_LIMIT_REACHED": "Maximum role assignments per section reached",
+  "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Cannot assign this role due to an exclusivity conflict with another role in this section",
+  "CLUB_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
+  "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id or role is required for this operation",
+  "CLUB_ROLE_NOT_FOUND": "Role not found in CLUB category"
 }

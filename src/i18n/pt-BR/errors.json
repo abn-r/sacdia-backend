@@ -328,5 +328,14 @@
   "INSURANCE_TYPE_INVALID": "Tipo de seguro inválido",
   "INSURANCE_COVERAGE_AMOUNT_INVALID": "O valor de cobertura deve ser numérico",
   "INSURANCE_DATE_REQUIRED": "A data é obrigatória",
-  "INSURANCE_DATE_INVALID": "A data é inválida"
+  "INSURANCE_DATE_INVALID": "A data é inválida",
+  "CLUB_NOT_FOUND": "Clube não encontrado",
+  "CLUB_SECTION_NOT_FOUND": "Seção do clube não encontrada",
+  "CLUB_TYPE_NOT_FOUND": "Tipo de clube não encontrado ou inativo",
+  "CLUB_SECTION_ID_REQUIRED": "O identificador da seção do clube é obrigatório",
+  "CLUB_ROLE_SLOT_LIMIT_REACHED": "O máximo de atribuições permitidas para esta função na seção foi atingido",
+  "CLUB_ROLE_EXCLUSIVE_CONFLICT": "Não é possível atribuir esta função porque há um conflito de exclusividade com outra função nesta seção",
+  "CLUB_NO_ACTIVE_YEAR": "Não há um ano eclesiástico ativo configurado",
+  "CLUB_ROLE_IDENTIFIER_REQUIRED": "role_id ou role é obrigatório para esta operação",
+  "CLUB_ROLE_NOT_FOUND": "Função não encontrada na categoria CLUB"
 }
