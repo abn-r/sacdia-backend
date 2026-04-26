@@ -210,5 +210,18 @@
   "INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN": "Bulk field-approve action requires admin role",
   "INVESTITURE_CONFIG_NOT_FOUND": "Investiture configuration not found",
   "INVESTITURE_CONFIG_DUPLICATE": "An investiture configuration already exists for this local field and ecclesiastical year",
-  "INVESTITURE_CONCURRENT_UPDATE": "The enrollment status was modified by a concurrent request. Please retry the operation"
+  "INVESTITURE_CONCURRENT_UPDATE": "The enrollment status was modified by a concurrent request. Please retry the operation",
+  "ACTIVITY_CLUB_NOT_FOUND": "Club not found",
+  "ACTIVITY_NOT_FOUND": "Activity not found",
+  "ACTIVITY_SECTION_ID_REQUIRED": "club_section_id is required for single-section activities",
+  "ACTIVITY_SECTION_DUPLICATE_IDS": "club_section_ids contains duplicate sections",
+  "ACTIVITY_SECTION_OWNER_NOT_IN_LIST": "The owner section is not in the list of validated sections",
+  "ACTIVITY_SECTION_CLUB_TYPE_MISMATCH": "club_type_id does not match the owner section type",
+  "ACTIVITY_NO_OWNER_SECTION": "The activity has no owner section",
+  "ACTIVITY_SECTION_NOT_FOUND": "Section not found",
+  "ACTIVITY_SECTION_WRONG_CLUB": "One or more sections do not belong to this club",
+  "ACTIVITY_IMAGE_INVALID_FORMAT": "Invalid image format. Only JPG, PNG, WEBP are allowed",
+  "ACTIVITY_IMAGE_TOO_LARGE": "File exceeds the maximum size of {max_mb} MB",
+  "ACTIVITY_IMAGE_UPLOAD_FAILED": "Failed to upload activity image",
+  "ACTIVITY_IMAGE_UPDATE_FAILED": "Failed to update activity image"
 }

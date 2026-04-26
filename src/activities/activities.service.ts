@@ -1,11 +1,10 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -97,7 +96,7 @@ export class ActivitiesService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_CLUB_NOT_FOUND);
     }
 
     // Build the activity_instances filter.
@@ -176,7 +175,7 @@ export class ActivitiesService {
     });
 
     if (!activity) {
-      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
     }
 
     return this.applySignedPrivateUrls(this.attachInstances(activity));
@@ -193,9 +192,7 @@ export class ActivitiesService {
 
     // Single-section activity (existing path)
     if (!dto.club_section_id) {
-      throw new BadRequestException(
-        'club_section_id es requerido para actividades de una sola sección',
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_ID_REQUIRED);
     }
 
     const section = await this.resolveAndValidateSectionRecord(
@@ -268,9 +265,7 @@ export class ActivitiesService {
     const rawSectionIds = dto.club_section_ids!;
     const uniqueSectionIds = [...new Set(rawSectionIds)];
     if (uniqueSectionIds.length !== rawSectionIds.length) {
-      throw new BadRequestException(
-        'club_section_ids contiene secciones duplicadas',
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_DUPLICATE_IDS);
     }
 
     // W1: Ensure the creator's own section is always present in the instances list
@@ -293,9 +288,7 @@ export class ActivitiesService {
       : sections[0];
 
     if (!primarySectionRecord) {
-      throw new BadRequestException(
-        `La sección propietaria (club_section_id=${dto.club_section_id}) no está en la lista de secciones validadas`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_OWNER_NOT_IN_LIST);
     }
 
     // W2: If club_type_id is explicitly provided, verify it matches the owner section
@@ -303,9 +296,7 @@ export class ActivitiesService {
       dto.club_type_id &&
       dto.club_type_id !== primarySectionRecord.club_type_id
     ) {
-      throw new BadRequestException(
-        `club_type_id=${dto.club_type_id} no coincide con el tipo de la sección propietaria (club_type_id=${primarySectionRecord.club_type_id})`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_CLUB_TYPE_MISMATCH);
     }
 
     const clubTypeId = dto.club_type_id ?? primarySectionRecord.club_type_id;
@@ -450,7 +441,7 @@ export class ActivitiesService {
     });
 
     if (!existing) {
-      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
     }
 
     // -----------------------------------------------------------------------
@@ -558,18 +549,14 @@ export class ActivitiesService {
     const clubId = existing.club_sections?.main_club_id;
 
     if (!clubId) {
-      throw new BadRequestException(
-        'La actividad no tiene sección propietaria; no se puede validar club_section_ids',
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_NO_OWNER_SECTION);
     }
 
     // Deduplicate
     const rawIds = dto.club_section_ids!;
     const uniqueSectionIds = [...new Set(rawIds)];
     if (uniqueSectionIds.length !== rawIds.length) {
-      throw new BadRequestException(
-        'club_section_ids contiene secciones duplicadas',
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_DUPLICATE_IDS);
     }
 
     // Validate all sections belong to the same club
@@ -668,9 +655,7 @@ export class ActivitiesService {
     const ownerSectionId = existing.club_section_id;
 
     if (!ownerSectionId) {
-      throw new BadRequestException(
-        'La actividad no tiene sección propietaria; no se puede convertir a sección única',
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_NO_OWNER_SECTION);
     }
 
     const now = new Date();
@@ -743,7 +728,7 @@ export class ActivitiesService {
     });
 
     if (!existing) {
-      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
     }
 
     const deleted = await this.prisma.activities.update({
@@ -810,7 +795,7 @@ export class ActivitiesService {
     });
 
     if (!activity) {
-      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
     }
 
     const attendeeIds = (activity.attendees as string[]) || [];
@@ -919,15 +904,16 @@ export class ActivitiesService {
     // Validate mime type
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Formato no válido. Solo se permiten JPG, PNG, WEBP',
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_IMAGE_INVALID_FORMAT);
     }
 
     // Validate size (max 5MB)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException('Archivo muy grande. Tamaño máximo: 5MB');
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_IMAGE_TOO_LARGE,
+        { max_mb: '5' },
+      );
     }
 
     const activity = await this.prisma.activities.findUnique({
@@ -936,7 +922,7 @@ export class ActivitiesService {
     });
 
     if (!activity) {
-      throw new NotFoundException(`Activity with ID ${activityId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
     }
 
     const extension = file.mimetype.split('/')[1];
@@ -953,7 +939,7 @@ export class ActivitiesService {
       );
     } catch (error) {
       this.logger.error('R2 upload error:', error);
-      throw new InternalServerErrorException('Error al subir la imagen');
+      throw new AppInternalServerErrorException(ErrorCode.ACTIVITY_IMAGE_UPLOAD_FAILED);
     }
 
     try {
@@ -966,7 +952,7 @@ export class ActivitiesService {
       await this.fileStorage.deleteMany(StorageBucketAlias.ACTIVITIES_IMAGES, [
         uploaded.key,
       ]);
-      throw new InternalServerErrorException('Error al actualizar la imagen');
+      throw new AppInternalServerErrorException(ErrorCode.ACTIVITY_IMAGE_UPDATE_FAILED);
     }
 
     // Delete previous image if it existed and is different
@@ -1019,7 +1005,7 @@ export class ActivitiesService {
     });
 
     if (!clubExists) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_CLUB_NOT_FOUND);
     }
 
     const section = await this.prisma.club_sections.findUnique({
@@ -1028,13 +1014,11 @@ export class ActivitiesService {
     });
 
     if (!section) {
-      throw new BadRequestException(`Sección ${clubSectionId} no existe`);
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_NOT_FOUND);
     }
 
     if (section.main_club_id !== clubId) {
-      throw new BadRequestException(
-        `Sección ${clubSectionId} no pertenece al clubId=${clubId}`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_WRONG_CLUB);
     }
 
     return section as {
@@ -1064,7 +1048,7 @@ export class ActivitiesService {
     });
 
     if (!clubExists) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_CLUB_NOT_FOUND);
     }
 
     const sections = await this.prisma.club_sections.findMany({
@@ -1076,18 +1060,14 @@ export class ActivitiesService {
     if (sections.length !== sectionIds.length) {
       const foundIds = new Set(sections.map((s) => s.club_section_id));
       const missing = sectionIds.filter((id) => !foundIds.has(id));
-      throw new BadRequestException(
-        `Las siguientes secciones no existen: ${missing.join(', ')}`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_NOT_FOUND);
     }
 
     // Verify all sections belong to the given club
     const wrongSections = sections.filter((s) => s.main_club_id !== clubId);
     if (wrongSections.length > 0) {
       const wrongIds = wrongSections.map((s) => s.club_section_id).join(', ');
-      throw new BadRequestException(
-        `Las siguientes secciones no pertenecen al clubId=${clubId}: ${wrongIds}`,
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_WRONG_CLUB);
     }
 
     // Preserve the original order from the request

@@ -210,5 +210,18 @@
   "INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN": "L'action field-approve en masse requiert le rôle admin",
   "INVESTITURE_CONFIG_NOT_FOUND": "Configuration d'investiture introuvable",
   "INVESTITURE_CONFIG_DUPLICATE": "Une configuration d'investiture existe déjà pour ce champ local et cette année ecclésiastique",
-  "INVESTITURE_CONCURRENT_UPDATE": "Le statut de l'enrollment a été modifié par une requête concurrente. Veuillez réessayer"
+  "INVESTITURE_CONCURRENT_UPDATE": "Le statut de l'enrollment a été modifié par une requête concurrente. Veuillez réessayer",
+  "ACTIVITY_CLUB_NOT_FOUND": "Club introuvable",
+  "ACTIVITY_NOT_FOUND": "Activité introuvable",
+  "ACTIVITY_SECTION_ID_REQUIRED": "club_section_id est requis pour les activités à section unique",
+  "ACTIVITY_SECTION_DUPLICATE_IDS": "club_section_ids contient des sections en double",
+  "ACTIVITY_SECTION_OWNER_NOT_IN_LIST": "La section propriétaire n'est pas dans la liste des sections validées",
+  "ACTIVITY_SECTION_CLUB_TYPE_MISMATCH": "Le club_type_id ne correspond pas au type de la section propriétaire",
+  "ACTIVITY_NO_OWNER_SECTION": "L'activité n'a pas de section propriétaire",
+  "ACTIVITY_SECTION_NOT_FOUND": "Section introuvable",
+  "ACTIVITY_SECTION_WRONG_CLUB": "Une ou plusieurs sections n'appartiennent pas à ce club",
+  "ACTIVITY_IMAGE_INVALID_FORMAT": "Format d'image invalide. Seuls JPG, PNG, WEBP sont autorisés",
+  "ACTIVITY_IMAGE_TOO_LARGE": "Le fichier dépasse la taille maximale de {max_mb} MB",
+  "ACTIVITY_IMAGE_UPLOAD_FAILED": "Échec du téléversement de l'image de l'activité",
+  "ACTIVITY_IMAGE_UPDATE_FAILED": "Échec de la mise à jour de l'image de l'activité"
 }

@@ -210,5 +210,18 @@
   "INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN": "La acción field-approve en bloque requiere rol admin",
   "INVESTITURE_CONFIG_NOT_FOUND": "Configuración de investidura no encontrada",
   "INVESTITURE_CONFIG_DUPLICATE": "Ya existe una configuración de investidura para este campo local y año eclesiástico",
-  "INVESTITURE_CONCURRENT_UPDATE": "El estado del enrollment fue modificado por otra solicitud concurrente. Reintentá la operación"
+  "INVESTITURE_CONCURRENT_UPDATE": "El estado del enrollment fue modificado por otra solicitud concurrente. Reintentá la operación",
+  "ACTIVITY_CLUB_NOT_FOUND": "Club no encontrado",
+  "ACTIVITY_NOT_FOUND": "Actividad no encontrada",
+  "ACTIVITY_SECTION_ID_REQUIRED": "club_section_id es requerido para actividades de una sola sección",
+  "ACTIVITY_SECTION_DUPLICATE_IDS": "club_section_ids contiene secciones duplicadas",
+  "ACTIVITY_SECTION_OWNER_NOT_IN_LIST": "La sección propietaria no está en la lista de secciones validadas",
+  "ACTIVITY_SECTION_CLUB_TYPE_MISMATCH": "El club_type_id no coincide con el tipo de la sección propietaria",
+  "ACTIVITY_NO_OWNER_SECTION": "La actividad no tiene sección propietaria",
+  "ACTIVITY_SECTION_NOT_FOUND": "Sección no encontrada",
+  "ACTIVITY_SECTION_WRONG_CLUB": "Una o más secciones no pertenecen a este club",
+  "ACTIVITY_IMAGE_INVALID_FORMAT": "Formato de imagen no válido. Solo se permiten JPG, PNG, WEBP",
+  "ACTIVITY_IMAGE_TOO_LARGE": "El archivo supera el tamaño máximo de {max_mb} MB",
+  "ACTIVITY_IMAGE_UPLOAD_FAILED": "Error al subir la imagen de la actividad",
+  "ACTIVITY_IMAGE_UPDATE_FAILED": "Error al actualizar la imagen de la actividad"
 }
