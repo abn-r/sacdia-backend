@@ -1,11 +1,10 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
@@ -36,7 +35,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
     }
 
     return user;
@@ -61,7 +60,7 @@ export class UsersService {
         select: { country_id: true },
       });
       if (!country) {
-        throw new BadRequestException('País no válido o inactivo');
+        throw new AppBadRequestException(ErrorCode.USER_COUNTRY_INVALID);
       }
     }
 
@@ -71,7 +70,7 @@ export class UsersService {
         select: { union_id: true, country_id: true },
       });
       if (!selectedUnion) {
-        throw new BadRequestException('Unión no válida o inactiva');
+        throw new AppBadRequestException(ErrorCode.USER_UNION_INVALID);
       }
     }
 
@@ -81,7 +80,7 @@ export class UsersService {
         select: { local_field_id: true },
       });
       if (!localField) {
-        throw new BadRequestException('Campo local no válido o inactivo');
+        throw new AppBadRequestException(ErrorCode.USER_LOCAL_FIELD_INVALID);
       }
     }
 
@@ -97,9 +96,7 @@ export class UsersService {
       }
 
       if (!selectedUnion || selectedUnion.country_id !== targetCountryId) {
-        throw new BadRequestException(
-          'La unión seleccionada no pertenece al país seleccionado',
-        );
+        throw new AppBadRequestException(ErrorCode.USER_UNION_COUNTRY_MISMATCH);
       }
     }
 
@@ -113,9 +110,7 @@ export class UsersService {
       });
 
       if (!localField || localField.union_id !== targetUnionId) {
-        throw new BadRequestException(
-          'El campo local seleccionado no pertenece a la unión seleccionada',
-        );
+        throw new AppBadRequestException(ErrorCode.USER_LOCAL_FIELD_UNION_MISMATCH);
       }
     }
   }
@@ -135,8 +130,9 @@ export class UsersService {
     const invalid = allergyIds.filter((id) => !found.has(id));
 
     if (invalid.length > 0) {
-      throw new BadRequestException(
-        `Alergias inválidas o inactivas: ${invalid.join(', ')}`,
+      throw new AppBadRequestException(
+        ErrorCode.USER_ALLERGY_INVALID,
+        { ids: invalid.join(', ') },
       );
     }
   }
@@ -156,8 +152,9 @@ export class UsersService {
     const invalid = diseaseIds.filter((id) => !found.has(id));
 
     if (invalid.length > 0) {
-      throw new BadRequestException(
-        `Enfermedades inválidas o inactivas: ${invalid.join(', ')}`,
+      throw new AppBadRequestException(
+        ErrorCode.USER_DISEASE_INVALID,
+        { ids: invalid.join(', ') },
       );
     }
   }
@@ -177,8 +174,9 @@ export class UsersService {
     const invalid = medicineIds.filter((id) => !found.has(id));
 
     if (invalid.length > 0) {
-      throw new BadRequestException(
-        `Medicamentos inválidos o inactivos: ${invalid.join(', ')}`,
+      throw new AppBadRequestException(
+        ErrorCode.USER_MEDICINE_INVALID,
+        { ids: invalid.join(', ') },
       );
     }
   }
@@ -209,7 +207,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
     }
 
     if (user.user_image) {
@@ -228,9 +226,7 @@ export class UsersService {
 
     // Validar baptism_date solo si baptism es true
     if (updateUserDto.baptism === false && updateUserDto.baptism_date) {
-      throw new BadRequestException(
-        'No se puede especificar fecha de bautismo si no está bautizado',
-      );
+      throw new AppBadRequestException(ErrorCode.USER_BAPTISM_DATE_CONFLICT);
     }
 
     await this.validateGeographyReferences(updateUserDto, existingUser);
@@ -600,9 +596,7 @@ export class UsersService {
     });
 
     if (result.count === 0) {
-      throw new NotFoundException(
-        'Alergia no encontrada en el perfil del usuario',
-      );
+      throw new AppNotFoundException(ErrorCode.USER_ALLERGY_NOT_IN_PROFILE);
     }
 
     this.logger.log(`User allergy removed: ${userId} -> ${allergyId}`);
@@ -634,9 +628,7 @@ export class UsersService {
     });
 
     if (result.count === 0) {
-      throw new NotFoundException(
-        'Enfermedad no encontrada en el perfil del usuario',
-      );
+      throw new AppNotFoundException(ErrorCode.USER_DISEASE_NOT_IN_PROFILE);
     }
 
     this.logger.log(`User disease removed: ${userId} -> ${diseaseId}`);
@@ -668,9 +660,7 @@ export class UsersService {
     });
 
     if (result.count === 0) {
-      throw new NotFoundException(
-        'Medicamento no encontrado en el perfil del usuario',
-      );
+      throw new AppNotFoundException(ErrorCode.USER_MEDICINE_NOT_IN_PROFILE);
     }
 
     this.logger.log(`User medicine removed: ${userId} -> ${medicineId}`);
@@ -689,15 +679,16 @@ export class UsersService {
     // Validar formato
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Formato no válido. Solo se permiten JPG, PNG, WEBP',
-      );
+      throw new AppBadRequestException(ErrorCode.USER_IMAGE_INVALID_FORMAT);
     }
 
     // Validar tamaño (max 5MB)
     const maxSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxSize) {
-      throw new BadRequestException('Archivo muy grande. Tamaño máximo: 5MB');
+      throw new AppBadRequestException(
+        ErrorCode.USER_IMAGE_TOO_LARGE,
+        { max_mb: '5' },
+      );
     }
 
     // Determinar extensión
@@ -710,7 +701,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
     }
 
     let uploaded: { key: string; url: string };
@@ -726,7 +717,7 @@ export class UsersService {
       );
     } catch (error) {
       this.logger.error('R2 upload error:', error);
-      throw new InternalServerErrorException('Error al subir la imagen');
+      throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_UPLOAD_FAILED);
     }
 
     try {
@@ -739,7 +730,7 @@ export class UsersService {
       await this.rollbackUploadedObjects(StorageBucketAlias.USER_PROFILES, [
         uploaded.key,
       ]);
-      throw new InternalServerErrorException('Error al actualizar la imagen');
+      throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_UPDATE_FAILED);
     }
 
     // Fire-and-forget: do NOT await — old-file cleanup must not block the
@@ -776,11 +767,11 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
     }
 
     if (!user.user_image) {
-      throw new BadRequestException('El usuario no tiene foto de perfil');
+      throw new AppBadRequestException(ErrorCode.USER_NO_PROFILE_PICTURE);
     }
 
     const fileKey = this.fileStorage.extractKeyFromPublicUrl(
@@ -800,7 +791,7 @@ export class UsersService {
         'Database update failed while deleting profile image:',
         error,
       );
-      throw new InternalServerErrorException('Error al eliminar la imagen');
+      throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_DELETE_FAILED);
     }
 
     if (fileKey) {
@@ -823,7 +814,7 @@ export class UsersService {
           );
         }
 
-        throw new InternalServerErrorException('Error al eliminar la imagen');
+        throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_DELETE_FAILED);
       }
     } else {
       this.logger.warn(
