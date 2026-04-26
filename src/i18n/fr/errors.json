@@ -285,5 +285,19 @@
   "UNIT_WEEKLY_RECORD_NOT_FOUND": "Enregistrement hebdomadaire introuvable",
   "UNIT_WEEKLY_RECORD_WRONG_UNIT": "L'enregistrement n'appartient pas à un membre de cette unité",
   "UNIT_SCORING_CATEGORY_INVALID": "La catégorie n'est pas active ou non disponible pour ce champ local",
-  "UNIT_SCORING_POINTS_EXCEED_MAX": "Les points dépassent le maximum autorisé pour cette catégorie"
+  "UNIT_SCORING_POINTS_EXCEED_MAX": "Les points dépassent le maximum autorisé pour cette catégorie",
+  "REQUEST_TRANSFER_SAME_SECTION": "Les sections d'origine et de destination doivent être différentes",
+  "REQUEST_TRANSFER_USER_NOT_IN_SECTION": "L'utilisateur n'appartient pas à la section d'origine",
+  "REQUEST_TRANSFER_SECTION_NOT_FOUND": "Section de destination introuvable",
+  "REQUEST_TRANSFER_PENDING_EXISTS": "L'utilisateur a déjà une demande de transfert en attente",
+  "REQUEST_TRANSFER_NOT_FOUND": "Demande de transfert introuvable",
+  "REQUEST_TRANSFER_ALREADY_REVIEWED": "La demande de transfert a déjà été traitée",
+  "REQUEST_SECTION_NOT_FOUND": "Section du club introuvable",
+  "REQUEST_USER_NOT_FOUND": "Utilisateur introuvable",
+  "REQUEST_ROLE_NOT_FOUND": "Rôle introuvable",
+  "REQUEST_ASSIGNMENT_PENDING_EXISTS": "Une demande d'attribution en attente existe déjà pour cet utilisateur, ce rôle et cette section",
+  "REQUEST_ASSIGNMENT_NOT_FOUND": "Demande d'attribution introuvable",
+  "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "La demande d'attribution a déjà été traitée",
+  "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Le nombre maximum d'attributions de rôle par section a été atteint",
+  "REQUEST_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée"
 }

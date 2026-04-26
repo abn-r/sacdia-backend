@@ -285,5 +285,19 @@
   "UNIT_WEEKLY_RECORD_NOT_FOUND": "Weekly record not found",
   "UNIT_WEEKLY_RECORD_WRONG_UNIT": "The record does not belong to a member of this unit",
   "UNIT_SCORING_CATEGORY_INVALID": "Category is not active or not available for this club's local field",
-  "UNIT_SCORING_POINTS_EXCEED_MAX": "Points exceed the maximum allowed for this category"
+  "UNIT_SCORING_POINTS_EXCEED_MAX": "Points exceed the maximum allowed for this category",
+  "REQUEST_TRANSFER_SAME_SECTION": "Origin and destination sections must be different",
+  "REQUEST_TRANSFER_USER_NOT_IN_SECTION": "User does not belong to the origin section",
+  "REQUEST_TRANSFER_SECTION_NOT_FOUND": "Destination section not found",
+  "REQUEST_TRANSFER_PENDING_EXISTS": "User already has a pending transfer request",
+  "REQUEST_TRANSFER_NOT_FOUND": "Transfer request not found",
+  "REQUEST_TRANSFER_ALREADY_REVIEWED": "Transfer request has already been reviewed",
+  "REQUEST_SECTION_NOT_FOUND": "Club section not found",
+  "REQUEST_USER_NOT_FOUND": "User not found",
+  "REQUEST_ROLE_NOT_FOUND": "Role not found",
+  "REQUEST_ASSIGNMENT_PENDING_EXISTS": "A pending assignment request already exists for this user, role, and section",
+  "REQUEST_ASSIGNMENT_NOT_FOUND": "Assignment request not found",
+  "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "Assignment request has already been reviewed",
+  "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Maximum role assignments per section reached",
+  "REQUEST_NO_ACTIVE_YEAR": "No active ecclesiastical year configured"
 }

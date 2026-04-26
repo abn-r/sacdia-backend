@@ -285,5 +285,19 @@
   "UNIT_WEEKLY_RECORD_NOT_FOUND": "Registro semanal no encontrado",
   "UNIT_WEEKLY_RECORD_WRONG_UNIT": "El registro no pertenece a un miembro de esta unidad",
   "UNIT_SCORING_CATEGORY_INVALID": "La categoría no está activa o no está disponible para este campo local",
-  "UNIT_SCORING_POINTS_EXCEED_MAX": "Los puntos superan el máximo permitido para esta categoría"
+  "UNIT_SCORING_POINTS_EXCEED_MAX": "Los puntos superan el máximo permitido para esta categoría",
+  "REQUEST_TRANSFER_SAME_SECTION": "Las secciones de origen y destino deben ser diferentes",
+  "REQUEST_TRANSFER_USER_NOT_IN_SECTION": "El usuario no pertenece a la sección de origen",
+  "REQUEST_TRANSFER_SECTION_NOT_FOUND": "La sección de destino no fue encontrada",
+  "REQUEST_TRANSFER_PENDING_EXISTS": "El usuario ya tiene una solicitud de traslado pendiente",
+  "REQUEST_TRANSFER_NOT_FOUND": "Solicitud de traslado no encontrada",
+  "REQUEST_TRANSFER_ALREADY_REVIEWED": "La solicitud de traslado ya fue procesada",
+  "REQUEST_SECTION_NOT_FOUND": "Sección del club no encontrada",
+  "REQUEST_USER_NOT_FOUND": "Usuario no encontrado",
+  "REQUEST_ROLE_NOT_FOUND": "Rol no encontrado",
+  "REQUEST_ASSIGNMENT_PENDING_EXISTS": "Ya existe una solicitud de asignación pendiente para este usuario, rol y sección",
+  "REQUEST_ASSIGNMENT_NOT_FOUND": "Solicitud de asignación no encontrada",
+  "REQUEST_ASSIGNMENT_ALREADY_REVIEWED": "La solicitud de asignación ya fue procesada",
+  "REQUEST_ROLE_SLOT_LIMIT_REACHED": "Se alcanzó el máximo de asignaciones permitidas para este rol en la sección",
+  "REQUEST_NO_ACTIVE_YEAR": "No hay un año eclesiástico activo configurado"
 }
