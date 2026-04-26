@@ -271,5 +271,19 @@
   "CLASS_SECTION_ALREADY_SUBMITTED": "La section est déjà au statut '{status}' et ne peut pas être soumise",
   "CLASS_SECTION_NO_EVIDENCE": "Au moins un fichier de preuve est requis pour soumettre une section à la validation",
   "CLASS_EVIDENCE_FILE_NOT_FOUND": "Fichier de preuve introuvable",
-  "CLASS_LEVEL_TOO_HIGH": "Vous ne pouvez pas vous inscrire dans une classe supérieure à votre niveau actuel"
+  "CLASS_LEVEL_TOO_HIGH": "Vous ne pouvez pas vous inscrire dans une classe supérieure à votre niveau actuel",
+  "UNIT_CLUB_NOT_FOUND": "Club introuvable",
+  "UNIT_NOT_FOUND": "Unité introuvable",
+  "UNIT_SECTION_NOT_FOUND": "Section introuvable",
+  "UNIT_SECTION_WRONG_CLUB": "La section n'appartient pas à ce club",
+  "UNIT_USER_NOT_FOUND": "Utilisateur introuvable",
+  "UNIT_MEMBER_ALREADY_IN_SECTION": "Le membre appartient déjà à une unité active dans cette section",
+  "UNIT_MEMBER_ALREADY_IN_UNIT": "L'utilisateur est déjà un membre actif de cette unité",
+  "UNIT_MEMBER_NOT_FOUND": "Membre introuvable dans cette unité",
+  "UNIT_MEMBER_NOT_ACTIVE": "L'utilisateur n'est pas un membre actif de cette unité",
+  "UNIT_WEEKLY_RECORD_DUPLICATE": "Un enregistrement hebdomadaire existe déjà pour cette semaine et cette année",
+  "UNIT_WEEKLY_RECORD_NOT_FOUND": "Enregistrement hebdomadaire introuvable",
+  "UNIT_WEEKLY_RECORD_WRONG_UNIT": "L'enregistrement n'appartient pas à un membre de cette unité",
+  "UNIT_SCORING_CATEGORY_INVALID": "La catégorie n'est pas active ou non disponible pour ce champ local",
+  "UNIT_SCORING_POINTS_EXCEED_MAX": "Les points dépassent le maximum autorisé pour cette catégorie"
 }

@@ -271,5 +271,19 @@
   "CLASS_SECTION_ALREADY_SUBMITTED": "La sección ya está en estado '{status}' y no puede ser enviada",
   "CLASS_SECTION_NO_EVIDENCE": "Se requiere al menos un archivo de evidencia para enviar la sección a validación",
   "CLASS_EVIDENCE_FILE_NOT_FOUND": "Archivo de evidencia no encontrado",
-  "CLASS_LEVEL_TOO_HIGH": "No podés inscribirte en una clase superior a tu nivel actual"
+  "CLASS_LEVEL_TOO_HIGH": "No podés inscribirte en una clase superior a tu nivel actual",
+  "UNIT_CLUB_NOT_FOUND": "Club no encontrado",
+  "UNIT_NOT_FOUND": "Unidad no encontrada",
+  "UNIT_SECTION_NOT_FOUND": "Sección no encontrada",
+  "UNIT_SECTION_WRONG_CLUB": "La sección no pertenece a este club",
+  "UNIT_USER_NOT_FOUND": "Usuario no encontrado",
+  "UNIT_MEMBER_ALREADY_IN_SECTION": "El miembro ya pertenece a una unidad activa en esta sección",
+  "UNIT_MEMBER_ALREADY_IN_UNIT": "El usuario ya es miembro activo de esta unidad",
+  "UNIT_MEMBER_NOT_FOUND": "Miembro no encontrado en esta unidad",
+  "UNIT_MEMBER_NOT_ACTIVE": "El usuario no es miembro activo de esta unidad",
+  "UNIT_WEEKLY_RECORD_DUPLICATE": "Ya existe un registro semanal para esta semana y año",
+  "UNIT_WEEKLY_RECORD_NOT_FOUND": "Registro semanal no encontrado",
+  "UNIT_WEEKLY_RECORD_WRONG_UNIT": "El registro no pertenece a un miembro de esta unidad",
+  "UNIT_SCORING_CATEGORY_INVALID": "La categoría no está activa o no está disponible para este campo local",
+  "UNIT_SCORING_POINTS_EXCEED_MAX": "Los puntos superan el máximo permitido para esta categoría"
 }
