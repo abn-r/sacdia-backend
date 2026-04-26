@@ -1642,18 +1642,34 @@ enum origin_level_enum {
 }
 
 model scoring_categories {
-  scoring_category_id  Int                    @id @default(autoincrement())
-  name                 String                 @db.VarChar(100)
+  scoring_category_id  Int                               @id @default(autoincrement())
+  name                 String                            @db.VarChar(100)
   max_points           Int
   origin_level         origin_level_enum
   origin_id            Int
-  active               Boolean                @default(true)
-  created_at           DateTime               @default(now()) @db.Timestamptz(6)
-  modified_at          DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+  active               Boolean                           @default(true)
+  created_at           DateTime                          @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
   weekly_record_scores weekly_record_scores[]
+  translations         scoring_categories_translations[]
 
   @@index([origin_level, origin_id], map: "idx_scoring_categories_level_id")
   @@map("scoring_categories")
+}
+
+model scoring_categories_translations {
+  id                  Int                @id @default(autoincrement())
+  scoring_category_id Int
+  locale              String             @db.VarChar(10)
+  name                String?            @db.VarChar(100)
+  created_at          DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?          @default(now()) @db.Timestamptz(6)
+  scoring_categories  scoring_categories @relation(fields: [scoring_category_id], references: [scoring_category_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([scoring_category_id, locale])
+  @@index([locale])
+  @@index([scoring_category_id])
+  @@map("scoring_categories_translations")
 }
 
 model weekly_record_scores {

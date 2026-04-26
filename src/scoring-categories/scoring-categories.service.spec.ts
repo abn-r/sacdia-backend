@@ -2,6 +2,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { ScoringCategoriesService } from './scoring-categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { TranslationService } from '../common/services/translation.service';
 
 describe('ScoringCategoriesService', () => {
   const mockPrisma = {
@@ -20,9 +21,15 @@ describe('ScoringCategoriesService', () => {
     isSuperAdmin: jest.fn(),
   };
 
+  const mockTranslationService = {
+    getCurrentLocale: jest.fn().mockReturnValue('es'),
+    translateMany: jest.fn().mockImplementation((records: unknown[]) => records),
+  };
+
   const service = new ScoringCategoriesService(
     mockPrisma as unknown as PrismaService,
     mockAuthContext as unknown as AuthorizationContextService,
+    mockTranslationService as unknown as TranslationService,
   );
 
   beforeEach(() => {

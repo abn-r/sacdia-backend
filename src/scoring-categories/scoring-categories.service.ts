@@ -11,6 +11,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { TranslationService } from '../common/services/translation.service';
 
 export interface CategoryWithReadonly {
   scoring_category_id: number;
@@ -32,6 +33,7 @@ export class ScoringCategoriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly translationService: TranslationService,
   ) {}
 
   // ============================================================
@@ -39,12 +41,26 @@ export class ScoringCategoriesService {
   // ============================================================
 
   async findDivisionCategories(): Promise<CategoryWithReadonly[]> {
+    const locale = this.translationService.getCurrentLocale();
     const categories = await this.prisma.scoring_categories.findMany({
       where: { origin_level: 'DIVISION' },
+      include: {
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true },
+        },
+      },
       orderBy: { name: 'asc' },
     });
 
-    return categories.map((cat) => ({
+    const translated = this.translationService.translateMany(
+      categories,
+      locale,
+      ['name'],
+      'translations',
+    );
+
+    return (translated as any[]).map((cat) => ({
       ...cat,
       readonly: false,
       origin_badge: 'Division',
@@ -213,6 +229,7 @@ export class ScoringCategoriesService {
     userId: string,
   ): Promise<CategoryWithReadonly[]> {
     await this.assertUserBelongsToUnion(userId, unionId);
+    const locale = this.translationService.getCurrentLocale();
 
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
@@ -221,10 +238,23 @@ export class ScoringCategoriesService {
           { origin_level: 'UNION', origin_id: unionId },
         ],
       },
+      include: {
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true },
+        },
+      },
       orderBy: [{ origin_level: 'asc' }, { name: 'asc' }],
     });
 
-    return categories.map((cat) => ({
+    const translated = this.translationService.translateMany(
+      categories,
+      locale,
+      ['name'],
+      'translations',
+    );
+
+    return (translated as any[]).map((cat) => ({
       ...cat,
       readonly: cat.origin_level !== 'UNION' || cat.origin_id !== unionId,
       origin_badge:
@@ -342,6 +372,7 @@ export class ScoringCategoriesService {
 
     const unionId = localField.union_id;
     await this.assertUserBelongsToLocalField(userId, fieldId);
+    const locale = this.translationService.getCurrentLocale();
 
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
@@ -351,10 +382,23 @@ export class ScoringCategoriesService {
           { origin_level: 'LOCAL_FIELD', origin_id: fieldId },
         ],
       },
+      include: {
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true },
+        },
+      },
       orderBy: [{ origin_level: 'asc' }, { name: 'asc' }],
     });
 
-    return categories.map((cat) => {
+    const translated = this.translationService.translateMany(
+      categories,
+      locale,
+      ['name'],
+      'translations',
+    );
+
+    return (translated as any[]).map((cat) => {
       const isOwn =
         cat.origin_level === 'LOCAL_FIELD' && cat.origin_id === fieldId;
       let origin_badge: string;
