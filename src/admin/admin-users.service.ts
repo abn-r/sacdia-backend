@@ -1,10 +1,13 @@
 import {
-  ForbiddenException,
   Inject,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
+import {
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma, role_category, user_approval_status } from '@prisma/client';
 import {
   createPaginatedResult,
@@ -457,7 +460,7 @@ export class AdminUsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado o fuera de alcance');
+      throw new AppNotFoundException(ErrorCode.ADMIN_USER_NOT_FOUND);
     }
 
     const activeEcclesiasticalYearId =
@@ -700,7 +703,7 @@ export class AdminUsersService {
     });
 
     if (!actor) {
-      throw new ForbiddenException('Usuario actor no encontrado');
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_NOT_FOUND);
     }
 
     const roles = this.extractRoleNames(actor.users_roles);
@@ -725,9 +728,7 @@ export class AdminUsersService {
         };
       }
 
-      throw new ForbiddenException(
-        'Admin/assistant_admin sin alcance configurado: requiere union_id o local_field_id',
-      );
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
 
     if (roles.includes('coordinator')) {
@@ -739,14 +740,10 @@ export class AdminUsersService {
         };
       }
 
-      throw new ForbiddenException(
-        'Coordinator sin alcance configurado: requiere local_field_id',
-      );
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
 
-    throw new ForbiddenException(
-      'No tienes permisos globales para consultar usuarios administrativos',
-    );
+    throw new AppForbiddenException(ErrorCode.ADMIN_USER_NO_GLOBAL_PERMISSIONS);
   }
 
   private buildListWhere(

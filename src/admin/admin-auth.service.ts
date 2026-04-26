@@ -1,9 +1,12 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 
@@ -129,9 +132,7 @@ export class AdminAuthService {
     });
 
     if (!session) {
-      throw new NotFoundException(
-        `Session ${sessionId} not found for user ${targetUserId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.ADMIN_SESSION_NOT_FOUND, { sessionId, userId: targetUserId });
     }
 
     await this.prisma.session.delete({ where: { id: sessionId } });
@@ -198,9 +199,7 @@ export class AdminAuthService {
       await this.betterAuthService.hasTotpEnabled(targetUserId);
 
     if (!enabled) {
-      throw new BadRequestException(
-        `User ${targetUserId} does not have MFA enabled`,
-      );
+      throw new AppBadRequestException(ErrorCode.ADMIN_USER_MFA_NOT_ENABLED, { userId: targetUserId });
     }
 
     // Delete directly — admin override, no password check
@@ -242,7 +241,7 @@ export class AdminAuthService {
     });
 
     if (!user) {
-      throw new NotFoundException(`User ${userId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_USER_NOT_FOUND, { userId });
     }
   }
 }

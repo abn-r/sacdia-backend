@@ -1,10 +1,13 @@
 import {
-  BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -157,9 +160,7 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException(
-        'Cannot deactivate activity type because it is in use by active activities',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_ACTIVITY_TYPE_IN_USE, { id: activityTypeId });
     }
 
     const activityType = await this.prisma.activity_types.update({
@@ -188,9 +189,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(
-        `Activity type ${activityTypeId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ADMIN_ACTIVITY_TYPE_NOT_FOUND, { id: activityTypeId });
     }
 
     return entity;
@@ -210,7 +209,7 @@ export class AdminReferenceService {
       });
 
       if (existingByName) {
-        throw new ConflictException('Activity type name already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_ACTIVITY_TYPE_NAME_CONFLICT);
       }
     }
 
@@ -223,7 +222,7 @@ export class AdminReferenceService {
       });
 
       if (existingByCode) {
-        throw new ConflictException('Activity type code already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_ACTIVITY_TYPE_CODE_CONFLICT);
       }
     }
   }
@@ -307,9 +306,7 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException(
-        'Cannot deactivate relationship type because it is in use',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_IN_USE, { id: relationshipTypeId });
     }
 
     const relationshipType = await this.prisma.relationship_types.update({
@@ -401,9 +398,7 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException(
-        'Cannot deactivate allergy because it is in use',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_ALLERGY_IN_USE, { id: allergyId });
     }
 
     const allergy = await this.prisma.allergies.update({
@@ -490,9 +485,7 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException(
-        'Cannot deactivate disease because it is in use',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_DISEASE_IN_USE, { id: diseaseId });
     }
 
     const disease = await this.prisma.diseases.update({
@@ -573,9 +566,7 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException(
-        'Cannot deactivate medicine because it is in use',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_MEDICINE_IN_USE, { id: medicineId });
     }
 
     const medicine = await this.prisma.medicines.update({
@@ -669,9 +660,7 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException(
-        'Cannot deactivate club type because it has active club sections',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_CLUB_TYPE_IN_USE, { id: clubTypeId });
     }
 
     const clubType = await this.prisma.club_types.update({
@@ -694,7 +683,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(`Club type ${clubTypeId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLUB_TYPE_NOT_FOUND, { id: clubTypeId });
     }
 
     return entity;
@@ -709,7 +698,7 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new ConflictException('Club type name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_CLUB_TYPE_NAME_CONFLICT);
     }
   }
 
@@ -814,7 +803,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(`Club ideal ${clubIdealId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLUB_IDEAL_NOT_FOUND, { id: clubIdealId });
     }
 
     return entity;
@@ -908,9 +897,7 @@ export class AdminReferenceService {
     });
 
     if (activeAssignments > 0) {
-      throw new ConflictException(
-        'Cannot deactivate ecclesiastical year with active role assignments',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_HAS_ACTIVE_ASSIGNMENTS, { id: yearId });
     }
 
     const year = await this.prisma.ecclesiastical_years.update({
@@ -1058,9 +1045,7 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new ConflictException(
-        'Cannot deactivate honor category because it is in use',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_HONOR_CATEGORY_IN_USE, { id });
     }
 
     const category = await this.prisma.honors_categories.update({
@@ -1082,11 +1067,11 @@ export class AdminReferenceService {
 
   private validateDateRange(startDate: Date, endDate: Date) {
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-      throw new BadRequestException('Invalid date format');
+      throw new AppBadRequestException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_DATE_INVALID);
     }
 
     if (startDate >= endDate) {
-      throw new BadRequestException('start_date must be before end_date');
+      throw new AppBadRequestException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_DATE_INVALID);
     }
   }
 
@@ -1096,9 +1081,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(
-        `Relationship type ${relationshipTypeId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_NOT_FOUND, { id: relationshipTypeId });
     }
 
     return entity;
@@ -1118,7 +1101,7 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new ConflictException('Relationship type name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_NAME_CONFLICT);
     }
   }
 
@@ -1128,7 +1111,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(`Allergy ${allergyId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_ALLERGY_NOT_FOUND, { id: allergyId });
     }
 
     return entity;
@@ -1143,7 +1126,7 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new ConflictException('Allergy name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_ALLERGY_NAME_CONFLICT);
     }
   }
 
@@ -1153,7 +1136,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(`Disease ${diseaseId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_DISEASE_NOT_FOUND, { id: diseaseId });
     }
 
     return entity;
@@ -1168,7 +1151,7 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new ConflictException('Disease name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_DISEASE_NAME_CONFLICT);
     }
   }
 
@@ -1178,7 +1161,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(`Medicine ${medicineId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_MEDICINE_NOT_FOUND, { id: medicineId });
     }
 
     return entity;
@@ -1193,7 +1176,7 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new ConflictException('Medicine name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_MEDICINE_NAME_CONFLICT);
     }
   }
 
@@ -1203,7 +1186,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(`Ecclesiastical year ${yearId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_NOT_FOUND, { id: yearId });
     }
 
     return entity;
@@ -1215,9 +1198,7 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new NotFoundException(
-        `Honor category ${honorCategoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_CATEGORY_NOT_FOUND, { id: honorCategoryId });
     }
 
     return entity;
@@ -1237,7 +1218,7 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new ConflictException('Honor category name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_HONOR_CATEGORY_NAME_CONFLICT);
     }
   }
 }

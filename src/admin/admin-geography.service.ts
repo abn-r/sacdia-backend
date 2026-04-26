@@ -1,9 +1,12 @@
 import {
-  ConflictException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
+import {
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CatalogCacheService,
@@ -129,9 +132,7 @@ export class AdminGeographyService {
     });
 
     if (activeUnions > 0) {
-      throw new ConflictException(
-        'Cannot deactivate country with active unions',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_COUNTRY_HAS_ACTIVE_UNIONS, { id: countryId });
     }
 
     const country = await this.prisma.countries.update({
@@ -236,9 +237,7 @@ export class AdminGeographyService {
     });
 
     if (activeLocalFields > 0) {
-      throw new ConflictException(
-        'Cannot deactivate union with active local fields',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_UNION_HAS_ACTIVE_LOCAL_FIELDS, { id: unionId });
     }
 
     const union = await this.prisma.unions.update({
@@ -353,9 +352,7 @@ export class AdminGeographyService {
     });
 
     if (activeDistricts > 0) {
-      throw new ConflictException(
-        'Cannot deactivate local field with active districts',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_LOCAL_FIELD_HAS_ACTIVE_DISTRICTS, { id: localFieldId });
     }
 
     const localField = await this.prisma.local_fields.update({
@@ -398,7 +395,7 @@ export class AdminGeographyService {
     });
 
     if (existing) {
-      throw new ConflictException('District with this name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_DISTRICT_NAME_CONFLICT);
     }
 
     const district = await this.prisma.districts.create({
@@ -449,7 +446,7 @@ export class AdminGeographyService {
       });
 
       if (existingDistrict) {
-        throw new ConflictException('District with this name already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_DISTRICT_NAME_CONFLICT);
       }
     }
 
@@ -486,9 +483,7 @@ export class AdminGeographyService {
     });
 
     if (activeChurches > 0) {
-      throw new ConflictException(
-        'Cannot deactivate district with active churches',
-      );
+      throw new AppConflictException(ErrorCode.ADMIN_DISTRICT_HAS_ACTIVE_CHURCHES, { id: districtId });
     }
 
     const district = await this.prisma.districts.update({
@@ -531,7 +526,7 @@ export class AdminGeographyService {
     });
 
     if (existing) {
-      throw new ConflictException('Church with this name already exists');
+      throw new AppConflictException(ErrorCode.ADMIN_CHURCH_NAME_CONFLICT);
     }
 
     const church = await this.prisma.churches.create({
@@ -573,7 +568,7 @@ export class AdminGeographyService {
       });
 
       if (existingChurch) {
-        throw new ConflictException('Church with this name already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_CHURCH_NAME_CONFLICT);
       }
     }
 
@@ -636,7 +631,7 @@ export class AdminGeographyService {
       });
 
       if (existingByName) {
-        throw new ConflictException('Country name already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_COUNTRY_NAME_CONFLICT);
       }
     }
 
@@ -649,7 +644,7 @@ export class AdminGeographyService {
       });
 
       if (existingByAbbreviation) {
-        throw new ConflictException('Country abbreviation already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_COUNTRY_ABBREVIATION_CONFLICT);
       }
     }
   }
@@ -668,7 +663,7 @@ export class AdminGeographyService {
       });
 
       if (existingByName) {
-        throw new ConflictException('Union name already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_UNION_NAME_CONFLICT);
       }
     }
 
@@ -681,7 +676,7 @@ export class AdminGeographyService {
       });
 
       if (existingByAbbreviation) {
-        throw new ConflictException('Union abbreviation already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_UNION_ABBREVIATION_CONFLICT);
       }
     }
   }
@@ -700,7 +695,7 @@ export class AdminGeographyService {
       });
 
       if (existingByName) {
-        throw new ConflictException('Local field name already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_LOCAL_FIELD_NAME_CONFLICT);
       }
     }
 
@@ -713,7 +708,7 @@ export class AdminGeographyService {
       });
 
       if (existingByAbbreviation) {
-        throw new ConflictException('Local field abbreviation already exists');
+        throw new AppConflictException(ErrorCode.ADMIN_LOCAL_FIELD_ABBREVIATION_CONFLICT);
       }
     }
   }
@@ -724,7 +719,7 @@ export class AdminGeographyService {
     });
 
     if (!country) {
-      throw new NotFoundException(`Country ${countryId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_COUNTRY_NOT_FOUND, { id: countryId });
     }
 
     return country;
@@ -736,7 +731,7 @@ export class AdminGeographyService {
     });
 
     if (!union) {
-      throw new NotFoundException(`Union ${unionId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_UNION_NOT_FOUND, { id: unionId });
     }
 
     return union;
@@ -748,7 +743,7 @@ export class AdminGeographyService {
     });
 
     if (!localField) {
-      throw new NotFoundException(`Local field ${localFieldId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_LOCAL_FIELD_NOT_FOUND, { id: localFieldId });
     }
 
     return localField;
@@ -760,7 +755,7 @@ export class AdminGeographyService {
     });
 
     if (!district) {
-      throw new NotFoundException(`District ${districtId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_DISTRICT_NOT_FOUND, { id: districtId });
     }
 
     return district;
@@ -772,7 +767,7 @@ export class AdminGeographyService {
     });
 
     if (!church) {
-      throw new NotFoundException(`Church ${churchId} not found`);
+      throw new AppNotFoundException(ErrorCode.ADMIN_CHURCH_NOT_FOUND, { id: churchId });
     }
 
     return church;
