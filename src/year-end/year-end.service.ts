@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppBadRequestException,
@@ -253,7 +250,9 @@ export class YearEndService {
     });
 
     if (!year) {
-      throw new AppNotFoundException(ErrorCode.YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.YEAR_END_ECCLESIASTICAL_YEAR_NOT_FOUND,
+      );
     }
 
     return year;

@@ -201,7 +201,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when club not found', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.findByClub(999)).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_CLUB_NOT_FOUND });
+      await expect(service.findByClub(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_CLUB_NOT_FOUND,
+      });
     });
   });
 
@@ -219,7 +221,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when not found', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
   });
 
@@ -340,7 +344,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when activity does not exist', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(999, { name: 'X' })).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
+      await expect(service.update(999, { name: 'X' })).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
 
     it('should not call update when dto has no fields', async () => {
@@ -388,7 +394,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when activity does not exist', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove(999)).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
+      await expect(service.remove(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
   });
 
@@ -473,7 +481,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when activity does not exist', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.getAttendance(999)).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
+      await expect(service.getAttendance(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
 
     it('should resolve signed URLs for attendee user_image when it is a string', async () => {
@@ -575,7 +585,9 @@ describe('ActivitiesService', () => {
       await expect(service.create(1, createDto, ACTOR)).rejects.toThrow(
         'DB constraint violation',
       );
-      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+      expect(
+        mockNotificationsService.sendSilentToSection,
+      ).not.toHaveBeenCalled();
     });
 
     it('update(): calls sendSilentToSection with UPDATED action after successful DB write', async () => {
@@ -607,8 +619,12 @@ describe('ActivitiesService', () => {
     it('update(): does NOT call sendSilentToSection when activity not found', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(999, { name: 'X' }, ACTOR)).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
-      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+      await expect(
+        service.update(999, { name: 'X' }, ACTOR),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
+      expect(
+        mockNotificationsService.sendSilentToSection,
+      ).not.toHaveBeenCalled();
     });
 
     it('remove(): calls sendSilentToSection with DELETED action after successful soft-delete', async () => {
@@ -640,8 +656,12 @@ describe('ActivitiesService', () => {
     it('remove(): does NOT call sendSilentToSection when activity not found', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove(999, ACTOR)).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
-      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+      await expect(service.remove(999, ACTOR)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
+      expect(
+        mockNotificationsService.sendSilentToSection,
+      ).not.toHaveBeenCalled();
     });
 
     it('remove(): uses fallback actorId "system" when actorId is not provided', async () => {

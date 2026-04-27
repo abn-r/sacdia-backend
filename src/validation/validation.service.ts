@@ -47,11 +47,15 @@ export class ValidationService {
     }
 
     if (enrollment.user_id !== userId) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_ENROLLMENT_NOT_OWNED);
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_ENROLLMENT_NOT_OWNED,
+      );
     }
 
     if (enrollment.investiture_status !== investiture_status_enum.IN_PROGRESS) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_ENROLLMENT_NOT_IN_PROGRESS);
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_ENROLLMENT_NOT_IN_PROGRESS,
+      );
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -136,17 +140,23 @@ export class ValidationService {
       userHonor.validate === true ||
       userHonor.validation_status === 'APPROVED'
     ) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_HONOR_ALREADY_VALIDATED);
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_ALREADY_VALIDATED,
+      );
     }
 
     if (userHonor.validation_status === 'PENDING_REVIEW') {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_HONOR_ALREADY_PENDING);
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_ALREADY_PENDING,
+      );
     }
 
     // Allow submission from: IN_PROGRESS, REJECTED
     const allowedStatuses = ['IN_PROGRESS', 'REJECTED'];
     if (!allowedStatuses.includes(userHonor.validation_status)) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_HONOR_INVALID_STATUS);
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+      );
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -217,7 +227,9 @@ export class ValidationService {
     comment?: string,
   ) {
     if (action === 'rejected' && !comment) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_REJECT_COMMENT_REQUIRED);
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_REJECT_COMMENT_REQUIRED,
+      );
     }
 
     if (entityType === 'class') {
@@ -244,7 +256,9 @@ export class ValidationService {
       enrollment.investiture_status !==
       investiture_status_enum.SUBMITTED_FOR_VALIDATION
     ) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_ENROLLMENT_NOT_SUBMITTED);
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_ENROLLMENT_NOT_SUBMITTED,
+      );
     }
 
     const newStatus =

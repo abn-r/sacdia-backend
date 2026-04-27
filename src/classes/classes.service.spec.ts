@@ -33,10 +33,9 @@ describe('ClassesService', () => {
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
     class_section_progress: { findMany: jest.fn() },
     club_types: {
-      findMany: jest.fn().mockResolvedValue([
-        { club_type_id: 1 },
-        { club_type_id: 2 },
-      ]),
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ club_type_id: 1 }, { club_type_id: 2 }]),
     },
   };
 
@@ -85,7 +84,14 @@ describe('ClassesService', () => {
         ClassesService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
-        { provide: AchievementsService, useValue: { emitEvent: jest.fn().mockResolvedValue({ eventLogId: 1, queued: true }) } },
+        {
+          provide: AchievementsService,
+          useValue: {
+            emitEvent: jest
+              .fn()
+              .mockResolvedValue({ eventLogId: 1, queued: true }),
+          },
+        },
         { provide: TranslationService, useValue: mockTranslationService },
       ],
     }).compile();
@@ -174,7 +180,9 @@ describe('ClassesService', () => {
       });
       mockPrismaService.enrollments.findMany.mockResolvedValue([]);
 
-      await expect(service.getUserProgress('user-1', 7)).rejects.toMatchObject({ code: ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND });
+      await expect(service.getUserProgress('user-1', 7)).rejects.toMatchObject({
+        code: ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND,
+      });
     });
 
     it('throws conflict when class-scoped resolution is ambiguous', async () => {
@@ -186,7 +194,9 @@ describe('ClassesService', () => {
         { enrollment_id: 2 },
       ]);
 
-      await expect(service.getUserProgress('user-1', 7)).rejects.toMatchObject({ code: ErrorCode.CLASS_ENROLLMENT_AMBIGUOUS });
+      await expect(service.getUserProgress('user-1', 7)).rejects.toMatchObject({
+        code: ErrorCode.CLASS_ENROLLMENT_AMBIGUOUS,
+      });
     });
   });
 
@@ -286,12 +296,11 @@ describe('ClassesService', () => {
 
       const txMock = {
         club_types: {
-          findMany: jest.fn().mockResolvedValue(
-            mocks.clubTypes ?? [
-              { club_type_id: 1 },
-              { club_type_id: 2 },
-            ],
-          ),
+          findMany: jest
+            .fn()
+            .mockResolvedValue(
+              mocks.clubTypes ?? [{ club_type_id: 1 }, { club_type_id: 2 }],
+            ),
         },
         classes: {
           findUnique: jest.fn().mockResolvedValue(mocks.targetClass ?? null),
@@ -364,7 +373,11 @@ describe('ClassesService', () => {
         activeCount: 1,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE });
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
+      });
     });
 
     it('should block Aventureros enrollment when 1 active Conquistadores enrollment exists', async () => {
@@ -380,7 +393,11 @@ describe('ClassesService', () => {
         activeCount: 1,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE });
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
+      });
     });
 
     it('should block GM class with requires_invested_gm when no prior investiture', async () => {
@@ -396,7 +413,11 @@ describe('ClassesService', () => {
         findFirstResults: [null],
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_GM_INVESTITURE_REQUIRED });
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
+      });
     });
 
     it('should allow GM class with requires_invested_gm when INVESTIDO exists', async () => {
@@ -461,7 +482,9 @@ describe('ClassesService', () => {
         activeCount: 2,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_GM_ACTIVE });
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_GM_ACTIVE });
     });
 
     it('should block reactivation when enrollment limit is reached', async () => {
@@ -478,7 +501,11 @@ describe('ClassesService', () => {
         existingEnrollment: { enrollment_id: 5, active: false },
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE });
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
+      });
     });
 
     it('should allow reactivation when under enrollment limit', async () => {
@@ -525,7 +552,9 @@ describe('ClassesService', () => {
         targetClass: null,
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_NOT_FOUND });
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_NOT_FOUND });
     });
 
     it('should throw ConflictException when enrollment already exists and is active (regression)', async () => {
@@ -541,7 +570,9 @@ describe('ClassesService', () => {
         existingEnrollment: { enrollment_id: 7, active: true },
       });
 
-      await expect(service.enrollUser(userId, classId, yearId)).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_ALREADY_ENROLLED });
     });
 
     // ========================================
@@ -739,14 +770,21 @@ describe('ClassesService', () => {
   describe('getUserProgress — evidence URL presign concurrency cap', () => {
     // Helper: build a classes.findUnique mock with N sections in one module,
     // and matching sectionProgress rows each with F evidence files.
-    const buildEvidenceFixture = (sectionCount: number, filesPerSection: number) => {
+    const buildEvidenceFixture = (
+      sectionCount: number,
+      filesPerSection: number,
+    ) => {
       const makeEvidenceFile = (id: number) => ({
         evidence_file_id: id,
         file_url: `evidence/file-${id}.pdf`,
         file_name: `file-${id}.pdf`,
         file_type: 'application/pdf',
         uploaded_at: new Date('2026-01-01'),
-        uploaded_by: { name: 'Test', paternal_last_name: 'User', maternal_last_name: null },
+        uploaded_by: {
+          name: 'Test',
+          paternal_last_name: 'User',
+          maternal_last_name: null,
+        },
       });
 
       const classSections = Array.from({ length: sectionCount }, (_, si) => ({
@@ -782,22 +820,40 @@ describe('ClassesService', () => {
         ],
       };
 
-      return { classData, sectionProgress, totalFiles: sectionCount * filesPerSection };
+      return {
+        classData,
+        sectionProgress,
+        totalFiles: sectionCount * filesPerSection,
+      };
     };
 
     it('signs all evidence files correctly when there are 100+ files (output completeness)', async () => {
       // 5 sections × 20 files = 100 total. Exceeds the cap of 20, so the limiter
       // batches execution — but the output must still contain all 100 signed URLs.
-      const { classData, sectionProgress, totalFiles } = buildEvidenceFixture(5, 20);
+      const { classData, sectionProgress, totalFiles } = buildEvidenceFixture(
+        5,
+        20,
+      );
 
       mockPrismaService.classes.findUnique.mockResolvedValue(classData);
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({ year_id: 2026 });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
       mockPrismaService.enrollments.findMany.mockResolvedValue([
-        { enrollment_id: 501, user_id: 'user-1', class_id: 7, ecclesiastical_year_id: 2026 },
+        {
+          enrollment_id: 501,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+        },
       ]);
-      mockPrismaService.class_section_progress.findMany.mockResolvedValue(sectionProgress);
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue(
+        sectionProgress,
+      );
 
-      const fileStorage = service['fileStorage'] as unknown as { getSignedDownloadUrl: jest.Mock };
+      const fileStorage = service['fileStorage'] as unknown as {
+        getSignedDownloadUrl: jest.Mock;
+      };
       fileStorage.getSignedDownloadUrl.mockImplementation(
         (_bucket: unknown, key: string) => Promise.resolve(`signed://${key}`),
       );
@@ -812,23 +868,39 @@ describe('ClassesService', () => {
       for (const ef of allEvidenceFiles) {
         expect(ef.file_url).toMatch(/^signed:\/\//);
       }
-      expect(fileStorage.getSignedDownloadUrl).toHaveBeenCalledTimes(totalFiles);
+      expect(fileStorage.getSignedDownloadUrl).toHaveBeenCalledTimes(
+        totalFiles,
+      );
     });
 
     it('never exceeds 20 concurrent active presign calls under heavy load', async () => {
       // 10 sections × 20 files = 200 evidence entries — the documented worst case.
       // The mock samples EVIDENCE_URL_LIMITER.activeCount on each call to verify
       // the cap held across the entire batch.
-      const { classData, sectionProgress, totalFiles } = buildEvidenceFixture(10, 20);
+      const { classData, sectionProgress, totalFiles } = buildEvidenceFixture(
+        10,
+        20,
+      );
 
       mockPrismaService.classes.findUnique.mockResolvedValue(classData);
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({ year_id: 2026 });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
       mockPrismaService.enrollments.findMany.mockResolvedValue([
-        { enrollment_id: 501, user_id: 'user-1', class_id: 7, ecclesiastical_year_id: 2026 },
+        {
+          enrollment_id: 501,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+        },
       ]);
-      mockPrismaService.class_section_progress.findMany.mockResolvedValue(sectionProgress);
+      mockPrismaService.class_section_progress.findMany.mockResolvedValue(
+        sectionProgress,
+      );
 
-      const fileStorage = service['fileStorage'] as unknown as { getSignedDownloadUrl: jest.Mock };
+      const fileStorage = service['fileStorage'] as unknown as {
+        getSignedDownloadUrl: jest.Mock;
+      };
 
       let peakActive = 0;
       fileStorage.getSignedDownloadUrl.mockImplementation(
@@ -843,7 +915,9 @@ describe('ClassesService', () => {
 
       await service.getUserProgress('user-1', 7);
 
-      expect(fileStorage.getSignedDownloadUrl).toHaveBeenCalledTimes(totalFiles);
+      expect(fileStorage.getSignedDownloadUrl).toHaveBeenCalledTimes(
+        totalFiles,
+      );
       // The limiter must have held concurrent calls to at most 20.
       expect(peakActive).toBeLessThanOrEqual(20);
       // Sanity: the limiter ran at least one call (not trivially zero).

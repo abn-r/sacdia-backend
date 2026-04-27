@@ -95,9 +95,7 @@ describe('Phase 3 permission cleanup — seed files', () => {
     it('keeps the soft-delete UPDATE inside the BEGIN/COMMIT block', () => {
       const idxBegin = permissionsSeed.indexOf('BEGIN;');
       const idxCommit = permissionsSeed.lastIndexOf('COMMIT;');
-      const idxSoftDelete = permissionsSeed.indexOf(
-        'UPDATE permissions',
-      );
+      const idxSoftDelete = permissionsSeed.indexOf('UPDATE permissions');
       expect(idxBegin).toBeGreaterThan(-1);
       expect(idxCommit).toBeGreaterThan(idxBegin);
       expect(idxSoftDelete).toBeGreaterThan(idxBegin);

@@ -149,7 +149,9 @@ export class PostRegistrationService {
       }
 
       if (!user.gender || !user.birthday || user.baptism === null) {
-        throw new AppBadRequestException(ErrorCode.POST_REG_PERSONAL_INFO_INCOMPLETE);
+        throw new AppBadRequestException(
+          ErrorCode.POST_REG_PERSONAL_INFO_INCOMPLETE,
+        );
       }
 
       // Validar contactos de emergencia (al menos 1)
@@ -161,7 +163,9 @@ export class PostRegistrationService {
       });
 
       if (contactsCount === 0) {
-        throw new AppBadRequestException(ErrorCode.POST_REG_EMERGENCY_CONTACT_REQUIRED);
+        throw new AppBadRequestException(
+          ErrorCode.POST_REG_EMERGENCY_CONTACT_REQUIRED,
+        );
       }
 
       // Si es menor de 18, validar representante legal
@@ -172,7 +176,9 @@ export class PostRegistrationService {
         try {
           await this.legalRepService.findOne(userId);
         } catch {
-          throw new AppBadRequestException(ErrorCode.POST_REG_LEGAL_REP_REQUIRED);
+          throw new AppBadRequestException(
+            ErrorCode.POST_REG_LEGAL_REP_REQUIRED,
+          );
         }
       }
 
@@ -309,7 +315,9 @@ export class PostRegistrationService {
     });
 
     if (!currentYear) {
-      throw new AppInternalServerErrorException(ErrorCode.POST_REG_NO_ACTIVE_YEAR);
+      throw new AppInternalServerErrorException(
+        ErrorCode.POST_REG_NO_ACTIVE_YEAR,
+      );
     }
 
     return currentYear;
@@ -329,7 +337,9 @@ export class PostRegistrationService {
     });
 
     if (!memberRole) {
-      throw new AppInternalServerErrorException(ErrorCode.POST_REG_MEMBER_ROLE_NOT_FOUND);
+      throw new AppInternalServerErrorException(
+        ErrorCode.POST_REG_MEMBER_ROLE_NOT_FOUND,
+      );
     }
 
     return memberRole.role_id;
@@ -465,7 +475,9 @@ export class PostRegistrationService {
       });
 
       if (!recoveredAssignment) {
-        throw new AppInternalServerErrorException(ErrorCode.POST_REG_ASSIGNMENT_FAILED);
+        throw new AppInternalServerErrorException(
+          ErrorCode.POST_REG_ASSIGNMENT_FAILED,
+        );
       }
 
       if (
@@ -547,7 +559,9 @@ export class PostRegistrationService {
       });
 
       if (!recoveredEnrollment) {
-        throw new AppInternalServerErrorException(ErrorCode.POST_REG_ENROLLMENT_FAILED);
+        throw new AppInternalServerErrorException(
+          ErrorCode.POST_REG_ENROLLMENT_FAILED,
+        );
       }
     }
   }
@@ -583,7 +597,10 @@ export class PostRegistrationService {
       return new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
     }
     // Legacy fallback for any remaining plain NestJS exceptions
-    if (error instanceof Error && error.constructor.name.includes('Exception')) {
+    if (
+      error instanceof Error &&
+      error.constructor.name.includes('Exception')
+    ) {
       return new AppBadRequestException(ErrorCode.POST_REG_NOT_INITIATED);
     }
     // Unknown errors propagate as-is

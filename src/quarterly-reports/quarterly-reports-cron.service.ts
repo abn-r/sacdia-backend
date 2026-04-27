@@ -21,7 +21,10 @@ export class QuarterlyReportsCronService {
    * Generates reports for the just-completed quarter for all active clubs.
    * Feature flag: reports.quarterly_auto_generate_enabled must be 'true'.
    */
-  @Cron('0 1 1 1,4,7,10 *', { name: 'quarterly-reports-auto-generate', timeZone: 'UTC' })
+  @Cron('0 1 1 1,4,7,10 *', {
+    name: 'quarterly-reports-auto-generate',
+    timeZone: 'UTC',
+  })
   async handleAutoGenerate(): Promise<void> {
     const acquired = await this.lockService.tryAcquire(
       'cron:quarterly-reports-auto-generate',
@@ -29,44 +32,62 @@ export class QuarterlyReportsCronService {
     );
 
     if (!acquired) {
-      this.logger.debug('Another instance is handling quarterly reports auto-generation — skipping');
-      await this.cronLogger.trackSkipped('quarterly-reports-auto-generate', 'lock_not_acquired');
+      this.logger.debug(
+        'Another instance is handling quarterly reports auto-generation — skipping',
+      );
+      await this.cronLogger.trackSkipped(
+        'quarterly-reports-auto-generate',
+        'lock_not_acquired',
+      );
       return;
     }
 
-    this.logger.log('Quarterly reports cron triggered — checking configuration...');
+    this.logger.log(
+      'Quarterly reports cron triggered — checking configuration...',
+    );
 
     try {
-      await this.cronLogger.track('quarterly-reports-auto-generate', async () => {
-        // 1. Feature flag check
-        const enabledConfig = await this.prisma.system_config.findUnique({
-          where: { config_key: 'reports.quarterly_auto_generate_enabled' },
-        });
+      await this.cronLogger.track(
+        'quarterly-reports-auto-generate',
+        async () => {
+          // 1. Feature flag check
+          const enabledConfig = await this.prisma.system_config.findUnique({
+            where: { config_key: 'reports.quarterly_auto_generate_enabled' },
+          });
 
-        if (!enabledConfig || enabledConfig.config_value !== 'true') {
-          this.logger.log('Quarterly auto-generation is disabled. Skipping.');
-          return { itemsProcessed: 0 };
-        }
+          if (!enabledConfig || enabledConfig.config_value !== 'true') {
+            this.logger.log('Quarterly auto-generation is disabled. Skipping.');
+            return { itemsProcessed: 0 };
+          }
 
-        // 2. Calculate the just-completed quarter
-        const today = new Date();
-        const { year, quarter } = this.getJustCompletedQuarter(today);
+          // 2. Calculate the just-completed quarter
+          const today = new Date();
+          const { year, quarter } = this.getJustCompletedQuarter(today);
 
-        this.logger.log(`Generating quarterly reports for ${year} Q${quarter}`);
+          this.logger.log(
+            `Generating quarterly reports for ${year} Q${quarter}`,
+          );
 
-        // 3. Run for all active clubs
-        const result = await this.quarterlyReportsService.autoGenerateForAllClubs(year, quarter);
+          // 3. Run for all active clubs
+          const result =
+            await this.quarterlyReportsService.autoGenerateForAllClubs(
+              year,
+              quarter,
+            );
 
-        this.logger.log(
-          `Quarterly auto-generation complete for ${year} Q${quarter}: ` +
-            `${result.success} generated, ${result.skipped} skipped, ${result.errors} errors`,
-        );
+          this.logger.log(
+            `Quarterly auto-generation complete for ${year} Q${quarter}: ` +
+              `${result.success} generated, ${result.skipped} skipped, ${result.errors} errors`,
+          );
 
-        return { itemsProcessed: result.success };
-      });
+          return { itemsProcessed: result.success };
+        },
+      );
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Fatal error in quarterly reports auto-generation: ${msg}`);
+      this.logger.error(
+        `Fatal error in quarterly reports auto-generation: ${msg}`,
+      );
     } finally {
       await this.lockService.release('cron:quarterly-reports-auto-generate');
     }
@@ -81,7 +102,10 @@ export class QuarterlyReportsCronService {
    * Jul 1 → Q2 of current year
    * Oct 1 → Q3 of current year
    */
-  private getJustCompletedQuarter(date: Date): { year: number; quarter: number } {
+  private getJustCompletedQuarter(date: Date): {
+    year: number;
+    quarter: number;
+  } {
     const month = date.getMonth() + 1; // 1-indexed
     const year = date.getFullYear();
 

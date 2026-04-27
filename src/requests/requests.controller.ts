@@ -24,7 +24,11 @@ import {
   CreateAssignmentRequestDto,
   ReviewAssignmentRequestDto,
 } from './dto';
-import { AuthorizationResource, RequirePermissions, CurrentUser } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  CurrentUser,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('requests')

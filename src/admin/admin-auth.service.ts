@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppNotFoundException,
@@ -132,7 +129,10 @@ export class AdminAuthService {
     });
 
     if (!session) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_SESSION_NOT_FOUND, { sessionId, userId: targetUserId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_SESSION_NOT_FOUND, {
+        sessionId,
+        userId: targetUserId,
+      });
     }
 
     await this.prisma.session.delete({ where: { id: sessionId } });
@@ -199,7 +199,9 @@ export class AdminAuthService {
       await this.betterAuthService.hasTotpEnabled(targetUserId);
 
     if (!enabled) {
-      throw new AppBadRequestException(ErrorCode.ADMIN_USER_MFA_NOT_ENABLED, { userId: targetUserId });
+      throw new AppBadRequestException(ErrorCode.ADMIN_USER_MFA_NOT_ENABLED, {
+        userId: targetUserId,
+      });
     }
 
     // Delete directly — admin override, no password check
@@ -222,7 +224,10 @@ export class AdminAuthService {
    * @param targetUserId - UUID of the user whose password to update.
    * @param newPassword  - The new plain-text password (hashed inside service).
    */
-  async setUserPassword(targetUserId: string, newPassword: string): Promise<void> {
+  async setUserPassword(
+    targetUserId: string,
+    newPassword: string,
+  ): Promise<void> {
     await this.assertUserExists(targetUserId);
 
     await this.betterAuthService.updatePasswordById(targetUserId, newPassword);
@@ -241,7 +246,9 @@ export class AdminAuthService {
     });
 
     if (!user) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_USER_NOT_FOUND, { userId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_USER_NOT_FOUND, {
+        userId,
+      });
     }
   }
 }

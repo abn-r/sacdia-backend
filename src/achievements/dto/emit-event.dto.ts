@@ -6,7 +6,9 @@ export class EmitEventDto {
   @IsUUID()
   userId: string;
 
-  @ApiProperty({ description: 'Tipo de evento (e.g. honor.completed, activity.attended)' })
+  @ApiProperty({
+    description: 'Tipo de evento (e.g. honor.completed, activity.attended)',
+  })
   @IsString()
   eventType: string;
 

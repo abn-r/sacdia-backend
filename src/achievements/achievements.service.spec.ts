@@ -36,9 +36,12 @@ describe('AchievementsService', () => {
   };
 
   const mockFileStorageService = {
-    resolvePublicUrl: jest.fn().mockImplementation((_bucket: string, key: string) =>
-      `https://cdn.r2.example/achievements-badges/${key}`,
-    ),
+    resolvePublicUrl: jest
+      .fn()
+      .mockImplementation(
+        (_bucket: string, key: string) =>
+          `https://cdn.r2.example/achievements-badges/${key}`,
+      ),
   };
 
   /**
@@ -77,8 +80,15 @@ describe('AchievementsService', () => {
 
   describe('emitEvent', () => {
     it('should persist the event to the event log', async () => {
-      const mockEventLog = { event_id: 1, user_id: 'user-1', event_type: 'attendance.marked', processed: false };
-      mockPrismaService.achievement_event_log.create.mockResolvedValue(mockEventLog);
+      const mockEventLog = {
+        event_id: 1,
+        user_id: 'user-1',
+        event_type: 'attendance.marked',
+        processed: false,
+      };
+      mockPrismaService.achievement_event_log.create.mockResolvedValue(
+        mockEventLog,
+      );
 
       const result = await service.emitEvent({
         userId: 'user-1',
@@ -86,7 +96,9 @@ describe('AchievementsService', () => {
         payload: { session_id: 'abc' },
       });
 
-      expect(mockPrismaService.achievement_event_log.create).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.achievement_event_log.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             user_id: 'user-1',
@@ -100,8 +112,15 @@ describe('AchievementsService', () => {
     });
 
     it('should return queued=false and not crash when no queue is configured', async () => {
-      const mockEventLog = { event_id: 2, user_id: 'user-1', event_type: 'login', processed: false };
-      mockPrismaService.achievement_event_log.create.mockResolvedValue(mockEventLog);
+      const mockEventLog = {
+        event_id: 2,
+        user_id: 'user-1',
+        event_type: 'login',
+        processed: false,
+      };
+      mockPrismaService.achievement_event_log.create.mockResolvedValue(
+        mockEventLog,
+      );
 
       const result = await service.emitEvent({
         userId: 'user-1',
@@ -129,9 +148,12 @@ describe('AchievementsService', () => {
         ],
       }).compile();
 
-      const serviceWithQueue = module.get<AchievementsService>(AchievementsService);
+      const serviceWithQueue =
+        module.get<AchievementsService>(AchievementsService);
 
-      mockPrismaService.achievement_event_log.create.mockResolvedValue({ event_id: 3 });
+      mockPrismaService.achievement_event_log.create.mockResolvedValue({
+        event_id: 3,
+      });
 
       const result = await serviceWithQueue.emitEvent({
         userId: 'user-1',
@@ -142,7 +164,11 @@ describe('AchievementsService', () => {
       expect(result.queued).toBe(true);
       expect(mockQueue.add).toHaveBeenCalledWith(
         'evaluate',
-        expect.objectContaining({ userId: 'user-1', eventType: 'attendance.marked', eventLogId: 3 }),
+        expect.objectContaining({
+          userId: 'user-1',
+          eventType: 'attendance.marked',
+          eventLogId: 3,
+        }),
         expect.any(Object),
       );
     });
@@ -162,8 +188,11 @@ describe('AchievementsService', () => {
         ],
       }).compile();
 
-      const serviceWithQueue = module.get<AchievementsService>(AchievementsService);
-      mockPrismaService.achievement_event_log.create.mockResolvedValue({ event_id: 4 });
+      const serviceWithQueue =
+        module.get<AchievementsService>(AchievementsService);
+      mockPrismaService.achievement_event_log.create.mockResolvedValue({
+        event_id: 4,
+      });
 
       const result = await serviceWithQueue.emitEvent({
         userId: 'user-1',
@@ -184,8 +213,18 @@ describe('AchievementsService', () => {
   describe('findAllAchievements', () => {
     it('should return paginated achievements with default page/limit', async () => {
       const mockData = [
-        { achievement_id: 1, name: 'Logro 1', badge_image_key: null, category: {} },
-        { achievement_id: 2, name: 'Logro 2', badge_image_key: null, category: {} },
+        {
+          achievement_id: 1,
+          name: 'Logro 1',
+          badge_image_key: null,
+          category: {},
+        },
+        {
+          achievement_id: 2,
+          name: 'Logro 2',
+          badge_image_key: null,
+          category: {},
+        },
       ];
       mockPrismaService.achievements.findMany.mockResolvedValue(mockData);
       mockPrismaService.achievements.count.mockResolvedValue(2);
@@ -204,7 +243,12 @@ describe('AchievementsService', () => {
 
     it('should include badge_image_url when badge_image_key is present', async () => {
       const mockData = [
-        { achievement_id: 1, name: 'Logro con badge', badge_image_key: 'achievements/badges/1_bronze.png', category: {} },
+        {
+          achievement_id: 1,
+          name: 'Logro con badge',
+          badge_image_key: 'achievements/badges/1_bronze.png',
+          category: {},
+        },
       ];
       mockPrismaService.achievements.findMany.mockResolvedValue(mockData);
       mockPrismaService.achievements.count.mockResolvedValue(1);
@@ -289,7 +333,12 @@ describe('AchievementsService', () => {
         description: 'Desc A',
         badge_image_key: null,
         category_id: 10,
-        category: { achievement_category_id: 10, name: 'Naturaleza', icon: 'leaf', display_order: 0 },
+        category: {
+          achievement_category_id: 10,
+          name: 'Naturaleza',
+          icon: 'leaf',
+          display_order: 0,
+        },
       },
       {
         achievement_id: 2,
@@ -299,7 +348,12 @@ describe('AchievementsService', () => {
         description: 'Desc B',
         badge_image_key: null,
         category_id: 10,
-        category: { achievement_category_id: 10, name: 'Naturaleza', icon: 'leaf', display_order: 0 },
+        category: {
+          achievement_category_id: 10,
+          name: 'Naturaleza',
+          icon: 'leaf',
+          display_order: 0,
+        },
       },
       {
         achievement_id: 3,
@@ -309,7 +363,12 @@ describe('AchievementsService', () => {
         description: 'Hidden',
         badge_image_key: 'key.png',
         category_id: 10,
-        category: { achievement_category_id: 10, name: 'Naturaleza', icon: 'leaf', display_order: 0 },
+        category: {
+          achievement_category_id: 10,
+          name: 'Naturaleza',
+          icon: 'leaf',
+          display_order: 0,
+        },
       },
     ];
 
@@ -326,8 +385,12 @@ describe('AchievementsService', () => {
         },
       ];
 
-      mockPrismaService.achievements.findMany.mockResolvedValue(mockAllAchievements);
-      mockPrismaService.user_achievements.findMany.mockResolvedValue(mockUserAchievements);
+      mockPrismaService.achievements.findMany.mockResolvedValue(
+        mockAllAchievements,
+      );
+      mockPrismaService.user_achievements.findMany.mockResolvedValue(
+        mockUserAchievements,
+      );
 
       const result = await service.getUserAchievements('user-1');
 
@@ -361,7 +424,9 @@ describe('AchievementsService', () => {
     });
 
     it('should return all achievements with null progress when user has no records', async () => {
-      mockPrismaService.achievements.findMany.mockResolvedValue(mockAllAchievements);
+      mockPrismaService.achievements.findMany.mockResolvedValue(
+        mockAllAchievements,
+      );
       mockPrismaService.user_achievements.findMany.mockResolvedValue([]);
 
       const result = await service.getUserAchievements('user-no-achievements');
@@ -400,7 +465,12 @@ describe('AchievementsService', () => {
           description: null,
           badge_image_key: null,
           category_id: 1,
-          category: { achievement_category_id: 1, name: 'Cat A', icon: null, display_order: 0 },
+          category: {
+            achievement_category_id: 1,
+            name: 'Cat A',
+            icon: null,
+            display_order: 0,
+          },
         },
         {
           achievement_id: 2,
@@ -410,11 +480,18 @@ describe('AchievementsService', () => {
           description: null,
           badge_image_key: null,
           category_id: 2,
-          category: { achievement_category_id: 2, name: 'Cat B', icon: null, display_order: 1 },
+          category: {
+            achievement_category_id: 2,
+            name: 'Cat B',
+            icon: null,
+            display_order: 1,
+          },
         },
       ];
 
-      mockPrismaService.achievements.findMany.mockResolvedValue(multiCatAchievements);
+      mockPrismaService.achievements.findMany.mockResolvedValue(
+        multiCatAchievements,
+      );
       mockPrismaService.user_achievements.findMany.mockResolvedValue([]);
 
       const result = await service.getUserAchievements('user-1');
@@ -425,26 +502,39 @@ describe('AchievementsService', () => {
     });
 
     it('should not mask secret achievements that are completed', async () => {
-      const secretAchievement = [{
-        achievement_id: 5,
-        name: 'Real Secret Name',
-        points: 200,
-        secret: true,
-        description: 'Real secret desc',
-        badge_image_key: 'badge.png',
-        category_id: 1,
-        category: { achievement_category_id: 1, name: 'Special', icon: null, display_order: 0 },
-      }];
-      const completedProgress = [{
-        user_achievement_id: 99,
-        achievement_id: 5,
-        user_id: 'user-1',
-        completed: true,
-        active: true,
-      }];
+      const secretAchievement = [
+        {
+          achievement_id: 5,
+          name: 'Real Secret Name',
+          points: 200,
+          secret: true,
+          description: 'Real secret desc',
+          badge_image_key: 'badge.png',
+          category_id: 1,
+          category: {
+            achievement_category_id: 1,
+            name: 'Special',
+            icon: null,
+            display_order: 0,
+          },
+        },
+      ];
+      const completedProgress = [
+        {
+          user_achievement_id: 99,
+          achievement_id: 5,
+          user_id: 'user-1',
+          completed: true,
+          active: true,
+        },
+      ];
 
-      mockPrismaService.achievements.findMany.mockResolvedValue(secretAchievement);
-      mockPrismaService.user_achievements.findMany.mockResolvedValue(completedProgress);
+      mockPrismaService.achievements.findMany.mockResolvedValue(
+        secretAchievement,
+      );
+      mockPrismaService.user_achievements.findMany.mockResolvedValue(
+        completedProgress,
+      );
 
       const result = await service.getUserAchievements('user-1');
 
@@ -475,8 +565,12 @@ describe('AchievementsService', () => {
         progress_value: 2,
       };
 
-      mockPrismaService.achievements.findUnique.mockResolvedValue(mockAchievement);
-      mockPrismaService.user_achievements.findFirst.mockResolvedValue(mockProgress);
+      mockPrismaService.achievements.findUnique.mockResolvedValue(
+        mockAchievement,
+      );
+      mockPrismaService.user_achievements.findFirst.mockResolvedValue(
+        mockProgress,
+      );
 
       const result = await service.getAchievementDetail(1, 'user-1');
 
@@ -494,7 +588,9 @@ describe('AchievementsService', () => {
         badge_image_key: 'achievements/badges/2_gold.png',
         category: {},
       };
-      mockPrismaService.achievements.findUnique.mockResolvedValue(mockAchievement);
+      mockPrismaService.achievements.findUnique.mockResolvedValue(
+        mockAchievement,
+      );
       mockPrismaService.user_achievements.findFirst.mockResolvedValue(null);
 
       const result = await service.getAchievementDetail(2, 'user-1');
@@ -505,15 +601,24 @@ describe('AchievementsService', () => {
     });
 
     it('should return achievement with userProgress=null when userId is not provided', async () => {
-      const mockAchievement = { achievement_id: 1, name: 'Test', badge_image_key: null, category: {} };
-      mockPrismaService.achievements.findUnique.mockResolvedValue(mockAchievement);
+      const mockAchievement = {
+        achievement_id: 1,
+        name: 'Test',
+        badge_image_key: null,
+        category: {},
+      };
+      mockPrismaService.achievements.findUnique.mockResolvedValue(
+        mockAchievement,
+      );
 
       const result = await service.getAchievementDetail(1);
 
       expect(result!.achievement.achievement_id).toBe(1);
       expect(result!.achievement.badge_image_url).toBeNull();
       expect(result!.userProgress).toBeNull();
-      expect(mockPrismaService.user_achievements.findFirst).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.user_achievements.findFirst,
+      ).not.toHaveBeenCalled();
     });
 
     it('should return null when achievement does not exist', async () => {
@@ -525,8 +630,15 @@ describe('AchievementsService', () => {
     });
 
     it('should return achievement with userProgress=null when user has no progress record', async () => {
-      const mockAchievement = { achievement_id: 1, name: 'Test', badge_image_key: null, category: {} };
-      mockPrismaService.achievements.findUnique.mockResolvedValue(mockAchievement);
+      const mockAchievement = {
+        achievement_id: 1,
+        name: 'Test',
+        badge_image_key: null,
+        category: {},
+      };
+      mockPrismaService.achievements.findUnique.mockResolvedValue(
+        mockAchievement,
+      );
       mockPrismaService.user_achievements.findFirst.mockResolvedValue(null); // no progress
 
       const result = await service.getAchievementDetail(1, 'user-1');
@@ -543,10 +655,18 @@ describe('AchievementsService', () => {
     it('should delegate to the handler registry and return its result', () => {
       mockHandler.validateCriteria.mockReturnValue({ valid: true });
 
-      const result = service.validateCriteria('THRESHOLD', { event: 'test', operator: 'gte', target: 5 });
+      const result = service.validateCriteria('THRESHOLD', {
+        event: 'test',
+        operator: 'gte',
+        target: 5,
+      });
 
       expect(mockHandlerRegistry.getHandler).toHaveBeenCalledWith('THRESHOLD');
-      expect(mockHandler.validateCriteria).toHaveBeenCalledWith({ event: 'test', operator: 'gte', target: 5 });
+      expect(mockHandler.validateCriteria).toHaveBeenCalledWith({
+        event: 'test',
+        operator: 'gte',
+        target: 5,
+      });
       expect(result.valid).toBe(true);
     });
 
@@ -556,7 +676,10 @@ describe('AchievementsService', () => {
         errors: ['event must be a non-empty string'],
       });
 
-      const result = service.validateCriteria('THRESHOLD', { operator: 'gte', target: 5 });
+      const result = service.validateCriteria('THRESHOLD', {
+        operator: 'gte',
+        target: 5,
+      });
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('event must be a non-empty string');
@@ -620,7 +743,9 @@ describe('AchievementsService', () => {
     });
 
     it('should enqueue and return queued=true when queue is available', async () => {
-      const mockQueue = { add: jest.fn().mockResolvedValue({ id: 'retro-job' }) };
+      const mockQueue = {
+        add: jest.fn().mockResolvedValue({ id: 'retro-job' }),
+      };
 
       const module: TestingModule = await Test.createTestingModule({
         providers: [
@@ -632,14 +757,23 @@ describe('AchievementsService', () => {
         ],
       }).compile();
 
-      const serviceWithQueue = module.get<AchievementsService>(AchievementsService);
+      const serviceWithQueue =
+        module.get<AchievementsService>(AchievementsService);
 
-      const result = await serviceWithQueue.enqueueRetroactiveEvaluation('user-1', 10, true);
+      const result = await serviceWithQueue.enqueueRetroactiveEvaluation(
+        'user-1',
+        10,
+        true,
+      );
 
       expect(result.queued).toBe(true);
       expect(mockQueue.add).toHaveBeenCalledWith(
         'retroactive-evaluate',
-        expect.objectContaining({ userId: 'user-1', achievementId: 10, skipNotification: true }),
+        expect.objectContaining({
+          userId: 'user-1',
+          achievementId: 10,
+          skipNotification: true,
+        }),
         expect.any(Object),
       );
     });

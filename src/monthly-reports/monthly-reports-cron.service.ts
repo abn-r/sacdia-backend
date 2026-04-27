@@ -29,7 +29,10 @@ export class MonthlyReportsCronService {
    * If today matches, enqueues a BullMQ job with 5 attempts + exponential backoff.
    * Falls back to direct execution when Redis / BullMQ is unavailable.
    */
-  @Cron('0 23 * * *', { name: 'monthly-reports-auto-generate', timeZone: 'UTC' })
+  @Cron('0 23 * * *', {
+    name: 'monthly-reports-auto-generate',
+    timeZone: 'UTC',
+  })
   async handleAutoGenerate(): Promise<void> {
     const acquired = await this.lockService.tryAcquire(
       'cron:monthly-reports-auto-generate',
@@ -46,9 +49,7 @@ export class MonthlyReportsCronService {
       return;
     }
 
-    this.logger.log(
-      'Monthly reports cron triggered — enqueuing BullMQ job...',
-    );
+    this.logger.log('Monthly reports cron triggered — enqueuing BullMQ job...');
 
     try {
       if (this.queue) {
@@ -58,8 +59,8 @@ export class MonthlyReportsCronService {
         await this.queue.add('auto-generate', jobData, {
           attempts: 5,
           backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
-          removeOnComplete: { age: 7 * 86_400 },   // keep 7 days
-          removeOnFail: { age: 30 * 86_400 },       // keep 30 days
+          removeOnComplete: { age: 7 * 86_400 }, // keep 7 days
+          removeOnFail: { age: 30 * 86_400 }, // keep 30 days
         });
         this.logger.log(
           'monthly-reports-auto-generate job enqueued with 5 attempts + exponential backoff',
@@ -69,9 +70,8 @@ export class MonthlyReportsCronService {
         this.logger.warn(
           'BullMQ queue unavailable — running monthly-reports auto-generation directly (no retry)',
         );
-        await this.cronLogger.track(
-          'monthly-reports-auto-generate',
-          () => this.monthlyReportsService.runAutoGeneration(),
+        await this.cronLogger.track('monthly-reports-auto-generate', () =>
+          this.monthlyReportsService.runAutoGeneration(),
         );
       }
     } catch (error) {

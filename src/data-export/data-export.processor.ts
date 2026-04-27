@@ -68,10 +68,16 @@ export class DataExportProcessor
   }
 
   async process(
-    job: Job<DataExportGenerateJobData, unknown, typeof DATA_EXPORT_GENERATE_JOB>,
+    job: Job<
+      DataExportGenerateJobData,
+      unknown,
+      typeof DATA_EXPORT_GENERATE_JOB
+    >,
   ) {
     const { exportId, userId } = job.data;
-    this.logger.log(`Processing data export job: exportId=${exportId}, userId=${userId}`);
+    this.logger.log(
+      `Processing data export job: exportId=${exportId}, userId=${userId}`,
+    );
 
     // -----------------------------------------------------------------------
     // Step 1: Fetch row — abort if not pending (idempotency guard)
@@ -350,17 +356,19 @@ export class DataExportProcessor
       // Step 8: Email notification (logger-only fallback)
       // -------------------------------------------------------------------
       if (user?.email) {
-        await this.emailService.sendDataExportReady({
-          userId,
-          email: user.email,
-          exportId,
-          deepLink: `sacdia://data-export/${exportId}`,
-          expiresAt,
-        }).catch((err: Error) => {
-          this.logger.warn(
-            `Failed to send data export email for exportId=${exportId}: ${err.message}`,
-          );
-        });
+        await this.emailService
+          .sendDataExportReady({
+            userId,
+            email: user.email,
+            exportId,
+            deepLink: `sacdia://data-export/${exportId}`,
+            expiresAt,
+          })
+          .catch((err: Error) => {
+            this.logger.warn(
+              `Failed to send data export email for exportId=${exportId}: ${err.message}`,
+            );
+          });
       }
 
       this.logger.log(
@@ -385,7 +393,10 @@ export class DataExportProcessor
       await this.prisma.data_export_requests
         .update({
           where: { export_id: exportId },
-          data: { status: 'failed', failure_reason: errorMessage.slice(0, 1000) },
+          data: {
+            status: 'failed',
+            failure_reason: errorMessage.slice(0, 1000),
+          },
         })
         .catch((updateErr: Error) => {
           this.logger.error(

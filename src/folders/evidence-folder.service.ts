@@ -141,11 +141,15 @@ export class EvidenceFolderService {
     );
 
     if (!sectionRecord) {
-      throw new AppNotFoundException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND,
+      );
     }
 
     if ((sectionRecord.status ?? 'PENDING') !== 'PENDING') {
-      throw new AppConflictException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING);
+      throw new AppConflictException(
+        ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      );
     }
 
     const activeFiles = (sectionRecord.evidence_files ?? []).filter(
@@ -153,7 +157,9 @@ export class EvidenceFolderService {
     );
 
     if (activeFiles.length === 0) {
-      throw new AppBadRequestException(ErrorCode.FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT);
+      throw new AppBadRequestException(
+        ErrorCode.FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT,
+      );
     }
 
     return this.db.folders_section_records.update({
@@ -189,7 +195,9 @@ export class EvidenceFolderService {
     });
 
     if ((sectionRecord.status ?? 'PENDING') !== 'PENDING') {
-      throw new AppConflictException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING);
+      throw new AppConflictException(
+        ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      );
     }
 
     const extension = this.resolveFileExtension(file);
@@ -288,7 +296,9 @@ export class EvidenceFolderService {
     }
 
     if ((fileRecord.section_record.status ?? 'PENDING') !== 'PENDING') {
-      throw new AppConflictException(ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING);
+      throw new AppConflictException(
+        ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      );
     }
 
     const r2Key = this.fileStorage.extractKeyFromPublicUrl(
@@ -347,7 +357,9 @@ export class EvidenceFolderService {
     });
 
     if (!assignment?.folders) {
-      throw new AppNotFoundException(ErrorCode.FOLDER_EVIDENCE_FOLDER_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.FOLDER_EVIDENCE_FOLDER_NOT_FOUND,
+      );
     }
 
     return assignment;

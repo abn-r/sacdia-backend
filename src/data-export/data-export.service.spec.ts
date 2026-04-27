@@ -63,7 +63,9 @@ describe('DataExportService', () => {
         created_at: new Date(),
       });
 
-      await expect(service.requestExport(userId)).rejects.toThrow(HttpException);
+      await expect(service.requestExport(userId)).rejects.toThrow(
+        HttpException,
+      );
     });
 
     it('throws 429 with retry_after_seconds in body', async () => {
@@ -199,7 +201,9 @@ describe('DataExportService', () => {
 
     it('throws NotFoundException when export not found', async () => {
       mockPrisma.data_export_requests.findUnique.mockResolvedValueOnce(null);
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+      await expect(
+        service.getDownloadUrl(userId, exportId),
+      ).rejects.toMatchObject({
         code: ErrorCode.EXPORT_NOT_FOUND,
       });
     });
@@ -212,7 +216,9 @@ describe('DataExportService', () => {
         r2_key: 'some/key',
         expires_at: new Date(Date.now() + 3600 * 1000),
       });
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+      await expect(
+        service.getDownloadUrl(userId, exportId),
+      ).rejects.toMatchObject({
         code: ErrorCode.EXPORT_NOT_FOUND,
       });
     });
@@ -225,7 +231,9 @@ describe('DataExportService', () => {
         r2_key: null,
         expires_at: null,
       });
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+      await expect(
+        service.getDownloadUrl(userId, exportId),
+      ).rejects.toMatchObject({
         code: ErrorCode.EXPORT_ALREADY_PROCESSING,
       });
     });
@@ -238,7 +246,9 @@ describe('DataExportService', () => {
         r2_key: null,
         expires_at: null,
       });
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toMatchObject({
+      await expect(
+        service.getDownloadUrl(userId, exportId),
+      ).rejects.toMatchObject({
         code: ErrorCode.EXPORT_ALREADY_PROCESSING,
       });
     });
@@ -251,7 +261,9 @@ describe('DataExportService', () => {
         r2_key: 'some/key',
         expires_at: new Date(Date.now() - 1000),
       });
-      await expect(service.getDownloadUrl(userId, exportId)).rejects.toThrow(GoneException);
+      await expect(service.getDownloadUrl(userId, exportId)).rejects.toThrow(
+        GoneException,
+      );
     });
 
     it('throws UnprocessableEntityException when status is failed', async () => {
@@ -304,9 +316,13 @@ describe('DataExportService', () => {
         expires_at: expiresAt,
         failure_reason: null,
       });
-      mockFileStorage.getSignedDownloadUrl.mockResolvedValueOnce('https://signed-url');
+      mockFileStorage.getSignedDownloadUrl.mockResolvedValueOnce(
+        'https://signed-url',
+      );
       // Simulate update failure — should not propagate
-      mockPrisma.data_export_requests.update.mockRejectedValueOnce(new Error('DB error'));
+      mockPrisma.data_export_requests.update.mockRejectedValueOnce(
+        new Error('DB error'),
+      );
 
       const result = await service.getDownloadUrl(userId, exportId);
       expect(result.url).toBe('https://signed-url');

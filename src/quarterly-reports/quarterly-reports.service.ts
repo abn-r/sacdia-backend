@@ -98,9 +98,11 @@ export class QuarterlyReportsService {
     ];
 
     // Find active ecclesiastical year for this calendar year range
-    const ecclesiasticalYear = await this.prisma.ecclesiastical_years.findFirst({
-      where: { active: true },
-    });
+    const ecclesiasticalYear = await this.prisma.ecclesiastical_years.findFirst(
+      {
+        where: { active: true },
+      },
+    );
 
     const yearId = ecclesiasticalYear?.year_id;
 
@@ -119,7 +121,12 @@ export class QuarterlyReportsService {
     // ── Directiva ──
     const directiva: { role: string; user_id: string; name: string }[] = [];
     if (allSectionIds.length > 0 && yearId) {
-      const directivaRoles = ['director', 'subdirector', 'secretario', 'tesorero'];
+      const directivaRoles = [
+        'director',
+        'subdirector',
+        'secretario',
+        'tesorero',
+      ];
       const assignments = await this.prisma.club_role_assignments.findMany({
         where: {
           club_section_id: { in: allSectionIds },
@@ -128,7 +135,14 @@ export class QuarterlyReportsService {
           roles: { role_name: { in: directivaRoles } },
         },
         include: {
-          users: { select: { user_id: true, name: true, paternal_last_name: true, maternal_last_name: true } },
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
           roles: { select: { role_name: true } },
         },
         distinct: ['user_id'],
@@ -138,7 +152,11 @@ export class QuarterlyReportsService {
         directiva.push({
           role: a.roles.role_name,
           user_id: a.users.user_id,
-          name: [a.users.name, a.users.paternal_last_name, a.users.maternal_last_name]
+          name: [
+            a.users.name,
+            a.users.paternal_last_name,
+            a.users.maternal_last_name,
+          ]
             .filter(Boolean)
             .join(' '),
         });
@@ -147,14 +165,26 @@ export class QuarterlyReportsService {
 
     // ── Honors aggregation across the 3 months ──
     const startDate = new Date(year, months[0] - 1, 1);
-    const endDate = new Date(year, months[months.length - 1], 0, 23, 59, 59, 999);
+    const endDate = new Date(
+      year,
+      months[months.length - 1],
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
 
     let honorsStarted = 0;
     let honorsCompleted = 0;
 
     if (allSectionIds.length > 0 && yearId) {
       const memberIds = await this.prisma.club_role_assignments.findMany({
-        where: { club_section_id: { in: allSectionIds }, ecclesiastical_year_id: yearId, active: true },
+        where: {
+          club_section_id: { in: allSectionIds },
+          ecclesiastical_year_id: yearId,
+          active: true,
+        },
         select: { user_id: true },
         distinct: ['user_id'],
       });
@@ -162,7 +192,11 @@ export class QuarterlyReportsService {
       const ids = memberIds.map((m) => m.user_id);
       if (ids.length > 0) {
         const honors = await this.prisma.users_honors.findMany({
-          where: { user_id: { in: ids }, active: true, date: { gte: startDate, lte: endDate } },
+          where: {
+            user_id: { in: ids },
+            active: true,
+            date: { gte: startDate, lte: endDate },
+          },
           select: { validate: true },
         });
         honorsStarted = honors.length;
@@ -189,7 +223,12 @@ export class QuarterlyReportsService {
     if (allSectionIds.length > 0) {
       for (const month of months) {
         const finances = await this.prisma.finances.findMany({
-          where: { club_section_id: { in: allSectionIds }, month, year, active: true },
+          where: {
+            club_section_id: { in: allSectionIds },
+            month,
+            year,
+            active: true,
+          },
           include: { finances_categories: { select: { type: true } } },
         });
         for (const f of finances) {
@@ -238,7 +277,11 @@ export class QuarterlyReportsService {
       throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_NOT_DRAFT);
     }
 
-    const computed = await this.computeData(report.club_id, report.year, report.quarter);
+    const computed = await this.computeData(
+      report.club_id,
+      report.year,
+      report.quarter,
+    );
 
     return this.prisma.quarterly_reports.update({
       where: { quarterly_report_id: reportId },
@@ -317,7 +360,9 @@ export class QuarterlyReportsService {
             districts: { select: { name: true } },
           },
         },
-        finalized_by_user: { select: { user_id: true, name: true, paternal_last_name: true } },
+        finalized_by_user: {
+          select: { user_id: true, name: true, paternal_last_name: true },
+        },
       },
     });
 
@@ -360,7 +405,9 @@ export class QuarterlyReportsService {
         orderBy: [{ year: 'desc' }, { quarter: 'desc' }],
         include: {
           club: { select: { club_id: true, name: true } },
-          finalized_by_user: { select: { user_id: true, name: true, paternal_last_name: true } },
+          finalized_by_user: {
+            select: { user_id: true, name: true, paternal_last_name: true },
+          },
         },
       }),
     ]);
@@ -382,7 +429,9 @@ export class QuarterlyReportsService {
       },
       orderBy: [{ year: 'desc' }, { quarter: 'desc' }],
       include: {
-        finalized_by_user: { select: { user_id: true, name: true, paternal_last_name: true } },
+        finalized_by_user: {
+          select: { user_id: true, name: true, paternal_last_name: true },
+        },
       },
     });
   }
@@ -400,7 +449,11 @@ export class QuarterlyReportsService {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_NOT_FOUND);
     }
 
-    const computed = await this.computeData(report.club_id, report.year, report.quarter);
+    const computed = await this.computeData(
+      report.club_id,
+      report.year,
+      report.quarter,
+    );
 
     return this.prisma.quarterly_reports.update({
       where: { quarterly_report_id: reportId },
@@ -416,7 +469,10 @@ export class QuarterlyReportsService {
   // AUTO-GENERATE (called by cron)
   // ========================================
 
-  async autoGenerateForAllClubs(year: number, quarter: number): Promise<{ success: number; skipped: number; errors: number }> {
+  async autoGenerateForAllClubs(
+    year: number,
+    quarter: number,
+  ): Promise<{ success: number; skipped: number; errors: number }> {
     const clubs = await this.prisma.clubs.findMany({
       where: { active: true },
       select: { club_id: true, name: true },
@@ -429,7 +485,9 @@ export class QuarterlyReportsService {
     for (const club of clubs) {
       try {
         const existing = await this.prisma.quarterly_reports.findUnique({
-          where: { club_id_year_quarter: { club_id: club.club_id, year, quarter } },
+          where: {
+            club_id_year_quarter: { club_id: club.club_id, year, quarter },
+          },
         });
 
         if (existing && existing.status !== 'draft') {
@@ -448,11 +506,16 @@ export class QuarterlyReportsService {
 
         await this.prisma.quarterly_reports.update({
           where: { quarterly_report_id: report.quarterly_report_id },
-          data: { computed_data: computed as any, auto_generated_at: new Date() },
+          data: {
+            computed_data: computed as any,
+            auto_generated_at: new Date(),
+          },
         });
 
         success++;
-        this.logger.log(`Auto-generated quarterly report for club ${club.name} (${year} Q${quarter})`);
+        this.logger.log(
+          `Auto-generated quarterly report for club ${club.name} (${year} Q${quarter})`,
+        );
       } catch (err) {
         errors++;
         this.logger.error(
@@ -474,7 +537,9 @@ export class QuarterlyReportsService {
 
   private validateQuarterYear(quarter: number, year: number) {
     if (quarter < 1 || quarter > 4) {
-      throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_INVALID_QUARTER);
+      throw new AppBadRequestException(
+        ErrorCode.QUARTERLY_REPORT_INVALID_QUARTER,
+      );
     }
     if (year < 2020 || year > 2100) {
       throw new AppBadRequestException(ErrorCode.QUARTERLY_REPORT_INVALID_YEAR);
@@ -482,14 +547,18 @@ export class QuarterlyReportsService {
   }
 
   private async validateClubExists(clubId: number) {
-    const club = await this.prisma.clubs.findUnique({ where: { club_id: clubId } });
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+    });
     if (!club) {
       throw new AppNotFoundException(ErrorCode.QUARTERLY_REPORT_CLUB_NOT_FOUND);
     }
     return club;
   }
 
-  private buildManualPayload(dto: UpdateQuarterlyManualDataDto): Record<string, unknown> {
+  private buildManualPayload(
+    dto: UpdateQuarterlyManualDataDto,
+  ): Record<string, unknown> {
     const fields: (keyof UpdateQuarterlyManualDataDto)[] = [
       'planning_meetings',
       'parent_meetings',

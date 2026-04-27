@@ -1,6 +1,4 @@
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppBadRequestException,
@@ -25,10 +23,13 @@ export class AwardCategoriesService {
       dto.max_points !== null &&
       dto.min_points > dto.max_points
     ) {
-      throw new AppBadRequestException(ErrorCode.AWARD_CATEGORY_POINTS_INVALID, {
-        minPoints: dto.min_points,
-        maxPoints: dto.max_points,
-      });
+      throw new AppBadRequestException(
+        ErrorCode.AWARD_CATEGORY_POINTS_INVALID,
+        {
+          minPoints: dto.min_points,
+          maxPoints: dto.max_points,
+        },
+      );
     }
 
     if (dto.club_type_id !== undefined && dto.club_type_id !== null) {
@@ -37,7 +38,10 @@ export class AwardCategoriesService {
       });
 
       if (!clubType) {
-        throw new AppNotFoundException(ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND, { id: dto.club_type_id });
+        throw new AppNotFoundException(
+          ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND,
+          { id: dto.club_type_id },
+        );
       }
     }
 
@@ -92,7 +96,9 @@ export class AwardCategoriesService {
     });
 
     if (!category) {
-      throw new AppNotFoundException(ErrorCode.AWARD_CATEGORY_NOT_FOUND, { id });
+      throw new AppNotFoundException(ErrorCode.AWARD_CATEGORY_NOT_FOUND, {
+        id,
+      });
     }
 
     return category;
@@ -115,10 +121,13 @@ export class AwardCategoriesService {
       effectiveMaxPoints !== undefined &&
       effectiveMinPoints > effectiveMaxPoints
     ) {
-      throw new AppBadRequestException(ErrorCode.AWARD_CATEGORY_POINTS_INVALID, {
-        minPoints: effectiveMinPoints,
-        maxPoints: effectiveMaxPoints,
-      });
+      throw new AppBadRequestException(
+        ErrorCode.AWARD_CATEGORY_POINTS_INVALID,
+        {
+          minPoints: effectiveMinPoints,
+          maxPoints: effectiveMaxPoints,
+        },
+      );
     }
 
     if (dto.club_type_id !== undefined && dto.club_type_id !== null) {
@@ -127,7 +136,10 @@ export class AwardCategoriesService {
       });
 
       if (!clubType) {
-        throw new AppNotFoundException(ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND, { id: dto.club_type_id });
+        throw new AppNotFoundException(
+          ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND,
+          { id: dto.club_type_id },
+        );
       }
     }
 

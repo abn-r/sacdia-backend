@@ -285,7 +285,10 @@ export class AnnualFoldersController {
     },
   })
   @ApiResponse({ status: 201, description: 'Evidence uploaded' })
-  @ApiResponse({ status: 400, description: 'Folder is not open or invalid file' })
+  @ApiResponse({
+    status: 400,
+    description: 'Folder is not open or invalid file',
+  })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async uploadEvidence(
     @Param('folderId', ParseUUIDPipe) folderId: string,
@@ -348,7 +351,8 @@ export class AnnualFoldersController {
   @Get(':folderId/sections/:sectionId/status')
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({
-    summary: 'Get the current status of a single section within an annual folder',
+    summary:
+      'Get the current status of a single section within an annual folder',
     description:
       'Returns section metadata, evidence count, submission record (if submitted), and evaluation record (if evaluated). Useful for the Flutter app to show per-section progress.',
   })
@@ -389,7 +393,11 @@ export class AnnualFoldersController {
     @Param('sectionId', ParseUUIDPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.service.submitSection(folderId, sectionId, user.sub);
+    const data = await this.service.submitSection(
+      folderId,
+      sectionId,
+      user.sub,
+    );
     return { status: 'success', data };
   }
 

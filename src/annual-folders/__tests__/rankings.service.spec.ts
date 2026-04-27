@@ -69,11 +69,20 @@ describe('RankingsService', () => {
         },
         {
           provide: DistributedLockService,
-          useValue: { tryAcquire: jest.fn().mockResolvedValue(true), release: jest.fn() },
+          useValue: {
+            tryAcquire: jest.fn().mockResolvedValue(true),
+            release: jest.fn(),
+          },
         },
         {
           provide: CronRunLogger,
-          useValue: { track: jest.fn().mockImplementation((_key: string, fn: () => Promise<unknown>) => fn()) },
+          useValue: {
+            track: jest
+              .fn()
+              .mockImplementation((_key: string, fn: () => Promise<unknown>) =>
+                fn(),
+              ),
+          },
         },
       ],
     }).compile();
@@ -142,17 +151,17 @@ describe('RankingsService', () => {
     it('should throw NotFoundException when provided yearId does not exist', async () => {
       mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(null);
 
-      await expect(service.recalculateRankings(9999)).rejects.toMatchObject(
-        { code: ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND },
-      );
+      await expect(service.recalculateRankings(9999)).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND,
+      });
     });
 
     it('should throw NotFoundException when no active year exists', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
 
-      await expect(service.recalculateRankings()).rejects.toMatchObject(
-        { code: ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND },
-      );
+      await expect(service.recalculateRankings()).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND,
+      });
     });
 
     it('should return { updated: 0 } when no evaluated/closed folders exist', async () => {
@@ -658,7 +667,9 @@ describe('RankingsService', () => {
 
       await expect(
         service.getRankingForClub('non-existent', 2026),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND,
+      });
     });
 
     it('should return both general and empty by_category when no rankings at all', async () => {

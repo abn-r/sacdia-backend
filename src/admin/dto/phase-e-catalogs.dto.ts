@@ -234,7 +234,10 @@ export class CreateFolderModuleDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ example: 100, description: 'Max points for this module' })
+  @ApiPropertyOptional({
+    example: 100,
+    description: 'Max points for this module',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -273,7 +276,10 @@ export class CreateFolderSectionDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ example: 1, description: 'module_id FK (folder_module_id)' })
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'module_id FK (folder_module_id)',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -284,7 +290,10 @@ export class CreateFolderSectionDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ example: 50, description: 'Max points for this section' })
+  @ApiPropertyOptional({
+    example: 50,
+    description: 'Max points for this section',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -307,7 +316,9 @@ export class CreateFolderSectionDto {
   translations?: CatalogTranslationDto[];
 }
 
-export class UpdateFolderSectionDto extends PartialType(CreateFolderSectionDto) {}
+export class UpdateFolderSectionDto extends PartialType(
+  CreateFolderSectionDto,
+) {}
 
 // ─── FINANCES CATEGORIES ──────────────────────────────────────────────────────
 
@@ -350,7 +361,9 @@ export class CreateFinanceCategoryDto {
   translations?: CatalogTranslationDto[];
 }
 
-export class UpdateFinanceCategoryDto extends PartialType(CreateFinanceCategoryDto) {}
+export class UpdateFinanceCategoryDto extends PartialType(
+  CreateFinanceCategoryDto,
+) {}
 
 // ─── INVENTORY CATEGORIES ─────────────────────────────────────────────────────
 
@@ -367,7 +380,8 @@ export class InventoryTranslationDto {
   locale!: 'pt-BR' | 'en' | 'fr';
 
   @ApiPropertyOptional({
-    description: 'Translated name. Pass empty string or omit to fall back to Spanish.',
+    description:
+      'Translated name. Pass empty string or omit to fall back to Spanish.',
     example: 'Camping Equipment',
     maxLength: 100,
   })
@@ -406,7 +420,9 @@ export class CreateInventoryCategoryDto {
   translations?: CatalogTranslationDto[];
 }
 
-export class UpdateInventoryCategoryDto extends PartialType(CreateInventoryCategoryDto) {}
+export class UpdateInventoryCategoryDto extends PartialType(
+  CreateInventoryCategoryDto,
+) {}
 
 // ─── HONORS ──────────────────────────────────────────────────────────────────
 
@@ -459,13 +475,20 @@ export class CreateHonorCatalogDto {
   @Min(1)
   skill_level?: number;
 
-  @ApiPropertyOptional({ example: null, nullable: true, description: 'master_honors_id FK (optional)' })
+  @ApiPropertyOptional({
+    example: null,
+    nullable: true,
+    description: 'master_honors_id FK (optional)',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
   master_honors_id?: number | null;
 
-  @ApiPropertyOptional({ example: '2025', description: 'Year string (optional)' })
+  @ApiPropertyOptional({
+    example: '2025',
+    description: 'Year string (optional)',
+  })
   @IsOptional()
   @IsString()
   year?: string;
@@ -495,7 +518,10 @@ export class CreateMasterHonorDto {
   @MaxLength(100)
   name!: string;
 
-  @ApiPropertyOptional({ example: 'https://storage.example.com/master-honor.jpg', nullable: true })
+  @ApiPropertyOptional({
+    example: 'https://storage.example.com/master-honor.jpg',
+    nullable: true,
+  })
   @IsOptional()
   @IsString()
   master_image?: string | null;

@@ -52,13 +52,22 @@ export class AnnualReportsService {
     await this.validateEcclesiasticalYearExists(ecclesiasticalYearId);
 
     const existing = await this.prisma.annual_reports.findUnique({
-      where: { club_id_ecclesiastical_year_id: { club_id: clubId, ecclesiastical_year_id: ecclesiasticalYearId } },
+      where: {
+        club_id_ecclesiastical_year_id: {
+          club_id: clubId,
+          ecclesiastical_year_id: ecclesiasticalYearId,
+        },
+      },
     });
 
     if (existing) return existing;
 
     return this.prisma.annual_reports.create({
-      data: { club_id: clubId, ecclesiastical_year_id: ecclesiasticalYearId, status: 'draft' },
+      data: {
+        club_id: clubId,
+        ecclesiastical_year_id: ecclesiasticalYearId,
+        status: 'draft',
+      },
     });
   }
 
@@ -66,9 +75,13 @@ export class AnnualReportsService {
   // COMPUTE (build computed_data from full ecclesiastical year)
   // ========================================
 
-  async computeData(clubId: number, ecclesiasticalYearId: number): Promise<AnnualComputedData> {
+  async computeData(
+    clubId: number,
+    ecclesiasticalYearId: number,
+  ): Promise<AnnualComputedData> {
     await this.validateClubExists(clubId);
-    const eccYear = await this.validateEcclesiasticalYearExists(ecclesiasticalYearId);
+    const eccYear =
+      await this.validateEcclesiasticalYearExists(ecclesiasticalYearId);
 
     const startDate = eccYear.start_date;
     const endDate = eccYear.end_date;
@@ -99,7 +112,12 @@ export class AnnualReportsService {
     // ── Directiva ──
     const directiva: { role: string; user_id: string; name: string }[] = [];
     if (allSectionIds.length > 0) {
-      const directivaRoles = ['director', 'subdirector', 'secretario', 'tesorero'];
+      const directivaRoles = [
+        'director',
+        'subdirector',
+        'secretario',
+        'tesorero',
+      ];
       const assignments = await this.prisma.club_role_assignments.findMany({
         where: {
           club_section_id: { in: allSectionIds },
@@ -108,7 +126,14 @@ export class AnnualReportsService {
           roles: { role_name: { in: directivaRoles } },
         },
         include: {
-          users: { select: { user_id: true, name: true, paternal_last_name: true, maternal_last_name: true } },
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
           roles: { select: { role_name: true } },
         },
         distinct: ['user_id'],
@@ -118,7 +143,13 @@ export class AnnualReportsService {
         directiva.push({
           role: a.roles.role_name,
           user_id: a.users.user_id,
-          name: [a.users.name, a.users.paternal_last_name, a.users.maternal_last_name].filter(Boolean).join(' '),
+          name: [
+            a.users.name,
+            a.users.paternal_last_name,
+            a.users.maternal_last_name,
+          ]
+            .filter(Boolean)
+            .join(' '),
         });
       }
     }
@@ -126,7 +157,10 @@ export class AnnualReportsService {
     // ── Honors ──
     let honorsStarted = 0;
     let honorsCompleted = 0;
-    const topAchieversMap = new Map<string, { user_id: string; name: string; honors_count: number }>();
+    const topAchieversMap = new Map<
+      string,
+      { user_id: string; name: string; honors_count: number }
+    >();
 
     if (allSectionIds.length > 0) {
       const memberIds = await this.prisma.club_role_assignments.findMany({
@@ -148,7 +182,9 @@ export class AnnualReportsService {
             date: { gte: startDate, lte: endDate },
           },
           include: {
-            users: { select: { user_id: true, name: true, paternal_last_name: true } },
+            users: {
+              select: { user_id: true, name: true, paternal_last_name: true },
+            },
           },
         });
 
@@ -162,7 +198,9 @@ export class AnnualReportsService {
           if (!topAchieversMap.has(uid)) {
             topAchieversMap.set(uid, {
               user_id: uid,
-              name: [h.users.name, h.users.paternal_last_name].filter(Boolean).join(' '),
+              name: [h.users.name, h.users.paternal_last_name]
+                .filter(Boolean)
+                .join(' '),
               honors_count: 0,
             });
           }
@@ -204,7 +242,12 @@ export class AnnualReportsService {
 
         for (let m = monthStart; m <= monthEnd; m++) {
           const finances = await this.prisma.finances.findMany({
-            where: { club_section_id: { in: allSectionIds }, month: m, year: y, active: true },
+            where: {
+              club_section_id: { in: allSectionIds },
+              month: m,
+              year: y,
+              active: true,
+            },
             include: { finances_categories: { select: { type: true } } },
           });
           for (const f of finances) {
@@ -241,7 +284,10 @@ export class AnnualReportsService {
     // ── Ranking percentile (from club_annual_rankings if exists) ──
     let rankingPercentile: number | null = null;
     const rankingRow = await this.prisma.club_annual_rankings.findFirst({
-      where: { club_enrollment: { club_section_id: { in: allSectionIds } }, ecclesiastical_year_id: ecclesiasticalYearId },
+      where: {
+        club_enrollment: { club_section_id: { in: allSectionIds } },
+        ecclesiastical_year_id: ecclesiasticalYearId,
+      },
       select: { progress_percentage: true, rank_position: true },
     });
 
@@ -287,7 +333,10 @@ export class AnnualReportsService {
       throw new AppBadRequestException(ErrorCode.ANNUAL_REPORT_NOT_DRAFT);
     }
 
-    const computed = await this.computeData(report.club_id, report.ecclesiastical_year_id);
+    const computed = await this.computeData(
+      report.club_id,
+      report.ecclesiastical_year_id,
+    );
 
     return this.prisma.annual_reports.update({
       where: { annual_report_id: reportId },
@@ -367,7 +416,9 @@ export class AnnualReportsService {
           },
         },
         ecclesiastical_year: true,
-        finalized_by_user: { select: { user_id: true, name: true, paternal_last_name: true } },
+        finalized_by_user: {
+          select: { user_id: true, name: true, paternal_last_name: true },
+        },
       },
     });
 
@@ -395,7 +446,9 @@ export class AnnualReportsService {
 
     const where: any = {
       ...(filters.clubId !== undefined && { club_id: filters.clubId }),
-      ...(filters.ecclesiasticalYearId !== undefined && { ecclesiastical_year_id: filters.ecclesiasticalYearId }),
+      ...(filters.ecclesiasticalYearId !== undefined && {
+        ecclesiastical_year_id: filters.ecclesiasticalYearId,
+      }),
       ...(filters.status && { status: filters.status }),
     };
 
@@ -408,8 +461,12 @@ export class AnnualReportsService {
         orderBy: { ecclesiastical_year_id: 'desc' },
         include: {
           club: { select: { club_id: true, name: true } },
-          ecclesiastical_year: { select: { year_id: true, start_date: true, end_date: true } },
-          finalized_by_user: { select: { user_id: true, name: true, paternal_last_name: true } },
+          ecclesiastical_year: {
+            select: { year_id: true, start_date: true, end_date: true },
+          },
+          finalized_by_user: {
+            select: { user_id: true, name: true, paternal_last_name: true },
+          },
         },
       }),
     ]);
@@ -428,8 +485,12 @@ export class AnnualReportsService {
       where: { club_id: clubId },
       orderBy: { ecclesiastical_year_id: 'desc' },
       include: {
-        ecclesiastical_year: { select: { year_id: true, start_date: true, end_date: true } },
-        finalized_by_user: { select: { user_id: true, name: true, paternal_last_name: true } },
+        ecclesiastical_year: {
+          select: { year_id: true, start_date: true, end_date: true },
+        },
+        finalized_by_user: {
+          select: { user_id: true, name: true, paternal_last_name: true },
+        },
       },
     });
   }
@@ -447,7 +508,10 @@ export class AnnualReportsService {
       throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_NOT_FOUND);
     }
 
-    const computed = await this.computeData(report.club_id, report.ecclesiastical_year_id);
+    const computed = await this.computeData(
+      report.club_id,
+      report.ecclesiastical_year_id,
+    );
 
     return this.prisma.annual_reports.update({
       where: { annual_report_id: reportId },
@@ -462,7 +526,9 @@ export class AnnualReportsService {
   // AUTO-GENERATE (called by cron)
   // ========================================
 
-  async autoGenerateForAllClubs(ecclesiasticalYearId: number): Promise<{ success: number; skipped: number; errors: number }> {
+  async autoGenerateForAllClubs(
+    ecclesiasticalYearId: number,
+  ): Promise<{ success: number; skipped: number; errors: number }> {
     const clubs = await this.prisma.clubs.findMany({
       where: { active: true },
       select: { club_id: true, name: true },
@@ -475,7 +541,12 @@ export class AnnualReportsService {
     for (const club of clubs) {
       try {
         const existing = await this.prisma.annual_reports.findUnique({
-          where: { club_id_ecclesiastical_year_id: { club_id: club.club_id, ecclesiastical_year_id: ecclesiasticalYearId } },
+          where: {
+            club_id_ecclesiastical_year_id: {
+              club_id: club.club_id,
+              ecclesiastical_year_id: ecclesiasticalYearId,
+            },
+          },
         });
 
         if (existing && existing.status !== 'draft') {
@@ -486,19 +557,31 @@ export class AnnualReportsService {
         let report = existing;
         if (!report) {
           report = await this.prisma.annual_reports.create({
-            data: { club_id: club.club_id, ecclesiastical_year_id: ecclesiasticalYearId, status: 'draft' },
+            data: {
+              club_id: club.club_id,
+              ecclesiastical_year_id: ecclesiasticalYearId,
+              status: 'draft',
+            },
           });
         }
 
-        const computed = await this.computeData(club.club_id, ecclesiasticalYearId);
+        const computed = await this.computeData(
+          club.club_id,
+          ecclesiasticalYearId,
+        );
 
         await this.prisma.annual_reports.update({
           where: { annual_report_id: report.annual_report_id },
-          data: { computed_data: computed as any, auto_generated_at: new Date() },
+          data: {
+            computed_data: computed as any,
+            auto_generated_at: new Date(),
+          },
         });
 
         success++;
-        this.logger.log(`Auto-generated annual report for club ${club.name} (year ${ecclesiasticalYearId})`);
+        this.logger.log(
+          `Auto-generated annual report for club ${club.name} (year ${ecclesiasticalYearId})`,
+        );
       } catch (err) {
         errors++;
         this.logger.error(
@@ -515,7 +598,9 @@ export class AnnualReportsService {
   // ========================================
 
   private async validateClubExists(clubId: number) {
-    const club = await this.prisma.clubs.findUnique({ where: { club_id: clubId } });
+    const club = await this.prisma.clubs.findUnique({
+      where: { club_id: clubId },
+    });
     if (!club) {
       throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_CLUB_NOT_FOUND);
     }
@@ -523,14 +608,18 @@ export class AnnualReportsService {
   }
 
   private async validateEcclesiasticalYearExists(yearId: number) {
-    const year = await this.prisma.ecclesiastical_years.findUnique({ where: { year_id: yearId } });
+    const year = await this.prisma.ecclesiastical_years.findUnique({
+      where: { year_id: yearId },
+    });
     if (!year) {
       throw new AppNotFoundException(ErrorCode.ANNUAL_REPORT_YEAR_NOT_FOUND);
     }
     return year;
   }
 
-  private buildManualPayload(dto: UpdateAnnualManualDataDto): Record<string, unknown> {
+  private buildManualPayload(
+    dto: UpdateAnnualManualDataDto,
+  ): Record<string, unknown> {
     const fields: (keyof UpdateAnnualManualDataDto)[] = [
       'planning_meetings',
       'parent_meetings',

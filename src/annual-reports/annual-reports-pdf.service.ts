@@ -73,7 +73,10 @@ export class AnnualReportsPdfService {
     const intlLocale = BCP47[locale] ?? 'es-MX';
 
     const t = (key: string, args?: Record<string, unknown>): string =>
-      this.i18n.translate(`annual_reports.${key}`, { lang: locale, args }) as string;
+      this.i18n.translate(`annual_reports.${key}`, {
+        lang: locale,
+        args,
+      }) as string;
 
     const reportData = report as any;
     const computed = reportData.computed_data as AnnualComputedData;
@@ -82,11 +85,20 @@ export class AnnualReportsPdfService {
     const churchName = (club?.churches?.name as string) ?? 'N/A';
     const districtName = (club?.districts?.name as string) ?? 'N/A';
     const clubName = (club?.name as string) ?? 'N/A';
-    const yearLabel = computed.year_label ?? String(reportData.ecclesiastical_year?.start_date?.getFullYear() ?? 'N/A');
+    const yearLabel =
+      computed.year_label ??
+      String(
+        reportData.ecclesiastical_year?.start_date?.getFullYear() ?? 'N/A',
+      );
 
     const doc = new PDFDocument({
       size: 'LETTER',
-      margins: { top: PAGE_MARGIN, bottom: PAGE_MARGIN, left: PAGE_MARGIN, right: PAGE_MARGIN },
+      margins: {
+        top: PAGE_MARGIN,
+        bottom: PAGE_MARGIN,
+        left: PAGE_MARGIN,
+        right: PAGE_MARGIN,
+      },
       info: {
         Title: `${t('header.title')} - ${clubName} - ${yearLabel}`,
         Author: 'SACDIA',
@@ -153,7 +165,10 @@ export class AnnualReportsPdfService {
     doc
       .fontSize(16)
       .font('Helvetica-Bold')
-      .text(t('header.title'), PAGE_MARGIN, PAGE_MARGIN, { width: CONTENT_WIDTH, align: 'center' });
+      .text(t('header.title'), PAGE_MARGIN, PAGE_MARGIN, {
+        width: CONTENT_WIDTH,
+        align: 'center',
+      });
 
     doc.moveDown(0.8);
 
@@ -165,14 +180,20 @@ export class AnnualReportsPdfService {
     doc.text(`${t('header.district')}: `, col1X, y, { continued: true });
     doc.font('Helvetica').text(districtName);
 
-    doc.font('Helvetica-Bold').text(`${t('header.church')}: `, col2X, y, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('header.church')}: `, col2X, y, { continued: true });
     doc.font('Helvetica').text(churchName);
 
     const y2 = doc.y + 2;
-    doc.font('Helvetica-Bold').text(`${t('header.club')}: `, col1X, y2, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('header.club')}: `, col1X, y2, { continued: true });
     doc.font('Helvetica').text(clubName);
 
-    doc.font('Helvetica-Bold').text(`${t('header.year')}: `, col2X, y2, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('header.year')}: `, col2X, y2, { continued: true });
     doc.font('Helvetica').text(yearLabel);
 
     doc.moveDown(1);
@@ -183,12 +204,21 @@ export class AnnualReportsPdfService {
     if (doc.y > 680) doc.addPage();
 
     doc.moveDown(0.5);
-    doc.fontSize(11).font('Helvetica-Bold').fillColor('#1a365d').text(title, PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
+    doc
+      .fontSize(11)
+      .font('Helvetica-Bold')
+      .fillColor('#1a365d')
+      .text(title, PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
     doc.fillColor('#000000');
     doc.moveDown(0.3);
 
     const y = doc.y;
-    doc.strokeColor('#1a365d').lineWidth(0.5).moveTo(PAGE_MARGIN, y).lineTo(PAGE_MARGIN + CONTENT_WIDTH, y).stroke();
+    doc
+      .strokeColor('#1a365d')
+      .lineWidth(0.5)
+      .moveTo(PAGE_MARGIN, y)
+      .lineTo(PAGE_MARGIN + CONTENT_WIDTH, y)
+      .stroke();
     doc.strokeColor('#000000');
     doc.moveDown(0.3);
   }
@@ -201,13 +231,36 @@ export class AnnualReportsPdfService {
   ) {
     doc.fontSize(9).font('Helvetica');
 
-    this.drawKeyValue(doc, t('summary.member_count'), String(computed.member_count ?? 0));
-    this.drawKeyValue(doc, t('summary.months_reported'), String(computed.months_reported ?? 0));
-    this.drawKeyValue(doc, t('summary.total_activities'), String(computed.activities?.total ?? 0));
-    this.drawKeyValue(doc, t('summary.honors_completed'), String(computed.honors?.completed ?? 0));
-    this.drawKeyValue(doc, t('summary.honors_started'), String(computed.honors?.started ?? 0));
+    this.drawKeyValue(
+      doc,
+      t('summary.member_count'),
+      String(computed.member_count ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      t('summary.months_reported'),
+      String(computed.months_reported ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      t('summary.total_activities'),
+      String(computed.activities?.total ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      t('summary.honors_completed'),
+      String(computed.honors?.completed ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      t('summary.honors_started'),
+      String(computed.honors?.started ?? 0),
+    );
 
-    const baptized = (manual['baptized_this_year'] as number | undefined) ?? computed.missionary?.baptized_total ?? 0;
+    const baptized =
+      (manual['baptized_this_year'] as number | undefined) ??
+      computed.missionary?.baptized_total ??
+      0;
     this.drawKeyValue(doc, t('summary.baptized_total'), String(baptized));
 
     if (computed.directiva && computed.directiva.length > 0) {
@@ -222,7 +275,14 @@ export class AnnualReportsPdfService {
     if (manual['annual_achievements_description']) {
       doc.moveDown(0.3);
       doc.font('Helvetica-Bold').text('Logros del año:', PAGE_MARGIN, doc.y);
-      doc.font('Helvetica').text(String(manual['annual_achievements_description']), PAGE_MARGIN + 10, doc.y, { width: CONTENT_WIDTH - 10 });
+      doc
+        .font('Helvetica')
+        .text(
+          String(manual['annual_achievements_description']),
+          PAGE_MARGIN + 10,
+          doc.y,
+          { width: CONTENT_WIDTH - 10 },
+        );
     }
   }
 
@@ -232,8 +292,16 @@ export class AnnualReportsPdfService {
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.fontSize(9).font('Helvetica');
-    this.drawKeyValue(doc, t('summary.honors_started'), String(computed.honors?.started ?? 0));
-    this.drawKeyValue(doc, t('summary.honors_completed'), String(computed.honors?.completed ?? 0));
+    this.drawKeyValue(
+      doc,
+      t('summary.honors_started'),
+      String(computed.honors?.started ?? 0),
+    );
+    this.drawKeyValue(
+      doc,
+      t('summary.honors_completed'),
+      String(computed.honors?.completed ?? 0),
+    );
   }
 
   private drawActivities(
@@ -242,7 +310,11 @@ export class AnnualReportsPdfService {
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.fontSize(9).font('Helvetica');
-    this.drawKeyValue(doc, t('summary.total_activities'), String(computed.activities?.total ?? 0));
+    this.drawKeyValue(
+      doc,
+      t('summary.total_activities'),
+      String(computed.activities?.total ?? 0),
+    );
   }
 
   private drawFinances(
@@ -253,7 +325,12 @@ export class AnnualReportsPdfService {
   ) {
     doc.fontSize(9).font('Helvetica');
 
-    const finances = computed.finances ?? { income: 0, expenses: 0, balance: 0, transactions: 0 };
+    const finances = computed.finances ?? {
+      income: 0,
+      expenses: 0,
+      balance: 0,
+      transactions: 0,
+    };
     const fmt = (n: number) =>
       `$${n.toLocaleString(intlLocale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -261,17 +338,36 @@ export class AnnualReportsPdfService {
     const valueWidth = CONTENT_WIDTH * 0.4;
 
     const rows = [
-      { label: t('finances.total_income'), value: fmt(finances.income), bold: false },
-      { label: t('finances.total_expenses'), value: fmt(finances.expenses), bold: false },
-      { label: t('finances.annual_balance'), value: fmt(finances.balance), bold: true },
-      { label: t('finances.transaction_count'), value: String(finances.transactions), bold: false },
+      {
+        label: t('finances.total_income'),
+        value: fmt(finances.income),
+        bold: false,
+      },
+      {
+        label: t('finances.total_expenses'),
+        value: fmt(finances.expenses),
+        bold: false,
+      },
+      {
+        label: t('finances.annual_balance'),
+        value: fmt(finances.balance),
+        bold: true,
+      },
+      {
+        label: t('finances.transaction_count'),
+        value: String(finances.transactions),
+        bold: false,
+      },
     ];
 
     let rowY = doc.y;
     for (const row of rows) {
       doc.font(row.bold ? 'Helvetica-Bold' : 'Helvetica');
       doc.text(row.label, PAGE_MARGIN, rowY, { width: labelWidth });
-      doc.text(row.value, PAGE_MARGIN + labelWidth, rowY, { width: valueWidth, align: 'right' });
+      doc.text(row.value, PAGE_MARGIN + labelWidth, rowY, {
+        width: valueWidth,
+        align: 'right',
+      });
       rowY += 14;
     }
 
@@ -286,28 +382,48 @@ export class AnnualReportsPdfService {
   ) {
     doc.fontSize(9).font('Helvetica');
 
-    const baptized = (manual['baptized_this_year'] as number | undefined) ?? computed.missionary?.baptized_total ?? 0;
-    const totalBaptized = (manual['total_baptized'] as number | undefined);
+    const baptized =
+      (manual['baptized_this_year'] as number | undefined) ??
+      computed.missionary?.baptized_total ??
+      0;
+    const totalBaptized = manual['total_baptized'] as number | undefined;
 
     this.drawKeyValue(doc, 'Bautizados en el año', String(baptized));
     if (totalBaptized !== undefined) {
-      this.drawKeyValue(doc, 'Total bautizados acumulado', String(totalBaptized));
+      this.drawKeyValue(
+        doc,
+        'Total bautizados acumulado',
+        String(totalBaptized),
+      );
     }
 
-    const camporees = (manual['camporees_attended'] as number | undefined);
+    const camporees = manual['camporees_attended'] as number | undefined;
     if (camporees !== undefined) {
       this.drawKeyValue(doc, 'Campamentos asistidos', String(camporees));
     }
 
     const allInvestitures = manual['all_investitures_completed'];
     if (allInvestitures !== undefined) {
-      this.drawKeyValue(doc, 'Todas las investiduras completadas', allInvestitures ? 'Sí' : 'No');
+      this.drawKeyValue(
+        doc,
+        'Todas las investiduras completadas',
+        allInvestitures ? 'Sí' : 'No',
+      );
     }
 
     if (manual['community_service_description']) {
       doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').text('Servicio comunitario:', PAGE_MARGIN, doc.y);
-      doc.font('Helvetica').text(String(manual['community_service_description']), PAGE_MARGIN + 10, doc.y, { width: CONTENT_WIDTH - 10 });
+      doc
+        .font('Helvetica-Bold')
+        .text('Servicio comunitario:', PAGE_MARGIN, doc.y);
+      doc
+        .font('Helvetica')
+        .text(
+          String(manual['community_service_description']),
+          PAGE_MARGIN + 10,
+          doc.y,
+          { width: CONTENT_WIDTH - 10 },
+        );
     }
   }
 
@@ -318,13 +434,22 @@ export class AnnualReportsPdfService {
   ) {
     doc.fontSize(9).font('Helvetica');
 
-    if (computed.ranking_percentile !== null && computed.ranking_percentile !== undefined) {
-      this.drawKeyValue(doc, t('ranking.percentile'), `${computed.ranking_percentile}%`);
+    if (
+      computed.ranking_percentile !== null &&
+      computed.ranking_percentile !== undefined
+    ) {
+      this.drawKeyValue(
+        doc,
+        t('ranking.percentile'),
+        `${computed.ranking_percentile}%`,
+      );
     }
 
     if (computed.top_achievers && computed.top_achievers.length > 0) {
       doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').text(`${t('ranking.top_achievers_header')}:`, PAGE_MARGIN, doc.y);
+      doc
+        .font('Helvetica-Bold')
+        .text(`${t('ranking.top_achievers_header')}:`, PAGE_MARGIN, doc.y);
       doc.font('Helvetica');
 
       const tableY = doc.y + 4;
@@ -339,7 +464,9 @@ export class AnnualReportsPdfService {
       let rowY = tableY + 12;
       for (const achiever of computed.top_achievers.slice(0, 10)) {
         doc.text(achiever.name, colX[0], rowY, { width: colWidths[0] - 5 });
-        doc.text(String(achiever.honors_count), colX[1], rowY, { width: colWidths[1] - 5 });
+        doc.text(String(achiever.honors_count), colX[1], rowY, {
+          width: colWidths[1] - 5,
+        });
         rowY += 12;
       }
 
@@ -349,19 +476,34 @@ export class AnnualReportsPdfService {
 
   private drawDirectorInfo(
     doc: PDFKit.PDFDocument,
-    finalizer: { user_id: string; name: string | null; paternal_last_name: string | null; maternal_last_name: string | null; email: string | null } | null,
+    finalizer: {
+      user_id: string;
+      name: string | null;
+      paternal_last_name: string | null;
+      maternal_last_name: string | null;
+      email: string | null;
+    } | null,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.moveDown(1.5);
     this.drawHorizontalLine(doc);
     doc.moveDown(0.5);
 
-    doc.fontSize(10).font('Helvetica-Bold').text(t('secretary.header'), PAGE_MARGIN, doc.y);
+    doc
+      .fontSize(10)
+      .font('Helvetica-Bold')
+      .text(t('secretary.header'), PAGE_MARGIN, doc.y);
     doc.moveDown(0.3);
     doc.fontSize(9).font('Helvetica');
 
     if (finalizer) {
-      const fullName = [finalizer.name, finalizer.paternal_last_name, finalizer.maternal_last_name].filter(Boolean).join(' ');
+      const fullName = [
+        finalizer.name,
+        finalizer.paternal_last_name,
+        finalizer.maternal_last_name,
+      ]
+        .filter(Boolean)
+        .join(' ');
       this.drawKeyValue(doc, t('secretary.name'), fullName || 'N/A');
       this.drawKeyValue(doc, t('secretary.email'), finalizer.email ?? 'N/A');
     } else {
@@ -380,20 +522,31 @@ export class AnnualReportsPdfService {
         .fontSize(7)
         .font('Helvetica')
         .fillColor('#666666')
-        .text(t('footer', { current: i + 1, total: range.count }), PAGE_MARGIN, 740, { width: CONTENT_WIDTH, align: 'center' });
+        .text(
+          t('footer', { current: i + 1, total: range.count }),
+          PAGE_MARGIN,
+          740,
+          { width: CONTENT_WIDTH, align: 'center' },
+        );
     }
     doc.fillColor('#000000');
   }
 
   private drawKeyValue(doc: PDFKit.PDFDocument, label: string, value: string) {
     const y = doc.y;
-    doc.font('Helvetica-Bold').text(`${label}: `, PAGE_MARGIN, y, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${label}: `, PAGE_MARGIN, y, { continued: true });
     doc.font('Helvetica').text(value);
   }
 
   private drawHorizontalLine(doc: PDFKit.PDFDocument) {
     const y = doc.y;
-    doc.lineWidth(1).moveTo(PAGE_MARGIN, y).lineTo(PAGE_MARGIN + CONTENT_WIDTH, y).stroke();
+    doc
+      .lineWidth(1)
+      .moveTo(PAGE_MARGIN, y)
+      .lineTo(PAGE_MARGIN + CONTENT_WIDTH, y)
+      .stroke();
     doc.moveDown(0.3);
   }
 }

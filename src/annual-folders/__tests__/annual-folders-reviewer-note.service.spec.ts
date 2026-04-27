@@ -1,9 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualFoldersService } from '../annual-folders.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  FILE_STORAGE_SERVICE,
-} from '../../common/services/file-storage.service';
+import { FILE_STORAGE_SERVICE } from '../../common/services/file-storage.service';
 import { ErrorCode } from '../../common/errors/error-codes';
 
 /**
@@ -85,7 +83,9 @@ describe('AnnualFoldersService — setReviewerNote', () => {
     service = module.get<AnnualFoldersService>(AnnualFoldersService);
 
     // Default: super_admin bypass (simplest path through territory check)
-    mockPrismaService.users_roles.findFirst.mockResolvedValue({ user_role_id: 'sa-role-id' });
+    mockPrismaService.users_roles.findFirst.mockResolvedValue({
+      user_role_id: 'sa-role-id',
+    });
 
     // Default: presign returns the key unchanged (keeps existing assertions valid)
     mockFileStorageService.getSignedDownloadUrl.mockImplementation(
@@ -114,8 +114,16 @@ describe('AnnualFoldersService — setReviewerNote', () => {
         reviewer_noted_by: REVIEWER_USER_ID,
         reviewer_noted_at: new Date(),
         section: { section_id: mockEvidenceBase.section_id, name: 'Actas' },
-        uploader: { name: 'María', paternal_last_name: 'García', maternal_last_name: null },
-        reviewer: { name: 'Juan', paternal_last_name: 'Pérez', maternal_last_name: null },
+        uploader: {
+          name: 'María',
+          paternal_last_name: 'García',
+          maternal_last_name: null,
+        },
+        reviewer: {
+          name: 'Juan',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: null,
+        },
       };
       mockPrismaService.annual_folder_evidences.update.mockResolvedValue(
         updatedEvidence,
@@ -251,7 +259,7 @@ describe('AnnualFoldersService — setReviewerNote', () => {
       // Territory check passes (needs club structure), actual evidence lookup returns null
       mockPrismaService.annual_folder_evidences.findUnique
         .mockResolvedValueOnce(mockEvidenceTerritoryShape) // territory check → passes
-        .mockResolvedValueOnce(null);                      // actual evidence → not found
+        .mockResolvedValueOnce(null); // actual evidence → not found
 
       await expect(
         service.setReviewerNote(
@@ -259,7 +267,9 @@ describe('AnnualFoldersService — setReviewerNote', () => {
           { reviewer_note: 'alguna nota' },
           REVIEWER_USER_ID,
         ),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND,
+      });
 
       expect(
         mockPrismaService.annual_folder_evidences.update,

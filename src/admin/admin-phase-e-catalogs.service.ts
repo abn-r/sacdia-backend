@@ -8,10 +8,7 @@
  * Unique index name format: Prisma auto-generates <col1>_<col2> for
  * @@unique([col1, col2]) when no explicit `map:` name is provided.
  */
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppConflictException,
@@ -144,12 +141,24 @@ export class AdminPhaseECatalogsService {
         where: { class_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
-          ...(mainDto.club_type_id !== undefined ? { club_type_id: mainDto.club_type_id } : {}),
-          ...(mainDto.minimum_age !== undefined ? { minimum_age: mainDto.minimum_age } : {}),
-          ...(typeof mainDto.requires_invested_gm === 'boolean' ? { requires_invested_gm: mainDto.requires_invested_gm } : {}),
-          ...(mainDto.display_order !== undefined ? { display_order: mainDto.display_order } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
+          ...(mainDto.club_type_id !== undefined
+            ? { club_type_id: mainDto.club_type_id }
+            : {}),
+          ...(mainDto.minimum_age !== undefined
+            ? { minimum_age: mainDto.minimum_age }
+            : {}),
+          ...(typeof mainDto.requires_invested_gm === 'boolean'
+            ? { requires_invested_gm: mainDto.requires_invested_gm }
+            : {}),
+          ...(mainDto.display_order !== undefined
+            ? { display_order: mainDto.display_order }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -184,7 +193,9 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureClassExists(id: number) {
-    const entity = await this.prisma.classes.findUnique({ where: { class_id: id } });
+    const entity = await this.prisma.classes.findUnique({
+      where: { class_id: id },
+    });
     if (!entity) {
       throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_NOT_FOUND, { id });
     }
@@ -257,13 +268,21 @@ export class AdminPhaseECatalogsService {
     return record;
   }
 
-  async updateClassModule(id: number, dto: UpdateClassModuleDto, actorId: string) {
+  async updateClassModule(
+    id: number,
+    dto: UpdateClassModuleDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     const existing = await this.ensureClassModuleExists(id);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
     if (name) {
-      await this.ensureClassModuleUnique(name, dto.class_id ?? existing.class_id, id);
+      await this.ensureClassModuleUnique(
+        name,
+        dto.class_id ?? existing.class_id,
+        id,
+      );
     }
 
     const { translations, ...mainDto } = dto;
@@ -273,9 +292,15 @@ export class AdminPhaseECatalogsService {
         where: { module_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
-          ...(mainDto.class_id !== undefined ? { class_id: mainDto.class_id } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
+          ...(mainDto.class_id !== undefined
+            ? { class_id: mainDto.class_id }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -310,14 +335,22 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureClassModuleExists(id: number) {
-    const entity = await this.prisma.class_modules.findUnique({ where: { module_id: id } });
+    const entity = await this.prisma.class_modules.findUnique({
+      where: { module_id: id },
+    });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_MODULE_NOT_FOUND, { id });
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_MODULE_NOT_FOUND, {
+        id,
+      });
     }
     return entity;
   }
 
-  private async ensureClassModuleUnique(name: string, classId: number, excludeId?: number) {
+  private async ensureClassModuleUnique(
+    name: string,
+    classId: number,
+    excludeId?: number,
+  ) {
     const existing = await this.prisma.class_modules.findFirst({
       where: {
         name: { equals: name, mode: 'insensitive' },
@@ -326,7 +359,9 @@ export class AdminPhaseECatalogsService {
       },
     });
     if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_CLASS_MODULE_NAME_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ADMIN_CLASS_MODULE_NAME_CONFLICT,
+      );
     }
   }
 
@@ -384,13 +419,21 @@ export class AdminPhaseECatalogsService {
     return record;
   }
 
-  async updateClassSection(id: number, dto: UpdateClassSectionDto, actorId: string) {
+  async updateClassSection(
+    id: number,
+    dto: UpdateClassSectionDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     const existing = await this.ensureClassSectionExists(id);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
     if (name) {
-      await this.ensureClassSectionUnique(name, dto.module_id ?? existing.module_id, id);
+      await this.ensureClassSectionUnique(
+        name,
+        dto.module_id ?? existing.module_id,
+        id,
+      );
     }
 
     const { translations, ...mainDto } = dto;
@@ -400,9 +443,15 @@ export class AdminPhaseECatalogsService {
         where: { section_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
-          ...(mainDto.module_id !== undefined ? { module_id: mainDto.module_id } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
+          ...(mainDto.module_id !== undefined
+            ? { module_id: mainDto.module_id }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -437,14 +486,22 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureClassSectionExists(id: number) {
-    const entity = await this.prisma.class_sections.findUnique({ where: { section_id: id } });
+    const entity = await this.prisma.class_sections.findUnique({
+      where: { section_id: id },
+    });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_SECTION_NOT_FOUND, { id });
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_SECTION_NOT_FOUND, {
+        id,
+      });
     }
     return entity;
   }
 
-  private async ensureClassSectionUnique(name: string, moduleId: number, excludeId?: number) {
+  private async ensureClassSectionUnique(
+    name: string,
+    moduleId: number,
+    excludeId?: number,
+  ) {
     const existing = await this.prisma.class_sections.findFirst({
       where: {
         name: { equals: name, mode: 'insensitive' },
@@ -453,7 +510,9 @@ export class AdminPhaseECatalogsService {
       },
     });
     if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_CLASS_SECTION_NAME_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ADMIN_CLASS_SECTION_NAME_CONFLICT,
+      );
     }
   }
 
@@ -527,10 +586,18 @@ export class AdminPhaseECatalogsService {
         where: { folder_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
-          ...(mainDto.club_type !== undefined ? { club_type: mainDto.club_type } : {}),
-          ...(mainDto.ecclesiastical_year_id !== undefined ? { ecclesiastical_year_id: mainDto.ecclesiastical_year_id } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
+          ...(mainDto.club_type !== undefined
+            ? { club_type: mainDto.club_type }
+            : {}),
+          ...(mainDto.ecclesiastical_year_id !== undefined
+            ? { ecclesiastical_year_id: mainDto.ecclesiastical_year_id }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -565,7 +632,9 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureFolderExists(id: number) {
-    const entity = await this.prisma.folders.findUnique({ where: { folder_id: id } });
+    const entity = await this.prisma.folders.findUnique({
+      where: { folder_id: id },
+    });
     if (!entity) {
       throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_NOT_FOUND, { id });
     }
@@ -635,11 +704,20 @@ export class AdminPhaseECatalogsService {
       return mod;
     });
 
-    this.logMutation('create', 'folders_modules', record.folder_module_id, actorId);
+    this.logMutation(
+      'create',
+      'folders_modules',
+      record.folder_module_id,
+      actorId,
+    );
     return record;
   }
 
-  async updateFolderModule(id: number, dto: UpdateFolderModuleDto, actorId: string) {
+  async updateFolderModule(
+    id: number,
+    dto: UpdateFolderModuleDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     await this.ensureFolderModuleExists(id);
 
@@ -652,11 +730,21 @@ export class AdminPhaseECatalogsService {
         where: { folder_module_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
-          ...(mainDto.folder_id !== undefined ? { folder_id: mainDto.folder_id } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
-          ...(mainDto.max_points !== undefined ? { max_points: mainDto.max_points } : {}),
-          ...(mainDto.minimum_points !== undefined ? { minimum_points: mainDto.minimum_points } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
+          ...(mainDto.folder_id !== undefined
+            ? { folder_id: mainDto.folder_id }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
+          ...(mainDto.max_points !== undefined
+            ? { max_points: mainDto.max_points }
+            : {}),
+          ...(mainDto.minimum_points !== undefined
+            ? { minimum_points: mainDto.minimum_points }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -691,9 +779,13 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureFolderModuleExists(id: number) {
-    const entity = await this.prisma.folders_modules.findUnique({ where: { folder_module_id: id } });
+    const entity = await this.prisma.folders_modules.findUnique({
+      where: { folder_module_id: id },
+    });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_MODULE_NOT_FOUND, { id });
+      throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_MODULE_NOT_FOUND, {
+        id,
+      });
     }
     return entity;
   }
@@ -749,11 +841,20 @@ export class AdminPhaseECatalogsService {
       return sec;
     });
 
-    this.logMutation('create', 'folders_sections', record.folder_section_id, actorId);
+    this.logMutation(
+      'create',
+      'folders_sections',
+      record.folder_section_id,
+      actorId,
+    );
     return record;
   }
 
-  async updateFolderSection(id: number, dto: UpdateFolderSectionDto, actorId: string) {
+  async updateFolderSection(
+    id: number,
+    dto: UpdateFolderSectionDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     await this.ensureFolderSectionExists(id);
 
@@ -766,11 +867,21 @@ export class AdminPhaseECatalogsService {
         where: { folder_section_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
-          ...(mainDto.module_id !== undefined ? { module_id: mainDto.module_id } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
-          ...(mainDto.max_points !== undefined ? { max_points: mainDto.max_points } : {}),
-          ...(mainDto.minimum_points !== undefined ? { minimum_points: mainDto.minimum_points } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
+          ...(mainDto.module_id !== undefined
+            ? { module_id: mainDto.module_id }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
+          ...(mainDto.max_points !== undefined
+            ? { max_points: mainDto.max_points }
+            : {}),
+          ...(mainDto.minimum_points !== undefined
+            ? { minimum_points: mainDto.minimum_points }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -805,9 +916,13 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureFolderSectionExists(id: number) {
-    const entity = await this.prisma.folders_sections.findUnique({ where: { folder_section_id: id } });
+    const entity = await this.prisma.folders_sections.findUnique({
+      where: { folder_section_id: id },
+    });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_SECTION_NOT_FOUND, { id });
+      throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_SECTION_NOT_FOUND, {
+        id,
+      });
     }
     return entity;
   }
@@ -862,17 +977,30 @@ export class AdminPhaseECatalogsService {
       return cat;
     });
 
-    this.logMutation('create', 'finances_categories', record.finance_category_id, actorId);
+    this.logMutation(
+      'create',
+      'finances_categories',
+      record.finance_category_id,
+      actorId,
+    );
     return record;
   }
 
-  async updateFinanceCategory(id: number, dto: UpdateFinanceCategoryDto, actorId: string) {
+  async updateFinanceCategory(
+    id: number,
+    dto: UpdateFinanceCategoryDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     const existing = await this.ensureFinanceCategoryExists(id);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
     if (name) {
-      await this.ensureFinanceCategoryUnique(name, dto.type ?? existing.type, id);
+      await this.ensureFinanceCategoryUnique(
+        name,
+        dto.type ?? existing.type,
+        id,
+      );
     }
 
     const { translations, ...mainDto } = dto;
@@ -882,10 +1010,14 @@ export class AdminPhaseECatalogsService {
         where: { finance_category_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
           ...(mainDto.type !== undefined ? { type: mainDto.type } : {}),
           ...(mainDto.icon !== undefined ? { icon: mainDto.icon } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -924,12 +1056,19 @@ export class AdminPhaseECatalogsService {
       where: { finance_category_id: id },
     });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_FINANCE_CATEGORY_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.ADMIN_FINANCE_CATEGORY_NOT_FOUND,
+        { id },
+      );
     }
     return entity;
   }
 
-  private async ensureFinanceCategoryUnique(name: string, type: number, excludeId?: number) {
+  private async ensureFinanceCategoryUnique(
+    name: string,
+    type: number,
+    excludeId?: number,
+  ) {
     const existing = await this.prisma.finances_categories.findFirst({
       where: {
         name: { equals: name, mode: 'insensitive' },
@@ -938,7 +1077,9 @@ export class AdminPhaseECatalogsService {
       },
     });
     if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_FINANCE_CATEGORY_NAME_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ADMIN_FINANCE_CATEGORY_NAME_CONFLICT,
+      );
     }
   }
 
@@ -961,7 +1102,10 @@ export class AdminPhaseECatalogsService {
     });
   }
 
-  async createInventoryCategory(dto: CreateInventoryCategoryDto, actorId: string) {
+  async createInventoryCategory(
+    dto: CreateInventoryCategoryDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     const name = this.normalizeName(dto.name);
     await this.ensureInventoryCategoryUnique(name);
@@ -990,11 +1134,20 @@ export class AdminPhaseECatalogsService {
       return cat;
     });
 
-    this.logMutation('create', 'inventory_categories', record.inventory_category_id, actorId);
+    this.logMutation(
+      'create',
+      'inventory_categories',
+      record.inventory_category_id,
+      actorId,
+    );
     return record;
   }
 
-  async updateInventoryCategory(id: number, dto: UpdateInventoryCategoryDto, actorId: string) {
+  async updateInventoryCategory(
+    id: number,
+    dto: UpdateInventoryCategoryDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     await this.ensureInventoryCategoryExists(id);
 
@@ -1011,7 +1164,9 @@ export class AdminPhaseECatalogsService {
         data: {
           ...(name ? { name } : {}),
           ...(mainDto.icon !== undefined ? { icon: mainDto.icon } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -1050,12 +1205,18 @@ export class AdminPhaseECatalogsService {
       where: { inventory_category_id: id },
     });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_INVENTORY_CATEGORY_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.ADMIN_INVENTORY_CATEGORY_NOT_FOUND,
+        { id },
+      );
     }
     return entity;
   }
 
-  private async ensureInventoryCategoryUnique(name: string, excludeId?: number) {
+  private async ensureInventoryCategoryUnique(
+    name: string,
+    excludeId?: number,
+  ) {
     const existing = await this.prisma.inventory_categories.findFirst({
       where: {
         name: { equals: name, mode: 'insensitive' },
@@ -1063,7 +1224,9 @@ export class AdminPhaseECatalogsService {
       },
     });
     if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_INVENTORY_CATEGORY_NAME_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ADMIN_INVENTORY_CATEGORY_NAME_CONFLICT,
+      );
     }
   }
 
@@ -1143,15 +1306,31 @@ export class AdminPhaseECatalogsService {
         where: { honor_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string' ? { description: mainDto.description } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
           ...(mainDto.honor_image ? { honor_image: mainDto.honor_image } : {}),
-          ...(mainDto.honors_category_id !== undefined ? { honors_category_id: mainDto.honors_category_id } : {}),
-          ...(mainDto.club_type_id !== undefined ? { club_type_id: mainDto.club_type_id } : {}),
-          ...(mainDto.material_url ? { material_url: mainDto.material_url } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
-          ...(mainDto.approval !== undefined ? { approval: mainDto.approval } : {}),
-          ...(mainDto.skill_level !== undefined ? { skill_level: mainDto.skill_level } : {}),
-          ...(mainDto.master_honors_id !== undefined ? { master_honors_id: mainDto.master_honors_id } : {}),
+          ...(mainDto.honors_category_id !== undefined
+            ? { honors_category_id: mainDto.honors_category_id }
+            : {}),
+          ...(mainDto.club_type_id !== undefined
+            ? { club_type_id: mainDto.club_type_id }
+            : {}),
+          ...(mainDto.material_url
+            ? { material_url: mainDto.material_url }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
+          ...(mainDto.approval !== undefined
+            ? { approval: mainDto.approval }
+            : {}),
+          ...(mainDto.skill_level !== undefined
+            ? { skill_level: mainDto.skill_level }
+            : {}),
+          ...(mainDto.master_honors_id !== undefined
+            ? { master_honors_id: mainDto.master_honors_id }
+            : {}),
           ...(mainDto.year !== undefined ? { year: mainDto.year } : {}),
           modified_at: new Date(),
         },
@@ -1187,9 +1366,13 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureHonorExists(id: number) {
-    const entity = await this.prisma.honors.findUnique({ where: { honor_id: id } });
+    const entity = await this.prisma.honors.findUnique({
+      where: { honor_id: id },
+    });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND_CATALOG, { id });
+      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND_CATALOG, {
+        id,
+      });
     }
     return entity;
   }
@@ -1254,11 +1437,20 @@ export class AdminPhaseECatalogsService {
       return masterHonor;
     });
 
-    this.logMutation('create', 'master_honors', record.master_honor_id, actorId);
+    this.logMutation(
+      'create',
+      'master_honors',
+      record.master_honor_id,
+      actorId,
+    );
     return record;
   }
 
-  async updateMasterHonor(id: number, dto: UpdateMasterHonorDto, actorId: string) {
+  async updateMasterHonor(
+    id: number,
+    dto: UpdateMasterHonorDto,
+    actorId: string,
+  ) {
     this.translationService.validateTranslations(dto.translations);
     await this.ensureMasterHonorExists(id);
 
@@ -1274,8 +1466,12 @@ export class AdminPhaseECatalogsService {
         where: { master_honor_id: id },
         data: {
           ...(name ? { name } : {}),
-          ...(mainDto.master_image !== undefined ? { master_image: mainDto.master_image } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
+          ...(mainDto.master_image !== undefined
+            ? { master_image: mainDto.master_image }
+            : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
           modified_at: new Date(),
         },
       });
@@ -1310,9 +1506,13 @@ export class AdminPhaseECatalogsService {
   }
 
   private async ensureMasterHonorExists(id: number) {
-    const entity = await this.prisma.master_honors.findUnique({ where: { master_honor_id: id } });
+    const entity = await this.prisma.master_honors.findUnique({
+      where: { master_honor_id: id },
+    });
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_MASTER_HONOR_NOT_FOUND, { id });
+      throw new AppNotFoundException(ErrorCode.ADMIN_MASTER_HONOR_NOT_FOUND, {
+        id,
+      });
     }
     return entity;
   }
@@ -1325,7 +1525,9 @@ export class AdminPhaseECatalogsService {
       },
     });
     if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_MASTER_HONOR_NAME_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ADMIN_MASTER_HONOR_NAME_CONFLICT,
+      );
     }
   }
 }

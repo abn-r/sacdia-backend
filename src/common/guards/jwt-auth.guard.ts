@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  ExecutionContext,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, ExecutionContext, Logger } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { AppUnauthorizedException } from '../errors/app.exception';

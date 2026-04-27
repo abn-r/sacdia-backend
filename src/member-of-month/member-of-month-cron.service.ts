@@ -24,7 +24,9 @@ export class MemberOfMonthCronService {
    */
   @Cron('5 0 1 * *', { name: 'member-of-month-auto-evaluate', timeZone: 'UTC' })
   async handleAutoEvaluate(): Promise<void> {
-    this.logger.log('Member of Month cron triggered — starting auto-evaluation...');
+    this.logger.log(
+      'Member of Month cron triggered — starting auto-evaluation...',
+    );
 
     await this.cronLogger.track('member-of-month-auto-evaluate', async () => {
       const BATCH_SIZE = 10;
@@ -34,7 +36,9 @@ export class MemberOfMonthCronService {
       const now = new Date();
       const { month: prevMonth, year: prevYear } = this.getPreviousMonth(now);
 
-      this.logger.log(`Evaluating member of the month for ${prevYear}-${String(prevMonth).padStart(2, '0')}`);
+      this.logger.log(
+        `Evaluating member of the month for ${prevYear}-${String(prevMonth).padStart(2, '0')}`,
+      );
 
       // Get all active club sections
       const activeSections = await this.prisma.club_sections.findMany({

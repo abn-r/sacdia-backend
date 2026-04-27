@@ -196,7 +196,9 @@ export class DataExportService {
       case 'processing':
         throw new AppConflictException(ErrorCode.EXPORT_ALREADY_PROCESSING);
       case 'expired':
-        throw new GoneException('This export has expired and is no longer available.');
+        throw new GoneException(
+          'This export has expired and is no longer available.',
+        );
       case 'failed':
         throw new UnprocessableEntityException(
           `Export failed: ${exportRow.failure_reason ?? 'unknown error'}`,
@@ -204,7 +206,9 @@ export class DataExportService {
       case 'ready':
         break;
       default:
-        throw new UnprocessableEntityException(`Unknown export status: ${status}`);
+        throw new UnprocessableEntityException(
+          `Unknown export status: ${status}`,
+        );
     }
 
     if (!exportRow.r2_key) {
@@ -218,7 +222,9 @@ export class DataExportService {
       { expiresInSeconds: PRESIGNED_URL_TTL_SECONDS },
     );
 
-    const urlExpiresAt = new Date(Date.now() + PRESIGNED_URL_TTL_SECONDS * 1000);
+    const urlExpiresAt = new Date(
+      Date.now() + PRESIGNED_URL_TTL_SECONDS * 1000,
+    );
 
     // Audit log: increment counter + update last_downloaded_at (fire-and-forget)
     this.prisma.data_export_requests

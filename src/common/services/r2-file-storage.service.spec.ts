@@ -17,10 +17,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ErrorCode } from '../errors/error-codes';
-import {
-  S3Client,
-  PutObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { R2FileStorageService } from './r2-file-storage.service';
 import { StorageBucketAlias } from './file-storage.service';
 
@@ -267,9 +264,7 @@ describe('R2FileStorageService', () => {
         StorageBucketAlias.USER_PROFILES,
         'photo-bare.jpeg',
       );
-      expect(url).toBe(
-        'https://pub-xxx.r2.dev/user-profiles/photo-bare.jpeg',
-      );
+      expect(url).toBe('https://pub-xxx.r2.dev/user-profiles/photo-bare.jpeg');
     });
 
     it('REGRESSION: full object key (already prefixed) is NOT double-prefixed', () => {
@@ -279,9 +274,7 @@ describe('R2FileStorageService', () => {
         StorageBucketAlias.USER_PROFILES,
         'user-profiles/photo-abc.jpeg',
       );
-      expect(url).toBe(
-        'https://pub-xxx.r2.dev/user-profiles/photo-abc.jpeg',
-      );
+      expect(url).toBe('https://pub-xxx.r2.dev/user-profiles/photo-abc.jpeg');
     });
 
     it('throws InternalServerErrorException on private bucket alias', () => {
@@ -290,7 +283,9 @@ describe('R2FileStorageService', () => {
           StorageBucketAlias.USERS_HONORS,
           'some-key.pdf',
         ),
-      ).toThrow(expect.objectContaining({ code: ErrorCode.R2_VALIDATION_FAILED }));
+      ).toThrow(
+        expect.objectContaining({ code: ErrorCode.R2_VALIDATION_FAILED }),
+      );
     });
   });
 
@@ -385,7 +380,10 @@ describe('R2FileStorageService', () => {
       });
 
       mockS3Send
-        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockRejectedValueOnce({
+          name: 'NotFound',
+          $metadata: { httpStatusCode: 404 },
+        })
         .mockResolvedValueOnce({});
 
       const result = await svc.upload(
@@ -409,7 +407,10 @@ describe('R2FileStorageService', () => {
       });
 
       mockS3Send
-        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockRejectedValueOnce({
+          name: 'NotFound',
+          $metadata: { httpStatusCode: 404 },
+        })
         .mockResolvedValueOnce({});
 
       const result = await svc.upload(
@@ -433,7 +434,10 @@ describe('R2FileStorageService', () => {
       });
 
       mockS3Send
-        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockRejectedValueOnce({
+          name: 'NotFound',
+          $metadata: { httpStatusCode: 404 },
+        })
         .mockResolvedValueOnce({});
 
       const result = await svc.upload(
@@ -453,7 +457,10 @@ describe('R2FileStorageService', () => {
     it('USER_PROFILES bare pattern still works when run alongside embedded-pattern buckets', async () => {
       // Confirm bare pattern is unaffected by the new helper
       mockS3Send
-        .mockRejectedValueOnce({ name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        .mockRejectedValueOnce({
+          name: 'NotFound',
+          $metadata: { httpStatusCode: 404 },
+        })
         .mockResolvedValueOnce({});
 
       const result = await service.upload(
@@ -465,7 +472,9 @@ describe('R2FileStorageService', () => {
 
       // Bare pattern: prefix is prepended by buildPublicUrl
       expect(result.key).toBe('user-profiles/photo-x.jpeg');
-      expect(result.url).toBe('https://pub-xxx.r2.dev/user-profiles/photo-x.jpeg');
+      expect(result.url).toBe(
+        'https://pub-xxx.r2.dev/user-profiles/photo-x.jpeg',
+      );
     });
   });
 

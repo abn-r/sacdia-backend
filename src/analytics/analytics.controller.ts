@@ -25,7 +25,11 @@ import { AnalyticsService } from './analytics.service';
 import { SlaDashboardDto } from './dto/sla-dashboard.dto';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { JobsOverviewService, JobsOverviewDto } from './jobs-overview.service';
-import { CronRunsService, CronRunsSummaryDto, CronHistoryPage } from './cron-runs.service';
+import {
+  CronRunsService,
+  CronRunsSummaryDto,
+  CronHistoryPage,
+} from './cron-runs.service';
 
 @ApiTags('analytics')
 @ApiBearerAuth()
@@ -35,7 +39,8 @@ export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,
     private readonly authorizationContext: AuthorizationContextService,
-    @Optional() private readonly jobsOverviewService: JobsOverviewService | null,
+    @Optional()
+    private readonly jobsOverviewService: JobsOverviewService | null,
     private readonly cronRunsService: CronRunsService,
   ) {}
 
@@ -119,7 +124,11 @@ export class AnalyticsController {
       'Supported queues: notifications, achievements, data-exports, ' +
       'monthly-reports, rankings, finance-period.',
   })
-  @ApiParam({ name: 'queueName', description: 'BullMQ queue name', example: 'monthly-reports' })
+  @ApiParam({
+    name: 'queueName',
+    description: 'BullMQ queue name',
+    example: 'monthly-reports',
+  })
   @ApiOkResponse({
     description: 'Queue health data',
     schema: {
@@ -173,7 +182,11 @@ export class AnalyticsController {
   @GlobalRoles('admin', 'super_admin')
   @ApiOperation({ summary: 'Historial paginado de cron runs con filtros' })
   @ApiQuery({ name: 'job_name', required: false })
-  @ApiQuery({ name: 'status', required: false, enum: ['running', 'completed', 'failed', 'skipped'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['running', 'completed', 'failed', 'skipped'],
+  })
   @ApiQuery({ name: 'since', required: false, description: 'ISO date string' })
   @ApiQuery({ name: 'until', required: false, description: 'ISO date string' })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -187,7 +200,12 @@ export class AnalyticsController {
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ): Promise<{ status: string; data: CronHistoryPage }> {
     const data = await this.cronRunsService.getHistory({
-      jobName, status, since, until, page, limit,
+      jobName,
+      status,
+      since,
+      until,
+      page,
+      limit,
     });
     return { status: 'ok', data };
   }

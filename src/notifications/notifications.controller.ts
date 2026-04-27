@@ -34,7 +34,10 @@ import {
   IsObject,
   IsBoolean,
 } from 'class-validator';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import {
   JwtAuthGuard,
   OwnerOrAdminGuard,
@@ -185,7 +188,11 @@ export class NotificationsController {
     description:
       'Returns the number of notification_deliveries where read_at is null for the calling user.',
   })
-  @ApiResponse({ status: 200, description: 'Unread count', schema: { example: { count: 3 } } })
+  @ApiResponse({
+    status: 200,
+    description: 'Unread count',
+    schema: { example: { count: 3 } },
+  })
   async getUnreadCount(@Request() req) {
     return this.notificationsService.getUnreadCount(req.user.sub);
   }
@@ -197,7 +204,11 @@ export class NotificationsController {
     description:
       'Bulk sets read_at = NOW() for all unread deliveries of the calling user.',
   })
-  @ApiResponse({ status: 200, description: 'Count of updated rows', schema: { example: { updated: 5 } } })
+  @ApiResponse({
+    status: 200,
+    description: 'Count of updated rows',
+    schema: { example: { updated: 5 } },
+  })
   async markAllRead(@Request() req) {
     return this.notificationsService.markAllDeliveriesRead(req.user.sub);
   }
@@ -209,9 +220,15 @@ export class NotificationsController {
     description:
       'Sets read_at = NOW() for the given delivery. Returns 404 if not found or not owned by the caller.',
   })
-  @ApiParam({ name: 'deliveryId', description: 'UUID of the notification_deliveries row' })
+  @ApiParam({
+    name: 'deliveryId',
+    description: 'UUID of the notification_deliveries row',
+  })
   @ApiResponse({ status: 200, description: 'Updated delivery row' })
-  @ApiResponse({ status: 404, description: 'Delivery not found or not owned by caller' })
+  @ApiResponse({
+    status: 404,
+    description: 'Delivery not found or not owned by caller',
+  })
   async markRead(
     @Param('deliveryId', ParseUUIDPipe) deliveryId: string,
     @Request() req,

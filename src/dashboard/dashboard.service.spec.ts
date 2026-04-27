@@ -166,7 +166,9 @@ describe('DashboardService', () => {
 
       expect(result.club_name).toBe('Club Sur');
       expect(result.club_type).toBe('Aventureros');
-      expect(mockPrismaService.club_role_assignments.findFirst).toHaveBeenCalledTimes(2);
+      expect(
+        mockPrismaService.club_role_assignments.findFirst,
+      ).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -299,7 +301,9 @@ describe('DashboardService', () => {
       expect(result.club_name).toBe('Club Este');
       expect(result.club_type).toBe('Conquistadores');
       // Only the fallback query should be called (no explicit ID, skip explicit lookup)
-      expect(mockPrismaService.club_role_assignments.findFirst).toHaveBeenCalledTimes(1);
+      expect(
+        mockPrismaService.club_role_assignments.findFirst,
+      ).toHaveBeenCalledTimes(1);
     });
   });
 

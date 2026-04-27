@@ -312,7 +312,9 @@ describe('EvidenceFolderService', () => {
         null,
       );
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toMatchObject({
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND,
       });
     });
@@ -327,7 +329,9 @@ describe('EvidenceFolderService', () => {
         evidence_files: [{ active: true }],
       });
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toMatchObject({
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
       });
     });
@@ -342,7 +346,9 @@ describe('EvidenceFolderService', () => {
         evidence_files: [{ active: true }],
       });
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toMatchObject({
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
       });
     });
@@ -357,7 +363,9 @@ describe('EvidenceFolderService', () => {
         evidence_files: [],
       });
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toMatchObject({
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT,
       });
     });
@@ -367,7 +375,9 @@ describe('EvidenceFolderService', () => {
         baseAssignment,
       );
 
-      await expect(service.submitSection('user-1', 9, 999)).rejects.toMatchObject({
+      await expect(
+        service.submitSection('user-1', 9, 999),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND,
       });
     });
@@ -377,7 +387,9 @@ describe('EvidenceFolderService', () => {
     it('should throw BadRequestException when no file buffer is provided', async () => {
       await expect(
         service.uploadFile('user-1', 9, 11, { buffer: undefined } as any),
-      ).rejects.toMatchObject({ code: ErrorCode.FOLDER_EVIDENCE_FILE_REQUIRED });
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_FILE_REQUIRED,
+      });
     });
 
     it('should create a new section record when none exists and upload the file', async () => {
@@ -474,7 +486,9 @@ describe('EvidenceFolderService', () => {
           mimetype: 'application/pdf',
           originalname: 'doc.pdf',
         } as Express.Multer.File),
-      ).rejects.toMatchObject({ code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING });
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      });
     });
 
     it('should upload the file to R2 and create the evidence file record', async () => {
@@ -580,7 +594,9 @@ describe('EvidenceFolderService', () => {
       });
       mockPrismaService.evidence_files.findFirst.mockResolvedValue(null);
 
-      await expect(service.deleteFile('user-1', 9, 11, 999)).rejects.toMatchObject({
+      await expect(
+        service.deleteFile('user-1', 9, 11, 999),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_FILE_NOT_FOUND,
       });
     });
@@ -614,7 +630,9 @@ describe('EvidenceFolderService', () => {
         },
       });
 
-      await expect(service.deleteFile('user-1', 9, 11, 99)).rejects.toMatchObject({
+      await expect(
+        service.deleteFile('user-1', 9, 11, 99),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_FILE_NOT_FOUND,
       });
     });
@@ -648,7 +666,9 @@ describe('EvidenceFolderService', () => {
         },
       });
 
-      await expect(service.deleteFile('user-1', 9, 11, 99)).rejects.toMatchObject({
+      await expect(
+        service.deleteFile('user-1', 9, 11, 99),
+      ).rejects.toMatchObject({
         code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
       });
     });

@@ -1,7 +1,4 @@
-import {
-  Inject,
-  Injectable,
-} from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import pLimit from 'p-limit';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -74,11 +71,16 @@ export class AnnualFoldersService {
     ]);
 
     if (!clubType) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_TYPE_NOT_FOUND, { id: dto.club_type_id });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_CLUB_TYPE_NOT_FOUND,
+        { id: dto.club_type_id },
+      );
     }
 
     if (!year) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, { id: dto.ecclesiastical_year_id });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+        id: dto.ecclesiastical_year_id,
+      });
     }
 
     return this.prisma.folder_templates.create({
@@ -108,7 +110,10 @@ export class AnnualFoldersService {
     });
 
     if (!template) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND, { id: templateId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+        { id: templateId },
+      );
     }
 
     return this.prisma.folder_template_sections.create({
@@ -136,7 +141,10 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND, { id: sectionId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND,
+        { id: sectionId },
+      );
     }
 
     return this.prisma.folder_template_sections.update({
@@ -166,11 +174,16 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND, { id: sectionId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND,
+        { id: sectionId },
+      );
     }
 
     if (section._count.evidences > 0) {
-      throw new AppConflictException(ErrorCode.ANNUAL_FOLDER_SECTION_HAS_EVIDENCES);
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_HAS_EVIDENCES,
+      );
     }
 
     await this.prisma.folder_template_sections.delete({
@@ -204,7 +217,10 @@ export class AnnualFoldersService {
     });
 
     if (!template) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH, { clubTypeId, yearId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH,
+        { clubTypeId, yearId },
+      );
     }
 
     return template;
@@ -228,7 +244,10 @@ export class AnnualFoldersService {
     });
 
     if (!template) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND, { id: templateId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+        { id: templateId },
+      );
     }
 
     return template;
@@ -391,7 +410,9 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     await this.presignFolderEvidences(folder.evidences);
@@ -484,7 +505,10 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND, { id: enrollmentId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: enrollmentId },
+      );
     }
 
     await this.presignFolderEvidences(folder.evidences);
@@ -515,11 +539,16 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     if (folder.status !== 'open') {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD, { status: folder.status });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD,
+        { status: folder.status },
+      );
     }
 
     // Validate section belongs to the folder's template
@@ -531,7 +560,10 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE, { sectionId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+        { sectionId },
+      );
     }
 
     const extension = this.resolveFileExtension(file);
@@ -616,7 +648,10 @@ export class AnnualFoldersService {
     if (clubId == null) {
       // Evidence exists but its club chain could not be resolved — treat as
       // not found so an attacker cannot enumerate valid evidence IDs.
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED, { evidenceId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
+        { evidenceId },
+      );
     }
 
     // 1. Super-admin bypass — users_roles → roles (GLOBAL category, super_admin name)
@@ -654,7 +689,9 @@ export class AnnualFoldersService {
     });
 
     if (!clubAssignment) {
-      throw new AppForbiddenException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_ACCESS_DENIED);
+      throw new AppForbiddenException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_ACCESS_DENIED,
+      );
     }
   }
 
@@ -702,7 +739,10 @@ export class AnnualFoldersService {
     if (clubId == null) {
       // Folder doesn't exist or its club chain is broken — surface as 404 so
       // an attacker cannot distinguish missing folder from an access denial.
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED, { evidenceId: folderId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
+        { evidenceId: folderId },
+      );
     }
 
     // 1. Super-admin bypass
@@ -740,7 +780,9 @@ export class AnnualFoldersService {
     });
 
     if (!clubAssignment) {
-      throw new AppForbiddenException(ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED);
+      throw new AppForbiddenException(
+        ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
+      );
     }
   }
 
@@ -799,11 +841,13 @@ export class AnnualFoldersService {
       },
     });
 
-    const club =
-      evidence?.annual_folder?.club_enrollment?.club_section?.clubs;
+    const club = evidence?.annual_folder?.club_enrollment?.club_section?.clubs;
 
     if (!club?.club_id) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED, { evidenceId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
+        { evidenceId },
+      );
     }
 
     const evidenceClubId = club.club_id;
@@ -854,7 +898,9 @@ export class AnnualFoldersService {
     });
 
     if (!reviewer) {
-      throw new AppForbiddenException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED);
+      throw new AppForbiddenException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
+      );
     }
 
     // LF-tier: reviewer.local_field_id must match the evidence club's local_field_id
@@ -874,7 +920,9 @@ export class AnnualFoldersService {
       return;
     }
 
-    throw new AppForbiddenException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED);
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
+    );
   }
 
   private resolveFileExtension(file: Express.Multer.File): string {
@@ -912,11 +960,17 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND, { id: evidenceId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND,
+        { id: evidenceId },
+      );
     }
 
     if (evidence.annual_folder.status !== 'open') {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_MUTATION, { status: evidence.annual_folder.status });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_MUTATION,
+        { status: evidence.annual_folder.status },
+      );
     }
 
     const updated = await this.prisma.annual_folder_evidences.update({
@@ -956,11 +1010,17 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND, { id: evidenceId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND,
+        { id: evidenceId },
+      );
     }
 
     if (evidence.annual_folder.status !== 'open') {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_MUTATION, { status: evidence.annual_folder.status });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_MUTATION,
+        { status: evidence.annual_folder.status },
+      );
     }
 
     await this.prisma.annual_folder_evidences.delete({
@@ -998,7 +1058,10 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND, { id: evidenceId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND,
+        { id: evidenceId },
+      );
     }
 
     const hasNote =
@@ -1060,7 +1123,9 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     // Validate section belongs to this folder's template
@@ -1072,7 +1137,10 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE, { sectionId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+        { sectionId },
+      );
     }
 
     // Fetch evidence count, submission, and evaluation in parallel
@@ -1194,11 +1262,16 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     if (folder.status !== 'open') {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD, { status: folder.status });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD,
+        { status: folder.status },
+      );
     }
 
     // Validate that the section belongs to this folder's template
@@ -1210,7 +1283,10 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE, { sectionId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+        { sectionId },
+      );
     }
 
     // Validate that at least one evidence exists for this section in this folder
@@ -1222,7 +1298,10 @@ export class AnnualFoldersService {
     });
 
     if (evidenceCount === 0) {
-      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_NO_EVIDENCE, { sectionName: section.name });
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NO_EVIDENCE,
+        { sectionName: section.name },
+      );
     }
 
     const now = new Date();
@@ -1302,7 +1381,9 @@ export class AnnualFoldersService {
       });
 
       if (!folder) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+          id: folderId,
+        });
       }
 
       // Atomic transition: only succeeds when status is still 'open'.
@@ -1346,7 +1427,9 @@ export class AnnualFoldersService {
       });
 
       if (!folder) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+          id: folderId,
+        });
       }
 
       // Atomic transition: only succeeds when status is still 'submitted' or
@@ -1448,7 +1531,10 @@ export class AnnualFoldersService {
   private async resolveTemplateForClub(
     enrollmentId: string,
     overrideYearId: number | undefined,
-  ): Promise<{ template: folder_templates; resolvedVia: 'union' | 'local_field' }> {
+  ): Promise<{
+    template: folder_templates;
+    resolvedVia: 'union' | 'local_field';
+  }> {
     // Load enrollment with the full club → local_field → union chain
     const enrollment = await this.prisma.club_enrollments.findUnique({
       where: { club_enrollment_id: enrollmentId },
@@ -1475,17 +1561,25 @@ export class AnnualFoldersService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND, { id: enrollmentId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: enrollmentId },
+      );
     }
 
     const club = enrollment.club_section.clubs;
     if (!club) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_PARENT, { enrollmentId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_PARENT, {
+        enrollmentId,
+      });
     }
 
     const localField = club.local_fields;
     if (!localField) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_LOCAL_FIELD, { clubId: club.club_id });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_CLUB_NO_LOCAL_FIELD,
+        { clubId: club.club_id },
+      );
     }
 
     const clubTypeId = enrollment.club_section.club_type_id;
@@ -1519,7 +1613,10 @@ export class AnnualFoldersService {
       return { template: lfTemplate, resolvedVia: 'local_field' };
     }
 
-    throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH, { clubTypeId, yearId });
+    throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH, {
+      clubTypeId,
+      yearId,
+    });
   }
 
   /**
@@ -1536,7 +1633,10 @@ export class AnnualFoldersService {
    */
   private clubTypeToCamporeeIncludesColumn(
     clubTypeId: number,
-  ): 'includes_adventurers' | 'includes_pathfinders' | 'includes_master_guides' {
+  ):
+    | 'includes_adventurers'
+    | 'includes_pathfinders'
+    | 'includes_master_guides' {
     switch (clubTypeId) {
       case 1:
         return 'includes_adventurers';
@@ -1545,7 +1645,10 @@ export class AnnualFoldersService {
       case 3:
         return 'includes_master_guides';
       default:
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_CAMPOREE_CLUB_TYPE_INVALID, { clubTypeId });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_CAMPOREE_CLUB_TYPE_INVALID,
+          { clubTypeId },
+        );
     }
   }
 
@@ -1599,18 +1702,26 @@ export class AnnualFoldersService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND, { id: enrollmentId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: enrollmentId },
+      );
     }
 
     const clubSection = enrollment.club_section;
     const club = clubSection?.clubs;
     if (!club) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_PARENT, { enrollmentId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_PARENT, {
+        enrollmentId,
+      });
     }
 
     const localField = club.local_fields;
     if (!localField) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_LOCAL_FIELD, { clubId: club.club_id });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_CLUB_NO_LOCAL_FIELD,
+        { clubId: club.club_id },
+      );
     }
 
     const clubTypeId = clubSection.club_type_id;

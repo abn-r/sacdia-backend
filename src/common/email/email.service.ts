@@ -8,7 +8,10 @@ import {
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
 } from './email.queue';
-import type { CronAlertCondition, CronAlertFailedRun } from './templates/cron-alert';
+import type {
+  CronAlertCondition,
+  CronAlertFailedRun,
+} from './templates/cron-alert';
 
 export interface SendDataExportReadyParams {
   userId: string;
@@ -85,9 +88,7 @@ export class EmailService {
     params: SendEmailVerificationParams,
   ): Promise<void> {
     const { email, verificationUrl, userName } = params;
-    this.logger.log(
-      `Enqueuing email verification: to=${maskEmail(email)}`,
-    );
+    this.logger.log(`Enqueuing email verification: to=${maskEmail(email)}`);
     await this.queue.enqueue(EMAIL_JOB_EMAIL_VERIFICATION, {
       to: email,
       verificationUrl,
@@ -97,9 +98,7 @@ export class EmailService {
 
   async sendPasswordReset(params: SendPasswordResetParams): Promise<void> {
     const { email, resetUrl } = params;
-    this.logger.log(
-      `Enqueuing password reset email: to=${maskEmail(email)}`,
-    );
+    this.logger.log(`Enqueuing password reset email: to=${maskEmail(email)}`);
     await this.queue.enqueue(EMAIL_JOB_PASSWORD_RESET, {
       to: email,
       resetUrl,
@@ -119,8 +118,14 @@ export class EmailService {
   }
 
   async sendCronAlert(params: SendCronAlertParams): Promise<void> {
-    const { email, jobName, condition, conditionDetail, recentFailures, locale } =
-      params;
+    const {
+      email,
+      jobName,
+      condition,
+      conditionDetail,
+      recentFailures,
+      locale,
+    } = params;
     this.logger.log(
       `Enqueuing cron alert email: job=${jobName} condition=${condition} to=${maskEmail(email)}`,
     );

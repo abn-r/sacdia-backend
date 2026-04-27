@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppBadRequestException,
@@ -163,7 +160,10 @@ export class MonthlyReportsPdfService {
      * Interpolation tokens use nestjs-i18n args format: {key} in JSON.
      */
     const t = (key: string, args?: Record<string, unknown>): string =>
-      this.i18n.translate(`monthly_reports.${key}`, { lang: locale, args }) as string;
+      this.i18n.translate(`monthly_reports.${key}`, {
+        lang: locale,
+        args,
+      }) as string;
 
     // Cast to any to access include relations (Prisma types are inferred at compile time)
     const reportData = report as any;
@@ -287,7 +287,10 @@ export class MonthlyReportsPdfService {
     doc
       .fontSize(12)
       .font('Helvetica')
-      .text(t('header.club_type', { type: clubType }), { width: CONTENT_WIDTH, align: 'center' });
+      .text(t('header.club_type', { type: clubType }), {
+        width: CONTENT_WIDTH,
+        align: 'center',
+      });
 
     doc.moveDown(0.8);
 
@@ -301,14 +304,20 @@ export class MonthlyReportsPdfService {
     doc.text(`${t('header.district')}: `, col1X, y, { continued: true });
     doc.font('Helvetica').text(districtName);
 
-    doc.font('Helvetica-Bold').text(`${t('header.church')}: `, col2X, y, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('header.church')}: `, col2X, y, { continued: true });
     doc.font('Helvetica').text(churchName);
 
     const y2 = doc.y + 2;
-    doc.font('Helvetica-Bold').text(`${t('header.club')}: `, col1X, y2, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('header.club')}: `, col1X, y2, { continued: true });
     doc.font('Helvetica').text(clubName);
 
-    doc.font('Helvetica-Bold').text(`${t('header.month')}: `, col2X, y2, { continued: true });
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('header.month')}: `, col2X, y2, { continued: true });
     doc.font('Helvetica').text(`${monthName} ${year}`);
 
     doc.moveDown(1);
@@ -354,7 +363,9 @@ export class MonthlyReportsPdfService {
     doc.fontSize(fontSize).font('Helvetica');
 
     // Directiva
-    doc.font('Helvetica-Bold').text(`${t('administration.directiva')}:`, PAGE_MARGIN, doc.y);
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('administration.directiva')}:`, PAGE_MARGIN, doc.y);
     doc.font('Helvetica');
 
     if (snapshot.directiva && snapshot.directiva.length > 0) {
@@ -363,7 +374,11 @@ export class MonthlyReportsPdfService {
         this.drawKeyValue(doc, `  ${label}`, member.name);
       }
     } else {
-      doc.text(`  ${t('administration.no_directiva')}`, PAGE_MARGIN + 10, doc.y);
+      doc.text(
+        `  ${t('administration.no_directiva')}`,
+        PAGE_MARGIN + 10,
+        doc.y,
+      );
     }
 
     doc.moveDown(0.3);
@@ -383,7 +398,9 @@ export class MonthlyReportsPdfService {
     doc.moveDown(0.3);
 
     // Manual fields
-    doc.font('Helvetica-Bold').text(`${t('administration.meetings_header')}:`, PAGE_MARGIN, doc.y);
+    doc
+      .font('Helvetica-Bold')
+      .text(`${t('administration.meetings_header')}:`, PAGE_MARGIN, doc.y);
     doc.font('Helvetica');
     this.drawKeyValue(
       doc,
@@ -471,7 +488,9 @@ export class MonthlyReportsPdfService {
 
       if (snapshot.honors.details.length > 10) {
         doc.text(
-          t('teachings.more_rows', { count: snapshot.honors.details.length - 10 }),
+          t('teachings.more_rows', {
+            count: snapshot.honors.details.length - 10,
+          }),
           colX[0],
           rowY,
         );
@@ -534,7 +553,9 @@ export class MonthlyReportsPdfService {
 
       if (snapshot.activities.list.length > 12) {
         doc.text(
-          t('activities.more_rows', { count: snapshot.activities.list.length - 12 }),
+          t('activities.more_rows', {
+            count: snapshot.activities.list.length - 12,
+          }),
           colX[0],
           rowY,
         );
@@ -618,7 +639,11 @@ export class MonthlyReportsPdfService {
   ) {
     doc.fontSize(9).font('Helvetica');
 
-    this.drawKeyValue(doc, t('missionary.soul_target'), String(manual.soul_target ?? 0));
+    this.drawKeyValue(
+      doc,
+      t('missionary.soul_target'),
+      String(manual.soul_target ?? 0),
+    );
     this.drawKeyValue(
       doc,
       t('missionary.unbaptized_members'),

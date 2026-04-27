@@ -79,7 +79,8 @@ export class CronAlertService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
-    @Optional() private readonly notificationsService: NotificationsService | null,
+    @Optional()
+    private readonly notificationsService: NotificationsService | null,
   ) {}
 
   // ── Scheduled check ────────────────────────────────────────────────────────

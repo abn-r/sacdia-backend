@@ -526,11 +526,13 @@ export class BetterAuthService implements IBetterAuthService {
 
     // Enqueue email — fire-and-forget from caller's perspective.
     // EMAIL_ENABLED gate is enforced at processor level; no need to check here.
-    this.emailService.sendPasswordReset({ email, resetUrl }).catch((err: Error) => {
-      this.logger.warn(
-        `Failed to enqueue password reset email for ${maskEmail(email)}: ${err.message}`,
-      );
-    });
+    this.emailService
+      .sendPasswordReset({ email, resetUrl })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `Failed to enqueue password reset email for ${maskEmail(email)}: ${err.message}`,
+        );
+      });
 
     this.logger.log(
       `Password reset token generated for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
@@ -711,7 +713,9 @@ export class BetterAuthService implements IBetterAuthService {
     try {
       parsed = JSON.parse(record.value);
     } catch {
-      throw new AppInternalServerErrorException(ErrorCode.AUTH_TOTP_ENROLLMENT_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.AUTH_TOTP_ENROLLMENT_FAILED,
+      );
     }
 
     const result = verifySync({
@@ -780,7 +784,9 @@ export class BetterAuthService implements IBetterAuthService {
       });
 
       if (!result.url) {
-        throw new AppInternalServerErrorException(ErrorCode.AUTH_OAUTH_CALLBACK_FAILED);
+        throw new AppInternalServerErrorException(
+          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+        );
       }
 
       const urlObj = new URL(result.url);
@@ -790,7 +796,9 @@ export class BetterAuthService implements IBetterAuthService {
       return { url: result.url, state };
     } catch (error) {
       if (error instanceof AppInternalServerErrorException) throw error;
-      throw new AppInternalServerErrorException(ErrorCode.AUTH_OAUTH_CALLBACK_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+      );
     }
   }
 
@@ -815,7 +823,9 @@ export class BetterAuthService implements IBetterAuthService {
       });
 
       if (!result?.token) {
-        throw new AppInternalServerErrorException(ErrorCode.AUTH_OAUTH_CALLBACK_FAILED);
+        throw new AppInternalServerErrorException(
+          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+        );
       }
 
       // For OAuth, find the session BA created and load the user directly
@@ -830,7 +840,9 @@ export class BetterAuthService implements IBetterAuthService {
         where: { user_id: dbSession.userId },
       });
       if (!dbUser) {
-        throw new AppInternalServerErrorException(ErrorCode.AUTH_OAUTH_CALLBACK_FAILED);
+        throw new AppInternalServerErrorException(
+          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+        );
       }
 
       const user = mapDbUserToBaUser(dbUser);
@@ -848,7 +860,9 @@ export class BetterAuthService implements IBetterAuthService {
       ) {
         throw error;
       }
-      throw new AppInternalServerErrorException(ErrorCode.AUTH_OAUTH_CALLBACK_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+      );
     }
   }
 
@@ -887,5 +901,4 @@ export class BetterAuthService implements IBetterAuthService {
     }
     return this.jwtService.sign(payload);
   }
-
 }

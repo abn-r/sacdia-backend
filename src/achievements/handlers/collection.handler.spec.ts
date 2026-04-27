@@ -38,7 +38,10 @@ describe('CollectionHandler', () => {
 
   it('should register itself on module init', () => {
     handler.onModuleInit();
-    expect(mockHandlerRegistry.register).toHaveBeenCalledWith('COLLECTION', handler);
+    expect(mockHandlerRegistry.register).toHaveBeenCalledWith(
+      'COLLECTION',
+      handler,
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -79,7 +82,9 @@ describe('CollectionHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('distinct_field must be a non-empty string');
+      expect(result.errors).toContain(
+        'distinct_field must be a non-empty string',
+      );
     });
 
     it('should fail when distinct_field is empty string', () => {
@@ -91,7 +96,9 @@ describe('CollectionHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('distinct_field must be a non-empty string');
+      expect(result.errors).toContain(
+        'distinct_field must be a non-empty string',
+      );
     });
 
     it('should fail when target is zero (must be positive)', () => {
@@ -103,7 +110,9 @@ describe('CollectionHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('target must be a positive finite number');
+      expect(result.errors).toContain(
+        'target must be a positive finite number',
+      );
     });
 
     it('should fail when target is negative', () => {
@@ -115,7 +124,9 @@ describe('CollectionHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('target must be a positive finite number');
+      expect(result.errors).toContain(
+        'target must be a positive finite number',
+      );
     });
 
     it('should fail when target is not a number', () => {
@@ -127,7 +138,9 @@ describe('CollectionHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('target must be a positive finite number');
+      expect(result.errors).toContain(
+        'target must be a positive finite number',
+      );
     });
 
     it('should fail when filters is not an object', () => {
@@ -140,7 +153,9 @@ describe('CollectionHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('filters must be an object when provided');
+      expect(result.errors).toContain(
+        'filters must be an object when provided',
+      );
     });
 
     it('should fail when event is missing', () => {
@@ -167,7 +182,7 @@ describe('CollectionHandler', () => {
 
   describe('evaluate', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     const dummyEvent = { eventType: 'honor.earned', payload: {} };
 
@@ -180,7 +195,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 3 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 3,
+        }),
         dummyEvent,
       );
 
@@ -197,7 +217,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 5 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 5,
+        }),
         dummyEvent,
       );
 
@@ -216,7 +241,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 3 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 3,
+        }),
         dummyEvent,
       );
 
@@ -257,7 +287,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 3 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 3,
+        }),
         dummyEvent,
       );
 
@@ -274,7 +309,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 5 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 5,
+        }),
         dummyEvent,
       );
 
@@ -287,13 +327,18 @@ describe('CollectionHandler', () => {
     it('should exclude events where the distinct field is null or undefined', async () => {
       mockPrismaService.achievement_event_log.findMany.mockResolvedValue([
         { event_payload: { honor_id: 1 } },
-        { event_payload: {} },              // no honor_id field
+        { event_payload: {} }, // no honor_id field
         { event_payload: { honor_id: null } }, // null honor_id
       ]);
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 2 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 2,
+        }),
         dummyEvent,
       );
 
@@ -308,7 +353,7 @@ describe('CollectionHandler', () => {
 
   describe('calculateProgress', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     it('should return distinct count vs target with correct percentage', async () => {
       mockPrismaService.achievement_event_log.findMany.mockResolvedValue([
@@ -319,7 +364,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 6 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 6,
+        }),
       );
 
       expect(result.current).toBe(3);
@@ -332,7 +382,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 10 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 10,
+        }),
       );
 
       expect(result.current).toBe(0);
@@ -350,7 +405,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 3 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 3,
+        }),
       );
 
       expect(result.percentage).toBe(100);
@@ -363,7 +423,12 @@ describe('CollectionHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 5 }),
+        makeAchievement({
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 5,
+        }),
       );
 
       expect(result.metadata).toBeDefined();

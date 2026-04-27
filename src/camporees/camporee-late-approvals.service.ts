@@ -153,7 +153,9 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
 
       return tx.camporee_clubs.update({
@@ -183,7 +185,9 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
 
       return tx.camporee_clubs.update({
@@ -217,7 +221,9 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
 
       return tx.camporee_members.update({
@@ -250,7 +256,9 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
 
       return tx.camporee_members.update({
@@ -288,7 +296,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -321,7 +331,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -358,7 +370,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -391,7 +405,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -428,7 +444,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -461,7 +479,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
@@ -498,7 +518,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -531,7 +553,9 @@ export class CamporeeLateApprovalsService {
         },
       });
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND,
+        );
       }
       return tx.camporee_members.update({
         where: { camporee_member_id: camporeeMemberId },
@@ -565,7 +589,9 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_PAYMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_PAYMENT_PENDING_NOT_FOUND,
+        );
       }
 
       return tx.camporee_payments.update({
@@ -598,7 +624,9 @@ export class CamporeeLateApprovalsService {
       });
 
       if (!record) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_PAYMENT_PENDING_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_PAYMENT_PENDING_NOT_FOUND,
+        );
       }
 
       return tx.camporee_payments.update({

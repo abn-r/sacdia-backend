@@ -16,8 +16,16 @@ import {
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  PermissionsGuard,
+  GlobalRolesGuard,
+} from '../common/guards';
 import { AdminReferenceService } from './admin-reference.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import {

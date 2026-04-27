@@ -121,7 +121,9 @@ export class InvestitureService {
 
     // Step 2: Not found or inactive
     if (!enrollment || enrollment.active === false) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     // Step 3: Validate state transition
@@ -301,7 +303,9 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     // 2. Validate that current status allows rejection
@@ -426,7 +430,9 @@ export class InvestitureService {
 
     // Step 2: Throw if not found or inactive
     if (!enrollment || enrollment.active === false) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     // Step 3: Validate state — must be FIELD_APPROVED
@@ -505,7 +511,9 @@ export class InvestitureService {
         },
       });
     } catch (error) {
-      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
     }
 
     // Step 6: Return result
@@ -629,7 +637,9 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     // 2. Authorization check — query DB for actual global roles (JWT payload does NOT carry roles)
@@ -743,7 +753,9 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     // 2. Validate state
@@ -762,7 +774,9 @@ export class InvestitureService {
       dto.action === 'REJECTED' &&
       (!dto.comments || dto.comments.trim() === '')
     ) {
-      throw new AppBadRequestException(ErrorCode.INVESTITURE_REJECT_COMMENTS_REQUIRED);
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_REJECT_COMMENTS_REQUIRED,
+      );
     }
 
     // 4. Transaction
@@ -880,7 +894,9 @@ export class InvestitureService {
         ['admin', 'assistant_admin', 'super_admin'],
       );
       if (!isAdmin) {
-        throw new AppForbiddenException(ErrorCode.INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN);
+        throw new AppForbiddenException(
+          ErrorCode.INVESTITURE_FIELD_APPROVE_REQUIRES_ADMIN,
+        );
       }
     }
 
@@ -1420,7 +1436,9 @@ export class InvestitureService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     // 2. Validate current status matches expected

@@ -198,7 +198,9 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep2(ownerActor.actorUserId, ownerActor),
-      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_EMERGENCY_CONTACT_REQUIRED });
+      ).rejects.toMatchObject({
+        code: ErrorCode.POST_REG_EMERGENCY_CONTACT_REQUIRED,
+      });
     });
 
     it('should hide detailed validation feedback from third-party completion', async () => {

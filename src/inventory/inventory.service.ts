@@ -2,9 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
-import {
-  AppNotFoundException,
-} from '../common/errors/app.exception';
+import { AppNotFoundException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { TranslationService } from '../common/services/translation.service';
 

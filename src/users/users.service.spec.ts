@@ -518,7 +518,9 @@ describe('UsersService', () => {
         new Error('upload failed'),
       );
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+      await expect(
+        service.uploadProfilePicture('u1', file),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_IMAGE_UPLOAD_FAILED,
       });
       expect(mockPrismaService.users.update).not.toHaveBeenCalled();
@@ -537,7 +539,9 @@ describe('UsersService', () => {
         new Error('db fail'),
       );
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+      await expect(
+        service.uploadProfilePicture('u1', file),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_IMAGE_UPDATE_FAILED,
       });
 
@@ -564,7 +568,11 @@ describe('UsersService', () => {
       expect(result.status).toBe('success');
       // DB update was committed
       expect(mockPrismaService.users.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ user_image: expect.stringContaining('https://cdn.r2.example/') }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_image: expect.stringContaining('https://cdn.r2.example/'),
+          }),
+        }),
       );
       // deleteMany was attempted for the old key (fire-and-forget)
       expect(mockFileStorageService.deleteMany).toHaveBeenCalledWith(
@@ -629,7 +637,9 @@ describe('UsersService', () => {
     it('should throw NotFoundException when user does not exist', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.deleteProfilePicture('missing')).rejects.toMatchObject({
+      await expect(
+        service.deleteProfilePicture('missing'),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_NOT_FOUND,
       });
     });
@@ -803,7 +813,9 @@ describe('UsersService', () => {
     it('TC-U02 - error: user not found → NotFoundException', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('missing', { gender: 'F' })).rejects.toMatchObject({
+      await expect(
+        service.update('missing', { gender: 'F' }),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_NOT_FOUND,
       });
     });
@@ -823,7 +835,9 @@ describe('UsersService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
       mockPrismaService.countries.findFirst.mockResolvedValue(null);
 
-      await expect(service.update('u1', { country_id: 999 })).rejects.toMatchObject({
+      await expect(
+        service.update('u1', { country_id: 999 }),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_COUNTRY_INVALID,
       });
     });
@@ -832,7 +846,9 @@ describe('UsersService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
       mockPrismaService.unions.findFirst.mockResolvedValue(null);
 
-      await expect(service.update('u1', { union_id: 999 })).rejects.toMatchObject({
+      await expect(
+        service.update('u1', { union_id: 999 }),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_UNION_INVALID,
       });
     });
@@ -881,7 +897,9 @@ describe('UsersService', () => {
 
       await expect(
         service.update('u1', { local_field_id: 50 }),
-      ).rejects.toMatchObject({ code: ErrorCode.USER_LOCAL_FIELD_UNION_MISMATCH });
+      ).rejects.toMatchObject({
+        code: ErrorCode.USER_LOCAL_FIELD_UNION_MISMATCH,
+      });
     });
   });
 
@@ -1089,7 +1107,9 @@ describe('UsersService', () => {
         buffer: Buffer.from('gif'),
       } as Express.Multer.File;
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+      await expect(
+        service.uploadProfilePicture('u1', file),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_IMAGE_INVALID_FORMAT,
       });
     });
@@ -1102,7 +1122,9 @@ describe('UsersService', () => {
         buffer: Buffer.alloc(6 * 1024 * 1024),
       } as Express.Multer.File;
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+      await expect(
+        service.uploadProfilePicture('u1', file),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_IMAGE_TOO_LARGE,
       });
     });
@@ -1117,7 +1139,9 @@ describe('UsersService', () => {
         buffer: Buffer.from('image'),
       } as Express.Multer.File;
 
-      await expect(service.uploadProfilePicture('u1', file)).rejects.toMatchObject({
+      await expect(
+        service.uploadProfilePicture('u1', file),
+      ).rejects.toMatchObject({
         code: ErrorCode.USER_NOT_FOUND,
       });
     });

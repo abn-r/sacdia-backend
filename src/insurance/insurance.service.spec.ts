@@ -352,8 +352,8 @@ describe('InsuranceService', () => {
   it('throws when member does not exist', async () => {
     mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-    await expect(service.getMemberInsurance('missing-member')).rejects.toMatchObject(
-      { code: ErrorCode.INSURANCE_MEMBER_NOT_FOUND },
-    );
+    await expect(
+      service.getMemberInsurance('missing-member'),
+    ).rejects.toMatchObject({ code: ErrorCode.INSURANCE_MEMBER_NOT_FOUND });
   });
 });

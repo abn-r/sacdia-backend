@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -79,11 +76,15 @@ export class AccountDeletionService {
     });
 
     if (!user) {
-      throw new AppNotFoundException(ErrorCode.AUTH_ACCOUNT_NOT_FOUND, { userId });
+      throw new AppNotFoundException(ErrorCode.AUTH_ACCOUNT_NOT_FOUND, {
+        userId,
+      });
     }
 
     if (!user.active) {
-      throw new AppBadRequestException(ErrorCode.AUTH_ACCOUNT_ALREADY_DELETED, { userId });
+      throw new AppBadRequestException(ErrorCode.AUTH_ACCOUNT_ALREADY_DELETED, {
+        userId,
+      });
     }
 
     // Re-authenticate: require credential account with a valid password

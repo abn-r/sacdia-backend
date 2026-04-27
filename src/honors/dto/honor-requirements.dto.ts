@@ -87,7 +87,9 @@ export class CreateRequirementDto {
   @IsInt()
   honorId: number;
 
-  @ApiPropertyOptional({ description: 'ID del requisito padre (null = top-level)' })
+  @ApiPropertyOptional({
+    description: 'ID del requisito padre (null = top-level)',
+  })
   @IsOptional()
   @IsInt()
   parentId?: number | null;
@@ -96,7 +98,9 @@ export class CreateRequirementDto {
   @IsInt()
   requirementNumber: number;
 
-  @ApiPropertyOptional({ description: 'Etiqueta visual (e.g., "1", "a", "ii")' })
+  @ApiPropertyOptional({
+    description: 'Etiqueta visual (e.g., "1", "a", "ii")',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(10)
@@ -106,12 +110,16 @@ export class CreateRequirementDto {
   @IsString()
   requirementText: string;
 
-  @ApiPropertyOptional({ description: 'Texto de referencia (tablas, material adicional)' })
+  @ApiPropertyOptional({
+    description: 'Texto de referencia (tablas, material adicional)',
+  })
   @IsOptional()
   @IsString()
   referenceText?: string | null;
 
-  @ApiPropertyOptional({ description: 'Es un grupo de selección (elegí N de M)' })
+  @ApiPropertyOptional({
+    description: 'Es un grupo de selección (elegí N de M)',
+  })
   @IsOptional()
   @IsBoolean()
   isChoiceGroup?: boolean;
@@ -176,7 +184,10 @@ export class UpdateRequirementDto {
 }
 
 export class ReorderRequirementsDto {
-  @ApiProperty({ description: 'Lista de IDs en el nuevo orden', type: [Number] })
+  @ApiProperty({
+    description: 'Lista de IDs en el nuevo orden',
+    type: [Number],
+  })
   @IsArray()
   @IsInt({ each: true })
   requirementIds: number[];

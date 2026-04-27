@@ -70,7 +70,11 @@ export class R2FileStorageService implements FileStorageService {
       // objectKey already includes the keyPrefix. buildPublicUrl will detect
       // whether the prefix is already embedded in publicBaseUrl (embedded-prefix
       // pattern) and avoid doubling it, or prepend it when the base URL is bare.
-      url: this.buildPublicUrl(config.publicBaseUrl, objectKey, config.keyPrefix),
+      url: this.buildPublicUrl(
+        config.publicBaseUrl,
+        objectKey,
+        config.keyPrefix,
+      ),
     };
   }
 
@@ -163,7 +167,11 @@ export class R2FileStorageService implements FileStorageService {
     if (config.isPublic) {
       // objectKey carries the full key with prefix. buildPublicUrl handles the
       // embedded-vs-bare publicBaseUrl distinction automatically.
-      return this.buildPublicUrl(config.publicBaseUrl, objectKey, config.keyPrefix);
+      return this.buildPublicUrl(
+        config.publicBaseUrl,
+        objectKey,
+        config.keyPrefix,
+      );
     }
 
     const expiresIn = this.resolveSignedUrlExpiration(
@@ -205,7 +213,11 @@ export class R2FileStorageService implements FileStorageService {
     const objectKey = this.hasKeyPrefix(config.keyPrefix, normalized)
       ? normalized
       : this.toObjectKey(config.keyPrefix, normalized);
-    return this.buildPublicUrl(config.publicBaseUrl, objectKey, config.keyPrefix);
+    return this.buildPublicUrl(
+      config.publicBaseUrl,
+      objectKey,
+      config.keyPrefix,
+    );
   }
 
   /**
@@ -277,9 +289,7 @@ export class R2FileStorageService implements FileStorageService {
     if (!normalizedPrefix) return false;
     try {
       const url = new URL(publicBaseUrl);
-      const basePath = url.pathname
-        .trim()
-        .replace(/^\/+|\/+$/g, '');
+      const basePath = url.pathname.trim().replace(/^\/+|\/+$/g, '');
       if (!basePath) return false;
       // Match if the basePath IS the prefix, ends with /prefix, or starts with prefix/
       return (
@@ -457,11 +467,16 @@ export class R2FileStorageService implements FileStorageService {
         return {
           bucket: this.getRequiredEnv('R2_BUCKET_DATA_EXPORTS'),
           publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_DATA_EXPORTS'),
-          keyPrefix: this.getOptionalEnv('R2_KEY_PREFIX_DATA_EXPORTS', 'data-exports'),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_DATA_EXPORTS',
+            'data-exports',
+          ),
           isPublic: false,
         };
       default:
-        throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
+        throw new AppInternalServerErrorException(
+          ErrorCode.R2_VALIDATION_FAILED,
+        );
     }
   }
 

@@ -19,7 +19,11 @@ import {
 import { EvaluationService } from './evaluation.service';
 import { AnnualFoldersService } from './annual-folders.service';
 import { ConfirmUnionDto, EvaluateSectionDto, SetReviewerNoteDto } from './dto';
-import { AuthorizationResource, CurrentUser, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  CurrentUser,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type CurrentUserPayload = {
@@ -147,9 +151,18 @@ export class EvaluationController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Section not pre-approved or folder status invalid' })
-  @ApiResponse({ status: 403, description: 'Missing annual_folders:evaluate (global) permission' })
-  @ApiResponse({ status: 404, description: 'Folder or section evaluation not found' })
+  @ApiResponse({
+    status: 400,
+    description: 'Section not pre-approved or folder status invalid',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Missing annual_folders:evaluate (global) permission',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Folder or section evaluation not found',
+  })
   async confirmUnion(
     @Param('folderId', ParseUUIDPipe) folderId: string,
     @Param('sectionId', ParseUUIDPipe) sectionId: string,

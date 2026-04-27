@@ -17,7 +17,11 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -57,7 +61,7 @@ export class AdminAuthController {
   @Get('sessions')
   @RequirePermissions('users:update_admin')
   @ApiOperation({
-    summary: "List all active sessions for a user",
+    summary: 'List all active sessions for a user',
     description:
       'Returns all non-expired sessions for the target user. ' +
       'Requires admin or super_admin role.',
@@ -86,13 +90,17 @@ export class AdminAuthController {
   @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "Revoke a specific session for a user",
+    summary: 'Revoke a specific session for a user',
     description:
       'Deletes a specific session token, forcing the device to re-authenticate. ' +
       'Requires admin or super_admin role.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
-  @ApiParam({ name: 'sessionId', type: String, description: 'Session ID to revoke' })
+  @ApiParam({
+    name: 'sessionId',
+    type: String,
+    description: 'Session ID to revoke',
+  })
   @ApiResponse({ status: 200, description: 'Session revoked' })
   @ApiResponse({ status: 404, description: 'User or session not found' })
   async revokeUserSession(
@@ -110,7 +118,7 @@ export class AdminAuthController {
   @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "Revoke all sessions for a user",
+    summary: 'Revoke all sessions for a user',
     description:
       'Deletes ALL sessions for the target user, forcing a complete re-authentication ' +
       'across all devices. Requires admin or super_admin role.',
@@ -134,7 +142,8 @@ export class AdminAuthController {
   async revokeAllUserSessions(
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<{ status: string; data: { revokedCount: number } }> {
-    const revokedCount = await this.adminAuthService.revokeAllUserSessions(userId);
+    const revokedCount =
+      await this.adminAuthService.revokeAllUserSessions(userId);
     return { status: 'success', data: { revokedCount } };
   }
 
@@ -145,7 +154,7 @@ export class AdminAuthController {
   @Get('mfa/status')
   @RequirePermissions('users:update_admin')
   @ApiOperation({
-    summary: "Get MFA enrollment status for a user",
+    summary: 'Get MFA enrollment status for a user',
     description:
       'Returns whether the target user has TOTP 2FA enrolled. ' +
       'Requires admin or super_admin role.',
@@ -174,7 +183,7 @@ export class AdminAuthController {
   @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "Reset (disable) MFA for a user",
+    summary: 'Reset (disable) MFA for a user',
     description:
       'Disables TOTP 2FA for the target user without requiring their password. ' +
       'This is an admin override — the user will need to re-enroll 2FA after this. ' +
@@ -199,7 +208,7 @@ export class AdminAuthController {
   @RequirePermissions('users:update_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "Set a new password for a user",
+    summary: 'Set a new password for a user',
     description:
       "Updates the target user's password without requiring their current password. " +
       'This is an admin override. Revoke all sessions afterwards if immediate lockout is required. ' +
@@ -208,12 +217,18 @@ export class AdminAuthController {
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({ status: 200, description: 'Password updated' })
   @ApiResponse({ status: 400, description: 'Validation error in request body' })
-  @ApiResponse({ status: 404, description: 'User not found or has no credential account' })
+  @ApiResponse({
+    status: 404,
+    description: 'User not found or has no credential account',
+  })
   async setUserPassword(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: AdminSetPasswordDto,
   ): Promise<{ status: string; message: string }> {
     await this.adminAuthService.setUserPassword(userId, dto.newPassword);
-    return { status: 'success', message: `Password updated for user ${userId}` };
+    return {
+      status: 'success',
+      message: `Password updated for user ${userId}`,
+    };
   }
 }

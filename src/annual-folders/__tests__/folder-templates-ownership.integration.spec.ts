@@ -31,12 +31,12 @@ import pg from 'pg';
 // ---------------------------------------------------------------------------
 // Stable fixture IDs — referenced from the dev DB (do not create/delete them)
 // ---------------------------------------------------------------------------
-const UNION_A_ID = 1;   // Unión Centroamericana del Sur — has no templates in dev
-const UNION_B_ID = 2;   // Unión Colombiana del Norte    — has no templates in dev
-const LF_1_ID    = 1;   // Asociación Chontalpa (union_id 20)
-const LF_2_ID    = 2;   // Asociación Norte de Veracruz (union_id 20)
-const CLUB_TYPE  = 2;   // Conquistadores
-const YEAR_ID    = 1;   // Ecclesiastical year 2026
+const UNION_A_ID = 1; // Unión Centroamericana del Sur — has no templates in dev
+const UNION_B_ID = 2; // Unión Colombiana del Norte    — has no templates in dev
+const LF_1_ID = 1; // Asociación Chontalpa (union_id 20)
+const LF_2_ID = 2; // Asociación Norte de Veracruz (union_id 20)
+const CLUB_TYPE = 2; // Conquistadores
+const YEAR_ID = 1; // Ecclesiastical year 2026
 
 // ---------------------------------------------------------------------------
 // Prisma client — uses the same adapter pattern as the production PrismaService

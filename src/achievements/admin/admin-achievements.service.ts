@@ -158,9 +158,8 @@ export class AdminAchievementsService {
   }
 
   async getAchievementById(achievementId: number) {
-    const result = await this.achievementsService.getAchievementDetail(
-      achievementId,
-    );
+    const result =
+      await this.achievementsService.getAchievementDetail(achievementId);
 
     if (!result) {
       throw new AppNotFoundException(ErrorCode.ACHIEVEMENT_NOT_FOUND);
@@ -275,7 +274,9 @@ export class AdminAchievementsService {
     // Validate MIME type
     const mimeType = file.mimetype as ImageMimeType;
     if (!ALLOWED_IMAGE_MIME_TYPES.includes(mimeType)) {
-      throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE);
+      throw new AppBadRequestException(
+        ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE,
+      );
     }
 
     // Validate file size
@@ -530,7 +531,9 @@ export class AdminAchievementsService {
     });
 
     if (!prereq || !prereq.active) {
-      throw new AppNotFoundException(ErrorCode.ACHIEVEMENT_PREREQUISITE_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.ACHIEVEMENT_PREREQUISITE_NOT_FOUND,
+      );
     }
 
     // Circular dependency detection — walk the prerequisite chain
@@ -540,7 +543,9 @@ export class AdminAchievementsService {
 
       while (cursor !== null) {
         if (cursor === currentId) {
-          throw new AppBadRequestException(ErrorCode.ACHIEVEMENT_CIRCULAR_PREREQUISITE);
+          throw new AppBadRequestException(
+            ErrorCode.ACHIEVEMENT_CIRCULAR_PREREQUISITE,
+          );
         }
 
         if (visited.has(cursor)) break; // cycle not involving currentId, safe to stop

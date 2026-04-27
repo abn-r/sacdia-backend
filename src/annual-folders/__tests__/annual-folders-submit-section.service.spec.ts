@@ -112,12 +112,20 @@ describe('AnnualFoldersService — submitSection', () => {
     mockPrismaService.annual_folders.findUnique
       .mockResolvedValueOnce(mockFolderClubChain)
       .mockResolvedValue(mockOpenFolder);
-    mockPrismaService.folder_template_sections.findFirst.mockResolvedValue(mockSection);
+    mockPrismaService.folder_template_sections.findFirst.mockResolvedValue(
+      mockSection,
+    );
     mockPrismaService.annual_folder_evidences.count.mockResolvedValue(1);
-    mockTx.annual_folder_section_submissions.upsert.mockResolvedValue(mockSubmission);
-    mockTx.annual_folder_section_evaluations.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.annual_folder_section_submissions.upsert.mockResolvedValue(
+      mockSubmission,
+    );
+    mockTx.annual_folder_section_evaluations.updateMany.mockResolvedValue({
+      count: 1,
+    });
     // assertFolderClubAccess: super_admin bypass (simplest path)
-    mockPrismaService.users_roles.findFirst.mockResolvedValue({ user_role_id: 'sa-role-id' });
+    mockPrismaService.users_roles.findFirst.mockResolvedValue({
+      user_role_id: 'sa-role-id',
+    });
   });
 
   // ---------------------------------------------------------------
@@ -125,7 +133,11 @@ describe('AnnualFoldersService — submitSection', () => {
   // ---------------------------------------------------------------
   describe('happy path (PENDING → SUBMITTED)', () => {
     it('wraps upsert + updateMany in a transaction', async () => {
-      const result = await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
+      const result = await service.submitSection(
+        FOLDER_ID,
+        SECTION_ID,
+        USER_ID,
+      );
 
       expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
     });
@@ -133,8 +145,11 @@ describe('AnnualFoldersService — submitSection', () => {
     it('upserts the submission record inside the transaction', async () => {
       await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
 
-      expect(mockTx.annual_folder_section_submissions.upsert).toHaveBeenCalledTimes(1);
-      const upsertCall = mockTx.annual_folder_section_submissions.upsert.mock.calls[0][0];
+      expect(
+        mockTx.annual_folder_section_submissions.upsert,
+      ).toHaveBeenCalledTimes(1);
+      const upsertCall =
+        mockTx.annual_folder_section_submissions.upsert.mock.calls[0][0];
       expect(upsertCall.where.annual_folder_id_section_id).toEqual({
         annual_folder_id: FOLDER_ID,
         section_id: SECTION_ID,
@@ -145,8 +160,11 @@ describe('AnnualFoldersService — submitSection', () => {
     it('transitions evaluation status PENDING → SUBMITTED with enum values', async () => {
       await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
 
-      expect(mockTx.annual_folder_section_evaluations.updateMany).toHaveBeenCalledTimes(1);
-      const updateManyCall = mockTx.annual_folder_section_evaluations.updateMany.mock.calls[0][0];
+      expect(
+        mockTx.annual_folder_section_evaluations.updateMany,
+      ).toHaveBeenCalledTimes(1);
+      const updateManyCall =
+        mockTx.annual_folder_section_evaluations.updateMany.mock.calls[0][0];
       expect(updateManyCall.where).toEqual({
         annual_folder_id: FOLDER_ID,
         section_id: SECTION_ID,
@@ -158,7 +176,11 @@ describe('AnnualFoldersService — submitSection', () => {
     });
 
     it('returns the expected submission envelope', async () => {
-      const result = await service.submitSection(FOLDER_ID, SECTION_ID, USER_ID);
+      const result = await service.submitSection(
+        FOLDER_ID,
+        SECTION_ID,
+        USER_ID,
+      );
 
       expect(result).toEqual({
         section_submission_id: SUBMISSION_ID,
@@ -176,14 +198,18 @@ describe('AnnualFoldersService — submitSection', () => {
   describe('idempotency — re-submitting an already-SUBMITTED section', () => {
     it('still calls updateMany with PENDING guard (matches 0 rows, no error)', async () => {
       // Simulate DB returning 0 rows affected (status was not PENDING).
-      mockTx.annual_folder_section_evaluations.updateMany.mockResolvedValue({ count: 0 });
+      mockTx.annual_folder_section_evaluations.updateMany.mockResolvedValue({
+        count: 0,
+      });
 
       await expect(
         service.submitSection(FOLDER_ID, SECTION_ID, USER_ID),
       ).resolves.toBeDefined();
 
       // updateMany must still be called — guard is idempotent, not a throw.
-      expect(mockTx.annual_folder_section_evaluations.updateMany).toHaveBeenCalledTimes(1);
+      expect(
+        mockTx.annual_folder_section_evaluations.updateMany,
+      ).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -214,7 +240,9 @@ describe('AnnualFoldersService — submitSection', () => {
 
       await expect(
         service.submitSection(FOLDER_ID, SECTION_ID, USER_ID),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD,
+      });
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
@@ -225,11 +253,15 @@ describe('AnnualFoldersService — submitSection', () => {
   // ---------------------------------------------------------------
   describe('when the section does not belong to the folder template', () => {
     it('throws AppNotFoundException before entering the transaction', async () => {
-      mockPrismaService.folder_template_sections.findFirst.mockResolvedValue(null);
+      mockPrismaService.folder_template_sections.findFirst.mockResolvedValue(
+        null,
+      );
 
       await expect(
         service.submitSection(FOLDER_ID, SECTION_ID, USER_ID),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+      });
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
@@ -244,7 +276,9 @@ describe('AnnualFoldersService — submitSection', () => {
 
       await expect(
         service.submitSection(FOLDER_ID, SECTION_ID, USER_ID),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_NO_EVIDENCE });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_NO_EVIDENCE,
+      });
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });

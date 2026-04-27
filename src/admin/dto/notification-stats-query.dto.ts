@@ -4,7 +4,8 @@ import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class NotificationStatsQueryDto {
   @ApiPropertyOptional({
-    description: 'Number of days to include in the daily delivery rate window (1–365)',
+    description:
+      'Number of days to include in the daily delivery rate window (1–365)',
     example: 30,
     default: 30,
   })

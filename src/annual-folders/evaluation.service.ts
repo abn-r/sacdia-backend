@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   annual_folder_section_status_enum,
   union_evaluation_decision_enum,
@@ -64,7 +61,9 @@ export class EvaluationService {
       });
 
       if (!folder) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+          id: folderId,
+        });
       }
 
       // Validate folder status allows evaluation
@@ -72,7 +71,10 @@ export class EvaluationService {
         folder.status !== 'submitted' &&
         folder.status !== 'under_evaluation'
       ) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE, { status: folder.status });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE,
+          { status: folder.status },
+        );
       }
 
       // Validate section belongs to folder's template
@@ -81,15 +83,21 @@ export class EvaluationService {
       );
 
       if (!section) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE, { sectionId });
+        throw new AppNotFoundException(
+          ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+          { sectionId },
+        );
       }
 
       // Validate earned_points does not exceed section max_points
       if (dto.earned_points > section.max_points) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_EARNED_POINTS_EXCEED_MAX, {
-          earnedPoints: dto.earned_points,
-          maxPoints: section.max_points,
-        });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_EARNED_POINTS_EXCEED_MAX,
+          {
+            earnedPoints: dto.earned_points,
+            maxPoints: section.max_points,
+          },
+        );
       }
 
       // Fetch pre-existing row (created eagerly at folder creation by T-B2-1)
@@ -104,24 +112,31 @@ export class EvaluationService {
         });
 
       if (!existingEval) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND, { sectionId });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND,
+          { sectionId },
+        );
       }
 
       // Guard: only SUBMITTED and PREAPPROVED_LF rows may be evaluated by LF
-      if (
-        existingEval.status === annual_folder_section_status_enum.PENDING
-      ) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_PENDING, { sectionId });
+      if (existingEval.status === annual_folder_section_status_enum.PENDING) {
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_SECTION_PENDING,
+          { sectionId },
+        );
       }
 
       if (
         existingEval.status === annual_folder_section_status_enum.VALIDATED ||
         existingEval.status === annual_folder_section_status_enum.REJECTED
       ) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_TERMINAL, {
-          sectionId,
-          status: existingEval.status,
-        });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_SECTION_TERMINAL,
+          {
+            sectionId,
+            status: existingEval.status,
+          },
+        );
       }
 
       // Compute new status based on union confirmation requirement
@@ -149,26 +164,25 @@ export class EvaluationService {
       }
 
       // Update evaluation record (row guaranteed to exist)
-      const evaluation =
-        await tx.annual_folder_section_evaluations.update({
-          where: {
-            annual_folder_id_section_id: {
-              annual_folder_id: folderId,
-              section_id: sectionId,
+      const evaluation = await tx.annual_folder_section_evaluations.update({
+        where: {
+          annual_folder_id_section_id: {
+            annual_folder_id: folderId,
+            section_id: sectionId,
+          },
+        },
+        data: updateData,
+        include: {
+          section: { select: { section_id: true, name: true } },
+          lf_approver: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
             },
           },
-          data: updateData,
-          include: {
-            section: { select: { section_id: true, name: true } },
-            lf_approver: {
-              select: {
-                name: true,
-                paternal_last_name: true,
-                maternal_last_name: true,
-              },
-            },
-          },
-        });
+        },
+      });
 
       // Recalculate folder totals
       await this.recalcFolderTotals(folderId, tx);
@@ -258,15 +272,15 @@ export class EvaluationService {
       include: { roles: { select: { role_name: true } } },
     });
 
-    const actorRoleNames = new Set(
-      actorRoles.map((ur) => ur.roles.role_name),
-    );
+    const actorRoleNames = new Set(actorRoles.map((ur) => ur.roles.role_name));
 
     const UNION_TIER_ROLES = ['director-union', 'assistant-union'];
     const hasUnionRole = UNION_TIER_ROLES.some((r) => actorRoleNames.has(r));
 
     if (!hasUnionRole) {
-      throw new AppForbiddenException(ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED);
+      throw new AppForbiddenException(
+        ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED,
+      );
     }
     // ──────────────────────────────────────────────────────────────────────
 
@@ -291,12 +305,16 @@ export class EvaluationService {
       });
 
       if (!folder) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+          id: folderId,
+        });
       }
 
       // Precondition: folder must require union confirmation
       if (!folder.requires_union_confirmation) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_UNION_CONFIRMATION_NOT_REQUIRED);
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_UNION_CONFIRMATION_NOT_REQUIRED,
+        );
       }
 
       // Load the evaluation row
@@ -311,20 +329,28 @@ export class EvaluationService {
         });
 
       if (!existingEval) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND, { sectionId });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND,
+          { sectionId },
+        );
       }
 
       // Precondition: evaluation must be in PREAPPROVED_LF
       if (
-        existingEval.status !==
-        annual_folder_section_status_enum.PREAPPROVED_LF
+        existingEval.status !== annual_folder_section_status_enum.PREAPPROVED_LF
       ) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_PREAPPROVED, { status: existingEval.status });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_SECTION_NOT_PREAPPROVED,
+          { status: existingEval.status },
+        );
       }
 
       // Defensive sanity check: LF fields must be populated
       if (!existingEval.lf_approved_at || !existingEval.lf_approved_by) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_MISSING_LF_DATA, { sectionId });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_SECTION_MISSING_LF_DATA,
+          { sectionId },
+        );
       }
 
       // Compute new status
@@ -345,26 +371,25 @@ export class EvaluationService {
       };
 
       // Update evaluation record
-      const evaluation =
-        await tx.annual_folder_section_evaluations.update({
-          where: {
-            annual_folder_id_section_id: {
-              annual_folder_id: folderId,
-              section_id: sectionId,
+      const evaluation = await tx.annual_folder_section_evaluations.update({
+        where: {
+          annual_folder_id_section_id: {
+            annual_folder_id: folderId,
+            section_id: sectionId,
+          },
+        },
+        data: updateData,
+        include: {
+          section: { select: { section_id: true, name: true } },
+          lf_approver: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
             },
           },
-          data: updateData,
-          include: {
-            section: { select: { section_id: true, name: true } },
-            lf_approver: {
-              select: {
-                name: true,
-                paternal_last_name: true,
-                maternal_last_name: true,
-              },
-            },
-          },
-        });
+        },
+      });
 
       // Recalculate folder totals (VALIDATED/REJECTED now contribute/exclude points)
       await this.recalcFolderTotals(folderId, tx);
@@ -437,7 +462,9 @@ export class EvaluationService {
       });
 
       if (!folder) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+          id: folderId,
+        });
       }
 
       // Validate folder status allows reopening
@@ -445,7 +472,10 @@ export class EvaluationService {
         folder.status !== 'under_evaluation' &&
         folder.status !== 'evaluated'
       ) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN, { status: folder.status });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN,
+          { status: folder.status },
+        );
       }
 
       // Find the existing evaluation
@@ -459,7 +489,10 @@ export class EvaluationService {
       });
 
       if (!existing) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND, { sectionId });
+        throw new AppNotFoundException(
+          ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND,
+          { sectionId },
+        );
       }
 
       // Guard: cannot reopen a row already in PENDING or SUBMITTED
@@ -469,7 +502,10 @@ export class EvaluationService {
         annual_folder_section_status_enum.PREAPPROVED_LF,
       ];
       if (!reopenableStatuses.includes(existing.status)) {
-        throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_SECTION_NOT_REOPENABLE, { status: existing.status });
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_SECTION_NOT_REOPENABLE,
+          { status: existing.status },
+        );
       }
 
       this.logger.log(
@@ -539,7 +575,9 @@ export class EvaluationService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     const evaluations =
@@ -599,7 +637,9 @@ export class EvaluationService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, { id: folderId });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     const sections = await tx.folder_template_sections.findMany({

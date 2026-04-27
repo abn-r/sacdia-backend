@@ -111,8 +111,7 @@ export class ActivitiesService {
       const sectionIds = club.club_sections
         .filter(
           (section) =>
-            !filters?.clubTypeId ||
-            section.club_type_id === filters.clubTypeId,
+            !filters?.clubTypeId || section.club_type_id === filters.clubTypeId,
         )
         .map((section) => section.club_section_id);
 
@@ -265,7 +264,9 @@ export class ActivitiesService {
     const rawSectionIds = dto.club_section_ids!;
     const uniqueSectionIds = [...new Set(rawSectionIds)];
     if (uniqueSectionIds.length !== rawSectionIds.length) {
-      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_DUPLICATE_IDS);
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SECTION_DUPLICATE_IDS,
+      );
     }
 
     // W1: Ensure the creator's own section is always present in the instances list
@@ -288,7 +289,9 @@ export class ActivitiesService {
       : sections[0];
 
     if (!primarySectionRecord) {
-      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_OWNER_NOT_IN_LIST);
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SECTION_OWNER_NOT_IN_LIST,
+      );
     }
 
     // W2: If club_type_id is explicitly provided, verify it matches the owner section
@@ -296,7 +299,9 @@ export class ActivitiesService {
       dto.club_type_id &&
       dto.club_type_id !== primarySectionRecord.club_type_id
     ) {
-      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_CLUB_TYPE_MISMATCH);
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SECTION_CLUB_TYPE_MISMATCH,
+      );
     }
 
     const clubTypeId = dto.club_type_id ?? primarySectionRecord.club_type_id;
@@ -448,7 +453,11 @@ export class ActivitiesService {
     // Branch A: caller explicitly converts back to non-joint (is_joint: false)
     // -----------------------------------------------------------------------
     if (dto.is_joint === false && !dto.club_section_ids) {
-      const result = await this.convertToSingleSection(activityId, existing, dto);
+      const result = await this.convertToSingleSection(
+        activityId,
+        existing,
+        dto,
+      );
       this.emitRealtimeInvalidation(
         existing.club_section_id,
         activityId,
@@ -556,7 +565,9 @@ export class ActivitiesService {
     const rawIds = dto.club_section_ids!;
     const uniqueSectionIds = [...new Set(rawIds)];
     if (uniqueSectionIds.length !== rawIds.length) {
-      throw new AppBadRequestException(ErrorCode.ACTIVITY_SECTION_DUPLICATE_IDS);
+      throw new AppBadRequestException(
+        ErrorCode.ACTIVITY_SECTION_DUPLICATE_IDS,
+      );
     }
 
     // Validate all sections belong to the same club
@@ -774,12 +785,15 @@ export class ActivitiesService {
           eventType: 'activity.attended',
           payload: {
             activity_id: activityId,
-            activity_type: activity.activity_types?.code ?? activity.activity_type_id,
+            activity_type:
+              activity.activity_types?.code ?? activity.activity_type_id,
             club_id: activity.club_sections?.main_club_id ?? null,
           },
         });
       } catch (error) {
-        this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+        this.logger.warn(
+          `Failed to emit achievement event: ${(error as Error).message}`,
+        );
       }
     }
 
@@ -910,10 +924,9 @@ export class ActivitiesService {
     // Validate size (max 5MB)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new AppBadRequestException(
-        ErrorCode.ACTIVITY_IMAGE_TOO_LARGE,
-        { max_mb: '5' },
-      );
+      throw new AppBadRequestException(ErrorCode.ACTIVITY_IMAGE_TOO_LARGE, {
+        max_mb: '5',
+      });
     }
 
     const activity = await this.prisma.activities.findUnique({
@@ -939,7 +952,9 @@ export class ActivitiesService {
       );
     } catch (error) {
       this.logger.error('R2 upload error:', error);
-      throw new AppInternalServerErrorException(ErrorCode.ACTIVITY_IMAGE_UPLOAD_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.ACTIVITY_IMAGE_UPLOAD_FAILED,
+      );
     }
 
     try {
@@ -952,7 +967,9 @@ export class ActivitiesService {
       await this.fileStorage.deleteMany(StorageBucketAlias.ACTIVITIES_IMAGES, [
         uploaded.key,
       ]);
-      throw new AppInternalServerErrorException(ErrorCode.ACTIVITY_IMAGE_UPDATE_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.ACTIVITY_IMAGE_UPDATE_FAILED,
+      );
     }
 
     // Delete previous image if it existed and is different

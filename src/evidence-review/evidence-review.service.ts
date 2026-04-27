@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -279,7 +276,10 @@ export class EvidenceReviewService {
       case 'honor':
         return this.getHonorDetail(id);
       default:
-        throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, { type });
+        throw new AppBadRequestException(
+          ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
+          { type },
+        );
     }
   }
 
@@ -304,7 +304,10 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     return {
@@ -350,7 +353,10 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     return {
@@ -399,7 +405,10 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
     }
 
     let files: EvidenceFile[];
@@ -479,7 +488,10 @@ export class EvidenceReviewService {
       case 'honor':
         return this.approveHonor(id, actorId, dto.comments);
       default:
-        throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, { type });
+        throw new AppBadRequestException(
+          ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
+          { type },
+        );
     }
   }
 
@@ -489,11 +501,17 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.status !== FOLDER_STATUS_PENDING) {
-      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING, { status: record.status });
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING,
+        { status: record.status },
+      );
     }
 
     const now = new Date();
@@ -535,11 +553,17 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.status !== CLASS_STATUS_SUBMITTED) {
-      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING, { status: record.status });
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING,
+        { status: record.status },
+      );
     }
 
     const now = new Date();
@@ -591,11 +615,17 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.validation_status !== HONOR_STATUS_PENDING) {
-      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING, { status: record.validation_status });
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING,
+        { status: record.validation_status },
+      );
     }
 
     const now = new Date();
@@ -637,7 +667,9 @@ export class EvidenceReviewService {
         },
       });
     } catch (error) {
-      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
     }
 
     return {
@@ -665,7 +697,10 @@ export class EvidenceReviewService {
       case 'honor':
         return this.rejectHonor(id, actorId, dto.reason);
       default:
-        throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, { type });
+        throw new AppBadRequestException(
+          ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
+          { type },
+        );
     }
   }
 
@@ -675,15 +710,22 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.status === FOLDER_STATUS_REJECTED) {
-      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED);
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED,
+      );
     }
 
     if (record.status === FOLDER_STATUS_VALIDATED) {
-      throw new AppConflictException(ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED);
+      throw new AppConflictException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED,
+      );
     }
 
     const now = new Date();
@@ -725,15 +767,22 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.status === CLASS_STATUS_REJECTED) {
-      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED);
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED,
+      );
     }
 
     if (record.status === CLASS_STATUS_VALIDATED) {
-      throw new AppConflictException(ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED);
+      throw new AppConflictException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED,
+      );
     }
 
     const now = new Date();
@@ -775,15 +824,22 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new AppNotFoundException(ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND, { id });
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.validation_status === HONOR_STATUS_REJECTED) {
-      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED);
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED,
+      );
     }
 
     if (record.validation_status === HONOR_STATUS_APPROVED) {
-      throw new AppConflictException(ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED);
+      throw new AppConflictException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED,
+      );
     }
 
     const now = new Date();
@@ -876,7 +932,9 @@ export class EvidenceReviewService {
   async getHistory(type: EvidenceType, id: number): Promise<HistoryEntry[]> {
     const validTypes: EvidenceType[] = ['folder', 'class', 'honor'];
     if (!validTypes.includes(type)) {
-      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, { type });
+      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, {
+        type,
+      });
     }
 
     const logs = await this.prisma.validation_logs.findMany({

@@ -30,6 +30,8 @@ describe('JwtAuthGuard', () => {
         { message: 'No auth token' },
         mockContext,
       ),
-    ).toThrow(expect.objectContaining({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED }));
+    ).toThrow(
+      expect.objectContaining({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED }),
+    );
   });
 });

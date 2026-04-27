@@ -236,12 +236,13 @@ export class ClassesService {
     if (translatedClass.class_modules) {
       // translateMany strips the `translations` key — cast to keep the
       // surrounding structure assignable to the Prisma-inferred type.
-      (translatedClass as any).class_modules = this.translationService.translateMany(
-        translatedClass.class_modules,
-        locale,
-        ['name', 'description'],
-        'translations',
-      );
+      (translatedClass as any).class_modules =
+        this.translationService.translateMany(
+          translatedClass.class_modules,
+          locale,
+          ['name', 'description'],
+          'translations',
+        );
       for (const mod of (translatedClass as any).class_modules) {
         if ((mod as any).class_sections) {
           (mod as any).class_sections = this.translationService.translateMany(
@@ -287,7 +288,8 @@ export class ClassesService {
 
       // Classify the pool using case-insensitive partial matching.
       // "guía" / "guia" covers both accented and unaccented variants.
-      const isGm = clubTypeName.includes('guia') || clubTypeName.includes('guía');
+      const isGm =
+        clubTypeName.includes('guia') || clubTypeName.includes('guía');
       const isAventuConquis =
         clubTypeName.includes('aventurer') ||
         clubTypeName.includes('conquistador');
@@ -306,7 +308,9 @@ export class ClassesService {
           },
         });
         if (!hasInvestiture) {
-          throw new AppForbiddenException(ErrorCode.CLASS_GM_INVESTITURE_REQUIRED);
+          throw new AppForbiddenException(
+            ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
+          );
         }
       }
 
@@ -338,7 +342,9 @@ export class ClassesService {
           },
         });
         if (activeCount >= 1) {
-          throw new AppConflictException(ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE);
+          throw new AppConflictException(
+            ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
+          );
         }
       } else if (isGm) {
         const activeCount = await tx.enrollments.count({
@@ -407,7 +413,9 @@ export class ClassesService {
         },
       });
     } catch (error) {
-      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
     }
 
     return enrollment;
@@ -879,7 +887,9 @@ export class ClassesService {
     });
 
     if (!sectionProgress) {
-      throw new AppNotFoundException(ErrorCode.CLASS_SECTION_PROGRESS_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.CLASS_SECTION_PROGRESS_NOT_FOUND,
+      );
     }
 
     // Must be in PENDING or REJECTED status to submit

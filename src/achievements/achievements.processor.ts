@@ -72,12 +72,20 @@ export class AchievementsProcessor
     });
   }
 
-  async process(job: Job<EvaluateJobData | RetroactiveEvaluateJobData, unknown, AchievementJobType>) {
+  async process(
+    job: Job<
+      EvaluateJobData | RetroactiveEvaluateJobData,
+      unknown,
+      AchievementJobType
+    >,
+  ) {
     switch (job.name as AchievementJobType) {
       case 'evaluate':
         return this.handleEvaluate(job as Job<EvaluateJobData>);
       case 'retroactive-evaluate':
-        return this.handleRetroactiveEvaluate(job as Job<RetroactiveEvaluateJobData>);
+        return this.handleRetroactiveEvaluate(
+          job as Job<RetroactiveEvaluateJobData>,
+        );
       default:
         this.logger.warn(`Unknown achievement job type: ${job.name}`);
     }
@@ -128,7 +136,9 @@ export class AchievementsProcessor
   // retroactive-evaluate
   // ---------------------------------------------------------------------------
 
-  private async handleRetroactiveEvaluate(job: Job<RetroactiveEvaluateJobData>) {
+  private async handleRetroactiveEvaluate(
+    job: Job<RetroactiveEvaluateJobData>,
+  ) {
     const { userId, achievementId, skipNotification } = job.data;
 
     this.logger.debug(
@@ -160,12 +170,16 @@ export class AchievementsProcessor
         data: {
           progress_value: progressResult.current,
           progress_target: progressResult.target,
-          progress_metadata: progressResult.metadata as object ?? undefined,
+          progress_metadata: (progressResult.metadata as object) ?? undefined,
           completed: isComplete,
-          completed_at: isComplete && !existingRecord.completed ? new Date() : existingRecord.completed_at,
-          times_completed: isComplete && !existingRecord.completed
-            ? existingRecord.times_completed + 1
-            : existingRecord.times_completed,
+          completed_at:
+            isComplete && !existingRecord.completed
+              ? new Date()
+              : existingRecord.completed_at,
+          times_completed:
+            isComplete && !existingRecord.completed
+              ? existingRecord.times_completed + 1
+              : existingRecord.times_completed,
         },
       });
     } else {
@@ -175,7 +189,7 @@ export class AchievementsProcessor
           achievement_id: achievementId,
           progress_value: progressResult.current,
           progress_target: progressResult.target,
-          progress_metadata: progressResult.metadata as object ?? undefined,
+          progress_metadata: (progressResult.metadata as object) ?? undefined,
           completed: isComplete,
           completed_at: isComplete ? new Date() : null,
           times_completed: isComplete ? 1 : 0,
@@ -194,7 +208,12 @@ export class AchievementsProcessor
       );
     }
 
-    return { userId, achievementId, completed: isComplete, progress: progressResult };
+    return {
+      userId,
+      achievementId,
+      completed: isComplete,
+      progress: progressResult,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -258,12 +277,16 @@ export class AchievementsProcessor
         data: {
           progress_value: evalResult.currentProgress,
           progress_target: evalResult.targetProgress,
-          progress_metadata: evalResult.metadata as object ?? undefined,
+          progress_metadata: (evalResult.metadata as object) ?? undefined,
           completed: isNowComplete,
-          completed_at: isNowComplete && !wasAlreadyComplete ? new Date() : existingRecord.completed_at,
-          times_completed: isNowComplete && !wasAlreadyComplete
-            ? existingRecord.times_completed + 1
-            : existingRecord.times_completed,
+          completed_at:
+            isNowComplete && !wasAlreadyComplete
+              ? new Date()
+              : existingRecord.completed_at,
+          times_completed:
+            isNowComplete && !wasAlreadyComplete
+              ? existingRecord.times_completed + 1
+              : existingRecord.times_completed,
         },
       });
 
@@ -277,7 +300,7 @@ export class AchievementsProcessor
           achievement_id: achievement.achievement_id,
           progress_value: evalResult.currentProgress,
           progress_target: evalResult.targetProgress,
-          progress_metadata: evalResult.metadata as object ?? undefined,
+          progress_metadata: (evalResult.metadata as object) ?? undefined,
           completed: isNowComplete,
           completed_at: isNowComplete ? new Date() : null,
           times_completed: isNowComplete ? 1 : 0,
@@ -301,7 +324,9 @@ export class AchievementsProcessor
    * For COMPOUND achievements, we need a raw query because the event is
    * nested inside an array.
    */
-  private async findMatchingAchievements(eventType: string): Promise<achievements[]> {
+  private async findMatchingAchievements(
+    eventType: string,
+  ): Promise<achievements[]> {
     // Direct match: THRESHOLD / STREAK / MILESTONE / COLLECTION where criteria.event === eventType
     const directMatches = await this.prisma.achievements.findMany({
       where: {
@@ -344,7 +369,9 @@ export class AchievementsProcessor
   // Helpers
   // ---------------------------------------------------------------------------
 
-  private async markEventProcessed(eventLogId: number | undefined): Promise<void> {
+  private async markEventProcessed(
+    eventLogId: number | undefined,
+  ): Promise<void> {
     if (!eventLogId) return;
     await this.prisma.achievement_event_log
       .update({
@@ -352,7 +379,9 @@ export class AchievementsProcessor
         data: { processed: true },
       })
       .catch((err: Error) => {
-        this.logger.warn(`Failed to mark event ${eventLogId} as processed: ${err.message}`);
+        this.logger.warn(
+          `Failed to mark event ${eventLogId} as processed: ${err.message}`,
+        );
       });
   }
 

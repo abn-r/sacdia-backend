@@ -16,7 +16,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { CreateResourceCategoryDto } from './dto/create-resource-category.dto';
 import { UpdateResourceCategoryDto } from './dto/update-resource-category.dto';

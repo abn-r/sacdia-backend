@@ -15,15 +15,17 @@ const SESSION_B = 'session-uuid-b';
 const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 const pastDate = new Date(Date.now() - 1000);
 
-function makeRow(overrides: Partial<{
-  id: string;
-  userId: string;
-  userAgent: string | null;
-  ipAddress: string | null;
-  expiresAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}> = {}) {
+function makeRow(
+  overrides: Partial<{
+    id: string;
+    userId: string;
+    userAgent: string | null;
+    ipAddress: string | null;
+    expiresAt: Date;
+    createdAt: Date;
+    updatedAt: Date;
+  }> = {},
+) {
   return {
     id: SESSION_A,
     userId: USER_ID,

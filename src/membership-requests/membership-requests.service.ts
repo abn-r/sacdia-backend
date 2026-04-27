@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -87,7 +84,12 @@ export class MembershipRequestsService {
       assignment!.user_id,
     );
 
-    this.emitRealtimeInvalidation(assignment!.club_section_id, assignment!.assignment_id, 'UPDATED', approvedById);
+    this.emitRealtimeInvalidation(
+      assignment!.club_section_id,
+      assignment!.assignment_id,
+      'UPDATED',
+      approvedById,
+    );
 
     return assignment;
   }
@@ -131,7 +133,12 @@ export class MembershipRequestsService {
       assignment!.user_id,
     );
 
-    this.emitRealtimeInvalidation(assignment!.club_section_id, assignment!.assignment_id, 'DELETED', rejectedById);
+    this.emitRealtimeInvalidation(
+      assignment!.club_section_id,
+      assignment!.assignment_id,
+      'DELETED',
+      rejectedById,
+    );
 
     return assignment;
   }

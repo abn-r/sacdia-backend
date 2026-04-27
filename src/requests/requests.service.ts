@@ -41,7 +41,9 @@ export class RequestsService {
     });
 
     if (!userAssignment) {
-      throw new AppBadRequestException(ErrorCode.REQUEST_TRANSFER_USER_NOT_IN_SECTION);
+      throw new AppBadRequestException(
+        ErrorCode.REQUEST_TRANSFER_USER_NOT_IN_SECTION,
+      );
     }
 
     // Validate to_section exists
@@ -50,7 +52,9 @@ export class RequestsService {
     });
 
     if (!toSection) {
-      throw new AppNotFoundException(ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND,
+      );
     }
 
     // Check no pending request already exists for this user
@@ -130,7 +134,9 @@ export class RequestsService {
     }
 
     if (request.status !== 'pending') {
-      throw new AppConflictException(ErrorCode.REQUEST_TRANSFER_ALREADY_REVIEWED);
+      throw new AppConflictException(
+        ErrorCode.REQUEST_TRANSFER_ALREADY_REVIEWED,
+      );
     }
 
     let result;
@@ -394,7 +400,9 @@ export class RequestsService {
     );
 
     if (pendingRequest) {
-      throw new AppConflictException(ErrorCode.REQUEST_ASSIGNMENT_PENDING_EXISTS);
+      throw new AppConflictException(
+        ErrorCode.REQUEST_ASSIGNMENT_PENDING_EXISTS,
+      );
     }
 
     const result = await this.prisma.role_assignment_requests.create({
@@ -464,7 +472,9 @@ export class RequestsService {
     }
 
     if (request.status !== 'pending') {
-      throw new AppConflictException(ErrorCode.REQUEST_ASSIGNMENT_ALREADY_REVIEWED);
+      throw new AppConflictException(
+        ErrorCode.REQUEST_ASSIGNMENT_ALREADY_REVIEWED,
+      );
     }
 
     let result;
@@ -486,7 +496,9 @@ export class RequestsService {
           });
 
           if (currentCount >= slotLimit.max_per_section) {
-            throw new AppConflictException(ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED);
+            throw new AppConflictException(
+              ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED,
+            );
           }
         }
 
@@ -763,7 +775,9 @@ export class RequestsService {
           where: { role_id: roleId },
           select: { role_name: true },
         });
-        throw new AppConflictException(ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED);
+        throw new AppConflictException(
+          ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED,
+        );
       }
     }
   }

@@ -203,7 +203,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.evaluateSection(folderId, sectionId, dto, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE,
+      });
     });
 
     it('should reject if folder status is "closed"', async () => {
@@ -214,7 +216,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.evaluateSection(folderId, sectionId, dto, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE,
+      });
     });
 
     it('should reject if earned_points exceeds section max_points', async () => {
@@ -230,7 +234,9 @@ describe('EvaluationService', () => {
           { earned_points: 150 },
           evaluatorId,
         ),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_EARNED_POINTS_EXCEED_MAX });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_EARNED_POINTS_EXCEED_MAX,
+      });
     });
 
     it('should reject if section does not belong to folder template', async () => {
@@ -246,7 +252,9 @@ describe('EvaluationService', () => {
           dto,
           evaluatorId,
         ),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+      });
     });
 
     it('should throw AppNotFoundException if folder does not exist', async () => {
@@ -270,7 +278,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.evaluateSection(folderId, sectionId, dto, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND,
+      });
     });
 
     it('should reject PENDING rows', async () => {
@@ -282,7 +292,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.evaluateSection(folderId, sectionId, dto, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_PENDING });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_PENDING,
+      });
     });
 
     it('should reject VALIDATED rows (terminal)', async () => {
@@ -294,7 +306,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.evaluateSection(folderId, sectionId, dto, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_TERMINAL });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_TERMINAL,
+      });
     });
 
     it('should reject REJECTED rows (terminal)', async () => {
@@ -306,7 +320,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.evaluateSection(folderId, sectionId, dto, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_TERMINAL });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_TERMINAL,
+      });
     });
 
     it('should set status=PREAPPROVED_LF when requires_union_confirmation=true', async () => {
@@ -413,10 +429,7 @@ describe('EvaluationService', () => {
       );
 
       txMock.annual_folder_section_evaluations.findMany
-        .mockResolvedValueOnce([
-          { earned_points: 80 },
-          { earned_points: 40 },
-        ]) // recalcFolderTotals
+        .mockResolvedValueOnce([{ earned_points: 80 }, { earned_points: 40 }]) // recalcFolderTotals
         .mockResolvedValueOnce(allDecidedEvaluations); // decidedEvaluations — 2 of 2 terminal
 
       txMock.folder_template_sections.findMany.mockResolvedValue([
@@ -638,11 +651,10 @@ describe('EvaluationService', () => {
     });
 
     it('REJECTED_OVERRIDE → status REJECTED, union_* set, lf_* preserved', async () => {
-      setupHappyPathMocks(
-        undefined,
-        undefined,
-        { status: 'REJECTED', union_decision: 'REJECTED_OVERRIDE' as any },
-      );
+      setupHappyPathMocks(undefined, undefined, {
+        status: 'REJECTED',
+        union_decision: 'REJECTED_OVERRIDE' as any,
+      });
 
       await service.confirmUnion(
         folderId,
@@ -671,8 +683,9 @@ describe('EvaluationService', () => {
 
     it('should throw BadRequestException when folder.requires_union_confirmation === false', async () => {
       // Role check must pass so we reach the folder precondition
-      mockPrismaService.users_roles.findMany
-        .mockResolvedValueOnce(makeRolesMock(['director-union']));
+      mockPrismaService.users_roles.findMany.mockResolvedValueOnce(
+        makeRolesMock(['director-union']),
+      );
 
       txMock.annual_folders.findUnique.mockResolvedValue({
         ...baseFolder,
@@ -680,16 +693,24 @@ describe('EvaluationService', () => {
       });
 
       await expect(
-        service.confirmUnion(folderId, sectionId, { decision: 'APPROVED' as any }, unionActorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_UNION_CONFIRMATION_NOT_REQUIRED });
+        service.confirmUnion(
+          folderId,
+          sectionId,
+          { decision: 'APPROVED' as any },
+          unionActorId,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_UNION_CONFIRMATION_NOT_REQUIRED,
+      });
     });
 
     it.each(['PENDING', 'SUBMITTED', 'VALIDATED', 'REJECTED'])(
       'should throw BadRequestException when evaluation.status === %s',
       async (status) => {
         // Role check must pass so we reach the eval-status precondition
-        mockPrismaService.users_roles.findMany
-          .mockResolvedValueOnce(makeRolesMock(['director-union']));
+        mockPrismaService.users_roles.findMany.mockResolvedValueOnce(
+          makeRolesMock(['director-union']),
+        );
 
         txMock.annual_folders.findUnique.mockResolvedValue(baseFolder);
         txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue({
@@ -698,24 +719,31 @@ describe('EvaluationService', () => {
         });
 
         await expect(
-          service.confirmUnion(folderId, sectionId, { decision: 'APPROVED' as any }, unionActorId),
-        ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_PREAPPROVED });
+          service.confirmUnion(
+            folderId,
+            sectionId,
+            { decision: 'APPROVED' as any },
+            unionActorId,
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_PREAPPROVED,
+        });
 
         // Reset for next iteration
         txMock = createTxMock();
         mockPrismaService.$transaction.mockImplementation(
-          (callback: (tx: ReturnType<typeof createTxMock>) => Promise<unknown>) =>
-            callback(txMock),
+          (
+            callback: (tx: ReturnType<typeof createTxMock>) => Promise<unknown>,
+          ) => callback(txMock),
         );
       },
     );
 
     it('union override preserves original lf_approved_by (LF actor stays on row)', async () => {
-      setupHappyPathMocks(
-        undefined,
-        undefined,
-        { status: 'REJECTED', union_decision: 'REJECTED_OVERRIDE' as any },
-      );
+      setupHappyPathMocks(undefined, undefined, {
+        status: 'REJECTED',
+        union_decision: 'REJECTED_OVERRIDE' as any,
+      });
 
       await service.confirmUnion(
         folderId,
@@ -768,7 +796,12 @@ describe('EvaluationService', () => {
       txMock.annual_folders.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.confirmUnion('non-existent', sectionId, { decision: 'APPROVED' as any }, unionActorId),
+        service.confirmUnion(
+          'non-existent',
+          sectionId,
+          { decision: 'APPROVED' as any },
+          unionActorId,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_NOT_FOUND });
     });
 
@@ -777,11 +810,20 @@ describe('EvaluationService', () => {
         makeRolesMock(['director-union']),
       );
       txMock.annual_folders.findUnique.mockResolvedValue(baseFolder);
-      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(null);
+      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(
+        null,
+      );
 
       await expect(
-        service.confirmUnion(folderId, sectionId, { decision: 'APPROVED' as any }, unionActorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND });
+        service.confirmUnion(
+          folderId,
+          sectionId,
+          { decision: 'APPROVED' as any },
+          unionActorId,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND,
+      });
     });
 
     it('should transition folder to "evaluated" when all sections reach terminal state', async () => {
@@ -861,8 +903,15 @@ describe('EvaluationService', () => {
         );
 
         await expect(
-          service.confirmUnion(folderId, sectionId, { decision: 'APPROVED' as any }, 'lf-actor-id'),
-        ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED });
+          service.confirmUnion(
+            folderId,
+            sectionId,
+            { decision: 'APPROVED' as any },
+            'lf-actor-id',
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED,
+        });
       });
 
       it('throws AppForbiddenException when actor has only assistant-lf role', async () => {
@@ -871,20 +920,36 @@ describe('EvaluationService', () => {
         );
 
         await expect(
-          service.confirmUnion(folderId, sectionId, { decision: 'APPROVED' as any }, 'lf-actor-id'),
-        ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED });
+          service.confirmUnion(
+            folderId,
+            sectionId,
+            { decision: 'APPROVED' as any },
+            'lf-actor-id',
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED,
+        });
       });
 
       it('throws AppForbiddenException when actor has no roles at all', async () => {
         mockPrismaService.users_roles.findMany.mockResolvedValueOnce([]);
 
         await expect(
-          service.confirmUnion(folderId, sectionId, { decision: 'APPROVED' as any }, 'no-role-actor'),
-        ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED });
+          service.confirmUnion(
+            folderId,
+            sectionId,
+            { decision: 'APPROVED' as any },
+            'no-role-actor',
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED,
+        });
       });
 
       it('succeeds when actor has assistant-union role', async () => {
-        setupHappyPathMocks(undefined, undefined, undefined, ['assistant-union']);
+        setupHappyPathMocks(undefined, undefined, undefined, [
+          'assistant-union',
+        ]);
 
         const result = await service.confirmUnion(
           folderId,
@@ -897,7 +962,10 @@ describe('EvaluationService', () => {
       });
 
       it('succeeds when actor holds BOTH director-lf AND director-union (union role grants access)', async () => {
-        setupHappyPathMocks(undefined, undefined, undefined, ['director-lf', 'director-union']);
+        setupHappyPathMocks(undefined, undefined, undefined, [
+          'director-lf',
+          'director-union',
+        ]);
 
         const result = await service.confirmUnion(
           folderId,
@@ -915,8 +983,15 @@ describe('EvaluationService', () => {
         );
 
         await expect(
-          service.confirmUnion(folderId, sectionId, { decision: 'APPROVED' as any }, 'lf-actor-id'),
-        ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED });
+          service.confirmUnion(
+            folderId,
+            sectionId,
+            { decision: 'APPROVED' as any },
+            'lf-actor-id',
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.ANNUAL_FOLDER_UNION_ROLE_REQUIRED,
+        });
       });
     });
   });
@@ -1050,7 +1125,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.reopenSection(folderId, sectionId, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN,
+      });
     });
 
     it('should reject if folder status is "submitted"', async () => {
@@ -1061,7 +1138,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.reopenSection(folderId, sectionId, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN,
+      });
     });
 
     it('should return 404 if section has no evaluation', async () => {
@@ -1076,7 +1155,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.reopenSection(folderId, sectionId, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_EVAL_ROW_NOT_FOUND,
+      });
     });
 
     it('should return 404 if folder does not exist', async () => {
@@ -1134,7 +1215,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.reopenSection(folderId, sectionId, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_REOPENABLE });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_REOPENABLE,
+      });
     });
 
     it('should reject reopen on SUBMITTED status', async () => {
@@ -1149,7 +1232,9 @@ describe('EvaluationService', () => {
 
       await expect(
         service.reopenSection(folderId, sectionId, evaluatorId),
-      ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_REOPENABLE });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SECTION_NOT_REOPENABLE,
+      });
     });
 
     it('should allow reopen on PREAPPROVED_LF status', async () => {

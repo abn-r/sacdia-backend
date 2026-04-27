@@ -139,7 +139,10 @@ export class AuthService {
 
     // Auto-send verification email after successful registration.
     // Fire-and-forget: a failure here does NOT block registration.
-    this.createAndLogVerificationToken(baResult.user.email, baResult.user.name).catch((e) =>
+    this.createAndLogVerificationToken(
+      baResult.user.email,
+      baResult.user.name,
+    ).catch((e) =>
       this.logger.warn(
         `Failed to create verification token during registration for ${baResult.user.id}: ${e instanceof Error ? e.message : String(e)}`,
       ),
@@ -312,11 +315,14 @@ export class AuthService {
           }),
         );
 
-        throw new AppBadRequestException(ErrorCode.AUTH_REFRESH_TOKEN_LEGACY_REMOVED, {
-          code: LEGACY_SNAKE_CASE_REMOVED_CODE,
-          removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
-          use: 'refreshToken',
-        });
+        throw new AppBadRequestException(
+          ErrorCode.AUTH_REFRESH_TOKEN_LEGACY_REMOVED,
+          {
+            code: LEGACY_SNAKE_CASE_REMOVED_CODE,
+            removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
+            use: 'refreshToken',
+          },
+        );
       }
 
       refreshToken = dto.refresh_token;
@@ -499,9 +505,7 @@ export class AuthService {
       throw new AppBadRequestException(ErrorCode.AUTH_PASSWORD_RESET_FAILED);
     }
 
-    this.logger.log(
-      `Password reset requested for: ${maskEmail(dto.email)}`,
-    );
+    this.logger.log(`Password reset requested for: ${maskEmail(dto.email)}`);
 
     return {
       success: true,
@@ -568,7 +572,9 @@ export class AuthService {
     });
 
     if (!assignment) {
-      throw new AppBadRequestException(ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND, { assignmentId: dto.assignment_id });
+      throw new AppBadRequestException(ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND, {
+        assignmentId: dto.assignment_id,
+      });
     }
 
     await this.prisma.users_pr.upsert({
@@ -613,7 +619,9 @@ export class AuthService {
     });
 
     if (!userPr) {
-      throw new AppBadRequestException(ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED);
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED,
+      );
     }
 
     let nextStep: string | null = null;
@@ -684,7 +692,9 @@ export class AuthService {
     });
 
     if (!verification) {
-      throw new AppBadRequestException(ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID);
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      );
     }
 
     if (verification.expiresAt < new Date()) {
@@ -692,7 +702,9 @@ export class AuthService {
       await this.prisma.verification.delete({
         where: { id: verification.id },
       });
-      throw new AppBadRequestException(ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED);
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED,
+      );
     }
 
     // Mark user as verified and delete the token in a transaction
@@ -792,5 +804,4 @@ export class AuthService {
   private shouldRejectSnakeCase(): boolean {
     return process.env.AUTH_REJECT_SNAKE_CASE?.toLowerCase() !== 'false';
   }
-
 }

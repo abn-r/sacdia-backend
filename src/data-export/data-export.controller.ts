@@ -47,7 +47,10 @@ export class DataExportController {
    * Returns 201 (new export created), 200 (existing in-progress), or 429 (cooldown).
    */
   @Post('data-export')
-  @Throttle({ short: { limit: 1, ttl: 60000 }, medium: { limit: 2, ttl: 3600000 } })
+  @Throttle({
+    short: { limit: 1, ttl: 60000 },
+    medium: { limit: 2, ttl: 3600000 },
+  })
   @ApiOperation({
     summary: 'Request a GDPR data export',
     description:
@@ -75,7 +78,10 @@ export class DataExportController {
     @Res() res: Response,
   ) {
     const userId = req.user.sub;
-    const result = await this.dataExportService.requestExport(userId, dto.format ?? 'json');
+    const result = await this.dataExportService.requestExport(
+      userId,
+      dto.format ?? 'json',
+    );
     return res.status(result.status).json(result.data);
   }
 
@@ -84,7 +90,9 @@ export class DataExportController {
    * List all data export requests for the authenticated user.
    */
   @Get('data-exports')
-  @ApiOperation({ summary: 'List all data export requests for the current user' })
+  @ApiOperation({
+    summary: 'List all data export requests for the current user',
+  })
   @ApiResponse({
     status: 200,
     description: 'List of export requests',
@@ -118,10 +126,16 @@ export class DataExportController {
     description: 'Presigned download URL',
     type: DataExportDownloadResponseDto,
   })
-  @ApiResponse({ status: 404, description: 'Export not found or belongs to another user' })
+  @ApiResponse({
+    status: 404,
+    description: 'Export not found or belongs to another user',
+  })
   @ApiResponse({ status: 409, description: 'Export is pending or processing' })
   @ApiResponse({ status: 410, description: 'Export has expired' })
-  @ApiResponse({ status: 422, description: 'Export failed — check failure_reason' })
+  @ApiResponse({
+    status: 422,
+    description: 'Export failed — check failure_reason',
+  })
   async getDownloadUrl(
     @Req() req: Request & { user: JwtUser },
     @Param('exportId') exportId: string,
@@ -130,6 +144,10 @@ export class DataExportController {
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
       req.socket?.remoteAddress;
 
-    return this.dataExportService.getDownloadUrl(req.user.sub, exportId, ipAddress);
+    return this.dataExportService.getDownloadUrl(
+      req.user.sub,
+      exportId,
+      ipAddress,
+    );
   }
 }

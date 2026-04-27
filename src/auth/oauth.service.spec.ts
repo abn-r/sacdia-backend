@@ -535,7 +535,9 @@ describe('OAuthService', () => {
 
       await expect(
         service.disconnectProvider('user-123', 'google'),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_OAUTH_PROVIDER_NOT_CONNECTED });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_OAUTH_PROVIDER_NOT_CONNECTED,
+      });
     });
   });
 });

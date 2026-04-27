@@ -13,7 +13,9 @@ export class DeleteAccountDto {
     example: 'MyPassword123!',
   })
   @IsString()
-  @IsNotEmpty({ message: 'La contraseña es requerida para confirmar la eliminación' })
+  @IsNotEmpty({
+    message: 'La contraseña es requerida para confirmar la eliminación',
+  })
   @MinLength(1)
   password!: string;
 }

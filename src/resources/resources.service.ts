@@ -1,8 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -52,7 +48,9 @@ export class ResourcesService {
 
     // 3. Validar coherencia scope_level / scope_id
     if (dto.scope_level === 'system' && dto.scope_id != null) {
-      throw new AppBadRequestException(ErrorCode.RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID);
+      throw new AppBadRequestException(
+        ErrorCode.RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID,
+      );
     }
     if (dto.scope_level !== 'system' && dto.scope_id == null) {
       throw new AppBadRequestException(
@@ -411,7 +409,9 @@ export class ResourcesService {
 
     if (scopeLevel === 'system') {
       if (!globalScope?.country?.id) {
-        throw new AppForbiddenException(ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM);
+        throw new AppForbiddenException(
+          ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM,
+        );
       }
       return;
     }
@@ -448,10 +448,9 @@ export class ResourcesService {
       return;
     }
 
-    throw new AppBadRequestException(
-      ErrorCode.RESOURCE_SCOPE_LEVEL_INVALID,
-      { scope_level: scopeLevel },
-    );
+    throw new AppBadRequestException(ErrorCode.RESOURCE_SCOPE_LEVEL_INVALID, {
+      scope_level: scopeLevel,
+    });
   }
 
   /** Genera una URL firmada para un file_key en R2. */

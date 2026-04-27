@@ -238,9 +238,9 @@ describe('AuthService', () => {
       mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
       mockTx.roles.findFirst.mockResolvedValue(null);
 
-      await expect(service.register(registerDto)).rejects.toMatchObject(
-        { code: ErrorCode.AUTH_USER_ROLE_NOT_FOUND },
-      );
+      await expect(service.register(registerDto)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_USER_ROLE_NOT_FOUND,
+      });
       expect(mockBetterAuthService.signOut).toHaveBeenCalledWith(
         mockBaResult.session.token,
       );
@@ -274,9 +274,9 @@ describe('AuthService', () => {
         new UnauthorizedException('Invalid login credentials'),
       );
 
-      await expect(service.login(loginDto)).rejects.toMatchObject(
-        { code: ErrorCode.AUTH_INVALID_CREDENTIALS },
-      );
+      await expect(service.login(loginDto)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+      });
 
       const warnMessage = String(warnSpy.mock.calls[0]?.[0] ?? '');
       expect(warnMessage).toContain('ju***@example.com');
@@ -287,9 +287,9 @@ describe('AuthService', () => {
       mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.login(loginDto)).rejects.toMatchObject(
-        { code: ErrorCode.AUTH_INVALID_CREDENTIALS },
-      );
+      await expect(service.login(loginDto)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+      });
     });
 
     it('should return tokens, user data, and post-registration state', async () => {
@@ -466,9 +466,9 @@ describe('AuthService', () => {
     };
 
     it('should throw BadRequestException when refresh token is missing', async () => {
-      await expect(service.refreshSession({} as any)).rejects.toMatchObject(
-        { code: ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED },
-      );
+      await expect(service.refreshSession({} as any)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED,
+      });
     });
 
     it('should throw UnauthorizedException when BA refreshSession fails', async () => {
@@ -574,7 +574,9 @@ describe('AuthService', () => {
 
     it('should propagate ServiceUnavailableException from BA as-is (503)', async () => {
       mockBetterAuthService.resetPasswordForEmail.mockRejectedValue(
-        new ServiceUnavailableException('Password reset is temporarily unavailable'),
+        new ServiceUnavailableException(
+          'Password reset is temporarily unavailable',
+        ),
       );
 
       await expect(
@@ -1053,9 +1055,11 @@ describe('AuthService', () => {
     it('should throw BadRequestException when post-registration does not exist', async () => {
       mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
 
-      await expect(service.getCompletionStatus('user-123')).rejects.toMatchObject(
-        { code: ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED },
-      );
+      await expect(
+        service.getCompletionStatus('user-123'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED,
+      });
     });
 
     it('should set nextStep to profilePicture when first step is pending', async () => {
@@ -1210,7 +1214,9 @@ describe('AuthService', () => {
 
       await expect(
         service.confirmEmailVerification({ token: 'nonexistent-token' }),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      });
     });
 
     it('should throw BadRequestException and delete token when token is expired', async () => {
@@ -1225,7 +1231,9 @@ describe('AuthService', () => {
 
       await expect(
         service.confirmEmailVerification({ token: validToken }),
-      ).rejects.toMatchObject({ code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED,
+      });
 
       expect(mockPrismaService.verification.delete).toHaveBeenCalledWith({
         where: { id: 'verification-id-1' },

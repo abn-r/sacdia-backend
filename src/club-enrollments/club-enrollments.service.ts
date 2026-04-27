@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogsService } from '../catalogs/catalogs.service';
 import { CreateClubEnrollmentDto, UpdateClubEnrollmentDto } from './dto';
@@ -105,7 +102,8 @@ export class ClubEnrollmentsService {
   // ========================================
 
   async findCurrentBySectionId(sectionId: number) {
-    const currentYear = await this.catalogsService.getCurrentEcclesiasticalYear();
+    const currentYear =
+      await this.catalogsService.getCurrentEcclesiasticalYear();
     if (!currentYear) {
       return null;
     }
@@ -248,12 +246,15 @@ export class ClubEnrollmentsService {
     const hasCombinedRole = dto.secretary_treasurer_id;
 
     if (hasIndividualRoles && hasCombinedRole) {
-      throw new AppBadRequestException(ErrorCode.CE_ECCLESIASTICAL_YEAR_REQUIRED);
+      throw new AppBadRequestException(
+        ErrorCode.CE_ECCLESIASTICAL_YEAR_REQUIRED,
+      );
     }
   }
 
   private async getActiveEcclesiasticalYear() {
-    const currentYear = await this.catalogsService.getCurrentEcclesiasticalYear();
+    const currentYear =
+      await this.catalogsService.getCurrentEcclesiasticalYear();
 
     if (!currentYear) {
       throw new AppBadRequestException(ErrorCode.CE_NO_ACTIVE_YEAR);

@@ -66,12 +66,10 @@ describe('TranslationService', () => {
       const translations = [
         { locale: 'en', name: 'ADRA EN', description: 'ADRA activities EN' },
       ];
-      const result = service.translate(
-        spanishRecord,
-        translations,
-        'es',
-        ['name', 'description'],
-      );
+      const result = service.translate(spanishRecord, translations, 'es', [
+        'name',
+        'description',
+      ]);
       expect(result).toEqual(spanishRecord);
       // Ensure it is the same object reference (no copy created for es)
       expect(result).toBe(spanishRecord);
@@ -81,12 +79,10 @@ describe('TranslationService', () => {
       const translations = [
         { locale: 'en', name: 'ADRA EN', description: 'ADRA activities EN' },
       ];
-      const result = service.translate(
-        spanishRecord,
-        translations,
-        'en',
-        ['name', 'description'],
-      );
+      const result = service.translate(spanishRecord, translations, 'en', [
+        'name',
+        'description',
+      ]);
       expect(result.name).toBe('ADRA EN');
       expect(result.description).toBe('ADRA activities EN');
       expect(result.honor_category_id).toBe(1); // non-translated field preserved
@@ -94,12 +90,10 @@ describe('TranslationService', () => {
 
     it('returns record unchanged when no translation exists for the locale', () => {
       const translations: Array<Partial<Category> & { locale: string }> = [];
-      const result = service.translate(
-        spanishRecord,
-        translations,
-        'fr',
-        ['name', 'description'],
-      );
+      const result = service.translate(spanishRecord, translations, 'fr', [
+        'name',
+        'description',
+      ]);
       expect(result).toEqual(spanishRecord);
     });
 
@@ -108,12 +102,10 @@ describe('TranslationService', () => {
       const translations = [
         { locale: 'pt-BR', name: 'ADRA PT', description: null },
       ];
-      const result = service.translate(
-        spanishRecord,
-        translations,
-        'pt-BR',
-        ['name', 'description'],
-      );
+      const result = service.translate(spanishRecord, translations, 'pt-BR', [
+        'name',
+        'description',
+      ]);
       expect(result.name).toBe('ADRA PT');
       // null from translation → keep Spanish fallback
       expect(result.description).toBe('Especialidades relacionadas con ADRA');
@@ -297,7 +289,9 @@ describe('TranslationService', () => {
         1,
         undefined,
       );
-      expect(tx.honors_categories_translations.deleteMany).not.toHaveBeenCalled();
+      expect(
+        tx.honors_categories_translations.deleteMany,
+      ).not.toHaveBeenCalled();
       expect(tx.honors_categories_translations.upsert).not.toHaveBeenCalled();
     });
 
@@ -311,9 +305,11 @@ describe('TranslationService', () => {
         1,
         [],
       );
-      expect(tx.honors_categories_translations.deleteMany).toHaveBeenCalledWith({
-        where: { honor_category_id: 1 },
-      });
+      expect(tx.honors_categories_translations.deleteMany).toHaveBeenCalledWith(
+        {
+          where: { honor_category_id: 1 },
+        },
+      );
       expect(tx.honors_categories_translations.upsert).not.toHaveBeenCalled();
     });
 
@@ -332,7 +328,8 @@ describe('TranslationService', () => {
       );
       expect(tx.honors_categories_translations.upsert).toHaveBeenCalledTimes(2);
       // Empty string for description should be stored as null
-      const secondCall = tx.honors_categories_translations.upsert.mock.calls[1][0];
+      const secondCall =
+        tx.honors_categories_translations.upsert.mock.calls[1][0];
       expect(secondCall.create.description).toBeNull();
     });
 

@@ -303,7 +303,12 @@ export class ClubsService {
       dto.user_id,
     );
 
-    this.emitRealtimeInvalidation(dto.club_section_id, created.assignment_id, 'CREATED', dto.user_id);
+    this.emitRealtimeInvalidation(
+      dto.club_section_id,
+      created.assignment_id,
+      'CREATED',
+      dto.user_id,
+    );
 
     return created;
   }
@@ -350,7 +355,11 @@ export class ClubsService {
       updated.user_id,
     );
 
-    this.emitRealtimeInvalidation(updated.club_section_id, updated.assignment_id, 'UPDATED');
+    this.emitRealtimeInvalidation(
+      updated.club_section_id,
+      updated.assignment_id,
+      'UPDATED',
+    );
 
     return updated;
   }
@@ -375,7 +384,11 @@ export class ClubsService {
       removed.user_id,
     );
 
-    this.emitRealtimeInvalidation(removed.club_section_id, removed.assignment_id, 'DELETED');
+    this.emitRealtimeInvalidation(
+      removed.club_section_id,
+      removed.assignment_id,
+      'DELETED',
+    );
 
     return removed;
   }
@@ -437,7 +450,9 @@ export class ClubsService {
         });
 
         if (hasSecTreas) {
-          throw new AppConflictException(ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT);
+          throw new AppConflictException(
+            ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT,
+          );
         }
       }
     }
@@ -463,7 +478,9 @@ export class ClubsService {
           });
 
         if (existingConflict) {
-          throw new AppConflictException(ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT);
+          throw new AppConflictException(
+            ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT,
+          );
         }
       }
     }

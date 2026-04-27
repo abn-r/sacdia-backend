@@ -185,7 +185,9 @@ export class UserHonorRequirementsController {
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ summary: 'Subir evidencia (imagen o archivo) para un requisito' })
+  @ApiOperation({
+    summary: 'Subir evidencia (imagen o archivo) para un requisito',
+  })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'honorId', type: Number })
   @ApiParam({ name: 'requirementId', type: Number })
@@ -205,7 +207,11 @@ export class UserHonorRequirementsController {
     const evidenceType = imageTypes.includes(file.mimetype) ? 'IMAGE' : 'FILE';
 
     const data = await this.honorRequirementsService.uploadEvidence(
-      userId, honorId, requirementId, file, evidenceType,
+      userId,
+      honorId,
+      requirementId,
+      file,
+      evidenceType,
     );
     return { status: 'success', data };
   }
@@ -224,7 +230,10 @@ export class UserHonorRequirementsController {
     @Body() dto: CreateEvidenceLinkDto,
   ) {
     const data = await this.honorRequirementsService.addEvidenceLink(
-      userId, honorId, requirementId, dto.url,
+      userId,
+      honorId,
+      requirementId,
+      dto.url,
     );
     return { status: 'success', data };
   }
@@ -242,7 +251,9 @@ export class UserHonorRequirementsController {
     @Param('requirementId', ParseIntPipe) requirementId: number,
   ) {
     const data = await this.honorRequirementsService.getEvidences(
-      userId, honorId, requirementId,
+      userId,
+      honorId,
+      requirementId,
     );
     return { status: 'success', data };
   }
@@ -262,7 +273,10 @@ export class UserHonorRequirementsController {
     @Param('evidenceId', ParseIntPipe) evidenceId: number,
   ) {
     const data = await this.honorRequirementsService.deleteEvidence(
-      userId, honorId, requirementId, evidenceId,
+      userId,
+      honorId,
+      requirementId,
+      evidenceId,
     );
     return { status: 'success', data };
   }

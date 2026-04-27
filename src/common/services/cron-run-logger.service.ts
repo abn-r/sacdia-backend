@@ -32,8 +32,8 @@ export class CronRunLogger {
           duration_ms: endedAt.getTime() - startedAt.getTime(),
           status: 'completed',
           items_processed:
-            (result as { itemsProcessed?: number } | undefined)?.itemsProcessed ??
-            null,
+            (result as { itemsProcessed?: number } | undefined)
+              ?.itemsProcessed ?? null,
         },
       });
       return result;

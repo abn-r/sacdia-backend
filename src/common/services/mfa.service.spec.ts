@@ -76,9 +76,16 @@ describe('MfaService', () => {
       mockHasTotpEnabled.mockResolvedValue({ enabled: true });
       mockVerifyTotp.mockResolvedValue({ verified: true });
 
-      const result = await service.verifyMfa(USER_ID, 'user@example.com', '123456');
+      const result = await service.verifyMfa(
+        USER_ID,
+        'user@example.com',
+        '123456',
+      );
 
-      expect(result).toEqual({ verified: true, accessToken: 'mock-aal2-token' });
+      expect(result).toEqual({
+        verified: true,
+        accessToken: 'mock-aal2-token',
+      });
       expect(mockVerifyTotp).toHaveBeenCalledWith(USER_ID, '123456');
       // sessionId is undefined when not provided — forwarded as undefined to signJwt
       expect(mockSignJwt).toHaveBeenCalledWith(
@@ -93,9 +100,17 @@ describe('MfaService', () => {
       mockVerifyTotp.mockResolvedValue({ verified: true });
 
       const SESSION_ID = 'ba-session-uuid-123';
-      const result = await service.verifyMfa(USER_ID, 'user@example.com', '123456', SESSION_ID);
+      const result = await service.verifyMfa(
+        USER_ID,
+        'user@example.com',
+        '123456',
+        SESSION_ID,
+      );
 
-      expect(result).toEqual({ verified: true, accessToken: 'mock-aal2-token' });
+      expect(result).toEqual({
+        verified: true,
+        accessToken: 'mock-aal2-token',
+      });
       expect(mockSignJwt).toHaveBeenCalledWith(
         { id: USER_ID, email: 'user@example.com' },
         false,
@@ -120,7 +135,11 @@ describe('MfaService', () => {
       mockHasTotpEnabled.mockResolvedValue({ enabled: true });
       mockVerifyTotp.mockResolvedValue({ verified: false });
 
-      const result = await service.verifyMfa(USER_ID, 'user@example.com', '000000');
+      const result = await service.verifyMfa(
+        USER_ID,
+        'user@example.com',
+        '000000',
+      );
 
       expect(result).toEqual({ verified: false });
     });

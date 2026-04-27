@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppConflictException,
   AppNotFoundException,
@@ -132,7 +129,10 @@ export class AdminGeographyService {
     });
 
     if (activeUnions > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_COUNTRY_HAS_ACTIVE_UNIONS, { id: countryId });
+      throw new AppConflictException(
+        ErrorCode.ADMIN_COUNTRY_HAS_ACTIVE_UNIONS,
+        { id: countryId },
+      );
     }
 
     const country = await this.prisma.countries.update({
@@ -237,7 +237,10 @@ export class AdminGeographyService {
     });
 
     if (activeLocalFields > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_UNION_HAS_ACTIVE_LOCAL_FIELDS, { id: unionId });
+      throw new AppConflictException(
+        ErrorCode.ADMIN_UNION_HAS_ACTIVE_LOCAL_FIELDS,
+        { id: unionId },
+      );
     }
 
     const union = await this.prisma.unions.update({
@@ -352,7 +355,10 @@ export class AdminGeographyService {
     });
 
     if (activeDistricts > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_LOCAL_FIELD_HAS_ACTIVE_DISTRICTS, { id: localFieldId });
+      throw new AppConflictException(
+        ErrorCode.ADMIN_LOCAL_FIELD_HAS_ACTIVE_DISTRICTS,
+        { id: localFieldId },
+      );
     }
 
     const localField = await this.prisma.local_fields.update({
@@ -483,7 +489,10 @@ export class AdminGeographyService {
     });
 
     if (activeChurches > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_DISTRICT_HAS_ACTIVE_CHURCHES, { id: districtId });
+      throw new AppConflictException(
+        ErrorCode.ADMIN_DISTRICT_HAS_ACTIVE_CHURCHES,
+        { id: districtId },
+      );
     }
 
     const district = await this.prisma.districts.update({
@@ -644,7 +653,9 @@ export class AdminGeographyService {
       });
 
       if (existingByAbbreviation) {
-        throw new AppConflictException(ErrorCode.ADMIN_COUNTRY_ABBREVIATION_CONFLICT);
+        throw new AppConflictException(
+          ErrorCode.ADMIN_COUNTRY_ABBREVIATION_CONFLICT,
+        );
       }
     }
   }
@@ -676,7 +687,9 @@ export class AdminGeographyService {
       });
 
       if (existingByAbbreviation) {
-        throw new AppConflictException(ErrorCode.ADMIN_UNION_ABBREVIATION_CONFLICT);
+        throw new AppConflictException(
+          ErrorCode.ADMIN_UNION_ABBREVIATION_CONFLICT,
+        );
       }
     }
   }
@@ -695,7 +708,9 @@ export class AdminGeographyService {
       });
 
       if (existingByName) {
-        throw new AppConflictException(ErrorCode.ADMIN_LOCAL_FIELD_NAME_CONFLICT);
+        throw new AppConflictException(
+          ErrorCode.ADMIN_LOCAL_FIELD_NAME_CONFLICT,
+        );
       }
     }
 
@@ -708,7 +723,9 @@ export class AdminGeographyService {
       });
 
       if (existingByAbbreviation) {
-        throw new AppConflictException(ErrorCode.ADMIN_LOCAL_FIELD_ABBREVIATION_CONFLICT);
+        throw new AppConflictException(
+          ErrorCode.ADMIN_LOCAL_FIELD_ABBREVIATION_CONFLICT,
+        );
       }
     }
   }
@@ -719,7 +736,9 @@ export class AdminGeographyService {
     });
 
     if (!country) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_COUNTRY_NOT_FOUND, { id: countryId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_COUNTRY_NOT_FOUND, {
+        id: countryId,
+      });
     }
 
     return country;
@@ -731,7 +750,9 @@ export class AdminGeographyService {
     });
 
     if (!union) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_UNION_NOT_FOUND, { id: unionId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_UNION_NOT_FOUND, {
+        id: unionId,
+      });
     }
 
     return union;
@@ -743,7 +764,9 @@ export class AdminGeographyService {
     });
 
     if (!localField) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_LOCAL_FIELD_NOT_FOUND, { id: localFieldId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_LOCAL_FIELD_NOT_FOUND, {
+        id: localFieldId,
+      });
     }
 
     return localField;
@@ -755,7 +778,9 @@ export class AdminGeographyService {
     });
 
     if (!district) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_DISTRICT_NOT_FOUND, { id: districtId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_DISTRICT_NOT_FOUND, {
+        id: districtId,
+      });
     }
 
     return district;
@@ -767,7 +792,9 @@ export class AdminGeographyService {
     });
 
     if (!church) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_CHURCH_NOT_FOUND, { id: churchId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_CHURCH_NOT_FOUND, {
+        id: churchId,
+      });
     }
 
     return church;

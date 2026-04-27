@@ -164,7 +164,10 @@ export class ClubsController {
       'Lista las secciones del club (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read — diseñado para permitir la selección de sección durante el post-registro. La respuesta es intencionalmente limitada a campos de identificación (id, nombre, tipo); los detalles operacionales (cuota, cupo, horarios, contacto) se omiten para reducir la superficie de exposición.',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 200, description: 'Secciones del club (campos de identificación)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Secciones del club (campos de identificación)',
+  })
   async getSections(@Param('clubId', ParseIntPipe) clubId: number) {
     return this.clubsService.getSections(clubId);
   }
@@ -256,7 +259,9 @@ export class ClubsController {
     @Body() dto: AssignRoleDto,
   ) {
     if (dto.club_section_id && dto.club_section_id !== sectionId) {
-      throw new AppBadRequestException(ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID);
+      throw new AppBadRequestException(
+        ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID,
+      );
     }
 
     return this.clubsService.assignRole({

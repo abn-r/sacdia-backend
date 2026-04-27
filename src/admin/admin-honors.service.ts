@@ -1,6 +1,4 @@
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppNotFoundException,
@@ -99,7 +97,9 @@ export class AdminHonorsService {
     });
 
     if (!honor) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND, { id: honorId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND, {
+        id: honorId,
+      });
     }
 
     const rows = await this.prisma.honor_requirements.findMany({
@@ -122,7 +122,9 @@ export class AdminHonorsService {
     });
 
     if (!honor) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND, { id: dto.honorId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND, {
+        id: dto.honorId,
+      });
     }
 
     // Validate parent belongs to same honor.
@@ -133,17 +135,25 @@ export class AdminHonorsService {
       });
 
       if (!parent || !parent.active) {
-        throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_REQUIREMENT_NOT_FOUND, { id: dto.parentId });
+        throw new AppNotFoundException(
+          ErrorCode.ADMIN_HONOR_REQUIREMENT_NOT_FOUND,
+          { id: dto.parentId },
+        );
       }
 
       if (parent.honor_id !== dto.honorId) {
-        throw new AppBadRequestException(ErrorCode.ADMIN_HONOR_REQUIREMENT_WRONG_HONOR, { parentId: dto.parentId, honorId: dto.honorId });
+        throw new AppBadRequestException(
+          ErrorCode.ADMIN_HONOR_REQUIREMENT_WRONG_HONOR,
+          { parentId: dto.parentId, honorId: dto.honorId },
+        );
       }
     }
 
     // Validate choice-group constraints.
     if (dto.isChoiceGroup && dto.choiceMin == null) {
-      throw new AppBadRequestException(ErrorCode.ADMIN_HONOR_REQUIREMENT_CHOICE_MIN_REQUIRED);
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_HONOR_REQUIREMENT_CHOICE_MIN_REQUIRED,
+      );
     }
 
     // Create requirement and update parent's has_sub_items in a transaction.
@@ -185,7 +195,10 @@ export class AdminHonorsService {
     });
 
     if (!existing || !existing.active) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_REQUIREMENT_NOT_FOUND, { id: requirementId });
+      throw new AppNotFoundException(
+        ErrorCode.ADMIN_HONOR_REQUIREMENT_NOT_FOUND,
+        { id: requirementId },
+      );
     }
 
     return this.prisma.honor_requirements.update({
@@ -203,7 +216,9 @@ export class AdminHonorsService {
         ...(dto.referenceText !== undefined && {
           reference_text: dto.referenceText,
         }),
-        ...(dto.hasSubItems !== undefined && { has_sub_items: dto.hasSubItems }),
+        ...(dto.hasSubItems !== undefined && {
+          has_sub_items: dto.hasSubItems,
+        }),
         ...(dto.isChoiceGroup !== undefined && {
           is_choice_group: dto.isChoiceGroup,
         }),
@@ -228,7 +243,10 @@ export class AdminHonorsService {
     });
 
     if (!existing || !existing.active) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_REQUIREMENT_NOT_FOUND, { id: requirementId });
+      throw new AppNotFoundException(
+        ErrorCode.ADMIN_HONOR_REQUIREMENT_NOT_FOUND,
+        { id: requirementId },
+      );
     }
 
     const now = new Date();
@@ -260,7 +278,9 @@ export class AdminHonorsService {
     });
 
     if (!honor) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND, { id: honorId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_NOT_FOUND, {
+        id: honorId,
+      });
     }
 
     const now = new Date();

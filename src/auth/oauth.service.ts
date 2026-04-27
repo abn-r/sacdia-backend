@@ -1,11 +1,5 @@
-import {
-  Injectable,
-  Logger,
-  Inject,
-} from '@nestjs/common';
-import {
-  AppBadRequestException,
-} from '../common/errors/app.exception';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { AppBadRequestException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
@@ -85,7 +79,10 @@ export class OAuthService {
       this.logger.warn(
         `OAuth redirect URL rejected — not in allowlist: ${url}`,
       );
-      throw new AppBadRequestException(ErrorCode.AUTH_OAUTH_REDIRECT_NOT_ALLOWED, { url });
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_OAUTH_REDIRECT_NOT_ALLOWED,
+        { url },
+      );
     }
   }
 
@@ -250,7 +247,10 @@ export class OAuthService {
   async disconnectProvider(userId: string, provider: string) {
     const validProviders = OAuthService.VALID_PROVIDERS as readonly string[];
     if (!validProviders.includes(provider)) {
-      throw new AppBadRequestException(ErrorCode.AUTH_OAUTH_PROVIDER_INVALID, { provider, valid: OAuthService.VALID_PROVIDERS.join(', ') });
+      throw new AppBadRequestException(ErrorCode.AUTH_OAUTH_PROVIDER_INVALID, {
+        provider,
+        valid: OAuthService.VALID_PROVIDERS.join(', '),
+      });
     }
 
     // Safety check: ensure the user retains at least one authentication method
@@ -276,7 +276,10 @@ export class OAuthService {
     });
 
     if (deleted.count === 0) {
-      throw new AppBadRequestException(ErrorCode.AUTH_OAUTH_PROVIDER_NOT_CONNECTED, { provider });
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_OAUTH_PROVIDER_NOT_CONNECTED,
+        { provider },
+      );
     }
 
     this.logger.log(`Provider ${provider} disconnected for user: ${userId}`);

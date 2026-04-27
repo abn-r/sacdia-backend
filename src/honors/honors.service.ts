@@ -1,8 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -391,7 +387,9 @@ export class HonorsService {
           },
         });
       } catch (error) {
-        this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+        this.logger.warn(
+          `Failed to emit achievement event: ${(error as Error).message}`,
+        );
       }
 
       return this.mapUserHonorPrivateUrls(updated);
@@ -432,7 +430,9 @@ export class HonorsService {
         },
       });
     } catch (error) {
-      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
     }
 
     return this.mapUserHonorPrivateUrls(created);
@@ -502,10 +502,9 @@ export class HonorsService {
     }
 
     if (duplicated.size > 0) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_BULK_DUPLICATE_IDS,
-        { ids: Array.from(duplicated).join(', ') },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_BULK_DUPLICATE_IDS, {
+        ids: Array.from(duplicated).join(', '),
+      });
     }
 
     const activeHonors = await this.prisma.honors.findMany({
@@ -521,10 +520,9 @@ export class HonorsService {
       (honorId) => !activeHonorIds.has(honorId),
     );
     if (missingHonorIds.length > 0) {
-      throw new AppNotFoundException(
-        ErrorCode.HONOR_BULK_NOT_FOUND,
-        { ids: missingHonorIds.join(', ') },
-      );
+      throw new AppNotFoundException(ErrorCode.HONOR_BULK_NOT_FOUND, {
+        ids: missingHonorIds.join(', '),
+      });
     }
 
     const existingUserHonors = await this.prisma.users_honors.findMany({
@@ -713,7 +711,9 @@ export class HonorsService {
       }
     } catch (error) {
       await this.rollbackUploadedObjects(uploadedObjects);
-      throw new AppInternalServerErrorException(ErrorCode.HONOR_FILE_UPLOAD_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.HONOR_FILE_UPLOAD_FAILED,
+      );
     }
 
     const finalImages = [...currentImages, ...uploadedImageUrls];
@@ -765,7 +765,9 @@ export class HonorsService {
       );
     } catch (error) {
       await this.rollbackUploadedObjects(uploadedObjects);
-      throw new AppInternalServerErrorException(ErrorCode.HONOR_FILE_UPLOAD_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.HONOR_FILE_UPLOAD_FAILED,
+      );
     }
 
     if (
@@ -805,7 +807,10 @@ export class HonorsService {
           images: await Promise.all(
             uploadedImageUrls.map((url) =>
               HONOR_DETAIL_URL_LIMITER(() =>
-                this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+                this.resolvePrivateAssetUrl(
+                  StorageBucketAlias.USERS_HONORS,
+                  url,
+                ),
               ),
             ),
           ),
@@ -984,36 +989,32 @@ export class HonorsService {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_FILE_INVALID_FORMAT,
-        { allowed: 'PDF, JPG, PNG, WEBP' },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_INVALID_FORMAT, {
+        allowed: 'PDF, JPG, PNG, WEBP',
+      });
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_FILE_TOO_LARGE,
-        { max_mb: '10' },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_TOO_LARGE, {
+        max_mb: '10',
+      });
     }
   }
 
   private validateImageFile(file: Express.Multer.File) {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_FILE_INVALID_FORMAT,
-        { allowed: 'JPG, PNG, WEBP' },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_INVALID_FORMAT, {
+        allowed: 'JPG, PNG, WEBP',
+      });
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_FILE_TOO_LARGE,
-        { max_mb: '10' },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_TOO_LARGE, {
+        max_mb: '10',
+      });
     }
   }
 
@@ -1027,18 +1028,16 @@ export class HonorsService {
       'image/webp',
     ];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_FILE_INVALID_FORMAT,
-        { allowed: 'PDF, DOC, DOCX, JPG, PNG, WEBP' },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_INVALID_FORMAT, {
+        allowed: 'PDF, DOC, DOCX, JPG, PNG, WEBP',
+      });
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_FILE_TOO_LARGE,
-        { max_mb: '10' },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_TOO_LARGE, {
+        max_mb: '10',
+      });
     }
   }
 

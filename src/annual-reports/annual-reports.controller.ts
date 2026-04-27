@@ -46,18 +46,32 @@ export class AnnualReportsController {
   @ApiOperation({ summary: 'Listar informes anuales (admin)' })
   @ApiQuery({ name: 'clubId', required: false, type: Number })
   @ApiQuery({ name: 'ecclesiasticalYearId', required: false, type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['draft', 'finalized', 'archived'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['draft', 'finalized', 'archived'],
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Lista paginada de informes anuales' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de informes anuales',
+  })
   async listAdmin(
     @Query('clubId', new ParseIntPipe({ optional: true })) clubId?: number,
-    @Query('ecclesiasticalYearId', new ParseIntPipe({ optional: true })) ecclesiasticalYearId?: number,
+    @Query('ecclesiasticalYearId', new ParseIntPipe({ optional: true }))
+    ecclesiasticalYearId?: number,
     @Query('status') status?: string,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    const data = await this.annualReportsService.listForAdmin({ clubId, ecclesiasticalYearId, status, page, limit });
+    const data = await this.annualReportsService.listForAdmin({
+      clubId,
+      ecclesiasticalYearId,
+      status,
+      page,
+      limit,
+    });
     return { status: 'success', data };
   }
 
@@ -82,7 +96,9 @@ export class AnnualReportsController {
 
   @Patch('admin/annual-reports/:id')
   @RequirePermissions('reports:update')
-  @ApiOperation({ summary: 'Actualizar datos manuales del informe anual (admin)' })
+  @ApiOperation({
+    summary: 'Actualizar datos manuales del informe anual (admin)',
+  })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Datos actualizados' })
   async updateManualData(
@@ -99,7 +115,9 @@ export class AnnualReportsController {
 
   @Post('admin/annual-reports/:id/regenerate')
   @RequirePermissions('reports:update')
-  @ApiOperation({ summary: 'Regenerar datos calculados del informe anual (admin)' })
+  @ApiOperation({
+    summary: 'Regenerar datos calculados del informe anual (admin)',
+  })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe regenerado' })
   async regenerate(@Param('id', ParseIntPipe) id: number) {
@@ -131,7 +149,10 @@ export class AnnualReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe anual' })
-  async downloadPdfAdmin(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+  async downloadPdfAdmin(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
     const buffer = await this.annualReportsPdfService.generatePdf(id);
     res.set({
       'Content-Type': 'application/pdf',
@@ -149,7 +170,10 @@ export class AnnualReportsController {
   @RequirePermissions('reports:read')
   @ApiOperation({ summary: 'Listar informes anuales de un club (usuario)' })
   @ApiParam({ name: 'clubId', type: 'integer' })
-  @ApiResponse({ status: 200, description: 'Lista de informes anuales del club' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de informes anuales del club',
+  })
   async listForClub(@Param('clubId', ParseIntPipe) clubId: number) {
     const data = await this.annualReportsService.listForClub(clubId);
     return { status: 'success', data };
@@ -182,7 +206,10 @@ export class AnnualReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe anual' })
-  async downloadPdfUser(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+  async downloadPdfUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
     const buffer = await this.annualReportsPdfService.generatePdf(id);
     res.set({
       'Content-Type': 'application/pdf',

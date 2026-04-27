@@ -62,7 +62,9 @@ export class LegalRepresentativesService {
     });
 
     if (!relType) {
-      throw new AppNotFoundException(ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
+      );
     }
 
     const representative = await this.prisma.legal_representatives.create({
@@ -168,7 +170,9 @@ export class LegalRepresentativesService {
       });
 
       if (!relType) {
-        throw new AppNotFoundException(ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND);
+        throw new AppNotFoundException(
+          ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
+        );
       }
     }
 

@@ -110,7 +110,9 @@ export class UsersService {
       });
 
       if (!localField || localField.union_id !== targetUnionId) {
-        throw new AppBadRequestException(ErrorCode.USER_LOCAL_FIELD_UNION_MISMATCH);
+        throw new AppBadRequestException(
+          ErrorCode.USER_LOCAL_FIELD_UNION_MISMATCH,
+        );
       }
     }
   }
@@ -130,10 +132,9 @@ export class UsersService {
     const invalid = allergyIds.filter((id) => !found.has(id));
 
     if (invalid.length > 0) {
-      throw new AppBadRequestException(
-        ErrorCode.USER_ALLERGY_INVALID,
-        { ids: invalid.join(', ') },
-      );
+      throw new AppBadRequestException(ErrorCode.USER_ALLERGY_INVALID, {
+        ids: invalid.join(', '),
+      });
     }
   }
 
@@ -152,10 +153,9 @@ export class UsersService {
     const invalid = diseaseIds.filter((id) => !found.has(id));
 
     if (invalid.length > 0) {
-      throw new AppBadRequestException(
-        ErrorCode.USER_DISEASE_INVALID,
-        { ids: invalid.join(', ') },
-      );
+      throw new AppBadRequestException(ErrorCode.USER_DISEASE_INVALID, {
+        ids: invalid.join(', '),
+      });
     }
   }
 
@@ -174,10 +174,9 @@ export class UsersService {
     const invalid = medicineIds.filter((id) => !found.has(id));
 
     if (invalid.length > 0) {
-      throw new AppBadRequestException(
-        ErrorCode.USER_MEDICINE_INVALID,
-        { ids: invalid.join(', ') },
-      );
+      throw new AppBadRequestException(ErrorCode.USER_MEDICINE_INVALID, {
+        ids: invalid.join(', '),
+      });
     }
   }
 
@@ -685,10 +684,9 @@ export class UsersService {
     // Validar tamaño (max 5MB)
     const maxSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxSize) {
-      throw new AppBadRequestException(
-        ErrorCode.USER_IMAGE_TOO_LARGE,
-        { max_mb: '5' },
-      );
+      throw new AppBadRequestException(ErrorCode.USER_IMAGE_TOO_LARGE, {
+        max_mb: '5',
+      });
     }
 
     // Determinar extensión
@@ -717,7 +715,9 @@ export class UsersService {
       );
     } catch (error) {
       this.logger.error('R2 upload error:', error);
-      throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_UPLOAD_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.USER_IMAGE_UPLOAD_FAILED,
+      );
     }
 
     try {
@@ -730,7 +730,9 @@ export class UsersService {
       await this.rollbackUploadedObjects(StorageBucketAlias.USER_PROFILES, [
         uploaded.key,
       ]);
-      throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_UPDATE_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.USER_IMAGE_UPDATE_FAILED,
+      );
     }
 
     // Fire-and-forget: do NOT await — old-file cleanup must not block the
@@ -791,7 +793,9 @@ export class UsersService {
         'Database update failed while deleting profile image:',
         error,
       );
-      throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_DELETE_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.USER_IMAGE_DELETE_FAILED,
+      );
     }
 
     if (fileKey) {
@@ -814,7 +818,9 @@ export class UsersService {
           );
         }
 
-        throw new AppInternalServerErrorException(ErrorCode.USER_IMAGE_DELETE_FAILED);
+        throw new AppInternalServerErrorException(
+          ErrorCode.USER_IMAGE_DELETE_FAILED,
+        );
       }
     } else {
       this.logger.warn(

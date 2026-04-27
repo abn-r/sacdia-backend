@@ -27,9 +27,7 @@ import { AdminCronAlertsService } from './admin-cron-alerts.service';
 @GlobalRoles('admin', 'super_admin')
 @Controller('admin/cron-alerts')
 export class AdminCronAlertsController {
-  constructor(
-    private readonly cronAlertsService: AdminCronAlertsService,
-  ) {}
+  constructor(private readonly cronAlertsService: AdminCronAlertsService) {}
 
   // ──────────────────────────────────────────────────────────────────────────
   // GET /admin/cron-alerts — paginated alert history
@@ -42,11 +40,34 @@ export class AdminCronAlertsController {
       'Returns the history of automated cron job alerts from cron_alerts_log. ' +
       'Supports filtering by job name, since date, and resolved/open status.',
   })
-  @ApiQuery({ name: 'jobName', required: false, description: 'Filter by job name' })
-  @ApiQuery({ name: 'since', required: false, description: 'ISO date — only alerts after this timestamp' })
-  @ApiQuery({ name: 'unresolved', required: false, type: Boolean, description: 'When true, return only open (unresolved) alerts' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default 20, max 100)' })
+  @ApiQuery({
+    name: 'jobName',
+    required: false,
+    description: 'Filter by job name',
+  })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description: 'ISO date — only alerts after this timestamp',
+  })
+  @ApiQuery({
+    name: 'unresolved',
+    required: false,
+    type: Boolean,
+    description: 'When true, return only open (unresolved) alerts',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default 20, max 100)',
+  })
   @ApiOkResponse({
     description: 'Paginated alert history',
     schema: {

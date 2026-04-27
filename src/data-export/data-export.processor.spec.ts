@@ -39,7 +39,7 @@ const makeJob = (data: object) =>
     data,
     id: 'job-1',
     name: DATA_EXPORT_GENERATE_JOB,
-  } as any);
+  }) as any;
 
 describe('DataExportProcessor', () => {
   let processor: DataExportProcessor;
@@ -113,7 +113,10 @@ describe('DataExportProcessor', () => {
     );
     expect(mockFileStorage.upload).toHaveBeenCalledTimes(1);
     expect(mockEmailService.sendDataExportReady).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: MOCK_USER_ID, exportId: MOCK_EXPORT_ID }),
+      expect.objectContaining({
+        userId: MOCK_USER_ID,
+        exportId: MOCK_EXPORT_ID,
+      }),
     );
   });
 
@@ -178,7 +181,9 @@ describe('DataExportProcessor', () => {
     mockPrisma.notification_preferences.findMany.mockImplementation(emptyArr);
     mockPrisma.evidence_files.findMany.mockImplementation(emptyArr);
 
-    mockFileStorage.upload.mockRejectedValueOnce(new Error('R2 connection refused'));
+    mockFileStorage.upload.mockRejectedValueOnce(
+      new Error('R2 connection refused'),
+    );
 
     const result = await processor.process(
       makeJob({ exportId: MOCK_EXPORT_ID, userId: MOCK_USER_ID }),

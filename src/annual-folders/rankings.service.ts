@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -75,7 +71,10 @@ export class RankingsService {
   // CRON JOB — Nightly at 2:00 AM
   // ========================================
 
-  @Cron('0 2 * * *', { name: 'annual-folders-rankings-recalc', timeZone: 'UTC' })
+  @Cron('0 2 * * *', {
+    name: 'annual-folders-rankings-recalc',
+    timeZone: 'UTC',
+  })
   async handleRankingsRecalculation() {
     this.logger.log('Rankings cron triggered — enqueuing BullMQ job...');
 
@@ -136,7 +135,9 @@ export class RankingsService {
     const acquired = await this.lockService.tryAcquire(lockKey, 10 * 60 * 1000);
 
     if (!acquired) {
-      throw new AppConflictException(ErrorCode.ANNUAL_FOLDER_RANKINGS_LOCK_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_FOLDER_RANKINGS_LOCK_CONFLICT,
+      );
     }
 
     try {
@@ -150,9 +151,9 @@ export class RankingsService {
    * Internal implementation — runs after the lock has been acquired.
    * Separated so the lock acquire/release wrapper stays clean.
    */
-  private async _runRecalculation(
-    year: { year_id: number },
-  ): Promise<RecalculateResult> {
+  private async _runRecalculation(year: {
+    year_id: number;
+  }): Promise<RecalculateResult> {
     // 2. Fetch all evaluated/closed folders for that year, with club type
     const folders = await this.prisma.annual_folders.findMany({
       where: {
@@ -365,7 +366,10 @@ export class RankingsService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND, { id: clubEnrollmentId });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND,
+        { id: clubEnrollmentId },
+      );
     }
 
     const records = await this.prisma.club_annual_rankings.findMany({
@@ -420,7 +424,9 @@ export class RankingsService {
         where: { year_id: yearId },
       });
       if (!year) {
-        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, { id: yearId });
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+          id: yearId,
+        });
       }
       return year;
     }
@@ -431,7 +437,9 @@ export class RankingsService {
     });
 
     if (!activeYear) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, { id: 'active' });
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+        id: 'active',
+      });
     }
 
     return activeYear;

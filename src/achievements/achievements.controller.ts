@@ -162,7 +162,8 @@ export class AchievementsController {
     }
 
     const categories = Array.from(categoryMap.values()).sort(
-      (a, b) => a.display_order - b.display_order || a.category_id - b.category_id,
+      (a, b) =>
+        a.display_order - b.display_order || a.category_id - b.category_id,
     );
 
     return {
@@ -193,7 +194,10 @@ export class AchievementsController {
   })
   @ApiParam({ name: 'achievementId', type: Number })
   @ApiResponse({ status: 200, description: 'Achievement detail with progress' })
-  @ApiResponse({ status: 404, description: 'Achievement not found or inactive' })
+  @ApiResponse({
+    status: 404,
+    description: 'Achievement not found or inactive',
+  })
   async getAchievementDetail(
     @Request() req: { user: { userId: string } },
     @Param('achievementId', ParseIntPipe) achievementId: number,

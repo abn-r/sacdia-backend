@@ -41,13 +41,18 @@ describe('UserNotificationPreferencesController', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    mockPreferencesService.getUserPreferences.mockResolvedValue(ALL_ENABLED_PREFS);
+    mockPreferencesService.getUserPreferences.mockResolvedValue(
+      ALL_ENABLED_PREFS,
+    );
     mockPreferencesService.setPreference.mockResolvedValue(ALL_ENABLED_PREFS);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserNotificationPreferencesController],
       providers: [
-        { provide: NotificationPreferencesService, useValue: mockPreferencesService },
+        {
+          provide: NotificationPreferencesService,
+          useValue: mockPreferencesService,
+        },
         { provide: FcmTokensService, useValue: mockFcmTokensService },
       ],
     })
@@ -160,10 +165,11 @@ describe('UserNotificationPreferencesController', () => {
 
       // 5 from master + 1 individual = 6 calls total
       expect(mockPreferencesService.setPreference).toHaveBeenCalledTimes(6);
-      const activitiesTrue = mockPreferencesService.setPreference.mock.calls.some(
-        ([uid, cat, enabled]) =>
-          uid === USER_ID && cat === 'activities' && enabled === true,
-      );
+      const activitiesTrue =
+        mockPreferencesService.setPreference.mock.calls.some(
+          ([uid, cat, enabled]) =>
+            uid === USER_ID && cat === 'activities' && enabled === true,
+        );
       expect(activitiesTrue).toBe(true);
     });
 

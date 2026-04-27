@@ -301,7 +301,9 @@ describe('InventoryService', () => {
     it('TC12 - error: category not found → NotFoundException', async () => {
       mockPrismaService.inventory_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(10, createDto, 'user-abc')).rejects.toMatchObject({
+      await expect(
+        service.create(10, createDto, 'user-abc'),
+      ).rejects.toMatchObject({
         code: ErrorCode.INVENTORY_CATEGORY_NOT_FOUND,
       });
     });
@@ -312,7 +314,9 @@ describe('InventoryService', () => {
         active: false,
       });
 
-      await expect(service.create(10, createDto, 'user-abc')).rejects.toMatchObject({
+      await expect(
+        service.create(10, createDto, 'user-abc'),
+      ).rejects.toMatchObject({
         code: ErrorCode.INVENTORY_CATEGORY_NOT_FOUND,
       });
     });
@@ -323,7 +327,9 @@ describe('InventoryService', () => {
       );
       mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(10, createDto, 'user-abc')).rejects.toMatchObject({
+      await expect(
+        service.create(10, createDto, 'user-abc'),
+      ).rejects.toMatchObject({
         code: ErrorCode.INVENTORY_SECTION_NOT_FOUND,
       });
     });
@@ -379,7 +385,9 @@ describe('InventoryService', () => {
     it('TC17 - error: item not found → NotFoundException', async () => {
       mockPrismaService.club_inventory.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(999, updateDto, 'user-abc')).rejects.toMatchObject({
+      await expect(
+        service.update(999, updateDto, 'user-abc'),
+      ).rejects.toMatchObject({
         code: ErrorCode.INVENTORY_NOT_FOUND,
       });
     });

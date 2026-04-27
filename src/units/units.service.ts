@@ -242,7 +242,9 @@ export class UnitsService {
       });
 
       if (conflictingMembership) {
-        throw new AppConflictException(ErrorCode.UNIT_MEMBER_ALREADY_IN_SECTION);
+        throw new AppConflictException(
+          ErrorCode.UNIT_MEMBER_ALREADY_IN_SECTION,
+        );
       }
     }
 
@@ -277,7 +279,12 @@ export class UnitsService {
       });
     }
 
-    this.emitRealtimeInvalidation(unit.club_section_id, unitId, 'UPDATED', dto.user_id);
+    this.emitRealtimeInvalidation(
+      unit.club_section_id,
+      unitId,
+      'UPDATED',
+      dto.user_id,
+    );
 
     return result;
   }
@@ -311,35 +318,33 @@ export class UnitsService {
    * Transforms a raw Prisma weekly_records row (with weekly_record_scores included)
    * into the flat response shape expected by the frontend and Flutter clients.
    */
-  private transformWeeklyRecord(
-    record: {
-      record_id: number;
+  private transformWeeklyRecord(record: {
+    record_id: number;
+    user_id: string;
+    week: number;
+    year: number;
+    attendance: number;
+    punctuality: number;
+    points: number;
+    active: boolean;
+    created_at: Date;
+    modified_at: Date;
+    users?: {
       user_id: string;
-      week: number;
-      year: number;
-      attendance: number;
-      punctuality: number;
+      name: string | null;
+      paternal_last_name: string | null;
+      user_image: string | null;
+    };
+    weekly_record_scores?: Array<{
+      category_id: number;
       points: number;
-      active: boolean;
-      created_at: Date;
-      modified_at: Date;
-      users?: {
-        user_id: string;
-        name: string | null;
-        paternal_last_name: string | null;
-        user_image: string | null;
-      };
-      weekly_record_scores?: Array<{
-        category_id: number;
-        points: number;
-        scoring_category: {
-          scoring_category_id: number;
-          name: string;
-          max_points: number;
-        } | null;
-      }>;
-    },
-  ) {
+      scoring_category: {
+        scoring_category_id: number;
+        name: string;
+        max_points: number;
+      } | null;
+    }>;
+  }) {
     const { weekly_record_scores, ...rest } = record;
     return {
       ...rest,
@@ -397,7 +402,11 @@ export class UnitsService {
     return records.map((r) => this.transformWeeklyRecord(r));
   }
 
-  async createWeeklyRecord(unitId: number, dto: CreateWeeklyRecordDto, userId: string) {
+  async createWeeklyRecord(
+    unitId: number,
+    dto: CreateWeeklyRecordDto,
+    userId: string,
+  ) {
     const unit = await this.findOne(unitId);
 
     const isMember = unit.unit_members.some(
@@ -410,7 +419,11 @@ export class UnitsService {
 
     const existing = await this.prisma.weekly_records.findUnique({
       where: {
-        user_id_week_year: { user_id: dto.user_id, week: dto.week, year: dto.year },
+        user_id_week_year: {
+          user_id: dto.user_id,
+          week: dto.week,
+          year: dto.year,
+        },
       },
     });
 
@@ -438,10 +451,14 @@ export class UnitsService {
       for (const scoreEntry of dto.scores) {
         const category = categoryMap.get(scoreEntry.category_id);
         if (!category) {
-          throw new AppBadRequestException(ErrorCode.UNIT_SCORING_CATEGORY_INVALID);
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
+          );
         }
         if (scoreEntry.points > category.max_points) {
-          throw new AppBadRequestException(ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX);
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX,
+          );
         }
         calculatedPoints += scoreEntry.points;
         validatedScores.push({
@@ -530,10 +547,14 @@ export class UnitsService {
       for (const scoreEntry of dto.scores) {
         const category = categoryMap.get(scoreEntry.category_id);
         if (!category) {
-          throw new AppBadRequestException(ErrorCode.UNIT_SCORING_CATEGORY_INVALID);
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
+          );
         }
         if (scoreEntry.points > category.max_points) {
-          throw new AppBadRequestException(ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX);
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX,
+          );
         }
         validatedScores.push({
           category_id: scoreEntry.category_id,
@@ -599,8 +620,7 @@ export class UnitsService {
   private resolveLocalFieldForUnit(
     unit: Awaited<ReturnType<typeof this.findOne>>,
   ): number | null {
-    const localFieldId =
-      unit.club_sections?.clubs?.local_field_id ?? null;
+    const localFieldId = unit.club_sections?.clubs?.local_field_id ?? null;
     return localFieldId;
   }
 

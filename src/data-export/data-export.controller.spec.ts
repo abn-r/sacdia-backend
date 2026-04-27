@@ -49,7 +49,11 @@ describe('DataExportController', () => {
       const res = mockRes();
       mockDataExportService.requestExport.mockResolvedValueOnce({
         status: 201,
-        data: { export_id: 'exp-1', status: 'pending', created_at: new Date().toISOString() },
+        data: {
+          export_id: 'exp-1',
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        },
       });
 
       await controller.requestExport(req, { format: 'json' }, res);
@@ -62,7 +66,11 @@ describe('DataExportController', () => {
       const res = mockRes();
       mockDataExportService.requestExport.mockResolvedValueOnce({
         status: 200,
-        data: { export_id: 'exp-1', status: 'processing', created_at: new Date().toISOString() },
+        data: {
+          export_id: 'exp-1',
+          status: 'processing',
+          created_at: new Date().toISOString(),
+        },
       });
 
       await controller.requestExport(req, { format: 'json' }, res);
@@ -83,7 +91,9 @@ describe('DataExportController', () => {
 
   describe('getDownloadUrl', () => {
     it('calls service with userId, exportId and ip', async () => {
-      const req = mockReq('user-1', { 'x-forwarded-for': '10.0.0.1, 10.0.0.2' }) as any;
+      const req = mockReq('user-1', {
+        'x-forwarded-for': '10.0.0.1, 10.0.0.2',
+      }) as any;
       mockDataExportService.getDownloadUrl.mockResolvedValueOnce({
         url: 'https://example.com/signed',
         expires_at: new Date().toISOString(),

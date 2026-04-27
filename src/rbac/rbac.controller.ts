@@ -25,7 +25,11 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
-import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
 import {
   JwtAuthGuard,
   PermissionsGuard,

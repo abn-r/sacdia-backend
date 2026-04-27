@@ -9,9 +9,9 @@ import { FcmTokensService } from './fcm-tokens.service';
  * can configure findFirst / create / update / findMany / deleteMany on it.
  */
 function buildTxMock(inner: Record<string, unknown>) {
-  return jest.fn().mockImplementation((fn: (tx: typeof inner) => unknown) =>
-    fn(inner),
-  );
+  return jest
+    .fn()
+    .mockImplementation((fn: (tx: typeof inner) => unknown) => fn(inner));
 }
 
 describe('FcmTokensService', () => {

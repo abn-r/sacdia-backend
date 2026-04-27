@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppConflictException,
@@ -99,9 +96,7 @@ export class JobsOverviewService {
           name: j.name,
           failed_reason: j.failedReason ?? null,
           attempts: j.attemptsMade,
-          timestamp: j.finishedOn
-            ? new Date(j.finishedOn).toISOString()
-            : null,
+          timestamp: j.finishedOn ? new Date(j.finishedOn).toISOString() : null,
         }));
       }),
     );
@@ -163,7 +158,9 @@ export class JobsOverviewService {
       !this.achievementsQueue ||
       !this.dataExportsQueue
     ) {
-      throw new ServiceUnavailableException('Queues unavailable (Redis not configured)');
+      throw new ServiceUnavailableException(
+        'Queues unavailable (Redis not configured)',
+      );
     }
 
     const queueMap: Record<string, Queue> = {
@@ -175,7 +172,8 @@ export class JobsOverviewService {
       [FINANCE_PERIOD_QUEUE]: this.financePeriodQueue,
     };
     const queue = queueMap[queueName];
-    if (!queue) throw new AppNotFoundException(ErrorCode.ANALYTICS_QUEUE_NOT_FOUND);
+    if (!queue)
+      throw new AppNotFoundException(ErrorCode.ANALYTICS_QUEUE_NOT_FOUND);
 
     const job = await queue.getJob(jobId);
     if (!job) throw new AppNotFoundException(ErrorCode.ANALYTICS_JOB_NOT_FOUND);

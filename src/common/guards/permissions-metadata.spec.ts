@@ -875,9 +875,9 @@ describe('Permissions metadata', () => {
       expect(
         getSensitiveUserSubresourceFallbackPermission(family, 'update'),
       ).toBe('users:update_profile');
-      expect(getSensitiveUserSubresourceFallbackPermission(family, 'read')).toBe(
-        'users:read_detail',
-      );
+      expect(
+        getSensitiveUserSubresourceFallbackPermission(family, 'read'),
+      ).toBe('users:read_detail');
     }
   });
 });

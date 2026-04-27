@@ -24,7 +24,11 @@ describe('MonthlyReportsProcessor', () => {
    */
   function makeJob(
     data: MonthlyReportsTriggerJobData,
-    overrides: Partial<{ id: string; attemptsMade: number; opts: { attempts: number } }> = {},
+    overrides: Partial<{
+      id: string;
+      attemptsMade: number;
+      opts: { attempts: number };
+    }> = {},
   ): Job<MonthlyReportsTriggerJobData> {
     return {
       id: 'test-job-1',
@@ -81,7 +85,9 @@ describe('MonthlyReportsProcessor', () => {
         expect.any(Function),
         expect.objectContaining({ bull_job_id: 'test-job-1' }),
       );
-      expect(mockMonthlyReportsService.runAutoGeneration).toHaveBeenCalledTimes(1);
+      expect(mockMonthlyReportsService.runAutoGeneration).toHaveBeenCalledTimes(
+        1,
+      );
     });
 
     it('propagates errors thrown by runAutoGeneration() so BullMQ can retry', async () => {
@@ -91,7 +97,9 @@ describe('MonthlyReportsProcessor', () => {
       );
 
       const job = makeJob({ triggeredAt: new Date().toISOString() });
-      await expect(processor.process(job)).rejects.toThrow('DB connection lost');
+      await expect(processor.process(job)).rejects.toThrow(
+        'DB connection lost',
+      );
     });
   });
 

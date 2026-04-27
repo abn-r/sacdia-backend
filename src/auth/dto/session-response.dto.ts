@@ -18,7 +18,8 @@ export class SessionItemDto {
   device_type: DeviceType;
 
   @ApiProperty({
-    description: 'Human-readable device/browser name, null when not determinable',
+    description:
+      'Human-readable device/browser name, null when not determinable',
     example: 'iPhone',
     nullable: true,
   })
@@ -52,13 +53,15 @@ export class SessionItemDto {
   created_at: string;
 
   @ApiProperty({
-    description: 'ISO 8601 timestamp of last session update (proxy for last activity)',
+    description:
+      'ISO 8601 timestamp of last session update (proxy for last activity)',
     example: '2026-04-17T15:30:00.000Z',
   })
   last_active_at: string;
 
   @ApiProperty({
-    description: 'true when this session matches the session_id in the caller JWT (sid claim)',
+    description:
+      'true when this session matches the session_id in the caller JWT (sid claim)',
   })
   is_current: boolean;
 

@@ -89,33 +89,31 @@ describe('NotificationsService', () => {
     mockPrismaService.users.findMany.mockResolvedValue([]);
     mockPrismaService.notification_logs.create.mockResolvedValue({ log_id: 1 });
     mockPrismaService.notification_deliveries.create.mockResolvedValue({});
-    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({ count: 1 });
+    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
+      count: 1,
+    });
     mockPrismaService.notification_deliveries.count.mockResolvedValue(0);
-    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-      {
-        profile: { user_id: SENT_BY },
-        authorization: buildAuthorizationSnapshot({
-          assignmentId: 'assignment-1',
-          activePermissions: ['notifications:club'],
-          clubSectionId: 42,
-          clubId: 7,
-          clubTypeName: 'adventurers',
-          localFieldId: 10,
-          unionId: 20,
-          countryId: 30,
-        }),
-      } as any,
-    );
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
+      profile: { user_id: SENT_BY },
+      authorization: buildAuthorizationSnapshot({
+        assignmentId: 'assignment-1',
+        activePermissions: ['notifications:club'],
+        clubSectionId: 42,
+        clubId: 7,
+        clubTypeName: 'adventurers',
+        localFieldId: 10,
+        unionId: 20,
+        countryId: 30,
+      }),
+    } as any);
 
     // $transaction: simulate the interactive callback style — run callback with prisma mock as tx
-    mockPrismaService.$transaction.mockImplementation(
-      (cbOrArray: unknown) => {
-        if (typeof cbOrArray === 'function') {
-          return cbOrArray(mockPrismaService);
-        }
-        return Promise.resolve([]);
-      },
-    );
+    mockPrismaService.$transaction.mockImplementation((cbOrArray: unknown) => {
+      if (typeof cbOrArray === 'function') {
+        return cbOrArray(mockPrismaService);
+      }
+      return Promise.resolve([]);
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -170,7 +168,9 @@ describe('NotificationsService', () => {
       expect(mockSendEachForMulticast).not.toHaveBeenCalled();
       // Delivery + log must have been persisted
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
-      expect(mockPrismaService.notification_deliveries.create).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.notification_deliveries.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ user_id: dto.userId }),
         }),
@@ -306,7 +306,9 @@ describe('NotificationsService', () => {
       });
       expect(mockSendEachForMulticast).not.toHaveBeenCalled();
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
-      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.arrayContaining([
             expect.objectContaining({ user_id: 'user-1' }),
@@ -472,7 +474,9 @@ describe('NotificationsService', () => {
       expect(
         mockAuthorizationContextService.resolveUserAuthorization,
       ).not.toHaveBeenCalledWith('system');
-      expect(mockPrismaService.club_role_assignments.findMany).toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalled();
     });
 
     it('should return failure when club section has no active members', async () => {
@@ -510,7 +514,9 @@ describe('NotificationsService', () => {
       });
       expect(mockSendEachForMulticast).not.toHaveBeenCalled();
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
-      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.arrayContaining([
             expect.objectContaining({ user_id: 'user-1' }),
@@ -652,7 +658,9 @@ describe('NotificationsService', () => {
           },
         },
       ];
-      mockPrismaService.notification_deliveries.findMany.mockResolvedValue(mockDeliveries);
+      mockPrismaService.notification_deliveries.findMany.mockResolvedValue(
+        mockDeliveries,
+      );
       mockPrismaService.notification_deliveries.count.mockResolvedValue(1);
 
       const result = await service.getNotificationHistory(CALLER_ID, 1, 20);
@@ -665,8 +673,12 @@ describe('NotificationsService', () => {
         'assistant_admin',
       ]);
       // Must NOT query notification_logs directly for regular users
-      expect(mockPrismaService.notification_logs.findMany).not.toHaveBeenCalled();
-      expect(mockPrismaService.notification_deliveries.findMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.notification_logs.findMany,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.notification_deliveries.findMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { user_id: CALLER_ID },
           include: { notification_log: true },
@@ -747,24 +759,22 @@ describe('NotificationsService', () => {
 
       mockPrismaService.notification_logs.findMany.mockImplementation(
         async ({ where }) =>
-          logs.filter(
-            (log) =>
-              log.deliveries?.some(
-                (delivery) =>
-                  delivery.user?.local_field_id ===
-                  where?.deliveries?.some?.user?.local_field_id,
-              ),
+          logs.filter((log) =>
+            log.deliveries?.some(
+              (delivery) =>
+                delivery.user?.local_field_id ===
+                where?.deliveries?.some?.user?.local_field_id,
+            ),
           ),
       );
       mockPrismaService.notification_logs.count.mockImplementation(
         async ({ where }) =>
-          logs.filter(
-            (log) =>
-              log.deliveries?.some(
-                (delivery) =>
-                  delivery.user?.local_field_id ===
-                  where?.deliveries?.some?.user?.local_field_id,
-              ),
+          logs.filter((log) =>
+            log.deliveries?.some(
+              (delivery) =>
+                delivery.user?.local_field_id ===
+                where?.deliveries?.some?.user?.local_field_id,
+            ),
           ).length,
       );
 
@@ -784,7 +794,10 @@ describe('NotificationsService', () => {
         }),
       );
       expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toMatchObject({ log_id: 7, title: 'Local field alert' });
+      expect(result.data[0]).toMatchObject({
+        log_id: 7,
+        title: 'Local field alert',
+      });
       expect(result.total).toBe(1);
     });
 
@@ -834,7 +847,11 @@ describe('NotificationsService', () => {
           created_at: new Date(),
           deliveries: [
             {
-              user: { user_id: 'user-local', union_id: 999, local_field_id: 10 },
+              user: {
+                user_id: 'user-local',
+                union_id: 999,
+                local_field_id: 10,
+              },
             },
           ],
         },
@@ -846,7 +863,8 @@ describe('NotificationsService', () => {
             (log) =>
               log.deliveries?.some(
                 (delivery) =>
-                  delivery.user?.union_id === where?.deliveries?.some?.user?.union_id,
+                  delivery.user?.union_id ===
+                  where?.deliveries?.some?.user?.union_id,
               ) ||
               log.deliveries?.some(
                 (delivery) =>
@@ -861,7 +879,8 @@ describe('NotificationsService', () => {
             (log) =>
               log.deliveries?.some(
                 (delivery) =>
-                  delivery.user?.union_id === where?.deliveries?.some?.user?.union_id,
+                  delivery.user?.union_id ===
+                  where?.deliveries?.some?.user?.union_id,
               ) ||
               log.deliveries?.some(
                 (delivery) =>
@@ -939,7 +958,9 @@ describe('NotificationsService', () => {
         }),
       );
       // Admin path should NOT touch notification_deliveries
-      expect(mockPrismaService.notification_deliveries.findMany).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.notification_deliveries.findMany,
+      ).not.toHaveBeenCalled();
       expect(result).toEqual({
         data: mockLogs,
         total: 1,
@@ -976,7 +997,9 @@ describe('NotificationsService', () => {
       await service.sendToSectionRole(clubSectionId, roleNames, title, body);
 
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
-      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.arrayContaining([
             expect.objectContaining({ user_id: 'user-1' }),
@@ -993,7 +1016,9 @@ describe('NotificationsService', () => {
       await service.sendToSectionRole(clubSectionId, roleNames, title, body);
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
-      expect(mockPrismaService.notification_deliveries.createMany).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).not.toHaveBeenCalled();
     });
 
     it('should create deliveries even when resolved users have no FCM tokens', async () => {
@@ -1008,7 +1033,9 @@ describe('NotificationsService', () => {
       await service.sendToSectionRole(clubSectionId, roleNames, title, body);
 
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
-      expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.arrayContaining([
             expect.objectContaining({ user_id: 'user-1' }),
@@ -1030,7 +1057,9 @@ describe('NotificationsService', () => {
 
       const result = await service.getUnreadCount('user-1');
 
-      expect(mockPrismaService.notification_deliveries.count).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.notification_deliveries.count,
+      ).toHaveBeenCalledWith({
         where: { user_id: 'user-1', read_at: null },
       });
       expect(result).toEqual({ count: 7 });
@@ -1045,8 +1074,14 @@ describe('NotificationsService', () => {
     const callerId = '00000000-0000-0000-0000-000000000002';
 
     it('should update read_at when delivery belongs to caller', async () => {
-      const existingDelivery = { delivery_id: deliveryId, user_id: callerId, read_at: null };
-      mockPrismaService.notification_deliveries.findFirst.mockResolvedValue(existingDelivery);
+      const existingDelivery = {
+        delivery_id: deliveryId,
+        user_id: callerId,
+        read_at: null,
+      };
+      mockPrismaService.notification_deliveries.findFirst.mockResolvedValue(
+        existingDelivery,
+      );
       mockPrismaService.notification_deliveries.update.mockResolvedValue({
         ...existingDelivery,
         read_at: new Date(),
@@ -1054,10 +1089,14 @@ describe('NotificationsService', () => {
 
       const result = await service.markDeliveryRead(deliveryId, callerId);
 
-      expect(mockPrismaService.notification_deliveries.findFirst).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.notification_deliveries.findFirst,
+      ).toHaveBeenCalledWith({
         where: { delivery_id: deliveryId, user_id: callerId },
       });
-      expect(mockPrismaService.notification_deliveries.update).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.notification_deliveries.update,
+      ).toHaveBeenCalledWith({
         where: { delivery_id: deliveryId },
         data: { read_at: expect.any(Date) },
       });
@@ -1065,7 +1104,9 @@ describe('NotificationsService', () => {
     });
 
     it('should throw NotFoundException when delivery not found or belongs to another user', async () => {
-      mockPrismaService.notification_deliveries.findFirst.mockResolvedValue(null);
+      mockPrismaService.notification_deliveries.findFirst.mockResolvedValue(
+        null,
+      );
 
       await expect(
         service.markDeliveryRead(deliveryId, 'other-user'),
@@ -1078,11 +1119,15 @@ describe('NotificationsService', () => {
   // ---------------------------------------------------------------------------
   describe('markAllDeliveriesRead', () => {
     it('should bulk update all unread deliveries and return count', async () => {
-      mockPrismaService.notification_deliveries.updateMany.mockResolvedValue({ count: 4 });
+      mockPrismaService.notification_deliveries.updateMany.mockResolvedValue({
+        count: 4,
+      });
 
       const result = await service.markAllDeliveriesRead('user-1');
 
-      expect(mockPrismaService.notification_deliveries.updateMany).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.notification_deliveries.updateMany,
+      ).toHaveBeenCalledWith({
         where: { user_id: 'user-1', read_at: null },
         data: { read_at: expect.any(Date) },
       });
@@ -1127,14 +1172,18 @@ describe('NotificationsService', () => {
       };
       (service as any).queue = mockQueue;
 
-      await expect(service.sendSilentToSection(payload)).resolves.toBeUndefined();
+      await expect(
+        service.sendSilentToSection(payload),
+      ).resolves.toBeUndefined();
     });
 
     it('should silently skip (no enqueue) when queue is not available', async () => {
       // Ensure queue is undefined (simulates no-Redis environment)
       (service as any).queue = undefined;
 
-      await expect(service.sendSilentToSection(payload)).resolves.toBeUndefined();
+      await expect(
+        service.sendSilentToSection(payload),
+      ).resolves.toBeUndefined();
     });
   });
 });

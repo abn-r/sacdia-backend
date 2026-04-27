@@ -504,7 +504,9 @@ describe('BetterAuthService', () => {
       mockQueryRaw.mockResolvedValue([]);
       mockSessionFindFirst.mockResolvedValue(null);
 
-      await expect(svc.refreshSession('non-existent-token')).rejects.toMatchObject({
+      await expect(
+        svc.refreshSession('non-existent-token'),
+      ).rejects.toMatchObject({
         code: ErrorCode.AUTH_SESSION_EXPIRED,
       });
       expect(mockQueryRaw).toHaveBeenCalledTimes(1);
@@ -523,7 +525,9 @@ describe('BetterAuthService', () => {
       mockSessionFindFirst.mockResolvedValue({ id: 'session-id-abc' }); // token exists
       mockSessionDeleteMany.mockResolvedValue({ count: 1 });
 
-      await expect(svc.refreshSession('expired-session-token')).rejects.toMatchObject({
+      await expect(
+        svc.refreshSession('expired-session-token'),
+      ).rejects.toMatchObject({
         code: ErrorCode.AUTH_SESSION_EXPIRED,
       });
       expect(mockQueryRaw).toHaveBeenCalledTimes(1);

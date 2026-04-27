@@ -21,7 +21,11 @@ describe('RankingsProcessor', () => {
 
   function makeJob(
     data: RankingsTriggerJobData,
-    overrides: Partial<{ id: string; attemptsMade: number; opts: { attempts: number } }> = {},
+    overrides: Partial<{
+      id: string;
+      attemptsMade: number;
+      opts: { attempts: number };
+    }> = {},
   ): Job<RankingsTriggerJobData> {
     return {
       id: 'test-job-2',
@@ -56,7 +60,9 @@ describe('RankingsProcessor', () => {
   describe('process()', () => {
     it('delegates to cronLogger.track() which calls recalculateRankings()', async () => {
       mockCronRunLogger.track.mockImplementation(async (_name, fn) => fn());
-      mockRankingsService.recalculateRankings.mockResolvedValue({ updated: 42 });
+      mockRankingsService.recalculateRankings.mockResolvedValue({
+        updated: 42,
+      });
 
       const job = makeJob({ triggeredAt: new Date().toISOString() });
       await processor.process(job);
@@ -76,7 +82,9 @@ describe('RankingsProcessor', () => {
       );
 
       const job = makeJob({ triggeredAt: new Date().toISOString() });
-      await expect(processor.process(job)).rejects.toThrow('Transaction deadlock');
+      await expect(processor.process(job)).rejects.toThrow(
+        'Transaction deadlock',
+      );
     });
   });
 

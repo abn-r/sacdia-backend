@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { DataExportController } from './data-export.controller';
 import { DataExportService } from './data-export.service';
-import { DataExportProcessor, DATA_EXPORTS_QUEUE } from './data-export.processor';
+import {
+  DataExportProcessor,
+  DATA_EXPORTS_QUEUE,
+} from './data-export.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';

@@ -224,8 +224,7 @@ describe('annual_folders — camporee link CHECK constraint', () => {
       // Prisma wraps DB errors in PrismaClientKnownRequestError (code P2010/P2002)
       // or PrismaClientUnknownRequestError. The constraint name appears in the
       // underlying Postgres error message regardless of the wrapper.
-      const message =
-        err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       expect(message).toContain('annual_folders_at_most_one_camporee_check');
     }
 
@@ -357,8 +356,8 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
   let t35FolderId: string;
 
   const T35_CLUB_TYPE_ID = 3; // Guías Mayores — includes_master_guides
-  const T35_UNION_ID = 20;    // IOMU
-  const T35_YEAR_ID = 1;      // Ecclesiastical year 2026
+  const T35_UNION_ID = 20; // IOMU
+  const T35_YEAR_ID = 1; // Ecclesiastical year 2026
 
   beforeAll(async () => {
     // Build a real PrismaService from the DATABASE_URL. Because PrismaService
@@ -369,7 +368,9 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
     const svcAdapter = new PrismaPg(svcPool);
     // Cast: PrismaClient is the runtime base of PrismaService; the extra NestJS
     // lifecycle methods are not exercised here.
-    svcPrisma = new PrismaClient({ adapter: svcAdapter }) as unknown as PrismaService;
+    svcPrisma = new PrismaClient({
+      adapter: svcAdapter,
+    }) as unknown as PrismaService;
     await (svcPrisma as unknown as PrismaClient).$connect();
 
     const module = await Test.createTestingModule({
@@ -389,7 +390,9 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
     if (!user) throw new Error('No users in dev DB — run seeds first.');
 
     // 1. Create isolated club_section (main_club_id=null avoids unique constraint)
-    const section = await (svcPrisma as unknown as PrismaClient).club_sections.create({
+    const section = await (
+      svcPrisma as unknown as PrismaClient
+    ).club_sections.create({
       data: {
         club_type_id: T35_CLUB_TYPE_ID,
         main_club_id: null,
@@ -401,7 +404,9 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
     t35ClubSectionId = section.club_section_id;
 
     // 2. Create club_enrollment for that section + year
-    const enrollment = await (svcPrisma as unknown as PrismaClient).club_enrollments.create({
+    const enrollment = await (
+      svcPrisma as unknown as PrismaClient
+    ).club_enrollments.create({
       data: {
         club_section_id: t35ClubSectionId,
         ecclesiastical_year_id: T35_YEAR_ID,
@@ -412,7 +417,9 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
     t35EnrollmentId = enrollment.club_enrollment_id;
 
     // 3. Create an active union_camporee for IOMU + year + includes_master_guides=true
-    const unionCamporee = await (svcPrisma as unknown as PrismaClient).union_camporees.create({
+    const unionCamporee = await (
+      svcPrisma as unknown as PrismaClient
+    ).union_camporees.create({
       data: {
         name: '[TEST T-3.5] Union Camporee — resolver wiring',
         start_date: new Date('2026-09-01'),
@@ -426,7 +433,9 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
     t35UnionCamporeeId = unionCamporee.union_camporee_id;
 
     // 4. Enroll the club_section in the union_camporee via camporee_clubs
-    const camporeeClub = await (svcPrisma as unknown as PrismaClient).camporee_clubs.create({
+    const camporeeClub = await (
+      svcPrisma as unknown as PrismaClient
+    ).camporee_clubs.create({
       data: {
         club_section_id: t35ClubSectionId,
         union_camporee_id: t35UnionCamporeeId,

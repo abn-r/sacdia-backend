@@ -174,7 +174,8 @@ export class EmailProcessor
 
       case EMAIL_JOB_CRON_ALERT: {
         const d = data as CronAlertJobPayload;
-        const locale = (d.locale as CronAlertCondition | undefined) ?? undefined;
+        const locale =
+          (d.locale as CronAlertCondition | undefined) ?? undefined;
         const element = React.createElement(CronAlertEmail, {
           jobName: d.jobName,
           condition: d.condition as CronAlertCondition,

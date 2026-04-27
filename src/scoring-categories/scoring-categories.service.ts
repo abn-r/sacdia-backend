@@ -129,7 +129,9 @@ export class ScoringCategoriesService {
         where: { scoring_category_id: id },
         data: {
           ...(mainDto.name !== undefined && { name: mainDto.name }),
-          ...(mainDto.max_points !== undefined && { max_points: mainDto.max_points }),
+          ...(mainDto.max_points !== undefined && {
+            max_points: mainDto.max_points,
+          }),
           ...(mainDto.active !== undefined && { active: mainDto.active }),
         },
       });
@@ -217,7 +219,9 @@ export class ScoringCategoriesService {
     });
 
     if (!assignment) {
-      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_UNION_FORBIDDEN);
+      throw new AppForbiddenException(
+        ErrorCode.SCORING_CATEGORY_UNION_FORBIDDEN,
+      );
     }
   }
 
@@ -252,7 +256,9 @@ export class ScoringCategoriesService {
     });
 
     if (!assignment) {
-      throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN);
+      throw new AppForbiddenException(
+        ErrorCode.SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN,
+      );
     }
   }
 
@@ -371,7 +377,9 @@ export class ScoringCategoriesService {
         where: { scoring_category_id: id },
         data: {
           ...(mainDto.name !== undefined && { name: mainDto.name }),
-          ...(mainDto.max_points !== undefined && { max_points: mainDto.max_points }),
+          ...(mainDto.max_points !== undefined && {
+            max_points: mainDto.max_points,
+          }),
           ...(mainDto.active !== undefined && { active: mainDto.active }),
         },
       });
@@ -389,9 +397,7 @@ export class ScoringCategoriesService {
       return record;
     });
 
-    this.logger.log(
-      `Category ${id} updated at UNION level by user ${userId}`,
-    );
+    this.logger.log(`Category ${id} updated at UNION level by user ${userId}`);
     return result;
   }
 
@@ -567,7 +573,9 @@ export class ScoringCategoriesService {
         where: { scoring_category_id: id },
         data: {
           ...(mainDto.name !== undefined && { name: mainDto.name }),
-          ...(mainDto.max_points !== undefined && { max_points: mainDto.max_points }),
+          ...(mainDto.max_points !== undefined && {
+            max_points: mainDto.max_points,
+          }),
           ...(mainDto.active !== undefined && { active: mainDto.active }),
         },
       });

@@ -4,7 +4,10 @@ import { MonthlyReportsController } from './monthly-reports.controller';
 import { MonthlyReportsService } from './monthly-reports.service';
 import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { MonthlyReportsCronService } from './monthly-reports-cron.service';
-import { MonthlyReportsProcessor, MONTHLY_REPORTS_QUEUE } from './monthly-reports.processor';
+import {
+  MonthlyReportsProcessor,
+  MONTHLY_REPORTS_QUEUE,
+} from './monthly-reports.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
 

@@ -159,7 +159,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (typeof response === 'string') return response;
     if (response?.message && Array.isArray(response.message)) {
       // Only keep the constraint messages (field + rule), not submitted values
-      return { constraints: response.message.length, messages: response.message };
+      return {
+        constraints: response.message.length,
+        messages: response.message,
+      };
     }
     return { type: typeof response };
   }

@@ -1,6 +1,4 @@
-import {
-  AppBadRequestException,
-} from '../../common/errors/app.exception';
+import { AppBadRequestException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -119,10 +117,9 @@ function validateMagicBytes(file: Express.Multer.File): void {
   const requiredLength = offset + bytes.length;
 
   if (file.buffer.length < requiredLength) {
-    throw new AppBadRequestException(
-      ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH,
-      { detected: 'unknown' },
-    );
+    throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH, {
+      detected: 'unknown',
+    });
   }
 
   const matchesSequence = (seq: number[]): boolean =>
@@ -132,10 +129,9 @@ function validateMagicBytes(file: Express.Multer.File): void {
 
   if (altBytes && altBytes.some((alt) => matchesSequence(alt))) return;
 
-  throw new AppBadRequestException(
-    ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH,
-    { detected: file.mimetype },
-  );
+  throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_CONTENT_MISMATCH, {
+    detected: file.mimetype,
+  });
 }
 
 /**
@@ -155,44 +151,40 @@ export function validateResourceFile(
   // text and video_link must NOT have a file attached
   if (FILE_FREE_TYPES.has(resourceType)) {
     if (file) {
-      throw new AppBadRequestException(
-        ErrorCode.RESOURCE_FILE_NOT_REQUIRED,
-        { resource_type: resourceType },
-      );
+      throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_NOT_REQUIRED, {
+        resource_type: resourceType,
+      });
     }
     return;
   }
 
   // document, audio, image MUST have a file attached
   if (!file) {
-    throw new AppBadRequestException(
-      ErrorCode.RESOURCE_FILE_REQUIRED,
-      { resource_type: resourceType },
-    );
+    throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_REQUIRED, {
+      resource_type: resourceType,
+    });
   }
 
   // Size check
   if (file.size > MAX_FILE_SIZE) {
-    throw new AppBadRequestException(
-      ErrorCode.RESOURCE_FILE_TOO_LARGE,
-      { max_mb: '50' },
-    );
+    throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_TOO_LARGE, {
+      max_mb: '50',
+    });
   }
 
   // MIME type check
   const allowedTypes = ALLOWED_MIME_TYPES[resourceType];
   if (!allowedTypes) {
-    throw new AppBadRequestException(
-      ErrorCode.RESOURCE_FILE_MIME_INVALID,
-      { mime_type: resourceType },
-    );
+    throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_MIME_INVALID, {
+      mime_type: resourceType,
+    });
   }
 
   if (!allowedTypes.includes(file.mimetype)) {
-    throw new AppBadRequestException(
-      ErrorCode.RESOURCE_FILE_TYPE_INVALID,
-      { resource_type: resourceType, allowed: allowedTypes.join(', ') },
-    );
+    throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_TYPE_INVALID, {
+      resource_type: resourceType,
+      allowed: allowedTypes.join(', '),
+    });
   }
 
   // Magic bytes validation — must run AFTER the MIME type check so we only

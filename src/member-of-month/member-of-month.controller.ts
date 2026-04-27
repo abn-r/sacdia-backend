@@ -31,14 +31,14 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class MemberOfMonthController {
-  constructor(
-    private readonly memberOfMonthService: MemberOfMonthService,
-  ) {}
+  constructor(private readonly memberOfMonthService: MemberOfMonthService) {}
 
   @Get('member-of-month/admin/list')
   @RequirePermissions('mom:supervise')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Listar miembro del mes multi-sección (admin/coordinator)' })
+  @ApiOperation({
+    summary: 'Listar miembro del mes multi-sección (admin/coordinator)',
+  })
   @ApiQuery({ name: 'club_type_id', required: false, type: Number })
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
   @ApiQuery({ name: 'club_id', required: false, type: Number })
@@ -98,8 +98,18 @@ export class MemberOfMonthController {
   @ApiOperation({ summary: 'Obtener historial paginado de miembro del mes' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Página (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Resultados por página (default 12)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Página (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Resultados por página (default 12)',
+  })
   @ApiResponse({ status: 200, description: 'Historial de miembro del mes' })
   @ApiResponse({ status: 404, description: 'Sección no encontrada' })
   async getMemberOfMonthHistory(
@@ -126,8 +136,14 @@ export class MemberOfMonthController {
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
-  @ApiResponse({ status: 201, description: 'Evaluación ejecutada exitosamente' })
-  @ApiResponse({ status: 403, description: 'Solo directores pueden ejecutar esta acción' })
+  @ApiResponse({
+    status: 201,
+    description: 'Evaluación ejecutada exitosamente',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo directores pueden ejecutar esta acción',
+  })
   @ApiResponse({ status: 404, description: 'Sección no encontrada' })
   async evaluateMemberOfMonth(
     @Param('clubId', ParseIntPipe) clubId: number,

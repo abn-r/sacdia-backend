@@ -81,7 +81,9 @@ export class MonthlyReportsService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     const clubSectionId = enrollment.club_section_id;
@@ -322,7 +324,8 @@ export class MonthlyReportsService {
       limit?: number;
     },
   ) {
-    const resolved = await this.authorizationContext.resolveUserAuthorization(userId);
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
 
     const globalRoleNames = new Set(
       resolved.authorization.grants.global_roles.map((grant) =>
@@ -333,10 +336,8 @@ export class MonthlyReportsService {
     const isAdmin =
       globalRoleNames.has('admin') || globalRoleNames.has('super_admin');
 
-    const userLocalFieldId =
-      resolved.authorization.effective.scope.global.local_field?.id as
-        | number
-        | undefined;
+    const userLocalFieldId = resolved.authorization.effective.scope.global
+      .local_field?.id as number | undefined;
 
     const scopedLocalFieldId: number | undefined = isAdmin
       ? filters.localFieldId
@@ -400,7 +401,8 @@ export class MonthlyReportsService {
     const items = rows.map((r) => {
       const section = r.club_enrollment.club_section;
       const submitterName = r.submitter
-        ? `${r.submitter.name ?? ''} ${r.submitter.paternal_last_name ?? ''}`.trim() || null
+        ? `${r.submitter.name ?? ''} ${r.submitter.paternal_last_name ?? ''}`.trim() ||
+          null
         : null;
       const memberCount =
         (r.snapshot_data as { member_count?: number } | null)?.member_count ??
@@ -486,9 +488,7 @@ export class MonthlyReportsService {
       where: { config_key: 'reports.auto_generate_day' },
     });
 
-    const configuredDay = dayConfig
-      ? parseInt(dayConfig.config_value, 10)
-      : 5;
+    const configuredDay = dayConfig ? parseInt(dayConfig.config_value, 10) : 5;
 
     if (isNaN(configuredDay) || configuredDay < 1 || configuredDay > 28) {
       this.logger.warn(
@@ -515,9 +515,7 @@ export class MonthlyReportsService {
     // 4. Calculate the PREVIOUS month and year
     const prevMonth = today.getMonth() === 0 ? 12 : today.getMonth();
     const prevYear =
-      today.getMonth() === 0
-        ? today.getFullYear() - 1
-        : today.getFullYear();
+      today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
 
     this.logger.log(
       `Generating reports for ${prevYear}-${String(prevMonth).padStart(2, '0')}`,
@@ -554,8 +552,7 @@ export class MonthlyReportsService {
       [];
 
     for (const enrollment of activeEnrollments) {
-      const clubName =
-        enrollment.club_section?.clubs?.name ?? 'Unknown club';
+      const clubName = enrollment.club_section?.clubs?.name ?? 'Unknown club';
       const clubType =
         enrollment.club_section?.club_types?.name ?? 'Unknown type';
       const label = `${clubName} (${clubType})`;
@@ -853,7 +850,9 @@ export class MonthlyReportsService {
     });
 
     if (!enrollment) {
-      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND,
+      );
     }
 
     return enrollment;

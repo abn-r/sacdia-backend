@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -142,12 +139,7 @@ export class AdminReferenceService {
       },
     });
 
-    this.logMutation(
-      'update',
-      'activity_types',
-      activityTypeId,
-      actorId,
-    );
+    this.logMutation('update', 'activity_types', activityTypeId, actorId);
 
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
 
@@ -162,7 +154,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_ACTIVITY_TYPE_IN_USE, { id: activityTypeId });
+      throw new AppConflictException(ErrorCode.ADMIN_ACTIVITY_TYPE_IN_USE, {
+        id: activityTypeId,
+      });
     }
 
     const activityType = await this.prisma.activity_types.update({
@@ -173,12 +167,7 @@ export class AdminReferenceService {
       },
     });
 
-    this.logMutation(
-      'delete',
-      'activity_types',
-      activityTypeId,
-      actorId,
-    );
+    this.logMutation('delete', 'activity_types', activityTypeId, actorId);
 
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.ACTIVITY_TYPES);
 
@@ -191,7 +180,9 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_ACTIVITY_TYPE_NOT_FOUND, { id: activityTypeId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_ACTIVITY_TYPE_NOT_FOUND, {
+        id: activityTypeId,
+      });
     }
 
     return entity;
@@ -211,7 +202,9 @@ export class AdminReferenceService {
       });
 
       if (existingByName) {
-        throw new AppConflictException(ErrorCode.ADMIN_ACTIVITY_TYPE_NAME_CONFLICT);
+        throw new AppConflictException(
+          ErrorCode.ADMIN_ACTIVITY_TYPE_NAME_CONFLICT,
+        );
       }
     }
 
@@ -224,7 +217,9 @@ export class AdminReferenceService {
       });
 
       if (existingByCode) {
-        throw new AppConflictException(ErrorCode.ADMIN_ACTIVITY_TYPE_CODE_CONFLICT);
+        throw new AppConflictException(
+          ErrorCode.ADMIN_ACTIVITY_TYPE_CODE_CONFLICT,
+        );
       }
     }
   }
@@ -308,7 +303,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_IN_USE, { id: relationshipTypeId });
+      throw new AppConflictException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_IN_USE, {
+        id: relationshipTypeId,
+      });
     }
 
     const relationshipType = await this.prisma.relationship_types.update({
@@ -400,7 +397,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_ALLERGY_IN_USE, { id: allergyId });
+      throw new AppConflictException(ErrorCode.ADMIN_ALLERGY_IN_USE, {
+        id: allergyId,
+      });
     }
 
     const allergy = await this.prisma.allergies.update({
@@ -487,7 +486,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_DISEASE_IN_USE, { id: diseaseId });
+      throw new AppConflictException(ErrorCode.ADMIN_DISEASE_IN_USE, {
+        id: diseaseId,
+      });
     }
 
     const disease = await this.prisma.diseases.update({
@@ -568,7 +569,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_MEDICINE_IN_USE, { id: medicineId });
+      throw new AppConflictException(ErrorCode.ADMIN_MEDICINE_IN_USE, {
+        id: medicineId,
+      });
     }
 
     const medicine = await this.prisma.medicines.update({
@@ -662,7 +665,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_CLUB_TYPE_IN_USE, { id: clubTypeId });
+      throw new AppConflictException(ErrorCode.ADMIN_CLUB_TYPE_IN_USE, {
+        id: clubTypeId,
+      });
     }
 
     const clubType = await this.prisma.club_types.update({
@@ -685,7 +690,9 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_CLUB_TYPE_NOT_FOUND, { id: clubTypeId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLUB_TYPE_NOT_FOUND, {
+        id: clubTypeId,
+      });
     }
 
     return entity;
@@ -724,12 +731,7 @@ export class AdminReferenceService {
       },
     });
 
-    this.logMutation(
-      'create',
-      'club_ideals',
-      clubIdeal.club_ideal_id,
-      actorId,
-    );
+    this.logMutation('create', 'club_ideals', clubIdeal.club_ideal_id, actorId);
     await this.catalogCache.invalidate(
       CATALOG_CACHE_KEYS.CLUB_IDEALS(dto.club_type_id),
     );
@@ -760,12 +762,7 @@ export class AdminReferenceService {
       },
     });
 
-    this.logMutation(
-      'update',
-      'club_ideals',
-      clubIdealId,
-      actorId,
-    );
+    this.logMutation('update', 'club_ideals', clubIdealId, actorId);
     await this.catalogCache.invalidate(
       CATALOG_CACHE_KEYS.CLUB_IDEALS(existing.club_type_id),
     );
@@ -785,12 +782,7 @@ export class AdminReferenceService {
       },
     });
 
-    this.logMutation(
-      'delete',
-      'club_ideals',
-      clubIdealId,
-      actorId,
-    );
+    this.logMutation('delete', 'club_ideals', clubIdealId, actorId);
     await this.catalogCache.invalidate(
       CATALOG_CACHE_KEYS.CLUB_IDEALS(existing.club_type_id),
     );
@@ -805,7 +797,9 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_CLUB_IDEAL_NOT_FOUND, { id: clubIdealId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_CLUB_IDEAL_NOT_FOUND, {
+        id: clubIdealId,
+      });
     }
 
     return entity;
@@ -899,7 +893,10 @@ export class AdminReferenceService {
     });
 
     if (activeAssignments > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_HAS_ACTIVE_ASSIGNMENTS, { id: yearId });
+      throw new AppConflictException(
+        ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_HAS_ACTIVE_ASSIGNMENTS,
+        { id: yearId },
+      );
     }
 
     const year = await this.prisma.ecclesiastical_years.update({
@@ -1039,7 +1036,9 @@ export class AdminReferenceService {
             ? { description: mainDto.description }
             : {}),
           ...(mainDto.icon !== undefined ? { icon: mainDto.icon } : {}),
-          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
+          ...(typeof mainDto.active === 'boolean'
+            ? { active: mainDto.active }
+            : {}),
           modified_at: new Date(),
         },
         include: {
@@ -1079,7 +1078,9 @@ export class AdminReferenceService {
     });
 
     if (inUseCount > 0) {
-      throw new AppConflictException(ErrorCode.ADMIN_HONOR_CATEGORY_IN_USE, { id });
+      throw new AppConflictException(ErrorCode.ADMIN_HONOR_CATEGORY_IN_USE, {
+        id,
+      });
     }
 
     const category = await this.prisma.honors_categories.update({
@@ -1101,11 +1102,15 @@ export class AdminReferenceService {
 
   private validateDateRange(startDate: Date, endDate: Date) {
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-      throw new AppBadRequestException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_DATE_INVALID);
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_DATE_INVALID,
+      );
     }
 
     if (startDate >= endDate) {
-      throw new AppBadRequestException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_DATE_INVALID);
+      throw new AppBadRequestException(
+        ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_DATE_INVALID,
+      );
     }
   }
 
@@ -1115,7 +1120,10 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_NOT_FOUND, { id: relationshipTypeId });
+      throw new AppNotFoundException(
+        ErrorCode.ADMIN_RELATIONSHIP_TYPE_NOT_FOUND,
+        { id: relationshipTypeId },
+      );
     }
 
     return entity;
@@ -1135,7 +1143,9 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_RELATIONSHIP_TYPE_NAME_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ADMIN_RELATIONSHIP_TYPE_NAME_CONFLICT,
+      );
     }
   }
 
@@ -1145,7 +1155,9 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_ALLERGY_NOT_FOUND, { id: allergyId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_ALLERGY_NOT_FOUND, {
+        id: allergyId,
+      });
     }
 
     return entity;
@@ -1170,7 +1182,9 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_DISEASE_NOT_FOUND, { id: diseaseId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_DISEASE_NOT_FOUND, {
+        id: diseaseId,
+      });
     }
 
     return entity;
@@ -1195,7 +1209,9 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_MEDICINE_NOT_FOUND, { id: medicineId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_MEDICINE_NOT_FOUND, {
+        id: medicineId,
+      });
     }
 
     return entity;
@@ -1220,7 +1236,10 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_NOT_FOUND, { id: yearId });
+      throw new AppNotFoundException(
+        ErrorCode.ADMIN_ECCLESIASTICAL_YEAR_NOT_FOUND,
+        { id: yearId },
+      );
     }
 
     return entity;
@@ -1232,7 +1251,9 @@ export class AdminReferenceService {
     });
 
     if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_CATEGORY_NOT_FOUND, { id: honorCategoryId });
+      throw new AppNotFoundException(ErrorCode.ADMIN_HONOR_CATEGORY_NOT_FOUND, {
+        id: honorCategoryId,
+      });
     }
 
     return entity;
@@ -1252,7 +1273,9 @@ export class AdminReferenceService {
     });
 
     if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_HONOR_CATEGORY_NAME_CONFLICT);
+      throw new AppConflictException(
+        ErrorCode.ADMIN_HONOR_CATEGORY_NAME_CONFLICT,
+      );
     }
   }
 }

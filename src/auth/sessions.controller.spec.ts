@@ -16,7 +16,12 @@ const SESSION_A = 'session-uuid-a';
 const SESSION_B = 'session-uuid-b';
 
 function makeUser(overrides: Record<string, unknown> = {}) {
-  return { user_id: USER_ID, sid: SESSION_A, email: 'u@test.com', ...overrides };
+  return {
+    user_id: USER_ID,
+    sid: SESSION_A,
+    email: 'u@test.com',
+    ...overrides,
+  };
 }
 
 function makeReq(userOverrides: Record<string, unknown> = {}) {
@@ -61,9 +66,7 @@ describe('SessionsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SessionsController],
-      providers: [
-        { provide: SessionsService, useValue: mockSessionsService },
-      ],
+      providers: [{ provide: SessionsService, useValue: mockSessionsService }],
     }).compile();
 
     controller = module.get<SessionsController>(SessionsController);

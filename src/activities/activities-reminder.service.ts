@@ -33,7 +33,10 @@ export class ActivitiesReminderService {
       this.logger.debug(
         'Another instance is handling activity reminders — skipping',
       );
-      await this.cronLogger.trackSkipped('activities-reminder', 'lock_not_acquired');
+      await this.cronLogger.trackSkipped(
+        'activities-reminder',
+        'lock_not_acquired',
+      );
       return;
     }
 
@@ -91,7 +94,9 @@ export class ActivitiesReminderService {
         const windowMs = effectiveMinutes * 60 * 1000;
 
         const toNotify = candidates.filter((activity) => {
-          const [hours, minutes] = activity.activity_time.split(':').map(Number);
+          const [hours, minutes] = activity.activity_time
+            .split(':')
+            .map(Number);
           if (isNaN(hours) || isNaN(minutes)) return false;
 
           const activityDatetime = new Date(now);

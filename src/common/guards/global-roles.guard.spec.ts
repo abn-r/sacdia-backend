@@ -50,9 +50,9 @@ describe('GlobalRolesGuard', () => {
   it('should throw ForbiddenException when user is not authenticated', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin']);
 
-    await expect(
-      guard.canActivate(createContext({})),
-    ).rejects.toMatchObject({ code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED });
+    await expect(guard.canActivate(createContext({}))).rejects.toMatchObject({
+      code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED,
+    });
   });
 
   it('should throw ForbiddenException when user has no sub claim', async () => {
@@ -112,11 +112,14 @@ describe('GlobalRolesGuard', () => {
     mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(true);
 
     await expect(
-      guard.canActivate(createContext({ user: { sub: 'assistant-admin-user' } })),
+      guard.canActivate(
+        createContext({ user: { sub: 'assistant-admin-user' } }),
+      ),
     ).resolves.toBe(true);
 
     // Verify aliases were expanded: admin → [admin, assistant_admin]
-    const firstRoleCall = mockAuthorizationContext.hasAnyGlobalRole.mock.calls[0];
+    const firstRoleCall =
+      mockAuthorizationContext.hasAnyGlobalRole.mock.calls[0];
     expect(firstRoleCall[1]).toEqual(
       expect.arrayContaining(['admin', 'assistant_admin']),
     );

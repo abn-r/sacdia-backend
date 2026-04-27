@@ -10,7 +10,11 @@ export class EvaluateMemberOfMonthDto {
   @Max(12)
   month: number;
 
-  @ApiProperty({ description: 'Año a evaluar (ej: 2026)', minimum: 2020, maximum: 2100 })
+  @ApiProperty({
+    description: 'Año a evaluar (ej: 2026)',
+    minimum: 2020,
+    maximum: 2100,
+  })
   @Type(() => Number)
   @IsInt()
   @Min(2020)

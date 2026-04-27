@@ -116,10 +116,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       });
 
       const lang = this.resolveLang(host);
-      const message = this.translateSafe(
-        ErrorCode.INTERNAL_SERVER_ERROR,
-        lang,
-      );
+      const message = this.translateSafe(ErrorCode.INTERNAL_SERVER_ERROR, lang);
 
       return response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         status: 'error',

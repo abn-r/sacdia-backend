@@ -196,7 +196,9 @@ describe('LegalRepresentativesService', () => {
           relationship_type_id: relTypeId,
           representative_user_id: repUserId,
         }),
-      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
+      });
     });
 
     it('should create representative with a registered user (representative_user_id path)', async () => {
@@ -321,7 +323,9 @@ describe('LegalRepresentativesService', () => {
 
       await expect(
         service.update(userId, { relationship_type_id: relTypeId }),
-      ).rejects.toMatchObject({ code: ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
+      });
     });
 
     it('should update representative successfully (name-only update)', async () => {

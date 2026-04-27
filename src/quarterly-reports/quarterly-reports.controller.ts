@@ -47,10 +47,17 @@ export class QuarterlyReportsController {
   @ApiQuery({ name: 'clubId', required: false, type: Number })
   @ApiQuery({ name: 'year', required: false, type: Number })
   @ApiQuery({ name: 'quarter', required: false, type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['draft', 'finalized', 'archived'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['draft', 'finalized', 'archived'],
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Lista paginada de informes trimestrales' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de informes trimestrales',
+  })
   async listAdmin(
     @Query('clubId', new ParseIntPipe({ optional: true })) clubId?: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
@@ -59,7 +66,14 @@ export class QuarterlyReportsController {
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    const data = await this.quarterlyReportsService.listForAdmin({ clubId, year, quarter, status, page, limit });
+    const data = await this.quarterlyReportsService.listForAdmin({
+      clubId,
+      year,
+      quarter,
+      status,
+      page,
+      limit,
+    });
     return { status: 'success', data };
   }
 
@@ -84,7 +98,9 @@ export class QuarterlyReportsController {
 
   @Patch('admin/quarterly-reports/:id')
   @RequirePermissions('reports:update')
-  @ApiOperation({ summary: 'Actualizar datos manuales del informe trimestral (admin)' })
+  @ApiOperation({
+    summary: 'Actualizar datos manuales del informe trimestral (admin)',
+  })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Datos actualizados' })
   async updateManualData(
@@ -101,7 +117,9 @@ export class QuarterlyReportsController {
 
   @Post('admin/quarterly-reports/:id/regenerate')
   @RequirePermissions('reports:update')
-  @ApiOperation({ summary: 'Regenerar datos calculados del informe trimestral (admin)' })
+  @ApiOperation({
+    summary: 'Regenerar datos calculados del informe trimestral (admin)',
+  })
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe regenerado' })
   async regenerate(@Param('id', ParseIntPipe) id: number) {
@@ -133,7 +151,10 @@ export class QuarterlyReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe trimestral' })
-  async downloadPdfAdmin(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+  async downloadPdfAdmin(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
     const buffer = await this.quarterlyReportsPdfService.generatePdf(id);
     res.set({
       'Content-Type': 'application/pdf',
@@ -149,10 +170,15 @@ export class QuarterlyReportsController {
 
   @Get('clubs/:clubId/quarterly-reports')
   @RequirePermissions('reports:read')
-  @ApiOperation({ summary: 'Listar informes trimestrales de un club (usuario)' })
+  @ApiOperation({
+    summary: 'Listar informes trimestrales de un club (usuario)',
+  })
   @ApiParam({ name: 'clubId', type: 'integer' })
   @ApiQuery({ name: 'year', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Lista de informes trimestrales del club' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de informes trimestrales del club',
+  })
   async listForClub(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
@@ -188,7 +214,10 @@ export class QuarterlyReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe trimestral' })
-  async downloadPdfUser(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+  async downloadPdfUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
     const buffer = await this.quarterlyReportsPdfService.generatePdf(id);
     res.set({
       'Content-Type': 'application/pdf',

@@ -67,10 +67,15 @@ export class ScoringCategoriesController {
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super_admin')
   @RequirePermissions('scoring_categories:manage')
-  @ApiOperation({ summary: 'Actualizar categoría de puntuación a nivel división' })
+  @ApiOperation({
+    summary: 'Actualizar categoría de puntuación a nivel división',
+  })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría actualizada' })
-  @ApiResponse({ status: 403, description: 'No puede modificar categoría de otro nivel' })
+  @ApiResponse({
+    status: 403,
+    description: 'No puede modificar categoría de otro nivel',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async updateDivisionCategory(
     @Param('id', ParseIntPipe) id: number,
@@ -83,10 +88,16 @@ export class ScoringCategoriesController {
   @UseGuards(GlobalRolesGuard)
   @GlobalRoles('admin', 'super_admin')
   @RequirePermissions('scoring_categories:manage')
-  @ApiOperation({ summary: 'Desactivar categoría de puntuación a nivel división (soft delete)' })
+  @ApiOperation({
+    summary:
+      'Desactivar categoría de puntuación a nivel división (soft delete)',
+  })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría desactivada' })
-  @ApiResponse({ status: 403, description: 'No puede eliminar categoría de otro nivel' })
+  @ApiResponse({
+    status: 403,
+    description: 'No puede eliminar categoría de otro nivel',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async deleteDivisionCategory(@Param('id', ParseIntPipe) id: number) {
     return this.scoringCategoriesService.deleteDivisionCategory(id);
@@ -100,7 +111,10 @@ export class ScoringCategoriesController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:read')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Listar categorías de puntuación para una unión (heredadas + propias)' })
+  @ApiOperation({
+    summary:
+      'Listar categorías de puntuación para una unión (heredadas + propias)',
+  })
   @ApiParam({ name: 'unionId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   async findUnionCategories(
@@ -137,11 +151,16 @@ export class ScoringCategoriesController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Actualizar categoría de puntuación propia de una unión' })
+  @ApiOperation({
+    summary: 'Actualizar categoría de puntuación propia de una unión',
+  })
   @ApiParam({ name: 'unionId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría actualizada' })
-  @ApiResponse({ status: 403, description: 'No puede modificar categoría heredada o de otra unión' })
+  @ApiResponse({
+    status: 403,
+    description: 'No puede modificar categoría heredada o de otra unión',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async updateUnionCategory(
     @Param('unionId', ParseIntPipe) unionId: number,
@@ -161,11 +180,17 @@ export class ScoringCategoriesController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Desactivar categoría de puntuación propia de una unión (soft delete)' })
+  @ApiOperation({
+    summary:
+      'Desactivar categoría de puntuación propia de una unión (soft delete)',
+  })
   @ApiParam({ name: 'unionId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría desactivada' })
-  @ApiResponse({ status: 403, description: 'No puede eliminar categoría heredada o de otra unión' })
+  @ApiResponse({
+    status: 403,
+    description: 'No puede eliminar categoría heredada o de otra unión',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async deleteUnionCategory(
     @Param('unionId', ParseIntPipe) unionId: number,
@@ -187,7 +212,10 @@ export class ScoringCategoriesController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:read')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Listar categorías de puntuación para un campo local (división + unión + propias)' })
+  @ApiOperation({
+    summary:
+      'Listar categorías de puntuación para un campo local (división + unión + propias)',
+  })
   @ApiParam({ name: 'fieldId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   async findLocalFieldCategories(
@@ -204,10 +232,15 @@ export class ScoringCategoriesController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Crear categoría de puntuación para un campo local' })
+  @ApiOperation({
+    summary: 'Crear categoría de puntuación para un campo local',
+  })
   @ApiParam({ name: 'fieldId', type: Number })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
-  @ApiResponse({ status: 403, description: 'Sin permisos para este campo local' })
+  @ApiResponse({
+    status: 403,
+    description: 'Sin permisos para este campo local',
+  })
   async createLocalFieldCategory(
     @Param('fieldId', ParseIntPipe) fieldId: number,
     @Body() dto: CreateScoringCategoryDto,
@@ -224,11 +257,16 @@ export class ScoringCategoriesController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Actualizar categoría de puntuación propia de un campo local' })
+  @ApiOperation({
+    summary: 'Actualizar categoría de puntuación propia de un campo local',
+  })
   @ApiParam({ name: 'fieldId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría actualizada' })
-  @ApiResponse({ status: 403, description: 'No puede modificar categoría heredada o de otro campo local' })
+  @ApiResponse({
+    status: 403,
+    description: 'No puede modificar categoría heredada o de otro campo local',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async updateLocalFieldCategory(
     @Param('fieldId', ParseIntPipe) fieldId: number,
@@ -248,11 +286,17 @@ export class ScoringCategoriesController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('scoring_categories:manage')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Desactivar categoría de puntuación propia de un campo local (soft delete)' })
+  @ApiOperation({
+    summary:
+      'Desactivar categoría de puntuación propia de un campo local (soft delete)',
+  })
   @ApiParam({ name: 'fieldId', type: Number })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría desactivada' })
-  @ApiResponse({ status: 403, description: 'No puede eliminar categoría heredada o de otro campo local' })
+  @ApiResponse({
+    status: 403,
+    description: 'No puede eliminar categoría heredada o de otro campo local',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async deleteLocalFieldCategory(
     @Param('fieldId', ParseIntPipe) fieldId: number,

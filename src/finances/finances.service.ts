@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  AppNotFoundException,
-} from '../common/errors/app.exception';
+import { AppNotFoundException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -50,7 +48,12 @@ export class FinancesService {
       },
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
     });
-    return this.translationService.translateMany(records, locale, ['name', 'description'], 'translations');
+    return this.translationService.translateMany(
+      records,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
   }
 
   // ========================================
@@ -84,11 +87,15 @@ export class FinancesService {
     // - Admin bypass (userSectionId === null): show all sections of the club,
     //   optionally narrowed by clubTypeId filter — preserves original broad behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+    let sectionFilter:
+      | { club_section_id: { in: number[] } }
+      | { club_section_id: number };
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+      sectionFilter = {
+        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      };
     } else {
       sectionFilter = { club_section_id: userSectionId };
     }
@@ -108,7 +115,9 @@ export class FinancesService {
         include: {
           finances_categories: { select: { name: true, type: true } },
           club_types: { select: { name: true } },
-          users: { select: { name: true, paternal_last_name: true, user_image: true } },
+          users: {
+            select: { name: true, paternal_last_name: true, user_image: true },
+          },
         },
         orderBy: [{ finance_date: 'desc' }, { created_at: 'desc' }],
         skip: pagination?.skip ?? 0,
@@ -149,11 +158,15 @@ export class FinancesService {
     // - Admin bypass (userSectionId === null): show all sections of the club,
     //   preserving original broad behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+    let sectionFilter:
+      | { club_section_id: { in: number[] } }
+      | { club_section_id: number };
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+      sectionFilter = {
+        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      };
     } else {
       sectionFilter = { club_section_id: userSectionId };
     }
@@ -171,7 +184,10 @@ export class FinancesService {
       ? {
           OR: [
             {
-              description: { contains: dto.search, mode: 'insensitive' as const },
+              description: {
+                contains: dto.search,
+                mode: 'insensitive' as const,
+              },
             },
             {
               finances_categories: {
@@ -316,11 +332,15 @@ export class FinancesService {
     // Build section filter.
     // - Admin bypass (userSectionId === null): show all sections — original behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+    let sectionFilter:
+      | { club_section_id: { in: number[] } }
+      | { club_section_id: number };
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+      sectionFilter = {
+        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      };
     } else {
       sectionFilter = { club_section_id: userSectionId };
     }
@@ -370,7 +390,9 @@ export class FinancesService {
       include: {
         finances_categories: true,
         club_types: { select: { name: true } },
-        users: { select: { name: true, paternal_last_name: true, user_image: true } },
+        users: {
+          select: { name: true, paternal_last_name: true, user_image: true },
+        },
       },
     });
 

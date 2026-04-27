@@ -175,7 +175,9 @@ export class HonorRequirementsService {
     });
 
     if (!requirement || requirement.honor_id !== honorId) {
-      throw new AppBadRequestException(ErrorCode.HONOR_REQUIREMENT_NOT_IN_HONOR);
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_REQUIREMENT_NOT_IN_HONOR,
+      );
     }
 
     const userHonor = await this.prisma.users_honors.findFirst({
@@ -196,7 +198,9 @@ export class HonorRequirementsService {
       },
       update: {
         completed: dto.completed,
-        ...(dto.textResponse !== undefined && { text_response: dto.textResponse }),
+        ...(dto.textResponse !== undefined && {
+          text_response: dto.textResponse,
+        }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
         completed_at: dto.completed ? new Date() : null,
         modified_at: new Date(),
@@ -235,7 +239,9 @@ export class HonorRequirementsService {
 
     const invalidIds = requirementIds.filter((id) => !validIds.has(id));
     if (invalidIds.length > 0) {
-      throw new AppBadRequestException(ErrorCode.HONOR_REQUIREMENT_NOT_IN_HONOR);
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_REQUIREMENT_NOT_IN_HONOR,
+      );
     }
 
     const userHonor = await this.prisma.users_honors.findFirst({
@@ -305,13 +311,10 @@ export class HonorRequirementsService {
       },
     });
     if (existingCount >= HonorRequirementsService.MAX_EVIDENCE_PER_TYPE) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_EVIDENCE_MAX_REACHED,
-        {
-          max: String(HonorRequirementsService.MAX_EVIDENCE_PER_TYPE),
-          evidence_type: evidenceType,
-        },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_EVIDENCE_MAX_REACHED, {
+        max: String(HonorRequirementsService.MAX_EVIDENCE_PER_TYPE),
+        evidence_type: evidenceType,
+      });
     }
 
     const r2Key = `requirement_evidence/${userId}/${honorId}/${requirementId}/${Date.now()}-${file.originalname}`;
@@ -350,13 +353,10 @@ export class HonorRequirementsService {
       where: { progress_id: progressId, evidence_type: 'LINK', active: true },
     });
     if (existingCount >= HonorRequirementsService.MAX_EVIDENCE_PER_TYPE) {
-      throw new AppBadRequestException(
-        ErrorCode.HONOR_EVIDENCE_MAX_REACHED,
-        {
-          max: String(HonorRequirementsService.MAX_EVIDENCE_PER_TYPE),
-          evidence_type: 'LINK',
-        },
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_EVIDENCE_MAX_REACHED, {
+        max: String(HonorRequirementsService.MAX_EVIDENCE_PER_TYPE),
+        evidence_type: 'LINK',
+      });
     }
 
     return this.prisma.requirement_evidence.create({
@@ -364,11 +364,7 @@ export class HonorRequirementsService {
     });
   }
 
-  async getEvidences(
-    userId: string,
-    honorId: number,
-    requirementId: number,
-  ) {
+  async getEvidences(userId: string, honorId: number, requirementId: number) {
     const { progressId } = await this.getOrCreateProgress(
       userId,
       honorId,
@@ -434,7 +430,9 @@ export class HonorRequirementsService {
       select: { requirement_id: true, honor_id: true },
     });
     if (!requirement || requirement.honor_id !== honorId) {
-      throw new AppBadRequestException(ErrorCode.HONOR_REQUIREMENT_NOT_IN_HONOR);
+      throw new AppBadRequestException(
+        ErrorCode.HONOR_REQUIREMENT_NOT_IN_HONOR,
+      );
     }
 
     const userHonor = await this.prisma.users_honors.findFirst({
@@ -445,20 +443,19 @@ export class HonorRequirementsService {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_NOT_ENROLLED);
     }
 
-    const progress =
-      await this.prisma.user_honor_requirement_progress.upsert({
-        where: {
-          user_honor_id_requirement_id: {
-            user_honor_id: userHonor.user_honor_id,
-            requirement_id: requirementId,
-          },
-        },
-        update: {},
-        create: {
+    const progress = await this.prisma.user_honor_requirement_progress.upsert({
+      where: {
+        user_honor_id_requirement_id: {
           user_honor_id: userHonor.user_honor_id,
           requirement_id: requirementId,
         },
-      });
+      },
+      update: {},
+      create: {
+        user_honor_id: userHonor.user_honor_id,
+        requirement_id: requirementId,
+      },
+    });
 
     return { progressId: progress.progress_id };
   }

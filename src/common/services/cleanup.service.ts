@@ -53,7 +53,9 @@ export class CleanupService {
           `Expired record cleanup completed: removed ${deletedSessions.count} session(s) and ${deletedVerifications.count} verification token(s)`,
         );
 
-        return { itemsProcessed: deletedSessions.count + deletedVerifications.count };
+        return {
+          itemsProcessed: deletedSessions.count + deletedVerifications.count,
+        };
       });
     } catch (error) {
       this.logger.error(

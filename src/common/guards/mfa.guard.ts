@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
@@ -51,9 +47,7 @@ export class MfaGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const user = request.user as
-      | { mfa_pending?: boolean }
-      | undefined;
+    const user = request.user as { mfa_pending?: boolean } | undefined;
 
     // If there is no authenticated user at this point, let JwtAuthGuard handle it
     if (!user) {

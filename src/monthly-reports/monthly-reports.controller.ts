@@ -25,7 +25,10 @@ import type { Response } from 'express';
 import { MonthlyReportsService } from './monthly-reports.service';
 import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { UpdateManualDataDto } from './dto';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('monthly-reports')
@@ -298,13 +301,19 @@ export class MonthlyReportsController {
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
   @ApiQuery({ name: 'year', required: false, type: Number })
   @ApiQuery({ name: 'month', required: false, type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['draft', 'generated', 'submitted'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['draft', 'generated', 'submitted'],
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async listForAdmin(
     @Req() req: any,
-    @Query('club_type_id', new ParseIntPipe({ optional: true })) clubTypeId?: number,
-    @Query('local_field_id', new ParseIntPipe({ optional: true })) localFieldId?: number,
+    @Query('club_type_id', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
     @Query('month', new ParseIntPipe({ optional: true })) month?: number,
     @Query('status') status?: string,

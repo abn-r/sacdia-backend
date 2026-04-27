@@ -68,7 +68,11 @@ const mockCreatedEvidence = {
   created_at: new Date('2026-01-15T10:00:00Z'),
   modified_at: new Date('2026-01-15T10:00:00Z'),
   section: { section_id: SECTION_ID, name: 'Actas' },
-  uploader: { name: 'Ana', paternal_last_name: 'López', maternal_last_name: null },
+  uploader: {
+    name: 'Ana',
+    paternal_last_name: 'López',
+    maternal_last_name: null,
+  },
 };
 
 const mockOpenFolder = {
@@ -146,8 +150,12 @@ describe('AnnualFoldersService — single-evidence presign', () => {
   // ================================================================
   describe('uploadEvidence', () => {
     beforeEach(() => {
-      mockPrismaService.annual_folders.findUnique.mockResolvedValue(mockOpenFolder);
-      mockPrismaService.folder_template_sections.findFirst.mockResolvedValue(mockSection);
+      mockPrismaService.annual_folders.findUnique.mockResolvedValue(
+        mockOpenFolder,
+      );
+      mockPrismaService.folder_template_sections.findFirst.mockResolvedValue(
+        mockSection,
+      );
       mockFileStorageService.upload.mockResolvedValue({ url: RAW_KEY });
       mockPrismaService.annual_folder_evidences.create.mockResolvedValue({
         ...mockCreatedEvidence,

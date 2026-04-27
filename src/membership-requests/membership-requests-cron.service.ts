@@ -28,13 +28,17 @@ export class MembershipRequestsCronService {
       this.logger.debug(
         'Another instance is handling membership request expiry — skipping',
       );
-      await this.cronLogger.trackSkipped('membership-requests-expiry', 'lock_not_acquired');
+      await this.cronLogger.trackSkipped(
+        'membership-requests-expiry',
+        'lock_not_acquired',
+      );
       return;
     }
 
     try {
       await this.cronLogger.track('membership-requests-expiry', async () => {
-        const count = await this.membershipRequestsService.expireStaleRequests();
+        const count =
+          await this.membershipRequestsService.expireStaleRequests();
 
         if (count > 0) {
           this.logger.log(`Expired ${count} stale membership request(s)`);

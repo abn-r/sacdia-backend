@@ -133,20 +133,22 @@ export class FoldersService {
     )[0];
 
     // Translate modules and their sections
-    const translatedModules = this.translationService.translateMany(
-      translatedFolder.folders_modules,
-      locale,
-      ['name', 'description'],
-      'translations',
-    ).map((module) => {
-      const translatedSections = this.translationService.translateMany(
-        ((module as any).folders_sections ?? []) as any[],
+    const translatedModules = this.translationService
+      .translateMany(
+        translatedFolder.folders_modules,
         locale,
         ['name', 'description'],
         'translations',
-      );
-      return { ...module, folders_sections: translatedSections };
-    });
+      )
+      .map((module) => {
+        const translatedSections = this.translationService.translateMany(
+          ((module as any).folders_sections ?? []) as any[],
+          locale,
+          ['name', 'description'],
+          'translations',
+        );
+        return { ...module, folders_sections: translatedSections };
+      });
 
     return {
       folder_id: translatedFolder.folder_id,

@@ -18,7 +18,8 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
  */
 export class CatalogTranslationDto {
   @ApiPropertyOptional({
-    description: 'Locale for this translation. Must be one of: pt-BR, en, fr. Spanish (es) lives in main table fields.',
+    description:
+      'Locale for this translation. Must be one of: pt-BR, en, fr. Spanish (es) lives in main table fields.',
     enum: ['pt-BR', 'en', 'fr'],
     example: 'en',
   })
@@ -28,7 +29,8 @@ export class CatalogTranslationDto {
   locale: 'pt-BR' | 'en' | 'fr';
 
   @ApiPropertyOptional({
-    description: 'Translated name. Pass empty string or omit to fall back to Spanish.',
+    description:
+      'Translated name. Pass empty string or omit to fall back to Spanish.',
     example: 'Missionary Achievement',
     maxLength: 255,
   })
@@ -38,7 +40,8 @@ export class CatalogTranslationDto {
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Translated description. Pass empty string or omit to fall back to Spanish.',
+    description:
+      'Translated description. Pass empty string or omit to fall back to Spanish.',
     example: 'Category for missionary honors',
   })
   @IsOptional()

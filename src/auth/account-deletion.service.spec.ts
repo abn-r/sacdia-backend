@@ -53,8 +53,8 @@ describe('AccountDeletionService', () => {
     jest.clearAllMocks();
 
     // Default: transaction calls the callback with mockPrisma as tx
-    mockPrisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) =>
-      fn(mockPrisma),
+    mockPrisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => fn(mockPrisma),
     );
 
     const module: TestingModule = await Test.createTestingModule({
@@ -143,7 +143,9 @@ describe('AccountDeletionService', () => {
     });
 
     it('should attempt R2 deletion for existing user_image (fire-and-forget)', async () => {
-      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue('profiles/avatar.jpg');
+      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue(
+        'profiles/avatar.jpg',
+      );
       mockFileStorage.deleteMany.mockResolvedValue(undefined);
 
       await service.deleteAccount(USER_ID, PASSWORD);
@@ -158,7 +160,9 @@ describe('AccountDeletionService', () => {
     });
 
     it('should NOT throw when R2 deletion fails (fire-and-forget)', async () => {
-      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue('profiles/avatar.jpg');
+      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue(
+        'profiles/avatar.jpg',
+      );
       mockFileStorage.deleteMany.mockRejectedValue(new Error('R2 down'));
 
       await expect(

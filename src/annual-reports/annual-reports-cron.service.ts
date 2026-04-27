@@ -29,12 +29,19 @@ export class AnnualReportsCronService {
     );
 
     if (!acquired) {
-      this.logger.debug('Another instance is handling annual reports auto-generation — skipping');
-      await this.cronLogger.trackSkipped('annual-reports-auto-generate', 'lock_not_acquired');
+      this.logger.debug(
+        'Another instance is handling annual reports auto-generation — skipping',
+      );
+      await this.cronLogger.trackSkipped(
+        'annual-reports-auto-generate',
+        'lock_not_acquired',
+      );
       return;
     }
 
-    this.logger.log('Annual reports cron triggered — checking configuration...');
+    this.logger.log(
+      'Annual reports cron triggered — checking configuration...',
+    );
 
     try {
       await this.cronLogger.track('annual-reports-auto-generate', async () => {
@@ -60,7 +67,9 @@ export class AnnualReportsCronService {
         });
 
         if (!justEndedYear) {
-          this.logger.warn('No completed ecclesiastical year found. Skipping annual report generation.');
+          this.logger.warn(
+            'No completed ecclesiastical year found. Skipping annual report generation.',
+          );
           return { itemsProcessed: 0 };
         }
 
@@ -70,7 +79,9 @@ export class AnnualReportsCronService {
         );
 
         // 3. Run for all active clubs
-        const result = await this.annualReportsService.autoGenerateForAllClubs(justEndedYear.year_id);
+        const result = await this.annualReportsService.autoGenerateForAllClubs(
+          justEndedYear.year_id,
+        );
 
         this.logger.log(
           `Annual auto-generation complete for year ${justEndedYear.year_id}: ` +
@@ -81,7 +92,9 @@ export class AnnualReportsCronService {
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Fatal error in annual reports auto-generation: ${msg}`);
+      this.logger.error(
+        `Fatal error in annual reports auto-generation: ${msg}`,
+      );
     } finally {
       await this.lockService.release('cron:annual-reports-auto-generate');
     }

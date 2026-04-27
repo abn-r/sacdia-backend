@@ -63,7 +63,10 @@ export class SessionsController {
     description: 'Active sessions list',
     type: SessionListResponseDto,
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized — invalid or expired JWT' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized — invalid or expired JWT',
+  })
   async listSessions(@Req() req: Request): Promise<SessionListResponseDto> {
     const user = req.user as any;
     return this.sessionsService.listSessions(user.user_id, user.sid ?? null);
@@ -80,7 +83,7 @@ export class SessionsController {
     summary: 'Revoke a specific session',
     description:
       'Deletes the specified BA session from the database. ' +
-      'Returns 400 when the sessionId matches the caller\'s current session — use POST /auth/logout instead. ' +
+      "Returns 400 when the sessionId matches the caller's current session — use POST /auth/logout instead. " +
       'Returns 403 when the session belongs to a different user. ' +
       'Returns 404 when the session does not exist or has already expired.',
   })
@@ -94,9 +97,18 @@ export class SessionsController {
     status: 400,
     description: 'Cannot revoke current session — use logout instead',
   })
-  @ApiResponse({ status: 403, description: 'Session belongs to a different user' })
-  @ApiResponse({ status: 404, description: 'Session not found or already expired' })
-  @ApiResponse({ status: 401, description: 'Unauthorized — invalid or expired JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Session belongs to a different user',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Session not found or already expired',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized — invalid or expired JWT',
+  })
   async revokeSession(
     @Req() req: Request,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
@@ -127,7 +139,10 @@ export class SessionsController {
     description: 'Sessions revoked',
     type: RevokeAllSessionsResponseDto,
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized — invalid or expired JWT' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized — invalid or expired JWT',
+  })
   async revokeAllSessions(
     @Req() req: Request,
   ): Promise<RevokeAllSessionsResponseDto> {

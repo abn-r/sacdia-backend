@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppForbiddenException,
@@ -92,9 +89,7 @@ export class MemberOfMonthService {
       LIMIT ${safeLimit} OFFSET ${skip}
     `;
 
-    const totalResult = await this.prisma.$queryRaw<
-      Array<{ count: bigint }>
-    >`
+    const totalResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(DISTINCT (year, month)) AS count
       FROM member_of_month
       WHERE club_section_id = ${sectionId}
@@ -180,17 +175,14 @@ export class MemberOfMonthService {
       await this.authorizationContext.resolveUserAuthorization(userId);
 
     const globalRoles = new Set(
-      resolved.authorization.grants.global_roles.map((g: { role_name: string }) =>
-        g.role_name.toLowerCase(),
+      resolved.authorization.grants.global_roles.map(
+        (g: { role_name: string }) => g.role_name.toLowerCase(),
       ),
     );
-    const isAdmin =
-      globalRoles.has('admin') || globalRoles.has('super_admin');
+    const isAdmin = globalRoles.has('admin') || globalRoles.has('super_admin');
 
-    const userLocalFieldId =
-      resolved.authorization.effective.scope.global.local_field?.id as
-        | number
-        | undefined;
+    const userLocalFieldId = resolved.authorization.effective.scope.global
+      .local_field?.id as number | undefined;
 
     const scopedLocalFieldId: number | undefined = isAdmin
       ? filters.localFieldId
@@ -305,7 +297,12 @@ export class MemberOfMonthService {
     sectionId: number,
     month: number,
     year: number,
-  ): Promise<{ winners: MemberResult[]; section_id: number; month: number; year: number }> {
+  ): Promise<{
+    winners: MemberResult[];
+    section_id: number;
+    month: number;
+    year: number;
+  }> {
     // 1. Calculate ISO week range for the given month/year
     const weekRange = this.getWeekRangeForMonth(year, month);
 
@@ -342,9 +339,7 @@ export class MemberOfMonthService {
 
     // 3. Find max points and all tied winners
     const maxPoints = Math.max(...scores.map((s) => Number(s.total_points)));
-    const winners = scores.filter(
-      (s) => Number(s.total_points) === maxPoints,
-    );
+    const winners = scores.filter((s) => Number(s.total_points) === maxPoints);
 
     // 4. Delete + Insert in a transaction (idempotency)
     await this.prisma.$transaction(async (tx) => {
@@ -365,16 +360,13 @@ export class MemberOfMonthService {
     });
 
     // 5. Send notifications (non-blocking)
-    this.sendMemberOfMonthNotifications(
-      sectionId,
-      winners,
-      month,
-      year,
-    ).catch((err) => {
-      this.logger.warn(
-        `Failed to send member-of-month notifications: ${err.message}`,
-      );
-    });
+    this.sendMemberOfMonthNotifications(sectionId, winners, month, year).catch(
+      (err) => {
+        this.logger.warn(
+          `Failed to send member-of-month notifications: ${err.message}`,
+        );
+      },
+    );
 
     return { winners, section_id: sectionId, month, year };
   }
@@ -440,7 +432,9 @@ export class MemberOfMonthService {
 
     // Notify club directors
     if (clubId) {
-      const winnerNames = await this.getWinnerNames(winners.map((w) => w.user_id));
+      const winnerNames = await this.getWinnerNames(
+        winners.map((w) => w.user_id),
+      );
       const pointsLabel = winners[0]
         ? ` con ${winners[0].total_points} puntos`
         : '';
@@ -459,7 +453,9 @@ export class MemberOfMonthService {
           select: { user_id: true },
         });
 
-      const directorIds = [...new Set(directorAssignments.map((a) => a.user_id))];
+      const directorIds = [
+        ...new Set(directorAssignments.map((a) => a.user_id)),
+      ];
 
       for (const directorId of directorIds) {
         try {

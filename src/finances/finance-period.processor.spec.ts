@@ -21,7 +21,11 @@ describe('FinancePeriodProcessor', () => {
 
   function makeJob(
     data: FinancePeriodTriggerJobData,
-    overrides: Partial<{ id: string; attemptsMade: number; opts: { attempts: number } }> = {},
+    overrides: Partial<{
+      id: string;
+      attemptsMade: number;
+      opts: { attempts: number };
+    }> = {},
   ): Job<FinancePeriodTriggerJobData> {
     return {
       id: 'test-job-3',
@@ -96,7 +100,9 @@ describe('FinancePeriodProcessor', () => {
       const result = await processor.process(job);
 
       expect(result).toEqual({ itemsProcessed: 0 });
-      expect(mockFinancePeriodService.runMonthlyClosing).toHaveBeenCalledTimes(1);
+      expect(mockFinancePeriodService.runMonthlyClosing).toHaveBeenCalledTimes(
+        1,
+      );
     });
   });
 

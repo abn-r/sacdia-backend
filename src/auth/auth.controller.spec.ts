@@ -29,7 +29,10 @@ describe('AuthController', () => {
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: mockAuthService },
-        { provide: AccountDeletionService, useValue: mockAccountDeletionService },
+        {
+          provide: AccountDeletionService,
+          useValue: mockAccountDeletionService,
+        },
       ],
     }).compile();
 

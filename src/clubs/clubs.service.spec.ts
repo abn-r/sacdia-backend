@@ -113,7 +113,9 @@ describe('ClubsService', () => {
     it('should throw NotFoundException when club not found', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toMatchObject({ code: ErrorCode.CLUB_NOT_FOUND });
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.CLUB_NOT_FOUND,
+      });
     });
   });
 

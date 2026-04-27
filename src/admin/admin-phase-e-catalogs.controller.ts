@@ -70,7 +70,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   AuthorizationResource,
   GlobalRoles,
@@ -112,11 +117,11 @@ import {
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminPhaseECatalogsController {
-  constructor(
-    private readonly catalogsService: AdminPhaseECatalogsService,
-  ) {}
+  constructor(private readonly catalogsService: AdminPhaseECatalogsService) {}
 
-  private getActorId(request: ExpressRequest & { user: { sub: string } }): string {
+  private getActorId(
+    request: ExpressRequest & { user: { sub: string } },
+  ): string {
     return request.user.sub;
   }
 
@@ -126,7 +131,9 @@ export class AdminPhaseECatalogsController {
 
   @Get('classes')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all classes with their full translations (admin editor)' })
+  @ApiOperation({
+    summary: 'List all classes with their full translations (admin editor)',
+  })
   async findAllClasses() {
     const data = await this.catalogsService.findAllClasses();
     return { status: 'success', data };
@@ -139,7 +146,10 @@ export class AdminPhaseECatalogsController {
     @Body() dto: CreateClassDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createClass(dto, this.getActorId(req));
+    const data = await this.catalogsService.createClass(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -151,7 +161,11 @@ export class AdminPhaseECatalogsController {
     @Body() dto: UpdateClassDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateClass(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateClass(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -162,7 +176,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteClass(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteClass(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -172,8 +189,16 @@ export class AdminPhaseECatalogsController {
 
   @Get('class-modules')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all class modules with their full translations (admin editor)' })
-  @ApiQuery({ name: 'classId', required: false, type: Number, description: 'Filter by class_id' })
+  @ApiOperation({
+    summary:
+      'List all class modules with their full translations (admin editor)',
+  })
+  @ApiQuery({
+    name: 'classId',
+    required: false,
+    type: Number,
+    description: 'Filter by class_id',
+  })
   async findAllClassModules(@Query('classId') classId?: string) {
     const data = await this.catalogsService.findAllClassModules(
       classId ? Number(classId) : undefined,
@@ -188,19 +213,28 @@ export class AdminPhaseECatalogsController {
     @Body() dto: CreateClassModuleDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createClassModule(dto, this.getActorId(req));
+    const data = await this.catalogsService.createClassModule(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Patch('class-modules/:id')
   @RequirePermissions('catalogs:update')
-  @ApiOperation({ summary: 'Update a class module and upsert/delete translations' })
+  @ApiOperation({
+    summary: 'Update a class module and upsert/delete translations',
+  })
   async updateClassModule(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateClassModuleDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateClassModule(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateClassModule(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -211,7 +245,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteClassModule(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteClassModule(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -221,8 +258,16 @@ export class AdminPhaseECatalogsController {
 
   @Get('class-sections')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all class sections with their full translations (admin editor)' })
-  @ApiQuery({ name: 'moduleId', required: false, type: Number, description: 'Filter by module_id' })
+  @ApiOperation({
+    summary:
+      'List all class sections with their full translations (admin editor)',
+  })
+  @ApiQuery({
+    name: 'moduleId',
+    required: false,
+    type: Number,
+    description: 'Filter by module_id',
+  })
   async findAllClassSections(@Query('moduleId') moduleId?: string) {
     const data = await this.catalogsService.findAllClassSections(
       moduleId ? Number(moduleId) : undefined,
@@ -232,24 +277,35 @@ export class AdminPhaseECatalogsController {
 
   @Post('class-sections')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create a class section with optional translations' })
+  @ApiOperation({
+    summary: 'Create a class section with optional translations',
+  })
   async createClassSection(
     @Body() dto: CreateClassSectionDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createClassSection(dto, this.getActorId(req));
+    const data = await this.catalogsService.createClassSection(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Patch('class-sections/:id')
   @RequirePermissions('catalogs:update')
-  @ApiOperation({ summary: 'Update a class section and upsert/delete translations' })
+  @ApiOperation({
+    summary: 'Update a class section and upsert/delete translations',
+  })
   async updateClassSection(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateClassSectionDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateClassSection(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateClassSection(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -260,7 +316,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteClassSection(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteClassSection(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -270,7 +329,9 @@ export class AdminPhaseECatalogsController {
 
   @Get('folders')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all folders with their full translations (admin editor)' })
+  @ApiOperation({
+    summary: 'List all folders with their full translations (admin editor)',
+  })
   async findAllFolders() {
     const data = await this.catalogsService.findAllFolders();
     return { status: 'success', data };
@@ -283,7 +344,10 @@ export class AdminPhaseECatalogsController {
     @Body() dto: CreateFolderDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createFolder(dto, this.getActorId(req));
+    const data = await this.catalogsService.createFolder(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -295,7 +359,11 @@ export class AdminPhaseECatalogsController {
     @Body() dto: UpdateFolderDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateFolder(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateFolder(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -306,7 +374,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteFolder(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteFolder(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -316,8 +387,16 @@ export class AdminPhaseECatalogsController {
 
   @Get('folder-modules')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all folder modules with their full translations (admin editor)' })
-  @ApiQuery({ name: 'folderId', required: false, type: Number, description: 'Filter by folder_id' })
+  @ApiOperation({
+    summary:
+      'List all folder modules with their full translations (admin editor)',
+  })
+  @ApiQuery({
+    name: 'folderId',
+    required: false,
+    type: Number,
+    description: 'Filter by folder_id',
+  })
   async findAllFolderModules(@Query('folderId') folderId?: string) {
     const data = await this.catalogsService.findAllFolderModules(
       folderId ? Number(folderId) : undefined,
@@ -327,24 +406,35 @@ export class AdminPhaseECatalogsController {
 
   @Post('folder-modules')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create a folder module with optional translations' })
+  @ApiOperation({
+    summary: 'Create a folder module with optional translations',
+  })
   async createFolderModule(
     @Body() dto: CreateFolderModuleDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createFolderModule(dto, this.getActorId(req));
+    const data = await this.catalogsService.createFolderModule(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Patch('folder-modules/:id')
   @RequirePermissions('catalogs:update')
-  @ApiOperation({ summary: 'Update a folder module and upsert/delete translations' })
+  @ApiOperation({
+    summary: 'Update a folder module and upsert/delete translations',
+  })
   async updateFolderModule(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateFolderModuleDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateFolderModule(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateFolderModule(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -355,7 +445,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteFolderModule(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteFolderModule(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -365,8 +458,16 @@ export class AdminPhaseECatalogsController {
 
   @Get('folder-sections')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all folder sections with their full translations (admin editor)' })
-  @ApiQuery({ name: 'moduleId', required: false, type: Number, description: 'Filter by module_id (folder_module_id)' })
+  @ApiOperation({
+    summary:
+      'List all folder sections with their full translations (admin editor)',
+  })
+  @ApiQuery({
+    name: 'moduleId',
+    required: false,
+    type: Number,
+    description: 'Filter by module_id (folder_module_id)',
+  })
   async findAllFolderSections(@Query('moduleId') moduleId?: string) {
     const data = await this.catalogsService.findAllFolderSections(
       moduleId ? Number(moduleId) : undefined,
@@ -376,24 +477,35 @@ export class AdminPhaseECatalogsController {
 
   @Post('folder-sections')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create a folder section with optional translations' })
+  @ApiOperation({
+    summary: 'Create a folder section with optional translations',
+  })
   async createFolderSection(
     @Body() dto: CreateFolderSectionDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createFolderSection(dto, this.getActorId(req));
+    const data = await this.catalogsService.createFolderSection(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Patch('folder-sections/:id')
   @RequirePermissions('catalogs:update')
-  @ApiOperation({ summary: 'Update a folder section and upsert/delete translations' })
+  @ApiOperation({
+    summary: 'Update a folder section and upsert/delete translations',
+  })
   async updateFolderSection(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateFolderSectionDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateFolderSection(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateFolderSection(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -404,7 +516,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteFolderSection(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteFolderSection(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -414,7 +529,10 @@ export class AdminPhaseECatalogsController {
 
   @Get('finance-categories')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all finance categories with their full translations (admin editor)' })
+  @ApiOperation({
+    summary:
+      'List all finance categories with their full translations (admin editor)',
+  })
   async findAllFinanceCategories() {
     const data = await this.catalogsService.findAllFinanceCategories();
     return { status: 'success', data };
@@ -422,24 +540,35 @@ export class AdminPhaseECatalogsController {
 
   @Post('finance-categories')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create a finance category with optional translations' })
+  @ApiOperation({
+    summary: 'Create a finance category with optional translations',
+  })
   async createFinanceCategory(
     @Body() dto: CreateFinanceCategoryDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createFinanceCategory(dto, this.getActorId(req));
+    const data = await this.catalogsService.createFinanceCategory(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Patch('finance-categories/:id')
   @RequirePermissions('catalogs:update')
-  @ApiOperation({ summary: 'Update a finance category and upsert/delete translations' })
+  @ApiOperation({
+    summary: 'Update a finance category and upsert/delete translations',
+  })
   async updateFinanceCategory(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateFinanceCategoryDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateFinanceCategory(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateFinanceCategory(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -450,7 +579,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteFinanceCategory(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteFinanceCategory(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -460,7 +592,10 @@ export class AdminPhaseECatalogsController {
 
   @Get('inventory-categories')
   @RequirePermissions('catalogs:read')
-  @ApiOperation({ summary: 'List all inventory categories with their full translations (admin editor)' })
+  @ApiOperation({
+    summary:
+      'List all inventory categories with their full translations (admin editor)',
+  })
   async findAllInventoryCategories() {
     const data = await this.catalogsService.findAllInventoryCategories();
     return { status: 'success', data };
@@ -468,35 +603,51 @@ export class AdminPhaseECatalogsController {
 
   @Post('inventory-categories')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create an inventory category with optional translations' })
+  @ApiOperation({
+    summary: 'Create an inventory category with optional translations',
+  })
   async createInventoryCategory(
     @Body() dto: CreateInventoryCategoryDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createInventoryCategory(dto, this.getActorId(req));
+    const data = await this.catalogsService.createInventoryCategory(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Patch('inventory-categories/:id')
   @RequirePermissions('catalogs:update')
-  @ApiOperation({ summary: 'Update an inventory category and upsert/delete translations' })
+  @ApiOperation({
+    summary: 'Update an inventory category and upsert/delete translations',
+  })
   async updateInventoryCategory(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateInventoryCategoryDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateInventoryCategory(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateInventoryCategory(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Delete('inventory-categories/:id')
   @RequirePermissions('catalogs:delete')
-  @ApiOperation({ summary: 'Soft-delete an inventory category (active = false)' })
+  @ApiOperation({
+    summary: 'Soft-delete an inventory category (active = false)',
+  })
   async deleteInventoryCategory(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteInventoryCategory(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteInventoryCategory(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -507,7 +658,9 @@ export class AdminPhaseECatalogsController {
 
   @Get('honors-catalog')
   @RequirePermissions('honors:read')
-  @ApiOperation({ summary: 'List all honors with their full translations (admin editor)' })
+  @ApiOperation({
+    summary: 'List all honors with their full translations (admin editor)',
+  })
   async findAllHonors() {
     const data = await this.catalogsService.findAllHonors();
     return { status: 'success', data };
@@ -520,7 +673,10 @@ export class AdminPhaseECatalogsController {
     @Body() dto: CreateHonorCatalogDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createHonor(dto, this.getActorId(req));
+    const data = await this.catalogsService.createHonor(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -532,7 +688,11 @@ export class AdminPhaseECatalogsController {
     @Body() dto: UpdateHonorCatalogDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateHonor(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateHonor(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -543,7 +703,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteHonor(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteHonor(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -553,7 +716,10 @@ export class AdminPhaseECatalogsController {
 
   @Get('master-honors')
   @RequirePermissions('honors:read')
-  @ApiOperation({ summary: 'List all master honors with their full translations (admin editor)' })
+  @ApiOperation({
+    summary:
+      'List all master honors with their full translations (admin editor)',
+  })
   async findAllMasterHonors() {
     const data = await this.catalogsService.findAllMasterHonors();
     return { status: 'success', data };
@@ -566,19 +732,28 @@ export class AdminPhaseECatalogsController {
     @Body() dto: CreateMasterHonorDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.createMasterHonor(dto, this.getActorId(req));
+    const data = await this.catalogsService.createMasterHonor(
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
   @Patch('master-honors/:id')
   @RequirePermissions('honors:update')
-  @ApiOperation({ summary: 'Update a master honor and upsert/delete translations' })
+  @ApiOperation({
+    summary: 'Update a master honor and upsert/delete translations',
+  })
   async updateMasterHonor(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateMasterHonorDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.updateMasterHonor(id, dto, this.getActorId(req));
+    const data = await this.catalogsService.updateMasterHonor(
+      id,
+      dto,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 
@@ -589,7 +764,10 @@ export class AdminPhaseECatalogsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
-    const data = await this.catalogsService.deleteMasterHonor(id, this.getActorId(req));
+    const data = await this.catalogsService.deleteMasterHonor(
+      id,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 }

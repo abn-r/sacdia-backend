@@ -166,7 +166,9 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     // Default: no existing folder
     mockPrismaService.annual_folders.findUnique.mockResolvedValue(null);
     // Default: enrollment exists
-    mockPrismaService.club_enrollments.findUnique.mockResolvedValue(mockEnrollment);
+    mockPrismaService.club_enrollments.findUnique.mockResolvedValue(
+      mockEnrollment,
+    );
     // Default: tx.annual_folders.create succeeds
     mockTx.annual_folders.create.mockResolvedValue({
       annual_folder_id: 'folder-uuid',
@@ -178,7 +180,9 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     // Default: no template sections (overridden per test)
     mockTx.folder_template_sections.findMany.mockResolvedValue([]);
     // Default: createMany succeeds
-    mockTx.annual_folder_section_evaluations.createMany.mockResolvedValue({ count: 0 });
+    mockTx.annual_folder_section_evaluations.createMany.mockResolvedValue({
+      count: 0,
+    });
     // Default: tx re-hydration of enrollment for camporee resolver
     // Uses the enriched shape (includes ecclesiastical_year relation + club_section.clubs).
     mockTx.club_enrollments.findUnique.mockResolvedValue(mockEnrollmentTxShape);
@@ -193,7 +197,7 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
   it('uses union-owned template when union template exists', async () => {
     mockPrismaService.folder_templates.findFirst
       .mockResolvedValueOnce(mockUnionTemplate) // union query → found
-      .mockResolvedValueOnce(null);             // LF query (should not be reached)
+      .mockResolvedValueOnce(null); // LF query (should not be reached)
 
     await service.createFolderForEnrollment(ENROLLMENT_ID);
 
@@ -202,8 +206,11 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     expect(createArg.data.folder_template_id).toBe(FOLDER_TEMPLATE_ID_UNION);
 
     // Only one findFirst call (union) since it was found first
-    expect(mockPrismaService.folder_templates.findFirst).toHaveBeenCalledTimes(1);
-    const firstCall = mockPrismaService.folder_templates.findFirst.mock.calls[0][0];
+    expect(mockPrismaService.folder_templates.findFirst).toHaveBeenCalledTimes(
+      1,
+    );
+    const firstCall =
+      mockPrismaService.folder_templates.findFirst.mock.calls[0][0];
     expect(firstCall.where.owner_union_id).toBe(7);
   });
 
@@ -212,16 +219,19 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
   // ---------------------------------------------------------------
   it('falls back to local_field-owned template when union template is missing', async () => {
     mockPrismaService.folder_templates.findFirst
-      .mockResolvedValueOnce(null)              // union query → not found
-      .mockResolvedValueOnce(mockLFTemplate);   // LF query → found
+      .mockResolvedValueOnce(null) // union query → not found
+      .mockResolvedValueOnce(mockLFTemplate); // LF query → found
 
     await service.createFolderForEnrollment(ENROLLMENT_ID);
 
     const createArg = mockTx.annual_folders.create.mock.calls[0][0];
     expect(createArg.data.folder_template_id).toBe(FOLDER_TEMPLATE_ID_LF);
 
-    expect(mockPrismaService.folder_templates.findFirst).toHaveBeenCalledTimes(2);
-    const lfCall = mockPrismaService.folder_templates.findFirst.mock.calls[1][0];
+    expect(mockPrismaService.folder_templates.findFirst).toHaveBeenCalledTimes(
+      2,
+    );
+    const lfCall =
+      mockPrismaService.folder_templates.findFirst.mock.calls[1][0];
     expect(lfCall.where.owner_local_field_id).toBe(3);
   });
 
@@ -233,7 +243,9 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
 
     await expect(
       service.createFolderForEnrollment(ENROLLMENT_ID),
-    ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH });
+    ).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH,
+    });
   });
 
   // ---------------------------------------------------------------
@@ -242,12 +254,14 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
   it('prefers union template when both union and LF templates exist', async () => {
     mockPrismaService.folder_templates.findFirst
       .mockResolvedValueOnce(mockUnionTemplate) // union query → found, short-circuits
-      .mockResolvedValueOnce(mockLFTemplate);   // LF query — never called
+      .mockResolvedValueOnce(mockLFTemplate); // LF query — never called
 
     await service.createFolderForEnrollment(ENROLLMENT_ID);
 
     // Union wins — only 1 findFirst call
-    expect(mockPrismaService.folder_templates.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPrismaService.folder_templates.findFirst).toHaveBeenCalledTimes(
+      1,
+    );
     const createArg = mockTx.annual_folders.create.mock.calls[0][0];
     expect(createArg.data.folder_template_id).toBe(FOLDER_TEMPLATE_ID_UNION);
   });
@@ -260,7 +274,9 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
 
     await expect(
       service.createFolderForEnrollment(ENROLLMENT_ID),
-    ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND });
+    ).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+    });
   });
 
   // ---------------------------------------------------------------
@@ -268,14 +284,39 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
   // ---------------------------------------------------------------
   it('creates one evaluation row per template section inside the transaction (T-B2-1)', async () => {
     const mockSections = [
-      { section_id: 'sec-uuid-0001', folder_template_id: FOLDER_TEMPLATE_ID_UNION, max_points: 10, order: 1, name: 'S1', description: null },
-      { section_id: 'sec-uuid-0002', folder_template_id: FOLDER_TEMPLATE_ID_UNION, max_points: 20, order: 2, name: 'S2', description: null },
-      { section_id: 'sec-uuid-0003', folder_template_id: FOLDER_TEMPLATE_ID_UNION, max_points: 15, order: 3, name: 'S3', description: null },
+      {
+        section_id: 'sec-uuid-0001',
+        folder_template_id: FOLDER_TEMPLATE_ID_UNION,
+        max_points: 10,
+        order: 1,
+        name: 'S1',
+        description: null,
+      },
+      {
+        section_id: 'sec-uuid-0002',
+        folder_template_id: FOLDER_TEMPLATE_ID_UNION,
+        max_points: 20,
+        order: 2,
+        name: 'S2',
+        description: null,
+      },
+      {
+        section_id: 'sec-uuid-0003',
+        folder_template_id: FOLDER_TEMPLATE_ID_UNION,
+        max_points: 15,
+        order: 3,
+        name: 'S3',
+        description: null,
+      },
     ];
 
-    mockPrismaService.folder_templates.findFirst.mockResolvedValueOnce(mockUnionTemplate);
+    mockPrismaService.folder_templates.findFirst.mockResolvedValueOnce(
+      mockUnionTemplate,
+    );
     mockTx.folder_template_sections.findMany.mockResolvedValue(mockSections);
-    mockTx.annual_folder_section_evaluations.createMany.mockResolvedValue({ count: 3 });
+    mockTx.annual_folder_section_evaluations.createMany.mockResolvedValue({
+      count: 3,
+    });
 
     await service.createFolderForEnrollment(ENROLLMENT_ID);
 
@@ -283,8 +324,11 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
 
     // createMany called once with exactly 3 rows
-    expect(mockTx.annual_folder_section_evaluations.createMany).toHaveBeenCalledTimes(1);
-    const createManyArg = mockTx.annual_folder_section_evaluations.createMany.mock.calls[0][0];
+    expect(
+      mockTx.annual_folder_section_evaluations.createMany,
+    ).toHaveBeenCalledTimes(1);
+    const createManyArg =
+      mockTx.annual_folder_section_evaluations.createMany.mock.calls[0][0];
     expect(createManyArg.data).toHaveLength(3);
 
     // Each row maps correctly
@@ -394,8 +438,8 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
     folder_templates: {
       findFirst: jest.fn(),
     },
-    $transaction: jest.fn(
-      (cb: (tx: typeof mockTxCamp) => Promise<unknown>) => cb(mockTxCamp),
+    $transaction: jest.fn((cb: (tx: typeof mockTxCamp) => Promise<unknown>) =>
+      cb(mockTxCamp),
     ),
   };
 
@@ -441,7 +485,9 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
     });
 
     // Tx defaults.
-    mockTxCamp.club_enrollments.findUnique.mockResolvedValue(mockCampEnrollment);
+    mockTxCamp.club_enrollments.findUnique.mockResolvedValue(
+      mockCampEnrollment,
+    );
     mockTxCamp.folder_template_sections.findMany.mockResolvedValue([]);
     mockTxCamp.annual_folder_section_evaluations.createMany.mockResolvedValue({
       count: 0,
@@ -463,7 +509,9 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
   // CAMP-1 S1 — Union enrolled happy path
   // -----------------------------------------------------------------------
   it('S1: returns union_camporee_id and flag=true when club has non-rejected enrollment', async () => {
-    mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(mockUnionCamporée);
+    mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(
+      mockUnionCamporée,
+    );
 
     await service.createFolderForEnrollment(ENROLLMENT_ID_CAMP);
 
@@ -479,7 +527,9 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
   it('S4: rejected camporee_clubs enrollment is filtered out; falls through to local', async () => {
     // camporee_clubs query returns null (rejected row excluded by status filter)
     mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(null);
-    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(mockLocalCamporee);
+    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(
+      mockLocalCamporee,
+    );
 
     await service.createFolderForEnrollment(ENROLLMENT_ID_CAMP);
 
@@ -494,7 +544,9 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
   // -----------------------------------------------------------------------
   it('S2: returns local_camporee_id and flag=false when no union enrollment but local exists', async () => {
     mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(null);
-    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(mockLocalCamporee);
+    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(
+      mockLocalCamporee,
+    );
 
     await service.createFolderForEnrollment(ENROLLMENT_ID_CAMP);
 
@@ -539,9 +591,13 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
   // CAMP-1 S5 — Union-first precedence: both tiers match → union wins
   // -----------------------------------------------------------------------
   it('S5: returns union_camporee_id even when both tiers would match (union-first precedence)', async () => {
-    mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(mockUnionCamporée);
+    mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(
+      mockUnionCamporée,
+    );
     // local mock also returns a row but should NOT be reached
-    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(mockLocalCamporee);
+    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(
+      mockLocalCamporee,
+    );
 
     await service.createFolderForEnrollment(ENROLLMENT_ID_CAMP);
 
@@ -560,7 +616,9 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
   it('S8a: inactive union_camporee is filtered out; falls through to local', async () => {
     // union query returns null (active=false filter in the Prisma where clause excludes it)
     mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(null);
-    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(mockLocalCamporee);
+    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(
+      mockLocalCamporee,
+    );
 
     await service.createFolderForEnrollment(ENROLLMENT_ID_CAMP);
 
@@ -592,12 +650,16 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
     // or re-sorts the result itself. This test asserts the resolver returns
     // the single mock row without modification.
     mockTxCamp.camporee_clubs.findFirst.mockResolvedValueOnce(null);
-    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(mockLocalCamporee);
+    mockTxCamp.local_camporees.findFirst.mockResolvedValueOnce(
+      mockLocalCamporee,
+    );
 
     await service.createFolderForEnrollment(ENROLLMENT_ID_CAMP);
 
     const createArg = mockTxCamp.annual_folders.create.mock.calls[0][0];
     // The resolver returns the row the DB chose — no extra filtering.
-    expect(createArg.data.local_camporee_id).toBe(mockLocalCamporee.local_camporee_id);
+    expect(createArg.data.local_camporee_id).toBe(
+      mockLocalCamporee.local_camporee_id,
+    );
   });
 });

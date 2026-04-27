@@ -40,7 +40,11 @@ function makeJob(
   data: RealtimeInvalidatePayload,
   id = 'job-test-1',
 ): Job<RealtimeInvalidatePayload> {
-  return { id, name: REALTIME_INVALIDATE_JOB, data } as unknown as Job<RealtimeInvalidatePayload>;
+  return {
+    id,
+    name: REALTIME_INVALIDATE_JOB,
+    data,
+  } as unknown as Job<RealtimeInvalidatePayload>;
 }
 
 function makePayload(
@@ -169,7 +173,9 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
       { token: 'token-good' },
       { token: 'token-dead' },
     ]);
-    mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({ count: 1 });
+    mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+      count: 1,
+    });
     mockSendEachForMulticast.mockResolvedValue({
       successCount: 1,
       failureCount: 1,
@@ -273,7 +279,10 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
     });
 
     const logSpy = jest.spyOn((processor as any).logger, 'log');
-    const job = makeJob(makePayload({ action: 'DELETED', entityId: 55 }), 'job-42');
+    const job = makeJob(
+      makePayload({ action: 'DELETED', entityId: 55 }),
+      'job-42',
+    );
     const result = await processor.process(job as any);
 
     expect(result).toMatchObject({
@@ -295,7 +304,11 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
   // ---------------------------------------------------------------------------
   it('should warn and not throw for unknown job names', async () => {
     const warnSpy = jest.spyOn((processor as any).logger, 'warn');
-    const unknownJob = { id: 'job-x', name: 'unknown.job', data: {} } as unknown as Job;
+    const unknownJob = {
+      id: 'job-x',
+      name: 'unknown.job',
+      data: {},
+    } as unknown as Job;
     await expect(processor.process(unknownJob as any)).resolves.toBeUndefined();
     expect(warnSpy).toHaveBeenCalled();
   });
@@ -345,8 +358,12 @@ describe('NotificationsProcessor — send-to-club-members', () => {
     mockPrismaService.$transaction.mockImplementation(
       (fn: (tx: any) => Promise<any>) => fn(mockPrismaService),
     );
-    mockPrismaService.notification_logs.create.mockResolvedValue({ log_id: 99 });
-    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({ count: 1 });
+    mockPrismaService.notification_logs.create.mockResolvedValue({
+      log_id: 99,
+    });
+    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
+      count: 1,
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -420,7 +437,9 @@ describe('NotificationsProcessor — send-to-club-members', () => {
         }),
       }),
     );
-    expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+    expect(
+      mockPrismaService.notification_deliveries.createMany,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         data: [{ log_id: 99, user_id: MEMBER_ID_A }],
         skipDuplicates: true,

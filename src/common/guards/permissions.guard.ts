@@ -1,8 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import {
   AppForbiddenException,
   AppInternalServerErrorException,
@@ -87,7 +83,9 @@ export class PermissionsGuard implements CanActivate {
     if (!resource) {
       const className = context.getClass().name;
       const handlerName = context.getHandler().name;
-      throw new AppInternalServerErrorException(ErrorCode.GUARD_RBAC_MISCONFIGURATION);
+      throw new AppInternalServerErrorException(
+        ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+      );
     }
     const sensitiveUserSubresource =
       this.reflector.getAllAndOverride<SensitiveUserSubresourceMetadata>(
@@ -548,7 +546,9 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!camporee) {
-      throw new AppNotFoundException(ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND);
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+      );
     }
 
     return {

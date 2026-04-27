@@ -19,7 +19,11 @@ export class CreateScoringCategoryDto {
   @MaxLength(100)
   name: string;
 
-  @ApiProperty({ description: 'Puntos máximos por sesión para esta categoría', minimum: 1, maximum: 1000 })
+  @ApiProperty({
+    description: 'Puntos máximos por sesión para esta categoría',
+    minimum: 1,
+    maximum: 1000,
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -45,7 +49,11 @@ export class UpdateScoringCategoryDto {
   @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional({ description: 'Puntos máximos por sesión', minimum: 1, maximum: 1000 })
+  @ApiPropertyOptional({
+    description: 'Puntos máximos por sesión',
+    minimum: 1,
+    maximum: 1000,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

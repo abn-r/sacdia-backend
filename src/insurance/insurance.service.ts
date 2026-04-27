@@ -244,7 +244,9 @@ export class InsuranceService {
     currentUserId?: string,
   ) {
     if (!currentUserId) {
-      throw new AppBadRequestException(ErrorCode.INSURANCE_CURRENT_USER_REQUIRED);
+      throw new AppBadRequestException(
+        ErrorCode.INSURANCE_CURRENT_USER_REQUIRED,
+      );
     }
 
     const member = await this.loadMemberSnapshot(memberId);
@@ -291,7 +293,9 @@ export class InsuranceService {
     currentUserId?: string,
   ) {
     if (!currentUserId) {
-      throw new AppBadRequestException(ErrorCode.INSURANCE_CURRENT_USER_REQUIRED);
+      throw new AppBadRequestException(
+        ErrorCode.INSURANCE_CURRENT_USER_REQUIRED,
+      );
     }
 
     const existing = await this.db.member_insurances.findUnique({
@@ -638,7 +642,9 @@ export class InsuranceService {
 
     const parsed = typeof value === 'number' ? value : Number(value);
     if (Number.isNaN(parsed)) {
-      throw new AppBadRequestException(ErrorCode.INSURANCE_COVERAGE_AMOUNT_INVALID);
+      throw new AppBadRequestException(
+        ErrorCode.INSURANCE_COVERAGE_AMOUNT_INVALID,
+      );
     }
 
     return parsed;

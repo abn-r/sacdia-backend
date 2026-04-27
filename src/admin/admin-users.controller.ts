@@ -19,8 +19,16 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  PermissionsGuard,
+  GlobalRolesGuard,
+} from '../common/guards';
 import {
   AdminCurrentOperationalEnrollmentDto,
   AdminListUsersQueryDto,

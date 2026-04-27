@@ -94,7 +94,9 @@ describe('AwardCategoriesService', () => {
       const dto = { ...baseDto, club_type_id: 999 };
       mockPrismaService.club_types.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(dto)).rejects.toMatchObject({ code: ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND });
+      await expect(service.create(dto)).rejects.toMatchObject({
+        code: ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND,
+      });
     });
 
     it('should skip club_type validation when club_type_id is null', async () => {
@@ -221,9 +223,9 @@ describe('AwardCategoriesService', () => {
     it('should throw NotFoundException for non-existent category', async () => {
       mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent-id')).rejects.toMatchObject(
-        { code: ErrorCode.AWARD_CATEGORY_NOT_FOUND },
-      );
+      await expect(service.findOne('non-existent-id')).rejects.toMatchObject({
+        code: ErrorCode.AWARD_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -292,7 +294,9 @@ describe('AwardCategoriesService', () => {
 
       await expect(
         service.update(categoryId, { club_type_id: 999 }),
-      ).rejects.toMatchObject({ code: ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND,
+      });
     });
 
     it('should throw NotFoundException when category does not exist', async () => {
@@ -372,9 +376,9 @@ describe('AwardCategoriesService', () => {
     it('should return 404 for non-existent category', async () => {
       mockPrismaService.award_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove('non-existent-id')).rejects.toMatchObject(
-        { code: ErrorCode.AWARD_CATEGORY_NOT_FOUND },
-      );
+      await expect(service.remove('non-existent-id')).rejects.toMatchObject({
+        code: ErrorCode.AWARD_CATEGORY_NOT_FOUND,
+      });
 
       expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
     });

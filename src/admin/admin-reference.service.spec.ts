@@ -25,19 +25,21 @@ describe('AdminReferenceService', () => {
       count: jest.fn(),
     },
     // $transaction: executes the callback with a tx client that mirrors the mock prisma
-    $transaction: jest.fn().mockImplementation(async (callback: (tx: any) => Promise<any>) => {
-      const tx = {
-        honors_categories: {
-          create: mockPrismaService.honors_categories.create,
-          update: mockPrismaService.honors_categories.update,
-        },
-        honors_categories_translations: {
-          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
-          upsert: jest.fn().mockResolvedValue({}),
-        },
-      };
-      return callback(tx);
-    }),
+    $transaction: jest
+      .fn()
+      .mockImplementation(async (callback: (tx: any) => Promise<any>) => {
+        const tx = {
+          honors_categories: {
+            create: mockPrismaService.honors_categories.create,
+            update: mockPrismaService.honors_categories.update,
+          },
+          honors_categories_translations: {
+            deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+            upsert: jest.fn().mockResolvedValue({}),
+          },
+        };
+        return callback(tx);
+      }),
   };
 
   const mockCatalogCacheService: Partial<CatalogCacheService> = {
@@ -214,7 +216,9 @@ describe('AdminReferenceService', () => {
 
       await expect(
         service.createHonorCategory({ name: 'Naturaleza' }, 'actor-1'),
-      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_HONOR_CATEGORY_NAME_CONFLICT });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_HONOR_CATEGORY_NAME_CONFLICT,
+      });
     });
   });
 
@@ -275,7 +279,9 @@ describe('AdminReferenceService', () => {
 
       await expect(
         service.updateHonorCategory(9, { name: 'Nuevo nombre' }, 'actor-2'),
-      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_HONOR_CATEGORY_NOT_FOUND });
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_HONOR_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -324,7 +330,9 @@ describe('AdminReferenceService', () => {
       });
       mockPrismaService.honors.count.mockResolvedValue(1);
 
-      await expect(service.deleteHonorCategory(12, 'actor-3')).rejects.toMatchObject({
+      await expect(
+        service.deleteHonorCategory(12, 'actor-3'),
+      ).rejects.toMatchObject({
         code: ErrorCode.ADMIN_HONOR_CATEGORY_IN_USE,
       });
     });

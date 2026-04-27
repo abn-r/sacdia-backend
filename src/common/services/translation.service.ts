@@ -77,7 +77,11 @@ export class TranslationService {
    * Safe to call with undefined (no-op) — useful before entering a transaction.
    */
   validateTranslations(
-    translations?: Array<{ locale: string; name?: string; description?: string }>,
+    translations?: Array<{
+      locale: string;
+      name?: string;
+      description?: string;
+    }>,
   ): void {
     if (!translations) return;
     const seen = new Set<string>();
@@ -86,10 +90,16 @@ export class TranslationService {
         throw new AppBadRequestException(ErrorCode.TRANSLATIONS_ES_NOT_ALLOWED);
       }
       if (!['pt-BR', 'en', 'fr'].includes(t.locale)) {
-        throw new AppBadRequestException(ErrorCode.TRANSLATIONS_INVALID_LOCALE, { locale: t.locale });
+        throw new AppBadRequestException(
+          ErrorCode.TRANSLATIONS_INVALID_LOCALE,
+          { locale: t.locale },
+        );
       }
       if (seen.has(t.locale)) {
-        throw new AppBadRequestException(ErrorCode.TRANSLATIONS_DUPLICATE_LOCALE, { locale: t.locale });
+        throw new AppBadRequestException(
+          ErrorCode.TRANSLATIONS_DUPLICATE_LOCALE,
+          { locale: t.locale },
+        );
       }
       seen.add(t.locale);
     }
@@ -122,13 +132,17 @@ export class TranslationService {
     recordIdField: string,
     uniqueIndexName: string,
     recordId: number | string,
-    translations: Array<{ locale: string; name?: string; description?: string }> | undefined,
+    translations:
+      | Array<{ locale: string; name?: string; description?: string }>
+      | undefined,
     fields: ('name' | 'description')[] = ['name', 'description'],
   ): Promise<void> {
     if (translations === undefined) return;
 
     if (translations.length === 0) {
-      await tx[translationModel].deleteMany({ where: { [recordIdField]: recordId } });
+      await tx[translationModel].deleteMany({
+        where: { [recordIdField]: recordId },
+      });
       return;
     }
 
@@ -136,7 +150,8 @@ export class TranslationService {
       const data: Record<string, string | null | Date> = {};
       for (const f of fields) {
         const v = t[f as keyof typeof t];
-        data[f] = (v === '' || v === undefined || v === null) ? null : (v as string);
+        data[f] =
+          v === '' || v === undefined || v === null ? null : (v as string);
       }
 
       await tx[translationModel].upsert({
@@ -171,15 +186,20 @@ export class TranslationService {
     translationsKey: TKey,
   ): Array<Omit<T, TKey>> {
     return records.map((record) => {
-      const translations = (
-        record[translationsKey] as Array<Partial<T> & { locale: string }>
-      ) ?? [];
+      const translations =
+        (record[translationsKey] as Array<Partial<T> & { locale: string }>) ??
+        [];
 
-      const translated = this.translate(record, translations, locale, fields as Array<keyof T>);
+      const translated = this.translate(
+        record,
+        translations,
+        locale,
+        fields as Array<keyof T>,
+      );
 
       // Strip the translations array — callers receive a clean DTO.
-      const { [translationsKey]: _dropped, ...rest } =
-        translated as T & Record<TKey, unknown>;
+      const { [translationsKey]: _dropped, ...rest } = translated as T &
+        Record<TKey, unknown>;
 
       return rest as Omit<T, TKey>;
     });

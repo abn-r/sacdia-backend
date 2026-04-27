@@ -33,9 +33,10 @@ export class SupportService {
         // Prisma InputJsonValue — castear a `any` para esquivar la firma
         // estricta (`JsonValue` no acepta Record<string, unknown> directo).
         device_info: dto.deviceInfo as unknown as object,
-        user_context: dto.userContext !== undefined
-          ? (dto.userContext as unknown as object)
-          : Prisma.JsonNull,
+        user_context:
+          dto.userContext !== undefined
+            ? (dto.userContext as unknown as object)
+            : Prisma.JsonNull,
       },
       select: {
         id: true,

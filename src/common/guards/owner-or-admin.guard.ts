@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { AuthorizationContextService } from '../services/authorization-context.service';
 import { AppForbiddenException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';

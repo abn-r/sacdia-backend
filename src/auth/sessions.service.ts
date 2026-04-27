@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -148,7 +145,9 @@ export class SessionsService {
     sessionId: string,
   ): Promise<void> {
     if (currentSid !== null && sessionId === currentSid) {
-      throw new AppBadRequestException(ErrorCode.AUTH_SESSION_IS_CURRENT, { sessionId });
+      throw new AppBadRequestException(ErrorCode.AUTH_SESSION_IS_CURRENT, {
+        sessionId,
+      });
     }
 
     const row = await this.prisma.session.findUnique({
@@ -157,7 +156,9 @@ export class SessionsService {
     });
 
     if (!row || row.expiresAt <= new Date()) {
-      throw new AppNotFoundException(ErrorCode.AUTH_SESSION_NOT_FOUND, { sessionId });
+      throw new AppNotFoundException(ErrorCode.AUTH_SESSION_NOT_FOUND, {
+        sessionId,
+      });
     }
 
     if (row.userId !== userId) {
@@ -170,7 +171,9 @@ export class SessionsService {
           sessionId,
         }),
       );
-      throw new AppForbiddenException(ErrorCode.AUTH_SESSION_NOT_OWNED, { sessionId });
+      throw new AppForbiddenException(ErrorCode.AUTH_SESSION_NOT_OWNED, {
+        sessionId,
+      });
     }
 
     await this.prisma.session.delete({ where: { id: sessionId } });
