@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsString,
   IsInt,
   IsOptional,
@@ -6,9 +7,11 @@ import {
   MaxLength,
   Min,
   Max,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
 export class CreateScoringCategoryDto {
   @ApiProperty({ description: 'Nombre de la categoría (máx 100 chars)' })
@@ -22,6 +25,17 @@ export class CreateScoringCategoryDto {
   @Min(1)
   @Max(1000)
   max_points: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Non-es translations. Pass undefined to leave existing untouched, [] to delete all, or entries for pt-BR / en / fr to upsert.',
+    type: [CatalogTranslationDto],
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateScoringCategoryDto {
@@ -43,4 +57,15 @@ export class UpdateScoringCategoryDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Non-es translations. Pass undefined to leave existing untouched, [] to delete all, or entries for pt-BR / en / fr to upsert.',
+    type: [CatalogTranslationDto],
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
