@@ -4,14 +4,13 @@ import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { FinancePeriodService } from './finance-period.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  FINANCE_PERIOD_QUEUE,
+  FinancePeriodTriggerJobData,
+} from './finance-period.types';
 
-export const FINANCE_PERIOD_QUEUE = 'finance-period';
-
-export interface FinancePeriodTriggerJobData {
-  triggeredAt: string; // ISO string
-  year: number;
-  month: number;
-}
+export { FINANCE_PERIOD_QUEUE };
+export type { FinancePeriodTriggerJobData };
 
 @Processor(FINANCE_PERIOD_QUEUE)
 export class FinancePeriodProcessor

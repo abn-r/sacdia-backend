@@ -10,7 +10,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { RANKINGS_QUEUE, RankingsTriggerJobData } from './rankings.processor';
+import { RANKINGS_QUEUE, RankingsTriggerJobData } from './rankings.types';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific

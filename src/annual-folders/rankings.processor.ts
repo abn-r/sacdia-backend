@@ -4,12 +4,13 @@ import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { RankingsService } from './rankings.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  RANKINGS_QUEUE,
+  RankingsTriggerJobData,
+} from './rankings.types';
 
-export const RANKINGS_QUEUE = 'rankings';
-
-export interface RankingsTriggerJobData {
-  triggeredAt: string; // ISO string
-}
+export { RANKINGS_QUEUE };
+export type { RankingsTriggerJobData };
 
 @Processor(RANKINGS_QUEUE)
 export class RankingsProcessor

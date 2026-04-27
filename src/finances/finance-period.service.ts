@@ -10,7 +10,7 @@ import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import {
   FINANCE_PERIOD_QUEUE,
   FinancePeriodTriggerJobData,
-} from './finance-period.processor';
+} from './finance-period.types';
 
 type CategoryBreakdownItem = {
   finance_category_id: number;
