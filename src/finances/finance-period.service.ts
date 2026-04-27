@@ -1,10 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { Cron } from '@nestjs/schedule';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  FINANCE_PERIOD_QUEUE,
+  FinancePeriodTriggerJobData,
+} from './finance-period.processor';
 
 type CategoryBreakdownItem = {
   finance_category_id: number;
@@ -32,6 +38,9 @@ export class FinancePeriodService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly cronLogger: CronRunLogger,
+    @Optional()
+    @InjectQueue(FINANCE_PERIOD_QUEUE)
+    private readonly financePeriodQueue: Queue | null,
   ) {}
 
   async closeMonthForClub(
@@ -128,9 +137,50 @@ export class FinancePeriodService {
     const { month, year } = this.getPreviousMonth(new Date());
     const period = `${year}-${String(month).padStart(2, '0')}`;
 
+    this.logger.log(
+      `Finance period-closing cron triggered for ${period} — enqueuing BullMQ job...`,
+    );
+
+    if (this.financePeriodQueue) {
+      const jobData: FinancePeriodTriggerJobData = {
+        triggeredAt: new Date().toISOString(),
+        year,
+        month,
+      };
+      await this.financePeriodQueue.add('close-month', jobData, {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
+        removeOnComplete: { age: 7 * 86_400 },
+        removeOnFail: { age: 30 * 86_400 },
+      });
+      this.logger.log(
+        `finance-period-closing job enqueued for ${period} with 5 attempts + exponential backoff`,
+      );
+    } else {
+      // Redis unavailable — execute directly (no retry fallback)
+      this.logger.warn(
+        `BullMQ queue unavailable — running finance-period closing for ${period} directly (no retry)`,
+      );
+      await this.runMonthlyClosing(year, month);
+    }
+  }
+
+  /**
+   * Runs the full batched monthly-closing loop for the given year/month.
+   * Called by the BullMQ processor (with retry) and as a direct fallback
+   * when Redis is unavailable.
+   *
+   * Idempotency: closeMonthForClub() returns null when the period is already
+   * closed, so retries are safe.
+   */
+  async runMonthlyClosing(
+    year: number,
+    month: number,
+  ): Promise<{ itemsProcessed: number }> {
+    const period = `${year}-${String(month).padStart(2, '0')}`;
     this.logger.log(`Starting monthly period closing for ${period}...`);
 
-    await this.cronLogger.track('finance-period-closing', async () => {
+    return this.cronLogger.track('finance-period-closing', async () => {
       const BATCH_SIZE = 50;
       let offset = 0;
       let totalProcessed = 0;

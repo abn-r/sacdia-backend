@@ -1,26 +1,33 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { PrismaService } from '../prisma/prisma.service';
-import { MonthlyReportsService } from './monthly-reports.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { MonthlyReportsService } from './monthly-reports.service';
+import {
+  MONTHLY_REPORTS_QUEUE,
+  MonthlyReportsTriggerJobData,
+} from './monthly-reports.processor';
 
 @Injectable()
 export class MonthlyReportsCronService {
   private readonly logger = new Logger(MonthlyReportsCronService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
     private readonly monthlyReportsService: MonthlyReportsService,
     private readonly lockService: DistributedLockService,
     private readonly cronLogger: CronRunLogger,
+    @Optional()
+    @InjectQueue(MONTHLY_REPORTS_QUEUE)
+    private readonly queue: Queue | null,
   ) {}
 
   /**
-   * Runs daily at 11 PM (server time).
+   * Runs daily at 11 PM UTC.
    * Checks system_config for the configured auto-generation day.
-   * If today matches the configured day, generates reports for all active
-   * club enrollments for the PREVIOUS month.
+   * If today matches, enqueues a BullMQ job with 5 attempts + exponential backoff.
+   * Falls back to direct execution when Redis / BullMQ is unavailable.
    */
   @Cron('0 23 * * *', { name: 'monthly-reports-auto-generate', timeZone: 'UTC' })
   async handleAutoGenerate(): Promise<void> {
@@ -32,185 +39,52 @@ export class MonthlyReportsCronService {
       this.logger.debug(
         'Another instance is handling monthly reports auto-generation — skipping',
       );
-      await this.cronLogger.trackSkipped('monthly-reports-auto-generate', 'lock_not_acquired');
+      await this.cronLogger.trackSkipped(
+        'monthly-reports-auto-generate',
+        'lock_not_acquired',
+      );
       return;
     }
 
     this.logger.log(
-      'Monthly reports cron triggered — checking configuration...',
+      'Monthly reports cron triggered — enqueuing BullMQ job...',
     );
 
     try {
-      await this.cronLogger.track('monthly-reports-auto-generate', async () => {
-        // 1. Read system_config to check if auto-generation is enabled
-        const enabledConfig = await this.prisma.system_config.findUnique({
-          where: { config_key: 'reports.auto_generate_enabled' },
+      if (this.queue) {
+        const jobData: MonthlyReportsTriggerJobData = {
+          triggeredAt: new Date().toISOString(),
+        };
+        await this.queue.add('auto-generate', jobData, {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
+          removeOnComplete: { age: 7 * 86_400 },   // keep 7 days
+          removeOnFail: { age: 30 * 86_400 },       // keep 30 days
         });
-
-        if (!enabledConfig || enabledConfig.config_value !== 'true') {
-          this.logger.log('Auto-generation is disabled. Skipping.');
-          return { itemsProcessed: 0 };
-        }
-
-        // 2. Read the configured day of month
-        const dayConfig = await this.prisma.system_config.findUnique({
-          where: { config_key: 'reports.auto_generate_day' },
-        });
-
-        const configuredDay = dayConfig
-          ? parseInt(dayConfig.config_value, 10)
-          : 5;
-
-        if (isNaN(configuredDay) || configuredDay < 1 || configuredDay > 28) {
-          this.logger.warn(
-            `Invalid auto_generate_day value: "${dayConfig?.config_value}". Must be 1-28. Skipping.`,
-          );
-          return { itemsProcessed: 0 };
-        }
-
-        // 3. Check if today is the configured day
-        const today = new Date();
-        const currentDay = today.getDate();
-
-        if (currentDay !== configuredDay) {
-          this.logger.debug(
-            `Today is day ${currentDay}, configured day is ${configuredDay}. Skipping.`,
-          );
-          return { itemsProcessed: 0 };
-        }
-
         this.logger.log(
-          `Today is the configured auto-generation day (${configuredDay}). Starting report generation...`,
+          'monthly-reports-auto-generate job enqueued with 5 attempts + exponential backoff',
         );
-
-        // 4. Calculate the PREVIOUS month and year
-        const { month: prevMonth, year: prevYear } = this.getPreviousMonth(today);
-
-        this.logger.log(
-          `Generating reports for ${prevYear}-${String(prevMonth).padStart(2, '0')}`,
+      } else {
+        // Redis unavailable — execute directly (legacy fallback, retainability)
+        this.logger.warn(
+          'BullMQ queue unavailable — running monthly-reports auto-generation directly (no retry)',
         );
-
-        // 5. Get all active club enrollments
-        const activeEnrollments = await this.prisma.club_enrollments.findMany({
-          where: { status: 'active' },
-          select: {
-            club_enrollment_id: true,
-            club_section: {
-              select: {
-                clubs: { select: { name: true } },
-                club_types: { select: { name: true } },
-              },
-            },
-          },
-        });
-
-        if (activeEnrollments.length === 0) {
-          this.logger.log(
-            'No active club enrollments found. Nothing to generate.',
-          );
-          return { itemsProcessed: 0 };
-        }
-
-        this.logger.log(
-          `Found ${activeEnrollments.length} active enrollment(s). Processing...`,
+        await this.cronLogger.track(
+          'monthly-reports-auto-generate',
+          () => this.monthlyReportsService.runAutoGeneration(),
         );
-
-        // 6. For each enrollment, get or create draft and then generate
-        let successCount = 0;
-        let skipCount = 0;
-        let errorCount = 0;
-        const errors: {
-          enrollmentId: string;
-          clubName: string;
-          error: string;
-        }[] = [];
-
-        for (const enrollment of activeEnrollments) {
-          const clubName = enrollment.club_section?.clubs?.name ?? 'Unknown club';
-          const clubType =
-            enrollment.club_section?.club_types?.name ?? 'Unknown type';
-          const label = `${clubName} (${clubType})`;
-
-          try {
-            // Get or create a draft for the previous month
-            const draft = await this.monthlyReportsService.getOrCreateDraft(
-              enrollment.club_enrollment_id,
-              prevMonth,
-              prevYear,
-            );
-
-            // Only generate if the report is still a draft
-            if (draft.status !== 'draft') {
-              this.logger.debug(
-                `Report for ${label} already has status "${draft.status}". Skipping.`,
-              );
-              skipCount++;
-              continue;
-            }
-
-            // Freeze the snapshot
-            await this.monthlyReportsService.generate(
-              draft.monthly_report_id,
-              'system', // userId = 'system' for auto-generated reports
-            );
-
-            successCount++;
-            this.logger.log(`Generated report for ${label}`);
-          } catch (error) {
-            errorCount++;
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            errors.push({
-              enrollmentId: enrollment.club_enrollment_id,
-              clubName: label,
-              error: errorMessage,
-            });
-            this.logger.error(
-              `Failed to generate report for ${label}: ${errorMessage}`,
-            );
-          }
-        }
-
-        // 7. Log summary
-        this.logger.log(
-          `Auto-generation complete for ${prevYear}-${String(prevMonth).padStart(2, '0')}: ` +
-            `${successCount} generated, ${skipCount} skipped (already processed), ${errorCount} errors`,
-        );
-
-        if (errors.length > 0) {
-          this.logger.warn(
-            `Errors during auto-generation:\n${errors
-              .map((e) => `  - ${e.clubName} (${e.enrollmentId}): ${e.error}`)
-              .join('\n')}`,
-          );
-        }
-
-        return { itemsProcessed: successCount };
-      });
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `Fatal error in monthly reports auto-generation: ${errorMessage}`,
+        `Fatal error in monthly reports auto-generation trigger: ${errorMessage}`,
       );
     } finally {
+      // Release the lock immediately after enqueuing (not after job completion).
+      // The BullMQ worker runs the actual work; the lock only prevents duplicate
+      // enqueues from multiple instances on the same cron tick.
       await this.lockService.release('cron:monthly-reports-auto-generate');
     }
-  }
-
-  /**
-   * Calculates the previous month and year from a given date.
-   * E.g., March 2026 -> { month: 2, year: 2026 }
-   *        January 2026 -> { month: 12, year: 2025 }
-   */
-  private getPreviousMonth(date: Date): { month: number; year: number } {
-    const currentMonth = date.getMonth() + 1; // getMonth() is 0-indexed
-    const currentYear = date.getFullYear();
-
-    if (currentMonth === 1) {
-      return { month: 12, year: currentYear - 1 };
-    }
-
-    return { month: currentMonth - 1, year: currentYear };
   }
 }

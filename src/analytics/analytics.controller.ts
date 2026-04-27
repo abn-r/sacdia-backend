@@ -109,6 +109,49 @@ export class AnalyticsController {
     return { status: 'ok' };
   }
 
+  @Get('queues/:queueName/health')
+  @GlobalRoles('admin', 'super_admin')
+  @ApiOperation({
+    summary: 'Queue health snapshot (admin only)',
+    description:
+      'Returns job counts (active, waiting, completed, failed, delayed) and ' +
+      'paused status for a single BullMQ queue. ' +
+      'Supported queues: notifications, achievements, data-exports, ' +
+      'monthly-reports, rankings, finance-period.',
+  })
+  @ApiParam({ name: 'queueName', description: 'BullMQ queue name', example: 'monthly-reports' })
+  @ApiOkResponse({
+    description: 'Queue health data',
+    schema: {
+      properties: {
+        status: { type: 'string', example: 'ok' },
+        data: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            active: { type: 'number' },
+            waiting: { type: 'number' },
+            completed: { type: 'number' },
+            failed: { type: 'number' },
+            delayed: { type: 'number' },
+            paused: { type: 'boolean' },
+          },
+        },
+      },
+    },
+  })
+  async getQueueHealth(
+    @Param('queueName') queueName: string,
+  ): Promise<{ status: string; data: object }> {
+    if (!this.jobsOverviewService) {
+      throw new ServiceUnavailableException(
+        'Queue service unavailable: Redis is not configured',
+      );
+    }
+    const data = await this.jobsOverviewService.getQueueHealth(queueName);
+    return { status: 'ok', data };
+  }
+
   @Get('cron-runs')
   @GlobalRoles('admin', 'super_admin')
   @ApiOperation({ summary: 'Resumen de ejecuciones de cron jobs (admin only)' })

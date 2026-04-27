@@ -9,6 +9,9 @@ import { CronRunsService } from './cron-runs.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { ACHIEVEMENTS_QUEUE } from '../achievements/achievements.constants';
 import { DATA_EXPORTS_QUEUE } from '../data-export/data-export.processor';
+import { MONTHLY_REPORTS_QUEUE } from '../monthly-reports/monthly-reports.processor';
+import { RANKINGS_QUEUE } from '../annual-folders/rankings.processor';
+import { FINANCE_PERIOD_QUEUE } from '../finances/finance-period.processor';
 import { isPlaceholderUrl } from '../config/bullmq.config';
 
 function isRedisConfigured(): boolean {
@@ -34,6 +37,9 @@ const redisAvailable = isRedisConfigured();
             { name: NOTIFICATIONS_QUEUE },
             { name: ACHIEVEMENTS_QUEUE },
             { name: DATA_EXPORTS_QUEUE },
+            { name: MONTHLY_REPORTS_QUEUE },
+            { name: RANKINGS_QUEUE },
+            { name: FINANCE_PERIOD_QUEUE },
           ),
         ]
       : []),

@@ -13,6 +13,9 @@ import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { ACHIEVEMENTS_QUEUE } from '../achievements/achievements.constants';
 import { DATA_EXPORTS_QUEUE } from '../data-export/data-export.processor';
+import { MONTHLY_REPORTS_QUEUE } from '../monthly-reports/monthly-reports.processor';
+import { RANKINGS_QUEUE } from '../annual-folders/rankings.processor';
+import { FINANCE_PERIOD_QUEUE } from '../finances/finance-period.processor';
 
 export interface JobCounts {
   name: string;
@@ -47,6 +50,12 @@ export class JobsOverviewService {
     private readonly achievementsQueue: Queue,
     @InjectQueue(DATA_EXPORTS_QUEUE)
     private readonly dataExportsQueue: Queue,
+    @InjectQueue(MONTHLY_REPORTS_QUEUE)
+    private readonly monthlyReportsQueue: Queue,
+    @InjectQueue(RANKINGS_QUEUE)
+    private readonly rankingsQueue: Queue,
+    @InjectQueue(FINANCE_PERIOD_QUEUE)
+    private readonly financePeriodQueue: Queue,
   ) {}
 
   async getOverview(): Promise<JobsOverviewDto> {
@@ -54,6 +63,9 @@ export class JobsOverviewService {
       { name: NOTIFICATIONS_QUEUE, queue: this.notificationsQueue },
       { name: ACHIEVEMENTS_QUEUE, queue: this.achievementsQueue },
       { name: DATA_EXPORTS_QUEUE, queue: this.dataExportsQueue },
+      { name: MONTHLY_REPORTS_QUEUE, queue: this.monthlyReportsQueue },
+      { name: RANKINGS_QUEUE, queue: this.rankingsQueue },
+      { name: FINANCE_PERIOD_QUEUE, queue: this.financePeriodQueue },
     ];
 
     const queueStats: JobCounts[] = await Promise.all(
@@ -102,8 +114,55 @@ export class JobsOverviewService {
     return { queues: queueStats, recent_failed };
   }
 
+  /**
+   * Returns a lightweight health snapshot for a single queue.
+   * Corresponds to GET /api/v1/admin/analytics/queues/:queueName/health
+   */
+  async getQueueHealth(queueName: string): Promise<{
+    name: string;
+    active: number;
+    waiting: number;
+    completed: number;
+    failed: number;
+    delayed: number;
+    paused: boolean;
+  }> {
+    const queueMap: Record<string, Queue> = {
+      [NOTIFICATIONS_QUEUE]: this.notificationsQueue,
+      [ACHIEVEMENTS_QUEUE]: this.achievementsQueue,
+      [DATA_EXPORTS_QUEUE]: this.dataExportsQueue,
+      [MONTHLY_REPORTS_QUEUE]: this.monthlyReportsQueue,
+      [RANKINGS_QUEUE]: this.rankingsQueue,
+      [FINANCE_PERIOD_QUEUE]: this.financePeriodQueue,
+    };
+
+    const queue = queueMap[queueName];
+    if (!queue) {
+      throw new AppNotFoundException(ErrorCode.ANALYTICS_QUEUE_NOT_FOUND);
+    }
+
+    const [counts, isPaused] = await Promise.all([
+      queue.getJobCounts('active', 'waiting', 'completed', 'failed', 'delayed'),
+      queue.isPaused(),
+    ]);
+
+    return {
+      name: queueName,
+      active: counts.active ?? 0,
+      waiting: counts.waiting ?? 0,
+      completed: counts.completed ?? 0,
+      failed: counts.failed ?? 0,
+      delayed: counts.delayed ?? 0,
+      paused: isPaused,
+    };
+  }
+
   async retryFailedJob(queueName: string, jobId: string): Promise<void> {
-    if (!this.notificationsQueue || !this.achievementsQueue || !this.dataExportsQueue) {
+    if (
+      !this.notificationsQueue ||
+      !this.achievementsQueue ||
+      !this.dataExportsQueue
+    ) {
       throw new ServiceUnavailableException('Queues unavailable (Redis not configured)');
     }
 
@@ -111,6 +170,9 @@ export class JobsOverviewService {
       [NOTIFICATIONS_QUEUE]: this.notificationsQueue,
       [ACHIEVEMENTS_QUEUE]: this.achievementsQueue,
       [DATA_EXPORTS_QUEUE]: this.dataExportsQueue,
+      [MONTHLY_REPORTS_QUEUE]: this.monthlyReportsQueue,
+      [RANKINGS_QUEUE]: this.rankingsQueue,
+      [FINANCE_PERIOD_QUEUE]: this.financePeriodQueue,
     };
     const queue = queueMap[queueName];
     if (!queue) throw new AppNotFoundException(ErrorCode.ANALYTICS_QUEUE_NOT_FOUND);
