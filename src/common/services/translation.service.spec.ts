@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TranslationService } from './translation.service';
 import { I18nContext } from 'nestjs-i18n';
+import { AppBadRequestException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 jest.mock('nestjs-i18n', () => ({
   I18nContext: {
@@ -212,6 +214,141 @@ describe('TranslationService', () => {
     it('returns empty array for empty input', () => {
       const results = service.translateMany([], 'en', ['name'], 'translations');
       expect(results).toEqual([]);
+    });
+  });
+
+  // ========================================================
+  // validateTranslations
+  // ========================================================
+  describe('validateTranslations', () => {
+    it('is a no-op when translations is undefined', () => {
+      expect(() => service.validateTranslations(undefined)).not.toThrow();
+    });
+
+    it('is a no-op for an empty array', () => {
+      expect(() => service.validateTranslations([])).not.toThrow();
+    });
+
+    it('accepts valid locales without throwing', () => {
+      expect(() =>
+        service.validateTranslations([
+          { locale: 'en', name: 'English name' },
+          { locale: 'pt-BR', name: 'PT name' },
+          { locale: 'fr', name: 'FR name' },
+        ]),
+      ).not.toThrow();
+    });
+
+    it('throws TRANSLATIONS_ES_NOT_ALLOWED when locale is es', () => {
+      let caught: AppBadRequestException | null = null;
+      try {
+        service.validateTranslations([{ locale: 'es', name: 'Spanish' }]);
+      } catch (e) {
+        caught = e as AppBadRequestException;
+      }
+      expect(caught).not.toBeNull();
+      expect(caught!.code).toBe(ErrorCode.TRANSLATIONS_ES_NOT_ALLOWED);
+    });
+
+    it('throws TRANSLATIONS_INVALID_LOCALE for an unsupported locale', () => {
+      let caught: AppBadRequestException | null = null;
+      try {
+        service.validateTranslations([{ locale: 'de', name: 'German' }]);
+      } catch (e) {
+        caught = e as AppBadRequestException;
+      }
+      expect(caught).not.toBeNull();
+      expect(caught!.code).toBe(ErrorCode.TRANSLATIONS_INVALID_LOCALE);
+    });
+
+    it('throws TRANSLATIONS_DUPLICATE_LOCALE when the same locale appears twice', () => {
+      let caught: AppBadRequestException | null = null;
+      try {
+        service.validateTranslations([
+          { locale: 'en', name: 'English 1' },
+          { locale: 'en', name: 'English 2' },
+        ]);
+      } catch (e) {
+        caught = e as AppBadRequestException;
+      }
+      expect(caught).not.toBeNull();
+      expect(caught!.code).toBe(ErrorCode.TRANSLATIONS_DUPLICATE_LOCALE);
+    });
+  });
+
+  // ========================================================
+  // upsertTranslations
+  // ========================================================
+  describe('upsertTranslations', () => {
+    const makeTx = () => ({
+      honors_categories_translations: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    });
+
+    it('is a no-op when translations is undefined', async () => {
+      const tx = makeTx();
+      await service.upsertTranslations(
+        tx,
+        'honors_categories_translations',
+        'honor_category_id',
+        'honor_category_id_locale',
+        1,
+        undefined,
+      );
+      expect(tx.honors_categories_translations.deleteMany).not.toHaveBeenCalled();
+      expect(tx.honors_categories_translations.upsert).not.toHaveBeenCalled();
+    });
+
+    it('calls deleteMany when translations is an empty array', async () => {
+      const tx = makeTx();
+      await service.upsertTranslations(
+        tx,
+        'honors_categories_translations',
+        'honor_category_id',
+        'honor_category_id_locale',
+        1,
+        [],
+      );
+      expect(tx.honors_categories_translations.deleteMany).toHaveBeenCalledWith({
+        where: { honor_category_id: 1 },
+      });
+      expect(tx.honors_categories_translations.upsert).not.toHaveBeenCalled();
+    });
+
+    it('calls upsert for each translation entry', async () => {
+      const tx = makeTx();
+      await service.upsertTranslations(
+        tx,
+        'honors_categories_translations',
+        'honor_category_id',
+        'honor_category_id_locale',
+        42,
+        [
+          { locale: 'en', name: 'English', description: 'EN desc' },
+          { locale: 'pt-BR', name: 'Portuguese', description: '' },
+        ],
+      );
+      expect(tx.honors_categories_translations.upsert).toHaveBeenCalledTimes(2);
+      // Empty string for description should be stored as null
+      const secondCall = tx.honors_categories_translations.upsert.mock.calls[1][0];
+      expect(secondCall.create.description).toBeNull();
+    });
+
+    it('stores empty string name as null', async () => {
+      const tx = makeTx();
+      await service.upsertTranslations(
+        tx,
+        'honors_categories_translations',
+        'honor_category_id',
+        'honor_category_id_locale',
+        5,
+        [{ locale: 'fr', name: '', description: 'FR desc' }],
+      );
+      const call = tx.honors_categories_translations.upsert.mock.calls[0][0];
+      expect(call.create.name).toBeNull();
+      expect(call.create.description).toBe('FR desc');
     });
   });
 });

@@ -444,5 +444,8 @@
   "QR_TOKEN_INVALID": "QR inválido o expirado.",
   "QR_ACTIVITY_NOT_FOUND": "Actividad del QR no encontrada.",
   "QR_ACTIVITY_SCOPE_INVALID": "La actividad no tiene sección asignada.",
-  "QR_ACCESS_DENIED": "No tienes acceso a esta actividad."
+  "QR_ACCESS_DENIED": "No tienes acceso a esta actividad.",
+  "TRANSLATIONS_ES_NOT_ALLOWED": "No se aceptan traducciones para el idioma español; usá los campos principales (name, description)",
+  "TRANSLATIONS_INVALID_LOCALE": "Idioma no soportado para traducciones: \"{locale}\". Locales válidos: pt-BR, en, fr",
+  "TRANSLATIONS_DUPLICATE_LOCALE": "Hay traducciones duplicadas para el mismo idioma: \"{locale}\""
 }

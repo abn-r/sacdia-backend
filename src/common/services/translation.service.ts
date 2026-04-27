@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { I18nContext } from 'nestjs-i18n';
+import { AppBadRequestException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 /**
  * TranslationService — Approach X i18n helper.
@@ -61,6 +63,93 @@ export class TranslationService {
 
     return { ...record, ...overrides };
   }
+
+  // ── WRITE HELPERS ─────────────────────────────────────────────────────────
+
+  /**
+   * Validate a translations array from a write DTO.
+   *
+   * Throws AppBadRequestException on:
+   *   - locale === 'es'                       → TRANSLATIONS_ES_NOT_ALLOWED
+   *   - locale not in ['pt-BR','en','fr']     → TRANSLATIONS_INVALID_LOCALE
+   *   - duplicate locale in the array         → TRANSLATIONS_DUPLICATE_LOCALE
+   *
+   * Safe to call with undefined (no-op) — useful before entering a transaction.
+   */
+  validateTranslations(
+    translations?: Array<{ locale: string; name?: string; description?: string }>,
+  ): void {
+    if (!translations) return;
+    const seen = new Set<string>();
+    for (const t of translations) {
+      if (t.locale === 'es') {
+        throw new AppBadRequestException(ErrorCode.TRANSLATIONS_ES_NOT_ALLOWED);
+      }
+      if (!['pt-BR', 'en', 'fr'].includes(t.locale)) {
+        throw new AppBadRequestException(ErrorCode.TRANSLATIONS_INVALID_LOCALE, { locale: t.locale });
+      }
+      if (seen.has(t.locale)) {
+        throw new AppBadRequestException(ErrorCode.TRANSLATIONS_DUPLICATE_LOCALE, { locale: t.locale });
+      }
+      seen.add(t.locale);
+    }
+  }
+
+  /**
+   * Upsert or delete translation rows for a given parent record inside a
+   * Prisma transaction.
+   *
+   * Behavior:
+   *   - translations === undefined  → no-op (leave existing rows untouched)
+   *   - translations === []         → delete all rows for this recordId
+   *   - translations has entries    → upsert each row by (recordId, locale);
+   *                                   empty/undefined string values stored as NULL
+   *                                   so READ helper falls back to Spanish.
+   *
+   * @param tx                Prisma transaction client (typed as any to avoid
+   *                          circular dependency on generated client types).
+   * @param translationModel  Prisma model name, e.g. 'honors_categories_translations'.
+   * @param recordIdField     FK column name on the translation model, e.g. 'honor_category_id'.
+   * @param uniqueIndexName   Name of the compound unique index used in the upsert
+   *                          `where` clause, e.g. 'honor_category_id_locale'.
+   * @param recordId          PK of the parent record.
+   * @param translations      Array from the DTO (already validated via validateTranslations).
+   * @param fields            Translatable fields to read from each translation entry.
+   */
+  async upsertTranslations(
+    tx: any,
+    translationModel: string,
+    recordIdField: string,
+    uniqueIndexName: string,
+    recordId: number | string,
+    translations: Array<{ locale: string; name?: string; description?: string }> | undefined,
+    fields: ('name' | 'description')[] = ['name', 'description'],
+  ): Promise<void> {
+    if (translations === undefined) return;
+
+    if (translations.length === 0) {
+      await tx[translationModel].deleteMany({ where: { [recordIdField]: recordId } });
+      return;
+    }
+
+    for (const t of translations) {
+      const data: Record<string, string | null | Date> = {};
+      for (const f of fields) {
+        const v = t[f as keyof typeof t];
+        data[f] = (v === '' || v === undefined || v === null) ? null : (v as string);
+      }
+
+      await tx[translationModel].upsert({
+        where: {
+          [uniqueIndexName]: { [recordIdField]: recordId, locale: t.locale },
+        },
+        create: { [recordIdField]: recordId, locale: t.locale, ...data },
+        update: { ...data, updated_at: new Date() },
+      });
+    }
+  }
+
+  // ── READ HELPERS ──────────────────────────────────────────────────────────
 
   /**
    * Applies translate() to every record in a list and strips the internal
