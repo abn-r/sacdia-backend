@@ -42,6 +42,8 @@ import { ClubEnrollmentsModule } from './club-enrollments/club-enrollments.modul
 import { ValidationModule } from './validation/validation.module';
 import { AnnualFoldersModule } from './annual-folders/annual-folders.module';
 import { MonthlyReportsModule } from './monthly-reports/monthly-reports.module';
+import { QuarterlyReportsModule } from './quarterly-reports/quarterly-reports.module';
+import { AnnualReportsModule } from './annual-reports/annual-reports.module';
 import { RequestsModule } from './requests/requests.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { YearEndModule } from './year-end/year-end.module';
@@ -215,6 +217,8 @@ import { buildBullRootConfig } from './config/bullmq.config';
     ValidationModule,
     AnnualFoldersModule,
     MonthlyReportsModule,
+    QuarterlyReportsModule,
+    AnnualReportsModule,
     RequestsModule,
     SystemConfigModule,
     YearEndModule,
