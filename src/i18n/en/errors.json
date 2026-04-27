@@ -447,5 +447,19 @@
   "QR_ACCESS_DENIED": "You do not have access to this activity.",
   "TRANSLATIONS_ES_NOT_ALLOWED": "Translations for Spanish are not accepted; use the main fields (name, description)",
   "TRANSLATIONS_INVALID_LOCALE": "Unsupported locale for translations: \"{locale}\". Valid locales: pt-BR, en, fr",
-  "TRANSLATIONS_DUPLICATE_LOCALE": "Duplicate translations for the same locale: \"{locale}\""
+  "TRANSLATIONS_DUPLICATE_LOCALE": "Duplicate translations for the same locale: \"{locale}\"",
+  "QUARTERLY_REPORT_NOT_FOUND": "Quarterly report not found",
+  "QUARTERLY_REPORT_NOT_DRAFT": "Only quarterly reports in draft status can be edited or finalized",
+  "QUARTERLY_REPORT_NOT_FINALIZED": "Only finalized quarterly reports can be downloaded as PDF",
+  "QUARTERLY_REPORT_CLUB_NOT_FOUND": "Club not found",
+  "QUARTERLY_REPORT_INVALID_QUARTER": "Quarter must be between 1 and 4",
+  "QUARTERLY_REPORT_INVALID_YEAR": "Year must be between 2020 and 2100",
+  "QUARTERLY_REPORT_PDF_NOT_READY": "Quarterly report has no computed data. Regenerate the report first",
+  "ANNUAL_REPORT_NOT_FOUND": "Annual report not found",
+  "ANNUAL_REPORT_NOT_DRAFT": "Only annual reports in draft status can be edited or finalized",
+  "ANNUAL_REPORT_NOT_FINALIZED": "Only finalized annual reports can be downloaded as PDF",
+  "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club not found",
+  "ANNUAL_REPORT_YEAR_NOT_FOUND": "Ecclesiastical year not found",
+  "ANNUAL_REPORT_PDF_NOT_READY": "Annual report has no computed data. Regenerate the report first",
+  "CRON_ALERT_NOT_FOUND": "Cron alert record not found."
 }

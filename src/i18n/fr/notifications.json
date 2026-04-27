@@ -1,0 +1,12 @@
+{
+  "notifications": {
+    "system_alert": {
+      "cron_consecutive_failures_title": "Alerte Job: {jobName}",
+      "cron_consecutive_failures_body": "{count} échecs consécutifs détectés (seuil: {threshold}).",
+      "cron_duration_title": "Job Lent: {jobName}",
+      "cron_duration_body": "La dernière exécution a pris {durationMs} ms, dépassant le seuil de {thresholdMs} ms.",
+      "cron_failure_rate_title": "Taux d'Échec Élevé pour le Job: {jobName}",
+      "cron_failure_rate_body": "Taux d'échec de {rate}% sur les 24 dernières heures ({failed}/{total} exécutions échouées)."
+    }
+  }
+}

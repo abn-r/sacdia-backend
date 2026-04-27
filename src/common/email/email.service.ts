@@ -6,7 +6,9 @@ import {
   EMAIL_JOB_EMAIL_VERIFICATION,
   EMAIL_JOB_PASSWORD_RESET,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
+  EMAIL_JOB_CRON_ALERT,
 } from './email.queue';
+import type { CronAlertCondition, CronAlertFailedRun } from './templates/cron-alert';
 
 export interface SendDataExportReadyParams {
   userId: string;
@@ -32,6 +34,17 @@ export interface SendPasswordResetParams {
 export interface SendAccountDeletionConfirmedParams {
   /** Original email BEFORE anonymization — captured pre-transaction */
   email: string;
+}
+
+export interface SendCronAlertParams {
+  /** Recipient admin email address */
+  email: string;
+  jobName: string;
+  condition: CronAlertCondition;
+  /** Human-readable description of the alert condition */
+  conditionDetail: string;
+  recentFailures: CronAlertFailedRun[];
+  locale?: string;
 }
 
 /**
@@ -102,6 +115,22 @@ export class EmailService {
     );
     await this.queue.enqueue(EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED, {
       to: email,
+    });
+  }
+
+  async sendCronAlert(params: SendCronAlertParams): Promise<void> {
+    const { email, jobName, condition, conditionDetail, recentFailures, locale } =
+      params;
+    this.logger.log(
+      `Enqueuing cron alert email: job=${jobName} condition=${condition} to=${maskEmail(email)}`,
+    );
+    await this.queue.enqueue(EMAIL_JOB_CRON_ALERT, {
+      to: email,
+      jobName,
+      condition,
+      conditionDetail,
+      recentFailures,
+      locale,
     });
   }
 }

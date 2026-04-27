@@ -447,5 +447,19 @@
   "QR_ACCESS_DENIED": "Vous n'avez pas accès à cette activité.",
   "TRANSLATIONS_ES_NOT_ALLOWED": "Les traductions en espagnol ne sont pas acceptées ; utilisez les champs principaux (name, description)",
   "TRANSLATIONS_INVALID_LOCALE": "Langue non prise en charge pour les traductions : « {locale} ». Langues valides : pt-BR, en, fr",
-  "TRANSLATIONS_DUPLICATE_LOCALE": "Traductions en double pour la même langue : « {locale} »"
+  "TRANSLATIONS_DUPLICATE_LOCALE": "Traductions en double pour la même langue : « {locale} »",
+  "QUARTERLY_REPORT_NOT_FOUND": "Rapport trimestriel introuvable",
+  "QUARTERLY_REPORT_NOT_DRAFT": "Seuls les rapports trimestriels en brouillon peuvent être modifiés ou finalisés",
+  "QUARTERLY_REPORT_NOT_FINALIZED": "Seuls les rapports trimestriels finalisés peuvent être téléchargés en PDF",
+  "QUARTERLY_REPORT_CLUB_NOT_FOUND": "Club introuvable",
+  "QUARTERLY_REPORT_INVALID_QUARTER": "Le trimestre doit être compris entre 1 et 4",
+  "QUARTERLY_REPORT_INVALID_YEAR": "L'année doit être comprise entre 2020 et 2100",
+  "QUARTERLY_REPORT_PDF_NOT_READY": "Le rapport trimestriel n'a pas de données calculées. Régénérez le rapport d'abord",
+  "ANNUAL_REPORT_NOT_FOUND": "Rapport annuel introuvable",
+  "ANNUAL_REPORT_NOT_DRAFT": "Seuls les rapports annuels en brouillon peuvent être modifiés ou finalisés",
+  "ANNUAL_REPORT_NOT_FINALIZED": "Seuls les rapports annuels finalisés peuvent être téléchargés en PDF",
+  "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club introuvable",
+  "ANNUAL_REPORT_YEAR_NOT_FOUND": "Année ecclésiastique introuvable",
+  "ANNUAL_REPORT_PDF_NOT_READY": "Le rapport annuel n'a pas de données calculées. Régénérez le rapport d'abord",
+  "CRON_ALERT_NOT_FOUND": "Enregistrement d'alerte cron introuvable."
 }

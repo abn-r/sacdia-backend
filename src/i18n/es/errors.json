@@ -447,5 +447,19 @@
   "QR_ACCESS_DENIED": "No tienes acceso a esta actividad.",
   "TRANSLATIONS_ES_NOT_ALLOWED": "No se aceptan traducciones para el idioma español; usá los campos principales (name, description)",
   "TRANSLATIONS_INVALID_LOCALE": "Idioma no soportado para traducciones: \"{locale}\". Locales válidos: pt-BR, en, fr",
-  "TRANSLATIONS_DUPLICATE_LOCALE": "Hay traducciones duplicadas para el mismo idioma: \"{locale}\""
+  "TRANSLATIONS_DUPLICATE_LOCALE": "Hay traducciones duplicadas para el mismo idioma: \"{locale}\"",
+  "QUARTERLY_REPORT_NOT_FOUND": "Informe trimestral no encontrado",
+  "QUARTERLY_REPORT_NOT_DRAFT": "Solo los informes trimestrales en estado borrador pueden ser editados o finalizados",
+  "QUARTERLY_REPORT_NOT_FINALIZED": "Solo los informes trimestrales finalizados pueden descargarse como PDF",
+  "QUARTERLY_REPORT_CLUB_NOT_FOUND": "Club no encontrado",
+  "QUARTERLY_REPORT_INVALID_QUARTER": "El trimestre debe estar entre 1 y 4",
+  "QUARTERLY_REPORT_INVALID_YEAR": "El año debe estar entre 2020 y 2100",
+  "QUARTERLY_REPORT_PDF_NOT_READY": "El informe trimestral no tiene datos computados. Regenere el informe primero",
+  "ANNUAL_REPORT_NOT_FOUND": "Informe anual no encontrado",
+  "ANNUAL_REPORT_NOT_DRAFT": "Solo los informes anuales en estado borrador pueden ser editados o finalizados",
+  "ANNUAL_REPORT_NOT_FINALIZED": "Solo los informes anuales finalizados pueden descargarse como PDF",
+  "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club no encontrado",
+  "ANNUAL_REPORT_YEAR_NOT_FOUND": "Año eclesiástico no encontrado",
+  "ANNUAL_REPORT_PDF_NOT_READY": "El informe anual no tiene datos computados. Regenere el informe primero",
+  "CRON_ALERT_NOT_FOUND": "Registro de alerta de cron no encontrado."
 }

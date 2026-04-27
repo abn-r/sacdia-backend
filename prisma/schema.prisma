@@ -382,6 +382,8 @@ model clubs {
   churches                churches               @relation(fields: [church_id], references: [church_id], onDelete: NoAction, onUpdate: NoAction)
   districts               districts              @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields            local_fields           @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  quarterly_reports       quarterly_reports[]
+  annual_reports          annual_reports[]
 }
 
 model club_sections {
@@ -494,6 +496,7 @@ model ecclesiastical_years {
   folder_templates         folder_templates[]
   club_annual_rankings     club_annual_rankings[]
   user_achievements        user_achievements[]
+  annual_reports           annual_reports[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -1246,6 +1249,8 @@ model users {
   evaluation_union_approvals annual_folder_section_evaluations[] @relation("evaluation_union_approver")
   annual_folder_section_submissions           annual_folder_section_submissions[] @relation("section_submission_submitter")
   monthly_reports_submitted                   monthly_reports[]                   @relation("monthly_report_submitter")
+  quarterly_reports_finalized                 quarterly_reports[]                 @relation("quarterly_report_finalizer")
+  annual_reports_finalized                    annual_reports[]                    @relation("annual_report_finalizer")
   transfer_requests_made                      club_transfer_requests[]            @relation("transfer_requester")
   transfer_requests_reviewed                  club_transfer_requests[]            @relation("transfer_reviewer")
   assignment_requests_target                  role_assignment_requests[]          @relation("assignment_target")
@@ -2570,4 +2575,66 @@ model cron_run_log {
   @@index([job_name, started_at(sort: Desc)], map: "idx_cron_run_log_job_started")
   @@index([status, started_at(sort: Desc)],   map: "idx_cron_run_log_status_started")
   @@map("cron_run_log")
+}
+
+model cron_alerts_log {
+  id          Int       @id @default(autoincrement())
+  job_name    String    @db.VarChar(100)
+  condition   String    @db.VarChar(50)
+  details     Json?     @db.JsonB
+  alerted_at  DateTime  @default(now()) @db.Timestamptz(6)
+  resolved_at DateTime? @db.Timestamptz(6)
+
+  @@index([job_name], map: "cron_alerts_log_job_name_idx")
+  @@index([alerted_at(sort: Desc)], map: "cron_alerts_log_alerted_at_idx")
+  @@map("cron_alerts_log")
+}
+
+// ========================================
+// QUARTERLY + ANNUAL REPORTS (line 3.3)
+// ========================================
+
+model quarterly_reports {
+  quarterly_report_id Int       @id @default(autoincrement())
+  club_id             Int
+  year                Int
+  quarter             Int
+  status              String    @default("draft")
+  auto_generated_at   DateTime? @db.Timestamptz(6)
+  finalized_at        DateTime? @db.Timestamptz(6)
+  finalized_by        String?   @db.Uuid
+  manual_data         Json?     @db.JsonB
+  computed_data       Json?     @db.JsonB
+  pdf_url             String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  club               clubs  @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  finalized_by_user  users? @relation("quarterly_report_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([club_id, year, quarter])
+  @@index([year, quarter], map: "idx_quarterly_reports_year_quarter")
+  @@index([status], map: "idx_quarterly_reports_status")
+}
+
+model annual_reports {
+  annual_report_id       Int       @id @default(autoincrement())
+  club_id                Int
+  ecclesiastical_year_id Int
+  status                 String    @default("draft")
+  auto_generated_at      DateTime? @db.Timestamptz(6)
+  finalized_at           DateTime? @db.Timestamptz(6)
+  finalized_by           String?   @db.Uuid
+  manual_data            Json?     @db.JsonB
+  computed_data          Json?     @db.JsonB
+  pdf_url                String?
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  club               clubs                @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  ecclesiastical_year ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  finalized_by_user  users?               @relation("annual_report_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([club_id, ecclesiastical_year_id])
+  @@index([status], map: "idx_annual_reports_status")
 }

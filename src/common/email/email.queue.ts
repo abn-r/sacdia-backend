@@ -12,12 +12,14 @@ export const EMAIL_JOB_EMAIL_VERIFICATION = 'email.email-verification';
 export const EMAIL_JOB_PASSWORD_RESET = 'email.password-reset';
 export const EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED =
   'email.account-deletion-confirmed';
+export const EMAIL_JOB_CRON_ALERT = 'email.cron-alert';
 
 export type EmailJobType =
   | typeof EMAIL_JOB_DATA_EXPORT_READY
   | typeof EMAIL_JOB_EMAIL_VERIFICATION
   | typeof EMAIL_JOB_PASSWORD_RESET
-  | typeof EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED;
+  | typeof EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED
+  | typeof EMAIL_JOB_CRON_ALERT;
 
 // ---------------------------------------------------------------------------
 // Job payload shapes
@@ -45,11 +47,26 @@ export interface AccountDeletionConfirmedJobPayload {
   to: string;
 }
 
+export interface CronAlertJobPayload {
+  to: string;
+  jobName: string;
+  condition: string;
+  conditionDetail: string;
+  recentFailures: Array<{
+    run_id: number;
+    started_at: string;
+    error_message: string | null;
+    duration_ms: number | null;
+  }>;
+  locale?: string;
+}
+
 export type EmailJobPayload =
   | DataExportReadyJobPayload
   | EmailVerificationJobPayload
   | PasswordResetJobPayload
-  | AccountDeletionConfirmedJobPayload;
+  | AccountDeletionConfirmedJobPayload
+  | CronAlertJobPayload;
 
 /**
  * BullMQ producer for the `emails` queue.

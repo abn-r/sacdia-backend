@@ -12,10 +12,12 @@ import {
   EMAIL_JOB_EMAIL_VERIFICATION,
   EMAIL_JOB_PASSWORD_RESET,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
+  EMAIL_JOB_CRON_ALERT,
   DataExportReadyJobPayload,
   EmailVerificationJobPayload,
   PasswordResetJobPayload,
   AccountDeletionConfirmedJobPayload,
+  CronAlertJobPayload,
   EmailJobPayload,
 } from './email.queue';
 import { EMAIL_PROVIDER } from './providers/email-provider.interface';
@@ -24,6 +26,8 @@ import { DataExportReadyEmail } from './templates/data-export-ready';
 import { EmailVerificationEmail } from './templates/email-verification';
 import { PasswordResetEmail } from './templates/password-reset';
 import { AccountDeletionConfirmedEmail } from './templates/account-deletion-confirmed';
+import { CronAlertEmail } from './templates/cron-alert';
+import type { CronAlertCondition } from './templates/cron-alert';
 
 interface RenderedEmail {
   subject: string;
@@ -163,6 +167,31 @@ export class EmailProcessor
         const element = React.createElement(AccountDeletionConfirmedEmail, {});
         return {
           subject: 'Tu cuenta SACDIA fue eliminada',
+          html: await render(element),
+          text: await render(element, { plainText: true }),
+        };
+      }
+
+      case EMAIL_JOB_CRON_ALERT: {
+        const d = data as CronAlertJobPayload;
+        const locale = (d.locale as CronAlertCondition | undefined) ?? undefined;
+        const element = React.createElement(CronAlertEmail, {
+          jobName: d.jobName,
+          condition: d.condition as CronAlertCondition,
+          conditionDetail: d.conditionDetail,
+          recentFailures: d.recentFailures,
+          locale: d.locale as 'es' | 'en' | 'pt-BR' | 'fr' | undefined,
+        });
+        const subjectMap: Record<string, string> = {
+          es: `[SACDIA] Job ${d.jobName} alerta: ${d.condition}`,
+          en: `[SACDIA] Job ${d.jobName} alert: ${d.condition}`,
+          'pt-BR': `[SACDIA] Job ${d.jobName} alerta: ${d.condition}`,
+          fr: `[SACDIA] Job ${d.jobName} alerte: ${d.condition}`,
+        };
+        const subject = subjectMap[d.locale ?? 'es'] ?? subjectMap['es'];
+        void locale; // locale variable consumed via element props
+        return {
+          subject,
           html: await render(element),
           text: await render(element, { plainText: true }),
         };

@@ -13,6 +13,8 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { DistributedLockService } from './services/distributed-lock.service';
 import { CronRunLogger } from './services/cron-run-logger.service';
 import { TranslationService } from './services/translation.service';
+import { CronAlertService } from './services/cron-alert.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 
@@ -73,6 +75,8 @@ function isPlaceholderRedisUrl(value: string): boolean {
     }),
     // BetterAuthModule provides BetterAuthService (used by MfaService for TOTP operations).
     BetterAuthModule,
+    // NotificationsModule provides NotificationsService (used by CronAlertService for in-app alerts).
+    NotificationsModule,
   ],
   providers: [
     // ==========================================
@@ -100,6 +104,10 @@ function isPlaceholderRedisUrl(value: string): boolean {
     // OBSERVABILIDAD - Logging de ejecución de crons
     // ==========================================
     CronRunLogger,
+    // ==========================================
+    // MONITORING - Automated cron job alerting
+    // ==========================================
+    CronAlertService,
     // ==========================================
     // I18N — Pilot translation helper (Approach X)
     // ==========================================
