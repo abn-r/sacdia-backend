@@ -22,6 +22,8 @@ import { AdminUsersService } from './admin-users.service';
     // BetterAuthModule exports BetterAuthService — needed by AdminAuthService
     // for password updates (updatePasswordById) and MFA status checks (hasTotpEnabled).
     BetterAuthModule,
+    // Note: TranslationService is provided by the global CommonModule (app.module.ts)
+    // — no explicit import needed here.
   ],
   controllers: [
     AdminAuthController,

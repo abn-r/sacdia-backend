@@ -35,6 +35,7 @@ import {
   UpdateMedicineDto,
   UpdateRelationshipTypeDto,
 } from './dto';
+import { TranslationService } from '../common/services/translation.service';
 
 type HonorCategoryRecord = Prisma.honors_categoriesGetPayload<{
   include: { _count: { select: { honors: true } } };
@@ -47,6 +48,7 @@ export class AdminReferenceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly catalogCache: CatalogCacheService,
+    private readonly translationService: TranslationService,
   ) {}
 
   private normalizeName(value: string): string {
@@ -971,21 +973,37 @@ export class AdminReferenceService {
     dto: CreateHonorCategoryDto,
     actorId: string,
   ): Promise<HonorCategoryRecord> {
+    this.translationService.validateTranslations(dto.translations);
     const name = this.normalizeName(dto.name);
     await this.ensureHonorCategoryUnique(name);
 
-    const category = await this.prisma.honors_categories.create({
-      data: {
-        name,
-        description: dto.description,
-        icon: dto.icon ?? null,
-        active: dto.active ?? true,
-      },
-      include: {
-        _count: {
-          select: { honors: true },
+    const { translations, ...mainData } = dto;
+
+    const category = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.honors_categories.create({
+        data: {
+          name,
+          description: mainData.description,
+          icon: mainData.icon ?? null,
+          active: mainData.active ?? true,
         },
-      },
+        include: {
+          _count: {
+            select: { honors: true },
+          },
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'honors_categories_translations',
+        'honor_category_id',
+        'honor_category_id_locale',
+        record.honor_category_id,
+        translations,
+      );
+
+      return record;
     });
 
     this.logMutation(
@@ -1002,6 +1020,7 @@ export class AdminReferenceService {
     dto: UpdateHonorCategoryDto,
     actorId: string,
   ): Promise<HonorCategoryRecord> {
+    this.translationService.validateTranslations(dto.translations);
     await this.ensureHonorCategoryExists(id);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
@@ -1009,22 +1028,37 @@ export class AdminReferenceService {
       await this.ensureHonorCategoryUnique(name, id);
     }
 
-    const category = await this.prisma.honors_categories.update({
-      where: { honor_category_id: id },
-      data: {
-        ...(name ? { name } : {}),
-        ...(typeof dto.description === 'string'
-          ? { description: dto.description }
-          : {}),
-        ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
-        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-        modified_at: new Date(),
-      },
-      include: {
-        _count: {
-          select: { honors: true },
+    const { translations, ...mainDto } = dto;
+
+    const category = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.honors_categories.update({
+        where: { honor_category_id: id },
+        data: {
+          ...(name ? { name } : {}),
+          ...(typeof mainDto.description === 'string'
+            ? { description: mainDto.description }
+            : {}),
+          ...(mainDto.icon !== undefined ? { icon: mainDto.icon } : {}),
+          ...(typeof mainDto.active === 'boolean' ? { active: mainDto.active } : {}),
+          modified_at: new Date(),
         },
-      },
+        include: {
+          _count: {
+            select: { honors: true },
+          },
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'honors_categories_translations',
+        'honor_category_id',
+        'honor_category_id_locale',
+        id,
+        translations,
+      );
+
+      return record;
     });
 
     this.logMutation('update', 'honors_categories', id, actorId);

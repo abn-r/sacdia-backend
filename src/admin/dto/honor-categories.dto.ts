@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
   IsBoolean,
   IsInt,
   IsNotEmpty,
@@ -7,8 +8,11 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
 export class HonorCategoryListQueryDto extends PaginationDto {
   @ApiPropertyOptional({ example: 'Naturaleza' })
@@ -44,6 +48,18 @@ export class CreateHonorCategoryDto {
   @IsInt()
   @Min(0)
   icon?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Non-es translations. Pass undefined to leave existing translations untouched, ' +
+      '[] to delete all, or entries for pt-BR / en / fr to upsert them.',
+    type: [CatalogTranslationDto],
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateHonorCategoryDto extends PartialType(
