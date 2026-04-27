@@ -234,16 +234,18 @@ export class ClassesService {
 
     // Translate nested modules and sections
     if (translatedClass.class_modules) {
-      translatedClass.class_modules = this.translationService.translateMany(
+      // translateMany strips the `translations` key — cast to keep the
+      // surrounding structure assignable to the Prisma-inferred type.
+      (translatedClass as any).class_modules = this.translationService.translateMany(
         translatedClass.class_modules,
         locale,
         ['name', 'description'],
         'translations',
       );
-      for (const mod of translatedClass.class_modules) {
-        if (mod.class_sections) {
-          mod.class_sections = this.translationService.translateMany(
-            mod.class_sections,
+      for (const mod of (translatedClass as any).class_modules) {
+        if ((mod as any).class_sections) {
+          (mod as any).class_sections = this.translationService.translateMany(
+            (mod as any).class_sections as Record<string, unknown>[],
             locale,
             ['name', 'description'],
             'translations',

@@ -164,26 +164,24 @@ export class TranslationService {
    * @param translationsKey  The key on each record that holds its translations array.
    * @returns                Array of records with translated fields and no translations key.
    */
-  translateMany<T extends object, K extends keyof T>(
+  translateMany<T extends object, TKey extends keyof T>(
     records: T[],
     locale: string,
-    fields: K[],
-    translationsKey: string,
-  ): Omit<T, typeof translationsKey & keyof T>[] {
+    fields: string[],
+    translationsKey: TKey,
+  ): Array<Omit<T, TKey>> {
     return records.map((record) => {
       const translations = (
-        record[translationsKey as keyof T] as Array<
-          Partial<T> & { locale: string }
-        >
+        record[translationsKey] as Array<Partial<T> & { locale: string }>
       ) ?? [];
 
-      const translated = this.translate(record, translations, locale, fields);
+      const translated = this.translate(record, translations, locale, fields as Array<keyof T>);
 
       // Strip the translations array — callers receive a clean DTO.
-      const { [translationsKey as keyof T]: _dropped, ...rest } =
-        translated as T & Record<typeof translationsKey, unknown>;
+      const { [translationsKey]: _dropped, ...rest } =
+        translated as T & Record<TKey, unknown>;
 
-      return rest as Omit<T, typeof translationsKey & keyof T>;
+      return rest as Omit<T, TKey>;
     });
   }
 }

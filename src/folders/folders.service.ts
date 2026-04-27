@@ -140,7 +140,7 @@ export class FoldersService {
       'translations',
     ).map((module) => {
       const translatedSections = this.translationService.translateMany(
-        (module as any).folders_sections ?? [],
+        ((module as any).folders_sections ?? []) as any[],
         locale,
         ['name', 'description'],
         'translations',
