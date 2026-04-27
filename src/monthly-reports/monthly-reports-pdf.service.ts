@@ -8,6 +8,8 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
+import { I18nService } from 'nestjs-i18n';
+import { TranslationService } from '../common/services/translation.service';
 import PDFDocument from 'pdfkit';
 
 // ============================================================
@@ -79,26 +81,14 @@ interface ManualData {
 // Constants
 // ============================================================
 
-const MONTH_NAMES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
-
-const ROLE_LABELS: Record<string, string> = {
-  director: 'Director(a)',
-  subdirector: 'Subdirector(a)',
-  secretario: 'Secretario(a)',
-  tesorero: 'Tesorero(a)',
+/**
+ * Maps SACDIA locale codes to BCP-47 locale tags used by Intl APIs.
+ */
+const BCP47: Record<string, string> = {
+  es: 'es-MX',
+  'pt-BR': 'pt-BR',
+  en: 'en-US',
+  fr: 'fr-FR',
 };
 
 const PAGE_MARGIN = 40;
@@ -108,11 +98,17 @@ const CONTENT_WIDTH = 612 - PAGE_MARGIN * 2; // Letter width minus margins
 export class MonthlyReportsPdfService {
   private readonly logger = new Logger(MonthlyReportsPdfService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly i18n: I18nService,
+    private readonly translationService: TranslationService,
+  ) {}
 
   /**
    * Generates a PDF buffer for the given monthly report.
    * Only works for reports with status 'generated' or 'submitted'.
+   * The PDF locale is determined by the active I18nContext (Accept-Language header
+   * or ?lang= query param), falling back to 'es'.
    */
   async generatePdf(reportId: string): Promise<Buffer> {
     const report = await this.prisma.monthly_reports.findUnique({
@@ -158,6 +154,17 @@ export class MonthlyReportsPdfService {
       throw new AppBadRequestException(ErrorCode.REPORT_PDF_NO_SNAPSHOT);
     }
 
+    // ======== Locale resolution ========
+    const locale = this.translationService.getCurrentLocale(); // 'es' | 'pt-BR' | 'en' | 'fr'
+    const intlLocale = BCP47[locale] ?? 'es-MX';
+
+    /**
+     * Shorthand translation helper scoped to the monthly_reports namespace.
+     * Interpolation tokens use nestjs-i18n args format: {key} in JSON.
+     */
+    const t = (key: string, args?: Record<string, unknown>): string =>
+      this.i18n.translate(`monthly_reports.${key}`, { lang: locale, args }) as string;
+
     // Cast to any to access include relations (Prisma types are inferred at compile time)
     const reportData = report as any;
 
@@ -171,7 +178,7 @@ export class MonthlyReportsPdfService {
     const clubType = (section?.club_types?.name as string) ?? 'N/A';
     const churchName = (club?.churches?.name as string) ?? 'N/A';
     const districtName = (club?.districts?.name as string) ?? 'N/A';
-    const monthName = MONTH_NAMES[report.month - 1] ?? `Mes ${report.month}`;
+    const monthName = t(`month_names.${report.month}`);
 
     // ========================================
     // Build PDF
@@ -186,9 +193,9 @@ export class MonthlyReportsPdfService {
         right: PAGE_MARGIN,
       },
       info: {
-        Title: `Informe Mensual - ${clubName} - ${monthName} ${report.year}`,
+        Title: `${t('header.title')} - ${clubName} - ${monthName} ${report.year}`,
         Author: 'SACDIA',
-        Subject: 'Informe Mensual del Club',
+        Subject: t('header.title'),
       },
     });
 
@@ -210,40 +217,41 @@ export class MonthlyReportsPdfService {
       churchName,
       monthName,
       report.year,
+      t,
     );
 
-    // Section 1: Administracion
-    this.drawSectionTitle(doc, '1. ADMINISTRACION');
-    this.drawAdministracion(doc, snapshot, manual);
+    // Section 1: Administration
+    this.drawSectionTitle(doc, t('section_titles.administration'));
+    this.drawAdministracion(doc, snapshot, manual, t);
 
-    // Section 2: Ensenanzas
-    this.drawSectionTitle(doc, '2. ENSENANZAS');
-    this.drawEnsenanzas(doc, snapshot);
+    // Section 2: Teachings
+    this.drawSectionTitle(doc, t('section_titles.teachings'));
+    this.drawEnsenanzas(doc, snapshot, t);
 
-    // Section 3: Actividades del Club
-    this.drawSectionTitle(doc, '3. ACTIVIDADES DEL CLUB');
-    this.drawActividades(doc, snapshot);
+    // Section 3: Club Activities
+    this.drawSectionTitle(doc, t('section_titles.activities'));
+    this.drawActividades(doc, snapshot, intlLocale, t);
 
     // ======== PAGE 2 (BACK) ========
     doc.addPage();
 
-    // Section 4: Finanzas
-    this.drawSectionTitle(doc, '4. FINANZAS');
-    this.drawFinanzas(doc, snapshot);
+    // Section 4: Finances
+    this.drawSectionTitle(doc, t('section_titles.finances'));
+    this.drawFinanzas(doc, snapshot, intlLocale, t);
 
-    // Section 5: Actividad Misionera
-    this.drawSectionTitle(doc, '5. ACTIVIDAD MISIONERA');
-    this.drawActividadMisionera(doc, manual);
+    // Section 5: Missionary Activity
+    this.drawSectionTitle(doc, t('section_titles.missionary'));
+    this.drawActividadMisionera(doc, manual, t);
 
-    // Section 6: Servicio
-    this.drawSectionTitle(doc, '6. SERVICIO');
-    this.drawServicio(doc, manual);
+    // Section 6: Service
+    this.drawSectionTitle(doc, t('section_titles.service'));
+    this.drawServicio(doc, manual, t);
 
     // Secretary info
-    this.drawSecretaryInfo(doc, reportData.submitter);
+    this.drawSecretaryInfo(doc, reportData.submitter, t);
 
     // Footer on both pages
-    this.drawFooter(doc);
+    this.drawFooter(doc, t);
 
     doc.end();
 
@@ -262,12 +270,13 @@ export class MonthlyReportsPdfService {
     churchName: string,
     monthName: string,
     year: number,
+    t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     // Title
     doc
       .fontSize(16)
       .font('Helvetica-Bold')
-      .text('INFORME MENSUAL DEL CLUB', PAGE_MARGIN, PAGE_MARGIN, {
+      .text(t('header.title'), PAGE_MARGIN, PAGE_MARGIN, {
         width: CONTENT_WIDTH,
         align: 'center',
       });
@@ -278,7 +287,7 @@ export class MonthlyReportsPdfService {
     doc
       .fontSize(12)
       .font('Helvetica')
-      .text(`Club de ${clubType}`, { width: CONTENT_WIDTH, align: 'center' });
+      .text(t('header.club_type', { type: clubType }), { width: CONTENT_WIDTH, align: 'center' });
 
     doc.moveDown(0.8);
 
@@ -289,17 +298,17 @@ export class MonthlyReportsPdfService {
 
     doc.fontSize(10).font('Helvetica-Bold');
 
-    doc.text('Distrito: ', col1X, y, { continued: true });
+    doc.text(`${t('header.district')}: `, col1X, y, { continued: true });
     doc.font('Helvetica').text(districtName);
 
-    doc.font('Helvetica-Bold').text('Iglesia: ', col2X, y, { continued: true });
+    doc.font('Helvetica-Bold').text(`${t('header.church')}: `, col2X, y, { continued: true });
     doc.font('Helvetica').text(churchName);
 
     const y2 = doc.y + 2;
-    doc.font('Helvetica-Bold').text('Club: ', col1X, y2, { continued: true });
+    doc.font('Helvetica-Bold').text(`${t('header.club')}: `, col1X, y2, { continued: true });
     doc.font('Helvetica').text(clubName);
 
-    doc.font('Helvetica-Bold').text('Mes: ', col2X, y2, { continued: true });
+    doc.font('Helvetica-Bold').text(`${t('header.month')}: `, col2X, y2, { continued: true });
     doc.font('Helvetica').text(`${monthName} ${year}`);
 
     doc.moveDown(1);
@@ -339,21 +348,22 @@ export class MonthlyReportsPdfService {
     doc: PDFKit.PDFDocument,
     snapshot: SnapshotData,
     manual: Partial<ManualData>,
+    t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     const fontSize = 9;
     doc.fontSize(fontSize).font('Helvetica');
 
     // Directiva
-    doc.font('Helvetica-Bold').text('Directiva:', PAGE_MARGIN, doc.y);
+    doc.font('Helvetica-Bold').text(`${t('administration.directiva')}:`, PAGE_MARGIN, doc.y);
     doc.font('Helvetica');
 
     if (snapshot.directiva && snapshot.directiva.length > 0) {
       for (const member of snapshot.directiva) {
-        const label = ROLE_LABELS[member.role] ?? member.role;
+        const label = t(`role_labels.${member.role}`) ?? member.role;
         this.drawKeyValue(doc, `  ${label}`, member.name);
       }
     } else {
-      doc.text('  No hay directiva registrada', PAGE_MARGIN + 10, doc.y);
+      doc.text(`  ${t('administration.no_directiva')}`, PAGE_MARGIN + 10, doc.y);
     }
 
     doc.moveDown(0.3);
@@ -361,53 +371,57 @@ export class MonthlyReportsPdfService {
     // Member count & meeting days
     this.drawKeyValue(
       doc,
-      'Cantidad de miembros',
+      t('administration.member_count'),
       String(snapshot.member_count),
     );
     this.drawKeyValue(
       doc,
-      'Dias de reunion',
-      snapshot.meeting_days ?? 'No especificado',
+      t('administration.meeting_days'),
+      snapshot.meeting_days ?? t('administration.not_specified'),
     );
 
     doc.moveDown(0.3);
 
     // Manual fields
-    doc.font('Helvetica-Bold').text('Juntas y reuniones:', PAGE_MARGIN, doc.y);
+    doc.font('Helvetica-Bold').text(`${t('administration.meetings_header')}:`, PAGE_MARGIN, doc.y);
     doc.font('Helvetica');
     this.drawKeyValue(
       doc,
-      '  Reuniones de planificacion',
+      `  ${t('administration.planning_meetings')}`,
       String(manual.planning_meetings ?? 0),
     );
     this.drawKeyValue(
       doc,
-      '  Reuniones de padres',
+      `  ${t('administration.parent_meetings')}`,
       String(manual.parent_meetings ?? 0),
     );
     this.drawKeyValue(
       doc,
-      '  Asistencia consejo de jovenes',
+      `  ${t('administration.youth_council_attendance')}`,
       String(manual.youth_council_attendance ?? 0),
     );
     this.drawKeyValue(
       doc,
-      '  Asistencia junta de iglesia',
+      `  ${t('administration.church_board_attendance')}`,
       String(manual.church_board_attendance ?? 0),
     );
   }
 
-  private drawEnsenanzas(doc: PDFKit.PDFDocument, snapshot: SnapshotData) {
+  private drawEnsenanzas(
+    doc: PDFKit.PDFDocument,
+    snapshot: SnapshotData,
+    t: (key: string, args?: Record<string, unknown>) => string,
+  ) {
     doc.fontSize(9).font('Helvetica');
 
     this.drawKeyValue(
       doc,
-      'Especialidades iniciadas este mes',
+      t('teachings.honors_started'),
       String(snapshot.honors?.started ?? 0),
     );
     this.drawKeyValue(
       doc,
-      'Especialidades completadas este mes',
+      t('teachings.honors_completed'),
       String(snapshot.honors?.completed ?? 0),
     );
 
@@ -415,7 +429,7 @@ export class MonthlyReportsPdfService {
       doc.moveDown(0.3);
       doc
         .font('Helvetica-Bold')
-        .text('Detalle de especialidades:', PAGE_MARGIN, doc.y);
+        .text(`${t('teachings.detail_header')}:`, PAGE_MARGIN, doc.y);
       doc.font('Helvetica');
 
       // Table header
@@ -432,9 +446,9 @@ export class MonthlyReportsPdfService {
       ];
 
       doc.font('Helvetica-Bold').fontSize(8);
-      doc.text('Especialidad', colX[0], tableY);
-      doc.text('Miembro', colX[1], tableY);
-      doc.text('Estado', colX[2], tableY);
+      doc.text(t('teachings.honor_column'), colX[0], tableY);
+      doc.text(t('teachings.member_column'), colX[1], tableY);
+      doc.text(t('teachings.status_column'), colX[2], tableY);
       doc.font('Helvetica').fontSize(8);
 
       let rowY = tableY + 12;
@@ -446,15 +460,18 @@ export class MonthlyReportsPdfService {
           width: colWidths[0] - 5,
         });
         doc.text(h.user_name ?? '', colX[1], rowY, { width: colWidths[1] - 5 });
-        doc.text(h.validated ? 'Completada' : 'En progreso', colX[2], rowY, {
-          width: colWidths[2] - 5,
-        });
+        doc.text(
+          h.validated ? t('teachings.completed') : t('teachings.in_progress'),
+          colX[2],
+          rowY,
+          { width: colWidths[2] - 5 },
+        );
         rowY += 12;
       }
 
       if (snapshot.honors.details.length > 10) {
         doc.text(
-          `... y ${snapshot.honors.details.length - 10} mas`,
+          t('teachings.more_rows', { count: snapshot.honors.details.length - 10 }),
           colX[0],
           rowY,
         );
@@ -465,12 +482,17 @@ export class MonthlyReportsPdfService {
     }
   }
 
-  private drawActividades(doc: PDFKit.PDFDocument, snapshot: SnapshotData) {
+  private drawActividades(
+    doc: PDFKit.PDFDocument,
+    snapshot: SnapshotData,
+    intlLocale: string,
+    t: (key: string, args?: Record<string, unknown>) => string,
+  ) {
     doc.fontSize(9).font('Helvetica');
 
     this.drawKeyValue(
       doc,
-      'Total de actividades',
+      t('activities.total'),
       String(snapshot.activities?.total ?? 0),
     );
 
@@ -491,9 +513,9 @@ export class MonthlyReportsPdfService {
       ];
 
       doc.font('Helvetica-Bold').fontSize(8);
-      doc.text('Fecha', colX[0], tableY);
-      doc.text('Actividad', colX[1], tableY);
-      doc.text('Tipo', colX[2], tableY);
+      doc.text(t('activities.date_column'), colX[0], tableY);
+      doc.text(t('activities.activity_column'), colX[1], tableY);
+      doc.text(t('activities.type_column'), colX[2], tableY);
       doc.font('Helvetica').fontSize(8);
 
       let rowY = tableY + 12;
@@ -502,7 +524,7 @@ export class MonthlyReportsPdfService {
       for (let i = 0; i < maxRows; i++) {
         const a = snapshot.activities.list[i];
         const dateStr = a.date
-          ? new Date(a.date).toLocaleDateString('es-MX')
+          ? new Date(a.date).toLocaleDateString(intlLocale)
           : 'N/A';
         doc.text(dateStr, colX[0], rowY, { width: colWidths[0] - 5 });
         doc.text(a.name ?? '', colX[1], rowY, { width: colWidths[1] - 5 });
@@ -512,7 +534,7 @@ export class MonthlyReportsPdfService {
 
       if (snapshot.activities.list.length > 12) {
         doc.text(
-          `... y ${snapshot.activities.list.length - 12} mas`,
+          t('activities.more_rows', { count: snapshot.activities.list.length - 12 }),
           colX[0],
           rowY,
         );
@@ -523,7 +545,12 @@ export class MonthlyReportsPdfService {
     }
   }
 
-  private drawFinanzas(doc: PDFKit.PDFDocument, snapshot: SnapshotData) {
+  private drawFinanzas(
+    doc: PDFKit.PDFDocument,
+    snapshot: SnapshotData,
+    intlLocale: string,
+    t: (key: string, args?: Record<string, unknown>) => string,
+  ) {
     doc.fontSize(9).font('Helvetica');
 
     const finances = snapshot.finances ?? {
@@ -533,8 +560,9 @@ export class MonthlyReportsPdfService {
       transactions: 0,
     };
 
+    // Keep same shape (decimal, not currency style) — just swap locale for number formatting.
     const formatMoney = (amount: number) =>
-      `$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      `$${amount.toLocaleString(intlLocale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     // Financial summary table
     const tableX = PAGE_MARGIN;
@@ -543,22 +571,22 @@ export class MonthlyReportsPdfService {
 
     const rows = [
       {
-        label: 'Total ingresos',
+        label: t('finances.total_income'),
         value: formatMoney(finances.income),
         bold: false,
       },
       {
-        label: 'Total egresos',
+        label: t('finances.total_expenses'),
         value: formatMoney(finances.expenses),
         bold: false,
       },
       {
-        label: 'Balance del mes',
+        label: t('finances.month_balance'),
         value: formatMoney(finances.balance),
         bold: true,
       },
       {
-        label: 'Total de transacciones',
+        label: t('finances.transaction_count'),
         value: String(finances.transactions),
         bold: false,
       },
@@ -586,43 +614,44 @@ export class MonthlyReportsPdfService {
   private drawActividadMisionera(
     doc: PDFKit.PDFDocument,
     manual: Partial<ManualData>,
+    t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.fontSize(9).font('Helvetica');
 
-    this.drawKeyValue(doc, 'Blanco de almas', String(manual.soul_target ?? 0));
+    this.drawKeyValue(doc, t('missionary.soul_target'), String(manual.soul_target ?? 0));
     this.drawKeyValue(
       doc,
-      'Miembros no bautizados',
+      t('missionary.unbaptized_members'),
       String(manual.unbaptized_members ?? 0),
     );
     this.drawKeyValue(
       doc,
-      'Recibiendo estudios biblicos',
+      t('missionary.receiving_bible_studies'),
       String(manual.bible_studies_receiving ?? 0),
     );
     this.drawKeyValue(
       doc,
-      'Instruccion biblica semanal',
-      this.boolLabel(manual.has_weekly_bible_instruction),
+      t('missionary.weekly_bible_instruction'),
+      this.boolLabel(manual.has_weekly_bible_instruction, t),
     );
     this.drawKeyValue(
       doc,
-      'Se dieron estudios biblicos',
-      this.boolLabel(manual.bible_studies_given),
+      t('missionary.bible_studies_given'),
+      this.boolLabel(manual.bible_studies_given, t),
     );
     this.drawKeyValue(
       doc,
-      'Se distribuyo literatura',
-      this.boolLabel(manual.literature_distributed),
+      t('missionary.literature_distributed'),
+      this.boolLabel(manual.literature_distributed, t),
     );
     this.drawKeyValue(
       doc,
-      'Bautizados este mes',
+      t('missionary.baptized_this_month'),
       String(manual.baptized_this_month ?? 0),
     );
     this.drawKeyValue(
       doc,
-      'Total bautizados acumulado',
+      t('missionary.baptized_total'),
       String(manual.total_baptized ?? 0),
     );
 
@@ -631,18 +660,18 @@ export class MonthlyReportsPdfService {
     // Booklet / certificates
     this.drawKeyValue(
       doc,
-      'Certificados entregados',
-      this.boolLabel(manual.certificates_delivered),
+      t('missionary.certificates_delivered'),
+      this.boolLabel(manual.certificates_delivered, t),
     );
     this.drawKeyValue(
       doc,
-      'Miembros tienen libreta',
-      this.boolLabel(manual.members_have_booklet),
+      t('missionary.members_have_booklet'),
+      this.boolLabel(manual.members_have_booklet, t),
     );
     this.drawKeyValue(
       doc,
-      'Requisitos de libreta firmados',
-      this.boolLabel(manual.booklet_requirements_signed),
+      t('missionary.booklet_requirements_signed'),
+      this.boolLabel(manual.booklet_requirements_signed, t),
     );
 
     // Club participation
@@ -650,7 +679,7 @@ export class MonthlyReportsPdfService {
       doc.moveDown(0.3);
       doc
         .font('Helvetica-Bold')
-        .text('Participacion del club:', PAGE_MARGIN, doc.y);
+        .text(`${t('missionary.club_participation')}:`, PAGE_MARGIN, doc.y);
       doc
         .font('Helvetica')
         .text(manual.club_participation_description, PAGE_MARGIN + 10, doc.y, {
@@ -659,24 +688,24 @@ export class MonthlyReportsPdfService {
     }
   }
 
-  private drawServicio(doc: PDFKit.PDFDocument, manual: Partial<ManualData>) {
+  private drawServicio(
+    doc: PDFKit.PDFDocument,
+    manual: Partial<ManualData>,
+    t: (key: string, args?: Record<string, unknown>) => string,
+  ) {
     doc.fontSize(9).font('Helvetica');
 
     if (manual.community_service_description) {
       doc
         .font('Helvetica-Bold')
-        .text('Servicio comunitario:', PAGE_MARGIN, doc.y);
+        .text(`${t('service.header')}:`, PAGE_MARGIN, doc.y);
       doc
         .font('Helvetica')
         .text(manual.community_service_description, PAGE_MARGIN + 10, doc.y, {
           width: CONTENT_WIDTH - 10,
         });
     } else {
-      doc.text(
-        'Sin descripcion de servicio comunitario para este mes.',
-        PAGE_MARGIN,
-        doc.y,
-      );
+      doc.text(t('service.fallback'), PAGE_MARGIN, doc.y);
     }
   }
 
@@ -689,6 +718,7 @@ export class MonthlyReportsPdfService {
       maternal_last_name: string | null;
       email: string | null;
     } | null,
+    t: (key: string, args?: Record<string, unknown>) => string,
   ) {
     doc.moveDown(1.5);
     this.drawHorizontalLine(doc);
@@ -697,7 +727,7 @@ export class MonthlyReportsPdfService {
     doc
       .fontSize(10)
       .font('Helvetica-Bold')
-      .text('Informacion del Secretario/a', PAGE_MARGIN, doc.y);
+      .text(t('secretary.header'), PAGE_MARGIN, doc.y);
     doc.moveDown(0.3);
     doc.fontSize(9).font('Helvetica');
 
@@ -709,18 +739,17 @@ export class MonthlyReportsPdfService {
       ]
         .filter(Boolean)
         .join(' ');
-      this.drawKeyValue(doc, 'Nombre', fullName || 'N/A');
-      this.drawKeyValue(doc, 'Email', submitter.email ?? 'N/A');
+      this.drawKeyValue(doc, t('secretary.name'), fullName || 'N/A');
+      this.drawKeyValue(doc, t('secretary.email'), submitter.email ?? 'N/A');
     } else {
-      doc.text(
-        'No hay informacion del secretario disponible.',
-        PAGE_MARGIN,
-        doc.y,
-      );
+      doc.text(t('secretary.fallback'), PAGE_MARGIN, doc.y);
     }
   }
 
-  private drawFooter(doc: PDFKit.PDFDocument) {
+  private drawFooter(
+    doc: PDFKit.PDFDocument,
+    t: (key: string, args?: Record<string, unknown>) => string,
+  ) {
     // Go to each page and draw footer
     const range = (doc as any).bufferedPageRange?.() ?? { start: 0, count: 1 };
     for (let i = range.start; i < range.start + range.count; i++) {
@@ -731,7 +760,7 @@ export class MonthlyReportsPdfService {
         .font('Helvetica')
         .fillColor('#666666')
         .text(
-          `Generado por SACDIA | Pagina ${i + 1} de ${range.count}`,
+          t('footer', { current: i + 1, total: range.count }),
           PAGE_MARGIN,
           740,
           { width: CONTENT_WIDTH, align: 'center' },
@@ -762,9 +791,12 @@ export class MonthlyReportsPdfService {
     doc.moveDown(0.3);
   }
 
-  private boolLabel(value?: boolean | null): string {
-    if (value === true) return 'Si';
-    if (value === false) return 'No';
-    return 'N/A';
+  private boolLabel(
+    value: boolean | null | undefined,
+    t: (key: string, args?: Record<string, unknown>) => string,
+  ): string {
+    if (value === true) return t('bool.true');
+    if (value === false) return t('bool.false');
+    return t('bool.null');
   }
 }
