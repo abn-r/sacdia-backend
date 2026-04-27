@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   AppForbiddenException,
   AppNotFoundException,
@@ -9,12 +9,25 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import PDFDocument from 'pdfkit';
+import {
+  AuthorizationContextService,
+  type ResolvedAuthorizationProfile,
+} from '../common/services/authorization-context.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+  type FileStorageService,
+} from '../common/services/file-storage.service';
 import type { QrMemberTokenDto } from './dto/qr-token.dto';
 import type { ScanResponseDto } from './dto/scan-qr.dto';
 
 const QR_MEMBER_AUDIENCE = 'sacdia:qr-member';
 const QR_MEMBER_VERSION = 1;
 const QR_MEMBER_TTL_SECONDS = 24 * 60 * 60;
+const QR_PRIVATE_ASSET_TTL_SECONDS = 300;
+const QR_CARD_TITLE = 'SACDIA';
+const QR_CARD_SUBTITLE = 'Credencial virtual';
 
 const ADMIN_SCOPE_ROLES = new Set(['admin', 'super_admin', 'coordinator']);
 
@@ -26,6 +39,40 @@ type QrMemberPayload = {
   ver: number;
 };
 
+type QrMemberView = {
+  user_id: string;
+  full_name: string;
+  avatar: string | null;
+  club_name: string | null;
+  section_name: string | null;
+};
+
+type QrCardVisual = {
+  title: string;
+  subtitle: string;
+  primary_line: string;
+  secondary_line: string;
+  club_name: string | null;
+  section_name: string | null;
+};
+
+export type QrMeResponse = QrMemberTokenDto & {
+  member: QrMemberView;
+  authorization: ResolvedAuthorizationProfile['authorization'];
+};
+
+export type QrCardResponse = QrMemberTokenDto & {
+  member: QrMemberView;
+  visual: QrCardVisual;
+};
+
+export type QrValidationResponse = {
+  valid: true;
+  member: QrMemberView;
+  attendance: ScanResponseDto['attendance'];
+  scanned_at: string;
+};
+
 @Injectable()
 export class QrService {
   private readonly logger = new Logger(QrService.name);
@@ -34,6 +81,9 @@ export class QrService {
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly achievementsService: AchievementsService,
+    private readonly authorizationContext: AuthorizationContextService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   generateMemberToken(userId: string): QrMemberTokenDto {
@@ -56,6 +106,57 @@ export class QrService {
     };
   }
 
+  async getMyQr(userId: string): Promise<QrMeResponse> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    const member = await this.resolveMemberView(resolved);
+
+    return {
+      ...this.generateMemberToken(userId),
+      member,
+      authorization: resolved.authorization,
+    };
+  }
+
+  async getMyCard(userId: string): Promise<QrCardResponse> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    const member = await this.resolveMemberView(resolved);
+
+    return {
+      ...this.generateMemberToken(userId),
+      member,
+      visual: this.buildCardVisual(resolved, member),
+    };
+  }
+
+  async generateMyCardPdf(userId: string): Promise<Buffer> {
+    const card = await this.getMyCard(userId);
+    const doc = new PDFDocument({
+      size: 'A6',
+      layout: 'portrait',
+      margins: { top: 24, bottom: 24, left: 24, right: 24 },
+      info: {
+        Title: `${QR_CARD_TITLE} - ${card.member.full_name}`,
+        Author: 'SACDIA',
+        Subject: QR_CARD_SUBTITLE,
+      },
+    });
+
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+    const pdfReady = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    this.drawCardPdf(doc, card);
+    doc.end();
+
+    return pdfReady;
+  }
+
   /**
    * Validates a scanned QR token and optionally registers attendance on an
    * activity. Signature, audience, version and expiry are enforced before
@@ -69,6 +170,24 @@ export class QrService {
     callerUserId: string,
     activityId?: number,
   ): Promise<ScanResponseDto> {
+    const validation = await this.validateMemberQr(
+      token,
+      callerUserId,
+      activityId,
+    );
+
+    return {
+      member: validation.member,
+      attendance: validation.attendance,
+      scanned_at: validation.scanned_at,
+    };
+  }
+
+  async validateMemberQr(
+    token: string,
+    callerUserId: string,
+    activityId?: number,
+  ): Promise<QrValidationResponse> {
     const payload = this.verifyMemberToken(token);
 
     const user = await this.prisma.users.findUnique({
@@ -99,18 +218,17 @@ export class QrService {
       throw new AppNotFoundException(ErrorCode.QR_MEMBER_NOT_FOUND);
     }
 
-    const fullName = [
-      user.name,
-      user.paternal_last_name,
-      user.maternal_last_name,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+    const signedAvatar = await this.resolveProfilePicture(user.user_image);
 
-    const assignment = user.club_role_assignments[0];
-    const sectionName = assignment?.club_sections?.name ?? null;
-    const clubName = assignment?.club_sections?.clubs?.name ?? null;
+    const member = this.buildMemberView({
+      user_id: user.user_id,
+      name: user.name,
+      paternal_last_name: user.paternal_last_name,
+      maternal_last_name: user.maternal_last_name,
+      user_image: signedAvatar,
+      club_role_assignments: user.club_role_assignments,
+      email: null,
+    });
 
     let attendance: ScanResponseDto['attendance'] = null;
     if (activityId !== undefined) {
@@ -122,13 +240,8 @@ export class QrService {
     }
 
     return {
-      member: {
-        user_id: user.user_id,
-        full_name: fullName || user.user_id,
-        avatar: user.user_image ?? null,
-        club_name: clubName,
-        section_name: sectionName,
-      },
+      valid: true,
+      member,
       attendance,
       scanned_at: new Date().toISOString(),
     };
@@ -264,8 +377,7 @@ export class QrService {
 
     const hasAdminRole = assignments.some(
       (a) =>
-        a.roles?.role_name != null &&
-        ADMIN_SCOPE_ROLES.has(a.roles.role_name),
+        a.roles?.role_name != null && ADMIN_SCOPE_ROLES.has(a.roles.role_name),
     );
     if (hasAdminRole) return;
 
@@ -298,5 +410,175 @@ export class QrService {
     if (!intersects) {
       throw new AppForbiddenException(ErrorCode.QR_ACCESS_DENIED);
     }
+  }
+
+  private async resolveMemberView(
+    resolved: ResolvedAuthorizationProfile,
+  ): Promise<QrMemberView> {
+    const signedAvatar = await this.resolveProfilePicture(
+      resolved.profile.user_image,
+    );
+
+    const activeAssignmentId =
+      resolved.authorization.active_assignment.assignment_id;
+    const activeAssignment = activeAssignmentId
+      ? await this.prisma.club_role_assignments.findFirst({
+          where: {
+            assignment_id: activeAssignmentId,
+            user_id: resolved.profile.user_id,
+            active: true,
+          },
+          select: {
+            club_sections: {
+              select: {
+                name: true,
+                clubs: { select: { name: true } },
+              },
+            },
+          },
+        })
+      : null;
+
+    return this.buildMemberView({
+      user_id: resolved.profile.user_id,
+      name: resolved.profile.name,
+      paternal_last_name: resolved.profile.paternal_last_name,
+      maternal_last_name: resolved.profile.maternal_last_name,
+      user_image: signedAvatar,
+      email: resolved.profile.email,
+      fallback_club_name: resolved.legacy.club?.club_name ?? null,
+      fallback_section_name: resolved.legacy.club?.club_type ?? null,
+      club_role_assignments: activeAssignment
+        ? [
+            {
+              club_sections: activeAssignment.club_sections,
+            },
+          ]
+        : [],
+    });
+  }
+
+  private buildMemberView(input: {
+    user_id: string;
+    name: string | null;
+    paternal_last_name: string | null;
+    maternal_last_name: string | null;
+    user_image: string | null;
+    club_role_assignments: Array<{
+      club_sections?: {
+        name: string | null;
+        clubs?: { name: string | null } | null;
+      } | null;
+    }>;
+    email: string | null;
+    fallback_club_name?: string | null;
+    fallback_section_name?: string | null;
+  }): QrMemberView {
+    const fullName = [
+      input.name,
+      input.paternal_last_name,
+      input.maternal_last_name,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    const assignment = input.club_role_assignments[0];
+    const sectionName = assignment?.club_sections?.name ?? null;
+    const clubName = assignment?.club_sections?.clubs?.name ?? null;
+
+    return {
+      user_id: input.user_id,
+      full_name: fullName || input.email || input.user_id,
+      avatar: input.user_image ?? null,
+      club_name: clubName ?? input.fallback_club_name ?? null,
+      section_name: sectionName ?? input.fallback_section_name ?? null,
+    };
+  }
+
+  private buildCardVisual(
+    resolved: ResolvedAuthorizationProfile,
+    member: QrMemberView,
+  ): QrCardVisual {
+    return {
+      title: QR_CARD_TITLE,
+      subtitle: QR_CARD_SUBTITLE,
+      primary_line: member.full_name,
+      secondary_line: resolved.profile.email,
+      club_name: member.club_name,
+      section_name: member.section_name,
+    };
+  }
+
+  private async resolveProfilePicture(
+    userImage: string | null | undefined,
+  ): Promise<string | null> {
+    if (!userImage) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        userImage,
+        {
+          expiresInSeconds: QR_PRIVATE_ASSET_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to generate signed URL for QR profile picture. Returning null.',
+        error,
+      );
+      return null;
+    }
+  }
+
+  private drawCardPdf(
+    doc: InstanceType<typeof PDFDocument>,
+    card: QrCardResponse,
+  ): void {
+    doc
+      .fontSize(16)
+      .font('Helvetica-Bold')
+      .text(card.visual.title, { align: 'center' });
+
+    doc.moveDown(0.5);
+    doc
+      .fontSize(11)
+      .font('Helvetica')
+      .text(card.visual.subtitle, { align: 'center' });
+
+    doc.moveDown(1);
+    doc.fontSize(13).font('Helvetica-Bold').text(card.member.full_name, {
+      align: 'center',
+    });
+    doc.fontSize(9).font('Helvetica').text(card.member.user_id, {
+      align: 'center',
+    });
+
+    doc.moveDown(1);
+    doc.fontSize(10).font('Helvetica-Bold').text('QR token:', {
+      align: 'left',
+    });
+    doc
+      .font('Courier')
+      .fontSize(8)
+      .text(card.token, { align: 'left', width: 210 });
+
+    doc.moveDown(0.8);
+    doc.font('Helvetica-Bold').text('Club:', { continued: true });
+    doc.font('Helvetica').text(` ${card.visual.club_name ?? 'N/A'}`);
+    doc.font('Helvetica-Bold').text('Sección:', { continued: true });
+    doc.font('Helvetica').text(` ${card.visual.section_name ?? 'N/A'}`);
+
+    doc.moveDown(1);
+    doc
+      .fontSize(8)
+      .font('Helvetica')
+      .text(
+        'Fallback técnico: el PDF expone el token en texto porque el backend no ' +
+          'incluye una librería de renderizado QR bitmap. El cliente puede dibujar ' +
+          'el QR visual desde /qr/me/card.',
+        { align: 'left' },
+      );
   }
 }

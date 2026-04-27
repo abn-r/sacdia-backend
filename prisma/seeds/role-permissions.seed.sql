@@ -59,6 +59,7 @@ WHERE r.role_name = 'user'
     -- Profile & personal data
     'users:read',
     'users:update_profile',
+    'qr:issue_self',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -139,6 +140,7 @@ WHERE r.role_name = 'member'
     -- Personal data
     'users:read',
     'users:update_profile',
+    'qr:issue_self',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -242,6 +244,7 @@ WHERE r.role_name = 'counselor'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -353,6 +356,7 @@ WHERE r.role_name = 'secretary'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -497,6 +501,7 @@ WHERE r.role_name = 'treasurer'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -626,6 +631,7 @@ WHERE r.role_name = 'secretary-treasurer'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -771,6 +777,7 @@ WHERE r.role_name = 'deputy-director'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -899,6 +906,7 @@ WHERE r.role_name = 'director'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -1281,6 +1289,7 @@ WHERE r.role_name = 'assistant-lf'
     'activities:delete',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',

@@ -16,7 +16,8 @@ export class QrMemberTokenDto {
   expires_at!: string;
 
   @ApiProperty({
-    description: 'Seconds until expiry — convenience for clients that cache the token.',
+    description:
+      'Seconds until expiry — convenience for clients that cache the token.',
     example: 86400,
   })
   expires_in!: number;

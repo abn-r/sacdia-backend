@@ -100,6 +100,17 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- QR / Virtual Credentials
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('qr:issue_self', 'Issue and view the authenticated user QR credential', true),
+  ('qr:validate', 'Validate QR credentials during scanning flows', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Finances
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
