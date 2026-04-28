@@ -59,21 +59,13 @@ describe('RankingsService', () => {
     },
   };
 
-  // Score calculator mocks — return zero by default; individual tests can override
-  const folderScore = { calc: jest.fn().mockResolvedValue(0) };
-  const financeScore = { calc: jest.fn().mockResolvedValue(0) };
-  const camporeeScore = { calc: jest.fn().mockResolvedValue(0) };
-  const evidenceScore = { calc: jest.fn().mockResolvedValue(0) };
-  const weightsResolver = {
-    resolve: jest.fn().mockResolvedValue({
-      folder: 25,
-      finance: 25,
-      camporee: 25,
-      evidence: 25,
-      source: 'default',
-    }),
-  };
-  const compositeScore = { compose: jest.fn().mockReturnValue(0) };
+  // Score calculator mocks — defaults reset in beforeEach after clearAllMocks
+  const folderScore = { calc: jest.fn() };
+  const financeScore = { calc: jest.fn() };
+  const camporeeScore = { calc: jest.fn() };
+  const evidenceScore = { calc: jest.fn() };
+  const weightsResolver = { resolve: jest.fn() };
+  const compositeScore = { compose: jest.fn() };
 
   // ---------------------------------------------------------------
   // Active year fixture reused across multiple tests
@@ -106,6 +98,20 @@ describe('RankingsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // Re-establish default return values after clearAllMocks wipes them
+    folderScore.calc.mockResolvedValue(0);
+    financeScore.calc.mockResolvedValue(0);
+    camporeeScore.calc.mockResolvedValue(0);
+    evidenceScore.calc.mockResolvedValue(0);
+    weightsResolver.resolve.mockResolvedValue({
+      folder: 60,
+      finance: 15,
+      camporee: 15,
+      evidence: 10,
+      source: 'default',
+    });
+    compositeScore.compose.mockReturnValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -545,9 +551,11 @@ describe('RankingsService', () => {
         config_value: 'false',
       });
 
-      // handleRankingsRecalculation is the cron entry point that checks the kill-switch
-      await service.handleRankingsRecalculation();
+      // Kill-switch now lives in recalculateRankings so both the cron path
+      // and the manual HTTP path honor it.
+      const result = await service.recalculateRankings();
 
+      expect(result).toEqual({ updated: 0, skipped: true, reason: 'kill-switch' });
       // Nothing should have been fetched or upserted
       expect(
         mockPrismaService.ecclesiastical_years.findFirst,

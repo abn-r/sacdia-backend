@@ -34,6 +34,9 @@ import { CompositeScoreService } from './score-calculators/composite-score';
  */
 export const GENERAL_CATEGORY_ID = '00000000-0000-0000-0000-000000000000';
 
+const SYSTEM_CONFIG_RECALC_ENABLED = 'ranking.recalculation_enabled';
+const KILL_SWITCH_VALUE_FALSE = 'false';
+
 export interface RankingEntry {
   rank_position: number | null;
   club_name: string;
@@ -62,6 +65,8 @@ export interface ClubRankingResult {
 
 export interface RecalculateResult {
   updated: number;
+  skipped?: boolean;
+  reason?: string;
 }
 
 @Injectable()
@@ -92,15 +97,6 @@ export class RankingsService {
     timeZone: 'UTC',
   })
   async handleRankingsRecalculation() {
-    // Kill-switch: allow ops team to disable recalculation without a deploy
-    const killSwitch = await this.prisma.system_config.findUnique({
-      where: { config_key: 'ranking.recalculation_enabled' },
-    });
-    if (killSwitch && killSwitch.config_value === 'false') {
-      this.logger.warn('Rankings recalculation skipped: kill-switch enabled');
-      return;
-    }
-
     this.logger.log('Rankings cron triggered — enqueuing BullMQ job...');
 
     if (this.rankingsQueue) {
@@ -157,6 +153,16 @@ export class RankingsService {
    * 8. Update calculated_at on all affected records.
    */
   async recalculateRankings(yearId?: number): Promise<RecalculateResult> {
+    // Kill-switch: allow ops team to disable recalculation without a deploy.
+    // Checked here so both the cron path and the manual HTTP path honor it.
+    const killSwitch = await this.prisma.system_config.findUnique({
+      where: { config_key: SYSTEM_CONFIG_RECALC_ENABLED },
+    });
+    if (killSwitch && killSwitch.config_value === KILL_SWITCH_VALUE_FALSE) {
+      this.logger.warn('Rankings recalculation skipped: kill-switch enabled');
+      return { updated: 0, skipped: true, reason: 'kill-switch' };
+    }
+
     // 1. Resolve the ecclesiastical year (outside the transaction — read-only)
     const year = await this.resolveYear(yearId);
 
@@ -329,8 +335,8 @@ export class RankingsService {
         // local_fields.union_id is non-nullable in schema (Int, not Int?)
         const unionId = localField.union_id;
 
-        // Compute 4 component percentages in parallel for performance
-        const [folderPct, financePct, camporeePct, evidencePct] =
+        // Compute 4 component percentages + resolve weights in parallel
+        const [folderPct, financePct, camporeePct, evidencePct, weights] =
           await Promise.all([
             this.folderScore.calc(enrollmentId, yearIdResolved),
             this.financeScore.calc(clubId, calendarYear),
@@ -341,10 +347,8 @@ export class RankingsService {
               yearIdResolved,
             ),
             this.evidenceScore.calc(clubId, yearIdResolved),
+            this.weightsResolver.resolve(clubTypeId),
           ]);
-
-        // Resolve weights for this club type
-        const weights = await this.weightsResolver.resolve(clubTypeId);
 
         // Compute weighted composite percentage
         const compositePct = this.compositeScore.compose(
@@ -399,8 +403,8 @@ export class RankingsService {
         });
         upserted++;
 
-        // Emit structured log per enrollment
-        this.logger.log(
+        // Emit structured log per enrollment (debug only — avoid stdout flood in production)
+        this.logger.debug(
           JSON.stringify({
             event: 'ranking_calculated',
             enrollment_id: enrollmentId,
