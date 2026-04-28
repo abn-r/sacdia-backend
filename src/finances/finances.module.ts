@@ -1,14 +1,11 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
 import { FinancesController } from './finances.controller';
 import { FinancesService } from './finances.service';
 import { FinancePeriodService } from './finance-period.service';
-import {
-  FinancePeriodProcessor,
-  FINANCE_PERIOD_QUEUE,
-} from './finance-period.processor';
+import { FinancePeriodProcessor } from './finance-period.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ClubRolesGuard } from '../common/guards';
+import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
 
 function isRedisConfigured(): boolean {
@@ -27,9 +24,7 @@ const redisAvailable = isRedisConfigured();
 @Module({
   imports: [
     PrismaModule,
-    ...(redisAvailable
-      ? [BullModule.registerQueue({ name: FINANCE_PERIOD_QUEUE })]
-      : []),
+    BackgroundJobsQueueModule,
   ],
   controllers: [FinancesController],
   providers: [

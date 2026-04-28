@@ -25,9 +25,10 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import {
-  DATA_EXPORTS_QUEUE,
-  DATA_EXPORT_GENERATE_JOB,
-} from './data-export.processor';
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  DataExportGeneratePayload,
+} from '../background-jobs/background-jobs.types';
 import { EmailService } from '../common/email/email.service';
 import type {
   DataExportItemDto,
@@ -47,7 +48,7 @@ export class DataExportService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     @Optional()
-    @InjectQueue(DATA_EXPORTS_QUEUE)
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
     private readonly dataExportsQueue: Queue | undefined,
     private readonly cronLogger: CronRunLogger,
     private readonly emailService: EmailService,
@@ -127,9 +128,13 @@ export class DataExportService {
         'Data export queue unavailable. Configure REDIS_URL to enable async exports.',
       );
     }
+    const jobPayload: DataExportGeneratePayload = {
+      exportId: exportRow.export_id,
+      userId,
+    };
     await this.dataExportsQueue.add(
-      DATA_EXPORT_GENERATE_JOB,
-      { exportId: exportRow.export_id, userId },
+      BackgroundJobName.DATA_EXPORT_GENERATE,
+      jobPayload,
       {
         attempts: 1,
         removeOnComplete: true,

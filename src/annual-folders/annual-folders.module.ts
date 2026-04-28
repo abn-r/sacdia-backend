@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
 import {
   AnnualFoldersController,
   AnnualFolderTemplatesController,
@@ -12,10 +11,11 @@ import { EvaluationController } from './evaluation.controller';
 import { EvaluationService } from './evaluation.service';
 import { RankingsController } from './rankings.controller';
 import { RankingsService } from './rankings.service';
-import { RankingsProcessor, RANKINGS_QUEUE } from './rankings.processor';
+import { RankingsProcessor } from './rankings.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ClubEnrollmentsModule } from '../club-enrollments/club-enrollments.module';
 import { CatalogsModule } from '../catalogs/catalogs.module';
+import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
 
 function isRedisConfigured(): boolean {
@@ -36,9 +36,7 @@ const redisAvailable = isRedisConfigured();
     PrismaModule,
     ClubEnrollmentsModule,
     CatalogsModule,
-    ...(redisAvailable
-      ? [BullModule.registerQueue({ name: RANKINGS_QUEUE })]
-      : []),
+    BackgroundJobsQueueModule,
   ],
   controllers: [
     AnnualFolderTemplatesController,

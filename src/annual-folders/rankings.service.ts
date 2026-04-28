@@ -10,7 +10,11 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { RANKINGS_QUEUE, RankingsTriggerJobData } from './rankings.types';
+import {
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  RankingsRecalculatePayload,
+} from '../background-jobs/background-jobs.types';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -63,7 +67,7 @@ export class RankingsService {
     private readonly lockService: DistributedLockService,
     private readonly cronLogger: CronRunLogger,
     @Optional()
-    @InjectQueue(RANKINGS_QUEUE)
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
     private readonly rankingsQueue: Queue | null,
   ) {}
 
@@ -79,15 +83,19 @@ export class RankingsService {
     this.logger.log('Rankings cron triggered — enqueuing BullMQ job...');
 
     if (this.rankingsQueue) {
-      const jobData: RankingsTriggerJobData = {
+      const jobData: RankingsRecalculatePayload = {
         triggeredAt: new Date().toISOString(),
       };
-      await this.rankingsQueue.add('recalculate', jobData, {
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
-        removeOnComplete: { age: 7 * 86_400 },
-        removeOnFail: { age: 30 * 86_400 },
-      });
+      await this.rankingsQueue.add(
+        BackgroundJobName.RANKINGS_RECALCULATE,
+        jobData,
+        {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
+          removeOnComplete: { age: 7 * 86_400 },
+          removeOnFail: { age: 30 * 86_400 },
+        },
+      );
       this.logger.log(
         'annual-folders-rankings-recalc job enqueued with 5 attempts + exponential backoff',
       );

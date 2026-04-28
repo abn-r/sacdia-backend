@@ -1,20 +1,18 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
 import { DataExportController } from './data-export.controller';
 import { DataExportService } from './data-export.service';
-import {
-  DataExportProcessor,
-  DATA_EXPORTS_QUEUE,
-} from './data-export.processor';
+import { DataExportProcessor } from './data-export.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
+import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
 
 /**
- * Mirrors the pattern used by NotificationsModule:
- * BullMQ queue registration and processor provider are guarded by Redis availability.
- * When Redis is not configured the module still starts — export requests will fail
- * gracefully at enqueue time (service throws InternalServerException).
+ * DataExportModule — enqueue site for DATA_EXPORT_GENERATE jobs.
+ * Jobs are now published to the consolidated background-jobs queue via
+ * BackgroundJobsQueueModule. The legacy DataExportProcessor is kept during the
+ * transition to process any jobs still on the old data-exports queue; it will
+ * be removed once the queue is fully drained.
  */
 function isRedisConfigured(): boolean {
   const rawUrl = process.env.REDIS_URL?.trim();
@@ -31,9 +29,7 @@ function isRedisConfigured(): boolean {
   imports: [
     PrismaModule,
     CommonModule,
-    ...(isRedisConfigured()
-      ? [BullModule.registerQueue({ name: DATA_EXPORTS_QUEUE })]
-      : []),
+    BackgroundJobsQueueModule,
   ],
   controllers: [DataExportController],
   providers: [

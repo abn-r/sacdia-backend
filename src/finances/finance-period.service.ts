@@ -8,9 +8,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import {
-  FINANCE_PERIOD_QUEUE,
-  FinancePeriodTriggerJobData,
-} from './finance-period.types';
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  FinancePeriodCloseMonthPayload,
+} from '../background-jobs/background-jobs.types';
 
 type CategoryBreakdownItem = {
   finance_category_id: number;
@@ -39,7 +40,7 @@ export class FinancePeriodService {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly cronLogger: CronRunLogger,
     @Optional()
-    @InjectQueue(FINANCE_PERIOD_QUEUE)
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
     private readonly financePeriodQueue: Queue | null,
   ) {}
 
@@ -142,17 +143,21 @@ export class FinancePeriodService {
     );
 
     if (this.financePeriodQueue) {
-      const jobData: FinancePeriodTriggerJobData = {
+      const jobData: FinancePeriodCloseMonthPayload = {
         triggeredAt: new Date().toISOString(),
         year,
         month,
       };
-      await this.financePeriodQueue.add('close-month', jobData, {
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
-        removeOnComplete: { age: 7 * 86_400 },
-        removeOnFail: { age: 30 * 86_400 },
-      });
+      await this.financePeriodQueue.add(
+        BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH,
+        jobData,
+        {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
+          removeOnComplete: { age: 7 * 86_400 },
+          removeOnFail: { age: 30 * 86_400 },
+        },
+      );
       this.logger.log(
         `finance-period-closing job enqueued for ${period} with 5 attempts + exponential backoff`,
       );
