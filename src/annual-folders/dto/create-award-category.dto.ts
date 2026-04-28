@@ -1,4 +1,12 @@
-import { IsString, IsInt, IsOptional, MaxLength, Min } from 'class-validator';
+import {
+  IsString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  MaxLength,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAwardCategoryDto {
@@ -70,4 +78,32 @@ export class CreateAwardCategoryDto {
   @IsInt()
   @Min(0)
   order?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Porcentaje compuesto mínimo para esta categoría (0-100). Requiere max_composite_pct.',
+    example: 70,
+    minimum: 0,
+    maximum: 100,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  min_composite_pct?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Porcentaje compuesto máximo para esta categoría (0-100). Debe ser mayor que min_composite_pct.',
+    example: 90,
+    minimum: 0,
+    maximum: 100,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  max_composite_pct?: number;
 }
