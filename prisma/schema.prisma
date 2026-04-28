@@ -175,28 +175,28 @@ model class_module_progress {
 }
 
 model class_modules {
-  module_id              Int                          @id @default(autoincrement())
-  name                   String                       @db.VarChar(255)
-  description            String?
-  class_id               Int
-  active                 Boolean
-  created_at             DateTime                     @default(now()) @db.Timestamptz(6)
-  modified_at            DateTime                     @default(now()) @db.Timestamptz(6)
-  classes                classes                      @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
-  class_sections         class_sections[]
-  translations           class_modules_translations[]
+  module_id      Int                          @id @default(autoincrement())
+  name           String                       @db.VarChar(255)
+  description    String?
+  class_id       Int
+  active         Boolean
+  created_at     DateTime                     @default(now()) @db.Timestamptz(6)
+  modified_at    DateTime                     @default(now()) @db.Timestamptz(6)
+  classes        classes                      @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
+  class_sections class_sections[]
+  translations   class_modules_translations[]
 
   @@unique([name, class_id])
 }
 
 model class_modules_translations {
-  id          Int           @id @default(autoincrement())
-  module_id   Int
-  locale      String        @db.VarChar(10)
-  name        String?       @db.VarChar(255)
-  description String?
-  created_at  DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime?     @default(now()) @db.Timestamptz(6)
+  id            Int           @id @default(autoincrement())
+  module_id     Int
+  locale        String        @db.VarChar(10)
+  name          String?       @db.VarChar(255)
+  description   String?
+  created_at    DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?     @default(now()) @db.Timestamptz(6)
   class_modules class_modules @relation(fields: [module_id], references: [module_id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([module_id, locale])
@@ -234,27 +234,27 @@ model class_section_progress {
 }
 
 model class_sections {
-  section_id     Int                           @id @default(autoincrement())
-  name           String                        @db.VarChar(255)
-  description    String?
-  module_id      Int
-  active         Boolean
-  created_at     DateTime                      @default(now()) @db.Timestamptz(6)
-  modified_at    DateTime                      @default(now()) @db.Timestamptz(6)
-  class_modules  class_modules                 @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
-  translations   class_sections_translations[]
+  section_id    Int                           @id @default(autoincrement())
+  name          String                        @db.VarChar(255)
+  description   String?
+  module_id     Int
+  active        Boolean
+  created_at    DateTime                      @default(now()) @db.Timestamptz(6)
+  modified_at   DateTime                      @default(now()) @db.Timestamptz(6)
+  class_modules class_modules                 @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
+  translations  class_sections_translations[]
 
   @@unique([name, module_id])
 }
 
 model class_sections_translations {
-  id          Int            @id @default(autoincrement())
-  section_id  Int
-  locale      String         @db.VarChar(10)
-  name        String?        @db.VarChar(255)
-  description String?
-  created_at  DateTime?      @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime?      @default(now()) @db.Timestamptz(6)
+  id             Int            @id @default(autoincrement())
+  section_id     Int
+  locale         String         @db.VarChar(10)
+  name           String?        @db.VarChar(255)
+  description    String?
+  created_at     DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime?      @default(now()) @db.Timestamptz(6)
   class_sections class_sections @relation(fields: [section_id], references: [section_id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([section_id, locale])
@@ -283,10 +283,10 @@ model classes {
 }
 
 model classes_translations {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   class_id    Int
-  locale      String   @db.VarChar(10)
-  name        String?  @db.VarChar(255)
+  locale      String    @db.VarChar(10)
+  name        String?   @db.VarChar(255)
   description String?
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
@@ -345,24 +345,25 @@ model inventory_history {
 }
 
 model club_types {
-  name                 String                 @unique @db.VarChar(50)
-  active               Boolean                @default(false)
-  created_at           DateTime?              @default(now()) @db.Timestamptz(6)
-  modified_at          DateTime?              @default(now()) @db.Timestamptz(6)
-  club_type_id         Int                    @id @default(autoincrement())
-  activities           activities[]
-  classes              classes[]
-  club_ideals          club_ideals[]
-  club_sections        club_sections[]
-  finances             finances[]
-  folders              folders[]
-  honors               honors[]
-  units                units[]
-  folder_templates     folder_templates[]
-  resources            resources[]
-  award_categories     award_categories[]
-  club_annual_rankings club_annual_rankings[]
-  achievements         achievements[]
+  name                   String                  @unique @db.VarChar(50)
+  active                 Boolean                 @default(false)
+  created_at             DateTime?               @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  club_type_id           Int                     @id @default(autoincrement())
+  activities             activities[]
+  classes                classes[]
+  club_ideals            club_ideals[]
+  club_sections          club_sections[]
+  finances               finances[]
+  folders                folders[]
+  honors                 honors[]
+  units                  units[]
+  folder_templates       folder_templates[]
+  resources              resources[]
+  award_categories       award_categories[]
+  club_annual_rankings   club_annual_rankings[]
+  achievements           achievements[]
+  ranking_weight_configs ranking_weight_configs?
 }
 
 model clubs {
@@ -579,14 +580,14 @@ model finances {
 }
 
 model finances_categories {
-  finance_category_id Int                               @id @default(autoincrement())
-  name                String                            @db.VarChar(100)
+  finance_category_id Int                                @id @default(autoincrement())
+  name                String                             @db.VarChar(100)
   description         String?
-  icon                Int?                              @default(0)
+  icon                Int?                               @default(0)
   type                Int
-  active              Boolean                           @default(false)
-  created_at          DateTime?                         @default(now()) @db.Timestamptz(6)
-  modified_at         DateTime?                         @default(now()) @db.Timestamptz(6)
+  active              Boolean                            @default(false)
+  created_at          DateTime?                          @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime?                          @default(now()) @db.Timestamptz(6)
   finances            finances[]
   translations        finances_categories_translations[]
 
@@ -651,10 +652,10 @@ model folders {
 }
 
 model folders_translations {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   folder_id   Int
-  locale      String   @db.VarChar(10)
-  name        String?  @db.VarChar(255)
+  locale      String    @db.VarChar(10)
+  name        String?   @db.VarChar(255)
   description String?
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
@@ -666,17 +667,17 @@ model folders_translations {
 }
 
 model folders_modules {
-  folder_module_id        Int                          @id @default(autoincrement())
-  name                    String                       @db.VarChar(255)
+  folder_module_id        Int                            @id @default(autoincrement())
+  name                    String                         @db.VarChar(255)
   description             String?
   folder_id               Int?
-  total_points            Int?                         @default(0)
-  max_points              Int?                         @default(0)
-  minimum_points          Int?                         @default(0)
-  active                  Boolean                      @default(true)
-  created_at              DateTime?                    @default(now()) @db.Timestamptz(6)
-  modified_at             DateTime?                    @default(now()) @db.Timestamptz(6)
-  folders                 folders?                     @relation(fields: [folder_id], references: [folder_id], onDelete: NoAction, onUpdate: NoAction)
+  total_points            Int?                           @default(0)
+  max_points              Int?                           @default(0)
+  minimum_points          Int?                           @default(0)
+  active                  Boolean                        @default(true)
+  created_at              DateTime?                      @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime?                      @default(now()) @db.Timestamptz(6)
+  folders                 folders?                       @relation(fields: [folder_id], references: [folder_id], onDelete: NoAction, onUpdate: NoAction)
   folders_modules_records folders_modules_records[]
   folders_section_records folders_section_records[]
   folders_sections        folders_sections[]
@@ -748,29 +749,29 @@ model folders_section_records {
 }
 
 model folders_sections {
-  folder_section_id       Int                           @id @default(autoincrement())
-  name                    String                        @db.VarChar(255)
+  folder_section_id       Int                             @id @default(autoincrement())
+  name                    String                          @db.VarChar(255)
   description             String?
   module_id               Int?
-  created_at              DateTime?                     @default(now()) @db.Timestamptz(6)
-  modified_at             DateTime?                     @default(now()) @db.Timestamptz(6)
-  total_points            Int?                          @default(0)
-  max_points              Int?                          @default(0)
-  minimum_points          Int?                          @default(0)
-  active                  Boolean                       @default(true)
+  created_at              DateTime?                       @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime?                       @default(now()) @db.Timestamptz(6)
+  total_points            Int?                            @default(0)
+  max_points              Int?                            @default(0)
+  minimum_points          Int?                            @default(0)
+  active                  Boolean                         @default(true)
   folders_section_records folders_section_records[]
-  folders_modules         folders_modules?              @relation(fields: [module_id], references: [folder_module_id], onDelete: NoAction, onUpdate: NoAction)
+  folders_modules         folders_modules?                @relation(fields: [module_id], references: [folder_module_id], onDelete: NoAction, onUpdate: NoAction)
   translations            folders_sections_translations[]
 }
 
 model folders_sections_translations {
-  id                Int             @id @default(autoincrement())
+  id                Int              @id @default(autoincrement())
   folder_section_id Int
-  locale            String          @db.VarChar(10)
-  name              String?         @db.VarChar(255)
+  locale            String           @db.VarChar(10)
+  name              String?          @db.VarChar(255)
   description       String?
-  created_at        DateTime?       @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime?       @default(now()) @db.Timestamptz(6)
+  created_at        DateTime?        @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?        @default(now()) @db.Timestamptz(6)
   folders_sections  folders_sections @relation(fields: [folder_section_id], references: [folder_section_id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([folder_section_id, locale])
@@ -801,33 +802,33 @@ model evidence_files {
 }
 
 model honors {
-  honor_id           Int                  @id @default(autoincrement())
-  name               String               @unique @db.VarChar(100)
+  honor_id           Int                   @id @default(autoincrement())
+  name               String                @unique @db.VarChar(100)
   description        String?
   honor_image        String
   honors_category_id Int
   master_honors_id   Int?
-  material_url       String               @db.VarChar
+  material_url       String                @db.VarChar
   club_type_id       Int
-  active             Boolean              @default(true)
-  approval           Int                  @default(1)
-  skill_level        Int                  @default(1)
-  year               String?              @db.VarChar
-  created_at         DateTime             @default(now()) @db.Timestamptz(6)
-  modified_at        DateTime?            @default(now()) @db.Timestamptz(6)
-  club_types         club_types           @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
-  honors_categories  honors_categories    @relation(fields: [honors_category_id], references: [honor_category_id], onDelete: NoAction, onUpdate: NoAction)
-  master_honors      master_honors?       @relation(fields: [master_honors_id], references: [master_honor_id], onDelete: NoAction, onUpdate: NoAction)
+  active             Boolean               @default(true)
+  approval           Int                   @default(1)
+  skill_level        Int                   @default(1)
+  year               String?               @db.VarChar
+  created_at         DateTime              @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime?             @default(now()) @db.Timestamptz(6)
+  club_types         club_types            @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  honors_categories  honors_categories     @relation(fields: [honors_category_id], references: [honor_category_id], onDelete: NoAction, onUpdate: NoAction)
+  master_honors      master_honors?        @relation(fields: [master_honors_id], references: [master_honor_id], onDelete: NoAction, onUpdate: NoAction)
   users_honors       users_honors[]
   honor_requirements honor_requirements[]
   translations       honors_translations[]
 }
 
 model honors_translations {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   honor_id    Int
-  locale      String   @db.VarChar(10)
-  name        String?  @db.VarChar(100)
+  locale      String    @db.VarChar(10)
+  name        String?   @db.VarChar(100)
   description String?
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
@@ -1007,12 +1008,12 @@ model local_fields {
 }
 
 model master_honors {
-  master_honor_id Int                        @id @default(autoincrement())
-  name            String                     @unique @db.VarChar(100)
+  master_honor_id Int                          @id @default(autoincrement())
+  name            String                       @unique @db.VarChar(100)
   master_image    String?
-  active          Boolean                    @default(false)
-  created_at      DateTime?                  @default(now()) @db.Timestamptz(6)
-  modified_at     DateTime?                  @default(now()) @db.Timestamptz(6)
+  active          Boolean                      @default(false)
+  created_at      DateTime?                    @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime?                    @default(now()) @db.Timestamptz(6)
   honors          honors[]
   translations    master_honors_translations[]
 }
@@ -1115,17 +1116,17 @@ model union_camporees {
 }
 
 model unions {
-  union_id        Int               @id @default(autoincrement())
-  name            String            @unique @db.VarChar(50)
-  abbreviation    String            @unique @db.VarChar(8)
-  active          Boolean           @default(false)
-  country_id      Int
-  created_at      DateTime?         @default(now()) @db.Timestamptz(6)
-  modified_at     DateTime?         @default(now()) @db.Timestamptz(6)
+  union_id         Int                @id @default(autoincrement())
+  name             String             @unique @db.VarChar(50)
+  abbreviation     String             @unique @db.VarChar(8)
+  active           Boolean            @default(false)
+  country_id       Int
+  created_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime?          @default(now()) @db.Timestamptz(6)
   local_fields     local_fields[]
   union_camporees  union_camporees[]
   folder_templates folder_templates[]
-  countries        countries         @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
+  countries        countries          @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
   users            users[]
 }
 
@@ -1167,107 +1168,107 @@ model units {
 }
 
 model users {
-  user_id                                     String                              @id @default(dbgenerated("auth.uid()")) @db.Uuid
-  name                                        String?                             @db.VarChar(50)
-  paternal_last_name                          String?                             @db.VarChar(50)
-  maternal_last_name                          String?                             @db.VarChar(50)
-  active                                      Boolean                             @default(true)
-  email                                       String                              @unique @db.VarChar(100)
-  gender                                      String?                             @db.VarChar
-  birthday                                    DateTime?                           @db.Date
-  blood                                       blood_type?
-  baptism                                     Boolean                             @default(false)
-  baptism_date                                DateTime?                           @db.Date
-  email_verified                              Boolean                             @default(false)
-  user_image                                  String?
-  country_id                                  Int?
-  union_id                                    Int?
-  access_app                                  Boolean?                            @default(true)
-  access_panel                                Boolean?                            @default(false)
-  created_at                                  DateTime                            @default(now()) @db.Timestamptz(6)
-  modified_at                                 DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
-  local_field_id                              Int?
-  approval_status                             user_approval_status                @default(pending)
-  rejection_reason                            String?
-  activities                                  activities[]
-  attending_members_camporees                 camporee_members[]
-  certification_module_progress               certification_module_progress[]
-  certification_section_progress              certification_section_progress[]
-  class_module_progress                       class_module_progress[]
-  class_section_progress                      class_section_progress[]
-  club_role_assignments                       club_role_assignments[]
-  emergency_contacts                          emergency_contacts[]                @relation("internal_user_emergency_contact")
-  emergency_contact                           emergency_contacts[]                @relation("user_emergency_contact")
-  enrollments                                 enrollments[]
-  validator_enrollments                       enrollments[]                       @relation("enrollment_validator")
-  evidence_files_uploaded                     evidence_files[]
-  finances                                    finances[]
-  finances_modified                           finances[]                          @relation("finances_modified_by")
-  assignments_folders                         folder_assignments[]
-  evidence_files_submitted                    folders_section_records[]           @relation("evidence_files_submitted_by")
-  evidence_files_validated                    folders_section_records[]           @relation("evidence_files_validated_by")
-  investiture_validation_history              investiture_validation_history[]
-  inventory_history_performed                 inventory_history[]                 @relation("inventory_history_performer")
-  as_legal_representative                     legal_representatives[]             @relation("representative")
-  legal_representative                        legal_representatives?              @relation("user_legal_rep")
-  member_insurances_created                   member_insurances[]                 @relation("member_insurances_created_by")
-  member_insurances_modified                  member_insurances[]                 @relation("member_insurances_modified_by")
-  member_insurances                           member_insurances[]
-  unit_members                                unit_members[]
-  units_advisor_id                            units[]                             @relation("units_advisor_idTousers")
-  units_captain_id                            units[]                             @relation("units_captain_idTousers")
-  units_secretary_id                          units[]                             @relation("units_secretary_idTousers")
-  units_as_substitute_advisor                 units[]                             @relation("units_substitute_advisor_idTousers")
-  notification_logs_sent                      notification_logs[]                 @relation("notification_logs_sender")
-  user_fcm_tokens                             user_fcm_tokens[]
-  countries                                   countries?                          @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
-  local_fields                                local_fields?                       @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
-  unions                                      unions?                             @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
-  users_allergies                             users_allergies[]
-  users_certifications                        users_certifications[]
-  users_diseases                              users_diseases[]
-  users_honors                                users_honors[]
-  users_medicines                             users_medicines[]
-  users_permissions                           users_permissions[]
-  users_pr                                    users_pr?
-  users_roles                                 users_roles[]
-  weekly_records                              weekly_records[]
-  weekly_records_created                      weekly_records[]                    @relation("weekly_record_creator")
-  member_of_month                             member_of_month[]
-  session                                     session[]
-  account                                     account[]
-  club_enrollments_created                    club_enrollments[]                  @relation("enrollment_creator")
-  club_enrollments_as_director                club_enrollments[]                  @relation("enrollment_director")
-  club_enrollments_as_secretary               club_enrollments[]                  @relation("enrollment_secretary")
-  club_enrollments_as_treasurer               club_enrollments[]                  @relation("enrollment_treasurer")
-  club_enrollments_as_sec_treasurer           club_enrollments[]                  @relation("enrollment_secretary_treasurer")
-  camporee_clubs_registered                   camporee_clubs[]                    @relation("camporee_clubs_registered_by")
-  camporee_payments_registered                camporee_payments[]                 @relation("camporee_payments_registered_by")
-  annual_folder_evidences                     annual_folder_evidences[]           @relation("annual_folder_evidences_uploader")
-  annual_folder_evidences_reviewed            annual_folder_evidences[]           @relation("annual_folder_evidences_reviewer")
-  evaluation_lf_approvals   annual_folder_section_evaluations[] @relation("evaluation_lf_approver")
-  evaluation_union_approvals annual_folder_section_evaluations[] @relation("evaluation_union_approver")
-  annual_folder_section_submissions           annual_folder_section_submissions[] @relation("section_submission_submitter")
-  monthly_reports_submitted                   monthly_reports[]                   @relation("monthly_report_submitter")
-  quarterly_reports_finalized                 quarterly_reports[]                 @relation("quarterly_report_finalizer")
-  annual_reports_finalized                    annual_reports[]                    @relation("annual_report_finalizer")
-  transfer_requests_made                      club_transfer_requests[]            @relation("transfer_requester")
-  transfer_requests_reviewed                  club_transfer_requests[]            @relation("transfer_reviewer")
-  assignment_requests_target                  role_assignment_requests[]          @relation("assignment_target")
-  assignment_requests_made                    role_assignment_requests[]          @relation("assignment_requester")
-  assignment_requests_approved                role_assignment_requests[]          @relation("assignment_approver")
-  validation_logs_as_user                     validation_logs[]                   @relation("validation_log_user")
-  validation_logs_as_performer                validation_logs[]                   @relation("validation_log_performer")
-  notification_preferences                    notification_preferences[]
-  notification_deliveries                     notification_deliveries[]
-  section_progress_submitted                  class_section_progress[]            @relation("section_progress_submitted_by")
-  section_progress_validated                  class_section_progress[]            @relation("section_progress_validated_by")
-  honors_validated                            users_honors[]                      @relation("honor_validator")
-  resources                                   resources[]
-  user_achievements                           user_achievements[]
-  achievement_event_log                       achievement_event_log[]
-  data_export_requests                        data_export_requests[]
-  support_reports                             support_reports[]
+  user_id                           String                              @id @default(dbgenerated("auth.uid()")) @db.Uuid
+  name                              String?                             @db.VarChar(50)
+  paternal_last_name                String?                             @db.VarChar(50)
+  maternal_last_name                String?                             @db.VarChar(50)
+  active                            Boolean                             @default(true)
+  email                             String                              @unique @db.VarChar(100)
+  gender                            String?                             @db.VarChar
+  birthday                          DateTime?                           @db.Date
+  blood                             blood_type?
+  baptism                           Boolean                             @default(false)
+  baptism_date                      DateTime?                           @db.Date
+  email_verified                    Boolean                             @default(false)
+  user_image                        String?
+  country_id                        Int?
+  union_id                          Int?
+  access_app                        Boolean?                            @default(true)
+  access_panel                      Boolean?                            @default(false)
+  created_at                        DateTime                            @default(now()) @db.Timestamptz(6)
+  modified_at                       DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
+  local_field_id                    Int?
+  approval_status                   user_approval_status                @default(pending)
+  rejection_reason                  String?
+  activities                        activities[]
+  attending_members_camporees       camporee_members[]
+  certification_module_progress     certification_module_progress[]
+  certification_section_progress    certification_section_progress[]
+  class_module_progress             class_module_progress[]
+  class_section_progress            class_section_progress[]
+  club_role_assignments             club_role_assignments[]
+  emergency_contacts                emergency_contacts[]                @relation("internal_user_emergency_contact")
+  emergency_contact                 emergency_contacts[]                @relation("user_emergency_contact")
+  enrollments                       enrollments[]
+  validator_enrollments             enrollments[]                       @relation("enrollment_validator")
+  evidence_files_uploaded           evidence_files[]
+  finances                          finances[]
+  finances_modified                 finances[]                          @relation("finances_modified_by")
+  assignments_folders               folder_assignments[]
+  evidence_files_submitted          folders_section_records[]           @relation("evidence_files_submitted_by")
+  evidence_files_validated          folders_section_records[]           @relation("evidence_files_validated_by")
+  investiture_validation_history    investiture_validation_history[]
+  inventory_history_performed       inventory_history[]                 @relation("inventory_history_performer")
+  as_legal_representative           legal_representatives[]             @relation("representative")
+  legal_representative              legal_representatives?              @relation("user_legal_rep")
+  member_insurances_created         member_insurances[]                 @relation("member_insurances_created_by")
+  member_insurances_modified        member_insurances[]                 @relation("member_insurances_modified_by")
+  member_insurances                 member_insurances[]
+  unit_members                      unit_members[]
+  units_advisor_id                  units[]                             @relation("units_advisor_idTousers")
+  units_captain_id                  units[]                             @relation("units_captain_idTousers")
+  units_secretary_id                units[]                             @relation("units_secretary_idTousers")
+  units_as_substitute_advisor       units[]                             @relation("units_substitute_advisor_idTousers")
+  notification_logs_sent            notification_logs[]                 @relation("notification_logs_sender")
+  user_fcm_tokens                   user_fcm_tokens[]
+  countries                         countries?                          @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
+  local_fields                      local_fields?                       @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  unions                            unions?                             @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
+  users_allergies                   users_allergies[]
+  users_certifications              users_certifications[]
+  users_diseases                    users_diseases[]
+  users_honors                      users_honors[]
+  users_medicines                   users_medicines[]
+  users_permissions                 users_permissions[]
+  users_pr                          users_pr?
+  users_roles                       users_roles[]
+  weekly_records                    weekly_records[]
+  weekly_records_created            weekly_records[]                    @relation("weekly_record_creator")
+  member_of_month                   member_of_month[]
+  session                           session[]
+  account                           account[]
+  club_enrollments_created          club_enrollments[]                  @relation("enrollment_creator")
+  club_enrollments_as_director      club_enrollments[]                  @relation("enrollment_director")
+  club_enrollments_as_secretary     club_enrollments[]                  @relation("enrollment_secretary")
+  club_enrollments_as_treasurer     club_enrollments[]                  @relation("enrollment_treasurer")
+  club_enrollments_as_sec_treasurer club_enrollments[]                  @relation("enrollment_secretary_treasurer")
+  camporee_clubs_registered         camporee_clubs[]                    @relation("camporee_clubs_registered_by")
+  camporee_payments_registered      camporee_payments[]                 @relation("camporee_payments_registered_by")
+  annual_folder_evidences           annual_folder_evidences[]           @relation("annual_folder_evidences_uploader")
+  annual_folder_evidences_reviewed  annual_folder_evidences[]           @relation("annual_folder_evidences_reviewer")
+  evaluation_lf_approvals           annual_folder_section_evaluations[] @relation("evaluation_lf_approver")
+  evaluation_union_approvals        annual_folder_section_evaluations[] @relation("evaluation_union_approver")
+  annual_folder_section_submissions annual_folder_section_submissions[] @relation("section_submission_submitter")
+  monthly_reports_submitted         monthly_reports[]                   @relation("monthly_report_submitter")
+  quarterly_reports_finalized       quarterly_reports[]                 @relation("quarterly_report_finalizer")
+  annual_reports_finalized          annual_reports[]                    @relation("annual_report_finalizer")
+  transfer_requests_made            club_transfer_requests[]            @relation("transfer_requester")
+  transfer_requests_reviewed        club_transfer_requests[]            @relation("transfer_reviewer")
+  assignment_requests_target        role_assignment_requests[]          @relation("assignment_target")
+  assignment_requests_made          role_assignment_requests[]          @relation("assignment_requester")
+  assignment_requests_approved      role_assignment_requests[]          @relation("assignment_approver")
+  validation_logs_as_user           validation_logs[]                   @relation("validation_log_user")
+  validation_logs_as_performer      validation_logs[]                   @relation("validation_log_performer")
+  notification_preferences          notification_preferences[]
+  notification_deliveries           notification_deliveries[]
+  section_progress_submitted        class_section_progress[]            @relation("section_progress_submitted_by")
+  section_progress_validated        class_section_progress[]            @relation("section_progress_validated_by")
+  honors_validated                  users_honors[]                      @relation("honor_validator")
+  resources                         resources[]
+  user_achievements                 user_achievements[]
+  achievement_event_log             achievement_event_log[]
+  data_export_requests              data_export_requests[]
+  support_reports                   support_reports[]
 }
 
 model notification_preferences {
@@ -1298,8 +1299,8 @@ model notification_logs {
   tokens_failed Int      @default(0)
   created_at    DateTime @default(now()) @db.Timestamptz()
 
-  users        users?                      @relation("notification_logs_sender", fields: [sent_by], references: [user_id])
-  deliveries   notification_deliveries[]
+  users      users?                    @relation("notification_logs_sender", fields: [sent_by], references: [user_id])
+  deliveries notification_deliveries[]
 
   @@index([sent_by], map: "idx_notification_logs_sender")
   @@index([created_at], map: "idx_notification_logs_created")
@@ -1308,11 +1309,11 @@ model notification_logs {
 }
 
 model notification_deliveries {
-  delivery_id      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  log_id           Int
-  user_id          String    @db.Uuid
-  read_at          DateTime? @db.Timestamptz(6)
-  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  delivery_id String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  log_id      Int
+  user_id     String    @db.Uuid
+  read_at     DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
 
   notification_log notification_logs @relation(fields: [log_id], references: [log_id], onDelete: Cascade)
   user             users             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
@@ -1348,7 +1349,6 @@ model user_fcm_tokens {
 /**
  * Audit log for account self-deletion requests.
  * Required for Apple App Store guideline 5.1.1(v) compliance and GDPR audit trail.
- *
  * Note: user_id is stored as a plain VarChar (not FK) because the users row
  * will be soft-deleted/anonymized — a FK with Cascade would delete this record,
  * defeating the audit purpose.
@@ -1678,11 +1678,11 @@ model scoring_categories_translations {
 }
 
 model weekly_record_scores {
-  score_id         Int                 @id @default(autoincrement())
+  score_id         Int                @id @default(autoincrement())
   record_id        Int
   category_id      Int
-  points           Int                 @default(0)
-  weekly_record    weekly_records      @relation(fields: [record_id], references: [record_id], onDelete: Cascade)
+  points           Int                @default(0)
+  weekly_record    weekly_records     @relation(fields: [record_id], references: [record_id], onDelete: Cascade)
   scoring_category scoring_categories @relation(fields: [category_id], references: [scoring_category_id])
 
   @@unique([record_id, category_id])
@@ -2105,31 +2105,31 @@ model folder_template_sections {
   created_at         DateTime @default(now()) @db.Timestamptz(6)
   modified_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  folder_template    folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: Cascade, onUpdate: NoAction)
-  evidences          annual_folder_evidences[]
-  evaluations        annual_folder_section_evaluations[]
+  folder_template     folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: Cascade, onUpdate: NoAction)
+  evidences           annual_folder_evidences[]
+  evaluations         annual_folder_section_evaluations[]
   section_submissions annual_folder_section_submissions[]
 
   @@index([folder_template_id], map: "idx_folder_template_sections_template")
 }
 
 model annual_folders {
-  annual_folder_id              String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
-  club_enrollment_id            String    @db.Uuid
-  folder_template_id            String    @db.Uuid
-  local_camporee_id             Int?
-  union_camporee_id             Int?
-  requires_union_confirmation   Boolean   @default(false)
+  annual_folder_id            String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  club_enrollment_id          String    @db.Uuid
+  folder_template_id          String    @db.Uuid
+  local_camporee_id           Int?
+  union_camporee_id           Int?
+  requires_union_confirmation Boolean   @default(false)
   /// Status values: "open", "submitted", "under_evaluation", "evaluated", "closed"
-  status                        String    @default("open") @db.VarChar(20)
-  submitted_at                  DateTime? @db.Timestamptz(6)
-  closed_at                     DateTime? @db.Timestamptz(6)
-  total_earned_points           Int       @default(0)
-  total_max_points              Int       @default(0)
-  progress_percentage           Float     @default(0)
-  evaluated_at                  DateTime? @db.Timestamptz(6)
-  created_at                    DateTime  @default(now()) @db.Timestamptz(6)
-  modified_at                   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  status                      String    @default("open") @db.VarChar(20)
+  submitted_at                DateTime? @db.Timestamptz(6)
+  closed_at                   DateTime? @db.Timestamptz(6)
+  total_earned_points         Int       @default(0)
+  total_max_points            Int       @default(0)
+  progress_percentage         Float     @default(0)
+  evaluated_at                DateTime? @db.Timestamptz(6)
+  created_at                  DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at                 DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   club_enrollment     club_enrollments                    @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
   folder_template     folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2146,18 +2146,18 @@ model annual_folders {
 }
 
 model annual_folder_evidences {
-  evidence_id         String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
-  annual_folder_id    String    @db.Uuid
-  section_id          String    @db.Uuid
-  file_url            String
-  file_name           String    @db.VarChar(255)
-  uploaded_by         String    @db.Uuid
-  notes               String?
-  reviewer_note       String?
-  reviewer_noted_by   String?   @db.Uuid
-  reviewer_noted_at   DateTime? @db.Timestamptz(6)
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  evidence_id       String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  annual_folder_id  String    @db.Uuid
+  section_id        String    @db.Uuid
+  file_url          String
+  file_name         String    @db.VarChar(255)
+  uploaded_by       String    @db.Uuid
+  notes             String?
+  reviewer_note     String?
+  reviewer_noted_by String?   @db.Uuid
+  reviewer_noted_at DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   annual_folder annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
   section       folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2174,20 +2174,20 @@ model annual_folder_evidences {
 // ========================================
 
 model annual_folder_section_evaluations {
-  evaluation_id    String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  annual_folder_id String                          @db.Uuid
-  section_id       String                          @db.Uuid
-  earned_points    Int                             @default(0)
-  max_points       Int                             @default(0)
-  notes            String?
-  lf_approved_by   String?                         @db.Uuid
-  lf_approved_at   DateTime?                       @db.Timestamptz(6)
-  union_approved_by String?                        @db.Uuid
-  union_approved_at DateTime?                      @db.Timestamptz(6)
-  union_decision   union_evaluation_decision_enum?
-  status           annual_folder_section_status_enum @default(PENDING)
-  created_at       DateTime                        @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime                        @default(now()) @updatedAt @db.Timestamptz(6)
+  evaluation_id     String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  annual_folder_id  String                            @db.Uuid
+  section_id        String                            @db.Uuid
+  earned_points     Int                               @default(0)
+  max_points        Int                               @default(0)
+  notes             String?
+  lf_approved_by    String?                           @db.Uuid
+  lf_approved_at    DateTime?                         @db.Timestamptz(6)
+  union_approved_by String?                           @db.Uuid
+  union_approved_at DateTime?                         @db.Timestamptz(6)
+  union_decision    union_evaluation_decision_enum?
+  status            annual_folder_section_status_enum @default(PENDING)
+  created_at        DateTime                          @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
 
   annual_folder  annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
   section        folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2217,9 +2217,9 @@ model annual_folder_section_submissions {
   created_at            DateTime @default(now()) @db.Timestamptz(6)
   modified_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  annual_folder   annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
-  section         folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
-  submitter       users                    @relation("section_submission_submitter", fields: [submitted_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  annual_folder annual_folders           @relation(fields: [annual_folder_id], references: [annual_folder_id], onDelete: Cascade, onUpdate: NoAction)
+  section       folder_template_sections @relation(fields: [section_id], references: [section_id], onDelete: NoAction, onUpdate: NoAction)
+  submitter     users                    @relation("section_submission_submitter", fields: [submitted_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([annual_folder_id, section_id])
   @@index([annual_folder_id], map: "idx_section_submissions_folder")
@@ -2239,6 +2239,10 @@ model award_categories {
   created_at        DateTime @default(now()) @db.Timestamptz(6)
   modified_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  min_composite_pct Decimal? @db.Decimal(5, 2)
+  max_composite_pct Decimal? @db.Decimal(5, 2)
+  is_legacy         Boolean  @default(false)
+
   club_type club_types?            @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   rankings  club_annual_rankings[]
 
@@ -2246,19 +2250,38 @@ model award_categories {
   @@map("award_categories")
 }
 
+model ranking_weight_configs {
+  ranking_weight_config_id String      @id @default(uuid()) @db.Uuid
+  club_type_id             Int?        @unique
+  folder_weight            Int
+  finance_weight           Int
+  camporee_weight          Int
+  evidence_weight          Int
+  created_at               DateTime    @default(now()) @db.Timestamptz()
+  updated_at               DateTime    @default(now()) @db.Timestamptz()
+  updated_by               String?     @db.Uuid
+  club_types               club_types? @relation(fields: [club_type_id], references: [club_type_id], onDelete: Cascade)
+}
+
 model club_annual_rankings {
-  ranking_id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  club_enrollment_id     String   @db.Uuid
-  club_type_id           Int
-  ecclesiastical_year_id Int
-  award_category_id      String   @default("00000000-0000-0000-0000-000000000000") @db.Uuid
-  total_earned_points    Int      @default(0)
-  total_max_points       Int      @default(0)
-  progress_percentage    Float    @default(0)
-  rank_position          Int?
-  calculated_at          DateTime @default(now()) @db.Timestamptz(6)
-  created_at             DateTime @default(now()) @db.Timestamptz(6)
-  modified_at            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  ranking_id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  club_enrollment_id      String    @db.Uuid
+  club_type_id            Int
+  ecclesiastical_year_id  Int
+  award_category_id       String    @default("00000000-0000-0000-0000-000000000000") @db.Uuid
+  total_earned_points     Int       @default(0)
+  total_max_points        Int       @default(0)
+  progress_percentage     Float     @default(0)
+  rank_position           Int?
+  calculated_at           DateTime  @default(now()) @db.Timestamptz(6)
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  folder_score_pct        Decimal   @default(0) @db.Decimal(5, 2)
+  finance_score_pct       Decimal   @default(0) @db.Decimal(5, 2)
+  camporee_score_pct      Decimal   @default(0) @db.Decimal(5, 2)
+  evidence_score_pct      Decimal   @default(0) @db.Decimal(5, 2)
+  composite_score_pct     Decimal   @default(0) @db.Decimal(5, 2)
+  composite_calculated_at DateTime? @db.Timestamptz()
 
   club_enrollment     club_enrollments     @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
   club_type           club_types           @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2270,6 +2293,7 @@ model club_annual_rankings {
   @@index([ecclesiastical_year_id], map: "idx_club_annual_rankings_year")
   @@index([award_category_id], map: "idx_club_annual_rankings_category")
   @@index([rank_position], map: "idx_club_annual_rankings_rank")
+  @@index([ecclesiastical_year_id, composite_score_pct(sort: Desc)], map: "idx_rankings_composite")
   @@map("club_annual_rankings")
 }
 
@@ -2573,7 +2597,7 @@ model cron_run_log {
   metadata        Json?     @db.JsonB
 
   @@index([job_name, started_at(sort: Desc)], map: "idx_cron_run_log_job_started")
-  @@index([status, started_at(sort: Desc)],   map: "idx_cron_run_log_status_started")
+  @@index([status, started_at(sort: Desc)], map: "idx_cron_run_log_status_started")
   @@map("cron_run_log")
 }
 
@@ -2609,8 +2633,8 @@ model quarterly_reports {
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  club               clubs  @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
-  finalized_by_user  users? @relation("quarterly_report_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  club              clubs  @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  finalized_by_user users? @relation("quarterly_report_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([club_id, year, quarter])
   @@index([year, quarter], map: "idx_quarterly_reports_year_quarter")
@@ -2631,9 +2655,9 @@ model annual_reports {
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   modified_at            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  club               clubs                @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  club                clubs                @relation(fields: [club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
   ecclesiastical_year ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
-  finalized_by_user  users?               @relation("annual_report_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  finalized_by_user   users?               @relation("annual_report_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([club_id, ecclesiastical_year_id])
   @@index([status], map: "idx_annual_reports_status")
