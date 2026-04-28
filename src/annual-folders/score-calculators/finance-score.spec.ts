@@ -26,7 +26,7 @@ describe('FinanceScoreService.calc', () => {
       config_value: '5',
     });
     prisma.$queryRaw.mockResolvedValueOnce([{ count: 12n }]);
-    const result = await svc.calc('11111111-1111-1111-1111-111111111111', 2026);
+    const result = await svc.calc(42, 2026);
     expect(result).toBe(100);
   });
 
@@ -36,7 +36,7 @@ describe('FinanceScoreService.calc', () => {
       config_value: '5',
     });
     prisma.$queryRaw.mockResolvedValueOnce([{ count: 0n }]);
-    const result = await svc.calc('11111111-1111-1111-1111-111111111111', 2026);
+    const result = await svc.calc(42, 2026);
     expect(result).toBe(0);
   });
 
@@ -46,7 +46,7 @@ describe('FinanceScoreService.calc', () => {
       config_value: '5',
     });
     prisma.$queryRaw.mockResolvedValueOnce([{ count: 6n }]);
-    const result = await svc.calc('11111111-1111-1111-1111-111111111111', 2026);
+    const result = await svc.calc(42, 2026);
     expect(result).toBe(50);
   });
 
@@ -56,14 +56,14 @@ describe('FinanceScoreService.calc', () => {
       config_value: '5',
     });
     prisma.$queryRaw.mockResolvedValueOnce([{ count: 15n }]);
-    const result = await svc.calc('11111111-1111-1111-1111-111111111111', 2026);
+    const result = await svc.calc(42, 2026);
     expect(result).toBe(100);
   });
 
   it('falls back to deadline_day=5 when system_config key missing', async () => {
     prisma.system_config.findUnique.mockResolvedValueOnce(null);
     prisma.$queryRaw.mockResolvedValueOnce([{ count: 12n }]);
-    const result = await svc.calc('11111111-1111-1111-1111-111111111111', 2026);
+    const result = await svc.calc(42, 2026);
     expect(result).toBe(100);
     expect(prisma.system_config.findUnique).toHaveBeenCalledWith({
       where: { config_key: 'ranking.finance_closing_deadline_day' },
@@ -76,7 +76,7 @@ describe('FinanceScoreService.calc', () => {
       config_value: 'not-a-number',
     });
     prisma.$queryRaw.mockResolvedValueOnce([{ count: 12n }]);
-    const result = await svc.calc('11111111-1111-1111-1111-111111111111', 2026);
+    const result = await svc.calc(42, 2026);
     expect(result).toBe(100);
   });
 });

@@ -10,16 +10,16 @@ export class FinanceScoreService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async calc(clubId: string, year: number): Promise<number> {
+  async calc(clubId: number, year: number): Promise<number> {
     const deadlineDay = await this.resolveDeadlineDay();
 
     const rows = await this.prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(*)::bigint AS count
-      FROM finance_period_closing
-      WHERE club_id = ${clubId}::uuid
+      FROM finance_period_closings
+      WHERE club_id = ${clubId}
         AND year = ${year}
         AND closed_at IS NOT NULL
-        AND closed_at <= make_timestamptz(year, month + 1, ${deadlineDay}, 23, 59, 59, 'UTC')
+        AND closed_at <= (make_timestamptz(year, month + 1, ${deadlineDay}, 23, 59, 59, 'UTC') AT TIME ZONE 'UTC')
     `;
 
     const monthsClosedOnTime = Number(rows[0]?.count ?? 0n);
