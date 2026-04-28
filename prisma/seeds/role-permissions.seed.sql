@@ -27,11 +27,16 @@ BEGIN;
 -- row marked `active=false` in permissions.seed.sql; this DELETE purges any
 -- surviving grants in role_permissions.
 --
+-- Phase 5 (2026-04-28): retired `qr:issue_self` — `/qr/me*` self-service routes
+-- no longer enforce a domain permission gate (Option A). JWT auth alone is
+-- sufficient since the caller identity is already established by the token.
+-- Permission row marked `active=false` in permissions.seed.sql.
+--
 -- Idempotent: re-runs are no-ops once rows are gone.
 DELETE FROM role_permissions
 USING permissions p
 WHERE role_permissions.permission_id = p.permission_id
-  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update', 'classes:validate');
+  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update', 'classes:validate', 'qr:issue_self');
 
 -- ============================
 -- USER role (GLOBAL)
@@ -59,7 +64,6 @@ WHERE r.role_name = 'user'
     -- Profile & personal data
     'users:read',
     'users:update_profile',
-    'qr:issue_self',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',
@@ -140,7 +144,6 @@ WHERE r.role_name = 'member'
     -- Personal data
     'users:read',
     'users:update_profile',
-    'qr:issue_self',
     'emergency_contacts:read',
     'emergency_contacts:update',
     'health:read',

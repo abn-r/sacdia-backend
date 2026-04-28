@@ -102,8 +102,12 @@ ON CONFLICT (permission_name) DO UPDATE SET
 -- ============================
 -- QR / Virtual Credentials
 -- ============================
+-- Deprecated 2026-04-28: `/qr/me*` no longer enforce a domain permission —
+-- self-service routes only require JWT auth (Option A). The permission row is
+-- kept but deactivated so existing role_permissions FK rows remain valid until
+-- the next seed run purges them via role-permissions.seed.sql.
 INSERT INTO permissions (permission_name, description, active) VALUES
-  ('qr:issue_self', 'Issue and view the authenticated user QR credential', true),
+  ('qr:issue_self', 'Issue and view the authenticated user QR credential', false),
   ('qr:validate', 'Validate QR credentials during scanning flows', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,

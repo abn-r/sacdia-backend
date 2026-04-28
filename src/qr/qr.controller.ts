@@ -65,9 +65,6 @@ export class QrController {
   }
 
   @Get('me')
-  @UseGuards(PermissionsGuard)
-  @AuthorizationResource({ type: 'global' })
-  @RequirePermissions('qr:issue_self')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({
     summary: 'Get the authenticated user QR metadata',
@@ -86,9 +83,6 @@ export class QrController {
   }
 
   @Get('me/card')
-  @UseGuards(PermissionsGuard)
-  @AuthorizationResource({ type: 'global' })
-  @RequirePermissions('qr:issue_self')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({
     summary: 'Get the QR card payload for the authenticated user',
@@ -107,9 +101,6 @@ export class QrController {
   }
 
   @Get('me/card.pdf')
-  @UseGuards(PermissionsGuard)
-  @AuthorizationResource({ type: 'global' })
-  @RequirePermissions('qr:issue_self')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiProduces('application/pdf')
   @ApiOperation({
