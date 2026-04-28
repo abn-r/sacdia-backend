@@ -70,6 +70,9 @@ src/
 ## Setup rápido
 
 ```bash
+# Start local Redis for BullMQ + cache (required in dev):
+docker compose up -d redis
+
 pnpm install
 cp .env.example .env
 pnpm run build

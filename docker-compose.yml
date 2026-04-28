@@ -1,0 +1,24 @@
+# SACDIA Backend — Local development services
+# Run: docker compose up -d redis
+# Stop: docker compose down
+#
+# This file is intentionally minimal. The database lives on Neon (no local Postgres).
+# Redis is the only service needed to run BullMQ queues and the cache layer in dev.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: sacdia-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - sacdia-redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  sacdia-redis-data:
