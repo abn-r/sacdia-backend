@@ -16,13 +16,12 @@
 // that source at all — the inbox is not an override of that intent.
 // =============================================================================
 
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-  ForbiddenException,
-} from '@nestjs/common';
+  AppNotFoundException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { firebaseAdmin } from '../config/firebase-admin.module';
@@ -218,7 +217,11 @@ export class NotificationsService {
         sentBy,
         source,
       };
-      await this.queue!.add('send-to-club-members', jobData, DEFAULT_JOB_OPTIONS);
+      await this.queue!.add(
+        'send-to-club-members',
+        jobData,
+        DEFAULT_JOB_OPTIONS,
+      );
       return { success: true, queued: true };
     }
 
@@ -377,18 +380,16 @@ export class NotificationsService {
       return;
     }
 
-    await this.queue!
-      .add(REALTIME_INVALIDATE_JOB, input, {
-        attempts: 2,
-        backoff: { type: 'exponential' as const, delay: 1000 },
-        removeOnComplete: { count: 50 },
-        removeOnFail: { count: 25 },
-      })
-      .catch((err: Error) => {
-        this.logger.error(
-          `sendSilentToSection: failed to enqueue realtime.invalidate for section ${input.sectionId}: ${err.message}`,
-        );
-      });
+    await this.queue!.add(REALTIME_INVALIDATE_JOB, input, {
+      attempts: 2,
+      backoff: { type: 'exponential' as const, delay: 1000 },
+      removeOnComplete: { count: 50 },
+      removeOnFail: { count: 25 },
+    }).catch((err: Error) => {
+      this.logger.error(
+        `sendSilentToSection: failed to enqueue realtime.invalidate for section ${input.sectionId}: ${err.message}`,
+      );
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -424,9 +425,8 @@ export class NotificationsService {
     const skip = (page - 1) * safeLimit;
 
     if (isAdmin) {
-      const resolved = await this.authorizationContext.resolveUserAuthorization(
-        callerUserId,
-      );
+      const resolved =
+        await this.authorizationContext.resolveUserAuthorization(callerUserId);
       const where = this.buildAdminHistoryWhere(callerUserId, resolved);
 
       // Admin path: read directly from notification_logs (full audit log)
@@ -502,10 +502,11 @@ export class NotificationsService {
       await this.authorizationContext.resolveUserAuthorization(userId);
     const activeClubScope = resolved.authorization.effective.scope.club;
 
-    if (!activeClubScope || activeClubScope.section.club_section_id !== clubSectionId) {
-      throw new ForbiddenException(
-        'You need an active club assignment for this exact instance',
-      );
+    if (
+      !activeClubScope ||
+      activeClubScope.section.club_section_id !== clubSectionId
+    ) {
+      throw new AppForbiddenException(ErrorCode.NOTIF_SEND_FORBIDDEN);
     }
   }
 
@@ -591,9 +592,7 @@ export class NotificationsService {
       where: { delivery_id: deliveryId, user_id: callerUserId },
     });
     if (!delivery) {
-      throw new NotFoundException(
-        `Delivery ${deliveryId} not found or not owned by caller`,
-      );
+      throw new AppNotFoundException(ErrorCode.NOTIF_NOT_FOUND);
     }
     return this.prisma.notification_deliveries.update({
       where: { delivery_id: deliveryId },
@@ -604,7 +603,9 @@ export class NotificationsService {
   /**
    * Bulk mark all unread deliveries as read for the calling user.
    */
-  async markAllDeliveriesRead(callerUserId: string): Promise<{ updated: number }> {
+  async markAllDeliveriesRead(
+    callerUserId: string,
+  ): Promise<{ updated: number }> {
     const result = await this.prisma.notification_deliveries.updateMany({
       where: { user_id: callerUserId, read_at: null },
       data: { read_at: new Date() },
@@ -639,28 +640,30 @@ export class NotificationsService {
     let successCount = 0;
     let failureCount = 0;
 
-    await this.prisma.$transaction(async (tx) => {
-      const log = await tx.notification_logs.create({
-        data: {
-          title: dto.title,
-          body: dto.body,
-          type: 'USER',
-          target_type: 'user',
-          target_id: dto.userId,
-          sent_by: isUuid(sentBy) ? sentBy : null,
-          source: source ?? null,
-          tokens_sent: 0,
-          tokens_failed: 0,
-        },
+    await this.prisma
+      .$transaction(async (tx) => {
+        const log = await tx.notification_logs.create({
+          data: {
+            title: dto.title,
+            body: dto.body,
+            type: 'USER',
+            target_type: 'user',
+            target_id: dto.userId,
+            sent_by: isUuid(sentBy) ? sentBy : null,
+            source: source ?? null,
+            tokens_sent: 0,
+            tokens_failed: 0,
+          },
+        });
+        await tx.notification_deliveries.create({
+          data: { log_id: log.log_id, user_id: dto.userId },
+        });
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `sendToUserSync: failed to persist log/delivery for user ${dto.userId}: ${err.message}`,
+        );
       });
-      await tx.notification_deliveries.create({
-        data: { log_id: log.log_id, user_id: dto.userId },
-      });
-    }).catch((err: Error) => {
-      this.logger.warn(
-        `sendToUserSync: failed to persist log/delivery for user ${dto.userId}: ${err.message}`,
-      );
-    });
 
     // Step 3: FCM push — best effort, only if tokens exist.
     const tokens = await this.prisma.user_fcm_tokens.findMany({
@@ -723,32 +726,34 @@ export class NotificationsService {
     let totalSuccess = 0;
     let totalFailure = 0;
 
-    await this.prisma.$transaction(async (tx) => {
-      const log = await tx.notification_logs.create({
-        data: {
-          title: dto.title,
-          body: dto.body,
-          type: 'BROADCAST',
-          target_type: 'all',
-          target_id: null,
-          sent_by: isUuid(sentBy) ? sentBy : null,
-          source: source ?? null,
-          tokens_sent: 0,
-          tokens_failed: 0,
-        },
+    await this.prisma
+      .$transaction(async (tx) => {
+        const log = await tx.notification_logs.create({
+          data: {
+            title: dto.title,
+            body: dto.body,
+            type: 'BROADCAST',
+            target_type: 'all',
+            target_id: null,
+            sent_by: isUuid(sentBy) ? sentBy : null,
+            source: source ?? null,
+            tokens_sent: 0,
+            tokens_failed: 0,
+          },
+        });
+        await tx.notification_deliveries.createMany({
+          data: allowedUserIds.map((uid) => ({
+            log_id: log.log_id,
+            user_id: uid,
+          })),
+          skipDuplicates: true,
+        });
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `broadcastSync: failed to persist log/deliveries: ${err.message}`,
+        );
       });
-      await tx.notification_deliveries.createMany({
-        data: allowedUserIds.map((uid) => ({
-          log_id: log.log_id,
-          user_id: uid,
-        })),
-        skipDuplicates: true,
-      });
-    }).catch((err: Error) => {
-      this.logger.warn(
-        `broadcastSync: failed to persist log/deliveries: ${err.message}`,
-      );
-    });
 
     // Step 3: FCM push — best effort, only to users with active tokens.
     const tokenRows = await this.prisma.user_fcm_tokens.findMany({
@@ -818,29 +823,31 @@ export class NotificationsService {
     let totalSuccess = 0;
     let totalFailure = 0;
 
-    await this.prisma.$transaction(async (tx) => {
-      const log = await tx.notification_logs.create({
-        data: {
-          title: dto.title,
-          body: dto.body,
-          type: 'CLUB',
-          target_type: 'club_section',
-          target_id: String(clubSectionId),
-          sent_by: isUuid(sentBy) ? sentBy : null,
-          source: source ?? null,
-          tokens_sent: 0,
-          tokens_failed: 0,
-        },
+    await this.prisma
+      .$transaction(async (tx) => {
+        const log = await tx.notification_logs.create({
+          data: {
+            title: dto.title,
+            body: dto.body,
+            type: 'CLUB',
+            target_type: 'club_section',
+            target_id: String(clubSectionId),
+            sent_by: isUuid(sentBy) ? sentBy : null,
+            source: source ?? null,
+            tokens_sent: 0,
+            tokens_failed: 0,
+          },
+        });
+        await tx.notification_deliveries.createMany({
+          data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+          skipDuplicates: true,
+        });
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `sendToClubMembersSync: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
+        );
       });
-      await tx.notification_deliveries.createMany({
-        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
-        skipDuplicates: true,
-      });
-    }).catch((err: Error) => {
-      this.logger.warn(
-        `sendToClubMembersSync: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
-      );
-    });
 
     // Step 3: FCM push — best effort, only to members with active tokens.
     const tokens = await this.prisma.user_fcm_tokens.findMany({
@@ -915,29 +922,31 @@ export class NotificationsService {
 
     // Step 2: Create log + deliveries for all allowed users atomically.
     // This happens regardless of FCM token availability.
-    await this.prisma.$transaction(async (tx) => {
-      const log = await tx.notification_logs.create({
-        data: {
-          title,
-          body,
-          type: 'SECTION_ROLE',
-          target_type: 'section_role',
-          target_id: String(clubSectionId),
-          sent_by: null,
-          source: source ?? null,
-          tokens_sent: 0,
-          tokens_failed: 0,
-        },
+    await this.prisma
+      .$transaction(async (tx) => {
+        const log = await tx.notification_logs.create({
+          data: {
+            title,
+            body,
+            type: 'SECTION_ROLE',
+            target_type: 'section_role',
+            target_id: String(clubSectionId),
+            sent_by: null,
+            source: source ?? null,
+            tokens_sent: 0,
+            tokens_failed: 0,
+          },
+        });
+        await tx.notification_deliveries.createMany({
+          data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+          skipDuplicates: true,
+        });
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `sendToSectionRoleSync: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
+        );
       });
-      await tx.notification_deliveries.createMany({
-        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
-        skipDuplicates: true,
-      });
-    }).catch((err: Error) => {
-      this.logger.warn(
-        `sendToSectionRoleSync: failed to persist log/deliveries for section ${clubSectionId}: ${err.message}`,
-      );
-    });
 
     // Step 3: FCM push — best effort, only to users with active tokens.
     const tokens = await this.prisma.user_fcm_tokens.findMany({
@@ -1011,29 +1020,31 @@ export class NotificationsService {
 
     // Step 2: Create log + deliveries for all allowed users atomically.
     // This happens regardless of FCM token availability.
-    await this.prisma.$transaction(async (tx) => {
-      const log = await tx.notification_logs.create({
-        data: {
-          title,
-          body,
-          type: 'GLOBAL_ROLE',
-          target_type: 'global_role',
-          target_id: localFieldId ? String(localFieldId) : null,
-          sent_by: null,
-          source: source ?? null,
-          tokens_sent: 0,
-          tokens_failed: 0,
-        },
+    await this.prisma
+      .$transaction(async (tx) => {
+        const log = await tx.notification_logs.create({
+          data: {
+            title,
+            body,
+            type: 'GLOBAL_ROLE',
+            target_type: 'global_role',
+            target_id: localFieldId ? String(localFieldId) : null,
+            sent_by: null,
+            source: source ?? null,
+            tokens_sent: 0,
+            tokens_failed: 0,
+          },
+        });
+        await tx.notification_deliveries.createMany({
+          data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
+          skipDuplicates: true,
+        });
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `sendToGlobalRoleSync: failed to persist log/deliveries for roles ${roleNames.join(',')}: ${err.message}`,
+        );
       });
-      await tx.notification_deliveries.createMany({
-        data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
-        skipDuplicates: true,
-      });
-    }).catch((err: Error) => {
-      this.logger.warn(
-        `sendToGlobalRoleSync: failed to persist log/deliveries for roles ${roleNames.join(',')}: ${err.message}`,
-      );
-    });
 
     // Step 3: FCM push — best effort, only to users with active tokens.
     const tokens = await this.prisma.user_fcm_tokens.findMany({

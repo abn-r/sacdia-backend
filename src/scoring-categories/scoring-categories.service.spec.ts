@@ -1,7 +1,8 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { ScoringCategoriesService } from './scoring-categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { TranslationService } from '../common/services/translation.service';
 
 describe('ScoringCategoriesService', () => {
   const mockPrisma = {
@@ -20,9 +21,17 @@ describe('ScoringCategoriesService', () => {
     isSuperAdmin: jest.fn(),
   };
 
+  const mockTranslationService = {
+    getCurrentLocale: jest.fn().mockReturnValue('es'),
+    translateMany: jest
+      .fn()
+      .mockImplementation((records: unknown[]) => records),
+  };
+
   const service = new ScoringCategoriesService(
     mockPrisma as unknown as PrismaService,
     mockAuthContext as unknown as AuthorizationContextService,
+    mockTranslationService as unknown as TranslationService,
   );
 
   beforeEach(() => {
@@ -36,11 +45,11 @@ describe('ScoringCategoriesService', () => {
       mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
-      await expect(service.findUnionCategories(20, 'user-1')).rejects.toThrow(
-        new ForbiddenException(
-          'No tiene permisos para gestionar categorías de esta unión',
-        ),
-      );
+      await expect(
+        service.findUnionCategories(20, 'user-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.SCORING_CATEGORY_UNION_FORBIDDEN,
+      });
     });
 
     it('returns categories when the caller belongs to the requested union', async () => {
@@ -98,11 +107,11 @@ describe('ScoringCategoriesService', () => {
       mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
-      await expect(service.findLocalFieldCategories(99, 'user-1')).rejects.toThrow(
-        new ForbiddenException(
-          'No tiene permisos para gestionar categorías de este campo local',
-        ),
-      );
+      await expect(
+        service.findLocalFieldCategories(99, 'user-1'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN,
+      });
     });
 
     it('returns categories when the caller belongs to the requested local field', async () => {
@@ -127,7 +136,9 @@ describe('ScoringCategoriesService', () => {
       });
       mockPrisma.scoring_categories.findMany.mockResolvedValue(categories);
 
-      await expect(service.findLocalFieldCategories(99, 'user-1')).resolves.toEqual(
+      await expect(
+        service.findLocalFieldCategories(99, 'user-1'),
+      ).resolves.toEqual(
         categories.map((category) => ({
           ...category,
           readonly: false,
@@ -158,7 +169,9 @@ describe('ScoringCategoriesService', () => {
       mockAuthContext.isSuperAdmin.mockResolvedValue(true);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
-      await expect(service.findUnionCategories(20, 'super-1')).resolves.toEqual([]);
+      await expect(service.findUnionCategories(20, 'super-1')).resolves.toEqual(
+        [],
+      );
       // club_role_assignments must NOT be queried — super-admin exits early
       expect(mockPrisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
     });
@@ -168,7 +181,9 @@ describe('ScoringCategoriesService', () => {
       mockPrisma.local_fields.findUnique.mockResolvedValue({ union_id: 7 });
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
-      await expect(service.findLocalFieldCategories(99, 'super-1')).resolves.toEqual([]);
+      await expect(
+        service.findLocalFieldCategories(99, 'super-1'),
+      ).resolves.toEqual([]);
       expect(mockPrisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
     });
   });

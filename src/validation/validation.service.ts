@@ -1,15 +1,15 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   investiture_status_enum,
   investiture_action_enum,
 } from '@prisma/client';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 type EntityType = 'class' | 'honor';
 
@@ -43,20 +43,18 @@ export class ValidationService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Inscripcion con ID ${enrollmentId} no encontrada`,
-      );
+      throw new AppNotFoundException(ErrorCode.VALIDATION_ENROLLMENT_NOT_FOUND);
     }
 
     if (enrollment.user_id !== userId) {
-      throw new BadRequestException(
-        'La inscripcion no pertenece al usuario autenticado',
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_ENROLLMENT_NOT_OWNED,
       );
     }
 
     if (enrollment.investiture_status !== investiture_status_enum.IN_PROGRESS) {
-      throw new BadRequestException(
-        `La inscripcion debe estar en estado IN_PROGRESS para enviar a revision. Estado actual: ${enrollment.investiture_status}`,
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_ENROLLMENT_NOT_IN_PROGRESS,
       );
     }
 
@@ -131,35 +129,33 @@ export class ValidationService {
     });
 
     if (!userHonor) {
-      throw new NotFoundException(
-        `Honor de usuario con ID ${userHonorId} no encontrado`,
-      );
+      throw new AppNotFoundException(ErrorCode.VALIDATION_USER_HONOR_NOT_FOUND);
     }
 
     if (userHonor.user_id !== userId) {
-      throw new BadRequestException(
-        'El honor no pertenece al usuario autenticado',
-      );
+      throw new AppBadRequestException(ErrorCode.VALIDATION_HONOR_NOT_OWNED);
     }
 
     if (
       userHonor.validate === true ||
       userHonor.validation_status === 'APPROVED'
     ) {
-      throw new BadRequestException('El honor ya se encuentra validado');
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_ALREADY_VALIDATED,
+      );
     }
 
     if (userHonor.validation_status === 'PENDING_REVIEW') {
-      throw new BadRequestException(
-        'El honor ya se encuentra pendiente de revision',
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_ALREADY_PENDING,
       );
     }
 
     // Allow submission from: IN_PROGRESS, REJECTED
     const allowedStatuses = ['IN_PROGRESS', 'REJECTED'];
     if (!allowedStatuses.includes(userHonor.validation_status)) {
-      throw new BadRequestException(
-        `El honor debe estar en estado IN_PROGRESS o REJECTED para enviar a revision. Estado actual: ${userHonor.validation_status}`,
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
       );
     }
 
@@ -231,8 +227,8 @@ export class ValidationService {
     comment?: string,
   ) {
     if (action === 'rejected' && !comment) {
-      throw new BadRequestException(
-        'Se requiere un comentario al rechazar una validacion',
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_REJECT_COMMENT_REQUIRED,
       );
     }
 
@@ -253,17 +249,15 @@ export class ValidationService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Inscripcion con ID ${enrollmentId} no encontrada`,
-      );
+      throw new AppNotFoundException(ErrorCode.VALIDATION_ENROLLMENT_NOT_FOUND);
     }
 
     if (
       enrollment.investiture_status !==
       investiture_status_enum.SUBMITTED_FOR_VALIDATION
     ) {
-      throw new BadRequestException(
-        `La inscripcion debe estar en estado SUBMITTED_FOR_VALIDATION para revisar. Estado actual: ${enrollment.investiture_status}`,
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_ENROLLMENT_NOT_SUBMITTED,
       );
     }
 
@@ -355,9 +349,7 @@ export class ValidationService {
     });
 
     if (!userHonor) {
-      throw new NotFoundException(
-        `Honor de usuario con ID ${userHonorId} no encontrado`,
-      );
+      throw new AppNotFoundException(ErrorCode.VALIDATION_USER_HONOR_NOT_FOUND);
     }
 
     const result = await this.prisma.$transaction(async (tx) => {

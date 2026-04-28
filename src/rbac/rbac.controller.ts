@@ -12,8 +12,9 @@ import {
   ParseUUIDPipe,
   Put,
   Headers,
-  ForbiddenException,
 } from '@nestjs/common';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiTags,
   ApiOperation,
@@ -24,7 +25,11 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
-import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -328,13 +333,11 @@ export class RbacBootstrapController {
     const configuredSecret = this.configService.get<string>('BOOTSTRAP_SECRET');
 
     if (!configuredSecret) {
-      throw new ForbiddenException(
-        'Bootstrap endpoint is disabled. Set BOOTSTRAP_SECRET to enable it.',
-      );
+      throw new AppForbiddenException(ErrorCode.RBAC_BOOTSTRAP_FORBIDDEN);
     }
 
     if (!bootstrapSecret) {
-      throw new ForbiddenException('Invalid bootstrap secret.');
+      throw new AppForbiddenException(ErrorCode.RBAC_BOOTSTRAP_SECRET_INVALID);
     }
 
     const secretBuffer = Buffer.from(configuredSecret, 'utf8');
@@ -344,7 +347,7 @@ export class RbacBootstrapController {
       secretBuffer.length !== providedBuffer.length ||
       !timingSafeEqual(secretBuffer, providedBuffer)
     ) {
-      throw new ForbiddenException('Invalid bootstrap secret.');
+      throw new AppForbiddenException(ErrorCode.RBAC_BOOTSTRAP_SECRET_INVALID);
     }
 
     return this.rbacService.bootstrapAdmin(dto.user_id);

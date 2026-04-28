@@ -1,4 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { ErrorCode } from '../errors/error-codes';
 import { MfaService } from './mfa.service';
 
 /**
@@ -71,17 +72,62 @@ describe('MfaService', () => {
   // ---------------------------------------------------------------------------
 
   describe('verifyMfa', () => {
-    it('should return { verified: true, accessToken } when code is valid', async () => {
+    it('should return { verified: true, accessToken } when code is valid (no sessionId)', async () => {
       mockHasTotpEnabled.mockResolvedValue({ enabled: true });
       mockVerifyTotp.mockResolvedValue({ verified: true });
 
-      const result = await service.verifyMfa(USER_ID, 'user@example.com', '123456');
+      const result = await service.verifyMfa(
+        USER_ID,
+        'user@example.com',
+        '123456',
+      );
 
-      expect(result).toEqual({ verified: true, accessToken: 'mock-aal2-token' });
+      expect(result).toEqual({
+        verified: true,
+        accessToken: 'mock-aal2-token',
+      });
       expect(mockVerifyTotp).toHaveBeenCalledWith(USER_ID, '123456');
+      // sessionId is undefined when not provided — forwarded as undefined to signJwt
       expect(mockSignJwt).toHaveBeenCalledWith(
         { id: USER_ID, email: 'user@example.com' },
         false,
+        undefined,
+      );
+    });
+
+    it('should forward sessionId to signJwt when provided', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: true });
+      mockVerifyTotp.mockResolvedValue({ verified: true });
+
+      const SESSION_ID = 'ba-session-uuid-123';
+      const result = await service.verifyMfa(
+        USER_ID,
+        'user@example.com',
+        '123456',
+        SESSION_ID,
+      );
+
+      expect(result).toEqual({
+        verified: true,
+        accessToken: 'mock-aal2-token',
+      });
+      expect(mockSignJwt).toHaveBeenCalledWith(
+        { id: USER_ID, email: 'user@example.com' },
+        false,
+        SESSION_ID,
+      );
+    });
+
+    it('should pass undefined to signJwt when sessionId is null (legacy token)', async () => {
+      mockHasTotpEnabled.mockResolvedValue({ enabled: true });
+      mockVerifyTotp.mockResolvedValue({ verified: true });
+
+      await service.verifyMfa(USER_ID, 'user@example.com', '123456', null);
+
+      expect(mockSignJwt).toHaveBeenCalledWith(
+        { id: USER_ID, email: 'user@example.com' },
+        false,
+        undefined,
       );
     });
 
@@ -89,7 +135,11 @@ describe('MfaService', () => {
       mockHasTotpEnabled.mockResolvedValue({ enabled: true });
       mockVerifyTotp.mockResolvedValue({ verified: false });
 
-      const result = await service.verifyMfa(USER_ID, 'user@example.com', '000000');
+      const result = await service.verifyMfa(
+        USER_ID,
+        'user@example.com',
+        '000000',
+      );
 
       expect(result).toEqual({ verified: false });
     });
@@ -99,7 +149,7 @@ describe('MfaService', () => {
 
       await expect(
         service.verifyMfa(USER_ID, 'user@example.com', '123456'),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toMatchObject({ code: ErrorCode.MFA_CODE_INVALID });
       expect(mockVerifyTotp).not.toHaveBeenCalled();
     });
   });

@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  UnauthorizedException,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -13,6 +7,13 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { Inject } from '@nestjs/common';
+import { EmailService } from '../common/email/email.service';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 /**
  * Handles the full account deletion lifecycle for self-service requests
@@ -46,6 +47,7 @@ export class AccountDeletionService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -74,11 +76,15 @@ export class AccountDeletionService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.AUTH_ACCOUNT_NOT_FOUND, {
+        userId,
+      });
     }
 
     if (!user.active) {
-      throw new BadRequestException('La cuenta ya fue eliminada');
+      throw new AppBadRequestException(ErrorCode.AUTH_ACCOUNT_ALREADY_DELETED, {
+        userId,
+      });
     }
 
     // Re-authenticate: require credential account with a valid password
@@ -100,15 +106,15 @@ export class AccountDeletionService {
         credentialAccount.password,
       );
       if (!isPasswordValid) {
-        throw new UnauthorizedException(
-          'Contraseña incorrecta. No se puede eliminar la cuenta.',
-        );
+        throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_PASSWORD);
       }
     }
 
     // -------------------------------------------------------------------------
     // 2. Transactional soft-delete + PII anonymization
     // -------------------------------------------------------------------------
+    // Capture original email BEFORE anonymization — needed for the confirmation email.
+    const originalEmail = user.email;
     const anonymizedEmail = `deleted-${userId}@sacdia.deleted`;
     const now = new Date();
 
@@ -166,6 +172,21 @@ export class AccountDeletionService {
           `Failed to delete profile picture from R2 for deleted user ${userId}: ${err instanceof Error ? err.message : String(err)}`,
         );
       });
+    }
+
+    // -------------------------------------------------------------------------
+    // 3b. Deletion confirmation email (fire-and-forget)
+    //     Sent to the ORIGINAL email captured before anonymization.
+    //     EMAIL_ENABLED gate is enforced at processor level.
+    // -------------------------------------------------------------------------
+    if (originalEmail) {
+      this.emailService
+        .sendAccountDeletionConfirmed({ email: originalEmail })
+        .catch((err: Error) => {
+          this.logger.warn(
+            `Failed to enqueue account deletion email for deleted user ${userId}: ${err.message}`,
+          );
+        });
     }
 
     // -------------------------------------------------------------------------

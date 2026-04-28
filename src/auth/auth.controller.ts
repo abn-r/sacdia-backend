@@ -383,7 +383,11 @@ export class AuthController {
     @Body() dto: DeleteAccountDto,
     @Ip() ip: string,
   ): Promise<void> {
-    await this.accountDeletionService.deleteAccount(user.userId, dto.password, ip);
+    await this.accountDeletionService.deleteAccount(
+      user.userId,
+      dto.password,
+      ip,
+    );
   }
 
   private extractBearerToken(authorization?: string): string | undefined {

@@ -83,7 +83,9 @@ export class UserNotificationPreferencesController {
       },
     },
   })
-  async getPreferences(@Request() req): Promise<NotificationPreferencesResponseDto> {
+  async getPreferences(
+    @Request() req,
+  ): Promise<NotificationPreferencesResponseDto> {
     const userId: string = req.user.sub;
     return this.resolvePreferences(userId);
   }
@@ -257,4 +259,3 @@ export class UserNotificationPreferencesController {
     };
   }
 }
-

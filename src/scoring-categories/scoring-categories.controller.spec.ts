@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ScoringCategoriesController } from './scoring-categories.controller';
 import { ScoringCategoriesService } from './scoring-categories.service';
-import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
+import {
+  JwtAuthGuard,
+  PermissionsGuard,
+  GlobalRolesGuard,
+} from '../common/guards';
 
 describe('ScoringCategoriesController', () => {
   const mockScoringCategoriesService = {
@@ -53,10 +57,9 @@ describe('ScoringCategoriesController', () => {
       user: { sub: 'user-123' },
     } as any);
 
-    expect(mockScoringCategoriesService.findUnionCategories).toHaveBeenCalledWith(
-      42,
-      'user-123',
-    );
+    expect(
+      mockScoringCategoriesService.findUnionCategories,
+    ).toHaveBeenCalledWith(42, 'user-123');
   });
 
   it('passes the authenticated user id to local field read scope checks', async () => {

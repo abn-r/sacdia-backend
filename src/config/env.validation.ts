@@ -21,6 +21,14 @@ export const envValidationSchema = Joi.object({
   // Email feature flag — defaults to false (fail-safe: emails OFF unless explicitly enabled).
   // Checked as process.env.EMAIL_ENABLED === 'true' in auth.service.ts and better-auth.service.ts.
   EMAIL_ENABLED: Joi.string().valid('true', 'false').default('false'),
+
+  // Resend (transactional email transport)
+  // RESEND_API_KEY: required when EMAIL_ENABLED=true; harmless as empty when disabled.
+  RESEND_API_KEY: Joi.string().allow('').optional(),
+  // Display name + sender address. Example: "SACDIA <noreply@sacdia.app>"
+  RESEND_FROM_EMAIL: Joi.string().allow('').optional(),
+  // Reply-To address shown to recipients (e.g. hola@sacdia.app)
+  RESEND_REPLY_TO: Joi.string().email().allow('').optional(),
   REQUEST_TIMEOUT_MS: Joi.number().integer().positive().optional(),
 
   // Logging
@@ -74,6 +82,11 @@ export const envValidationSchema = Joi.object({
   R2_BUCKET_INSURANCE_EVIDENCE: Joi.string().optional(),
   R2_PUBLIC_URL_INSURANCE_EVIDENCE: Joi.string().uri().optional(),
   R2_KEY_PREFIX_INSURANCE_EVIDENCE: Joi.string().allow('').optional(),
+
+  // Cloudflare R2 — GDPR data exports bucket (private, presigned URLs only)
+  R2_BUCKET_DATA_EXPORTS: Joi.string().optional(),
+  R2_PUBLIC_URL_DATA_EXPORTS: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_DATA_EXPORTS: Joi.string().allow('').optional(),
 
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),

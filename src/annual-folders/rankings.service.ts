@@ -1,12 +1,20 @@
-import {
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { DistributedLockService } from '../common/services/distributed-lock.service';
+import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
+import {
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  RankingsRecalculatePayload,
+} from '../background-jobs/background-jobs.types';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -57,17 +65,51 @@ export class RankingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lockService: DistributedLockService,
+    private readonly cronLogger: CronRunLogger,
+    @Optional()
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
+    private readonly rankingsQueue: Queue | null,
   ) {}
 
   // ========================================
   // CRON JOB — Nightly at 2:00 AM
   // ========================================
 
-  @Cron('0 2 * * *')
+  @Cron('0 2 * * *', {
+    name: 'annual-folders-rankings-recalc',
+    timeZone: 'UTC',
+  })
   async handleRankingsRecalculation() {
-    this.logger.log('Starting nightly rankings recalculation...');
-    const result = await this.recalculateRankings();
-    this.logger.log(`Rankings recalculated: ${result.updated} records`);
+    this.logger.log('Rankings cron triggered — enqueuing BullMQ job...');
+
+    if (this.rankingsQueue) {
+      const jobData: RankingsRecalculatePayload = {
+        triggeredAt: new Date().toISOString(),
+      };
+      await this.rankingsQueue.add(
+        BackgroundJobName.RANKINGS_RECALCULATE,
+        jobData,
+        {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
+          removeOnComplete: { age: 7 * 86_400 },
+          removeOnFail: { age: 30 * 86_400 },
+        },
+      );
+      this.logger.log(
+        'annual-folders-rankings-recalc job enqueued with 5 attempts + exponential backoff',
+      );
+    } else {
+      // Redis unavailable — execute directly (no retry fallback)
+      this.logger.warn(
+        'BullMQ queue unavailable — running rankings recalculation directly (no retry)',
+      );
+      await this.cronLogger.track('rankings-recalculate', async () => {
+        const result = await this.recalculateRankings();
+        this.logger.log(`Rankings recalculated: ${result.updated} records`);
+        return { itemsProcessed: result.updated };
+      });
+    }
   }
 
   // ========================================
@@ -101,8 +143,8 @@ export class RankingsService {
     const acquired = await this.lockService.tryAcquire(lockKey, 10 * 60 * 1000);
 
     if (!acquired) {
-      throw new ConflictException(
-        'Ranking recalculation already in progress for this year',
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_FOLDER_RANKINGS_LOCK_CONFLICT,
       );
     }
 
@@ -117,9 +159,9 @@ export class RankingsService {
    * Internal implementation — runs after the lock has been acquired.
    * Separated so the lock acquire/release wrapper stays clean.
    */
-  private async _runRecalculation(
-    year: { year_id: number },
-  ): Promise<RecalculateResult> {
+  private async _runRecalculation(year: {
+    year_id: number;
+  }): Promise<RecalculateResult> {
     // 2. Fetch all evaluated/closed folders for that year, with club type
     const folders = await this.prisma.annual_folders.findMany({
       where: {
@@ -332,8 +374,9 @@ export class RankingsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${clubEnrollmentId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND,
+        { id: clubEnrollmentId },
       );
     }
 
@@ -389,9 +432,9 @@ export class RankingsService {
         where: { year_id: yearId },
       });
       if (!year) {
-        throw new NotFoundException(
-          `Ecclesiastical year with ID ${yearId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+          id: yearId,
+        });
       }
       return year;
     }
@@ -402,7 +445,9 @@ export class RankingsService {
     });
 
     if (!activeYear) {
-      throw new NotFoundException('No active ecclesiastical year found');
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+        id: 'active',
+      });
     }
 
     return activeYear;

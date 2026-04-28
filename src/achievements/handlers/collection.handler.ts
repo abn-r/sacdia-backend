@@ -48,15 +48,25 @@ export class CollectionHandler implements AchievementHandler, OnModuleInit {
       errors.push('distinct_field must be a non-empty string');
     }
 
-    if (typeof c.target !== 'number' || !Number.isFinite(c.target) || c.target < 1) {
+    if (
+      typeof c.target !== 'number' ||
+      !Number.isFinite(c.target) ||
+      c.target < 1
+    ) {
       errors.push('target must be a positive finite number');
     }
 
-    if (c.filters !== undefined && (typeof c.filters !== 'object' || c.filters === null)) {
+    if (
+      c.filters !== undefined &&
+      (typeof c.filters !== 'object' || c.filters === null)
+    ) {
       errors.push('filters must be an object when provided');
     }
 
-    return { valid: errors.length === 0, errors: errors.length > 0 ? errors : undefined };
+    return {
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
   async evaluate(
@@ -65,7 +75,10 @@ export class CollectionHandler implements AchievementHandler, OnModuleInit {
     _event: { eventType: string; payload: Record<string, unknown> },
   ): Promise<EvaluationResult> {
     const criteria = achievement.criteria as unknown as CollectionCriteria;
-    const { distinctValues, count } = await this.collectDistinctValues(userId, criteria);
+    const { distinctValues, count } = await this.collectDistinctValues(
+      userId,
+      criteria,
+    );
     const matched = count >= criteria.target;
 
     return {
@@ -81,7 +94,10 @@ export class CollectionHandler implements AchievementHandler, OnModuleInit {
     achievement: achievements,
   ): Promise<ProgressResult> {
     const criteria = achievement.criteria as unknown as CollectionCriteria;
-    const { distinctValues, count } = await this.collectDistinctValues(userId, criteria);
+    const { distinctValues, count } = await this.collectDistinctValues(
+      userId,
+      criteria,
+    );
     const target = criteria.target;
     const percentage = Math.min(100, Math.round((count / target) * 100));
 

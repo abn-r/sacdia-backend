@@ -10,7 +10,8 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
  */
 export class UnionMembersPaginationDto extends PaginationDto {
   @ApiPropertyOptional({
-    description: 'Cantidad de elementos por página (máximo 200 para endpoints de unión)',
+    description:
+      'Cantidad de elementos por página (máximo 200 para endpoints de unión)',
     minimum: 1,
     maximum: 200,
     default: 100,

@@ -1,8 +1,9 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { AdminReferenceService } from './admin-reference.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
+import { TranslationService } from '../common/services/translation.service';
 
 describe('AdminReferenceService', () => {
   let service: AdminReferenceService;
@@ -23,6 +24,22 @@ describe('AdminReferenceService', () => {
     honors: {
       count: jest.fn(),
     },
+    // $transaction: executes the callback with a tx client that mirrors the mock prisma
+    $transaction: jest
+      .fn()
+      .mockImplementation(async (callback: (tx: any) => Promise<any>) => {
+        const tx = {
+          honors_categories: {
+            create: mockPrismaService.honors_categories.create,
+            update: mockPrismaService.honors_categories.update,
+          },
+          honors_categories_translations: {
+            deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+            upsert: jest.fn().mockResolvedValue({}),
+          },
+        };
+        return callback(tx);
+      }),
   };
 
   const mockCatalogCacheService: Partial<CatalogCacheService> = {
@@ -31,12 +48,18 @@ describe('AdminReferenceService', () => {
     invalidateAll: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockTranslationService: Partial<TranslationService> = {
+    validateTranslations: jest.fn(),
+    upsertTranslations: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminReferenceService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CatalogCacheService, useValue: mockCatalogCacheService },
+        { provide: TranslationService, useValue: mockTranslationService },
       ],
     }).compile();
 
@@ -193,7 +216,9 @@ describe('AdminReferenceService', () => {
 
       await expect(
         service.createHonorCategory({ name: 'Naturaleza' }, 'actor-1'),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_HONOR_CATEGORY_NAME_CONFLICT,
+      });
     });
   });
 
@@ -254,7 +279,9 @@ describe('AdminReferenceService', () => {
 
       await expect(
         service.updateHonorCategory(9, { name: 'Nuevo nombre' }, 'actor-2'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_HONOR_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -303,9 +330,11 @@ describe('AdminReferenceService', () => {
       });
       mockPrismaService.honors.count.mockResolvedValue(1);
 
-      await expect(service.deleteHonorCategory(12, 'actor-3')).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.deleteHonorCategory(12, 'actor-3'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_HONOR_CATEGORY_IN_USE,
+      });
     });
   });
 

@@ -15,21 +15,28 @@
 BEGIN;
 
 -- ============================================================================
--- LEGACY PERMISSION CLEANUP (Phase 3 — permission-scope-cleanup-phase-3)
+-- LEGACY PERMISSION CLEANUP
 -- ============================================================================
--- Removes any role_permissions row that still references the retired legacy
--- permissions (`users:update`, `classes:update`, `user_honors:update`).
--- Phase 1+2 of the migration ensured every role that previously held these
--- legacy strings ALSO holds the new intent-specific equivalents
--- (`users:update_profile`, `classes:submit_progress`/`classes:validate`,
--- `user_honors:submit`/`user_honors:validate`). Phase 3 also added
--- `user_honors:submit` to the `user` and `member` role IN-arrays below to
--- preserve their write capability after the legacy row is soft-deleted.
+-- Phase 3 (permission-scope-cleanup-phase-3): retired broad legacy permissions
+-- (`users:update`, `classes:update`, `user_honors:update`) superseded by
+-- intent-specific ones (`users:update_profile`, `classes:submit_progress`,
+-- `user_honors:submit`/`user_honors:validate`).
+--
+-- Phase 4 (2026-04-22): retired `classes:validate` — superseded by
+-- `validation:review` after the validation domain was canonized. Permission
+-- row marked `active=false` in permissions.seed.sql; this DELETE purges any
+-- surviving grants in role_permissions.
+--
+-- Phase 5 (2026-04-28): retired `qr:issue_self` — `/qr/me*` self-service routes
+-- no longer enforce a domain permission gate (Option A). JWT auth alone is
+-- sufficient since the caller identity is already established by the token.
+-- Permission row marked `active=false` in permissions.seed.sql.
+--
 -- Idempotent: re-runs are no-ops once rows are gone.
 DELETE FROM role_permissions
 USING permissions p
 WHERE role_permissions.permission_id = p.permission_id
-  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update');
+  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update', 'classes:validate', 'qr:issue_self');
 
 -- ============================
 -- USER role (GLOBAL)
@@ -81,11 +88,17 @@ WHERE r.role_name = 'user'
     'clubs:read',
     'club_sections:read',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Dashboard
     'dashboard:read',
 
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -138,10 +151,12 @@ WHERE r.role_name = 'member'
     'legal_representative:read',
     'legal_representative:update',
 
-    -- Activities
+    -- Activities (read only — attendance:manage intentionally withheld:
+    -- members must not be able to mark attendance for other members via
+    -- the QR scanner or the legacy attendance endpoint. Scoped to director+
+    -- roles only.)
     'activities:read',
     'attendance:read',
-    'attendance:manage',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -149,6 +164,12 @@ WHERE r.role_name = 'member'
 
     -- Units
     'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+
+    -- Member of the Month
+    'mom:read',
 
     -- Post-registration
     'post_registration:read',
@@ -159,8 +180,15 @@ WHERE r.role_name = 'member'
     -- Investiture (read only)
     'investiture:read',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:read',
+    'validation:submit'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -219,6 +247,7 @@ WHERE r.role_name = 'counselor'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -226,6 +255,9 @@ WHERE r.role_name = 'counselor'
 
     -- Units
     'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
 
     -- Post-registration
     'post_registration:read',
@@ -241,9 +273,13 @@ WHERE r.role_name = 'counselor'
     'users:read_detail',
     -- Validate/return class progress for members in their classes
     'classes:submit_progress',
-    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
     -- Submit members as investiture candidates to section leadership
     'investiture:submit',
     -- See member list of the club and their roles
@@ -251,8 +287,20 @@ WHERE r.role_name = 'counselor'
     -- View insurance status of members they oversee
     'insurance:read',
 
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+    'user_folders:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -311,6 +359,7 @@ WHERE r.role_name = 'secretary'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -318,6 +367,9 @@ WHERE r.role_name = 'secretary'
 
     -- Units
     'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
 
     -- Post-registration
     'post_registration:read',
@@ -333,15 +385,23 @@ WHERE r.role_name = 'secretary'
     'users:read_detail',
     -- Validate/return class progress
     'classes:submit_progress',
-    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
     -- Submit members as investiture candidates
     'investiture:submit',
     -- See member list and roles
     'club_roles:read',
     -- View insurance status
     'insurance:read',
+
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+    'user_folders:read',
 
     -- ===== Additional SECRETARY permissions (13) =====
     -- Club info + section management
@@ -363,6 +423,9 @@ WHERE r.role_name = 'secretary'
     -- Camporees (view and register club to camporees)
     'camporees:read',
     'camporees:register',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
     -- Inventory management (CRUD for club inventory items)
     'inventory:read',
     'inventory:create',
@@ -373,8 +436,16 @@ WHERE r.role_name = 'secretary'
     'club_members:reject',
     'club_members:list_pending',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -433,6 +504,7 @@ WHERE r.role_name = 'treasurer'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -440,6 +512,9 @@ WHERE r.role_name = 'treasurer'
 
     -- Units
     'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
 
     -- Post-registration
     'post_registration:read',
@@ -455,15 +530,23 @@ WHERE r.role_name = 'treasurer'
     'users:read_detail',
     -- Validate/return class progress
     'classes:submit_progress',
-    'classes:validate',
     -- Assign weekly scores/points for unit meetings
     'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
     -- Submit members as investiture candidates
     'investiture:submit',
     -- See member list and roles
     'club_roles:read',
     -- View insurance status
     'insurance:read',
+
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+    'user_folders:read',
 
     -- ===== Additional TREASURER permissions (10) =====
     -- Financial records management (section-level)
@@ -480,9 +563,20 @@ WHERE r.role_name = 'treasurer'
     -- Camporees (view and register payments for attendees)
     'camporees:read',
     'camporees:register',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+
+    -- Requests (own domain)
+    'requests:read',
 
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -540,6 +634,7 @@ WHERE r.role_name = 'secretary-treasurer'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -547,6 +642,9 @@ WHERE r.role_name = 'secretary-treasurer'
 
     -- Units
     'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
 
     -- Post-registration
     'post_registration:read',
@@ -560,8 +658,12 @@ WHERE r.role_name = 'secretary-treasurer'
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
     'classes:submit_progress',
-    'classes:validate',
     'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
     'investiture:submit',
     'club_roles:read',
     'insurance:read',
@@ -585,11 +687,18 @@ WHERE r.role_name = 'secretary-treasurer'
     -- Camporees
     'camporees:read',
     'camporees:register',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
     -- Inventory management
     'inventory:read',
     'inventory:create',
     'inventory:update',
     'inventory:delete',
+
+    -- User progression (view other users' progression — admin-level)
+    'user_certifications:read',
+    'user_folders:read',
 
     -- ===== From TREASURER (4 unique) =====
     -- Financial records management
@@ -603,8 +712,16 @@ WHERE r.role_name = 'secretary-treasurer'
     'club_members:reject',
     'club_members:list_pending',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -663,6 +780,7 @@ WHERE r.role_name = 'deputy-director'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -670,6 +788,9 @@ WHERE r.role_name = 'deputy-director'
 
     -- Units
     'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
 
     -- Post-registration
     'post_registration:read',
@@ -683,11 +804,21 @@ WHERE r.role_name = 'deputy-director'
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
     'classes:submit_progress',
-    'classes:validate',
     'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
     'investiture:submit',
     'club_roles:read',
     'insurance:read',
+
+    -- User progression (view + manage other users' progression — admin-level)
+    'user_certifications:read',
+    'user_certifications:manage',
+    'user_folders:read',
+    'user_folders:manage',
 
     -- ===== Additional DEPUTY-DIRECTOR permissions (9) =====
     -- Read-only access to secretary domains
@@ -696,6 +827,9 @@ WHERE r.role_name = 'deputy-director'
     'reports:download',
     'club_instances:read',
     'camporees:read',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
     -- Investiture validation (accept/reject from counselors)
     'investiture:validate',
     -- Activity management
@@ -708,8 +842,16 @@ WHERE r.role_name = 'deputy-director'
     'club_members:reject',
     'club_members:list_pending',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -767,6 +909,7 @@ WHERE r.role_name = 'director'
     'activities:read',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -774,6 +917,9 @@ WHERE r.role_name = 'director'
 
     -- Units
     'units:read',
+
+    -- Scoring Categories
+    'scoring_categories:read',
 
     -- Post-registration
     'post_registration:read',
@@ -787,8 +933,12 @@ WHERE r.role_name = 'director'
     -- ===== Inherited from COUNSELOR (6) =====
     'users:read_detail',
     'classes:submit_progress',
-    'classes:validate',
     'units:update',
+    -- Scoring Categories (manage)
+    'scoring_categories:manage',
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
     'investiture:submit',
     'club_roles:read',
     'insurance:read',
@@ -812,6 +962,10 @@ WHERE r.role_name = 'director'
     -- Camporees
     'camporees:read',
     'camporees:register',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+    'camporees:delete',
     -- Inventory management
     'inventory:read',
     'inventory:create',
@@ -824,6 +978,12 @@ WHERE r.role_name = 'director'
     'finances:create',
     'finances:update',
     'finances:delete',
+
+    -- User progression (view + manage other users' progression — admin-level)
+    'user_certifications:read',
+    'user_certifications:manage',
+    'user_folders:read',
+    'user_folders:manage',
 
     -- ===== From DEPUTY-DIRECTOR (1 unique) =====
     -- Investiture validation (accept/reject from counselors)
@@ -846,8 +1006,17 @@ WHERE r.role_name = 'director'
     'rankings:read',
     'award_categories:read',
 
+    -- Requests (own domain)
+    'requests:read',
+    'requests:review',
+
     -- Achievements (own progress)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -886,7 +1055,6 @@ WHERE r.role_name = 'coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -907,8 +1075,15 @@ WHERE r.role_name = 'coordinator'
     'attendance:read',
     'activities:read',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (read only)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -947,7 +1122,6 @@ WHERE r.role_name = 'zone-coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -976,8 +1150,15 @@ WHERE r.role_name = 'zone-coordinator'
     -- View insurance records
     'insurance:read',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (read only)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1016,7 +1197,6 @@ WHERE r.role_name = 'general-coordinator'
 
     -- Classes & progress (read + approve/reject)
     'classes:read',
-    'classes:validate',
 
     -- Investiture (read + validate)
     'investiture:read',
@@ -1042,8 +1222,15 @@ WHERE r.role_name = 'general-coordinator'
     'health:read',
     'insurance:read',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (read only)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1105,6 +1292,7 @@ WHERE r.role_name = 'assistant-lf'
     'activities:delete',
     'attendance:read',
     'attendance:manage',
+    'qr:validate',
 
     -- Evidence & progress
     'evidence_folders:read',
@@ -1113,6 +1301,15 @@ WHERE r.role_name = 'assistant-lf'
     -- Units
     'units:read',
     'units:update',
+
+    -- Scoring Categories
+    'scoring_categories:read',
+    'scoring_categories:manage',
+
+    -- Member of the Month
+    'mom:read',
+    'mom:evaluate',
+    'mom:supervise',
 
     -- Post-registration
     'post_registration:read',
@@ -1141,6 +1338,10 @@ WHERE r.role_name = 'assistant-lf'
     'club_instances:update',
     'camporees:read',
     'camporees:register',
+    -- Camporees management (Sprint D)
+    'camporees:create',
+    'camporees:update',
+    'camporees:delete',
     'inventory:read',
     'inventory:create',
     'inventory:update',
@@ -1154,7 +1355,6 @@ WHERE r.role_name = 'assistant-lf'
 
     -- Director-level
     'classes:submit_progress',
-    'classes:validate',
     'club_roles:assign',
     'club_roles:revoke',
 
@@ -1162,6 +1362,12 @@ WHERE r.role_name = 'assistant-lf'
     'club_members:approve',
     'club_members:reject',
     'club_members:list_pending',
+
+    -- User progression (view + manage other users' progression — admin-level)
+    'user_certifications:read',
+    'user_certifications:manage',
+    'user_folders:read',
+    'user_folders:manage',
 
     -- ===== Additional ASSISTANT-LF permissions (6) =====
     -- Mark members as invested (field-level authority)
@@ -1193,11 +1399,24 @@ WHERE r.role_name = 'assistant-lf'
     -- this permission via the JOIN-based copy blocks below.
     'registration:complete',
 
+    -- ===== Requests (own domain) =====
+    -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
+    -- director-dia via the JOIN-based copy blocks below.
+    'requests:read',
+    'requests:review',
+
     -- ===== Achievements (field-level: full management) =====
     -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
     -- director-dia via the JOIN-based copy blocks below.
     'achievements:read',
-    'achievements:manage'
+    'achievements:manage',
+
+    -- ===== Validation (own domain — Sprint E) =====
+    -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
+    -- director-dia via the JOIN-based copy blocks below.
+    'validation:submit',
+    'validation:review',
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1262,8 +1481,14 @@ WHERE r.role_name = 'pastor'
     'emergency_contacts:read',
     'health:read',
 
+    -- Requests (own domain)
+    'requests:read',
+
     -- Achievements (read only)
-    'achievements:read'
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:read'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 

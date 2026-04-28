@@ -51,11 +51,17 @@ export class ThresholdHandler implements AchievementHandler, OnModuleInit {
       errors.push('target must be a finite number');
     }
 
-    if (c.filters !== undefined && (typeof c.filters !== 'object' || c.filters === null)) {
+    if (
+      c.filters !== undefined &&
+      (typeof c.filters !== 'object' || c.filters === null)
+    ) {
       errors.push('filters must be an object when provided');
     }
 
-    return { valid: errors.length === 0, errors: errors.length > 0 ? errors : undefined };
+    return {
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
   async evaluate(
@@ -76,7 +82,11 @@ export class ThresholdHandler implements AchievementHandler, OnModuleInit {
     }
 
     const currentCount = await this.countMatchingEvents(userId, criteria);
-    const matched = this.compare(currentCount, criteria.operator, criteria.target);
+    const matched = this.compare(
+      currentCount,
+      criteria.operator,
+      criteria.target,
+    );
 
     return {
       matched,
@@ -128,11 +138,18 @@ export class ThresholdHandler implements AchievementHandler, OnModuleInit {
     return filtered.length;
   }
 
-  private compare(current: number, operator: 'gte' | 'lte' | 'eq', target: number): boolean {
+  private compare(
+    current: number,
+    operator: 'gte' | 'lte' | 'eq',
+    target: number,
+  ): boolean {
     switch (operator) {
-      case 'gte': return current >= target;
-      case 'lte': return current <= target;
-      case 'eq': return current === target;
+      case 'gte':
+        return current >= target;
+      case 'lte':
+        return current <= target;
+      case 'eq':
+        return current === target;
     }
   }
 }

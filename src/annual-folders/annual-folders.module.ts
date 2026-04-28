@@ -14,9 +14,15 @@ import { RankingsService } from './rankings.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ClubEnrollmentsModule } from '../club-enrollments/club-enrollments.module';
 import { CatalogsModule } from '../catalogs/catalogs.module';
+import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 
 @Module({
-  imports: [PrismaModule, ClubEnrollmentsModule, CatalogsModule],
+  imports: [
+    PrismaModule,
+    ClubEnrollmentsModule,
+    CatalogsModule,
+    BackgroundJobsQueueModule,
+  ],
   controllers: [
     AnnualFolderTemplatesController,
     AnnualFoldersController,

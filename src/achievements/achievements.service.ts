@@ -43,7 +43,9 @@ export class AchievementsService {
     if (queue) {
       this.logger.log('AchievementsService: async queue mode (BullMQ)');
     } else {
-      this.logger.log('AchievementsService: synchronous mode (no Redis configured)');
+      this.logger.log(
+        'AchievementsService: synchronous mode (no Redis configured)',
+      );
     }
   }
 
@@ -55,7 +57,9 @@ export class AchievementsService {
    * Persist an achievement event and enqueue evaluation.
    * Fire-and-forget: errors are logged but never thrown to the caller.
    */
-  async emitEvent(dto: EmitEventDto): Promise<{ eventLogId: number; queued: boolean }> {
+  async emitEvent(
+    dto: EmitEventDto,
+  ): Promise<{ eventLogId: number; queued: boolean }> {
     // Always persist the event — this is the source of truth
     const eventLog = await this.prisma.achievement_event_log.create({
       data: {
@@ -235,9 +239,15 @@ export class AchievementsService {
       const isCompleted = userProgress?.completed === true;
 
       // Mask secret achievements not yet completed
-      const masked = achievement.secret && !isCompleted
-        ? { ...achievement, name: '???', description: '???', badge_image_key: null }
-        : achievement;
+      const masked =
+        achievement.secret && !isCompleted
+          ? {
+              ...achievement,
+              name: '???',
+              description: '???',
+              badge_image_key: null,
+            }
+          : achievement;
 
       // Append badge_image_url derived from the (possibly masked) badge_image_key
       const maskedWithUrl = {
@@ -257,7 +267,8 @@ export class AchievementsService {
     }
 
     const categories = Array.from(categoryMap.values()).sort(
-      (a, b) => a.display_order - b.display_order || a.category_id - b.category_id,
+      (a, b) =>
+        a.display_order - b.display_order || a.category_id - b.category_id,
     );
 
     return {
@@ -303,7 +314,10 @@ export class AchievementsService {
       where: { user_id: userId, achievement_id: achievementId },
     });
 
-    return { achievement: achievementWithUrl, userProgress: userProgress ?? null };
+    return {
+      achievement: achievementWithUrl,
+      userProgress: userProgress ?? null,
+    };
   }
 
   // ---------------------------------------------------------------------------

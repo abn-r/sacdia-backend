@@ -1,0 +1,104 @@
+{
+  "month_names": {
+    "1": "Janvier",
+    "2": "Février",
+    "3": "Mars",
+    "4": "Avril",
+    "5": "Mai",
+    "6": "Juin",
+    "7": "Juillet",
+    "8": "Août",
+    "9": "Septembre",
+    "10": "Octobre",
+    "11": "Novembre",
+    "12": "Décembre"
+  },
+  "role_labels": {
+    "director": "Directeur/rice",
+    "subdirector": "Directeur/rice adjoint/e",
+    "secretario": "Secrétaire",
+    "tesorero": "Trésorier/ère"
+  },
+  "header": {
+    "title": "RAPPORT MENSUEL DU CLUB",
+    "club_type": "Club de {type}",
+    "district": "District",
+    "church": "Église",
+    "club": "Club",
+    "month": "Mois"
+  },
+  "section_titles": {
+    "administration": "1. ADMINISTRATION",
+    "teachings": "2. ENSEIGNEMENTS",
+    "activities": "3. ACTIVITÉS DU CLUB",
+    "finances": "4. FINANCES",
+    "missionary": "5. ACTIVITÉ MISSIONNAIRE",
+    "service": "6. SERVICE"
+  },
+  "administration": {
+    "directiva": "Direction",
+    "no_directiva": "Aucune direction enregistrée",
+    "member_count": "Nombre de membres",
+    "meeting_days": "Jours de réunion",
+    "not_specified": "Non spécifié",
+    "meetings_header": "Réunions et assemblées",
+    "planning_meetings": "Réunions de planification",
+    "parent_meetings": "Réunions de parents",
+    "youth_council_attendance": "Présence au conseil des jeunes",
+    "church_board_attendance": "Présence au conseil d’église"
+  },
+  "teachings": {
+    "honors_started": "Spécialités commencées ce mois",
+    "honors_completed": "Spécialités terminées ce mois",
+    "detail_header": "Détail des spécialités",
+    "honor_column": "Spécialité",
+    "member_column": "Membre",
+    "status_column": "Statut",
+    "completed": "Terminée",
+    "in_progress": "En cours",
+    "more_rows": "...et {count} de plus"
+  },
+  "activities": {
+    "total": "Total des activités",
+    "date_column": "Date",
+    "activity_column": "Activité",
+    "type_column": "Type",
+    "more_rows": "...et {count} de plus"
+  },
+  "finances": {
+    "total_income": "Total des recettes",
+    "total_expenses": "Total des dépenses",
+    "month_balance": "Solde du mois",
+    "transaction_count": "Total des transactions"
+  },
+  "missionary": {
+    "soul_target": "Objectif d’âmes",
+    "unbaptized_members": "Membres non baptisés",
+    "receiving_bible_studies": "Recevant des études bibliques",
+    "weekly_bible_instruction": "Instruction biblique hebdomadaire",
+    "bible_studies_given": "Études bibliques données",
+    "literature_distributed": "Littérature distribuée",
+    "baptized_this_month": "Baptisés ce mois",
+    "baptized_total": "Total baptisés (cumul)",
+    "certificates_delivered": "Certificats remis",
+    "members_have_booklet": "Membres avec carnet",
+    "booklet_requirements_signed": "Exigences du carnet signées",
+    "club_participation": "Participation du club"
+  },
+  "service": {
+    "header": "Service communautaire",
+    "fallback": "Aucune description de service communautaire pour ce mois."
+  },
+  "secretary": {
+    "header": "Informations du Secrétaire/Secrétaire",
+    "name": "Nom",
+    "email": "E-mail",
+    "fallback": "Aucune information sur le secrétaire disponible."
+  },
+  "footer": "Généré par SACDIA | Page {current} sur {total}",
+  "bool": {
+    "true": "Oui",
+    "false": "Non",
+    "null": "N/A"
+  }
+}

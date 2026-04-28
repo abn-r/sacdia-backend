@@ -16,9 +16,11 @@ describe('notification-source-map', () => {
   describe('NOTIFICATION_SOURCE_MAP completeness', () => {
     it('every mapped category is a valid MOBILE_NOTIFICATION_CATEGORY', () => {
       const validCategories = new Set(MOBILE_NOTIFICATION_CATEGORIES);
-      for (const [source, category] of Object.entries(NOTIFICATION_SOURCE_MAP)) {
-        expect(validCategories).toContain(category),
-          `source "${source}" maps to "${category}" which is not a valid mobile category`;
+      for (const [source, category] of Object.entries(
+        NOTIFICATION_SOURCE_MAP,
+      )) {
+        (expect(validCategories).toContain(category),
+          `source "${source}" maps to "${category}" which is not a valid mobile category`);
       }
     });
 
@@ -52,8 +54,8 @@ describe('notification-source-map', () => {
       ];
 
       for (const source of knownSources) {
-        expect(isSourceMapped(source)).toBe(true),
-          `source "${source}" is not in NOTIFICATION_SOURCE_MAP — add it`;
+        (expect(isSourceMapped(source)).toBe(true),
+          `source "${source}" is not in NOTIFICATION_SOURCE_MAP — add it`);
       }
     });
   });

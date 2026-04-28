@@ -29,7 +29,9 @@ export class UserAchievementResponseDto {
   @ApiProperty({ description: 'Indica si el usuario fue notificado del logro' })
   notified: boolean;
 
-  @ApiPropertyOptional({ description: 'ID del año eclesiástico al que pertenece (si aplica)' })
+  @ApiPropertyOptional({
+    description: 'ID del año eclesiástico al que pertenece (si aplica)',
+  })
   ecclesiastical_year_id?: number | null;
 
   @ApiProperty({ description: 'Número de veces que el logro fue completado' })
@@ -44,6 +46,9 @@ export class UserAchievementResponseDto {
   @ApiProperty({ description: 'Fecha de última modificación' })
   modified_at: Date;
 
-  @ApiPropertyOptional({ description: 'Detalle del logro', type: () => AchievementResponseDto })
+  @ApiPropertyOptional({
+    description: 'Detalle del logro',
+    type: () => AchievementResponseDto,
+  })
   achievement?: AchievementResponseDto;
 }

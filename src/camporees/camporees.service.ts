@@ -1,11 +1,10 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-  Logger,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -14,6 +13,7 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { UnionMembersPaginationDto } from './dto/union-members-pagination.dto';
+import { CamporeeMembersPaginationDto } from './dto/camporee-members-pagination.dto';
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { CreateUnionCamporeeDto } from './dto/create-union-camporee.dto';
@@ -40,7 +40,7 @@ import pLimit from 'p-limit';
 // this limiter is a no-op in practice. Kept as defense-in-depth for
 // future regressions where any other private bucket might re-enter the
 // same code path.
-const PROFILE_URL_LIMITER = pLimit(20);
+export const PROFILE_URL_LIMITER = pLimit(20);
 
 @Injectable()
 export class CamporeesService {
@@ -144,7 +144,9 @@ export class CamporeesService {
     });
 
     if (!camporee) {
-      throw new NotFoundException(`Camporee with ID ${camporeeId} not found`);
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
+        id: camporeeId,
+      });
     }
 
     return camporee;
@@ -169,9 +171,7 @@ export class CamporeesService {
     });
 
     if (!activeYear) {
-      throw new BadRequestException(
-        'No active ecclesiastical year found. Please activate an ecclesiastical year first.',
-      );
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_YEAR_NOT_ACTIVE);
     }
 
     // Validate local field exists
@@ -180,9 +180,9 @@ export class CamporeesService {
     });
 
     if (!localField) {
-      throw new BadRequestException(
-        `Local field with ID ${dto.local_field_id} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_LOCAL_FIELD_NOT_FOUND, {
+        id: dto.local_field_id,
+      });
     }
 
     return this.prisma.local_camporees.create({
@@ -385,8 +385,9 @@ export class CamporeesService {
     });
 
     if (!camporee) {
-      throw new NotFoundException(
-        `Union camporee with ID ${camporeeId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+        { id: camporeeId },
       );
     }
 
@@ -413,9 +414,7 @@ export class CamporeesService {
     });
 
     if (!activeYear) {
-      throw new BadRequestException(
-        'No active ecclesiastical year found. Please activate an ecclesiastical year first.',
-      );
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_YEAR_NOT_ACTIVE);
     }
 
     // Validate union exists
@@ -424,7 +423,9 @@ export class CamporeesService {
     });
 
     if (!union) {
-      throw new BadRequestException(`Union with ID ${dto.union_id} not found`);
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_UNION_NOT_FOUND, {
+        id: dto.union_id,
+      });
     }
 
     // Validate local fields belong to the union (if provided)
@@ -437,8 +438,8 @@ export class CamporeesService {
       });
 
       if (localFields.length !== dto.local_field_ids.length) {
-        throw new BadRequestException(
-          'Some local field IDs are invalid or do not belong to this union',
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_LOCAL_FIELD_INVALID,
         );
       }
     }
@@ -543,8 +544,8 @@ export class CamporeesService {
           });
 
           if (localFields.length !== local_field_ids.length) {
-            throw new BadRequestException(
-              'Some local field IDs are invalid or do not belong to this union',
+            throw new AppBadRequestException(
+              ErrorCode.CAMPOREE_LOCAL_FIELD_INVALID,
             );
           }
         }
@@ -649,12 +650,14 @@ export class CamporeesService {
       });
 
       if (!camporee) {
-        throw new NotFoundException('Camporee not found');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
+          id: camporeeId,
+        });
       }
 
       // Validate camporee is active
       if (!camporee.active) {
-        throw new BadRequestException('Camporee is not active');
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
 
       isLate = this.isAfterDeadline(camporee.member_registration_deadline);
@@ -667,7 +670,7 @@ export class CamporeesService {
       });
 
       if (!user) {
-        throw new BadRequestException('User not found');
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_USER_NOT_FOUND);
       }
 
       // 3. Check for duplicate registration
@@ -680,8 +683,8 @@ export class CamporeesService {
       });
 
       if (existingRegistration) {
-        throw new BadRequestException(
-          'User is already registered for this camporee',
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_MEMBER_ALREADY_REGISTERED,
         );
       }
 
@@ -693,31 +696,37 @@ export class CamporeesService {
 
         // Validate insurance exists
         if (!insurance) {
-          throw new BadRequestException('Insurance not found');
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND,
+          );
         }
 
         // Validate insurance belongs to the user
         if (insurance.user_id !== dto.user_id) {
-          throw new BadRequestException(
-            'Insurance does not belong to this user',
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER,
           );
         }
 
         // Validate insurance type is CAMPOREE
         if (insurance.insurance_type !== 'CAMPOREE') {
-          throw new BadRequestException('Insurance type must be CAMPOREE');
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
+          );
         }
 
         // Validate insurance is not expired before camporee ends
         if (insurance.end_date < camporee.end_date) {
-          throw new BadRequestException(
-            'Insurance expires before camporee ends',
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_EXPIRED,
           );
         }
 
         // Validate insurance is active
         if (!insurance.active) {
-          throw new BadRequestException('Insurance is not active');
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE,
+          );
         }
       }
 
@@ -783,7 +792,9 @@ export class CamporeesService {
         },
       });
     } catch (error) {
-      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
     }
 
     // TODO: emit camporee.completed when a dedicated camporee completion action is added
@@ -800,7 +811,7 @@ export class CamporeesService {
   async getMembers(
     camporeeId: number,
     status?: string,
-    pagination?: PaginationDto,
+    pagination?: CamporeeMembersPaginationDto,
   ): Promise<PaginatedResult<any>> {
     // Validate camporee exists
     await this.findOne(camporeeId);
@@ -856,7 +867,10 @@ export class CamporeesService {
       ),
     );
 
-    const paginationDto = Object.assign(new PaginationDto(), { page, limit });
+    const paginationDto = Object.assign(new CamporeeMembersPaginationDto(), {
+      page,
+      limit,
+    });
     return createPaginatedResult(data, total, paginationDto);
   }
 
@@ -879,9 +893,9 @@ export class CamporeesService {
     });
 
     if (!registration) {
-      throw new NotFoundException(
-        `Member with user ID ${userId} not found in camporee ${camporeeId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_NOT_FOUND, {
+        id: userId,
+      });
     }
 
     // Soft delete the registration
@@ -921,11 +935,13 @@ export class CamporeesService {
       });
 
       if (!camporee) {
-        throw new NotFoundException('Camporee not found');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
+          id: camporeeId,
+        });
       }
 
       if (!camporee.active) {
-        throw new BadRequestException('Camporee is not active');
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
 
       isLate = this.isAfterDeadline(camporee.club_registration_deadline);
@@ -941,8 +957,9 @@ export class CamporeesService {
       });
 
       if (!clubSection) {
-        throw new BadRequestException(
-          `Club section with ID ${dto.club_section_id} not found`,
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
+          { id: dto.club_section_id },
         );
       }
 
@@ -956,8 +973,8 @@ export class CamporeesService {
       });
 
       if (existingEnrollment) {
-        throw new BadRequestException(
-          'This club section is already enrolled in this camporee',
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_ALREADY_ENROLLED,
         );
       }
 
@@ -1063,8 +1080,9 @@ export class CamporeesService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${camporeeClubId} not found in camporee ${camporeeId}`,
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_CLUB_ENROLLMENT_NOT_FOUND,
+        { id: camporeeClubId },
       );
     }
 
@@ -1105,7 +1123,9 @@ export class CamporeesService {
       });
 
       if (!camporee) {
-        throw new NotFoundException('Camporee not found');
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
+          id: camporeeId,
+        });
       }
 
       isLate = this.isAfterDeadline(camporee.payment_deadline);
@@ -1121,9 +1141,9 @@ export class CamporeesService {
       });
 
       if (!member) {
-        throw new NotFoundException(
-          `Member with ID ${memberId} not found in camporee ${camporeeId}`,
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_NOT_FOUND, {
+          id: memberId,
+        });
       }
 
       // 3. Create payment
@@ -1203,9 +1223,9 @@ export class CamporeesService {
     });
 
     if (!member) {
-      throw new NotFoundException(
-        `Member with ID ${memberId} not found in camporee ${camporeeId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_NOT_FOUND, {
+        id: memberId,
+      });
     }
 
     // Safety cap: a single member is unlikely to have more than 200 payments.
@@ -1287,7 +1307,9 @@ export class CamporeesService {
     });
 
     if (!payment) {
-      throw new NotFoundException(`Payment with ID ${paymentId} not found`);
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_PAYMENT_NOT_FOUND, {
+        id: paymentId,
+      });
     }
 
     const updateData: Record<string, any> = {};
@@ -1353,11 +1375,14 @@ export class CamporeesService {
       });
 
       if (!camporee) {
-        throw new NotFoundException('Camporee not found');
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+          { id: unionCamporeeId },
+        );
       }
 
       if (!camporee.active) {
-        throw new BadRequestException('Camporee is not active');
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
 
       isLate = this.isAfterDeadline(camporee.club_registration_deadline);
@@ -1372,14 +1397,17 @@ export class CamporeesService {
       });
 
       if (!clubSection) {
-        throw new BadRequestException(
-          `Club section with ID ${dto.club_section_id} not found`,
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
+          { id: dto.club_section_id },
         );
       }
 
       // 3. Ensure we can determine the club's local field
       if (clubSection.clubs?.local_field_id == null) {
-        throw new BadRequestException("Cannot determine club's local field");
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_LOCAL_FIELD_UNKNOWN,
+        );
       }
 
       // 4. Validate that the club's local field participates in this union camporee
@@ -1394,8 +1422,8 @@ export class CamporeesService {
       );
 
       if (!fieldParticipation) {
-        throw new ForbiddenException(
-          "Club's local field does not participate in this union camporee",
+        throw new AppForbiddenException(
+          ErrorCode.CAMPOREE_CLUB_LOCAL_FIELD_NOT_PARTICIPATING,
         );
       }
 
@@ -1409,8 +1437,8 @@ export class CamporeesService {
       });
 
       if (existingEnrollment) {
-        throw new BadRequestException(
-          'This club section is already enrolled in this camporee',
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_ALREADY_ENROLLED,
         );
       }
 
@@ -1479,12 +1507,15 @@ export class CamporeesService {
       });
 
       if (!camporee) {
-        throw new NotFoundException('Camporee not found');
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+          { id: unionCamporeeId },
+        );
       }
 
       // Validate camporee is active
       if (!camporee.active) {
-        throw new BadRequestException('Camporee is not active');
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
 
       isLate = this.isAfterDeadline(camporee.member_registration_deadline);
@@ -1497,7 +1528,7 @@ export class CamporeesService {
       });
 
       if (!user) {
-        throw new BadRequestException('User not found');
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_USER_NOT_FOUND);
       }
 
       // 3. Check for duplicate registration
@@ -1510,8 +1541,8 @@ export class CamporeesService {
       });
 
       if (existingRegistration) {
-        throw new BadRequestException(
-          'User is already registered for this camporee',
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_MEMBER_ALREADY_REGISTERED,
         );
       }
 
@@ -1523,31 +1554,37 @@ export class CamporeesService {
 
         // Validate insurance exists
         if (!insurance) {
-          throw new BadRequestException('Insurance not found');
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND,
+          );
         }
 
         // Validate insurance belongs to the user
         if (insurance.user_id !== dto.user_id) {
-          throw new BadRequestException(
-            'Insurance does not belong to this user',
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER,
           );
         }
 
         // Validate insurance type is CAMPOREE
         if (insurance.insurance_type !== 'CAMPOREE') {
-          throw new BadRequestException('Insurance type must be CAMPOREE');
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
+          );
         }
 
         // Validate insurance is not expired before camporee ends
         if (insurance.end_date < camporee.end_date) {
-          throw new BadRequestException(
-            'Insurance expires before camporee ends',
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_EXPIRED,
           );
         }
 
         // Validate insurance is active
         if (!insurance.active) {
-          throw new BadRequestException('Insurance is not active');
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE,
+          );
         }
       }
 
@@ -1614,7 +1651,9 @@ export class CamporeesService {
         },
       });
     } catch (error) {
-      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
     }
 
     // TODO: emit camporee.completed when a dedicated camporee completion action is added
@@ -1645,7 +1684,10 @@ export class CamporeesService {
       });
 
       if (!camporee) {
-        throw new NotFoundException('Camporee not found');
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+          { id: unionCamporeeId },
+        );
       }
 
       isLate = this.isAfterDeadline(camporee.payment_deadline);
@@ -1661,9 +1703,9 @@ export class CamporeesService {
       });
 
       if (!member) {
-        throw new NotFoundException(
-          `Member with ID ${memberId} not found in camporee ${unionCamporeeId}`,
-        );
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_NOT_FOUND, {
+          id: memberId,
+        });
       }
 
       // 3. Create payment
@@ -1901,9 +1943,9 @@ export class CamporeesService {
     });
 
     if (!member) {
-      throw new NotFoundException(
-        `Member with ID ${memberId} not found in camporee ${unionCamporeeId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_NOT_FOUND, {
+        id: memberId,
+      });
     }
 
     // Safety cap: a single member is unlikely to have more than 200 payments.
@@ -1948,8 +1990,9 @@ export class CamporeesService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${camporeeClubId} not found in camporee ${unionCamporeeId}`,
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_CLUB_ENROLLMENT_NOT_FOUND,
+        { id: camporeeClubId },
       );
     }
 
@@ -1982,9 +2025,9 @@ export class CamporeesService {
     });
 
     if (!registration) {
-      throw new NotFoundException(
-        `Member with user ID ${userId} not found in camporee ${unionCamporeeId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_MEMBER_NOT_FOUND, {
+        id: userId,
+      });
     }
 
     // Soft delete the registration
@@ -2021,7 +2064,7 @@ export class CamporeesService {
    */
   async getParticipants(
     camporeeId: number,
-    pagination?: PaginationDto,
+    pagination?: CamporeeMembersPaginationDto,
   ): Promise<PaginatedResult<any>> {
     return this.getMembers(camporeeId, undefined, pagination);
   }
@@ -2124,9 +2167,7 @@ export class CamporeesService {
       return;
     }
 
-    throw new ForbiddenException(
-      'You do not have access to manage union camporees',
-    );
+    throw new AppForbiddenException(ErrorCode.CAMPOREE_UNION_ACCESS_DENIED);
   }
 
   private async assertCanManageLocalField(
@@ -2152,13 +2193,13 @@ export class CamporeesService {
         return;
       }
 
-      throw new ForbiddenException(
-        'You do not have access to manage camporees for this local field',
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
       );
     }
 
-    throw new ForbiddenException(
-      'You do not have access to manage camporees for this local field',
+    throw new AppForbiddenException(
+      ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
     );
   }
 

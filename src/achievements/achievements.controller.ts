@@ -1,13 +1,14 @@
 import {
   Controller,
   Get,
-  NotFoundException,
   Param,
   ParseIntPipe,
   Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { AppNotFoundException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -161,7 +162,8 @@ export class AchievementsController {
     }
 
     const categories = Array.from(categoryMap.values()).sort(
-      (a, b) => a.display_order - b.display_order || a.category_id - b.category_id,
+      (a, b) =>
+        a.display_order - b.display_order || a.category_id - b.category_id,
     );
 
     return {
@@ -192,7 +194,10 @@ export class AchievementsController {
   })
   @ApiParam({ name: 'achievementId', type: Number })
   @ApiResponse({ status: 200, description: 'Achievement detail with progress' })
-  @ApiResponse({ status: 404, description: 'Achievement not found or inactive' })
+  @ApiResponse({
+    status: 404,
+    description: 'Achievement not found or inactive',
+  })
   async getAchievementDetail(
     @Request() req: { user: { userId: string } },
     @Param('achievementId', ParseIntPipe) achievementId: number,
@@ -205,9 +210,7 @@ export class AchievementsController {
     );
 
     if (!result || !result.achievement.active) {
-      throw new NotFoundException(
-        `Achievement with ID ${achievementId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ACHIEVEMENT_NOT_FOUND);
     }
 
     const isCompleted = result.userProgress?.completed === true;

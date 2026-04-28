@@ -1,11 +1,13 @@
+import { Injectable, Logger } from '@nestjs/common';
 import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+  AppNotFoundException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 export interface MemberResult {
   user_id: string;
@@ -19,6 +21,7 @@ export class MemberOfMonthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly authorizationContext: AuthorizationContextService,
   ) {}
 
   // ============================================================
@@ -86,9 +89,7 @@ export class MemberOfMonthService {
       LIMIT ${safeLimit} OFFSET ${skip}
     `;
 
-    const totalResult = await this.prisma.$queryRaw<
-      Array<{ count: bigint }>
-    >`
+    const totalResult = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(DISTINCT (year, month)) AS count
       FROM member_of_month
       WHERE club_section_id = ${sectionId}
@@ -156,6 +157,121 @@ export class MemberOfMonthService {
     };
   }
 
+  async listForAdmin(
+    userId: string,
+    filters: {
+      clubTypeId?: number;
+      localFieldId?: number;
+      clubId?: number;
+      sectionId?: number;
+      year?: number;
+      month?: number;
+      notified?: boolean;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+
+    const globalRoles = new Set(
+      resolved.authorization.grants.global_roles.map(
+        (g: { role_name: string }) => g.role_name.toLowerCase(),
+      ),
+    );
+    const isAdmin = globalRoles.has('admin') || globalRoles.has('super_admin');
+
+    const userLocalFieldId = resolved.authorization.effective.scope.global
+      .local_field?.id as number | undefined;
+
+    const scopedLocalFieldId: number | undefined = isAdmin
+      ? filters.localFieldId
+      : userLocalFieldId;
+
+    const page = Math.max(1, filters.page ?? 1);
+    const limit = Math.min(Math.max(1, filters.limit ?? 20), 100);
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.member_of_monthWhereInput = {
+      ...(filters.year !== undefined && { year: filters.year }),
+      ...(filters.month !== undefined && { month: filters.month }),
+      ...(filters.notified !== undefined && { notified: filters.notified }),
+      club_section: {
+        ...(filters.sectionId !== undefined && {
+          club_section_id: filters.sectionId,
+        }),
+        ...(filters.clubTypeId !== undefined && {
+          club_type_id: filters.clubTypeId,
+        }),
+        clubs: {
+          ...(filters.clubId !== undefined && { club_id: filters.clubId }),
+          ...(scopedLocalFieldId !== undefined && {
+            local_field_id: scopedLocalFieldId,
+          }),
+        },
+      },
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.member_of_month.count({ where }),
+      this.prisma.member_of_month.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        include: {
+          users: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+              user_image: true,
+            },
+          },
+          club_section: {
+            include: {
+              club_types: { select: { name: true } },
+              clubs: {
+                select: {
+                  club_id: true,
+                  name: true,
+                  local_field_id: true,
+                  local_fields: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const items = rows.map((r) => {
+      const fullName =
+        `${r.users.name ?? ''} ${r.users.paternal_last_name ?? ''}`.trim();
+      return {
+        member_of_month_id: r.member_of_month_id,
+        user_id: r.user_id,
+        user_name: fullName || null,
+        user_image: r.users.user_image ?? null,
+        club_section_id: r.club_section_id,
+        section_name:
+          r.club_section.name ?? r.club_section.club_types?.name ?? null,
+        club_type: r.club_section.club_types?.name ?? null,
+        club_id: r.club_section.clubs?.club_id ?? null,
+        club_name: r.club_section.clubs?.name ?? null,
+        local_field: r.club_section.clubs?.local_fields?.name ?? null,
+        local_field_id: r.club_section.clubs?.local_field_id ?? null,
+        month: r.month,
+        year: r.year,
+        total_points: r.total_points,
+        notified: r.notified,
+        created_at: r.created_at,
+      };
+    });
+
+    return { total, page, limit, items };
+  }
+
   // ============================================================
   // Evaluation
   // ============================================================
@@ -181,7 +297,12 @@ export class MemberOfMonthService {
     sectionId: number,
     month: number,
     year: number,
-  ): Promise<{ winners: MemberResult[]; section_id: number; month: number; year: number }> {
+  ): Promise<{
+    winners: MemberResult[];
+    section_id: number;
+    month: number;
+    year: number;
+  }> {
     // 1. Calculate ISO week range for the given month/year
     const weekRange = this.getWeekRangeForMonth(year, month);
 
@@ -218,9 +339,7 @@ export class MemberOfMonthService {
 
     // 3. Find max points and all tied winners
     const maxPoints = Math.max(...scores.map((s) => Number(s.total_points)));
-    const winners = scores.filter(
-      (s) => Number(s.total_points) === maxPoints,
-    );
+    const winners = scores.filter((s) => Number(s.total_points) === maxPoints);
 
     // 4. Delete + Insert in a transaction (idempotency)
     await this.prisma.$transaction(async (tx) => {
@@ -241,16 +360,13 @@ export class MemberOfMonthService {
     });
 
     // 5. Send notifications (non-blocking)
-    this.sendMemberOfMonthNotifications(
-      sectionId,
-      winners,
-      month,
-      year,
-    ).catch((err) => {
-      this.logger.warn(
-        `Failed to send member-of-month notifications: ${err.message}`,
-      );
-    });
+    this.sendMemberOfMonthNotifications(sectionId, winners, month, year).catch(
+      (err) => {
+        this.logger.warn(
+          `Failed to send member-of-month notifications: ${err.message}`,
+        );
+      },
+    );
 
     return { winners, section_id: sectionId, month, year };
   }
@@ -316,7 +432,9 @@ export class MemberOfMonthService {
 
     // Notify club directors
     if (clubId) {
-      const winnerNames = await this.getWinnerNames(winners.map((w) => w.user_id));
+      const winnerNames = await this.getWinnerNames(
+        winners.map((w) => w.user_id),
+      );
       const pointsLabel = winners[0]
         ? ` con ${winners[0].total_points} puntos`
         : '';
@@ -335,7 +453,9 @@ export class MemberOfMonthService {
           select: { user_id: true },
         });
 
-      const directorIds = [...new Set(directorAssignments.map((a) => a.user_id))];
+      const directorIds = [
+        ...new Set(directorAssignments.map((a) => a.user_id)),
+      ];
 
       for (const directorId of directorIds) {
         try {
@@ -459,9 +579,7 @@ export class MemberOfMonthService {
       });
 
     if (!directorAssignment) {
-      throw new ForbiddenException(
-        'Solo directores del club pueden ejecutar la evaluación de Miembro del Mes',
-      );
+      throw new AppForbiddenException(ErrorCode.MOM_FORBIDDEN);
     }
   }
 
@@ -475,13 +593,11 @@ export class MemberOfMonthService {
     });
 
     if (!section) {
-      throw new NotFoundException(`Section ${sectionId} not found`);
+      throw new AppNotFoundException(ErrorCode.MOM_SECTION_NOT_FOUND);
     }
 
     if (section.main_club_id !== clubId) {
-      throw new NotFoundException(
-        `Section ${sectionId} does not belong to club ${clubId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.MOM_SECTION_NOT_FOUND);
     }
   }
 }

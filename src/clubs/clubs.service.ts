@@ -1,11 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ConflictException,
-  Logger,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -27,6 +20,13 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class ClubsService {
@@ -38,6 +38,7 @@ export class ClubsService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ========================================
@@ -105,7 +106,7 @@ export class ClubsService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.CLUB_NOT_FOUND);
     }
 
     return club;
@@ -175,7 +176,7 @@ export class ClubsService {
       include: { club_types: { select: { name: true } } },
     });
     if (!section)
-      throw new NotFoundException(`Club section ${sectionId} not found`);
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     return section;
   }
 
@@ -185,9 +186,7 @@ export class ClubsService {
       where: { club_type_id: dto.club_type_id },
     });
     if (!clubType || !clubType.active) {
-      throw new BadRequestException(
-        `Club type ${dto.club_type_id} not found or inactive`,
-      );
+      throw new AppBadRequestException(ErrorCode.CLUB_TYPE_NOT_FOUND);
     }
     return this.prisma.club_sections.create({
       data: {
@@ -270,7 +269,7 @@ export class ClubsService {
 
   async assignRole(dto: AssignRoleDto) {
     if (!dto.club_section_id) {
-      throw new BadRequestException('club_section_id is required');
+      throw new AppBadRequestException(ErrorCode.CLUB_SECTION_ID_REQUIRED);
     }
 
     const roleId = await this.resolveRoleId(dto);
@@ -301,6 +300,13 @@ export class ClubsService {
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
+      dto.user_id,
+    );
+
+    this.emitRealtimeInvalidation(
+      dto.club_section_id,
+      created.assignment_id,
+      'CREATED',
       dto.user_id,
     );
 
@@ -338,10 +344,21 @@ export class ClubsService {
     const updated = await this.prisma.club_role_assignments.update({
       where: { assignment_id: assignmentId },
       data: updateData,
+      select: {
+        assignment_id: true,
+        user_id: true,
+        club_section_id: true,
+      },
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
       updated.user_id,
+    );
+
+    this.emitRealtimeInvalidation(
+      updated.club_section_id,
+      updated.assignment_id,
+      'UPDATED',
     );
 
     return updated;
@@ -356,10 +373,21 @@ export class ClubsService {
         end_date: new Date(),
         modified_at: new Date(),
       },
+      select: {
+        assignment_id: true,
+        user_id: true,
+        club_section_id: true,
+      },
     });
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
       removed.user_id,
+    );
+
+    this.emitRealtimeInvalidation(
+      removed.club_section_id,
+      removed.assignment_id,
+      'DELETED',
     );
 
     return removed;
@@ -392,9 +420,7 @@ export class ClubsService {
           where: { role_id: roleId },
           select: { role_name: true },
         });
-        throw new ConflictException(
-          `Maximum ${slotLimit.max_per_section} "${role?.role_name ?? roleId}" per section reached`,
-        );
+        throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
       }
     }
 
@@ -424,8 +450,8 @@ export class ClubsService {
         });
 
         if (hasSecTreas) {
-          throw new ConflictException(
-            `Cannot assign "${roleName}" when "secretary-treasurer" already exists in this section`,
+          throw new AppConflictException(
+            ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT,
           );
         }
       }
@@ -452,8 +478,8 @@ export class ClubsService {
           });
 
         if (existingConflict) {
-          throw new ConflictException(
-            `Cannot assign "secretary-treasurer" when "${existingConflict.roles.role_name}" already exists in this section`,
+          throw new AppConflictException(
+            ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT,
           );
         }
       }
@@ -470,7 +496,7 @@ export class ClubsService {
     });
 
     if (!currentYear) {
-      throw new BadRequestException('No active ecclesiastical year configured');
+      throw new AppBadRequestException(ErrorCode.CLUB_NO_ACTIVE_YEAR);
     }
 
     return currentYear.year_id;
@@ -484,12 +510,12 @@ export class ClubsService {
     }
 
     if (!dto.role) {
-      throw new BadRequestException('role_id or role is required');
+      throw new AppBadRequestException(ErrorCode.CLUB_ROLE_IDENTIFIER_REQUIRED);
     }
 
     const normalizedRoleName = dto.role.trim().toLowerCase();
     if (!normalizedRoleName) {
-      throw new BadRequestException('role is empty');
+      throw new AppBadRequestException(ErrorCode.CLUB_ROLE_IDENTIFIER_REQUIRED);
     }
 
     const role = await this.prisma.roles.findFirst({
@@ -502,9 +528,7 @@ export class ClubsService {
     });
 
     if (!role) {
-      throw new BadRequestException(
-        `Role "${normalizedRoleName}" not found in CLUB category`,
-      );
+      throw new AppBadRequestException(ErrorCode.CLUB_ROLE_NOT_FOUND);
     }
 
     return role.role_id;
@@ -530,5 +554,28 @@ export class ClubsService {
       );
       return value;
     }
+  }
+
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number | string,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'members',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 }

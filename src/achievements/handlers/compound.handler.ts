@@ -68,15 +68,23 @@ export class CompoundHandler implements AchievementHandler, OnModuleInit {
           errors.push(`conditions[${index}].event must be a non-empty string`);
         }
         if (!['gte', 'lte', 'eq'].includes(condition.operator as string)) {
-          errors.push(`conditions[${index}].operator must be one of: gte, lte, eq`);
+          errors.push(
+            `conditions[${index}].operator must be one of: gte, lte, eq`,
+          );
         }
-        if (typeof condition.target !== 'number' || !Number.isFinite(condition.target)) {
+        if (
+          typeof condition.target !== 'number' ||
+          !Number.isFinite(condition.target)
+        ) {
           errors.push(`conditions[${index}].target must be a finite number`);
         }
       });
     }
 
-    return { valid: errors.length === 0, errors: errors.length > 0 ? errors : undefined };
+    return {
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
   async evaluate(
@@ -85,14 +93,19 @@ export class CompoundHandler implements AchievementHandler, OnModuleInit {
     _event: { eventType: string; payload: Record<string, unknown> },
   ): Promise<EvaluationResult> {
     const criteria = achievement.criteria as unknown as CompoundCriteria;
-    const conditionStatuses = await this.evaluateConditions(userId, criteria.conditions);
+    const conditionStatuses = await this.evaluateConditions(
+      userId,
+      criteria.conditions,
+    );
 
     const allCompleted = conditionStatuses.every((cs) => cs.completed);
     const anyCompleted = conditionStatuses.some((cs) => cs.completed);
     const matched = criteria.logic === 'AND' ? allCompleted : anyCompleted;
 
     const totalConditions = conditionStatuses.length;
-    const completedCount = conditionStatuses.filter((cs) => cs.completed).length;
+    const completedCount = conditionStatuses.filter(
+      (cs) => cs.completed,
+    ).length;
 
     let currentProgress: number;
     let targetProgress: number;
@@ -122,10 +135,15 @@ export class CompoundHandler implements AchievementHandler, OnModuleInit {
     achievement: achievements,
   ): Promise<ProgressResult> {
     const criteria = achievement.criteria as unknown as CompoundCriteria;
-    const conditionStatuses = await this.evaluateConditions(userId, criteria.conditions);
+    const conditionStatuses = await this.evaluateConditions(
+      userId,
+      criteria.conditions,
+    );
 
     const totalConditions = conditionStatuses.length;
-    const completedCount = conditionStatuses.filter((cs) => cs.completed).length;
+    const completedCount = conditionStatuses.filter(
+      (cs) => cs.completed,
+    ).length;
 
     let current: number;
     let target: number;
@@ -196,11 +214,18 @@ export class CompoundHandler implements AchievementHandler, OnModuleInit {
     }).length;
   }
 
-  private compare(current: number, operator: 'gte' | 'lte' | 'eq', target: number): boolean {
+  private compare(
+    current: number,
+    operator: 'gte' | 'lte' | 'eq',
+    target: number,
+  ): boolean {
     switch (operator) {
-      case 'gte': return current >= target;
-      case 'lte': return current <= target;
-      case 'eq': return current === target;
+      case 'gte':
+        return current >= target;
+      case 'lte':
+        return current <= target;
+      case 'eq':
+        return current === target;
     }
   }
 }

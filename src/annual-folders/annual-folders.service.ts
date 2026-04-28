@@ -1,11 +1,5 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import pLimit from 'p-limit';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   FILE_STORAGE_SERVICE,
@@ -22,6 +16,20 @@ import {
   UpdateEvidenceDto,
   SetReviewerNoteDto,
 } from './dto';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
+
+// Cap concurrent presign calls for EVIDENCE_FILES bucket. A folder can contain
+// many sections × many files each — without the cap, a single getFolder request
+// could fire hundreds of simultaneous HMAC presigns, blocking the event loop.
+// Cap is 20, matching the pattern used by PROFILE_URL_LIMITER in
+// camporees.service.ts and EVIDENCE_URL_LIMITER in classes.service.ts.
+export const EVIDENCE_FILES_URL_LIMITER = pLimit(20);
 
 @Injectable()
 export class AnnualFoldersService {
@@ -49,9 +57,7 @@ export class AnnualFoldersService {
     const hasUnionOwner = dto.owner_union_id != null;
     const hasLocalFieldOwner = dto.owner_local_field_id != null;
     if (hasUnionOwner === hasLocalFieldOwner) {
-      throw new BadRequestException(
-        'Exactly one of owner_union_id or owner_local_field_id must be provided',
-      );
+      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_OWNER_REQUIRED);
     }
 
     // Validate that club_type and ecclesiastical_year exist
@@ -65,15 +71,16 @@ export class AnnualFoldersService {
     ]);
 
     if (!clubType) {
-      throw new NotFoundException(
-        `Club type with ID ${dto.club_type_id} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_CLUB_TYPE_NOT_FOUND,
+        { id: dto.club_type_id },
       );
     }
 
     if (!year) {
-      throw new NotFoundException(
-        `Ecclesiastical year with ID ${dto.ecclesiastical_year_id} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+        id: dto.ecclesiastical_year_id,
+      });
     }
 
     return this.prisma.folder_templates.create({
@@ -103,8 +110,9 @@ export class AnnualFoldersService {
     });
 
     if (!template) {
-      throw new NotFoundException(
-        `Folder template with ID ${templateId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+        { id: templateId },
       );
     }
 
@@ -133,8 +141,9 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Template section with ID ${sectionId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND,
+        { id: sectionId },
       );
     }
 
@@ -165,14 +174,15 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Template section with ID ${sectionId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND,
+        { id: sectionId },
       );
     }
 
     if (section._count.evidences > 0) {
-      throw new ConflictException(
-        'Cannot delete section that already has evidences uploaded',
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_HAS_EVIDENCES,
       );
     }
 
@@ -207,8 +217,9 @@ export class AnnualFoldersService {
     });
 
     if (!template) {
-      throw new NotFoundException(
-        'No template found for the given club type and ecclesiastical year',
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH,
+        { clubTypeId, yearId },
       );
     }
 
@@ -233,8 +244,9 @@ export class AnnualFoldersService {
     });
 
     if (!template) {
-      throw new NotFoundException(
-        `Folder template with ID ${templateId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+        { id: templateId },
       );
     }
 
@@ -256,9 +268,7 @@ export class AnnualFoldersService {
     });
 
     if (existingFolder) {
-      throw new ConflictException(
-        'An annual folder already exists for this enrollment',
-      );
+      throw new AppConflictException(ErrorCode.ANNUAL_FOLDER_ALREADY_EXISTS);
     }
 
     // resolveTemplateForClub loads the enrollment internally and throws
@@ -400,11 +410,12 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new NotFoundException(
-        `Annual folder with ID ${folderId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
+    await this.presignFolderEvidences(folder.evidences);
     return this.formatFolderResponse(folder);
   }
 
@@ -494,11 +505,13 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new NotFoundException(
-        `Annual folder for enrollment ${enrollmentId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: enrollmentId },
       );
     }
 
+    await this.presignFolderEvidences(folder.evidences);
     return this.formatFolderResponse(folder);
   }
 
@@ -518,7 +531,7 @@ export class AnnualFoldersService {
     file: Express.Multer.File,
   ) {
     if (!file?.buffer) {
-      throw new BadRequestException('File is required');
+      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_FILE_REQUIRED);
     }
 
     const folder = await this.prisma.annual_folders.findUnique({
@@ -526,14 +539,15 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new NotFoundException(
-        `Annual folder with ID ${folderId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     if (folder.status !== 'open') {
-      throw new BadRequestException(
-        `Cannot upload evidence to a folder with status '${folder.status}'. Folder must be 'open'.`,
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD,
+        { status: folder.status },
       );
     }
 
@@ -546,8 +560,9 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Section ${sectionId} does not belong to this folder's template`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+        { sectionId },
       );
     }
 
@@ -560,7 +575,7 @@ export class AnnualFoldersService {
       { contentType: file.mimetype },
     );
 
-    return this.prisma.annual_folder_evidences.create({
+    const created = await this.prisma.annual_folder_evidences.create({
       data: {
         annual_folder_id: folderId,
         section_id: sectionId,
@@ -580,6 +595,8 @@ export class AnnualFoldersService {
         },
       },
     });
+
+    return this.presignSingleEvidence(created);
   }
 
   /**
@@ -631,8 +648,9 @@ export class AnnualFoldersService {
     if (clubId == null) {
       // Evidence exists but its club chain could not be resolved — treat as
       // not found so an attacker cannot enumerate valid evidence IDs.
-      throw new NotFoundException(
-        `Cannot resolve club ownership for evidence ${evidenceId}`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
+        { evidenceId },
       );
     }
 
@@ -671,8 +689,8 @@ export class AnnualFoldersService {
     });
 
     if (!clubAssignment) {
-      throw new ForbiddenException(
-        'Evidence does not belong to a club you have access to',
+      throw new AppForbiddenException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_ACCESS_DENIED,
       );
     }
   }
@@ -721,8 +739,9 @@ export class AnnualFoldersService {
     if (clubId == null) {
       // Folder doesn't exist or its club chain is broken — surface as 404 so
       // an attacker cannot distinguish missing folder from an access denial.
-      throw new NotFoundException(
-        `Cannot resolve club ownership for folder ${folderId}`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
+        { evidenceId: folderId },
       );
     }
 
@@ -761,8 +780,8 @@ export class AnnualFoldersService {
     });
 
     if (!clubAssignment) {
-      throw new ForbiddenException(
-        'Folder does not belong to a club you have access to',
+      throw new AppForbiddenException(
+        ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
       );
     }
   }
@@ -822,12 +841,12 @@ export class AnnualFoldersService {
       },
     });
 
-    const club =
-      evidence?.annual_folder?.club_enrollment?.club_section?.clubs;
+    const club = evidence?.annual_folder?.club_enrollment?.club_section?.clubs;
 
     if (!club?.club_id) {
-      throw new NotFoundException(
-        `Cannot resolve club ownership for evidence ${evidenceId}`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
+        { evidenceId },
       );
     }
 
@@ -879,8 +898,8 @@ export class AnnualFoldersService {
     });
 
     if (!reviewer) {
-      throw new ForbiddenException(
-        'Evidence is outside your review territory',
+      throw new AppForbiddenException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
       );
     }
 
@@ -901,8 +920,8 @@ export class AnnualFoldersService {
       return;
     }
 
-    throw new ForbiddenException(
-      'Evidence is outside your review territory',
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
     );
   }
 
@@ -941,16 +960,20 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new NotFoundException(`Evidence with ID ${evidenceId} not found`);
-    }
-
-    if (evidence.annual_folder.status !== 'open') {
-      throw new BadRequestException(
-        `Cannot update evidence in a folder with status '${evidence.annual_folder.status}'. Folder must be 'open'.`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND,
+        { id: evidenceId },
       );
     }
 
-    return this.prisma.annual_folder_evidences.update({
+    if (evidence.annual_folder.status !== 'open') {
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_MUTATION,
+        { status: evidence.annual_folder.status },
+      );
+    }
+
+    const updated = await this.prisma.annual_folder_evidences.update({
       where: { evidence_id: evidenceId },
       data: {
         ...(dto.file_url !== undefined && { file_url: dto.file_url }),
@@ -968,6 +991,8 @@ export class AnnualFoldersService {
         },
       },
     });
+
+    return this.presignSingleEvidence(updated);
   }
 
   /**
@@ -985,12 +1010,16 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new NotFoundException(`Evidence with ID ${evidenceId} not found`);
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND,
+        { id: evidenceId },
+      );
     }
 
     if (evidence.annual_folder.status !== 'open') {
-      throw new BadRequestException(
-        `Cannot delete evidence in a folder with status '${evidence.annual_folder.status}'. Folder must be 'open'.`,
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_MUTATION,
+        { status: evidence.annual_folder.status },
       );
     }
 
@@ -1029,7 +1058,10 @@ export class AnnualFoldersService {
     });
 
     if (!evidence) {
-      throw new NotFoundException(`Evidence with ID ${evidenceId} not found`);
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_NOT_FOUND,
+        { id: evidenceId },
+      );
     }
 
     const hasNote =
@@ -1037,7 +1069,7 @@ export class AnnualFoldersService {
       dto.reviewer_note !== undefined &&
       dto.reviewer_note.trim().length > 0;
 
-    return this.prisma.annual_folder_evidences.update({
+    const noted = await this.prisma.annual_folder_evidences.update({
       where: { evidence_id: evidenceId },
       data: {
         reviewer_note: hasNote ? dto.reviewer_note!.trim() : null,
@@ -1062,6 +1094,8 @@ export class AnnualFoldersService {
         },
       },
     });
+
+    return this.presignSingleEvidence(noted);
   }
 
   // ========================================
@@ -1089,9 +1123,9 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new NotFoundException(
-        `Annual folder with ID ${folderId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     // Validate section belongs to this folder's template
@@ -1103,8 +1137,9 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Section ${sectionId} does not belong to this folder's template`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+        { sectionId },
       );
     }
 
@@ -1227,14 +1262,15 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new NotFoundException(
-        `Annual folder with ID ${folderId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
     }
 
     if (folder.status !== 'open') {
-      throw new BadRequestException(
-        `Cannot submit a section in a folder with status '${folder.status}'. Folder must be 'open'.`,
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD,
+        { status: folder.status },
       );
     }
 
@@ -1247,8 +1283,9 @@ export class AnnualFoldersService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Section ${sectionId} does not belong to this folder's template`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NOT_IN_TEMPLATE,
+        { sectionId },
       );
     }
 
@@ -1261,8 +1298,9 @@ export class AnnualFoldersService {
     });
 
     if (evidenceCount === 0) {
-      throw new BadRequestException(
-        `Cannot submit section '${section.name}': at least one evidence file must be uploaded first`,
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_SECTION_NO_EVIDENCE,
+        { sectionName: section.name },
       );
     }
 
@@ -1343,9 +1381,9 @@ export class AnnualFoldersService {
       });
 
       if (!folder) {
-        throw new NotFoundException(
-          `Annual folder with ID ${folderId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+          id: folderId,
+        });
       }
 
       // Atomic transition: only succeeds when status is still 'open'.
@@ -1360,9 +1398,7 @@ export class AnnualFoldersService {
       });
 
       if (result.count === 0) {
-        throw new ConflictException(
-          `Folder is not in the expected state. Expected 'open' — concurrent update may have already submitted it.`,
-        );
+        throw new AppConflictException(ErrorCode.ANNUAL_FOLDER_STATUS_CONFLICT);
       }
 
       return tx.annual_folders.findUnique({
@@ -1391,9 +1427,9 @@ export class AnnualFoldersService {
       });
 
       if (!folder) {
-        throw new NotFoundException(
-          `Annual folder with ID ${folderId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+          id: folderId,
+        });
       }
 
       // Atomic transition: only succeeds when status is still 'submitted' or
@@ -1411,9 +1447,7 @@ export class AnnualFoldersService {
       });
 
       if (result.count === 0) {
-        throw new ConflictException(
-          `Folder is not in the expected state. Expected 'submitted' or 'evaluated' — concurrent update may have already closed it.`,
-        );
+        throw new AppConflictException(ErrorCode.ANNUAL_FOLDER_STATUS_CONFLICT);
       }
 
       return tx.annual_folders.findUnique({
@@ -1425,6 +1459,61 @@ export class AnnualFoldersService {
   // ========================================
   // PRIVATE HELPERS
   // ========================================
+
+  /**
+   * Presign all evidence file_url fields in-place using the module-level
+   * EVIDENCE_FILES_URL_LIMITER (cap = 20). Mutates the evidences array so
+   * that callers (getFolder, getFolderByEnrollment) can pass the same object
+   * to formatFolderResponse without any further transformation.
+   *
+   * Evidence files are stored in the private EVIDENCE_FILES R2 bucket; the
+   * stored value is the object key (not a public URL). Failing to sign a
+   * single file is non-fatal: the original key is kept so the client at
+   * least knows a file exists.
+   */
+  private async presignFolderEvidences(
+    evidences: { file_url: string }[],
+  ): Promise<void> {
+    if (evidences.length === 0) return;
+    await Promise.all(
+      evidences.map((evidence) =>
+        EVIDENCE_FILES_URL_LIMITER(async () => {
+          try {
+            evidence.file_url = await this.fileStorage.getSignedDownloadUrl(
+              StorageBucketAlias.EVIDENCE_FILES,
+              evidence.file_url,
+            );
+          } catch {
+            // Non-fatal: keep original key so the client knows a file exists.
+          }
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Presign the file_url of a single evidence record in-place.
+   *
+   * Mirrors presignFolderEvidences for single-evidence return paths
+   * (uploadEvidence, updateEvidence, setReviewerNote). Uses the same
+   * EVIDENCE_FILES_URL_LIMITER pool so all presign calls share one cap.
+   * Failure is non-fatal: the original key is kept on error.
+   */
+  private async presignSingleEvidence<T extends { file_url: string }>(
+    evidence: T,
+  ): Promise<T> {
+    await EVIDENCE_FILES_URL_LIMITER(async () => {
+      try {
+        evidence.file_url = await this.fileStorage.getSignedDownloadUrl(
+          StorageBucketAlias.EVIDENCE_FILES,
+          evidence.file_url,
+        );
+      } catch {
+        // Non-fatal: keep original key so the client knows a file exists.
+      }
+    });
+    return evidence;
+  }
 
   /**
    * Resolve the active folder template for a club enrollment using the
@@ -1442,7 +1531,10 @@ export class AnnualFoldersService {
   private async resolveTemplateForClub(
     enrollmentId: string,
     overrideYearId: number | undefined,
-  ): Promise<{ template: folder_templates; resolvedVia: 'union' | 'local_field' }> {
+  ): Promise<{
+    template: folder_templates;
+    resolvedVia: 'union' | 'local_field';
+  }> {
     // Load enrollment with the full club → local_field → union chain
     const enrollment = await this.prisma.club_enrollments.findUnique({
       where: { club_enrollment_id: enrollmentId },
@@ -1469,22 +1561,24 @@ export class AnnualFoldersService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${enrollmentId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: enrollmentId },
       );
     }
 
     const club = enrollment.club_section.clubs;
     if (!club) {
-      throw new NotFoundException(
-        `Club section for enrollment ${enrollmentId} has no parent club — cannot resolve template owner`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_PARENT, {
+        enrollmentId,
+      });
     }
 
     const localField = club.local_fields;
     if (!localField) {
-      throw new NotFoundException(
-        `Club ${club.club_id} has no local field — cannot resolve template owner`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_CLUB_NO_LOCAL_FIELD,
+        { clubId: club.club_id },
       );
     }
 
@@ -1519,9 +1613,10 @@ export class AnnualFoldersService {
       return { template: lfTemplate, resolvedVia: 'local_field' };
     }
 
-    throw new NotFoundException(
-      `No folder template found for club ${club.club_id} (club_type=${clubTypeId}, year=${yearId})`,
-    );
+    throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH, {
+      clubTypeId,
+      yearId,
+    });
   }
 
   /**
@@ -1538,7 +1633,10 @@ export class AnnualFoldersService {
    */
   private clubTypeToCamporeeIncludesColumn(
     clubTypeId: number,
-  ): 'includes_adventurers' | 'includes_pathfinders' | 'includes_master_guides' {
+  ):
+    | 'includes_adventurers'
+    | 'includes_pathfinders'
+    | 'includes_master_guides' {
     switch (clubTypeId) {
       case 1:
         return 'includes_adventurers';
@@ -1547,8 +1645,9 @@ export class AnnualFoldersService {
       case 3:
         return 'includes_master_guides';
       default:
-        throw new BadRequestException(
-          `Unsupported club_type_id ${clubTypeId} for camporee linkage`,
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_CAMPOREE_CLUB_TYPE_INVALID,
+          { clubTypeId },
         );
     }
   }
@@ -1603,23 +1702,25 @@ export class AnnualFoldersService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${enrollmentId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: enrollmentId },
       );
     }
 
     const clubSection = enrollment.club_section;
     const club = clubSection?.clubs;
     if (!club) {
-      throw new NotFoundException(
-        `Club section for enrollment ${enrollmentId} has no parent club — cannot resolve camporee linkage`,
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_PARENT, {
+        enrollmentId,
+      });
     }
 
     const localField = club.local_fields;
     if (!localField) {
-      throw new NotFoundException(
-        `Club ${club.club_id} has no local field — cannot resolve camporee linkage`,
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_CLUB_NO_LOCAL_FIELD,
+        { clubId: club.club_id },
       );
     }
 

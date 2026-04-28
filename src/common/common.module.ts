@@ -1,4 +1,5 @@
 import { Module, Global } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AuthorizationContextService } from './services/authorization-context.service';
 import { TokenBlacklistService } from './services/token-blacklist.service';
@@ -10,6 +11,12 @@ import { R2FileStorageService } from './services/r2-file-storage.service';
 import { FILE_STORAGE_SERVICE } from './services/file-storage.service';
 import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { DistributedLockService } from './services/distributed-lock.service';
+import { CronRunLogger } from './services/cron-run-logger.service';
+import { TranslationService } from './services/translation.service';
+import { CronAlertService } from './services/cron-alert.service';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { HttpExceptionFilter } from './filters/http-exception.filter';
+import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 
 function isPlaceholderRedisUrl(value: string): boolean {
   return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
@@ -68,6 +75,8 @@ function isPlaceholderRedisUrl(value: string): boolean {
     }),
     // BetterAuthModule provides BetterAuthService (used by MfaService for TOTP operations).
     BetterAuthModule,
+    // NotificationsModule provides NotificationsService (used by CronAlertService for in-app alerts).
+    NotificationsModule,
   ],
   providers: [
     // ==========================================
@@ -91,6 +100,33 @@ function isPlaceholderRedisUrl(value: string): boolean {
     // MANTENIMIENTO - Limpieza de registros expirados
     // ==========================================
     CleanupService,
+    // ==========================================
+    // OBSERVABILIDAD - Logging de ejecución de crons
+    // ==========================================
+    CronRunLogger,
+    // ==========================================
+    // MONITORING - Automated cron job alerting
+    // ==========================================
+    CronAlertService,
+    // ==========================================
+    // I18N — Pilot translation helper (Approach X)
+    // ==========================================
+    TranslationService,
+    // ==========================================
+    // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
+    // Order: AllExceptionsFilter registered FIRST (lower priority),
+    // HttpExceptionFilter registered SECOND (higher priority for @Catch(HttpException)).
+    // NestJS routes by specificity: @Catch(HttpException) wins over @Catch() for
+    // HttpException subclasses, preserving the original filter contract.
+    // ==========================================
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
+    },
   ],
   exports: [
     CacheModule,
@@ -101,6 +137,8 @@ function isPlaceholderRedisUrl(value: string): boolean {
     PermissionsGuard,
     FILE_STORAGE_SERVICE,
     DistributedLockService,
+    CronRunLogger,
+    TranslationService,
   ],
 })
 export class CommonModule {}

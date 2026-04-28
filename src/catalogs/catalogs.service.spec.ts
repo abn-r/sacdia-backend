@@ -270,7 +270,9 @@ describe('CatalogsService', () => {
           active: false,
         },
       ]);
-      expect(mockPrismaService.ecclesiastical_years.findMany).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.ecclesiastical_years.findMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           select: expect.objectContaining({
             year_id: true,

@@ -197,12 +197,11 @@ async function seedFolderWithEvaluation(opts: {
   });
 
   // 2. Get first section of the template
-  const templateSection =
-    await rawPrisma.folder_template_sections.findFirst({
-      where: { folder_template_id: folderTemplateId },
-      orderBy: { order: 'asc' },
-      select: { section_id: true },
-    });
+  const templateSection = await rawPrisma.folder_template_sections.findFirst({
+    where: { folder_template_id: folderTemplateId },
+    orderBy: { order: 'asc' },
+    select: { section_id: true },
+  });
   if (!templateSection) {
     throw new Error(
       `No folder_template_sections found for template ${folderTemplateId}. ` +
@@ -222,17 +221,31 @@ async function seedFolderWithEvaluation(opts: {
     create: {
       annual_folder_id: folder.annual_folder_id,
       section_id: templateSection.section_id,
-      earned_points: opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF ? 80 : 0,
+      earned_points:
+        opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF
+          ? 80
+          : 0,
       max_points: 100,
       status: opts.evalStatus,
       lf_approved_by: opts.lfApprovedBy ?? null,
-      lf_approved_at: opts.lfApprovedAt ?? (opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF ? now : null),
+      lf_approved_at:
+        opts.lfApprovedAt ??
+        (opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF
+          ? now
+          : null),
     },
     update: {
       status: opts.evalStatus,
       lf_approved_by: opts.lfApprovedBy ?? null,
-      lf_approved_at: opts.lfApprovedAt ?? (opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF ? now : null),
-      earned_points: opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF ? 80 : 0,
+      lf_approved_at:
+        opts.lfApprovedAt ??
+        (opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF
+          ? now
+          : null),
+      earned_points:
+        opts.evalStatus === annual_folder_section_status_enum.PREAPPROVED_LF
+          ? 80
+          : 0,
     },
   });
 
@@ -462,7 +475,10 @@ describe('confirmUnion — RBAC and service preconditions', () => {
 
       expect(evalRow?.lf_approved_by).toBe(directorLfUserId);
       // lf_approved_at should still equal the original timestamp (within 1 s)
-      expect(evalRow?.lf_approved_at?.getTime()).toBeCloseTo(lfAt.getTime(), -3);
+      expect(evalRow?.lf_approved_at?.getTime()).toBeCloseTo(
+        lfAt.getTime(),
+        -3,
+      );
     });
   });
 

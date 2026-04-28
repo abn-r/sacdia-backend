@@ -1,14 +1,14 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-  ConflictException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { CreateLegalRepresentativeDto } from './dto/create-legal-representative.dto';
 import { UpdateLegalRepresentativeDto } from './dto/update-legal-representative.dto';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class LegalRepresentativesService {
@@ -25,9 +25,7 @@ export class LegalRepresentativesService {
       await this.usersService.requiresLegalRepresentative(userId);
 
     if (!requiresRep) {
-      throw new BadRequestException(
-        'Usuario mayor de 18 años no requiere representante legal',
-      );
+      throw new AppBadRequestException(ErrorCode.LEGAL_REP_NOT_REQUIRED);
     }
 
     // Validar que no tenga ya un representante
@@ -36,7 +34,7 @@ export class LegalRepresentativesService {
     });
 
     if (existing) {
-      throw new ConflictException('El usuario ya tiene un representante legal');
+      throw new AppConflictException(ErrorCode.LEGAL_REP_ALREADY_EXISTS);
     }
 
     // Validar que se proporcione usuario registrado O datos manuales
@@ -44,9 +42,7 @@ export class LegalRepresentativesService {
       !createDto.representative_user_id &&
       (!createDto.name || !createDto.paternal_last_name || !createDto.phone)
     ) {
-      throw new BadRequestException(
-        'Debe proporcionar representative_user_id O los datos completos (name, paternal_last_name, phone)',
-      );
+      throw new AppBadRequestException(ErrorCode.LEGAL_REP_DATA_REQUIRED);
     }
 
     // Si es usuario registrado, verificar que exista
@@ -56,7 +52,7 @@ export class LegalRepresentativesService {
       });
 
       if (!repUser) {
-        throw new NotFoundException('Usuario representante no encontrado');
+        throw new AppNotFoundException(ErrorCode.LEGAL_REP_USER_NOT_FOUND);
       }
     }
 
@@ -66,7 +62,9 @@ export class LegalRepresentativesService {
     });
 
     if (!relType) {
-      throw new NotFoundException('Tipo de relación no encontrado');
+      throw new AppNotFoundException(
+        ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
+      );
     }
 
     const representative = await this.prisma.legal_representatives.create({
@@ -104,7 +102,7 @@ export class LegalRepresentativesService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.LEGAL_REP_OWNER_NOT_FOUND);
     }
 
     const representative = await this.prisma.legal_representatives.findUnique({
@@ -151,7 +149,7 @@ export class LegalRepresentativesService {
     });
 
     if (!existing) {
-      throw new NotFoundException('Representante legal no encontrado');
+      throw new AppNotFoundException(ErrorCode.LEGAL_REP_NOT_FOUND);
     }
 
     // Si actualizan representative_user_id, verificar que existe
@@ -161,7 +159,7 @@ export class LegalRepresentativesService {
       });
 
       if (!repUser) {
-        throw new NotFoundException('Usuario representante no encontrado');
+        throw new AppNotFoundException(ErrorCode.LEGAL_REP_USER_NOT_FOUND);
       }
     }
 
@@ -172,7 +170,9 @@ export class LegalRepresentativesService {
       });
 
       if (!relType) {
-        throw new NotFoundException('Tipo de relación no encontrado');
+        throw new AppNotFoundException(
+          ErrorCode.LEGAL_REP_RELATIONSHIP_TYPE_NOT_FOUND,
+        );
       }
     }
 
@@ -203,7 +203,7 @@ export class LegalRepresentativesService {
     });
 
     if (!existing) {
-      throw new NotFoundException('Representante legal no encontrado');
+      throw new AppNotFoundException(ErrorCode.LEGAL_REP_NOT_FOUND);
     }
 
     await this.prisma.legal_representatives.delete({

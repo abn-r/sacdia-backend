@@ -1,9 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  BadRequestException,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AccountDeletionService } from './account-deletion.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +6,8 @@ import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import { EmailService } from '../common/email/email.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 jest.mock('bcryptjs');
 const bcryptMock = bcrypt as jest.Mocked<typeof bcrypt>;
@@ -45,6 +42,10 @@ const mockFileStorage = {
   deleteMany: jest.fn(),
 };
 
+const mockEmailService = {
+  sendAccountDeletionConfirmed: jest.fn().mockResolvedValue(undefined),
+};
+
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;
 
@@ -52,8 +53,8 @@ describe('AccountDeletionService', () => {
     jest.clearAllMocks();
 
     // Default: transaction calls the callback with mockPrisma as tx
-    mockPrisma.$transaction.mockImplementation(async (fn: (tx: any) => Promise<any>) =>
-      fn(mockPrisma),
+    mockPrisma.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<any>) => fn(mockPrisma),
     );
 
     const module: TestingModule = await Test.createTestingModule({
@@ -61,6 +62,7 @@ describe('AccountDeletionService', () => {
         AccountDeletionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorage },
+        { provide: EmailService, useValue: mockEmailService },
       ],
     }).compile();
 
@@ -141,7 +143,9 @@ describe('AccountDeletionService', () => {
     });
 
     it('should attempt R2 deletion for existing user_image (fire-and-forget)', async () => {
-      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue('profiles/avatar.jpg');
+      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue(
+        'profiles/avatar.jpg',
+      );
       mockFileStorage.deleteMany.mockResolvedValue(undefined);
 
       await service.deleteAccount(USER_ID, PASSWORD);
@@ -156,7 +160,9 @@ describe('AccountDeletionService', () => {
     });
 
     it('should NOT throw when R2 deletion fails (fire-and-forget)', async () => {
-      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue('profiles/avatar.jpg');
+      mockFileStorage.extractKeyFromPublicUrl.mockReturnValue(
+        'profiles/avatar.jpg',
+      );
       mockFileStorage.deleteMany.mockRejectedValue(new Error('R2 down'));
 
       await expect(
@@ -175,7 +181,7 @@ describe('AccountDeletionService', () => {
 
       await expect(
         service.deleteAccount(USER_ID, PASSWORD),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ACCOUNT_NOT_FOUND });
     });
 
     it('should throw BadRequestException when account is already deleted', async () => {
@@ -188,7 +194,7 @@ describe('AccountDeletionService', () => {
 
       await expect(
         service.deleteAccount(USER_ID, PASSWORD),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ACCOUNT_ALREADY_DELETED });
     });
 
     it('should throw UnauthorizedException when password is wrong', async () => {
@@ -203,7 +209,7 @@ describe('AccountDeletionService', () => {
 
       await expect(
         service.deleteAccount(USER_ID, PASSWORD),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_PASSWORD });
     });
 
     it('should skip password check for OAuth-only users (no credential account)', async () => {

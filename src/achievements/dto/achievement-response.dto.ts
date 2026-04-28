@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { achievement_scope, achievement_tier, achievement_type } from '@prisma/client';
+import {
+  achievement_scope,
+  achievement_tier,
+  achievement_type,
+} from '@prisma/client';
 
 export class AchievementResponseDto {
   @ApiProperty({ description: 'ID único del logro' })
@@ -14,7 +18,9 @@ export class AchievementResponseDto {
   @ApiProperty({ description: 'Descripción del logro' })
   description: string;
 
-  @ApiPropertyOptional({ description: 'URL firmada del badge (generada desde badge_image_key)' })
+  @ApiPropertyOptional({
+    description: 'URL firmada del badge (generada desde badge_image_key)',
+  })
   badge_image_url?: string | null;
 
   @ApiProperty({ description: 'Tipo de logro', enum: achievement_type })
@@ -38,7 +44,9 @@ export class AchievementResponseDto {
   @ApiProperty({ description: 'El logro puede obtenerse más de una vez' })
   repeatable: boolean;
 
-  @ApiPropertyOptional({ description: 'Número máximo de veces que se puede obtener' })
+  @ApiPropertyOptional({
+    description: 'Número máximo de veces que se puede obtener',
+  })
   max_repeats?: number | null;
 
   @ApiPropertyOptional({ description: 'ID del tipo de club al que aplica' })

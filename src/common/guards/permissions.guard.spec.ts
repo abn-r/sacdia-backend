@@ -1,13 +1,10 @@
-import {
-  ForbiddenException,
-  NotFoundException,
-  type ExecutionContext,
-} from '@nestjs/common';
+import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
 import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ErrorCode } from '../errors/error-codes';
 
 const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
 
@@ -198,11 +195,7 @@ describe('PermissionsGuard', () => {
             params: { userId: 'user-123' },
           }),
         ),
-      ).rejects.toThrow(
-        new ForbiddenException(
-          `Missing required global permissions: ${permission}`,
-        ),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
     };
 
     it.each([
@@ -240,6 +233,9 @@ describe('PermissionsGuard', () => {
       if (key === PERMISSIONS_KEY) {
         return { permissions: ['users:read'], mode: 'all' };
       }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'global' };
+      }
       return undefined;
     });
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
@@ -256,6 +252,9 @@ describe('PermissionsGuard', () => {
       if (key === PERMISSIONS_KEY) {
         return { permissions: ['clubs:read'], mode: 'all' };
       }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'global' };
+      }
       return undefined;
     });
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
@@ -264,9 +263,7 @@ describe('PermissionsGuard', () => {
 
     await expect(
       guard.canActivate(createContext({ user: { sub: 'club-user-1' } })),
-    ).rejects.toThrow(
-      new ForbiddenException('Missing required global permissions: clubs:read'),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
   });
 
   it('allows a club resource when the active assignment belongs to the same club and has the permission', async () => {
@@ -316,11 +313,7 @@ describe('PermissionsGuard', () => {
           params: { clubId: '10' },
         }),
       ),
-    ).rejects.toThrow(
-      new ForbiddenException(
-        'You need an active club assignment for this club',
-      ),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
   });
 
   it('allows an instance resource when the active assignment matches the exact instance', async () => {
@@ -430,11 +423,7 @@ describe('PermissionsGuard', () => {
           params: { camporeeId: '8' },
         }),
       ),
-    ).rejects.toThrow(
-      new ForbiddenException(
-        'You need an active assignment or global scope for this camporee',
-      ),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
   });
 
   it('rejects an instance resource when the active assignment points to another instance of the same club', async () => {
@@ -475,11 +464,7 @@ describe('PermissionsGuard', () => {
           query: { instanceType: 'pathf' },
         }),
       ),
-    ).rejects.toThrow(
-      new ForbiddenException(
-        'You need an active club assignment for this exact instance',
-      ),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
   });
 
   it('allows owner-scoped resources without requiring extra permissions', async () => {
@@ -551,11 +536,7 @@ describe('PermissionsGuard', () => {
           params: { userId: 'user-123' },
         }),
       ),
-    ).rejects.toThrow(
-      new ForbiddenException(
-        'Missing required global permissions: users:read_detail',
-      ),
-    );
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
   });
 
   it('throws not found when an assignment resource cannot be resolved', async () => {
@@ -580,6 +561,6 @@ describe('PermissionsGuard', () => {
           params: { assignmentId: 'missing-assignment' },
         }),
       ),
-    ).rejects.toThrow(new NotFoundException('Club assignment not found'));
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND });
   });
 });

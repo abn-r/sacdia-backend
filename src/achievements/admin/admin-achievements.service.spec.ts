@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { AdminAchievementsService } from './admin-achievements.service';
 import { AchievementsService } from '../achievements.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ErrorCode } from '../../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -85,7 +85,9 @@ describe('AdminAchievementsService', () => {
         display_order: 1,
         active: true,
       };
-      mockPrismaService.achievement_categories.create.mockResolvedValue(mockCategory);
+      mockPrismaService.achievement_categories.create.mockResolvedValue(
+        mockCategory,
+      );
 
       const result = await service.createCategory({
         name: 'Naturaleza',
@@ -96,7 +98,9 @@ describe('AdminAchievementsService', () => {
       });
 
       expect(result).toEqual(mockCategory);
-      expect(mockPrismaService.achievement_categories.create).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.achievement_categories.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ name: 'Naturaleza' }),
         }),
@@ -106,32 +110,56 @@ describe('AdminAchievementsService', () => {
 
   describe('updateCategory', () => {
     it('should update an existing category', async () => {
-      const mockCategory = { achievement_category_id: 1, name: 'Naturaleza', active: true };
+      const mockCategory = {
+        achievement_category_id: 1,
+        name: 'Naturaleza',
+        active: true,
+      };
       const updated = { ...mockCategory, name: 'Naturaleza Actualizada' };
 
-      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(mockCategory);
-      mockPrismaService.achievement_categories.update.mockResolvedValue(updated);
+      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(
+        mockCategory,
+      );
+      mockPrismaService.achievement_categories.update.mockResolvedValue(
+        updated,
+      );
 
-      const result = await service.updateCategory(1, { name: 'Naturaleza Actualizada' });
+      const result = await service.updateCategory(1, {
+        name: 'Naturaleza Actualizada',
+      });
 
       expect(result.name).toBe('Naturaleza Actualizada');
     });
 
     it('should throw NotFoundException when category does not exist', async () => {
-      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(null);
+      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(
+        null,
+      );
 
-      await expect(service.updateCategory(999, { name: 'X' })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateCategory(999, { name: 'X' }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
   describe('deleteCategory', () => {
     it('should soft-delete a category with no active achievements', async () => {
-      const mockCategory = { achievement_category_id: 1, name: 'Naturaleza', active: true };
+      const mockCategory = {
+        achievement_category_id: 1,
+        name: 'Naturaleza',
+        active: true,
+      };
       const softDeleted = { ...mockCategory, active: false };
 
-      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(mockCategory);
+      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(
+        mockCategory,
+      );
       mockPrismaService.achievements.count.mockResolvedValue(0); // no active achievements
-      mockPrismaService.achievement_categories.update.mockResolvedValue(softDeleted);
+      mockPrismaService.achievement_categories.update.mockResolvedValue(
+        softDeleted,
+      );
 
       const result = await service.deleteCategory(1);
 
@@ -139,18 +167,30 @@ describe('AdminAchievementsService', () => {
     });
 
     it('should throw ConflictException when category has active achievements', async () => {
-      const mockCategory = { achievement_category_id: 1, name: 'Naturaleza', active: true };
+      const mockCategory = {
+        achievement_category_id: 1,
+        name: 'Naturaleza',
+        active: true,
+      };
 
-      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(mockCategory);
+      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(
+        mockCategory,
+      );
       mockPrismaService.achievements.count.mockResolvedValue(3); // 3 active achievements
 
-      await expect(service.deleteCategory(1)).rejects.toThrow(ConflictException);
+      await expect(service.deleteCategory(1)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_HAS_ACTIVE,
+      });
     });
 
     it('should throw NotFoundException when category to delete does not exist', async () => {
-      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(null);
+      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(
+        null,
+      );
 
-      await expect(service.deleteCategory(999)).rejects.toThrow(NotFoundException);
+      await expect(service.deleteCategory(999)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -174,10 +214,20 @@ describe('AdminAchievementsService', () => {
     };
 
     it('should create an achievement after validating category and criteria', async () => {
-      const mockCategory = { achievement_category_id: 1, name: 'Naturaleza', active: true };
-      const mockCreated = { achievement_id: 1, ...createDto, category: mockCategory };
+      const mockCategory = {
+        achievement_category_id: 1,
+        name: 'Naturaleza',
+        active: true,
+      };
+      const mockCreated = {
+        achievement_id: 1,
+        ...createDto,
+        category: mockCategory,
+      };
 
-      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(mockCategory);
+      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(
+        mockCategory,
+      );
       mockAchievementsService.validateCriteria.mockReturnValue({ valid: true });
       mockPrismaService.achievements.create.mockResolvedValue(mockCreated);
 
@@ -191,9 +241,13 @@ describe('AdminAchievementsService', () => {
     });
 
     it('should throw NotFoundException when category does not exist', async () => {
-      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(null);
+      mockPrismaService.achievement_categories.findUnique.mockResolvedValue(
+        null,
+      );
 
-      await expect(service.createAchievement(createDto)).rejects.toThrow(NotFoundException);
+      await expect(service.createAchievement(createDto)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CATEGORY_NOT_FOUND,
+      });
     });
   });
 
@@ -210,7 +264,9 @@ describe('AdminAchievementsService', () => {
       };
       const updated = { ...mockAchievement, name: 'New Name' };
 
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: mockAchievement });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
       mockPrismaService.achievements.update.mockResolvedValue(updated);
 
       const result = await service.updateAchievement(1, { name: 'New Name' });
@@ -221,7 +277,11 @@ describe('AdminAchievementsService', () => {
     it('should throw NotFoundException when achievement does not exist', async () => {
       mockAchievementsService.getAchievementDetail.mockResolvedValue(null);
 
-      await expect(service.updateAchievement(999, { name: 'X' })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateAchievement(999, { name: 'X' }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_NOT_FOUND,
+      });
     });
 
     it('should re-validate criteria when both type and criteria are provided in update', async () => {
@@ -236,13 +296,20 @@ describe('AdminAchievementsService', () => {
       };
       const updated = { ...mockAchievement, type: 'COLLECTION' };
 
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: mockAchievement });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
       mockAchievementsService.validateCriteria.mockReturnValue({ valid: true });
       mockPrismaService.achievements.update.mockResolvedValue(updated);
 
       await service.updateAchievement(1, {
         type: 'COLLECTION' as any,
-        criteria: { event: 'honor.earned', operator: 'distinct_count', distinct_field: 'honor_id', target: 10 },
+        criteria: {
+          event: 'honor.earned',
+          operator: 'distinct_count',
+          distinct_field: 'honor_id',
+          target: 10,
+        },
       });
 
       expect(mockAchievementsService.validateCriteria).toHaveBeenCalled();
@@ -260,7 +327,9 @@ describe('AdminAchievementsService', () => {
       };
       const softDeleted = { ...mockAchievement, active: false };
 
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: mockAchievement });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
       mockPrismaService.achievements.update.mockResolvedValue(softDeleted);
 
       const result = await service.deleteAchievement(1);
@@ -283,10 +352,22 @@ describe('AdminAchievementsService', () => {
     it('should throw BadRequestException for a direct circular dependency A→B→A', async () => {
       // Achievement A (id=1) tries to set prerequisite to B (id=2)
       // B already has prerequisite = A (id=1) → circular
-      const achievementA = { achievement_id: 1, name: 'A', active: true, tier: 'BRONZE', category: { achievement_category_id: 1 } };
-      const achievementB = { achievement_id: 2, active: true, prerequisite_id: 1 }; // B → A
+      const achievementA = {
+        achievement_id: 1,
+        name: 'A',
+        active: true,
+        tier: 'BRONZE',
+        category: { achievement_category_id: 1 },
+      };
+      const achievementB = {
+        achievement_id: 2,
+        active: true,
+        prerequisite_id: 1,
+      }; // B → A
 
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: achievementA });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: achievementA,
+      });
       mockAchievementsService.validateCriteria.mockReturnValue({ valid: true });
 
       // First findUnique: check if B (prerequisite) exists
@@ -297,7 +378,9 @@ describe('AdminAchievementsService', () => {
 
       await expect(
         service.updateAchievement(1, { prerequisite_id: 2 }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_CIRCULAR_PREREQUISITE,
+      });
     });
 
     it('should allow setting a valid (non-circular) prerequisite', async () => {
@@ -309,10 +392,16 @@ describe('AdminAchievementsService', () => {
         criteria: {},
         category: { achievement_category_id: 1 },
       };
-      const achievementB = { achievement_id: 2, active: true, prerequisite_id: null }; // B has no prerequisites
+      const achievementB = {
+        achievement_id: 2,
+        active: true,
+        prerequisite_id: null,
+      }; // B has no prerequisites
       const updatedA = { ...achievementA, prerequisite_id: 2 };
 
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: achievementA });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: achievementA,
+      });
       mockPrismaService.achievements.findUnique.mockResolvedValue(achievementB); // B exists, no chain
       mockPrismaService.achievements.update.mockResolvedValue(updatedA);
 
@@ -331,12 +420,16 @@ describe('AdminAchievementsService', () => {
         category: { achievement_category_id: 1 },
       };
 
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: achievementA });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: achievementA,
+      });
       mockPrismaService.achievements.findUnique.mockResolvedValue(null); // prerequisite not found
 
       await expect(
         service.updateAchievement(1, { prerequisite_id: 999 }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_PREREQUISITE_NOT_FOUND,
+      });
     });
   });
 
@@ -354,12 +447,17 @@ describe('AdminAchievementsService', () => {
         category: { achievement_category_id: 1 },
       };
 
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: mockAchievement });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
       mockFileStorageService.upload.mockResolvedValue({
         key: 'achievements/badges/1_bronze.png',
         url: 'https://cdn.r2.example/achievements/badges/1_bronze.png',
       });
-      mockPrismaService.achievements.update.mockResolvedValue({ ...mockAchievement, badge_image_key: 'achievements/badges/1_bronze.png' });
+      mockPrismaService.achievements.update.mockResolvedValue({
+        ...mockAchievement,
+        badge_image_key: 'achievements/badges/1_bronze.png',
+      });
 
       const pngFile: Express.Multer.File = {
         originalname: 'badge.png',
@@ -380,7 +478,9 @@ describe('AdminAchievementsService', () => {
       expect(mockPrismaService.achievements.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { achievement_id: 1 },
-          data: expect.objectContaining({ badge_image_key: 'achievements/badges/1_bronze.png' }),
+          data: expect.objectContaining({
+            badge_image_key: 'achievements/badges/1_bronze.png',
+          }),
         }),
       );
     });
@@ -393,7 +493,9 @@ describe('AdminAchievementsService', () => {
         active: true,
         category: { achievement_category_id: 1 },
       };
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: mockAchievement });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
 
       const jpgFile: Express.Multer.File = {
         originalname: 'badge.jpg',
@@ -402,7 +504,9 @@ describe('AdminAchievementsService', () => {
         buffer: Buffer.from('jpg-data'),
       } as Express.Multer.File;
 
-      await expect(service.uploadBadgeImage(1, jpgFile)).rejects.toThrow(BadRequestException);
+      await expect(service.uploadBadgeImage(1, jpgFile)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE,
+      });
     });
 
     it('should throw BadRequestException when file size exceeds 2 MB', async () => {
@@ -413,7 +517,9 @@ describe('AdminAchievementsService', () => {
         active: true,
         category: { achievement_category_id: 1 },
       };
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: mockAchievement });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
 
       const oversizedFile: Express.Multer.File = {
         originalname: 'big.png',
@@ -422,7 +528,11 @@ describe('AdminAchievementsService', () => {
         buffer: Buffer.from('big-data'),
       } as Express.Multer.File;
 
-      await expect(service.uploadBadgeImage(1, oversizedFile)).rejects.toThrow(BadRequestException);
+      await expect(
+        service.uploadBadgeImage(1, oversizedFile),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_BADGE_TOO_LARGE,
+      });
     });
 
     it('should support SVG file upload', async () => {
@@ -433,7 +543,9 @@ describe('AdminAchievementsService', () => {
         active: true,
         category: { achievement_category_id: 1 },
       };
-      mockAchievementsService.getAchievementDetail.mockResolvedValue({ achievement: mockAchievement });
+      mockAchievementsService.getAchievementDetail.mockResolvedValue({
+        achievement: mockAchievement,
+      });
       mockFileStorageService.upload.mockResolvedValue({
         key: 'achievements/badges/2_gold.svg',
         url: 'https://cdn.r2.example/achievements/badges/2_gold.svg',

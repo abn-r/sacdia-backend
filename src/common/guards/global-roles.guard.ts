@@ -1,11 +1,8 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthorizationContextService } from '../services/authorization-context.service';
+import { AppForbiddenException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import {
   GLOBAL_ROLES_KEY,
   type GlobalRoleType,
@@ -42,7 +39,7 @@ export class GlobalRolesGuard implements CanActivate {
     const user = request.user;
 
     if (!user || !user.sub) {
-      throw new ForbiddenException('User not authenticated');
+      throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
     }
 
     // super_admin bypasses all role-based restrictions (god mode)
@@ -64,9 +61,7 @@ export class GlobalRolesGuard implements CanActivate {
     );
 
     if (!hasRole) {
-      throw new ForbiddenException(
-        `You need one of these global roles: ${requiredRoles.join(', ')}`,
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
 
     return true;

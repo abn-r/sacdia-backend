@@ -3,7 +3,11 @@ import { user_approval_status } from '@prisma/client';
 import type { Request } from 'express';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
-import { JwtAuthGuard, GlobalRolesGuard, PermissionsGuard } from '../common/guards';
+import {
+  JwtAuthGuard,
+  GlobalRolesGuard,
+  PermissionsGuard,
+} from '../common/guards';
 import { AdminListUsersQueryDto } from './dto';
 
 describe('AdminUsersController', () => {

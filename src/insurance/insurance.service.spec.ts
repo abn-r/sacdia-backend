@@ -1,5 +1,5 @@
-import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InsuranceService } from './insurance.service';
@@ -352,8 +352,8 @@ describe('InsuranceService', () => {
   it('throws when member does not exist', async () => {
     mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-    await expect(service.getMemberInsurance('missing-member')).rejects.toThrow(
-      NotFoundException,
-    );
+    await expect(
+      service.getMemberInsurance('missing-member'),
+    ).rejects.toMatchObject({ code: ErrorCode.INSURANCE_MEMBER_NOT_FOUND });
   });
 });

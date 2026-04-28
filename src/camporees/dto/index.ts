@@ -10,3 +10,4 @@ export { ApproveEnrollmentDto } from './approve-enrollment.dto';
 export { RejectEnrollmentDto } from './reject-enrollment.dto';
 export { CamporeeStatusQueryDto } from './camporee-status-query.dto';
 export { UnionMembersPaginationDto } from './union-members-pagination.dto';
+export { CamporeeMembersPaginationDto } from './camporee-members-pagination.dto';

@@ -1,0 +1,53 @@
+{
+  "header": {
+    "title": "RAPPORT ANNUEL DU CLUB",
+    "club_type": "Club de {type}",
+    "district": "District",
+    "church": "Église",
+    "club": "Club",
+    "year": "Année Ecclésiastique"
+  },
+  "section_titles": {
+    "summary": "1. RÉSUMÉ ANNUEL",
+    "teachings": "2. ENSEIGNEMENTS",
+    "activities": "3. ACTIVITÉS DU CLUB",
+    "finances": "4. FINANCES",
+    "missionary": "5. ACTIVITÉ MISSIONNAIRE",
+    "ranking": "6. CLASSEMENTS ET RECONNAISSANCES"
+  },
+  "summary": {
+    "member_count": "Nombre de membres",
+    "months_reported": "Mois avec rapports",
+    "total_activities": "Total des activités pour l'année",
+    "honors_completed": "Spécialités terminées pour l'année",
+    "honors_started": "Spécialités commencées pour l'année",
+    "baptized_total": "Total baptisés pour l'année"
+  },
+  "finances": {
+    "total_income": "Total des recettes annuelles",
+    "total_expenses": "Total des dépenses annuelles",
+    "annual_balance": "Solde annuel",
+    "transaction_count": "Total des transactions"
+  },
+  "ranking": {
+    "percentile": "Percentile de performance",
+    "top_achievers_header": "Membres distingués"
+  },
+  "status": {
+    "draft": "Brouillon",
+    "finalized": "Finalisé",
+    "archived": "Archivé"
+  },
+  "secretary": {
+    "header": "Informations du Directeur/rice",
+    "name": "Nom",
+    "email": "E-mail",
+    "fallback": "Aucune information disponible."
+  },
+  "footer": "Généré par SACDIA | Page {current} sur {total}",
+  "bool": {
+    "true": "Oui",
+    "false": "Non",
+    "null": "N/A"
+  }
+}

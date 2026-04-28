@@ -4,9 +4,7 @@ import {
   NOTIFICATION_CATEGORIES,
   NotificationCategory,
 } from './notification-categories.constants';
-import {
-  getCategoryForSource,
-} from './notification-source-map.constants';
+import { getCategoryForSource } from './notification-source-map.constants';
 
 export interface PreferenceEntry {
   category: string;

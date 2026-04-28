@@ -1,11 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
+import { AppNotFoundException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
+import { TranslationService } from '../common/services/translation.service';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly translationService: TranslationService,
+  ) {}
 
   // ========================================
   // INVENTORY ITEMS
@@ -59,15 +65,30 @@ export class InventoryService {
     });
 
     // Obtener categorías únicas
+    const locale = this.translationService.getCurrentLocale();
     const categoryIds = [
       ...new Set(items.map((i) => i.inventory_category_id).filter(Boolean)),
     ];
-    const categories = await this.prisma.inventory_categories.findMany({
+    const categoriesRaw = await this.prisma.inventory_categories.findMany({
       where: { inventory_category_id: { in: categoryIds as number[] } },
+      select: {
+        inventory_category_id: true,
+        name: true,
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true },
+        },
+      },
     });
+    const translatedCategories = this.translationService.translateMany(
+      categoriesRaw,
+      locale,
+      ['name'],
+      'translations',
+    );
 
     const categoryMap = new Map(
-      categories.map((c) => [c.inventory_category_id, c]),
+      translatedCategories.map((c) => [c.inventory_category_id, c]),
     );
 
     return {
@@ -111,12 +132,11 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     // Obtener categoría si existe
+    const localeForItem = this.translationService.getCurrentLocale();
     let category: {
       category_id: number;
       name: string;
@@ -125,11 +145,25 @@ export class InventoryService {
     if (item.inventory_category_id) {
       const cat = await this.prisma.inventory_categories.findUnique({
         where: { inventory_category_id: item.inventory_category_id },
+        select: {
+          inventory_category_id: true,
+          name: true,
+          translations: {
+            where: { locale: localeForItem },
+            select: { locale: true, name: true },
+          },
+        },
       });
       if (cat) {
+        const translatedCat = this.translationService.translateMany(
+          [cat],
+          localeForItem,
+          ['name'],
+          'translations',
+        )[0];
         category = {
-          category_id: cat.inventory_category_id,
-          name: cat.name,
+          category_id: translatedCat.inventory_category_id,
+          name: translatedCat.name,
           description: null,
         };
       }
@@ -160,7 +194,7 @@ export class InventoryService {
     });
 
     if (!category || !category.active) {
-      throw new NotFoundException('Inventory category not found');
+      throw new AppNotFoundException(ErrorCode.INVENTORY_CATEGORY_NOT_FOUND);
     }
 
     // Validar que la sección de club existe
@@ -169,7 +203,7 @@ export class InventoryService {
     });
 
     if (!section) {
-      throw new NotFoundException('Club section not found');
+      throw new AppNotFoundException(ErrorCode.INVENTORY_SECTION_NOT_FOUND);
     }
 
     // Crear item
@@ -221,9 +255,7 @@ export class InventoryService {
     });
 
     if (!existingItem) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     // Si se actualiza la categoría, validar que existe
@@ -233,7 +265,7 @@ export class InventoryService {
       });
 
       if (!category || !category.active) {
-        throw new NotFoundException('Inventory category not found');
+        throw new AppNotFoundException(ErrorCode.INVENTORY_CATEGORY_NOT_FOUND);
       }
     }
 
@@ -337,9 +369,7 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     await this.prisma.club_inventory.update({
@@ -399,9 +429,7 @@ export class InventoryService {
     });
 
     if (!item) {
-      throw new NotFoundException(
-        `Inventory item with ID ${inventoryId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     const records = await this.prisma.inventory_history.findMany({

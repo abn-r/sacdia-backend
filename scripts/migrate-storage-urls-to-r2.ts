@@ -106,13 +106,32 @@ function parseUrl(value: string): URL | null {
   }
 }
 
-function buildPublicUrl(publicBaseUrl: string, relativeKey: string): string {
-  const normalizedBase = normalizeBaseUrl(publicBaseUrl);
+function buildPublicUrl(
+  target: Pick<StorageTarget, 'publicBaseUrl' | 'keyPrefix'>,
+  relativeKey: string,
+): string {
+  const normalizedBase = normalizeBaseUrl(target.publicBaseUrl);
   const normalizedKey = normalizePath(relativeKey)
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/');
-  return `${normalizedBase}/${normalizedKey}`;
+  const prefix = normalizePrefix(target.keyPrefix);
+
+  // Only inject the keyPrefix when it is NOT already embedded in publicBaseUrl.
+  // Some buckets encode the prefix in the base URL (e.g. "…/honors") while
+  // others expose a bare domain (e.g. "https://pub-xxx.r2.dev") and rely on
+  // the prefix being prepended here.  Detecting this prevents double-prefix
+  // paths like ".../honors/honors/image.png".
+  const basePath = getConfiguredBasePath(normalizedBase);
+  const prefixAlreadyInBase =
+    prefix !== '' &&
+    (basePath === prefix ||
+      basePath.endsWith(`/${prefix}`) ||
+      basePath.startsWith(`${prefix}/`));
+
+  const path =
+    prefix && !prefixAlreadyInBase ? `${prefix}/${normalizedKey}` : normalizedKey;
+  return `${normalizedBase}/${path}`;
 }
 
 function getConfiguredHost(publicBaseUrl: string): string | null {
@@ -223,7 +242,7 @@ function migrateAssetUrlValue(
       allowBareKeyForLiteralValue(raw),
     );
     if (!relative) return null;
-    const next = buildPublicUrl(target.publicBaseUrl, relative);
+    const next = buildPublicUrl(target, relative);
     return next === raw ? null : next;
   }
 
@@ -265,7 +284,7 @@ function migrateAssetUrlValue(
     );
     if (!relative) continue;
 
-    const next = buildPublicUrl(target.publicBaseUrl, relative);
+    const next = buildPublicUrl(target, relative);
     if (next !== raw) {
       return next;
     }
@@ -357,7 +376,15 @@ function loadStorageTargets() {
     bucket: getRequiredEnv('R2_BUCKET_USER_PROFILES'),
     publicBaseUrl: getRequiredEnv('R2_PUBLIC_URL_USER_PROFILES'),
     keyPrefix: getOptionalEnv('R2_KEY_PREFIX_USER_PROFILES', ''),
-    legacyPrefixes: ['user-profiles', 'profile-pictures'],
+    // IMPORTANT: 'user-profiles' is NOT a legacy prefix — it is the active
+    // keyPrefix for this bucket (R2_KEY_PREFIX_USER_PROFILES=user-profiles).
+    // If it were listed here, deriveRelativeKey would strip it from working
+    // URLs and buildPublicUrl would reconstruct them WITHOUT the prefix,
+    // breaking every stored URL that is currently valid.
+    //
+    // 'profile-pictures' was the Supabase storage bucket name used before
+    // the R2 migration and is a genuine legacy path to rewrite.
+    legacyPrefixes: ['profile-pictures'],
   };
 
   const honorsImages: StorageTarget = {

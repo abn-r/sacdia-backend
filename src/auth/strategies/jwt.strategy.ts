@@ -1,4 +1,6 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AppUnauthorizedException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +16,12 @@ export interface JwtPayload {
    * (aal2) should be blocked until this is cleared by POST /auth/mfa/verify.
    */
   mfa_pending?: boolean;
+  /**
+   * BA session DB row `id` (UUID). Embedded since 2026-04 to enable `is_current`
+   * comparison in GET /auth/sessions without an extra DB round-trip.
+   * Absent in tokens issued before this change or via MFA verify endpoint.
+   */
+  sid?: string;
   iat?: number;
   exp?: number;
 }
@@ -47,7 +55,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           sub: payload.sub,
         }),
       );
-      throw new UnauthorizedException('revoked');
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
     }
 
     if (
@@ -64,7 +72,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           sub: payload.sub,
         }),
       );
-      throw new UnauthorizedException('revoked');
+      throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
     }
 
     return {
@@ -73,6 +81,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       user_id: payload.sub,
       email: payload.email,
       mfa_pending: payload.mfa_pending ?? false,
+      sid: payload.sid ?? null,
     };
   }
 

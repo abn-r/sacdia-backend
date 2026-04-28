@@ -2,12 +2,15 @@ import {
   Injectable,
   Inject,
   Logger,
-  ConflictException,
-  UnauthorizedException,
-  NotFoundException,
-  InternalServerErrorException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import {
+  AppConflictException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID, randomBytes } from 'crypto';
@@ -15,6 +18,7 @@ import { generateSecret, generateURI, verifySync } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BetterAuthInstance } from './better-auth.config';
 import { maskEmail } from '../common/utils/mask-email.util';
+import { EmailService } from '../common/email/email.service';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -101,7 +105,11 @@ export interface IBetterAuthService {
   ): Promise<BaAuthResult>;
 
   // -- JWT (Option C core — IMPLEMENTED) ------------------------------------
-  signJwt(user: Pick<BaUser, 'id' | 'email'>, mfaPending?: boolean): string;
+  signJwt(
+    user: Pick<BaUser, 'id' | 'email'>,
+    mfaPending?: boolean,
+    sessionId?: string,
+  ): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +191,7 @@ export class BetterAuthService implements IBetterAuthService {
     // Keep the BA instance injected for OAuth and TOTP (future use)
     @Inject('BETTER_AUTH_INSTANCE')
     private readonly ba: BetterAuthInstance,
+    private readonly emailService: EmailService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -232,7 +241,7 @@ export class BetterAuthService implements IBetterAuthService {
     // 1. Duplicate email check
     const existing = await this.prisma.users.findUnique({ where: { email } });
     if (existing) {
-      throw new ConflictException('Email already in use');
+      throw new AppConflictException(ErrorCode.AUTH_EMAIL_ALREADY_IN_USE);
     }
 
     // 2. Hash password
@@ -264,7 +273,7 @@ export class BetterAuthService implements IBetterAuthService {
     const session = await this.createSession(userId);
 
     const user = mapDbUserToBaUser(dbUser);
-    const accessToken = this.signJwt(user);
+    const accessToken = this.signJwt(user, false, session.id);
 
     this.logger.log(`User created: ${user.id}`);
     return { user, session, accessToken };
@@ -286,7 +295,7 @@ export class BetterAuthService implements IBetterAuthService {
     // 1. Find user
     const dbUser = await this.prisma.users.findUnique({ where: { email } });
     if (!dbUser) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     // 2. Find credential account
@@ -294,13 +303,13 @@ export class BetterAuthService implements IBetterAuthService {
       where: { userId: dbUser.user_id, providerId: 'credential' },
     });
     if (!dbAccount || !dbAccount.password) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     // 3. Verify password
     const isValid = await bcrypt.compare(password, dbAccount.password);
     if (!isValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     // 4. Check MFA enrollment — if TOTP is active, issue a restricted token
@@ -312,7 +321,7 @@ export class BetterAuthService implements IBetterAuthService {
     // 5. Create session + sign JWT
     const session = await this.createSession(dbUser.user_id);
     const user = mapDbUserToBaUser(dbUser);
-    const accessToken = this.signJwt(user, mfaEnabled);
+    const accessToken = this.signJwt(user, mfaEnabled, session.id);
 
     if (mfaEnabled) {
       this.logger.log(
@@ -395,7 +404,7 @@ export class BetterAuthService implements IBetterAuthService {
       });
 
       if (!existing) {
-        throw new UnauthorizedException('Session not found or expired');
+        throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
       }
 
       // Token exists but is expired — clean it up fire-and-forget.
@@ -407,7 +416,7 @@ export class BetterAuthService implements IBetterAuthService {
           ),
         );
 
-      throw new UnauthorizedException('Session expired');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
     }
 
     const row = rows[0];
@@ -440,7 +449,7 @@ export class BetterAuthService implements IBetterAuthService {
       modified_at: row.u_modified_at,
     });
 
-    const accessToken = this.signJwt(user);
+    const accessToken = this.signJwt(user, false, session.id);
 
     this.logger.log(`Session refreshed for user: ${user.id}`);
     return { user, session, accessToken };
@@ -509,8 +518,22 @@ export class BetterAuthService implements IBetterAuthService {
       },
     });
 
-    // TODO(production): send email with reset link containing the token.
-    // SECURITY: Never log the raw token — it is a credential.
+    // Build deep link — token embedded in URL, never logged separately.
+    // The mobile app handles sacdia://reset-password?token=<token> and calls
+    // POST /api/v1/auth/password/reset with the token in the body.
+    // SECURITY: raw token is NEVER logged.
+    const resetUrl = `sacdia://reset-password?token=${token}`;
+
+    // Enqueue email — fire-and-forget from caller's perspective.
+    // EMAIL_ENABLED gate is enforced at processor level; no need to check here.
+    this.emailService
+      .sendPasswordReset({ email, resetUrl })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `Failed to enqueue password reset email for ${maskEmail(email)}: ${err.message}`,
+        );
+      });
+
     this.logger.log(
       `Password reset token generated for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
     );
@@ -527,9 +550,7 @@ export class BetterAuthService implements IBetterAuthService {
       where: { userId, providerId: 'credential' },
     });
     if (!dbAccount) {
-      throw new NotFoundException(
-        `updatePasswordById: no credential account for user ${userId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
@@ -598,12 +619,12 @@ export class BetterAuthService implements IBetterAuthService {
       where: { userId, providerId: 'credential' },
     });
     if (!dbAccount || !dbAccount.password) {
-      throw new UnauthorizedException('No credential account found for user');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     const isValid = await bcrypt.compare(password, dbAccount.password);
     if (!isValid) {
-      throw new UnauthorizedException('Invalid password');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
   }
 
@@ -632,7 +653,7 @@ export class BetterAuthService implements IBetterAuthService {
       select: { email: true },
     });
     if (!dbUser) {
-      throw new NotFoundException(`enrollTotp: user ${userId} not found`);
+      throw new AppNotFoundException(ErrorCode.USER_NOT_FOUND);
     }
 
     const secret = generateSecret();
@@ -692,8 +713,8 @@ export class BetterAuthService implements IBetterAuthService {
     try {
       parsed = JSON.parse(record.value);
     } catch {
-      throw new InternalServerErrorException(
-        'verifyTotp: stored TOTP data is malformed',
+      throw new AppInternalServerErrorException(
+        ErrorCode.AUTH_TOTP_ENROLLMENT_FAILED,
       );
     }
 
@@ -763,8 +784,8 @@ export class BetterAuthService implements IBetterAuthService {
       });
 
       if (!result.url) {
-        throw new InternalServerErrorException(
-          `getOAuthUrl: BA did not return a URL for provider ${provider}`,
+        throw new AppInternalServerErrorException(
+          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
         );
       }
 
@@ -774,9 +795,10 @@ export class BetterAuthService implements IBetterAuthService {
       this.logger.log(`OAuth URL generated for provider: ${provider}`);
       return { url: result.url, state };
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      throw new InternalServerErrorException(`getOAuthUrl: ${message}`);
+      if (error instanceof AppInternalServerErrorException) throw error;
+      throw new AppInternalServerErrorException(
+        ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+      );
     }
   }
 
@@ -801,8 +823,8 @@ export class BetterAuthService implements IBetterAuthService {
       });
 
       if (!result?.token) {
-        throw new InternalServerErrorException(
-          `handleOAuthCallback: no token in BA response for provider ${provider}`,
+        throw new AppInternalServerErrorException(
+          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
         );
       }
 
@@ -811,23 +833,21 @@ export class BetterAuthService implements IBetterAuthService {
         where: { token: result.token },
       });
       if (!dbSession) {
-        throw new UnauthorizedException(
-          'handleOAuthCallback: session not found after OAuth callback',
-        );
+        throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
       }
 
       const dbUser = await this.prisma.users.findUnique({
         where: { user_id: dbSession.userId },
       });
       if (!dbUser) {
-        throw new InternalServerErrorException(
-          'handleOAuthCallback: user not found for OAuth session',
+        throw new AppInternalServerErrorException(
+          ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
         );
       }
 
       const user = mapDbUserToBaUser(dbUser);
       const session = mapDbSessionToBaSession(dbSession);
-      const accessToken = this.signJwt(user);
+      const accessToken = this.signJwt(user, false, session.id);
 
       this.logger.log(
         `OAuth callback handled for provider: ${provider}, user: ${user.id}`,
@@ -835,13 +855,14 @@ export class BetterAuthService implements IBetterAuthService {
       return { user, session, accessToken };
     } catch (error) {
       if (
-        error instanceof InternalServerErrorException ||
-        error instanceof UnauthorizedException
+        error instanceof AppInternalServerErrorException ||
+        error instanceof AppUnauthorizedException
       ) {
         throw error;
       }
-      const message = error instanceof Error ? error.message : String(error);
-      throw new InternalServerErrorException(`handleOAuthCallback: ${message}`);
+      throw new AppInternalServerErrorException(
+        ErrorCode.AUTH_OAUTH_CALLBACK_FAILED,
+      );
     }
   }
 
@@ -850,7 +871,7 @@ export class BetterAuthService implements IBetterAuthService {
   /**
    * Signs a SACDIA HS256 JWT for API consumers.
    *
-   * Payload: { sub: user.id, email: user.email, [mfa_pending] }
+   * Payload: { sub: user.id, email: user.email, [sid], [mfa_pending] }
    * Algorithm: HS256 (via BETTER_AUTH_SECRET in JwtModule config)
    * Expiry: 8h (configured in BetterAuthModule JwtModule.registerAsync)
    *
@@ -860,16 +881,24 @@ export class BetterAuthService implements IBetterAuthService {
    *                      verified yet. Protected endpoints should reject these
    *                      tokens via MfaGuard until the user calls
    *                      POST /auth/mfa/verify successfully.
+   * @param sessionId   - Optional BA session DB row `id` (UUID). When present,
+   *                      enables `is_current` comparison in GET /auth/sessions.
    */
-  signJwt(user: Pick<BaUser, 'id' | 'email'>, mfaPending = false): string {
+  signJwt(
+    user: Pick<BaUser, 'id' | 'email'>,
+    mfaPending = false,
+    sessionId?: string,
+  ): string {
     const payload: Record<string, unknown> = {
       sub: user.id,
       email: user.email,
     };
+    if (sessionId) {
+      payload['sid'] = sessionId;
+    }
     if (mfaPending) {
       payload['mfa_pending'] = true;
     }
     return this.jwtService.sign(payload);
   }
-
 }

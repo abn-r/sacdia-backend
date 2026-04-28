@@ -1,16 +1,15 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 type InsuranceMutationInput = {
   insurance_type?: string;
@@ -128,7 +127,7 @@ export class InsuranceService {
   async getMemberInsurance(memberId: string) {
     const member = await this.loadMemberSnapshot(memberId);
     if (!member) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
     }
 
     const insurance = await this.loadLatestActiveInsurance(memberId);
@@ -245,18 +244,20 @@ export class InsuranceService {
     currentUserId?: string,
   ) {
     if (!currentUserId) {
-      throw new BadRequestException('Current user is required');
+      throw new AppBadRequestException(
+        ErrorCode.INSURANCE_CURRENT_USER_REQUIRED,
+      );
     }
 
     const member = await this.loadMemberSnapshot(memberId);
     if (!member) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
     }
 
     const fileData = await this.uploadEvidenceFile(memberId, file);
     const insuranceType = this.normalizeInsuranceType(dto.insurance_type);
     if (!insuranceType) {
-      throw new BadRequestException('insurance_type is required');
+      throw new AppBadRequestException(ErrorCode.INSURANCE_TYPE_REQUIRED);
     }
 
     await this.db.member_insurances.create({
@@ -292,7 +293,9 @@ export class InsuranceService {
     currentUserId?: string,
   ) {
     if (!currentUserId) {
-      throw new BadRequestException('Current user is required');
+      throw new AppBadRequestException(
+        ErrorCode.INSURANCE_CURRENT_USER_REQUIRED,
+      );
     }
 
     const existing = await this.db.member_insurances.findUnique({
@@ -304,7 +307,7 @@ export class InsuranceService {
     });
 
     if (!existing) {
-      throw new NotFoundException('Insurance not found');
+      throw new AppNotFoundException(ErrorCode.INSURANCE_NOT_FOUND);
     }
 
     const fileData = await this.uploadEvidenceFile(existing.user_id, file);
@@ -354,7 +357,7 @@ export class InsuranceService {
 
     const member = await this.loadMemberSnapshot(existing.user_id);
     if (!member) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
     }
 
     return this.mapMemberInsuranceDetail(
@@ -609,7 +612,7 @@ export class InsuranceService {
 
     const normalized = value.toString().trim().toUpperCase();
     if (!normalized) {
-      throw new BadRequestException('insurance_type is required');
+      throw new AppBadRequestException(ErrorCode.INSURANCE_TYPE_REQUIRED);
     }
 
     if (
@@ -617,7 +620,7 @@ export class InsuranceService {
       normalized !== 'CAMPOREE' &&
       normalized !== 'HIGH_RISK'
     ) {
-      throw new BadRequestException('Invalid insurance_type');
+      throw new AppBadRequestException(ErrorCode.INSURANCE_TYPE_INVALID);
     }
 
     return normalized;
@@ -639,7 +642,9 @@ export class InsuranceService {
 
     const parsed = typeof value === 'number' ? value : Number(value);
     if (Number.isNaN(parsed)) {
-      throw new BadRequestException('coverage_amount must be numeric');
+      throw new AppBadRequestException(
+        ErrorCode.INSURANCE_COVERAGE_AMOUNT_INVALID,
+      );
     }
 
     return parsed;
@@ -650,12 +655,12 @@ export class InsuranceService {
     field: string,
   ) {
     if (value === undefined || value === null || value === '') {
-      throw new BadRequestException(`${field} is required`);
+      throw new AppBadRequestException(ErrorCode.INSURANCE_DATE_REQUIRED);
     }
 
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException(`${field} is invalid`);
+      throw new AppBadRequestException(ErrorCode.INSURANCE_DATE_INVALID);
     }
 
     return date;

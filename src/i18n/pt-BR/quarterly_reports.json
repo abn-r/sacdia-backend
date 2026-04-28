@@ -1,0 +1,53 @@
+{
+  "quarter_labels": {
+    "1": "1o Trimestre",
+    "2": "2o Trimestre",
+    "3": "3o Trimestre",
+    "4": "4o Trimestre"
+  },
+  "header": {
+    "title": "RELATORIO TRIMESTRAL DO CLUBE",
+    "club_type": "Clube de {type}",
+    "district": "Distrito",
+    "church": "Igreja",
+    "club": "Clube",
+    "period": "Periodo"
+  },
+  "section_titles": {
+    "summary": "1. RESUMO DO TRIMESTRE",
+    "teachings": "2. ENSINAMENTOS",
+    "activities": "3. ATIVIDADES DO CLUBE",
+    "finances": "4. FINANCAS",
+    "missionary": "5. ATIVIDADE MISSIONARIA"
+  },
+  "summary": {
+    "member_count": "Quantidade de membros",
+    "months_covered": "Meses cobertos",
+    "total_activities": "Total de atividades",
+    "honors_completed": "Especialidades concluidas",
+    "honors_started": "Especialidades iniciadas"
+  },
+  "finances": {
+    "total_income": "Total de receitas",
+    "total_expenses": "Total de despesas",
+    "quarter_balance": "Saldo do trimestre",
+    "transaction_count": "Total de transacoes"
+  },
+  "status": {
+    "draft": "Rascunho",
+    "finalized": "Finalizado",
+    "archived": "Arquivado"
+  },
+  "secretary": {
+    "header": "Informacoes do Diretor/a",
+    "name": "Nome",
+    "email": "Email",
+    "fallback": "Nenhuma informacao disponivel."
+  },
+  "footer": "Gerado por SACDIA | Pagina {current} de {total}",
+  "bool": {
+    "true": "Sim",
+    "false": "Nao",
+    "null": "N/A"
+  }
+}

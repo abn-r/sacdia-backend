@@ -1,7 +1,7 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './jwt.strategy';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
+import { ErrorCode } from '../../common/errors/error-codes';
 
 describe('JwtStrategy', () => {
   const mockConfigService = {
@@ -44,7 +44,7 @@ describe('JwtStrategy', () => {
       iat: 1700000000,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       sub: 'user-123',
       userId: 'user-123',
       user_id: 'user-123',
@@ -68,7 +68,7 @@ describe('JwtStrategy', () => {
         email: 'user@example.com',
         iat: 1700000000,
       }),
-    ).rejects.toThrow(UnauthorizedException);
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
   });
 
   it('should throw UnauthorizedException when user was globally blacklisted', async () => {
@@ -89,6 +89,6 @@ describe('JwtStrategy', () => {
         email: 'user@example.com',
         iat: 1700000000,
       }),
-    ).rejects.toThrow(UnauthorizedException);
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED });
   });
 });

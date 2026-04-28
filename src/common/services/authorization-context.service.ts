@@ -1,9 +1,6 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  Inject,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
+import { AppUnauthorizedException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -357,7 +354,7 @@ export class AuthorizationContextService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Usuario no encontrado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_CONTEXT_USER_NOT_FOUND);
     }
 
     const globalScope = this.buildUserScope(user);

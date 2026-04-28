@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { AppNotFoundException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateFinanceDto,
@@ -12,12 +14,14 @@ import {
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
 import { FinancePeriodService } from './finance-period.service';
+import { TranslationService } from '../common/services/translation.service';
 
 @Injectable()
 export class FinancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly financePeriodService: FinancePeriodService,
+    private readonly translationService: TranslationService,
   ) {}
 
   // ========================================
@@ -25,7 +29,8 @@ export class FinancesService {
   // ========================================
 
   async getCategories(type?: number) {
-    return this.prisma.finances_categories.findMany({
+    const locale = this.translationService.getCurrentLocale();
+    const records = await this.prisma.finances_categories.findMany({
       where: {
         active: true,
         ...(type !== undefined && { type }),
@@ -36,9 +41,19 @@ export class FinancesService {
         description: true,
         icon: true,
         type: true, // 0=ingreso, 1=egreso
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
       },
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
     });
+    return this.translationService.translateMany(
+      records,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
   }
 
   // ========================================
@@ -65,18 +80,22 @@ export class FinancesService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
     }
 
     // Build section filter.
     // - Admin bypass (userSectionId === null): show all sections of the club,
     //   optionally narrowed by clubTypeId filter — preserves original broad behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+    let sectionFilter:
+      | { club_section_id: { in: number[] } }
+      | { club_section_id: number };
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+      sectionFilter = {
+        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      };
     } else {
       sectionFilter = { club_section_id: userSectionId };
     }
@@ -96,7 +115,9 @@ export class FinancesService {
         include: {
           finances_categories: { select: { name: true, type: true } },
           club_types: { select: { name: true } },
-          users: { select: { name: true, paternal_last_name: true, user_image: true } },
+          users: {
+            select: { name: true, paternal_last_name: true, user_image: true },
+          },
         },
         orderBy: [{ finance_date: 'desc' }, { created_at: 'desc' }],
         skip: pagination?.skip ?? 0,
@@ -130,18 +151,22 @@ export class FinancesService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
     }
 
     // Build section filter.
     // - Admin bypass (userSectionId === null): show all sections of the club,
     //   preserving original broad behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+    let sectionFilter:
+      | { club_section_id: { in: number[] } }
+      | { club_section_id: number };
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+      sectionFilter = {
+        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      };
     } else {
       sectionFilter = { club_section_id: userSectionId };
     }
@@ -159,7 +184,10 @@ export class FinancesService {
       ? {
           OR: [
             {
-              description: { contains: dto.search, mode: 'insensitive' as const },
+              description: {
+                contains: dto.search,
+                mode: 'insensitive' as const,
+              },
             },
             {
               finances_categories: {
@@ -298,17 +326,21 @@ export class FinancesService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.FINANCE_CLUB_NOT_FOUND);
     }
 
     // Build section filter.
     // - Admin bypass (userSectionId === null): show all sections — original behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter: { club_section_id: { in: number[] } } | { club_section_id: number };
+    let sectionFilter:
+      | { club_section_id: { in: number[] } }
+      | { club_section_id: number };
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
-      sectionFilter = { club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] } };
+      sectionFilter = {
+        club_section_id: { in: sectionIds.length > 0 ? sectionIds : [-1] },
+      };
     } else {
       sectionFilter = { club_section_id: userSectionId };
     }
@@ -358,14 +390,14 @@ export class FinancesService {
       include: {
         finances_categories: true,
         club_types: { select: { name: true } },
-        users: { select: { name: true, paternal_last_name: true, user_image: true } },
+        users: {
+          select: { name: true, paternal_last_name: true, user_image: true },
+        },
       },
     });
 
     if (!finance) {
-      throw new NotFoundException(
-        `Finance record with ID ${financeId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.FINANCE_TRANSACTION_NOT_FOUND);
     }
 
     return finance;

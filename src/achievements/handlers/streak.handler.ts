@@ -44,7 +44,11 @@ export class StreakHandler implements AchievementHandler, OnModuleInit {
       errors.push('event must be a non-empty string');
     }
 
-    if (typeof c.target !== 'number' || !Number.isFinite(c.target) || c.target < 1) {
+    if (
+      typeof c.target !== 'number' ||
+      !Number.isFinite(c.target) ||
+      c.target < 1
+    ) {
       errors.push('target must be a positive finite number');
     }
 
@@ -58,7 +62,10 @@ export class StreakHandler implements AchievementHandler, OnModuleInit {
       }
     }
 
-    return { valid: errors.length === 0, errors: errors.length > 0 ? errors : undefined };
+    return {
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
   async evaluate(
@@ -130,7 +137,10 @@ export class StreakHandler implements AchievementHandler, OnModuleInit {
     let currentPeriod = periods[0];
 
     for (let i = 1; i < 1000; i++) {
-      const previousPeriod = this.previousPeriodKey(currentPeriod, criteria.streak_unit);
+      const previousPeriod = this.previousPeriodKey(
+        currentPeriod,
+        criteria.streak_unit,
+      );
 
       if (periodSet.has(previousPeriod)) {
         streak++;
@@ -173,18 +183,25 @@ export class StreakHandler implements AchievementHandler, OnModuleInit {
    * Uses UTC getters to avoid local-timezone date shifts on UTC-midnight inputs.
    */
   private getISOWeekKey(date: Date): string {
-    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const d = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
     const day = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
     d.setUTCDate(d.getUTCDate() + 4 - day);
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    const weekNum = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+    const weekNum = Math.ceil(
+      ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+    );
     return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
   }
 
   /**
    * Return the period key immediately before the given one.
    */
-  private previousPeriodKey(key: string, unit: 'day' | 'week' | 'month'): string {
+  private previousPeriodKey(
+    key: string,
+    unit: 'day' | 'week' | 'month',
+  ): string {
     switch (unit) {
       case 'day': {
         const d = new Date(key + 'T00:00:00Z');

@@ -80,19 +80,19 @@ Migration: `20260417183839_user_fcm_tokens_partial_index`. Aplicada a developmen
 **Paso 4 — Token cleanup job periodico (backend)** ✅ YA ESTABA IMPLEMENTADO
 `FcmTokensService.cleanupOldTokens()` tiene `@Cron('0 3 * * 0')` (domingo 3am). Politica: hard delete (`deleteMany`) de tokens con `last_used < now() - 90 days`. Log del count al finalizar.
 
-**Paso 5 — Indice en notification_deliveries para inbox (DB)**
+**Paso 5 — Indice en notification_deliveries para inbox (DB)** ✅ COMPLETADO 2026-04-23
 ```sql
-CREATE INDEX IF NOT EXISTS idx_notification_deliveries_user_unread
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_notification_deliveries_user_unread
   ON notification_deliveries (user_id, created_at DESC)
   WHERE read_at IS NULL;
 ```
-Acelera el endpoint de bandeja de entrada (`getNotificationHistory`) y el `getUnreadCount`. Pendiente de migration.
+Acelera el endpoint de bandeja de entrada (`getNotificationHistory`) y el `getUnreadCount`. Migration: `20260423155416_notification_deliveries_unread_index` — SQL crudo con `CONCURRENTLY` (fuera de transaccion). El modelo `notification_deliveries` en `schema.prisma` lleva un comentario que documenta la existencia del indice parcial para evitar drift al regenerar.
 
 **Paso 6 (original Paso 8) — Source-to-category mapping (backend)** ✅ COMPLETADO 2026-04-17
 Creado `notification-source-map.constants.ts` con mapping explicito de los 19 source strings del sistema a sus 4 categorias mobile activas. `NotificationPreferencesService.extractCategory()` usa el mapa primero (lookup O(1)) y cae al prefix-matching como fallback. Sources no mapeados loguean un warning. 26 unit tests cubriendo mapping, completitud de callsites, y casos borde.
 
-**Paso 7 — Limite de tokens por user (backend + DB)**
-Limitar a 5 tokens activos por user. En `FcmTokensService.registerToken()`, despues del upsert, hacer DELETE de los tokens mas viejos que excedan el limite.
+**Paso 7 — Limite de tokens por user (backend + DB)** ✅ COMPLETADO 2026-04-23
+Constante `MAX_ACTIVE_TOKENS_PER_USER = 5` en `src/notifications/fcm-tokens.service.ts`. `registerToken()` envuelve el upsert + la poda en una sola `prisma.$transaction`: tras el upsert se listan los tokens activos ordenados por `last_used DESC` y se hace hard delete de los que excedan el top 5 (los mas viejos). Cubierto en `fcm-tokens.service.spec.ts`.
 
-**Paso 8 — Exponer metricas de delivery en admin (backend)**
-Agregar endpoint `GET /api/v1/admin/notifications/stats` que retorne: tokens activos totales, tokens inactivos (ultimos 30 dias), tasa de delivery (tokens_sent / (tokens_sent + tokens_failed)) por dia.
+**Paso 8 — Exponer metricas de delivery en admin (backend)** ✅ COMPLETADO 2026-04-23
+Endpoint `GET /api/v1/admin/notifications/stats?days=30` protegido con `JwtAuthGuard` + `GlobalRolesGuard` (`admin|super_admin`). Responde `{ activeTokens, inactiveTokens30d, dailyDeliveryRate[] }`; cada fila de `dailyDeliveryRate` trae `date`, `tokens_sent`, `tokens_failed` y `success_rate` calculado server-side (`null` cuando `tokens_sent` y `tokens_failed` son ambos 0, para distinguir "sin datos" de "100% de fallo"). Implementacion en `src/admin/admin-notifications.controller.ts` + `src/admin/admin-notifications.service.ts`; DTOs en `src/admin/dto/notification-stats-{query,response}.dto.ts`.

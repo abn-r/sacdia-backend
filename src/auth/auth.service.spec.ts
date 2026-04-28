@@ -15,6 +15,8 @@ import {
 } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
+import { EmailService } from '../common/email/email.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -91,6 +93,11 @@ describe('AuthService', () => {
     isUserBlacklisted: jest.fn(),
   };
 
+  const mockEmailService = {
+    sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+    sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     mockPrismaService.$transaction.mockImplementation(
       async (callback: (tx: typeof mockTx) => Promise<unknown>) =>
@@ -110,6 +117,10 @@ describe('AuthService', () => {
         {
           provide: TokenBlacklistService,
           useValue: mockTokenBlacklistService,
+        },
+        {
+          provide: EmailService,
+          useValue: mockEmailService,
         },
       ],
     }).compile();
@@ -227,9 +238,9 @@ describe('AuthService', () => {
       mockTx.users_pr.create.mockResolvedValue({ user_id: 'user-123' });
       mockTx.roles.findFirst.mockResolvedValue(null);
 
-      await expect(service.register(registerDto)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(service.register(registerDto)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_USER_ROLE_NOT_FOUND,
+      });
       expect(mockBetterAuthService.signOut).toHaveBeenCalledWith(
         mockBaResult.session.token,
       );
@@ -263,9 +274,9 @@ describe('AuthService', () => {
         new UnauthorizedException('Invalid login credentials'),
       );
 
-      await expect(service.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(service.login(loginDto)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+      });
 
       const warnMessage = String(warnSpy.mock.calls[0]?.[0] ?? '');
       expect(warnMessage).toContain('ju***@example.com');
@@ -276,9 +287,9 @@ describe('AuthService', () => {
       mockBetterAuthService.signInWithPassword.mockResolvedValue(mockBaResult);
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(service.login(loginDto)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_INVALID_CREDENTIALS,
+      });
     });
 
     it('should return tokens, user data, and post-registration state', async () => {
@@ -455,9 +466,9 @@ describe('AuthService', () => {
     };
 
     it('should throw BadRequestException when refresh token is missing', async () => {
-      await expect(service.refreshSession({} as any)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.refreshSession({} as any)).rejects.toMatchObject({
+        code: ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED,
+      });
     });
 
     it('should throw UnauthorizedException when BA refreshSession fails', async () => {
@@ -467,7 +478,7 @@ describe('AuthService', () => {
 
       await expect(
         service.refreshSession({ refreshToken: 'invalid-session-token' }),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID });
     });
 
     it('should reject legacy snake_case field by default', async () => {
@@ -476,11 +487,7 @@ describe('AuthService', () => {
       await expect(
         service.refreshSession({ refresh_token: 'legacy-token' }),
       ).rejects.toMatchObject({
-        response: expect.objectContaining({
-          code: 'LEGACY_SNAKE_CASE_REMOVED',
-          removedAt: '2026-03-01',
-          use: 'refreshToken',
-        }),
+        code: ErrorCode.AUTH_REFRESH_TOKEN_LEGACY_REMOVED,
       });
     });
 
@@ -562,12 +569,14 @@ describe('AuthService', () => {
 
       await expect(
         service.requestPasswordReset({ email: 'juan.garcia@example.com' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_PASSWORD_RESET_FAILED });
     });
 
     it('should propagate ServiceUnavailableException from BA as-is (503)', async () => {
       mockBetterAuthService.resetPasswordForEmail.mockRejectedValue(
-        new ServiceUnavailableException('Password reset is temporarily unavailable'),
+        new ServiceUnavailableException(
+          'Password reset is temporarily unavailable',
+        ),
       );
 
       await expect(
@@ -580,10 +589,17 @@ describe('AuthService', () => {
   // updatePassword()
   // ---------------------------------------------------------------------------
   describe('updatePassword', () => {
-    it('should throw NotImplementedException (BA admin plugin not configured)', async () => {
+    it('should delegate to betterAuthService.updatePasswordById', async () => {
+      mockBetterAuthService.updatePasswordById.mockResolvedValue(undefined);
+
       await expect(
         service.updatePassword('user-123', 'NewPassword123!'),
-      ).rejects.toThrow(NotImplementedException);
+      ).resolves.toBeUndefined();
+
+      expect(mockBetterAuthService.updatePasswordById).toHaveBeenCalledWith(
+        'user-123',
+        'NewPassword123!',
+      );
     });
   });
 
@@ -848,7 +864,7 @@ describe('AuthService', () => {
         service.setActiveClubContext('user-123', {
           assignment_id: 'missing-assignment',
         } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND });
     });
 
     it('should persist active assignment and return normalized context', async () => {
@@ -1039,9 +1055,11 @@ describe('AuthService', () => {
     it('should throw BadRequestException when post-registration does not exist', async () => {
       mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
 
-      await expect(service.getCompletionStatus('user-123')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.getCompletionStatus('user-123'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED,
+      });
     });
 
     it('should set nextStep to profilePicture when first step is pending', async () => {
@@ -1123,7 +1141,7 @@ describe('AuthService', () => {
 
       await expect(
         service.sendVerificationEmail('missing-user'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_USER_NOT_FOUND });
     });
 
     it('should return alreadyVerified=true when email is already verified', async () => {
@@ -1196,7 +1214,9 @@ describe('AuthService', () => {
 
       await expect(
         service.confirmEmailVerification({ token: 'nonexistent-token' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      });
     });
 
     it('should throw BadRequestException and delete token when token is expired', async () => {
@@ -1211,7 +1231,9 @@ describe('AuthService', () => {
 
       await expect(
         service.confirmEmailVerification({ token: validToken }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED,
+      });
 
       expect(mockPrismaService.verification.delete).toHaveBeenCalledWith({
         where: { id: 'verification-id-1' },

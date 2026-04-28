@@ -38,7 +38,10 @@ describe('MilestoneHandler', () => {
 
   it('should register itself on module init', () => {
     handler.onModuleInit();
-    expect(mockHandlerRegistry.register).toHaveBeenCalledWith('MILESTONE', handler);
+    expect(mockHandlerRegistry.register).toHaveBeenCalledWith(
+      'MILESTONE',
+      handler,
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -164,7 +167,7 @@ describe('MilestoneHandler', () => {
 
   describe('evaluate', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     it('should return matched=true when live payload matches the milestone field', async () => {
       // The historical log query should NOT be called when live payload matches
@@ -172,7 +175,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'profile.updated', field: 'status', operator: 'eq', target: 'COMPLETE' }),
+        makeAchievement({
+          event: 'profile.updated',
+          field: 'status',
+          operator: 'eq',
+          target: 'COMPLETE',
+        }),
         { eventType: 'profile.updated', payload: { status: 'COMPLETE' } },
       );
 
@@ -188,7 +196,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'profile.updated', field: 'status', operator: 'eq', target: 'COMPLETE' }),
+        makeAchievement({
+          event: 'profile.updated',
+          field: 'status',
+          operator: 'eq',
+          target: 'COMPLETE',
+        }),
         { eventType: 'profile.updated', payload: { status: 'PENDING' } },
       );
 
@@ -206,7 +219,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'profile.updated', field: 'status', operator: 'eq', target: 'COMPLETE' }),
+        makeAchievement({
+          event: 'profile.updated',
+          field: 'status',
+          operator: 'eq',
+          target: 'COMPLETE',
+        }),
         { eventType: 'profile.updated', payload: { status: 'PENDING' } },
       );
 
@@ -221,7 +239,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'profile.updated', field: 'status', operator: 'eq', target: 'COMPLETE' }),
+        makeAchievement({
+          event: 'profile.updated',
+          field: 'status',
+          operator: 'eq',
+          target: 'COMPLETE',
+        }),
         { eventType: 'some.other.event', payload: {} }, // different event type
       );
 
@@ -233,7 +256,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'level.reached', field: 'level', operator: 'eq', target: 10 }),
+        makeAchievement({
+          event: 'level.reached',
+          field: 'level',
+          operator: 'eq',
+          target: 10,
+        }),
         { eventType: 'level.reached', payload: { level: 5 } },
       );
 
@@ -249,7 +277,7 @@ describe('MilestoneHandler', () => {
 
   describe('calculateProgress', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     it('should return current=1, target=1, percentage=100 when milestone is completed', async () => {
       mockPrismaService.achievement_event_log.findMany.mockResolvedValue([
@@ -258,7 +286,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'profile.updated', field: 'status', operator: 'eq', target: 'COMPLETE' }),
+        makeAchievement({
+          event: 'profile.updated',
+          field: 'status',
+          operator: 'eq',
+          target: 'COMPLETE',
+        }),
       );
 
       expect(result.current).toBe(1);
@@ -273,7 +306,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'profile.updated', field: 'status', operator: 'eq', target: 'COMPLETE' }),
+        makeAchievement({
+          event: 'profile.updated',
+          field: 'status',
+          operator: 'eq',
+          target: 'COMPLETE',
+        }),
       );
 
       expect(result.current).toBe(0);
@@ -286,7 +324,12 @@ describe('MilestoneHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'profile.updated', field: 'status', operator: 'eq', target: 'COMPLETE' }),
+        makeAchievement({
+          event: 'profile.updated',
+          field: 'status',
+          operator: 'eq',
+          target: 'COMPLETE',
+        }),
       );
 
       expect(result.current).toBe(0);

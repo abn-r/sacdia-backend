@@ -45,7 +45,10 @@ describe('StreakHandler', () => {
 
   it('should register itself on module init', () => {
     handler.onModuleInit();
-    expect(mockHandlerRegistry.register).toHaveBeenCalledWith('STREAK', handler);
+    expect(mockHandlerRegistry.register).toHaveBeenCalledWith(
+      'STREAK',
+      handler,
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -86,7 +89,9 @@ describe('StreakHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('streak_unit must be one of: day, week, month');
+      expect(result.errors).toContain(
+        'streak_unit must be one of: day, week, month',
+      );
     });
 
     it('should fail when streak_unit is missing', () => {
@@ -97,7 +102,9 @@ describe('StreakHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('streak_unit must be one of: day, week, month');
+      expect(result.errors).toContain(
+        'streak_unit must be one of: day, week, month',
+      );
     });
 
     it('should fail when target is missing', () => {
@@ -108,7 +115,9 @@ describe('StreakHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('target must be a positive finite number');
+      expect(result.errors).toContain(
+        'target must be a positive finite number',
+      );
     });
 
     it('should fail when target is zero', () => {
@@ -120,7 +129,9 @@ describe('StreakHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('target must be a positive finite number');
+      expect(result.errors).toContain(
+        'target must be a positive finite number',
+      );
     });
 
     it('should fail when target is negative', () => {
@@ -132,7 +143,9 @@ describe('StreakHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('target must be a positive finite number');
+      expect(result.errors).toContain(
+        'target must be a positive finite number',
+      );
     });
 
     it('should fail when grace_period is negative', () => {
@@ -164,7 +177,7 @@ describe('StreakHandler', () => {
 
   describe('evaluate', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     const dummyEvent = { eventType: 'attendance.marked', payload: {} };
 
@@ -179,7 +192,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 4, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 4,
+          streak_unit: 'week',
+        }),
         dummyEvent,
       );
 
@@ -199,7 +217,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 4, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 4,
+          streak_unit: 'week',
+        }),
         dummyEvent,
       );
 
@@ -243,7 +266,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'login', operator: 'streak', target: 3, streak_unit: 'day' }),
+        makeAchievement({
+          event: 'login',
+          operator: 'streak',
+          target: 3,
+          streak_unit: 'day',
+        }),
         dummyEvent,
       );
 
@@ -261,7 +289,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'donation.made', operator: 'streak', target: 3, streak_unit: 'month' }),
+        makeAchievement({
+          event: 'donation.made',
+          operator: 'streak',
+          target: 3,
+          streak_unit: 'month',
+        }),
         dummyEvent,
       );
 
@@ -278,7 +311,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 2, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 2,
+          streak_unit: 'week',
+        }),
         dummyEvent,
       );
 
@@ -292,7 +330,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 4, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 4,
+          streak_unit: 'week',
+        }),
         dummyEvent,
       );
 
@@ -307,7 +350,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 4, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 4,
+          streak_unit: 'week',
+        }),
         dummyEvent,
       );
 
@@ -322,7 +370,7 @@ describe('StreakHandler', () => {
 
   describe('calculateProgress', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     it('should return current streak length vs target with correct percentage', async () => {
       mockPrismaService.achievement_event_log.findMany.mockResolvedValue([
@@ -332,7 +380,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 4, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 4,
+          streak_unit: 'week',
+        }),
       );
 
       expect(result.current).toBe(2);
@@ -345,7 +398,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 4, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 4,
+          streak_unit: 'week',
+        }),
       );
 
       expect(result.current).toBe(0);
@@ -364,7 +422,12 @@ describe('StreakHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'streak', target: 3, streak_unit: 'week' }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'streak',
+          target: 3,
+          streak_unit: 'week',
+        }),
       );
 
       expect(result.percentage).toBe(100);

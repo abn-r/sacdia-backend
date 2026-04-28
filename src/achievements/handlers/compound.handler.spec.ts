@@ -38,7 +38,10 @@ describe('CompoundHandler', () => {
 
   it('should register itself on module init', () => {
     handler.onModuleInit();
-    expect(mockHandlerRegistry.register).toHaveBeenCalledWith('COMPOUND', handler);
+    expect(mockHandlerRegistry.register).toHaveBeenCalledWith(
+      'COMPOUND',
+      handler,
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -166,7 +169,7 @@ describe('CompoundHandler', () => {
 
   describe('evaluate (AND logic)', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     const dummyEvent = { eventType: 'anything', payload: {} };
 
@@ -262,7 +265,7 @@ describe('CompoundHandler', () => {
 
   describe('evaluate (OR logic)', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     const dummyEvent = { eventType: 'anything', payload: {} };
 
@@ -314,7 +317,11 @@ describe('CompoundHandler', () => {
     it('should represent OR progress as max percentage across conditions', async () => {
       // condition 1: 3/5 = 60%, condition 2: 1/3 = 33%
       mockPrismaService.achievement_event_log.findMany
-        .mockResolvedValueOnce([{ event_payload: {} }, { event_payload: {} }, { event_payload: {} }]) // 3
+        .mockResolvedValueOnce([
+          { event_payload: {} },
+          { event_payload: {} },
+          { event_payload: {} },
+        ]) // 3
         .mockResolvedValueOnce([{ event_payload: {} }]); // 1
 
       const result = await handler.evaluate(
@@ -341,7 +348,7 @@ describe('CompoundHandler', () => {
 
   describe('calculateProgress', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     it('should return completed_count/total for AND logic', async () => {
       mockPrismaService.achievement_event_log.findMany

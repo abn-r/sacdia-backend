@@ -1,11 +1,11 @@
+import { Injectable, Logger } from '@nestjs/common';
 import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-  ForbiddenException,
-  Logger,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppConflictException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
@@ -40,7 +40,9 @@ export class RbacService {
     });
 
     if (!permission) {
-      throw new NotFoundException(`Permiso ${id} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_PERMISSION_NOT_FOUND, {
+        id,
+      });
     }
 
     return permission;
@@ -52,9 +54,9 @@ export class RbacService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        `Ya existe un permiso con nombre "${dto.permission_name}"`,
-      );
+      throw new AppConflictException(ErrorCode.RBAC_PERMISSION_NAME_CONFLICT, {
+        name: dto.permission_name,
+      });
     }
 
     const permission = await this.prisma.permissions.create({
@@ -80,8 +82,9 @@ export class RbacService {
       });
 
       if (existing) {
-        throw new ConflictException(
-          `Ya existe un permiso con nombre "${dto.permission_name}"`,
+        throw new AppConflictException(
+          ErrorCode.RBAC_PERMISSION_NAME_CONFLICT,
+          { name: dto.permission_name },
         );
       }
     }
@@ -150,9 +153,9 @@ export class RbacService {
 
   async createRole(dto: CreateRoleDto) {
     if (dto.role_name === 'super_admin') {
-      throw new BadRequestException(
-        'El nombre de rol "super_admin" está reservado y no puede ser creado',
-      );
+      throw new AppBadRequestException(ErrorCode.RBAC_ROLE_NAME_RESERVED, {
+        name: dto.role_name,
+      });
     }
 
     const existing = await this.prisma.roles.findUnique({
@@ -160,9 +163,9 @@ export class RbacService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        `Ya existe un rol con nombre "${dto.role_name}"`,
-      );
+      throw new AppConflictException(ErrorCode.RBAC_ROLE_NAME_CONFLICT, {
+        name: dto.role_name,
+      });
     }
 
     const permissionIds = dto.permission_ids ?? [];
@@ -177,9 +180,9 @@ export class RbacService {
       if (permissions.length !== permissionIds.length) {
         const foundIds = new Set(permissions.map((p) => p.permission_id));
         const missing = permissionIds.filter((id) => !foundIds.has(id));
-        throw new NotFoundException(
-          `Permisos no encontrados: ${missing.join(', ')}`,
-        );
+        throw new AppNotFoundException(ErrorCode.RBAC_PERMISSIONS_NOT_FOUND, {
+          ids: missing.join(', '),
+        });
       }
     }
 
@@ -233,18 +236,18 @@ export class RbacService {
     });
 
     if (!role) {
-      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
     }
 
     if (role.role_name === 'super_admin') {
-      throw new ForbiddenException('El rol super_admin no puede ser modificado');
+      throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
     // role_name is immutable — reject if caller sent it
     if ('role_name' in dto) {
-      throw new BadRequestException(
-        'role_name no puede ser modificado. Es inmutable después de la creación.',
-      );
+      throw new AppBadRequestException(ErrorCode.RBAC_ROLE_NAME_IMMUTABLE);
     }
 
     const updateData: { description?: string; modified_at: Date } = {
@@ -301,13 +304,13 @@ export class RbacService {
     });
 
     if (!role) {
-      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
     }
 
     if (role.role_name === 'super_admin') {
-      throw new ForbiddenException(
-        'El rol super_admin no puede ser desactivado',
-      );
+      throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
     // Count active user assignments for this role
@@ -316,9 +319,10 @@ export class RbacService {
     });
 
     if (assignedCount > 0) {
-      throw new ConflictException(
-        `Cannot deactivate role: ${assignedCount} user${assignedCount === 1 ? '' : 's'} are currently assigned. Reassign them first.`,
-      );
+      throw new AppConflictException(ErrorCode.RBAC_ROLE_HAS_ASSIGNMENTS, {
+        id: roleId,
+        count: assignedCount,
+      });
     }
 
     await this.prisma.roles.update({
@@ -350,7 +354,9 @@ export class RbacService {
     });
 
     if (!role) {
-      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
     }
 
     return role;
@@ -364,7 +370,9 @@ export class RbacService {
     });
 
     if (!role) {
-      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
     }
 
     // Verificar que todos los permisos existen
@@ -375,9 +383,9 @@ export class RbacService {
     if (permissions.length !== permissionIds.length) {
       const foundIds = new Set(permissions.map((p) => p.permission_id));
       const missing = permissionIds.filter((id) => !foundIds.has(id));
-      throw new NotFoundException(
-        `Permisos no encontrados: ${missing.join(', ')}`,
-      );
+      throw new AppNotFoundException(ErrorCode.RBAC_PERMISSIONS_NOT_FOUND, {
+        ids: missing.join(', '),
+      });
     }
 
     // Insertar solo los que no existan (upsert conceptual)
@@ -427,7 +435,10 @@ export class RbacService {
     });
 
     if (!assignment) {
-      throw new NotFoundException('Asignación de permiso a rol no encontrada');
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_PERMISSION_NOT_FOUND, {
+        roleId,
+        permissionId,
+      });
     }
 
     await this.prisma.role_permissions.update({
@@ -478,7 +489,10 @@ export class RbacService {
         );
         return { success: true, message: 'Permiso reactivado' };
       }
-      throw new ConflictException('El usuario ya tiene este permiso asignado');
+      throw new AppConflictException(
+        ErrorCode.RBAC_USER_PERMISSION_ALREADY_ASSIGNED,
+        { userId, permissionId },
+      );
     }
 
     await this.prisma.users_permissions.create({
@@ -495,9 +509,10 @@ export class RbacService {
     });
 
     if (!assignment) {
-      throw new NotFoundException(
-        'Asignación de permiso a usuario no encontrada',
-      );
+      throw new AppNotFoundException(ErrorCode.RBAC_USER_PERMISSION_NOT_FOUND, {
+        userId,
+        permissionId,
+      });
     }
 
     await this.prisma.users_permissions.update({
@@ -518,7 +533,9 @@ export class RbacService {
     });
 
     if (!user) {
-      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_USER_NOT_FOUND, {
+        id: userId,
+      });
     }
 
     // Per-user role assignments: bounded by the total number of roles.
@@ -553,11 +570,15 @@ export class RbacService {
     ]);
 
     if (!user) {
-      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_USER_NOT_FOUND, {
+        id: userId,
+      });
     }
 
     if (!role) {
-      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
     }
 
     const existing = await this.prisma.users_roles.findFirst({
@@ -578,7 +599,10 @@ export class RbacService {
         );
         return { success: true, message: 'Rol reactivado' };
       }
-      throw new ConflictException('El usuario ya tiene este rol asignado');
+      throw new AppConflictException(
+        ErrorCode.RBAC_USER_ROLE_ALREADY_ASSIGNED,
+        { userId, roleId },
+      );
     }
 
     await this.prisma.users_roles.create({
@@ -596,7 +620,10 @@ export class RbacService {
     });
 
     if (!assignment) {
-      throw new NotFoundException('Asignación de rol a usuario no encontrada');
+      throw new AppNotFoundException(ErrorCode.RBAC_USER_ROLE_NOT_FOUND, {
+        userId,
+        roleId,
+      });
     }
 
     await this.prisma.users_roles.update({
@@ -622,9 +649,7 @@ export class RbacService {
     });
 
     if (existingSuperAdmin) {
-      throw new ConflictException(
-        'Ya existe un super_admin. Este endpoint solo funciona cuando no hay ninguno.',
-      );
+      throw new AppConflictException(ErrorCode.RBAC_SUPER_ADMIN_ALREADY_EXISTS);
     }
 
     const user = await this.prisma.users.findUnique({
@@ -633,7 +658,9 @@ export class RbacService {
     });
 
     if (!user) {
-      throw new NotFoundException(`Usuario ${userId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_USER_NOT_FOUND, {
+        id: userId,
+      });
     }
 
     const superAdminRole = await this.prisma.roles.findFirst({
@@ -641,9 +668,7 @@ export class RbacService {
     });
 
     if (!superAdminRole) {
-      throw new NotFoundException(
-        'Rol super_admin no encontrado en la base de datos. Ejecutá el seed primero.',
-      );
+      throw new AppNotFoundException(ErrorCode.RBAC_SUPER_ADMIN_ROLE_NOT_FOUND);
     }
 
     await this.prisma.users_roles.create({
@@ -673,7 +698,9 @@ export class RbacService {
     });
 
     if (!role) {
-      throw new NotFoundException(`Rol ${roleId} no encontrado`);
+      throw new AppNotFoundException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        id: roleId,
+      });
     }
 
     // Obtener asignaciones actuales activas

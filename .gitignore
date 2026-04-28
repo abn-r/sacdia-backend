@@ -5,3 +5,6 @@ dist
 .claude
 /generated/prisma
 coverage/
+
+# Runtime audit logs from one-shot scripts
+orphan-cleanup-*.json

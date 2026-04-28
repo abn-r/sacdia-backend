@@ -69,7 +69,7 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('classes:read', 'Read class information', true),
   ('classes:update', 'Update class information and progress', true),
   ('classes:submit_progress', 'Enroll, progress, submit class evidence', true),
-  ('classes:validate', 'Approve/reject class submissions', true)
+  ('classes:validate', 'DEPRECATED — superseded by validation:review (2026-04-22)', false)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -94,6 +94,21 @@ ON CONFLICT (permission_name) DO UPDATE SET
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('attendance:read', 'Read attendance records', true),
   ('attendance:manage', 'Manage attendance (mark, update)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- QR / Virtual Credentials
+-- ============================
+-- Deprecated 2026-04-28: `/qr/me*` no longer enforce a domain permission —
+-- self-service routes only require JWT auth (Option A). The permission row is
+-- kept but deactivated so existing role_permissions FK rows remain valid until
+-- the next seed run purges them via role-permissions.seed.sql.
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('qr:issue_self', 'Issue and view the authenticated user QR credential', false),
+  ('qr:validate', 'Validate QR credentials during scanning flows', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -184,6 +199,19 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('honor_categories:create', 'Create honor categories', true),
   ('honor_categories:update', 'Update honor categories', true),
   ('honor_categories:delete', 'Delete honor categories', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Honors (admin CRUD on honor definitions)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('honors:read', 'Read honor definitions (admin)', true),
+  ('honors:create', 'Create honor definitions (admin)', true),
+  ('honors:update', 'Update honor definitions (admin)', true),
+  ('honors:delete', 'Delete honor definitions (admin)', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -352,7 +380,7 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
--- Certifications
+-- Certifications (catalog browse — broad read grant, original semantics)
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('certifications:read', 'Browse certifications catalog', true)
@@ -362,10 +390,41 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
--- Folders
+-- Folders (catalog browse — broad read grant, original semantics)
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('folders:read', 'Browse folders catalog', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Corrective migration (Sprint C collision fix)
+-- ============================
+-- Soft-remove permissions mistakenly added in Sprint C collision.
+-- These were added with wrong semantics (user-progression, not catalog-browse).
+-- Rows remain for FK integrity; active=false removes them from grants.
+UPDATE permissions SET active = false, modified_at = now()
+WHERE permission_name IN ('certifications:manage', 'folders:manage');
+
+-- ============================
+-- User Certifications (own domain, admin-level operations on user progression)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('user_certifications:read',   'Read any user certification progress (admin-level)', true),
+  ('user_certifications:manage', 'Enroll user, update/delete certification progress (admin-level)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- User Folders (own domain, admin-level operations on user folder progression)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('user_folders:read',   'Read any user folder enrollment and progress (admin-level)', true),
+  ('user_folders:manage', 'Enroll, update/delete user folder assignments (admin-level)', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -405,6 +464,40 @@ ON CONFLICT (permission_name) DO UPDATE SET
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('achievements:read', 'View achievements catalog and user progress', true),
   ('achievements:manage', 'Create, update, delete, and manage achievements', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Member of the Month
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('mom:read',      'Read member-of-month winners and history per section', true),
+  ('mom:supervise', 'List member-of-month multi-section (admin/coordinator)', true),
+  ('mom:evaluate',  'Trigger manual member-of-month evaluation (director)', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Scoring Categories
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('scoring_categories:read',   'Read scoring categories for divisions, unions, and local fields', true),
+  ('scoring_categories:manage', 'Create/update/delete scoring categories for unions and local fields', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Requests (own domain, migrated from clubs:*/club_roles:*)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('requests:read',   'Read transfer and role assignment requests', true),
+  ('requests:review', 'Review (approve/reject) transfer and role assignment requests', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -493,6 +586,31 @@ ON CONFLICT (permission_name) DO UPDATE SET
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('camporees:read', 'View camporees information', true),
   ('camporees:register', 'Register/enroll club to camporees', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- Camporees management (Sprint D)
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('camporees:create', 'Create new camporees', true),
+  ('camporees:update', 'Update camporee information', true),
+  ('camporees:delete', 'Delete/deactivate camporees', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Validation (own domain — Sprint E)
+-- Coexists with classes:* and users:read_detail which remain active for their
+-- respective modules (classes controller, users controller). These new permissions
+-- are used exclusively by the validation controller.
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('validation:submit', 'Submit class/honor progress for review', true),
+  ('validation:review', 'Approve or reject submitted progress', true),
+  ('validation:read',   'Read pending reviews, history, and check eligibility', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

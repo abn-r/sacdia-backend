@@ -755,7 +755,7 @@ describe('Permissions metadata', () => {
         PERMISSIONS_KEY,
         CamporeesController.prototype.create,
       ),
-    ).toEqual({ permissions: ['activities:create'], mode: 'all' });
+    ).toEqual({ permissions: ['camporees:create'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -782,13 +782,13 @@ describe('Permissions metadata', () => {
   // require `users:update_profile` (replaces the retired `users:update`).
   // ==========================================================================
 
-  it('marks folder enroll/update/delete as users:update_profile (Phase 3 cleanup)', () => {
+  it('marks folder enroll/update/delete as user_folders:manage (Phase 3 cleanup)', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UserFoldersController.prototype.enrollUser,
       ),
-    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    ).toEqual({ permissions: ['user_folders:manage'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -801,7 +801,7 @@ describe('Permissions metadata', () => {
         PERMISSIONS_KEY,
         UserFoldersController.prototype.updateSectionProgress,
       ),
-    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    ).toEqual({ permissions: ['user_folders:manage'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -814,7 +814,7 @@ describe('Permissions metadata', () => {
         PERMISSIONS_KEY,
         UserFoldersController.prototype.deleteAssignment,
       ),
-    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    ).toEqual({ permissions: ['user_folders:manage'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -823,13 +823,13 @@ describe('Permissions metadata', () => {
     ).toEqual({ type: 'user', ownerParam: 'userId' });
   });
 
-  it('marks certification enroll/update/delete as users:update_profile (Phase 3 cleanup)', () => {
+  it('marks certification enroll/update/delete as user_certifications:manage (Phase 3 cleanup)', () => {
     expect(
       Reflect.getMetadata(
         PERMISSIONS_KEY,
         UserCertificationsController.prototype.enrollUser,
       ),
-    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    ).toEqual({ permissions: ['user_certifications:manage'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -842,7 +842,7 @@ describe('Permissions metadata', () => {
         PERMISSIONS_KEY,
         UserCertificationsController.prototype.updateProgress,
       ),
-    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    ).toEqual({ permissions: ['user_certifications:manage'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -855,7 +855,7 @@ describe('Permissions metadata', () => {
         PERMISSIONS_KEY,
         UserCertificationsController.prototype.deleteCertification,
       ),
-    ).toEqual({ permissions: ['users:update_profile'], mode: 'all' });
+    ).toEqual({ permissions: ['user_certifications:manage'], mode: 'all' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
@@ -875,9 +875,9 @@ describe('Permissions metadata', () => {
       expect(
         getSensitiveUserSubresourceFallbackPermission(family, 'update'),
       ).toBe('users:update_profile');
-      expect(getSensitiveUserSubresourceFallbackPermission(family, 'read')).toBe(
-        'users:read_detail',
-      );
+      expect(
+        getSensitiveUserSubresourceFallbackPermission(family, 'read'),
+      ).toBe('users:read_detail');
     }
   });
 });

@@ -13,6 +13,12 @@ export enum StorageBucketAlias {
   CLASS_EVIDENCE = 'CLASS_EVIDENCE',
   RESOURCES_FILES = 'RESOURCES_FILES',
   ACHIEVEMENTS_BADGES = 'ACHIEVEMENTS_BADGES',
+  /**
+   * Private bucket for GDPR data export JSON files.
+   * Objects are served via presigned URLs (TTL 15 min) — never public.
+   * Env vars: R2_BUCKET_DATA_EXPORTS, R2_PUBLIC_URL_DATA_EXPORTS (required).
+   */
+  DATA_EXPORTS = 'DATA_EXPORTS',
 }
 
 export type UploadFileOptions = {

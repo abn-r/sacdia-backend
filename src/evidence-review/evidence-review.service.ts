@@ -1,10 +1,10 @@
+import { Injectable, Logger } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApproveEvidenceDto } from './dto/approve-evidence.dto';
 import { RejectEvidenceDto } from './dto/reject-evidence.dto';
@@ -276,7 +276,10 @@ export class EvidenceReviewService {
       case 'honor':
         return this.getHonorDetail(id);
       default:
-        throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
+        throw new AppBadRequestException(
+          ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
+          { type },
+        );
     }
   }
 
@@ -301,7 +304,10 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Registro de carpeta #${id} no encontrado`);
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     return {
@@ -347,8 +353,9 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(
-        `Progreso de sección de clase #${id} no encontrado`,
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
       );
     }
 
@@ -398,7 +405,10 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Honor de usuario #${id} no encontrado`);
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
     }
 
     let files: EvidenceFile[];
@@ -478,7 +488,10 @@ export class EvidenceReviewService {
       case 'honor':
         return this.approveHonor(id, actorId, dto.comments);
       default:
-        throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
+        throw new AppBadRequestException(
+          ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
+          { type },
+        );
     }
   }
 
@@ -488,12 +501,16 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Registro de carpeta #${id} no encontrado`);
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.status !== FOLDER_STATUS_PENDING) {
-      throw new BadRequestException(
-        `Solo se pueden aprobar registros en estado pendiente. Estado actual: ${record.status}`,
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING,
+        { status: record.status },
       );
     }
 
@@ -536,14 +553,16 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(
-        `Progreso de sección de clase #${id} no encontrado`,
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
       );
     }
 
     if (record.status !== CLASS_STATUS_SUBMITTED) {
-      throw new BadRequestException(
-        `Solo se pueden aprobar registros en estado enviado (SUBMITTED). Estado actual: ${record.status}`,
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_NOT_PENDING,
+        { status: record.status },
       );
     }
 
@@ -596,12 +615,16 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Honor de usuario #${id} no encontrado`);
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.validation_status !== HONOR_STATUS_PENDING) {
-      throw new BadRequestException(
-        `Solo se pueden aprobar honores en estado IN_PROGRESS. Estado actual: ${record.validation_status}`,
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING,
+        { status: record.validation_status },
       );
     }
 
@@ -644,7 +667,9 @@ export class EvidenceReviewService {
         },
       });
     } catch (error) {
-      this.logger.warn(`Failed to emit achievement event: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
     }
 
     return {
@@ -672,7 +697,10 @@ export class EvidenceReviewService {
       case 'honor':
         return this.rejectHonor(id, actorId, dto.reason);
       default:
-        throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
+        throw new AppBadRequestException(
+          ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
+          { type },
+        );
     }
   }
 
@@ -682,15 +710,22 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Registro de carpeta #${id} no encontrado`);
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_FOLDER_RECORD_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.status === FOLDER_STATUS_REJECTED) {
-      throw new BadRequestException(`El registro ya está rechazado`);
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED,
+      );
     }
 
     if (record.status === FOLDER_STATUS_VALIDATED) {
-      throw new ConflictException(`El registro ya fue validado`);
+      throw new AppConflictException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED,
+      );
     }
 
     const now = new Date();
@@ -732,17 +767,22 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(
-        `Progreso de sección de clase #${id} no encontrado`,
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
       );
     }
 
     if (record.status === CLASS_STATUS_REJECTED) {
-      throw new BadRequestException(`El registro ya está rechazado`);
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_REJECTED,
+      );
     }
 
     if (record.status === CLASS_STATUS_VALIDATED) {
-      throw new ConflictException(`El registro ya fue validado`);
+      throw new AppConflictException(
+        ErrorCode.EVIDENCE_REVIEW_RECORD_ALREADY_VALIDATED,
+      );
     }
 
     const now = new Date();
@@ -784,15 +824,22 @@ export class EvidenceReviewService {
     });
 
     if (!record) {
-      throw new NotFoundException(`Honor de usuario #${id} no encontrado`);
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
     }
 
     if (record.validation_status === HONOR_STATUS_REJECTED) {
-      throw new BadRequestException(`El honor ya está rechazado`);
+      throw new AppBadRequestException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED,
+      );
     }
 
     if (record.validation_status === HONOR_STATUS_APPROVED) {
-      throw new ConflictException(`El registro ya fue aprobado`);
+      throw new AppConflictException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED,
+      );
     }
 
     const now = new Date();
@@ -885,7 +932,9 @@ export class EvidenceReviewService {
   async getHistory(type: EvidenceType, id: number): Promise<HistoryEntry[]> {
     const validTypes: EvidenceType[] = ['folder', 'class', 'honor'];
     if (!validTypes.includes(type)) {
-      throw new BadRequestException(`Tipo de evidencia no válido: ${type}`);
+      throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, {
+        type,
+      });
     }
 
     const logs = await this.prisma.validation_logs.findMany({

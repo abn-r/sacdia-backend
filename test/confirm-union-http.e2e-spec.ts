@@ -134,7 +134,11 @@ describe('Confirm Union — HTTP guard layer (T-C9a / T-C9b)', () => {
       legacy: {
         roles: ['director'],
         permissions: [],
-        club: { club_id: 1, club_name: 'Club Test', club_type: 'Guías Mayores' },
+        club: {
+          club_id: 1,
+          club_name: 'Club Test',
+          club_type: 'Guías Mayores',
+        },
         club_context: {
           active_assignment_id: 'club-assignment-1',
           active: null,
@@ -169,7 +173,9 @@ describe('Confirm Union — HTTP guard layer (T-C9a / T-C9b)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.setGlobalPrefix('api/v1');
     await app.init();
   });
@@ -203,8 +209,12 @@ describe('Confirm Union — HTTP guard layer (T-C9a / T-C9b)', () => {
 
     const token = jwtService.sign({ sub: userId, email });
 
-    const response = await request(app.getHttpServer() as Parameters<typeof request>[0])
-      .post(`/api/v1/annual-folders/${FAKE_FOLDER_ID}/sections/${FAKE_SECTION_ID}/confirm-union`)
+    const response = await request(
+      app.getHttpServer() as Parameters<typeof request>[0],
+    )
+      .post(
+        `/api/v1/annual-folders/${FAKE_FOLDER_ID}/sections/${FAKE_SECTION_ID}/confirm-union`,
+      )
       .set('Authorization', `Bearer ${token}`)
       .send({ decision: 'APPROVED' })
       .expect(403);
@@ -232,8 +242,12 @@ describe('Confirm Union — HTTP guard layer (T-C9a / T-C9b)', () => {
 
     const token = jwtService.sign({ sub: userId, email });
 
-    const response = await request(app.getHttpServer() as Parameters<typeof request>[0])
-      .post(`/api/v1/annual-folders/${FAKE_FOLDER_ID}/sections/${FAKE_SECTION_ID}/confirm-union`)
+    const response = await request(
+      app.getHttpServer() as Parameters<typeof request>[0],
+    )
+      .post(
+        `/api/v1/annual-folders/${FAKE_FOLDER_ID}/sections/${FAKE_SECTION_ID}/confirm-union`,
+      )
       .set('Authorization', `Bearer ${token}`)
       .send({ decision: 'APPROVED' })
       .expect(403);

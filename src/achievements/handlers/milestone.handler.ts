@@ -55,7 +55,10 @@ export class MilestoneHandler implements AchievementHandler, OnModuleInit {
       errors.push('target must be a string or number');
     }
 
-    return { valid: errors.length === 0, errors: errors.length > 0 ? errors : undefined };
+    return {
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
   async evaluate(

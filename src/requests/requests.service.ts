@@ -1,12 +1,12 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class RequestsService {
@@ -28,9 +28,7 @@ export class RequestsService {
     reason?: string,
   ) {
     if (fromSectionId === toSectionId) {
-      throw new BadRequestException(
-        'Origin and destination sections must be different',
-      );
+      throw new AppBadRequestException(ErrorCode.REQUEST_TRANSFER_SAME_SECTION);
     }
 
     // Validate user has an active role assignment in from_section
@@ -43,8 +41,8 @@ export class RequestsService {
     });
 
     if (!userAssignment) {
-      throw new BadRequestException(
-        `User does not belong to section ${fromSectionId}`,
+      throw new AppBadRequestException(
+        ErrorCode.REQUEST_TRANSFER_USER_NOT_IN_SECTION,
       );
     }
 
@@ -54,8 +52,8 @@ export class RequestsService {
     });
 
     if (!toSection) {
-      throw new NotFoundException(
-        `Destination section with ID ${toSectionId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND,
       );
     }
 
@@ -68,9 +66,7 @@ export class RequestsService {
     });
 
     if (pendingRequest) {
-      throw new ConflictException(
-        'User already has a pending transfer request',
-      );
+      throw new AppConflictException(ErrorCode.REQUEST_TRANSFER_PENDING_EXISTS);
     }
 
     const result = await this.prisma.club_transfer_requests.create({
@@ -134,14 +130,12 @@ export class RequestsService {
     });
 
     if (!request) {
-      throw new NotFoundException(
-        `Transfer request with ID ${requestId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.REQUEST_TRANSFER_NOT_FOUND);
     }
 
     if (request.status !== 'pending') {
-      throw new ConflictException(
-        `Transfer request has already been ${request.status}`,
+      throw new AppConflictException(
+        ErrorCode.REQUEST_TRANSFER_ALREADY_REVIEWED,
       );
     }
 
@@ -345,9 +339,7 @@ export class RequestsService {
     });
 
     if (!request) {
-      throw new NotFoundException(
-        `Transfer request with ID ${requestId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.REQUEST_TRANSFER_NOT_FOUND);
     }
 
     return request;
@@ -369,9 +361,7 @@ export class RequestsService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Club section with ID ${sectionId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.REQUEST_SECTION_NOT_FOUND);
     }
 
     // Validate user exists
@@ -381,7 +371,7 @@ export class RequestsService {
     });
 
     if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`);
+      throw new AppNotFoundException(ErrorCode.REQUEST_USER_NOT_FOUND);
     }
 
     // Validate role exists
@@ -391,7 +381,7 @@ export class RequestsService {
     });
 
     if (!role) {
-      throw new NotFoundException(`Role with ID ${roleId} not found`);
+      throw new AppNotFoundException(ErrorCode.REQUEST_ROLE_NOT_FOUND);
     }
 
     // Check role_slot_limits before creating request
@@ -410,8 +400,8 @@ export class RequestsService {
     );
 
     if (pendingRequest) {
-      throw new ConflictException(
-        `A pending assignment request already exists for this user and role in this section`,
+      throw new AppConflictException(
+        ErrorCode.REQUEST_ASSIGNMENT_PENDING_EXISTS,
       );
     }
 
@@ -478,14 +468,12 @@ export class RequestsService {
     });
 
     if (!request) {
-      throw new NotFoundException(
-        `Assignment request with ID ${requestId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.REQUEST_ASSIGNMENT_NOT_FOUND);
     }
 
     if (request.status !== 'pending') {
-      throw new ConflictException(
-        `Assignment request has already been ${request.status}`,
+      throw new AppConflictException(
+        ErrorCode.REQUEST_ASSIGNMENT_ALREADY_REVIEWED,
       );
     }
 
@@ -508,8 +496,8 @@ export class RequestsService {
           });
 
           if (currentCount >= slotLimit.max_per_section) {
-            throw new ConflictException(
-              `Maximum ${slotLimit.max_per_section} "${request.role.role_name}" per section reached. Cannot approve this request.`,
+            throw new AppConflictException(
+              ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED,
             );
           }
         }
@@ -745,9 +733,7 @@ export class RequestsService {
     });
 
     if (!request) {
-      throw new NotFoundException(
-        `Assignment request with ID ${requestId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.REQUEST_ASSIGNMENT_NOT_FOUND);
     }
 
     return request;
@@ -789,8 +775,8 @@ export class RequestsService {
           where: { role_id: roleId },
           select: { role_name: true },
         });
-        throw new ConflictException(
-          `Maximum ${slotLimit.max_per_section} "${role?.role_name ?? roleId}" per section reached (including pending requests)`,
+        throw new AppConflictException(
+          ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED,
         );
       }
     }
@@ -809,7 +795,7 @@ export class RequestsService {
     });
 
     if (!currentYear) {
-      throw new BadRequestException('No active ecclesiastical year configured');
+      throw new AppBadRequestException(ErrorCode.REQUEST_NO_ACTIVE_YEAR);
     }
 
     return currentYear.year_id;

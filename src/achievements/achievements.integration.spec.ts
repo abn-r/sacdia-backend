@@ -7,7 +7,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Job } from 'bullmq';
 import { AchievementsService } from './achievements.service';
-import { AchievementsProcessor, EvaluateJobData } from './achievements.processor';
+import {
+  AchievementsProcessor,
+  EvaluateJobData,
+} from './achievements.processor';
 import { ThresholdHandler } from './handlers/threshold.handler';
 import { HandlerRegistry } from './handlers/handler.registry';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,7 +25,12 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
   // ---------------------------------------------------------------------------
   // Shared mock state — tracks event log across multiple emitEvent calls
   // ---------------------------------------------------------------------------
-  const eventLogStore: Array<{ event_id: number; event_type: string; event_payload: object; user_id: string }> = [];
+  const eventLogStore: Array<{
+    event_id: number;
+    event_type: string;
+    event_payload: object;
+    user_id: string;
+  }> = [];
   let eventLogIdCounter = 0;
 
   // Single achievement: THRESHOLD, target=3
@@ -53,10 +61,11 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
       findMany: jest.fn(({ where }) => {
         const rows = eventLogStore.filter(
           (e) =>
-            e.user_id === where.user_id &&
-            e.event_type === where.event_type,
+            e.user_id === where.user_id && e.event_type === where.event_type,
         );
-        return Promise.resolve(rows.map((r) => ({ event_payload: r.event_payload })));
+        return Promise.resolve(
+          rows.map((r) => ({ event_payload: r.event_payload })),
+        );
       }),
       update: jest.fn().mockResolvedValue({}),
     },
@@ -101,9 +110,12 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
     userAchievementRecord = null;
 
     const mockFileStorageService = {
-      resolvePublicUrl: jest.fn().mockImplementation((_bucket: string, key: string) =>
-        `https://cdn.r2.example/achievements-badges/${key}`,
-      ),
+      resolvePublicUrl: jest
+        .fn()
+        .mockImplementation(
+          (_bucket: string, key: string) =>
+            `https://cdn.r2.example/achievements-badges/${key}`,
+        ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -124,14 +136,20 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
     })
       .overrideProvider(AchievementsProcessor)
       .useFactory({
-        factory: (prisma: PrismaService, registry: HandlerRegistry, notifications: NotificationsService) =>
-          new AchievementsProcessor(prisma, registry, notifications),
+        factory: (
+          prisma: PrismaService,
+          registry: HandlerRegistry,
+          notifications: NotificationsService,
+        ) => new AchievementsProcessor(prisma, registry, notifications),
         inject: [PrismaService, HandlerRegistry, NotificationsService],
       })
       .overrideProvider(AchievementsService)
       .useFactory({
-        factory: (prisma: PrismaService, registry: HandlerRegistry, fileStorage: any) =>
-          new AchievementsService(prisma, registry, fileStorage, undefined), // no queue — we call processor manually
+        factory: (
+          prisma: PrismaService,
+          registry: HandlerRegistry,
+          fileStorage: any,
+        ) => new AchievementsService(prisma, registry, fileStorage, undefined), // no queue — we call processor manually
         inject: [PrismaService, HandlerRegistry, FILE_STORAGE_SERVICE],
       })
       .compile();
@@ -265,7 +283,11 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
     const userId = 'user-integration-4';
     const eventType = 'attendance.marked';
 
-    const emitResult = await service.emitEvent({ userId, eventType, payload: {} });
+    const emitResult = await service.emitEvent({
+      userId,
+      eventType,
+      payload: {},
+    });
 
     const job = makeJob<EvaluateJobData>('evaluate', {
       userId,

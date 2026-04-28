@@ -79,7 +79,8 @@ export class InventoryController {
   async findAllByClub(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('instanceType') instanceType: 'adv' | 'pathf' | 'mg',
-    @Query('category', new ParseIntPipe({ optional: true })) categoryId?: number,
+    @Query('category', new ParseIntPipe({ optional: true }))
+    categoryId?: number,
     @Req() req?: any,
   ) {
     // PermissionsGuard sets req.authorization after resolving the user profile.

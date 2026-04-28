@@ -1,16 +1,21 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import {
+  AppNotFoundException,
+  AppConflictException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class MembershipRequestsService {
+  private readonly logger = new Logger(MembershipRequestsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -70,17 +75,20 @@ export class MembershipRequestsService {
 
     if (result.count === 0) {
       if (!assignment) {
-        throw new NotFoundException(
-          `Membership request ${assignmentId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
-      throw new ConflictException(
-        `Request already ${assignment.status}`,
-      );
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
       assignment!.user_id,
+    );
+
+    this.emitRealtimeInvalidation(
+      assignment!.club_section_id,
+      assignment!.assignment_id,
+      'UPDATED',
+      approvedById,
     );
 
     return assignment;
@@ -116,17 +124,20 @@ export class MembershipRequestsService {
 
     if (result.count === 0) {
       if (!assignment) {
-        throw new NotFoundException(
-          `Membership request ${assignmentId} not found`,
-        );
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
-      throw new ConflictException(
-        `Request already ${assignment.status}`,
-      );
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
 
     await this.authorizationContext.invalidateUserAuthorizationCache(
       assignment!.user_id,
+    );
+
+    this.emitRealtimeInvalidation(
+      assignment!.club_section_id,
+      assignment!.assignment_id,
+      'DELETED',
+      rejectedById,
     );
 
     return assignment;
@@ -160,5 +171,28 @@ export class MembershipRequestsService {
     });
 
     return result.count;
+  }
+
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number | string,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'members',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 }

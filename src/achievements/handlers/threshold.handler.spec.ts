@@ -38,7 +38,10 @@ describe('ThresholdHandler', () => {
 
   it('should register itself on module init', () => {
     handler.onModuleInit();
-    expect(mockHandlerRegistry.register).toHaveBeenCalledWith('THRESHOLD', handler);
+    expect(mockHandlerRegistry.register).toHaveBeenCalledWith(
+      'THRESHOLD',
+      handler,
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -132,7 +135,9 @@ describe('ThresholdHandler', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('filters must be an object when provided');
+      expect(result.errors).toContain(
+        'filters must be an object when provided',
+      );
     });
 
     it('should fail when criteria is not an object', () => {
@@ -169,7 +174,7 @@ describe('ThresholdHandler', () => {
       ({
         achievement_id: 1,
         criteria,
-      } as any);
+      }) as any;
 
     it('should return matched=true when event count meets gte target', async () => {
       mockPrismaService.achievement_event_log.findMany.mockResolvedValue([
@@ -180,7 +185,11 @@ describe('ThresholdHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'gte', target: 3 }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'gte',
+          target: 3,
+        }),
         { eventType: 'attendance.marked', payload: {} },
       );
 
@@ -197,7 +206,11 @@ describe('ThresholdHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'gte', target: 5 }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'gte',
+          target: 5,
+        }),
         { eventType: 'attendance.marked', payload: {} },
       );
 
@@ -228,7 +241,11 @@ describe('ThresholdHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'error.reported', operator: 'lte', target: 3 }),
+        makeAchievement({
+          event: 'error.reported',
+          operator: 'lte',
+          target: 3,
+        }),
         { eventType: 'error.reported', payload: {} },
       );
 
@@ -250,7 +267,10 @@ describe('ThresholdHandler', () => {
           target: 2,
           filters: { club_type: 'CONQUISTADORES' },
         }),
-        { eventType: 'attendance.marked', payload: { club_type: 'CONQUISTADORES' } },
+        {
+          eventType: 'attendance.marked',
+          payload: { club_type: 'CONQUISTADORES' },
+        },
       );
 
       expect(result.matched).toBe(true);
@@ -271,7 +291,10 @@ describe('ThresholdHandler', () => {
           target: 1,
           filters: { club_type: 'CONQUISTADORES' },
         }),
-        { eventType: 'attendance.marked', payload: { club_type: 'AVENTUREROS' } },
+        {
+          eventType: 'attendance.marked',
+          payload: { club_type: 'AVENTUREROS' },
+        },
       );
 
       expect(result.matched).toBe(false);
@@ -283,7 +306,11 @@ describe('ThresholdHandler', () => {
 
       const result = await handler.evaluate(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'gte', target: 3 }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'gte',
+          target: 3,
+        }),
         { eventType: 'attendance.marked', payload: {} },
       );
 
@@ -298,7 +325,7 @@ describe('ThresholdHandler', () => {
 
   describe('calculateProgress', () => {
     const makeAchievement = (criteria: object) =>
-      ({ achievement_id: 1, criteria } as any);
+      ({ achievement_id: 1, criteria }) as any;
 
     it('should return correct current, target and percentage', async () => {
       mockPrismaService.achievement_event_log.findMany.mockResolvedValue([
@@ -308,7 +335,11 @@ describe('ThresholdHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'gte', target: 4 }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'gte',
+          target: 4,
+        }),
       );
 
       expect(result.current).toBe(2);
@@ -327,7 +358,11 @@ describe('ThresholdHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'gte', target: 3 }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'gte',
+          target: 3,
+        }),
       );
 
       expect(result.percentage).toBe(100);
@@ -338,7 +373,11 @@ describe('ThresholdHandler', () => {
 
       const result = await handler.calculateProgress(
         'user-1',
-        makeAchievement({ event: 'attendance.marked', operator: 'gte', target: 5 }),
+        makeAchievement({
+          event: 'attendance.marked',
+          operator: 'gte',
+          target: 5,
+        }),
       );
 
       expect(result.current).toBe(0);

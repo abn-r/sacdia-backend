@@ -1,9 +1,5 @@
-import {
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -189,9 +185,9 @@ describe('EvidenceFolderService', () => {
     it('should throw when the user has no active assignment for the club section', async () => {
       mockPrismaService.folder_assignments.findFirst.mockResolvedValue(null);
 
-      await expect(service.getFolder('user-404', 9)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getFolder('user-404', 9)).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_FOLDER_NOT_FOUND,
+      });
     });
 
     it('should default status to PENDING and earned_points to 0 when section has no record', async () => {
@@ -316,9 +312,11 @@ describe('EvidenceFolderService', () => {
         null,
       );
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND,
+      });
     });
 
     it('should throw ConflictException when section is already REJECTED', async () => {
@@ -331,9 +329,11 @@ describe('EvidenceFolderService', () => {
         evidence_files: [{ active: true }],
       });
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      });
     });
 
     it('should throw ConflictException when section is already VALIDATED', async () => {
@@ -346,9 +346,11 @@ describe('EvidenceFolderService', () => {
         evidence_files: [{ active: true }],
       });
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      });
     });
 
     it('should throw BadRequestException when there are no active evidence files', async () => {
@@ -361,9 +363,11 @@ describe('EvidenceFolderService', () => {
         evidence_files: [],
       });
 
-      await expect(service.submitSection('user-1', 9, 11)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.submitSection('user-1', 9, 11),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_NO_FILES_FOR_SUBMIT,
+      });
     });
 
     it('should throw NotFoundException when sectionId does not exist in the folder template', async () => {
@@ -371,9 +375,11 @@ describe('EvidenceFolderService', () => {
         baseAssignment,
       );
 
-      await expect(service.submitSection('user-1', 9, 999)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.submitSection('user-1', 9, 999),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_FOUND,
+      });
     });
   });
 
@@ -381,7 +387,9 @@ describe('EvidenceFolderService', () => {
     it('should throw BadRequestException when no file buffer is provided', async () => {
       await expect(
         service.uploadFile('user-1', 9, 11, { buffer: undefined } as any),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_FILE_REQUIRED,
+      });
     });
 
     it('should create a new section record when none exists and upload the file', async () => {
@@ -478,7 +486,9 @@ describe('EvidenceFolderService', () => {
           mimetype: 'application/pdf',
           originalname: 'doc.pdf',
         } as Express.Multer.File),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      });
     });
 
     it('should upload the file to R2 and create the evidence file record', async () => {
@@ -584,9 +594,11 @@ describe('EvidenceFolderService', () => {
       });
       mockPrismaService.evidence_files.findFirst.mockResolvedValue(null);
 
-      await expect(service.deleteFile('user-1', 9, 11, 999)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.deleteFile('user-1', 9, 11, 999),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_FILE_NOT_FOUND,
+      });
     });
 
     it('should throw NotFoundException when the file belongs to a different section', async () => {
@@ -618,9 +630,11 @@ describe('EvidenceFolderService', () => {
         },
       });
 
-      await expect(service.deleteFile('user-1', 9, 11, 99)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.deleteFile('user-1', 9, 11, 99),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_FILE_NOT_FOUND,
+      });
     });
 
     it('should throw ConflictException when the section is not pending', async () => {
@@ -652,9 +666,11 @@ describe('EvidenceFolderService', () => {
         },
       });
 
-      await expect(service.deleteFile('user-1', 9, 11, 99)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.deleteFile('user-1', 9, 11, 99),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FOLDER_EVIDENCE_SECTION_NOT_PENDING,
+      });
     });
 
     it('should soft delete the file and remove it from R2 when possible', async () => {

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,6 +13,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AppBadRequestException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -25,7 +26,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { achievement_type } from '@prisma/client';
-import { AuthorizationResource, RequirePermissions, GlobalRoles } from '../../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../../common/decorators';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -135,8 +140,7 @@ export class AdminAchievementsController {
     description: 'Category has active achievements',
   })
   async deleteCategory(@Param('categoryId', ParseIntPipe) categoryId: number) {
-    const data =
-      await this.adminAchievementsService.deleteCategory(categoryId);
+    const data = await this.adminAchievementsService.deleteCategory(categoryId);
     return { status: 'success', data };
   }
 
@@ -192,8 +196,14 @@ export class AdminAchievementsController {
       'Validates criteria via the appropriate handler before persisting.',
   })
   @ApiResponse({ status: 201, description: 'Achievement created' })
-  @ApiResponse({ status: 400, description: 'Validation error or invalid criteria' })
-  @ApiResponse({ status: 404, description: 'Category or prerequisite not found' })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error or invalid criteria',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Category or prerequisite not found',
+  })
   async createAchievement(@Body() dto: CreateAchievementDto) {
     const data = await this.adminAchievementsService.createAchievement(dto);
     return { status: 'success', data };
@@ -224,7 +234,10 @@ export class AdminAchievementsController {
   @ApiOperation({ summary: 'Update an achievement' })
   @ApiParam({ name: 'achievementId', type: Number })
   @ApiResponse({ status: 200, description: 'Achievement updated' })
-  @ApiResponse({ status: 400, description: 'Invalid criteria or circular prerequisite' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid criteria or circular prerequisite',
+  })
   @ApiResponse({ status: 404, description: 'Achievement not found' })
   async updateAchievement(
     @Param('achievementId', ParseIntPipe) achievementId: number,
@@ -301,15 +314,18 @@ export class AdminAchievementsController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Invalid file type or size exceeded' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid file type or size exceeded',
+  })
   @ApiResponse({ status: 404, description: 'Achievement not found' })
   async uploadBadgeImage(
     @Param('achievementId', ParseIntPipe) achievementId: number,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) {
-      throw new BadRequestException(
-        'No file provided. Use multipart/form-data with field name "file".',
+      throw new AppBadRequestException(
+        ErrorCode.ACHIEVEMENT_BADGE_UPLOAD_MISSING,
       );
     }
     const data = await this.adminAchievementsService.uploadBadgeImage(

@@ -1,0 +1,12 @@
+{
+  "notifications": {
+    "system_alert": {
+      "cron_consecutive_failures_title": "Alerta de Job: {jobName}",
+      "cron_consecutive_failures_body": "{count} falhas consecutivas detectadas (limite: {threshold}).",
+      "cron_duration_title": "Job Lento: {jobName}",
+      "cron_duration_body": "A última execução levou {durationMs} ms, excedendo o limite de {thresholdMs} ms.",
+      "cron_failure_rate_title": "Alta Taxa de Falhas no Job: {jobName}",
+      "cron_failure_rate_body": "Taxa de falhas de {rate}% nas últimas 24 h ({failed}/{total} execuções com falha)."
+    }
+  }
+}
