@@ -6,6 +6,8 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   AppNotFoundException,
@@ -42,8 +44,9 @@ export class DataExportService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    @Optional()
     @InjectQueue(DATA_EXPORTS_QUEUE)
-    private readonly dataExportsQueue: Queue,
+    private readonly dataExportsQueue: Queue | undefined,
     private readonly cronLogger: CronRunLogger,
   ) {}
 
@@ -112,6 +115,15 @@ export class DataExportService {
     });
 
     // Enqueue job — fail closed, single attempt
+    if (!this.dataExportsQueue) {
+      // Roll back the pending row so the user can retry later
+      await this.prisma.data_export_requests
+        .delete({ where: { export_id: exportRow.export_id } })
+        .catch(() => undefined);
+      throw new ServiceUnavailableException(
+        'Data export queue unavailable. Configure REDIS_URL to enable async exports.',
+      );
+    }
     await this.dataExportsQueue.add(
       DATA_EXPORT_GENERATE_JOB,
       { exportId: exportRow.export_id, userId },

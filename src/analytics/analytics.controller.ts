@@ -40,7 +40,7 @@ export class AnalyticsController {
     private readonly analyticsService: AnalyticsService,
     private readonly authorizationContext: AuthorizationContextService,
     @Optional()
-    private readonly jobsOverviewService: JobsOverviewService | null,
+    private readonly jobsOverviewService: JobsOverviewService | undefined,
     private readonly cronRunsService: CronRunsService,
   ) {}
 
