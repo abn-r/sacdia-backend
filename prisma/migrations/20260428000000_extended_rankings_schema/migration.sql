@@ -1,4 +1,7 @@
--- 20260428000000_extended_rankings_schema
+-- Migration: extended_rankings_schema
+-- Created: 2026-04-28
+-- Description: Extended rankings schema: add component + composite score columns to club_annual_rankings, add composite_pct thresholds + is_legacy flag to award_categories, mark pre-existing categories as legacy.
+-- NOTE: Apply manually via psql — Neon shadow DB is disabled.
 ALTER TABLE club_annual_rankings
   ADD COLUMN folder_score_pct numeric(5,2) NOT NULL DEFAULT 0,
   ADD COLUMN finance_score_pct numeric(5,2) NOT NULL DEFAULT 0,
