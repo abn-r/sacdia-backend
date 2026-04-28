@@ -3,23 +3,8 @@ import { MonthlyReportsController } from './monthly-reports.controller';
 import { MonthlyReportsService } from './monthly-reports.service';
 import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { MonthlyReportsCronService } from './monthly-reports-cron.service';
-import { MonthlyReportsProcessor } from './monthly-reports.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
-import { isPlaceholderUrl } from '../config/bullmq.config';
-
-function isRedisConfigured(): boolean {
-  const rawUrl = process.env.REDIS_URL?.trim();
-  if (!rawUrl || isPlaceholderUrl(rawUrl)) return false;
-  try {
-    new URL(rawUrl);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const redisAvailable = isRedisConfigured();
 
 @Module({
   imports: [
@@ -31,7 +16,6 @@ const redisAvailable = isRedisConfigured();
     MonthlyReportsService,
     MonthlyReportsPdfService,
     MonthlyReportsCronService,
-    ...(redisAvailable ? [MonthlyReportsProcessor] : []),
   ],
   exports: [MonthlyReportsService],
 })
