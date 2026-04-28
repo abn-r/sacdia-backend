@@ -28,6 +28,11 @@ const mockQueue = {
 
 const mockCronLogger = {
   log: jest.fn(),
+  track: jest.fn(),
+};
+
+const mockEmailService = {
+  sendDataExportReady: jest.fn(),
 };
 
 function makeService(): DataExportService {
@@ -36,6 +41,7 @@ function makeService(): DataExportService {
     mockFileStorage as any,
     mockQueue as any,
     mockCronLogger as any,
+    mockEmailService as any,
   );
 }
 
