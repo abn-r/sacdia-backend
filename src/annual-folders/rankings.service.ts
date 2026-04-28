@@ -44,6 +44,12 @@ export interface RankingEntry {
   total_max_points: number;
   progress_percentage: number;
   award_category_name: string | null;
+  folder_score_pct: number;
+  finance_score_pct: number;
+  camporee_score_pct: number;
+  evidence_score_pct: number;
+  composite_score_pct: number;
+  composite_calculated_at: string | null;
 }
 
 export interface ClubRankingResult {
@@ -52,6 +58,12 @@ export interface ClubRankingResult {
     total_earned_points: number;
     total_max_points: number;
     progress_percentage: number;
+    folder_score_pct: number;
+    finance_score_pct: number;
+    camporee_score_pct: number;
+    evidence_score_pct: number;
+    composite_score_pct: number;
+    composite_calculated_at: string | null;
   } | null;
   by_category: {
     award_category_id: string;
@@ -60,6 +72,12 @@ export interface ClubRankingResult {
     total_earned_points: number;
     total_max_points: number;
     progress_percentage: number;
+    folder_score_pct: number;
+    finance_score_pct: number;
+    camporee_score_pct: number;
+    evidence_score_pct: number;
+    composite_score_pct: number;
+    composite_calculated_at: string | null;
   }[];
 }
 
@@ -548,6 +566,12 @@ export class RankingsService {
       total_max_points: r.total_max_points,
       progress_percentage: r.progress_percentage,
       award_category_name: r.award_category?.name ?? null,
+      folder_score_pct: Number(r.folder_score_pct),
+      finance_score_pct: Number(r.finance_score_pct),
+      camporee_score_pct: Number(r.camporee_score_pct),
+      evidence_score_pct: Number(r.evidence_score_pct),
+      composite_score_pct: Number(r.composite_score_pct),
+      composite_calculated_at: r.composite_calculated_at?.toISOString() ?? null,
     }));
   }
 
@@ -599,6 +623,13 @@ export class RankingsService {
             total_earned_points: general.total_earned_points,
             total_max_points: general.total_max_points,
             progress_percentage: general.progress_percentage,
+            folder_score_pct: Number(general.folder_score_pct),
+            finance_score_pct: Number(general.finance_score_pct),
+            camporee_score_pct: Number(general.camporee_score_pct),
+            evidence_score_pct: Number(general.evidence_score_pct),
+            composite_score_pct: Number(general.composite_score_pct),
+            composite_calculated_at:
+              general.composite_calculated_at?.toISOString() ?? null,
           }
         : null,
       by_category: byCategory.map((r) => ({
@@ -608,6 +639,12 @@ export class RankingsService {
         total_earned_points: r.total_earned_points,
         total_max_points: r.total_max_points,
         progress_percentage: r.progress_percentage,
+        folder_score_pct: Number(r.folder_score_pct),
+        finance_score_pct: Number(r.finance_score_pct),
+        camporee_score_pct: Number(r.camporee_score_pct),
+        evidence_score_pct: Number(r.evidence_score_pct),
+        composite_score_pct: Number(r.composite_score_pct),
+        composite_calculated_at: r.composite_calculated_at?.toISOString() ?? null,
       })),
     };
   }

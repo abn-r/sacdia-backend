@@ -653,6 +653,12 @@ describe('RankingsService', () => {
         total_earned_points: 90,
         total_max_points: 100,
         progress_percentage: 90,
+        folder_score_pct: 88,
+        finance_score_pct: 75,
+        camporee_score_pct: 60,
+        evidence_score_pct: 95,
+        composite_score_pct: 82,
+        composite_calculated_at: new Date('2026-01-15T10:00:00Z'),
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -669,6 +675,12 @@ describe('RankingsService', () => {
         total_earned_points: 70,
         total_max_points: 100,
         progress_percentage: 70,
+        folder_score_pct: 65,
+        finance_score_pct: 50,
+        camporee_score_pct: 40,
+        evidence_score_pct: 70,
+        composite_score_pct: 60,
+        composite_calculated_at: null,
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -689,6 +701,26 @@ describe('RankingsService', () => {
       expect(result[0].rank_position).toBe(1);
       expect(result[0].club_name).toBe('Club Alfa');
       expect(result[1].rank_position).toBe(2);
+    });
+
+    it('should include component and composite score fields in each entry', async () => {
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
+
+      const result = await service.getRankings(2, 2026);
+
+      // First record has all score fields populated
+      expect(result[0].folder_score_pct).toBe(88);
+      expect(result[0].finance_score_pct).toBe(75);
+      expect(result[0].camporee_score_pct).toBe(60);
+      expect(result[0].evidence_score_pct).toBe(95);
+      expect(result[0].composite_score_pct).toBe(82);
+      expect(result[0].composite_calculated_at).toBe(
+        '2026-01-15T10:00:00.000Z',
+      );
+      // Second record has null composite_calculated_at
+      expect(result[1].composite_calculated_at).toBeNull();
     });
 
     it('should filter by club_type_id and year_id', async () => {
@@ -798,6 +830,12 @@ describe('RankingsService', () => {
           total_earned_points: 85,
           total_max_points: 100,
           progress_percentage: 85,
+          folder_score_pct: 80,
+          finance_score_pct: 70,
+          camporee_score_pct: 65,
+          evidence_score_pct: 90,
+          composite_score_pct: 77,
+          composite_calculated_at: new Date('2026-02-01T08:00:00Z'),
           award_category: null,
         },
         {
@@ -807,6 +845,12 @@ describe('RankingsService', () => {
           total_earned_points: 85,
           total_max_points: 100,
           progress_percentage: 85,
+          folder_score_pct: 80,
+          finance_score_pct: 70,
+          camporee_score_pct: 65,
+          evidence_score_pct: 90,
+          composite_score_pct: 77,
+          composite_calculated_at: new Date('2026-02-01T08:00:00Z'),
           award_category: { award_category_id: 'cat-gold', name: 'Oro' },
         },
       ]);
@@ -815,8 +859,15 @@ describe('RankingsService', () => {
 
       expect(result.general).not.toBeNull();
       expect(result.general?.rank_position).toBe(2);
+      expect(result.general?.folder_score_pct).toBe(80);
+      expect(result.general?.composite_score_pct).toBe(77);
+      expect(result.general?.composite_calculated_at).toBe(
+        '2026-02-01T08:00:00.000Z',
+      );
       expect(result.by_category).toHaveLength(1);
       expect(result.by_category[0].award_category_name).toBe('Oro');
+      expect(result.by_category[0].folder_score_pct).toBe(80);
+      expect(result.by_category[0].composite_score_pct).toBe(77);
     });
 
     it('should return null for general ranking when no general record exists', async () => {
@@ -832,6 +883,12 @@ describe('RankingsService', () => {
           total_earned_points: 90,
           total_max_points: 100,
           progress_percentage: 90,
+          folder_score_pct: 88,
+          finance_score_pct: 72,
+          camporee_score_pct: 55,
+          evidence_score_pct: 80,
+          composite_score_pct: 81,
+          composite_calculated_at: null,
           award_category: { award_category_id: 'cat-gold', name: 'Oro' },
         },
       ]);
@@ -855,6 +912,12 @@ describe('RankingsService', () => {
           total_earned_points: 60,
           total_max_points: 100,
           progress_percentage: 60,
+          folder_score_pct: 55,
+          finance_score_pct: 40,
+          camporee_score_pct: 30,
+          evidence_score_pct: 50,
+          composite_score_pct: 48,
+          composite_calculated_at: null,
           award_category: null,
         },
       ]);
