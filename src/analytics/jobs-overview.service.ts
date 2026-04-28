@@ -9,10 +9,8 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { ACHIEVEMENTS_QUEUE } from '../achievements/achievements.constants';
-import { DATA_EXPORTS_QUEUE } from '../data-export/data-export.processor';
-import { MONTHLY_REPORTS_QUEUE } from '../monthly-reports/monthly-reports.processor';
-import { RANKINGS_QUEUE } from '../annual-folders/rankings.processor';
-import { FINANCE_PERIOD_QUEUE } from '../finances/finance-period.processor';
+import { EMAIL_QUEUE } from '../common/email/email.queue';
+import { BACKGROUND_JOBS_QUEUE } from '../background-jobs/background-jobs.types';
 
 export interface JobCounts {
   name: string;
@@ -45,24 +43,18 @@ export class JobsOverviewService {
     private readonly notificationsQueue: Queue,
     @InjectQueue(ACHIEVEMENTS_QUEUE)
     private readonly achievementsQueue: Queue,
-    @InjectQueue(DATA_EXPORTS_QUEUE)
-    private readonly dataExportsQueue: Queue,
-    @InjectQueue(MONTHLY_REPORTS_QUEUE)
-    private readonly monthlyReportsQueue: Queue,
-    @InjectQueue(RANKINGS_QUEUE)
-    private readonly rankingsQueue: Queue,
-    @InjectQueue(FINANCE_PERIOD_QUEUE)
-    private readonly financePeriodQueue: Queue,
+    @InjectQueue(EMAIL_QUEUE)
+    private readonly emailQueue: Queue,
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
+    private readonly backgroundJobsQueue: Queue,
   ) {}
 
   async getOverview(): Promise<JobsOverviewDto> {
     const queues: Array<{ name: string; queue: Queue }> = [
       { name: NOTIFICATIONS_QUEUE, queue: this.notificationsQueue },
       { name: ACHIEVEMENTS_QUEUE, queue: this.achievementsQueue },
-      { name: DATA_EXPORTS_QUEUE, queue: this.dataExportsQueue },
-      { name: MONTHLY_REPORTS_QUEUE, queue: this.monthlyReportsQueue },
-      { name: RANKINGS_QUEUE, queue: this.rankingsQueue },
-      { name: FINANCE_PERIOD_QUEUE, queue: this.financePeriodQueue },
+      { name: EMAIL_QUEUE, queue: this.emailQueue },
+      { name: BACKGROUND_JOBS_QUEUE, queue: this.backgroundJobsQueue },
     ];
 
     const queueStats: JobCounts[] = await Promise.all(
@@ -125,10 +117,8 @@ export class JobsOverviewService {
     const queueMap: Record<string, Queue> = {
       [NOTIFICATIONS_QUEUE]: this.notificationsQueue,
       [ACHIEVEMENTS_QUEUE]: this.achievementsQueue,
-      [DATA_EXPORTS_QUEUE]: this.dataExportsQueue,
-      [MONTHLY_REPORTS_QUEUE]: this.monthlyReportsQueue,
-      [RANKINGS_QUEUE]: this.rankingsQueue,
-      [FINANCE_PERIOD_QUEUE]: this.financePeriodQueue,
+      [EMAIL_QUEUE]: this.emailQueue,
+      [BACKGROUND_JOBS_QUEUE]: this.backgroundJobsQueue,
     };
 
     const queue = queueMap[queueName];
@@ -153,11 +143,7 @@ export class JobsOverviewService {
   }
 
   async retryFailedJob(queueName: string, jobId: string): Promise<void> {
-    if (
-      !this.notificationsQueue ||
-      !this.achievementsQueue ||
-      !this.dataExportsQueue
-    ) {
+    if (!this.notificationsQueue || !this.achievementsQueue) {
       throw new ServiceUnavailableException(
         'Queues unavailable (Redis not configured)',
       );
@@ -166,10 +152,8 @@ export class JobsOverviewService {
     const queueMap: Record<string, Queue> = {
       [NOTIFICATIONS_QUEUE]: this.notificationsQueue,
       [ACHIEVEMENTS_QUEUE]: this.achievementsQueue,
-      [DATA_EXPORTS_QUEUE]: this.dataExportsQueue,
-      [MONTHLY_REPORTS_QUEUE]: this.monthlyReportsQueue,
-      [RANKINGS_QUEUE]: this.rankingsQueue,
-      [FINANCE_PERIOD_QUEUE]: this.financePeriodQueue,
+      [EMAIL_QUEUE]: this.emailQueue,
+      [BACKGROUND_JOBS_QUEUE]: this.backgroundJobsQueue,
     };
     const queue = queueMap[queueName];
     if (!queue)
