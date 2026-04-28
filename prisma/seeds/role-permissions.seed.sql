@@ -1753,6 +1753,40 @@ WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
   AND p.permission_name = 'annual_folders:submit'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
+-- ============================
+-- ranking_weights:* — 8.4-C grants
+-- ============================
+-- super_admin and admin pick up both permissions automatically via their
+-- wildcard grants above (super_admin: all active; admin: all active except :delete).
+--
+-- Union-level roles (director-union, assistant-union): read + write.
+-- These roles copy permissions from assistant-lf which uses an explicit list,
+-- so they do NOT pick up new permissions automatically.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-union', 'assistant-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('ranking_weights:read', 'ranking_weights:write')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- Field-level and division-level roles (director-lf, assistant-lf,
+-- director-dia, assistant-dia): read-only.
+-- director (CLUB) and assistant-lf lineage also get read-only access.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-dia', 'assistant-dia', 'director')
+  AND r.role_category IN ('GLOBAL', 'CLUB')
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'ranking_weights:read'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
 COMMIT;
 
 -- ============================================================================

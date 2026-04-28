@@ -669,6 +669,17 @@ SET active = false, modified_at = now()
 WHERE permission_name IN ('users:update', 'classes:update', 'user_honors:update')
   AND active = true;
 
+-- ============================
+-- Ranking Weights (8.4-C)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('ranking_weights:read',  'Read ranking weight configurations', true),
+  ('ranking_weights:write', 'Create/update/delete ranking weight overrides', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================
