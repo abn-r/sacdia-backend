@@ -66,16 +66,29 @@ export class AwardCategoriesController {
     description: 'Filter by active status (default: true)',
     example: true,
   })
+  @ApiQuery({
+    name: 'include_legacy',
+    required: false,
+    description:
+      'Include legacy categories (is_legacy=true). Default: false — only current composite-based categories are returned.',
+    example: false,
+  })
   @ApiResponse({ status: 200, description: 'List of award categories' })
   async findAll(
     @Query('club_type_id') clubTypeId?: string,
     @Query('active') active?: string,
+    @Query('include_legacy') includeLegacy?: string,
   ) {
     const clubTypeIdParsed =
       clubTypeId !== undefined ? parseInt(clubTypeId, 10) : undefined;
     const activeParsed = active !== undefined ? active === 'true' : undefined;
+    const includeLegacyParsed = includeLegacy === 'true';
 
-    const data = await this.service.findAll(clubTypeIdParsed, activeParsed);
+    const data = await this.service.findAll(
+      clubTypeIdParsed,
+      activeParsed,
+      includeLegacyParsed,
+    );
     return { status: 'success', data };
   }
 

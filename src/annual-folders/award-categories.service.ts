@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppBadRequestException,
@@ -32,6 +32,14 @@ export class AwardCategoriesService {
       );
     }
 
+    if (dto.min_composite_pct != null && dto.max_composite_pct != null) {
+      if (dto.min_composite_pct >= dto.max_composite_pct) {
+        throw new BadRequestException(
+          'min_composite_pct must be less than max_composite_pct',
+        );
+      }
+    }
+
     if (dto.club_type_id !== undefined && dto.club_type_id !== null) {
       const clubType = await this.prisma.club_types.findUnique({
         where: { club_type_id: dto.club_type_id },
@@ -55,6 +63,12 @@ export class AwardCategoriesService {
         icon: dto.icon ?? null,
         order: dto.order ?? 0,
         active: true,
+        ...(dto.min_composite_pct != null && {
+          min_composite_pct: dto.min_composite_pct,
+        }),
+        ...(dto.max_composite_pct != null && {
+          max_composite_pct: dto.max_composite_pct,
+        }),
       },
       include: {
         club_type: dto.club_type_id
@@ -67,14 +81,21 @@ export class AwardCategoriesService {
   /**
    * List award categories with optional filters.
    * Results are sorted by order ASC, then name ASC.
+   * By default, legacy categories (is_legacy=true) are excluded.
+   * Pass includeLegacy=true to include them.
    */
-  async findAll(clubTypeId?: number, active?: boolean) {
+  async findAll(
+    clubTypeId?: number,
+    active?: boolean,
+    includeLegacy?: boolean,
+  ) {
     const activeFilter = active !== undefined ? active : true;
 
     return this.prisma.award_categories.findMany({
       where: {
         active: activeFilter,
         ...(clubTypeId !== undefined && { club_type_id: clubTypeId }),
+        ...(!includeLegacy && { is_legacy: false }),
       },
       include: {
         club_type: { select: { club_type_id: true, name: true } },
@@ -130,6 +151,14 @@ export class AwardCategoriesService {
       );
     }
 
+    if (dto.min_composite_pct != null && dto.max_composite_pct != null) {
+      if (dto.min_composite_pct >= dto.max_composite_pct) {
+        throw new BadRequestException(
+          'min_composite_pct must be less than max_composite_pct',
+        );
+      }
+    }
+
     if (dto.club_type_id !== undefined && dto.club_type_id !== null) {
       const clubType = await this.prisma.club_types.findUnique({
         where: { club_type_id: dto.club_type_id },
@@ -155,6 +184,12 @@ export class AwardCategoriesService {
         ...(dto.max_points !== undefined && { max_points: dto.max_points }),
         ...(dto.icon !== undefined && { icon: dto.icon }),
         ...(dto.order !== undefined && { order: dto.order }),
+        ...(dto.min_composite_pct !== undefined && {
+          min_composite_pct: dto.min_composite_pct,
+        }),
+        ...(dto.max_composite_pct !== undefined && {
+          max_composite_pct: dto.max_composite_pct,
+        }),
       },
       include: {
         club_type: { select: { club_type_id: true, name: true } },

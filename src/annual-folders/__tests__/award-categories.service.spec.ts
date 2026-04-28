@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { AwardCategoriesService } from '../award-categories.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -124,6 +125,34 @@ describe('AwardCategoriesService', () => {
         }),
       );
     });
+
+    it('should throw BadRequestException when min_composite_pct >= max_composite_pct', async () => {
+      const dto = { ...baseDto, min_composite_pct: 80, max_composite_pct: 70 };
+
+      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
+      expect(mockPrismaService.award_categories.create).not.toHaveBeenCalled();
+    });
+
+    it('should create successfully when min_composite_pct < max_composite_pct', async () => {
+      const dto = { ...baseDto, min_composite_pct: 70, max_composite_pct: 80 };
+      mockPrismaService.award_categories.create.mockResolvedValue({
+        ...mockCategory,
+        min_composite_pct: 70,
+        max_composite_pct: 80,
+      });
+
+      const result = await service.create(dto);
+
+      expect(mockPrismaService.award_categories.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            min_composite_pct: 70,
+            max_composite_pct: 80,
+          }),
+        }),
+      );
+      expect(result).toMatchObject({ min_composite_pct: 70, max_composite_pct: 80 });
+    });
   });
 
   // ================================================================
@@ -197,6 +226,32 @@ describe('AwardCategoriesService', () => {
       const result = await service.findAll(999);
 
       expect(result).toHaveLength(0);
+    });
+
+    it('should filter out legacy categories by default (include_legacy=false)', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
+
+      await service.findAll(undefined, undefined, false);
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ is_legacy: false }),
+        }),
+      );
+    });
+
+    it('should include legacy categories when include_legacy=true', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue(
+        mockCategories,
+      );
+
+      await service.findAll(undefined, undefined, true);
+
+      const callArgs =
+        mockPrismaService.award_categories.findMany.mock.calls[0][0];
+      expect(callArgs.where).not.toHaveProperty('is_legacy');
     });
   });
 
@@ -321,6 +376,21 @@ describe('AwardCategoriesService', () => {
       await service.update(categoryId, { min_points: 90 });
 
       expect(mockPrismaService.club_types.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when min_composite_pct >= max_composite_pct on update', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+
+      await expect(
+        service.update(categoryId, {
+          min_composite_pct: 50,
+          max_composite_pct: 40,
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
     });
   });
 
