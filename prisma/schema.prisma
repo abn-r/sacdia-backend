@@ -2251,14 +2251,14 @@ model award_categories {
 }
 
 model ranking_weight_configs {
-  ranking_weight_config_id String      @id @default(uuid()) @db.Uuid
+  ranking_weight_config_id String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   club_type_id             Int?        @unique
   folder_weight            Int
   finance_weight           Int
   camporee_weight          Int
   evidence_weight          Int
-  created_at               DateTime    @default(now()) @db.Timestamptz()
-  updated_at               DateTime    @default(now()) @db.Timestamptz()
+  created_at               DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime    @default(now()) @db.Timestamptz(6)
   updated_by               String?     @db.Uuid
   club_types               club_types? @relation(fields: [club_type_id], references: [club_type_id], onDelete: Cascade)
 }
@@ -2281,7 +2281,7 @@ model club_annual_rankings {
   camporee_score_pct      Decimal   @default(0) @db.Decimal(5, 2)
   evidence_score_pct      Decimal   @default(0) @db.Decimal(5, 2)
   composite_score_pct     Decimal   @default(0) @db.Decimal(5, 2)
-  composite_calculated_at DateTime? @db.Timestamptz()
+  composite_calculated_at DateTime? @db.Timestamptz(6)
 
   club_enrollment     club_enrollments     @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
   club_type           club_types           @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
