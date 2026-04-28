@@ -1773,15 +1773,25 @@ WHERE r.role_name IN ('director-union', 'assistant-union')
   AND p.permission_name IN ('ranking_weights:read', 'ranking_weights:write')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
--- Field-level and division-level roles (director-lf, assistant-lf,
--- director-dia, assistant-dia): read-only.
--- director (CLUB) and assistant-lf lineage also get read-only access.
+-- 8.4-C: ranking_weights:read for GLOBAL field/dia leaders
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
 CROSS JOIN permissions p
-WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-dia', 'assistant-dia', 'director')
-  AND r.role_category IN ('GLOBAL', 'CLUB')
+WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-dia', 'assistant-dia')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'ranking_weights:read'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- 8.4-C: ranking_weights:read for CLUB-scope club director
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'director'
+  AND r.role_category = 'CLUB'
   AND r.active = true
   AND p.active = true
   AND p.permission_name = 'ranking_weights:read'
