@@ -25,7 +25,10 @@ describe('EnrollmentClubResolverService', () => {
     prisma.club_role_assignments.findFirst.mockResolvedValue({
       club_sections: { club_section_id: 50, main_club_id: 10 },
     });
-    expect(await service.resolve(1, 2)).toEqual({ clubId: 10, clubSectionId: 50 });
+    expect(await service.resolve(1, 2)).toEqual({
+      clubId: 10,
+      clubSectionId: 50,
+    });
   });
 
   it('no enrollment → null', async () => {

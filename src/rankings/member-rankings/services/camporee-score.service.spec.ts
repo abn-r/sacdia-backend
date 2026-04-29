@@ -34,8 +34,12 @@ describe('CamporeeScoreService (per-enrollment)', () => {
       local_field_id: 100,
       local_fields: { union_id: 5 },
     });
-    prisma.local_camporees.findMany.mockResolvedValue([{ local_camporee_id: 11 }]);
-    prisma.union_camporees.findMany.mockResolvedValue([{ union_camporee_id: 22 }]);
+    prisma.local_camporees.findMany.mockResolvedValue([
+      { local_camporee_id: 11 },
+    ]);
+    prisma.union_camporees.findMany.mockResolvedValue([
+      { union_camporee_id: 22 },
+    ]);
     prisma.camporee_members.count.mockResolvedValue(1);
     expect(await service.calculate(1, 2)).toBe(50);
     // verify count was scoped to in-range IDs
@@ -72,7 +76,9 @@ describe('CamporeeScoreService (per-enrollment)', () => {
       local_field_id: 100,
       local_fields: null,
     });
-    prisma.local_camporees.findMany.mockResolvedValue([{ local_camporee_id: 11 }]);
+    prisma.local_camporees.findMany.mockResolvedValue([
+      { local_camporee_id: 11 },
+    ]);
     prisma.camporee_members.count.mockResolvedValue(1);
     expect(await service.calculate(1, 2)).toBe(100);
     expect(prisma.union_camporees.findMany).not.toHaveBeenCalled();
@@ -96,7 +102,9 @@ describe('CamporeeScoreService (per-enrollment)', () => {
       { local_camporee_id: 11 },
       { local_camporee_id: 12 },
     ]);
-    prisma.union_camporees.findMany.mockResolvedValue([{ union_camporee_id: 22 }]);
+    prisma.union_camporees.findMany.mockResolvedValue([
+      { union_camporee_id: 22 },
+    ]);
     prisma.camporee_members.count.mockResolvedValue(3);
     expect(await service.calculate(1, 2)).toBe(100);
   });

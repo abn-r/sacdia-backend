@@ -35,7 +35,10 @@ describe('MemberCompositeScoreService', () => {
         { provide: ClassScoreService, useValue: classScore },
         { provide: InvestitureScoreService, useValue: investitureScore },
         { provide: CamporeeScoreService, useValue: camporeeScore },
-        { provide: EnrollmentWeightsResolverService, useValue: weightsResolver },
+        {
+          provide: EnrollmentWeightsResolverService,
+          useValue: weightsResolver,
+        },
       ],
     }).compile();
     service = m.get(MemberCompositeScoreService);

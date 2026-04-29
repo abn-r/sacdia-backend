@@ -234,7 +234,9 @@ describe('AchievementsService', () => {
 
       expect(result.data).toHaveLength(2);
       expect(result.data[0].achievement_id).toBe(1);
-      expect(result.data[0].badge_image_url).toBe(ACHIEVEMENT_DEFAULT_BADGE_URL); // no key → default url
+      expect(result.data[0].badge_image_url).toBe(
+        ACHIEVEMENT_DEFAULT_BADGE_URL,
+      ); // no key → default url
       expect(result.data[1].achievement_id).toBe(2);
       expect(result.total).toBe(2);
       expect(result.page).toBe(1);
@@ -578,7 +580,9 @@ describe('AchievementsService', () => {
       expect(result).not.toBeNull();
       expect(result!.achievement.achievement_id).toBe(1);
       expect(result!.achievement.name).toBe('Test');
-      expect(result!.achievement.badge_image_url).toBe(ACHIEVEMENT_DEFAULT_BADGE_URL); // no key → default url
+      expect(result!.achievement.badge_image_url).toBe(
+        ACHIEVEMENT_DEFAULT_BADGE_URL,
+      ); // no key → default url
       expect(result!.userProgress).toEqual(mockProgress);
     });
 
@@ -615,7 +619,9 @@ describe('AchievementsService', () => {
       const result = await service.getAchievementDetail(1);
 
       expect(result!.achievement.achievement_id).toBe(1);
-      expect(result!.achievement.badge_image_url).toBe(ACHIEVEMENT_DEFAULT_BADGE_URL);
+      expect(result!.achievement.badge_image_url).toBe(
+        ACHIEVEMENT_DEFAULT_BADGE_URL,
+      );
       expect(result!.userProgress).toBeNull();
       expect(
         mockPrismaService.user_achievements.findFirst,

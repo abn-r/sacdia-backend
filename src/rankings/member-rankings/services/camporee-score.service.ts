@@ -19,7 +19,10 @@ export class CamporeeScoreService {
     });
     if (!enrollment) return null;
 
-    const club = await this.clubResolver.resolve(enrollmentId, ecclesiasticalYearId);
+    const club = await this.clubResolver.resolve(
+      enrollmentId,
+      ecclesiasticalYearId,
+    );
     if (!club) return null;
 
     // engram #1850: clubs has no direct union_id; resolve via local_fields
@@ -69,7 +72,8 @@ export class CamporeeScoreService {
     // inflating scores (caught in stage 2 review of v1 plan).
     const orClauses: Array<Record<string, unknown>> = [];
     if (localIds.length > 0) orClauses.push({ camporee_id: { in: localIds } });
-    if (unionIds.length > 0) orClauses.push({ union_camporee_id: { in: unionIds } });
+    if (unionIds.length > 0)
+      orClauses.push({ union_camporee_id: { in: unionIds } });
 
     const participatedCount = await this.prisma.camporee_members.count({
       where: {
