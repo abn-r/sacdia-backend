@@ -364,6 +364,7 @@ model club_types {
   club_annual_rankings   club_annual_rankings[]
   achievements           achievements[]
   ranking_weight_configs ranking_weight_configs?
+  enrollment_ranking_weights EnrollmentRankingWeight[]
 }
 
 model clubs {
@@ -380,6 +381,8 @@ model clubs {
   districlub_type_id      Int
   club_sections           club_sections[]
   finance_period_closings FinancePeriodClosing[]
+  enrollment_rankings     EnrollmentRanking[]
+  section_rankings        SectionRanking[]
   churches                churches               @relation(fields: [church_id], references: [church_id], onDelete: NoAction, onUpdate: NoAction)
   districts               districts              @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields            local_fields           @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
@@ -423,6 +426,8 @@ model club_sections {
   transfer_requests_to     club_transfer_requests[]   @relation("transfer_to")
   role_assignment_requests role_assignment_requests[]
   member_of_month          member_of_month[]
+  enrollment_rankings      EnrollmentRanking[]
+  section_rankings         SectionRanking[]
 
   @@unique([main_club_id, club_type_id])
 }
@@ -493,11 +498,14 @@ model ecclesiastical_years {
   investiture_configs      investiture_config[]
   local_camporees_relation local_camporees[]       @relation("local_camporees_ecclesiastical_yearToecclesiastical_year")
   union_camporees_relation union_camporees[]       @relation("union_camporees_ecclesiastical_yearToecclesiastical_year")
-  club_enrollments         club_enrollments[]
-  folder_templates         folder_templates[]
-  club_annual_rankings     club_annual_rankings[]
-  user_achievements        user_achievements[]
-  annual_reports           annual_reports[]
+  club_enrollments             club_enrollments[]
+  folder_templates             folder_templates[]
+  club_annual_rankings         club_annual_rankings[]
+  user_achievements            user_achievements[]
+  annual_reports               annual_reports[]
+  enrollment_rankings          EnrollmentRanking[]
+  section_rankings             SectionRanking[]
+  enrollment_ranking_weights   EnrollmentRankingWeight[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -526,6 +534,7 @@ model enrollments {
   modified_at              DateTime                         @default(now()) @db.Timestamptz(6)
   class_module_progress    class_module_progress[]
   class_section_progress   class_section_progress[]
+  enrollment_rankings      EnrollmentRanking[]
   classes                  classes                          @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction)
   ecclesiastical_year      ecclesiastical_years             @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   users                    users                            @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1269,6 +1278,7 @@ model users {
   achievement_event_log             achievement_event_log[]
   data_export_requests              data_export_requests[]
   support_reports                   support_reports[]
+  enrollment_rankings               EnrollmentRanking[]
 }
 
 model notification_preferences {
@@ -2236,6 +2246,7 @@ model award_categories {
   icon              String?  @db.VarChar(100)
   order             Int      @default(0)
   active            Boolean  @default(true)
+  scope             String   @default("club") @db.VarChar(20)
   created_at        DateTime @default(now()) @db.Timestamptz(6)
   modified_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -2243,10 +2254,13 @@ model award_categories {
   max_composite_pct Decimal? @db.Decimal(5, 2)
   is_legacy         Boolean  @default(false)
 
-  club_type club_types?            @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
-  rankings  club_annual_rankings[]
+  club_type           club_types?            @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  rankings            club_annual_rankings[]
+  enrollment_rankings EnrollmentRanking[]
+  section_rankings    SectionRanking[]
 
   @@index([club_type_id], map: "idx_award_categories_club_type")
+  @@index([scope, is_legacy], map: "idx_award_categories_scope")
   @@map("award_categories")
 }
 
@@ -2661,4 +2675,84 @@ model annual_reports {
 
   @@unique([club_id, ecclesiastical_year_id])
   @@index([status], map: "idx_annual_reports_status")
+}
+
+// ========================================
+// SECTION MEMBER RANKINGS (8.4-A)
+// ========================================
+
+model EnrollmentRanking {
+  id                       String    @id @default(uuid()) @db.Uuid
+  enrollment_id            Int
+  user_id                  String    @db.Uuid
+  club_id                  Int
+  club_section_id          Int?
+  ecclesiastical_year_id   Int
+  class_score_pct          Decimal?  @db.Decimal(5, 2)
+  investiture_score_pct    Decimal?  @db.Decimal(5, 2)
+  camporee_score_pct       Decimal?  @db.Decimal(5, 2)
+  composite_score_pct      Decimal?  @db.Decimal(5, 2)
+  rank_position            Int?
+  awarded_category_id      String?   @db.Uuid
+  composite_calculated_at  DateTime? @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime  @default(now()) @db.Timestamptz(6)
+
+  enrollment          enrollments          @relation(fields: [enrollment_id], references: [enrollment_id], onDelete: Cascade)
+  user                users                @relation(fields: [user_id], references: [user_id])
+  club                clubs                @relation(fields: [club_id], references: [club_id])
+  club_section        club_sections?       @relation(fields: [club_section_id], references: [club_section_id])
+  ecclesiastical_year ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id])
+  awarded_category    award_categories?    @relation(fields: [awarded_category_id], references: [award_category_id])
+
+  @@unique([enrollment_id, ecclesiastical_year_id], map: "uq_enrollment_rankings_enrollment_year")
+  @@index([club_id, ecclesiastical_year_id], map: "idx_enrollment_rankings_club_year")
+  @@index([club_section_id, ecclesiastical_year_id], map: "idx_enrollment_rankings_section_year")
+  @@index([club_id, ecclesiastical_year_id, composite_score_pct(sort: Desc)], map: "idx_enrollment_rankings_composite")
+  @@index([user_id], map: "idx_enrollment_rankings_user")
+  @@index([awarded_category_id], map: "idx_enrollment_rankings_award_category")
+  @@map("enrollment_rankings")
+}
+
+model SectionRanking {
+  id                       String    @id @default(uuid()) @db.Uuid
+  club_section_id          Int
+  club_id                  Int
+  ecclesiastical_year_id   Int
+  composite_score_pct      Decimal?  @db.Decimal(5, 2)
+  active_enrollment_count  Int       @default(0)
+  rank_position            Int?
+  awarded_category_id      String?   @db.Uuid
+  composite_calculated_at  DateTime? @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime  @default(now()) @db.Timestamptz(6)
+
+  club_section        club_sections        @relation(fields: [club_section_id], references: [club_section_id], onDelete: Cascade)
+  club                clubs                @relation(fields: [club_id], references: [club_id])
+  ecclesiastical_year ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id])
+  awarded_category    award_categories?    @relation(fields: [awarded_category_id], references: [award_category_id])
+
+  @@unique([club_section_id, ecclesiastical_year_id], map: "uq_section_rankings_section_year")
+  @@index([club_id, ecclesiastical_year_id], map: "idx_section_rankings_club_year")
+  @@index([club_id, ecclesiastical_year_id, composite_score_pct(sort: Desc)], map: "idx_section_rankings_composite")
+  @@index([awarded_category_id], map: "idx_section_rankings_award_category")
+  @@map("section_rankings")
+}
+
+model EnrollmentRankingWeight {
+  id                     String    @id @default(uuid()) @db.Uuid
+  club_type_id           Int?
+  ecclesiastical_year_id Int?
+  class_pct              Decimal   @db.Decimal(5, 2)
+  investiture_pct        Decimal   @db.Decimal(5, 2)
+  camporee_pct           Decimal   @db.Decimal(5, 2)
+  is_default             Boolean   @default(false)
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at            DateTime  @default(now()) @db.Timestamptz(6)
+
+  club_type           club_types?           @relation(fields: [club_type_id], references: [club_type_id])
+  ecclesiastical_year ecclesiastical_years? @relation(fields: [ecclesiastical_year_id], references: [year_id])
+
+  @@unique([club_type_id, ecclesiastical_year_id], map: "uq_enrollment_weights_type_year")
+  @@map("enrollment_ranking_weights")
 }
