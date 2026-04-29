@@ -5,7 +5,10 @@ import { achievement_type, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HandlerRegistry } from './handlers/handler.registry';
 import { EmitEventDto } from './dto/emit-event.dto';
-import { ACHIEVEMENTS_QUEUE } from './achievements.constants';
+import {
+  ACHIEVEMENTS_QUEUE,
+  ACHIEVEMENT_DEFAULT_BADGE_URL,
+} from './achievements.constants';
 import { EvaluateJobData } from './achievements.processor';
 import {
   FILE_STORAGE_SERVICE,
@@ -138,7 +141,7 @@ export class AchievementsService {
             StorageBucketAlias.ACHIEVEMENTS_BADGES,
             item.badge_image_key,
           )
-        : null,
+        : ACHIEVEMENT_DEFAULT_BADGE_URL,
     }));
 
     return {
@@ -257,7 +260,7 @@ export class AchievementsService {
               StorageBucketAlias.ACHIEVEMENTS_BADGES,
               masked.badge_image_key,
             )
-          : null,
+          : ACHIEVEMENT_DEFAULT_BADGE_URL,
       };
 
       categoryMap.get(cat.achievement_category_id)!.achievements.push({
@@ -303,7 +306,7 @@ export class AchievementsService {
             StorageBucketAlias.ACHIEVEMENTS_BADGES,
             achievement.badge_image_key,
           )
-        : null,
+        : ACHIEVEMENT_DEFAULT_BADGE_URL,
     };
 
     if (!userId) {

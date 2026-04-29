@@ -7,6 +7,7 @@ import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../../common/services/file-storage.service';
+import { ACHIEVEMENT_DEFAULT_BADGE_URL } from '../achievements.constants';
 
 describe('AdminAchievementsService', () => {
   let service: AdminAchievementsService;
@@ -48,6 +49,12 @@ describe('AdminAchievementsService', () => {
       key: 'achievements/badges/1_bronze.png',
       url: 'https://cdn.r2.example/achievements-badges/achievements/badges/1_bronze.png',
     }),
+    resolvePublicUrl: jest
+      .fn()
+      .mockImplementation(
+        (_bucket: string, key: string) =>
+          `https://cdn.r2.example/achievements-badges/${key}`,
+      ),
   };
 
   beforeEach(async () => {
@@ -233,7 +240,10 @@ describe('AdminAchievementsService', () => {
 
       const result = await service.createAchievement(createDto);
 
-      expect(result).toEqual(mockCreated);
+      // Result is mockCreated enriched with badge_image_url.
+      // mockCreated has no badge_image_key → default URL applied.
+      expect(result).toMatchObject(mockCreated);
+      expect(result.badge_image_url).toBe(ACHIEVEMENT_DEFAULT_BADGE_URL);
       expect(mockAchievementsService.validateCriteria).toHaveBeenCalledWith(
         'THRESHOLD',
         createDto.criteria,

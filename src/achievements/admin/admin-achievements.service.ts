@@ -14,6 +14,7 @@ import {
   ACHIEVEMENTS_QUEUE,
   RETROACTIVE_BATCH_SIZE,
   RETROACTIVE_BATCH_DELAY_MS,
+  ACHIEVEMENT_DEFAULT_BADGE_URL,
 } from '../achievements.constants';
 import {
   FILE_STORAGE_SERVICE,
@@ -180,7 +181,7 @@ export class AdminAchievementsService {
       await this._validatePrerequisite(dto.prerequisite_id, null);
     }
 
-    return this.prisma.achievements.create({
+    const created = await this.prisma.achievements.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -200,6 +201,16 @@ export class AdminAchievementsService {
       },
       include: { category: true },
     });
+
+    return {
+      ...created,
+      badge_image_url: created.badge_image_key
+        ? this.fileStorage.resolvePublicUrl(
+            StorageBucketAlias.ACHIEVEMENTS_BADGES,
+            created.badge_image_key,
+          )
+        : ACHIEVEMENT_DEFAULT_BADGE_URL,
+    };
   }
 
   async updateAchievement(achievementId: number, dto: UpdateAchievementDto) {
@@ -220,7 +231,7 @@ export class AdminAchievementsService {
       await this._validatePrerequisite(dto.prerequisite_id, achievementId);
     }
 
-    return this.prisma.achievements.update({
+    const updated = await this.prisma.achievements.update({
       where: { achievement_id: achievementId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -250,6 +261,16 @@ export class AdminAchievementsService {
       } as Prisma.achievementsUncheckedUpdateInput,
       include: { category: true },
     });
+
+    return {
+      ...updated,
+      badge_image_url: updated.badge_image_key
+        ? this.fileStorage.resolvePublicUrl(
+            StorageBucketAlias.ACHIEVEMENTS_BADGES,
+            updated.badge_image_key,
+          )
+        : ACHIEVEMENT_DEFAULT_BADGE_URL,
+    };
   }
 
   async deleteAchievement(achievementId: number) {
