@@ -18,7 +18,6 @@ export class ClassScoreService {
       where: {
         enrollment_id: enrollmentId,
         active: true,
-        score: { not: null },
       },
     });
 
