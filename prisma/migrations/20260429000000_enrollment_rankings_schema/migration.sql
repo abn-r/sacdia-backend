@@ -17,7 +17,7 @@ CREATE TABLE enrollment_rankings (
   awarded_category_id UUID REFERENCES award_categories(award_category_id),
   composite_calculated_at TIMESTAMPTZ(6),
   created_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
+  modified_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
   CONSTRAINT uq_enrollment_rankings_enrollment_year
     UNIQUE (enrollment_id, ecclesiastical_year_id),
   CONSTRAINT chk_enrollment_rankings_class_score
@@ -53,7 +53,7 @@ CREATE TABLE section_rankings (
   awarded_category_id UUID REFERENCES award_categories(award_category_id),
   composite_calculated_at TIMESTAMPTZ(6),
   created_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
+  modified_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
   CONSTRAINT uq_section_rankings_section_year
     UNIQUE (club_section_id, ecclesiastical_year_id),
   CONSTRAINT chk_section_rankings_composite
@@ -77,7 +77,7 @@ CREATE TABLE enrollment_ranking_weights (
   camporee_pct NUMERIC(5,2) NOT NULL,
   is_default BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
+  modified_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
   CONSTRAINT chk_enrollment_weights_sum_100
     CHECK (class_pct + investiture_pct + camporee_pct = 100),
   CONSTRAINT chk_enrollment_weights_class_range
@@ -91,5 +91,11 @@ CREATE TABLE enrollment_ranking_weights (
 );
 
 CREATE UNIQUE INDEX idx_enrollment_weights_default_global
-  ON enrollment_ranking_weights ((club_type_id IS NULL), (ecclesiastical_year_id IS NULL))
+  ON enrollment_ranking_weights ((club_type_id IS NULL))
   WHERE club_type_id IS NULL AND ecclesiastical_year_id IS NULL;
+
+CREATE INDEX idx_enrollment_rankings_award_category
+  ON enrollment_rankings(awarded_category_id);
+
+CREATE INDEX idx_section_rankings_award_category
+  ON section_rankings(awarded_category_id);

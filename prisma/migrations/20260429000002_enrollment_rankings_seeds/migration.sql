@@ -5,7 +5,7 @@ INSERT INTO enrollment_ranking_weights
   (club_type_id, ecclesiastical_year_id, class_pct, investiture_pct, camporee_pct, is_default)
 VALUES
   (NULL, NULL, 50, 30, 20, true)
-ON CONFLICT DO NOTHING;
+ON CONFLICT ON CONSTRAINT uq_enrollment_weights_type_year DO NOTHING;
 
 INSERT INTO system_config (config_key, config_value, config_type, description) VALUES
   ('member_ranking.recalculation_enabled', 'true',      'boolean',
