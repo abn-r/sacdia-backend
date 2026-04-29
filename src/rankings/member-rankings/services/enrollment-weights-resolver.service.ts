@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { AppInternalServerErrorException } from '../../../common/errors/app.exception';
+import { ErrorCode } from '../../../common/errors/error-codes';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 export interface ResolvedWeights {
@@ -57,7 +59,9 @@ export class EnrollmentWeightsResolverService {
       },
     });
     if (!def) {
-      throw new Error('No default enrollment_ranking_weights row found');
+      throw new AppInternalServerErrorException(
+        ErrorCode.RANKING_WEIGHTS_DEFAULT_NOT_FOUND,
+      );
     }
     return {
       class_pct: Number(def.class_pct),

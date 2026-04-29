@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { AppInternalServerErrorException } from '../../../common/errors/app.exception';
 import { EnrollmentWeightsResolverService } from './enrollment-weights-resolver.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -35,7 +36,11 @@ describe('EnrollmentWeightsResolverService', () => {
   it('override (clubType only) wins when year override absent', async () => {
     prisma.enrollmentRankingWeight.findFirst
       .mockResolvedValueOnce(null) // year+type miss
-      .mockResolvedValueOnce({ class_pct: 60, investiture_pct: 25, camporee_pct: 15 });
+      .mockResolvedValueOnce({
+        class_pct: 60,
+        investiture_pct: 25,
+        camporee_pct: 15,
+      });
     const r = await service.resolve({ clubTypeId: 1, ecclesiasticalYearId: 2 });
     expect(r).toEqual({
       class_pct: 60,
@@ -69,7 +74,10 @@ describe('EnrollmentWeightsResolverService', () => {
       camporee_pct: 20,
       is_default: true,
     });
-    const r = await service.resolve({ clubTypeId: null, ecclesiasticalYearId: 2 });
+    const r = await service.resolve({
+      clubTypeId: null,
+      ecclesiasticalYearId: 2,
+    });
     expect(r.source).toBe('default');
     // verify only ONE findFirst call (the default branch)
     expect(prisma.enrollmentRankingWeight.findFirst).toHaveBeenCalledTimes(1);
@@ -82,6 +90,6 @@ describe('EnrollmentWeightsResolverService', () => {
       .mockResolvedValueOnce(null);
     await expect(
       service.resolve({ clubTypeId: 1, ecclesiasticalYearId: 2 }),
-    ).rejects.toThrow('No default enrollment_ranking_weights row found');
+    ).rejects.toBeInstanceOf(AppInternalServerErrorException);
   });
 });
