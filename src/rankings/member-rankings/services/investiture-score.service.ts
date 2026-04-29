@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { investiture_status_enum } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
@@ -7,15 +8,14 @@ export class InvestitureScoreService {
 
   async calculate(
     enrollmentId: number,
-    ecclesiasticalYearId: number,
+    _ecclesiasticalYearId: number,
   ): Promise<number | null> {
-    const enrollment = await this.prisma.enrollments.findFirst({
-      where: {
-        enrollment_id: enrollmentId,
-        ecclesiastical_year_id: ecclesiasticalYearId,
-      },
+    const enrollment = await this.prisma.enrollments.findUnique({
+      where: { enrollment_id: enrollmentId },
     });
     if (!enrollment) return null;
-    return enrollment.investiture_status === 'INVESTIDO' ? 100 : 0;
+    return enrollment.investiture_status === investiture_status_enum.INVESTIDO
+      ? 100
+      : 0;
   }
 }
