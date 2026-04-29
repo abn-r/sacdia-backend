@@ -230,7 +230,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
    */
   private translateSafe(code: ErrorCode, lang: string): string {
     try {
-      return this.i18n.translate(`errors.${code}`, { lang }) as string;
+      return this.i18n.translate(`errors.${code}`, { lang });
     } catch {
       return code;
     }

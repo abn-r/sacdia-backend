@@ -539,7 +539,7 @@ describe('createFolderForEnrollment — links camporee via resolver (CAMP-1, T-3
       data: { main_club_id: clubWithLocalField[0].club_id },
     });
 
-    let folderTemplate = await raw.folder_templates.findFirst({
+    const folderTemplate = await raw.folder_templates.findFirst({
       where: {
         club_type_id: T35_CLUB_TYPE_ID,
         ecclesiastical_year_id: T35_YEAR_ID,

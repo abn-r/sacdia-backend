@@ -435,6 +435,6 @@ export class CronAlertService {
         (a): a is typeof a & { users: { email: string; active: boolean } } =>
           !!a.users?.email && a.users.active === true,
       )
-      .map((a) => ({ user_id: a.user_id, email: a.users!.email }));
+      .map((a) => ({ user_id: a.user_id, email: a.users.email }));
   }
 }

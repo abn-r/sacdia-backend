@@ -4,10 +4,7 @@ import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { RankingsService } from './rankings.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
-import {
-  RANKINGS_QUEUE,
-  RankingsTriggerJobData,
-} from './rankings.types';
+import { RANKINGS_QUEUE, RankingsTriggerJobData } from './rankings.types';
 
 export { RANKINGS_QUEUE };
 export type { RankingsTriggerJobData };

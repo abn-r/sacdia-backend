@@ -72,7 +72,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         translatedMessage = this.i18n.translate(`errors.${code}`, {
           lang,
           args: namedArgs ?? {},
-        }) as string;
+        });
       } catch {
         // Fallback: use code itself if translation key is missing
         translatedMessage = code;
@@ -82,9 +82,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const maskedMessage =
         process.env.NODE_ENV === 'production' &&
         status >= HttpStatus.INTERNAL_SERVER_ERROR
-          ? (this.i18n.translate(`errors.${ErrorCode.INTERNAL_SERVER_ERROR}`, {
+          ? this.i18n.translate(`errors.${ErrorCode.INTERNAL_SERVER_ERROR}`, {
               lang,
-            }) as string)
+            })
           : translatedMessage;
 
       return response.status(status).json({
