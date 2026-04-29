@@ -47,4 +47,17 @@ describe('SectionAggregationService', () => {
       active_enrollment_count: 2,
     });
   });
+
+  it('where clause shape: filters by sectionId, yearId, composite NOT NULL — no member_status filter', async () => {
+    prisma.enrollmentRanking.findMany.mockResolvedValue([]);
+    await service.aggregate(5, 3);
+    expect(prisma.enrollmentRanking.findMany).toHaveBeenCalledWith({
+      where: {
+        club_section_id: 5,
+        ecclesiastical_year_id: 3,
+        composite_score_pct: { not: null },
+      },
+      select: { composite_score_pct: true },
+    });
+  });
 });
