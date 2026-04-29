@@ -7,7 +7,7 @@ export class ClassScoreService {
 
   async calculate(
     enrollmentId: number,
-    ecclesiasticalYearId: number,
+    _ecclesiasticalYearId: number,
   ): Promise<number | null> {
     const enrollment = await this.prisma.enrollments.findUnique({
       where: { enrollment_id: enrollmentId },

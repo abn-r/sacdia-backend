@@ -26,7 +26,9 @@ describe('ClassScoreService', () => {
 
   it('happy path: 3/5 modules completed → 60.00', async () => {
     (prisma.enrollments.findUnique as jest.Mock).mockResolvedValue({
-      enrollment_id: 1, class_id: 10, ecclesiastical_year_id: 2,
+      enrollment_id: 1,
+      class_id: 10,
+      ecclesiastical_year_id: 2,
     });
     (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(3);
     (prisma.class_modules.count as jest.Mock).mockResolvedValue(5);
@@ -35,7 +37,9 @@ describe('ClassScoreService', () => {
 
   it('required_count = 0 → null', async () => {
     (prisma.enrollments.findUnique as jest.Mock).mockResolvedValue({
-      enrollment_id: 1, class_id: 10, ecclesiastical_year_id: 2,
+      enrollment_id: 1,
+      class_id: 10,
+      ecclesiastical_year_id: 2,
     });
     (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(0);
     (prisma.class_modules.count as jest.Mock).mockResolvedValue(0);
@@ -44,21 +48,27 @@ describe('ClassScoreService', () => {
 
   it('completed > required → clamp 100', async () => {
     (prisma.enrollments.findUnique as jest.Mock).mockResolvedValue({
-      enrollment_id: 1, class_id: 10, ecclesiastical_year_id: 2,
+      enrollment_id: 1,
+      class_id: 10,
+      ecclesiastical_year_id: 2,
     });
     (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(7);
     (prisma.class_modules.count as jest.Mock).mockResolvedValue(5);
     expect(await service.calculate(1, 2)).toBe(100);
   });
 
-  it('no enrollment → null', async () => {
+  it('no enrollment → null (short-circuits, no further DB calls)', async () => {
     (prisma.enrollments.findUnique as jest.Mock).mockResolvedValue(null);
     expect(await service.calculate(999, 2)).toBeNull();
+    expect(prisma.class_module_progress.count).not.toHaveBeenCalled();
+    expect(prisma.class_modules.count).not.toHaveBeenCalled();
   });
 
   it('exact 0 completed of 5 required → 0', async () => {
     (prisma.enrollments.findUnique as jest.Mock).mockResolvedValue({
-      enrollment_id: 1, class_id: 10, ecclesiastical_year_id: 2,
+      enrollment_id: 1,
+      class_id: 10,
+      ecclesiastical_year_id: 2,
     });
     (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(0);
     (prisma.class_modules.count as jest.Mock).mockResolvedValue(5);
