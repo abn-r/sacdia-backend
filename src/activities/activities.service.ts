@@ -797,8 +797,6 @@ export class ActivitiesService {
       }
     }
 
-    // TODO: emit activity.completed when a dedicated completion action is added
-
     return updated;
   }
 

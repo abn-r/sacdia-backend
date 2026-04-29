@@ -797,8 +797,6 @@ export class CamporeesService {
       );
     }
 
-    // TODO: emit camporee.completed when a dedicated camporee completion action is added
-
     return this.applySignedPrivateUrls(member);
   }
 
@@ -1655,8 +1653,6 @@ export class CamporeesService {
         `Failed to emit achievement event: ${(error as Error).message}`,
       );
     }
-
-    // TODO: emit camporee.completed when a dedicated camporee completion action is added
 
     return this.applySignedPrivateUrls(member);
   }
