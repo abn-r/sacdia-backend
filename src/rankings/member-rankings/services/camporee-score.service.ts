@@ -51,6 +51,9 @@ export class CamporeeScoreService {
               ecclesiastical_year: ecclesiasticalYearId,
               active: true,
               union_id: resolvedUnionId,
+              union_camporee_local_fields: {
+                some: { local_field_id: localFieldId },
+              },
             },
             select: { union_camporee_id: true },
           }),
