@@ -42,6 +42,14 @@ describe('AdminAchievementsService', () => {
     getAchievementDetail: jest.fn(),
     validateCriteria: jest.fn().mockReturnValue({ valid: true }),
     enqueueRetroactiveEvaluation: jest.fn().mockResolvedValue({ queued: true }),
+    resolveBadgeUrl: jest
+      .fn()
+      .mockImplementation(
+        (key: string | null | undefined) =>
+          key
+            ? `https://cdn.r2.example/achievements-badges/${key}`
+            : ACHIEVEMENT_DEFAULT_BADGE_URL,
+      ),
   };
 
   const mockFileStorageService = {

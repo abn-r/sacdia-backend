@@ -14,7 +14,6 @@ import {
   ACHIEVEMENTS_QUEUE,
   RETROACTIVE_BATCH_SIZE,
   RETROACTIVE_BATCH_DELAY_MS,
-  ACHIEVEMENT_DEFAULT_BADGE_URL,
 } from '../achievements.constants';
 import {
   FILE_STORAGE_SERVICE,
@@ -204,12 +203,9 @@ export class AdminAchievementsService {
 
     return {
       ...created,
-      badge_image_url: created.badge_image_key
-        ? this.fileStorage.resolvePublicUrl(
-            StorageBucketAlias.ACHIEVEMENTS_BADGES,
-            created.badge_image_key,
-          )
-        : ACHIEVEMENT_DEFAULT_BADGE_URL,
+      badge_image_url: this.achievementsService.resolveBadgeUrl(
+        created.badge_image_key,
+      ),
     };
   }
 
@@ -264,12 +260,9 @@ export class AdminAchievementsService {
 
     return {
       ...updated,
-      badge_image_url: updated.badge_image_key
-        ? this.fileStorage.resolvePublicUrl(
-            StorageBucketAlias.ACHIEVEMENTS_BADGES,
-            updated.badge_image_key,
-          )
-        : ACHIEVEMENT_DEFAULT_BADGE_URL,
+      badge_image_url: this.achievementsService.resolveBadgeUrl(
+        updated.badge_image_key,
+      ),
     };
   }
 
