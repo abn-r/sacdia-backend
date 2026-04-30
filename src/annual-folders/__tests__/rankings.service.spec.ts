@@ -8,18 +8,24 @@ import { ErrorCode } from '../../common/errors/error-codes';
 import { MemberCompositeScoreService } from '../../rankings/member-rankings/services/member-composite-score.service';
 import { SectionAggregationService } from '../../rankings/section-rankings/services/section-aggregation.service';
 import { SystemConfigService } from '../../system-config/system-config.service';
+import { FolderScoreService } from '../score-calculators/folder-score';
+import { FinanceScoreService } from '../score-calculators/finance-score';
+import { CamporeeScoreService } from '../score-calculators/camporee-score';
+import { EvidenceScoreService } from '../score-calculators/evidence-score';
+import { WeightsResolverService } from '../score-calculators/weights-resolver';
+import { CompositeScoreService } from '../score-calculators/composite-score';
 
 describe('RankingsService', () => {
   let service: RankingsService;
 
   // Forward-declare so we can reference it inside $transaction
-
   let mockPrismaService: {
     $transaction: jest.Mock;
     $executeRaw: jest.Mock;
     ecclesiastical_years: { findUnique: jest.Mock; findFirst: jest.Mock };
     annual_folders: { findMany: jest.Mock };
     award_categories: { findMany: jest.Mock };
+    system_config: { findUnique: jest.Mock };
     club_annual_rankings: {
       upsert: jest.Mock;
       deleteMany: jest.Mock;
@@ -53,6 +59,9 @@ describe('RankingsService', () => {
     },
     award_categories: {
       findMany: jest.fn(),
+    },
+    system_config: {
+      findUnique: jest.fn(),
     },
     club_annual_rankings: {
       upsert: jest.fn(),
@@ -89,10 +98,42 @@ describe('RankingsService', () => {
   // Default: get() returns null → kill-switches disabled (feature ON by default)
   mockSystemConfig = { get: jest.fn().mockResolvedValue(null) };
 
+  // Score calculator mocks — defaults reset in beforeEach after clearAllMocks
+  const folderScore = { calc: jest.fn() };
+  const financeScore = { calc: jest.fn() };
+  const camporeeScore = { calc: jest.fn() };
+  const evidenceScore = { calc: jest.fn() };
+  const weightsResolver = { resolve: jest.fn() };
+  const compositeScore = { compose: jest.fn() };
+
   // ---------------------------------------------------------------
   // Active year fixture reused across multiple tests
   // ---------------------------------------------------------------
-  const mockActiveYear = { year_id: 2026, name: '2026', active: true };
+  const mockActiveYear = {
+    year_id: 2026,
+    name: '2026',
+    active: true,
+    start_date: new Date('2026-01-01'),
+  };
+
+  // ---------------------------------------------------------------
+  // Club hierarchy fixture reused across folder builders
+  // ---------------------------------------------------------------
+  const clubHierarchy = {
+    club_enrollment_id: 'enroll-1',
+    club_section: {
+      club_type_id: 2,
+      main_club_id: 10,
+      clubs: {
+        club_id: 10,
+        local_field_id: 1,
+        local_fields: {
+          local_field_id: 1,
+          union_id: 5,
+        },
+      },
+    },
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -105,6 +146,20 @@ describe('RankingsService', () => {
     });
     mockSystemConfig.get.mockResolvedValue(null);
     mockPrismaService.$executeRaw.mockResolvedValue(0);
+
+    // Re-establish default return values for score calculator mocks
+    folderScore.calc.mockResolvedValue(0);
+    financeScore.calc.mockResolvedValue(0);
+    camporeeScore.calc.mockResolvedValue(0);
+    evidenceScore.calc.mockResolvedValue(0);
+    weightsResolver.resolve.mockResolvedValue({
+      folder: 60,
+      finance: 15,
+      camporee: 15,
+      evidence: 10,
+      source: 'default',
+    });
+    compositeScore.compose.mockReturnValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -144,6 +199,12 @@ describe('RankingsService', () => {
           provide: SystemConfigService,
           useValue: mockSystemConfig,
         },
+        { provide: FolderScoreService, useValue: folderScore },
+        { provide: FinanceScoreService, useValue: financeScore },
+        { provide: CamporeeScoreService, useValue: camporeeScore },
+        { provide: EvidenceScoreService, useValue: evidenceScore },
+        { provide: WeightsResolverService, useValue: weightsResolver },
+        { provide: CompositeScoreService, useValue: compositeScore },
       ],
     }).compile();
 
@@ -175,6 +236,10 @@ describe('RankingsService', () => {
       folder_template: {
         club_type_id: clubTypeId,
         ecclesiastical_year_id: 2026,
+      },
+      club_enrollment: {
+        ...clubHierarchy,
+        club_enrollment_id: clubEnrollmentId,
       },
     });
 
@@ -275,7 +340,8 @@ describe('RankingsService', () => {
       expect(result.updated).toBe(1);
     });
 
-    it('should create category-specific rankings when points qualify', async () => {
+    it('should create category-specific rankings when composite qualifies (non-legacy)', async () => {
+      compositeScore.compose.mockReturnValue(85);
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
       );
@@ -286,8 +352,11 @@ describe('RankingsService', () => {
         {
           award_category_id: 'cat-gold',
           name: 'Oro',
-          min_points: 80,
+          min_points: 0,
           max_points: null,
+          min_composite_pct: 80,
+          max_composite_pct: null,
+          is_legacy: false,
           club_type_id: null, // applies to all club types
         },
       ]);
@@ -308,6 +377,34 @@ describe('RankingsService', () => {
       expect(result.updated).toBe(2);
     });
 
+    it('should create legacy category rankings when points qualify (is_legacy = true)', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([
+        {
+          award_category_id: 'cat-legacy',
+          name: 'Legacy Oro',
+          min_points: 80,
+          max_points: null,
+          min_composite_pct: null,
+          max_composite_pct: null,
+          is_legacy: true,
+          club_type_id: null,
+        },
+      ]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+
+      const result = await service.recalculateRankings();
+
+      // 1 general + 1 legacy category = 2 upserts
+      expect(result.updated).toBe(2);
+    });
+
     it('should delete category rankings when points no longer qualify (idempotent)', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
@@ -321,6 +418,9 @@ describe('RankingsService', () => {
           name: 'Oro',
           min_points: 80,
           max_points: null,
+          min_composite_pct: null,
+          max_composite_pct: null,
+          is_legacy: true,
           club_type_id: null,
         },
       ]);
@@ -358,6 +458,9 @@ describe('RankingsService', () => {
           name: 'Solo Aventureros',
           min_points: 80,
           max_points: null,
+          min_composite_pct: null,
+          max_composite_pct: null,
+          is_legacy: true,
           club_type_id: 3, // only applies to club type 3
         },
       ]);
@@ -376,7 +479,7 @@ describe('RankingsService', () => {
       expect(result.updated).toBe(1);
     });
 
-    it('should assign dense rank positions (ties get same rank)', async () => {
+    it('should assign dense rank positions using composite_score_pct (ties get same rank)', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
       );
@@ -388,25 +491,25 @@ describe('RankingsService', () => {
       mockPrismaService.award_categories.findMany.mockResolvedValue([]);
       mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
 
-      // assignRankPositions fetches all records for the year
+      // assignRankPositions now fetches composite_score_pct, ordered desc
       mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([
         {
           ranking_id: 'r-1',
           club_type_id: 2,
           award_category_id: GENERAL_CATEGORY_ID,
-          total_earned_points: 90,
+          composite_score_pct: 90,
         },
         {
           ranking_id: 'r-2',
           club_type_id: 2,
           award_category_id: GENERAL_CATEGORY_ID,
-          total_earned_points: 90,
+          composite_score_pct: 90,
         },
         {
           ranking_id: 'r-3',
           club_type_id: 2,
           award_category_id: GENERAL_CATEGORY_ID,
-          total_earned_points: 70,
+          composite_score_pct: 70,
         },
       ]);
       mockPrismaService.club_annual_rankings.update.mockResolvedValue({});
@@ -427,8 +530,6 @@ describe('RankingsService', () => {
         );
 
       // Dense ranking: r-1 and r-2 tied → both rank 1; r-3 is next → rank 2 (not 3)
-      // Dense:       [90, 90, 70] → [1, 1, 2]
-      // Competition: [90, 90, 70] → [1, 1, 3]  ← NOT what we want
       const r1 = updateCalls.find((c) => c.ranking_id === 'r-1');
       const r2 = updateCalls.find((c) => c.ranking_id === 'r-2');
       const r3 = updateCalls.find((c) => c.ranking_id === 'r-3');
@@ -438,7 +539,7 @@ describe('RankingsService', () => {
       expect(r3?.rank_position).toBe(2); // dense: 2, not 3
     });
 
-    it('should handle max_points boundary (points equal to max_points still qualify)', async () => {
+    it('should handle max_points boundary (points equal to max_points still qualify) for legacy categories', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
       );
@@ -451,6 +552,9 @@ describe('RankingsService', () => {
           name: 'Perfecta',
           min_points: 80,
           max_points: 100,
+          min_composite_pct: null,
+          max_composite_pct: null,
+          is_legacy: true,
           club_type_id: null,
         },
       ]);
@@ -463,7 +567,7 @@ describe('RankingsService', () => {
       expect(result.updated).toBe(2);
     });
 
-    it('should NOT qualify when points exceed max_points boundary', async () => {
+    it('should NOT qualify when points exceed max_points boundary for legacy categories', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
       );
@@ -476,6 +580,9 @@ describe('RankingsService', () => {
           name: 'Capped',
           min_points: 80,
           max_points: 100, // ceiling
+          min_composite_pct: null,
+          max_composite_pct: null,
+          is_legacy: true,
           club_type_id: null,
         },
       ]);
@@ -492,6 +599,102 @@ describe('RankingsService', () => {
       expect(
         mockPrismaService.club_annual_rankings.deleteMany,
       ).toHaveBeenCalled();
+    });
+
+    // ================================================================
+    // NEW TEST 1: Kill-switch returns early
+    // ================================================================
+
+    it('should return early when kill-switch is enabled (ranking.recalculation_enabled = false)', async () => {
+      mockPrismaService.system_config.findUnique.mockResolvedValue({
+        config_key: 'ranking.recalculation_enabled',
+        config_value: 'false',
+      });
+
+      // Kill-switch now lives in recalculateRankings so both the cron path
+      // and the manual HTTP path honor it.
+      const result = await service.recalculateRankings();
+
+      expect(result).toEqual({ updated: 0, skipped: true, reason: 'kill-switch' });
+      // Nothing should have been fetched or upserted
+      expect(
+        mockPrismaService.ecclesiastical_years.findFirst,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should NOT skip when kill-switch is absent (no system_config row)', async () => {
+      mockPrismaService.system_config.findUnique.mockResolvedValue(null);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([]);
+
+      // Should proceed normally — no throw, no early return
+      await expect(service.handleRankingsRecalculation()).resolves.not.toThrow();
+    });
+
+    // ================================================================
+    // NEW TEST 2: Composite computation invokes the right services
+    // ================================================================
+
+    it('should invoke weightsResolver and compositeScore with correct args', async () => {
+      folderScore.calc.mockResolvedValue(80);
+      financeScore.calc.mockResolvedValue(70);
+      camporeeScore.calc.mockResolvedValue(60);
+      evidenceScore.calc.mockResolvedValue(90);
+      weightsResolver.resolve.mockResolvedValue({
+        folder: 40,
+        finance: 20,
+        camporee: 20,
+        evidence: 20,
+        source: 'club_type_override',
+      });
+      compositeScore.compose.mockReturnValue(76);
+
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+
+      await service.recalculateRankings();
+
+      // weightsResolver called with the club type ID from folder_template
+      expect(weightsResolver.resolve).toHaveBeenCalledWith(2);
+
+      // compositeScore called with the 4 component scores + resolved weights
+      expect(compositeScore.compose).toHaveBeenCalledWith(
+        { folder: 80, finance: 70, camporee: 60, evidence: 90 },
+        expect.objectContaining({
+          folder: 40,
+          finance: 20,
+          camporee: 20,
+          evidence: 20,
+          source: 'club_type_override',
+        }),
+      );
+
+      // The upsert should contain the composite result
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            composite_score_pct: 76,
+            folder_score_pct: 80,
+            finance_score_pct: 70,
+            camporee_score_pct: 60,
+            evidence_score_pct: 90,
+          }),
+        }),
+      );
     });
   });
 
@@ -510,6 +713,12 @@ describe('RankingsService', () => {
         total_earned_points: 90,
         total_max_points: 100,
         progress_percentage: 90,
+        folder_score_pct: 88,
+        finance_score_pct: 75,
+        camporee_score_pct: 60,
+        evidence_score_pct: 95,
+        composite_score_pct: 82,
+        composite_calculated_at: new Date('2026-01-15T10:00:00Z'),
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -526,6 +735,12 @@ describe('RankingsService', () => {
         total_earned_points: 70,
         total_max_points: 100,
         progress_percentage: 70,
+        folder_score_pct: 65,
+        finance_score_pct: 50,
+        camporee_score_pct: 40,
+        evidence_score_pct: 70,
+        composite_score_pct: 60,
+        composite_calculated_at: null,
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -546,6 +761,26 @@ describe('RankingsService', () => {
       expect(result[0].rank_position).toBe(1);
       expect(result[0].club_name).toBe('Club Alfa');
       expect(result[1].rank_position).toBe(2);
+    });
+
+    it('should include component and composite score fields in each entry', async () => {
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
+
+      const result = await service.getRankings(2, 2026);
+
+      // First record has all score fields populated
+      expect(result[0].folder_score_pct).toBe(88);
+      expect(result[0].finance_score_pct).toBe(75);
+      expect(result[0].camporee_score_pct).toBe(60);
+      expect(result[0].evidence_score_pct).toBe(95);
+      expect(result[0].composite_score_pct).toBe(82);
+      expect(result[0].composite_calculated_at).toBe(
+        '2026-01-15T10:00:00.000Z',
+      );
+      // Second record has null composite_calculated_at
+      expect(result[1].composite_calculated_at).toBeNull();
     });
 
     it('should filter by club_type_id and year_id', async () => {
@@ -655,6 +890,12 @@ describe('RankingsService', () => {
           total_earned_points: 85,
           total_max_points: 100,
           progress_percentage: 85,
+          folder_score_pct: 80,
+          finance_score_pct: 70,
+          camporee_score_pct: 65,
+          evidence_score_pct: 90,
+          composite_score_pct: 77,
+          composite_calculated_at: new Date('2026-02-01T08:00:00Z'),
           award_category: null,
         },
         {
@@ -664,6 +905,12 @@ describe('RankingsService', () => {
           total_earned_points: 85,
           total_max_points: 100,
           progress_percentage: 85,
+          folder_score_pct: 80,
+          finance_score_pct: 70,
+          camporee_score_pct: 65,
+          evidence_score_pct: 90,
+          composite_score_pct: 77,
+          composite_calculated_at: new Date('2026-02-01T08:00:00Z'),
           award_category: { award_category_id: 'cat-gold', name: 'Oro' },
         },
       ]);
@@ -672,8 +919,15 @@ describe('RankingsService', () => {
 
       expect(result.general).not.toBeNull();
       expect(result.general?.rank_position).toBe(2);
+      expect(result.general?.folder_score_pct).toBe(80);
+      expect(result.general?.composite_score_pct).toBe(77);
+      expect(result.general?.composite_calculated_at).toBe(
+        '2026-02-01T08:00:00.000Z',
+      );
       expect(result.by_category).toHaveLength(1);
       expect(result.by_category[0].award_category_name).toBe('Oro');
+      expect(result.by_category[0].folder_score_pct).toBe(80);
+      expect(result.by_category[0].composite_score_pct).toBe(77);
     });
 
     it('should return null for general ranking when no general record exists', async () => {
@@ -689,6 +943,12 @@ describe('RankingsService', () => {
           total_earned_points: 90,
           total_max_points: 100,
           progress_percentage: 90,
+          folder_score_pct: 88,
+          finance_score_pct: 72,
+          camporee_score_pct: 55,
+          evidence_score_pct: 80,
+          composite_score_pct: 81,
+          composite_calculated_at: null,
           award_category: { award_category_id: 'cat-gold', name: 'Oro' },
         },
       ]);
@@ -712,6 +972,12 @@ describe('RankingsService', () => {
           total_earned_points: 60,
           total_max_points: 100,
           progress_percentage: 60,
+          folder_score_pct: 55,
+          finance_score_pct: 40,
+          camporee_score_pct: 30,
+          evidence_score_pct: 50,
+          composite_score_pct: 48,
+          composite_calculated_at: null,
           award_category: null,
         },
       ]);

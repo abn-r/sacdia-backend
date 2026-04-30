@@ -6,9 +6,10 @@ import { DistributedLockService } from '../common/services/distributed-lock.serv
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
 import { MonthlyReportsService } from './monthly-reports.service';
 import {
-  MONTHLY_REPORTS_QUEUE,
-  MonthlyReportsTriggerJobData,
-} from './monthly-reports.processor';
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  MonthlyReportsAutoGeneratePayload,
+} from '../background-jobs/background-jobs.types';
 
 @Injectable()
 export class MonthlyReportsCronService {
@@ -19,7 +20,7 @@ export class MonthlyReportsCronService {
     private readonly lockService: DistributedLockService,
     private readonly cronLogger: CronRunLogger,
     @Optional()
-    @InjectQueue(MONTHLY_REPORTS_QUEUE)
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
     private readonly queue: Queue | null,
   ) {}
 
@@ -53,15 +54,19 @@ export class MonthlyReportsCronService {
 
     try {
       if (this.queue) {
-        const jobData: MonthlyReportsTriggerJobData = {
+        const jobData: MonthlyReportsAutoGeneratePayload = {
           triggeredAt: new Date().toISOString(),
         };
-        await this.queue.add('auto-generate', jobData, {
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
-          removeOnComplete: { age: 7 * 86_400 }, // keep 7 days
-          removeOnFail: { age: 30 * 86_400 }, // keep 30 days
-        });
+        await this.queue.add(
+          BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE,
+          jobData,
+          {
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
+            removeOnComplete: { age: 7 * 86_400 }, // keep 7 days
+            removeOnFail: { age: 30 * 86_400 }, // keep 30 days
+          },
+        );
         this.logger.log(
           'monthly-reports-auto-generate job enqueued with 5 attempts + exponential backoff',
         );
