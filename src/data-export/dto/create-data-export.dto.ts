@@ -10,5 +10,5 @@ export class CreateDataExportDto {
   })
   @IsOptional()
   @IsIn(['json'], { message: 'Only "json" format is supported' })
-  format?: 'json' = 'json';
+  format? = 'json' as const;
 }

@@ -151,7 +151,10 @@ describe('AwardCategoriesService', () => {
           }),
         }),
       );
-      expect(result).toMatchObject({ min_composite_pct: 70, max_composite_pct: 80 });
+      expect(result).toMatchObject({
+        min_composite_pct: 70,
+        max_composite_pct: 80,
+      });
     });
   });
 
@@ -230,7 +233,12 @@ describe('AwardCategoriesService', () => {
 
     it('scope=club → where clause includes { scope: "club" }', async () => {
       mockPrismaService.award_categories.findMany.mockResolvedValue([
-        { award_category_id: 'cat-1', name: 'Alpha', scope: 'club', active: true },
+        {
+          award_category_id: 'cat-1',
+          name: 'Alpha',
+          scope: 'club',
+          active: true,
+        },
       ]);
 
       await service.findAll(undefined, undefined, 'club');
@@ -254,8 +262,6 @@ describe('AwardCategoriesService', () => {
           where: expect.objectContaining({ is_legacy: false }),
         }),
       );
-    });
-
     });
   });
 

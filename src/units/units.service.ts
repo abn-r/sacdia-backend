@@ -13,6 +13,7 @@ import {
   AppBadRequestException,
   AppConflictException,
   AppForbiddenException,
+  AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -436,7 +437,7 @@ export class UnitsService {
     const validatedScores: { category_id: number; points: number }[] = [];
 
     if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const localFieldId = this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
           ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
@@ -500,7 +501,12 @@ export class UnitsService {
         include: this.weeklyRecordInclude,
       });
 
-      return this.transformWeeklyRecord(created!);
+      if (!created) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.INTERNAL_SERVER_ERROR,
+        );
+      }
+      return this.transformWeeklyRecord(created);
     });
   }
 
@@ -532,7 +538,7 @@ export class UnitsService {
     const validatedScores: { category_id: number; points: number }[] = [];
 
     if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const localFieldId = this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
           ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
