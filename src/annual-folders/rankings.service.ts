@@ -322,8 +322,14 @@ export class RankingsService {
    *   member_ranking.recalculation_enabled → steps 2+3 only
    *
    * Step 3 always runs even if step 2 threw a partial/total error.
+   *
+   * mode param (Task 27 delta optimization):
+   *   'full'  — default; processes ALL active enrollments (sections always run full)
+   *   'delta' — processes only enrollments whose last_progress_change > previousRecalcAt;
+   *             club rankings (step 1) and section aggregates (step 3) always run full
+   *             regardless of mode because they are cheap aggregations, not per-row scans.
    */
-  async recalculateAll(yearId?: number): Promise<void> {
+  async recalculateAll(yearId?: number, mode: 'full' | 'delta' = 'full'): Promise<void> {
     const globalEnabled = await this.systemConfig.get('ranking.recalculation_enabled');
     if (globalEnabled === 'false') {
       this.logger.warn('[rankings] global kill-switch off — skipping all recalculation');
@@ -342,7 +348,7 @@ export class RankingsService {
 
     // Step 2: enrollments (continues to step 3 even if step 2 throws)
     try {
-      await this.recalculateEnrollmentRankings(yearId);
+      await this.recalculateEnrollmentRankings(yearId, mode);
     } catch (err) {
       this.logger.error(
         '[member-rankings] recalculateEnrollmentRankings failed, continuing to section aggregates',
@@ -372,11 +378,35 @@ export class RankingsService {
    * Clubs are processed in chunks of 50 to bound peak memory.
    * Per-enrollment errors log+skip without bubbling — a single corrupt
    * enrollment never aborts the entire pass.
+   *
+   * mode='delta' (Task 27): only enrollments whose last_progress_change is
+   * strictly after the previousRecalcAt timestamp are fetched and processed.
+   * If no prior recalc exists (previousRecalcAt = null), falls back to full mode
+   * and processes all enrollments. The cron always calls this with mode='full'
+   * (default) to preserve existing behaviour.
    */
-  async recalculateEnrollmentRankings(ecclesiasticalYearId?: number): Promise<void> {
+  async recalculateEnrollmentRankings(
+    ecclesiasticalYearId?: number,
+    mode: 'full' | 'delta' = 'full',
+  ): Promise<void> {
     const year = await this.resolveYear(ecclesiasticalYearId);
     const yearId = year.year_id;
-    this.logger.log(`[member-rankings] Recalc started ecclesiastical_year_id=${yearId}`);
+
+    // Resolve previousRecalcAt upfront — only meaningful in delta mode.
+    let previousRecalc: Date | null = null;
+    if (mode === 'delta') {
+      previousRecalc = await this.getPreviousRecalcAt(yearId);
+      if (!previousRecalc) {
+        this.logger.log(
+          `[member-rankings] mode=delta but no previous recalc found for year ${yearId}; falling back to full mode`,
+        );
+        // Continue without filter — equivalent to full
+      }
+    }
+
+    this.logger.log(
+      `[member-rankings] Recalc started ecclesiastical_year_id=${yearId} mode=${mode} previousRecalc=${previousRecalc?.toISOString() ?? 'null'}`,
+    );
 
     const clubs = await this.prisma.clubs.findMany({
       where: { active: true },
@@ -424,6 +454,12 @@ export class RankingsService {
             ecclesiastical_year_id: yearId,
             active: true,
             class_id: { in: classIdSet },
+            // Delta mode: only enrollments with progress changes since the last recalc.
+            // When previousRecalc is null (no prior recalc), the filter is omitted and
+            // all enrollments are processed (same as full mode).
+            ...(mode === 'delta' && previousRecalc
+              ? { last_progress_change: { gt: previousRecalc } }
+              : {}),
           },
           select: { enrollment_id: true, user_id: true, class_id: true },
         });
@@ -731,6 +767,22 @@ export class RankingsService {
       ) sub
       WHERE sr.id = sub.id
     `;
+  }
+
+  /**
+   * Returns the MAX(composite_calculated_at) from enrollment_rankings for
+   * the given ecclesiastical year. Used in delta mode to determine which
+   * enrollments have had progress changes since the last recalculation.
+   *
+   * Returns null when no ranking rows exist yet (first-ever recalc for the year),
+   * in which case the caller falls back to full mode.
+   */
+  private async getPreviousRecalcAt(yearId: number): Promise<Date | null> {
+    const result = await this.prisma.enrollmentRanking.aggregate({
+      where: { ecclesiastical_year_id: yearId },
+      _max: { composite_calculated_at: true },
+    });
+    return result._max.composite_calculated_at ?? null;
   }
 
   /**

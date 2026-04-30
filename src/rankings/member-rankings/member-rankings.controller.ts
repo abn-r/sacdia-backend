@@ -89,6 +89,17 @@ export class MemberRankingsController {
     type: Number,
     description: 'Optional club filter (informational only — full recalc runs)',
   })
+  @ApiQuery({
+    name: 'mode',
+    required: false,
+    enum: ['full', 'delta'],
+    description:
+      'Recalculation mode. ' +
+      '"full" (default) processes all active enrollments. ' +
+      '"delta" processes only enrollments whose last_progress_change is after the previous recalc timestamp. ' +
+      'Falls back to full if no prior recalc exists for the year. ' +
+      'Club rankings (step 1) and section aggregates (step 3) always run full regardless of mode.',
+  })
   @ApiResponse({
     status: 201,
     description: 'Recalculation triggered successfully',
@@ -97,6 +108,7 @@ export class MemberRankingsController {
         triggered: true,
         ecclesiastical_year_id: 5,
         club_id: 12,
+        mode: 'full',
       },
     },
   })
@@ -112,9 +124,11 @@ export class MemberRankingsController {
     @Req() req: any,
     @Query('year_id', ParseIntPipe) yearId: number,
     @Query('club_id') clubIdRaw?: string,
+    @Query('mode') modeRaw?: string,
   ) {
     const clubId = clubIdRaw !== undefined ? Number(clubIdRaw) : undefined;
-    return this.service.triggerRecalculate(yearId, req.user.user_id, clubId);
+    const mode: 'full' | 'delta' = modeRaw === 'delta' ? 'delta' : 'full';
+    return this.service.triggerRecalculate(yearId, req.user.user_id, clubId, mode);
   }
 
   // ========================================

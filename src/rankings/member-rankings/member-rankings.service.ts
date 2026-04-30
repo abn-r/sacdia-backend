@@ -247,7 +247,8 @@ export class MemberRankingsService {
     yearId: number,
     triggeredBy: string,
     clubId?: number,
-  ): Promise<{ triggered: boolean; ecclesiastical_year_id: number; club_id?: number }> {
+    mode: 'full' | 'delta' = 'full',
+  ): Promise<{ triggered: boolean; ecclesiastical_year_id: number; club_id?: number; mode: string }> {
     const enabled = await this.systemConfig.get(
       'member_ranking.recalculation_enabled',
     );
@@ -264,15 +265,19 @@ export class MemberRankingsService {
       user_id: triggeredBy,
       year_id: yearId,
       club_id: clubId ?? null,
+      mode,
     });
 
     // Delegate to RankingsService.recalculateAll which covers both
     // enrollment rankings and section aggregates in the correct order.
-    await this.rankingsService.recalculateAll(yearId);
+    // mode is threaded through to recalculateEnrollmentRankings only —
+    // club rankings (step 1) and section aggregates (step 3) always run full.
+    await this.rankingsService.recalculateAll(yearId, mode);
 
     return {
       triggered: true,
       ecclesiastical_year_id: yearId,
+      mode,
       ...(clubId !== undefined ? { club_id: clubId } : {}),
     };
   }

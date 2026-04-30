@@ -530,6 +530,7 @@ model enrollments {
   locked_for_validation    Boolean                          @default(false)
   cross_type_enrollment    Boolean                          @default(false)
   active                   Boolean                          @default(true)
+  last_progress_change     DateTime                         @default(now()) @db.Timestamptz(6)
   created_at               DateTime                         @default(now()) @db.Timestamptz(6)
   modified_at              DateTime                         @default(now()) @db.Timestamptz(6)
   class_module_progress    class_module_progress[]
@@ -549,6 +550,7 @@ model enrollments {
   @@index([class_id], map: "idx_enrollments_class_id")
   @@index([user_id, investiture_status, active], map: "idx_enrollments_user_investiture_active")
   @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
+  @@index([last_progress_change], map: "idx_enrollments_last_progress")
 }
 
 model error_logs {

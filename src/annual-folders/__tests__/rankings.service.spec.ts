@@ -31,7 +31,7 @@ describe('RankingsService', () => {
     club_sections: { findMany: jest.Mock };
     classes: { findMany: jest.Mock };
     enrollments: { findMany: jest.Mock };
-    enrollmentRanking: { upsert: jest.Mock };
+    enrollmentRanking: { upsert: jest.Mock; aggregate: jest.Mock };
     sectionRanking: { upsert: jest.Mock };
   };
 
@@ -77,6 +77,7 @@ describe('RankingsService', () => {
     },
     enrollmentRanking: {
       upsert: jest.fn(),
+      aggregate: jest.fn(),
     },
     sectionRanking: {
       upsert: jest.fn(),
@@ -879,6 +880,164 @@ describe('RankingsService', () => {
 
       // Only the successful section triggers an upsert
       expect(mockPrismaService.sectionRanking.upsert).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ================================================================
+  // Task 27 — recalculateEnrollmentRankings delta mode
+  // ================================================================
+
+  describe('recalculateEnrollmentRankings — delta mode', () => {
+    // Shared setup: 1 club → 1 section (type 2) → 1 class (id 5) → enrolled members
+    const setupClubChain = () => {
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(mockActiveYear);
+      mockPrismaService.clubs.findMany.mockResolvedValue([{ club_id: 10 }]);
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
+        { club_section_id: 100, club_type_id: 2 },
+      ]);
+      mockPrismaService.classes.findMany.mockResolvedValue([
+        { class_id: 5, club_type_id: 2 },
+      ]);
+      mockPrismaService.enrollmentRanking.upsert.mockResolvedValue({});
+      mockMemberCompositeScore.calculate.mockResolvedValue({
+        class_score_pct: 80,
+        investiture_score_pct: 70,
+        camporee_score_pct: 60,
+        composite_score_pct: 72,
+      });
+    };
+
+    it('mode=delta + previousRecalc set + enrollment last_progress > previousRecalc → processes enrollment', async () => {
+      setupClubChain();
+      const prevRecalc = new Date('2026-04-01T02:00:00Z');
+
+      // Aggregate returns a previous recalc timestamp
+      mockPrismaService.enrollmentRanking.aggregate.mockResolvedValue({
+        _max: { composite_calculated_at: prevRecalc },
+      });
+
+      // findMany simulates DB returning only enrollments with last_progress_change > prevRecalc
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        { enrollment_id: 1, user_id: 'uid-1', class_id: 5 },
+      ]);
+
+      await service.recalculateEnrollmentRankings(2026, 'delta');
+
+      // Verify aggregate was called to determine previousRecalc
+      expect(mockPrismaService.enrollmentRanking.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ecclesiastical_year_id: 2026 },
+          _max: { composite_calculated_at: true },
+        }),
+      );
+
+      // Verify findMany was called with gt filter on last_progress_change
+      expect(mockPrismaService.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            last_progress_change: { gt: prevRecalc },
+          }),
+        }),
+      );
+
+      // The eligible enrollment was processed
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('mode=delta + previousRecalc set + no enrollments pass filter → skips (upsert not called)', async () => {
+      setupClubChain();
+      const prevRecalc = new Date('2026-04-01T02:00:00Z');
+
+      mockPrismaService.enrollmentRanking.aggregate.mockResolvedValue({
+        _max: { composite_calculated_at: prevRecalc },
+      });
+
+      // findMany returns empty — no enrollment changed since prevRecalc
+      mockPrismaService.enrollments.findMany.mockResolvedValue([]);
+
+      await service.recalculateEnrollmentRankings(2026, 'delta');
+
+      // Filter was applied
+      expect(mockPrismaService.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            last_progress_change: { gt: prevRecalc },
+          }),
+        }),
+      );
+
+      // Nothing to process — upsert never called
+      expect(mockPrismaService.enrollmentRanking.upsert).not.toHaveBeenCalled();
+    });
+
+    it('mode=delta + previousRecalc null → falls back to full (no last_progress_change filter)', async () => {
+      setupClubChain();
+
+      // No prior recalc exists for this year
+      mockPrismaService.enrollmentRanking.aggregate.mockResolvedValue({
+        _max: { composite_calculated_at: null },
+      });
+
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        { enrollment_id: 1, user_id: 'uid-1', class_id: 5 },
+      ]);
+
+      await service.recalculateEnrollmentRankings(2026, 'delta');
+
+      // findMany must NOT include last_progress_change filter (full mode fallback)
+      const findManyCall = mockPrismaService.enrollments.findMany.mock.calls[0][0];
+      expect(findManyCall.where).not.toHaveProperty('last_progress_change');
+
+      // Enrollment was still processed (full mode behaviour)
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('mode=full (default) → ignores last_progress_change, processes all enrollments', async () => {
+      setupClubChain();
+
+      // aggregate should NOT be called in full mode
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        { enrollment_id: 1, user_id: 'uid-1', class_id: 5 },
+        { enrollment_id: 2, user_id: 'uid-2', class_id: 5 },
+      ]);
+
+      await service.recalculateEnrollmentRankings(2026); // default mode = 'full'
+
+      // aggregate is never called in full mode
+      expect(mockPrismaService.enrollmentRanking.aggregate).not.toHaveBeenCalled();
+
+      // findMany has no last_progress_change filter
+      const findManyCall = mockPrismaService.enrollments.findMany.mock.calls[0][0];
+      expect(findManyCall.where).not.toHaveProperty('last_progress_change');
+
+      // Both enrollments processed
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(2);
+    });
+
+    it('mode=delta filter applied at Prisma query — WHERE clause includes gt: previousRecalc', async () => {
+      setupClubChain();
+      const prevRecalc = new Date('2026-03-15T02:00:00Z');
+
+      mockPrismaService.enrollmentRanking.aggregate.mockResolvedValue({
+        _max: { composite_calculated_at: prevRecalc },
+      });
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        { enrollment_id: 42, user_id: 'uid-42', class_id: 5 },
+      ]);
+
+      await service.recalculateEnrollmentRankings(2026, 'delta');
+
+      // Verify the exact WHERE clause shape passed to Prisma
+      expect(mockPrismaService.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ecclesiastical_year_id: 2026,
+            active: true,
+            class_id: { in: [5] },
+            last_progress_change: { gt: prevRecalc },
+          }),
+        }),
+      );
     });
   });
 
