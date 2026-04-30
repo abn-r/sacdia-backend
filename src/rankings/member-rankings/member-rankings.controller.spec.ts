@@ -404,6 +404,7 @@ describe('MemberRankingsController', () => {
         YEAR_ID,
         'admin-uuid-001',
         undefined,
+        'full',
       );
     });
   });

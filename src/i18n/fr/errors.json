@@ -466,5 +466,6 @@
   "WEIGHTS_SUM_INVALID": "Les pourcentages de pondération doivent totaliser 100; reçu {sum}.",
   "WEIGHTS_CONFLICT": "Une configuration de pondération existe déjà pour cette combinaison de type de club et d'année ecclésiastique.",
   "DEFAULT_WEIGHTS_NOT_DELETABLE": "La ligne de pondération par défaut globale ne peut pas être supprimée.",
-  "WEIGHTS_NOT_FOUND": "Configuration de pondération de classement introuvable."
+  "WEIGHTS_NOT_FOUND": "Configuration de pondération de classement introuvable.",
+  "RECALCULATION_DISABLED": "Le recalcul des classements est actuellement désactivé dans les paramètres système."
 }

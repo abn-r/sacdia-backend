@@ -466,5 +466,6 @@
   "WEIGHTS_SUM_INVALID": "Los porcentajes de pesos deben sumar 100; se recibió {sum}.",
   "WEIGHTS_CONFLICT": "Ya existe una configuración de pesos para esta combinación de tipo de club y año eclesiástico.",
   "DEFAULT_WEIGHTS_NOT_DELETABLE": "La fila de pesos global predeterminada no puede eliminarse.",
-  "WEIGHTS_NOT_FOUND": "Configuración de pesos de clasificación no encontrada."
+  "WEIGHTS_NOT_FOUND": "Configuración de pesos de clasificación no encontrada.",
+  "RECALCULATION_DISABLED": "El recálculo de rankings está desactivado en configuración del sistema."
 }

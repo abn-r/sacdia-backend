@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -126,7 +127,14 @@ export class MemberRankingsController {
     @Query('club_id') clubIdRaw?: string,
     @Query('mode') modeRaw?: string,
   ) {
-    const clubId = clubIdRaw !== undefined ? Number(clubIdRaw) : undefined;
+    let clubId: number | undefined;
+    if (clubIdRaw !== undefined) {
+      const parsed = Number(clubIdRaw);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new BadRequestException('club_id must be a positive integer');
+      }
+      clubId = parsed;
+    }
     const mode: 'full' | 'delta' = modeRaw === 'delta' ? 'delta' : 'full';
     return this.service.triggerRecalculate(yearId, req.user.user_id, clubId, mode);
   }
