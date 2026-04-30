@@ -461,5 +461,9 @@
   "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club introuvable",
   "ANNUAL_REPORT_YEAR_NOT_FOUND": "Année ecclésiastique introuvable",
   "ANNUAL_REPORT_PDF_NOT_READY": "Le rapport annuel n'a pas de données calculées. Régénérez le rapport d'abord",
-  "CRON_ALERT_NOT_FOUND": "Enregistrement d'alerte cron introuvable."
+  "CRON_ALERT_NOT_FOUND": "Enregistrement d'alerte cron introuvable.",
+  "WEIGHTS_SUM_INVALID": "Les pourcentages de pondération doivent totaliser 100; reçu {sum}.",
+  "WEIGHTS_CONFLICT": "Une configuration de pondération existe déjà pour cette combinaison de type de club et d'année ecclésiastique.",
+  "DEFAULT_WEIGHTS_NOT_DELETABLE": "La ligne de pondération par défaut globale ne peut pas être supprimée.",
+  "WEIGHTS_NOT_FOUND": "Configuration de pondération de classement introuvable."
 }

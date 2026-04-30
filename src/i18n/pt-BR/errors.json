@@ -461,5 +461,9 @@
   "ANNUAL_REPORT_CLUB_NOT_FOUND": "Clube não encontrado",
   "ANNUAL_REPORT_YEAR_NOT_FOUND": "Ano eclesiástico não encontrado",
   "ANNUAL_REPORT_PDF_NOT_READY": "O relatório anual não tem dados computados. Regenere o relatório primeiro",
-  "CRON_ALERT_NOT_FOUND": "Registro de alerta de cron não encontrado."
+  "CRON_ALERT_NOT_FOUND": "Registro de alerta de cron não encontrado.",
+  "WEIGHTS_SUM_INVALID": "Os percentuais de pesos devem somar 100; recebido {sum}.",
+  "WEIGHTS_CONFLICT": "Já existe uma configuração de pesos para esta combinação de tipo de clube e ano eclesiástico.",
+  "DEFAULT_WEIGHTS_NOT_DELETABLE": "A linha de peso padrão global não pode ser excluída.",
+  "WEIGHTS_NOT_FOUND": "Configuração de peso de classificação não encontrada."
 }

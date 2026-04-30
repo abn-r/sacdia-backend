@@ -461,5 +461,9 @@
   "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club not found",
   "ANNUAL_REPORT_YEAR_NOT_FOUND": "Ecclesiastical year not found",
   "ANNUAL_REPORT_PDF_NOT_READY": "Annual report has no computed data. Regenerate the report first",
-  "CRON_ALERT_NOT_FOUND": "Cron alert record not found."
+  "CRON_ALERT_NOT_FOUND": "Cron alert record not found.",
+  "WEIGHTS_SUM_INVALID": "Weight percentages must sum to 100; got {sum}.",
+  "WEIGHTS_CONFLICT": "A weight configuration already exists for this club type and ecclesiastical year combination.",
+  "DEFAULT_WEIGHTS_NOT_DELETABLE": "The global default weight row cannot be deleted.",
+  "WEIGHTS_NOT_FOUND": "Ranking weight configuration not found."
 }

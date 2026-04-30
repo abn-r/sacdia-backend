@@ -461,5 +461,9 @@
   "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club no encontrado",
   "ANNUAL_REPORT_YEAR_NOT_FOUND": "Año eclesiástico no encontrado",
   "ANNUAL_REPORT_PDF_NOT_READY": "El informe anual no tiene datos computados. Regenere el informe primero",
-  "CRON_ALERT_NOT_FOUND": "Registro de alerta de cron no encontrado."
+  "CRON_ALERT_NOT_FOUND": "Registro de alerta de cron no encontrado.",
+  "WEIGHTS_SUM_INVALID": "Los porcentajes de pesos deben sumar 100; se recibió {sum}.",
+  "WEIGHTS_CONFLICT": "Ya existe una configuración de pesos para esta combinación de tipo de club y año eclesiástico.",
+  "DEFAULT_WEIGHTS_NOT_DELETABLE": "La fila de pesos global predeterminada no puede eliminarse.",
+  "WEIGHTS_NOT_FOUND": "Configuración de pesos de clasificación no encontrada."
 }
