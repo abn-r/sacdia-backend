@@ -1,4 +1,13 @@
-import { IsString, IsInt, IsOptional, IsIn, MaxLength, Min } from 'class-validator';
+import {
+  IsString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsIn,
+  MaxLength,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   AWARD_CATEGORY_SCOPES,
@@ -85,4 +94,32 @@ export class CreateAwardCategoryDto {
   @IsOptional()
   @IsIn(AWARD_CATEGORY_SCOPES)
   scope?: AwardCategoryScope;
+
+  @ApiPropertyOptional({
+    description:
+      'Porcentaje compuesto mínimo para esta categoría (0-100). Requiere max_composite_pct.',
+    example: 70,
+    minimum: 0,
+    maximum: 100,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  min_composite_pct?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Porcentaje compuesto máximo para esta categoría (0-100). Debe ser mayor que min_composite_pct.',
+    example: 90,
+    minimum: 0,
+    maximum: 100,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  max_composite_pct?: number;
 }

@@ -16,6 +16,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import * as crypto from 'crypto';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -24,9 +25,11 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import {
-  DATA_EXPORTS_QUEUE,
-  DATA_EXPORT_GENERATE_JOB,
-} from './data-export.processor';
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  DataExportGeneratePayload,
+} from '../background-jobs/background-jobs.types';
+import { EmailService } from '../common/email/email.service';
 import type {
   DataExportItemDto,
   DataExportStatus,
@@ -45,9 +48,10 @@ export class DataExportService {
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
     @Optional()
-    @InjectQueue(DATA_EXPORTS_QUEUE)
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
     private readonly dataExportsQueue: Queue | undefined,
     private readonly cronLogger: CronRunLogger,
+    private readonly emailService: EmailService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -124,9 +128,13 @@ export class DataExportService {
         'Data export queue unavailable. Configure REDIS_URL to enable async exports.',
       );
     }
+    const jobPayload: DataExportGeneratePayload = {
+      exportId: exportRow.export_id,
+      userId,
+    };
     await this.dataExportsQueue.add(
-      DATA_EXPORT_GENERATE_JOB,
-      { exportId: exportRow.export_id, userId },
+      BackgroundJobName.DATA_EXPORT_GENERATE,
+      jobPayload,
       {
         attempts: 1,
         removeOnComplete: true,
@@ -270,6 +278,339 @@ export class DataExportService {
       url: signedUrl,
       expires_at: urlExpiresAt.toISOString(),
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Core export execution — called by BackgroundJobsProcessor
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Executes the full data-export pipeline for a given exportId/userId pair.
+   *
+   * Steps:
+   *   1. Fetch row — abort if not pending (idempotency guard)
+   *   2. Transition to 'processing'
+   *   3. Collect user data from Prisma
+   *   4. Build JSON payload
+   *   5. Serialize and checksum
+   *   6. Upload to R2
+   *   7. Mark ready
+   *   8. Email notification (best-effort)
+   *
+   * Called by BackgroundJobsProcessor for the DATA_EXPORT_GENERATE job.
+   * Does NOT rethrow on business errors — returns a result object.
+   * Fatal infrastructure errors are caught and the row is marked 'failed'.
+   */
+  async runExport(
+    exportId: string,
+    userId: string,
+  ): Promise<{
+    exportId: string;
+    fileSizeBytes?: number;
+    sha256?: string;
+    failed?: boolean;
+    reason?: string;
+    skipped?: boolean;
+  }> {
+    // Step 1: Fetch row — abort if not pending (idempotency guard)
+    const exportRow = await this.prisma.data_export_requests.findUnique({
+      where: { export_id: exportId },
+    });
+
+    if (!exportRow) {
+      this.logger.warn(`Export row not found: exportId=${exportId} — aborting`);
+      return { exportId, skipped: true, reason: 'not_found' };
+    }
+
+    if (exportRow.user_id !== userId) {
+      this.logger.error(
+        `Ownership mismatch: job userId=${userId} vs row userId=${exportRow.user_id} — aborting`,
+      );
+      return { exportId, skipped: true, reason: 'ownership_mismatch' };
+    }
+
+    if (exportRow.status !== 'pending') {
+      this.logger.warn(
+        `Export ${exportId} is ${exportRow.status}, not pending — aborting (idempotent)`,
+      );
+      return { exportId, skipped: true, reason: 'not_pending' };
+    }
+
+    // Step 2: Transition to 'processing'
+    await this.prisma.data_export_requests.update({
+      where: { export_id: exportId },
+      data: { status: 'processing', started_at: new Date() },
+    });
+
+    try {
+      // Step 3: Collect user data from Prisma
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+      const [
+        user,
+        honors,
+        classesProgress,
+        clubRoles,
+        fcmTokens,
+        notificationDeliveries,
+        sessions,
+        notificationPreferences,
+        evidenceFiles,
+      ] = await Promise.all([
+        this.prisma.users.findUnique({
+          where: { user_id: userId },
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+            email: true,
+            gender: true,
+            birthday: true,
+            blood: true,
+            baptism: true,
+            baptism_date: true,
+            email_verified: true,
+            user_image: true,
+            active: true,
+            approval_status: true,
+            created_at: true,
+            modified_at: true,
+            country_id: true,
+            union_id: true,
+            local_field_id: true,
+            access_app: true,
+          },
+        }),
+
+        this.prisma.users_honors.findMany({
+          where: { user_id: userId },
+          select: {
+            user_honor_id: true,
+            honor_id: true,
+            active: true,
+            validate: true,
+            validation_status: true,
+            submitted_at: true,
+            validated_at: true,
+            rejection_reason: true,
+            date: true,
+            created_at: true,
+            modified_at: true,
+          },
+        }),
+
+        this.prisma.class_section_progress.findMany({
+          where: { user_id: userId },
+          select: {
+            section_progress_id: true,
+            class_id: true,
+            module_id: true,
+            section_id: true,
+            score: true,
+            active: true,
+            status: true,
+            submitted_at: true,
+            validated_at: true,
+            created_at: true,
+            modified_at: true,
+          },
+        }),
+
+        this.prisma.club_role_assignments.findMany({
+          where: { user_id: userId },
+          select: {
+            assignment_id: true,
+            role_id: true,
+            club_section_id: true,
+            active: true,
+            status: true,
+            start_date: true,
+            end_date: true,
+          },
+        }),
+
+        this.prisma.user_fcm_tokens.findMany({
+          where: { user_id: userId },
+          select: {
+            fcm_token_id: true,
+            token: true,
+            device_type: true,
+            device_name: true,
+            active: true,
+            last_used: true,
+            created_at: true,
+          },
+        }),
+
+        this.prisma.notification_deliveries.findMany({
+          where: {
+            user_id: userId,
+            created_at: { gte: sixMonthsAgo },
+          },
+          select: {
+            delivery_id: true,
+            log_id: true,
+            read_at: true,
+            created_at: true,
+          },
+          orderBy: { created_at: 'desc' },
+        }),
+
+        this.prisma.session.findMany({
+          where: { userId },
+          select: {
+            id: true,
+            expiresAt: true,
+            createdAt: true,
+            updatedAt: true,
+            ipAddress: true,
+            userAgent: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+
+        this.prisma.notification_preferences.findMany({
+          where: { user_id: userId },
+          select: {
+            preference_id: true,
+            category: true,
+            enabled: true,
+            created_at: true,
+            modified_at: true,
+          },
+        }),
+
+        this.prisma.evidence_files.findMany({
+          where: { uploaded_by_id: userId },
+          select: {
+            evidence_file_id: true,
+            file_url: true,
+            file_name: true,
+            file_type: true,
+            uploaded_at: true,
+            active: true,
+            section_record_id: true,
+            section_progress_id: true,
+            user_honor_id: true,
+          },
+        }),
+      ]);
+
+      // Step 4: Build JSON payload
+      const exportPayload = {
+        export_metadata: {
+          export_id: exportId,
+          generated_at: new Date().toISOString(),
+          format: 'json',
+          schema_version: '1.0.0',
+          app_version: process.env.npm_package_version ?? 'unknown',
+          notice:
+            'Evidence files (documents, images) are not included in this export. ' +
+            'To request copies of your uploaded files, contact support@sacdia.app.',
+        },
+        user,
+        honors,
+        classes_progress: classesProgress,
+        roles: clubRoles,
+        devices: fcmTokens.map((t) => ({
+          ...t,
+          token: `${'*'.repeat(10)}${t.token.slice(10)}`,
+        })),
+        notifications_history: notificationDeliveries,
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          expires_at: s.expiresAt,
+          created_at: s.createdAt,
+          updated_at: s.updatedAt,
+          ip_address: s.ipAddress,
+          user_agent: s.userAgent,
+        })),
+        notification_preferences: notificationPreferences,
+        evidence_files_metadata: evidenceFiles,
+      };
+
+      // Step 5: Serialize and checksum
+      const jsonString = JSON.stringify(exportPayload, null, 2);
+      const buffer = Buffer.from(jsonString, 'utf-8');
+      const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+
+      // Step 6: Upload to R2
+      const r2Key = `${userId}/${exportId}.json`;
+      const uploadResult = await this.fileStorage.upload(
+        StorageBucketAlias.DATA_EXPORTS,
+        r2Key,
+        buffer,
+        { contentType: 'application/json', overwrite: true },
+      );
+
+      // Step 7: Mark ready
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000); // +48h
+
+      await this.prisma.data_export_requests.update({
+        where: { export_id: exportId },
+        data: {
+          status: 'ready',
+          r2_key: uploadResult.key,
+          file_size_bytes: BigInt(buffer.byteLength),
+          sha256_checksum: sha256,
+          completed_at: now,
+          expires_at: expiresAt,
+        },
+      });
+
+      // Step 8: Email notification (best-effort)
+      if (user?.email) {
+        await this.emailService
+          .sendDataExportReady({
+            userId,
+            email: user.email,
+            exportId,
+            deepLink: `sacdia://data-export/${exportId}`,
+            expiresAt,
+          })
+          .catch((err: Error) => {
+            this.logger.warn(
+              `Failed to send data export email for exportId=${exportId}: ${err.message}`,
+            );
+          });
+      }
+
+      this.logger.log(
+        `Data export completed: exportId=${exportId}, bytes=${buffer.byteLength}, sha256=${sha256.slice(0, 8)}...`,
+      );
+
+      return {
+        exportId,
+        fileSizeBytes: buffer.byteLength,
+        sha256: sha256.slice(0, 8) + '...',
+      };
+    } catch (err) {
+      // Fail closed — no retry, single attempt
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Data export failed: exportId=${exportId}, error=${errorMessage}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+
+      await this.prisma.data_export_requests
+        .update({
+          where: { export_id: exportId },
+          data: {
+            status: 'failed',
+            failure_reason: errorMessage.slice(0, 1000),
+          },
+        })
+        .catch((updateErr: Error) => {
+          this.logger.error(
+            `Failed to mark export as failed: exportId=${exportId}, ${updateErr.message}`,
+          );
+        });
+
+      return { exportId, failed: true, reason: errorMessage };
+    }
   }
 
   // ---------------------------------------------------------------------------

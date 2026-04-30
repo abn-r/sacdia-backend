@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Query,
@@ -22,6 +23,7 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { RankingBreakdownDto } from './dto/ranking-breakdown.dto';
 
 @ApiTags('Annual Folders - Rankings')
 @ApiBearerAuth()
@@ -119,6 +121,39 @@ export class RankingsController {
     );
 
     return { status: 'success', data };
+  }
+
+  // ========================================
+  // BREAKDOWN — per-component drill-down
+  // ========================================
+
+  @Get(':enrollmentId/breakdown')
+  @RequirePermissions('rankings:read')
+  @ApiOperation({
+    summary: 'Per-component score breakdown for a club enrollment',
+    description:
+      'Returns the composite score, the four component scores (folder, finance, camporee, evidence), ' +
+      'the weights applied (with source), and auxiliary detail per component: ' +
+      'folder section evaluations summary, finance months closed/missed list + deadline day, ' +
+      'camporee events list with per-event attended status, evidence validated/rejected/pending counts.',
+  })
+  @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
+  @ApiQuery({
+    name: 'year_id',
+    required: true,
+    description: 'Ecclesiastical year ID',
+    example: 5,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Breakdown of composite score into components',
+  })
+  @ApiResponse({ status: 404, description: 'Club enrollment not found' })
+  async getBreakdown(
+    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Query('year_id', ParseIntPipe) yearId: number,
+  ): Promise<RankingBreakdownDto> {
+    return this.rankingsService.getBreakdown(enrollmentId, yearId);
   }
 
   // ========================================

@@ -17,17 +17,17 @@ export class ActivitiesReminderService {
   ) {}
 
   /**
-   * Runs every 5 minutes.
+   * Runs every 15 minutes.
    * Finds activities whose reminder has not been sent yet and whose
    * activity_date is today and activity_time is within the configured
    * reminder window from now. Sends a push notification to all section
    * members and marks the activity as reminder_sent = true.
    */
-  @Cron('*/5 * * * *', { name: 'activities-reminder', timeZone: 'UTC' })
+  @Cron('*/15 * * * *', { name: 'activities-reminder', timeZone: 'UTC' })
   async handleActivityReminders(): Promise<void> {
     const acquired = await this.lockService.tryAcquire(
       'cron:activities-reminder',
-      4 * 60 * 1000, // 4 min — slightly less than the 5-min interval
+      14 * 60 * 1000, // 14 min — slightly less than the 15-min interval
     );
     if (!acquired) {
       this.logger.debug(

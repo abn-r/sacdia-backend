@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
 import {
   AnnualFoldersController,
   AnnualFolderTemplatesController,
@@ -12,12 +11,17 @@ import { EvaluationController } from './evaluation.controller';
 import { EvaluationService } from './evaluation.service';
 import { RankingsController } from './rankings.controller';
 import { RankingsService } from './rankings.service';
-import { RankingsProcessor, RANKINGS_QUEUE } from './rankings.processor';
+import { FolderScoreService } from './score-calculators/folder-score';
+import { FinanceScoreService } from './score-calculators/finance-score';
+import { CamporeeScoreService } from './score-calculators/camporee-score';
+import { EvidenceScoreService } from './score-calculators/evidence-score';
+import { WeightsResolverService } from './score-calculators/weights-resolver';
+import { CompositeScoreService } from './score-calculators/composite-score';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ClubEnrollmentsModule } from '../club-enrollments/club-enrollments.module';
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
-import { isPlaceholderUrl } from '../config/bullmq.config';
+import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 // 8.4-A Task 12 — REST module for member ranking endpoints.
 // MemberRankingsModule is the single source of truth for member calc services
 // (ClassScoreService, InvestitureScoreService, CamporeeScoreService,
@@ -31,31 +35,16 @@ import { SectionRankingsModule } from '../rankings/section-rankings/section-rank
 // 8.4-A Task 14 — Admin CRUD module for enrollment_ranking_weights table.
 import { MemberRankingWeightsModule } from '../rankings/member-ranking-weights/member-ranking-weights.module';
 
-function isRedisConfigured(): boolean {
-  const rawUrl = process.env.REDIS_URL?.trim();
-  if (!rawUrl || isPlaceholderUrl(rawUrl)) return false;
-  try {
-    new URL(rawUrl);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const redisAvailable = isRedisConfigured();
-
 @Module({
   imports: [
     PrismaModule,
     ClubEnrollmentsModule,
     CatalogsModule,
     SystemConfigModule, // provides SystemConfigService for kill-switches
+    BackgroundJobsQueueModule, // consolidated BullMQ queue (8.4-C)
     MemberRankingsModule, // Task 12 — REST endpoints for member rankings
     SectionRankingsModule, // Task 13 — REST endpoints for section rankings + SectionAggregationService owner
     MemberRankingWeightsModule, // Task 14 — Admin CRUD for enrollment_ranking_weights
-    ...(redisAvailable
-      ? [BullModule.registerQueue({ name: RANKINGS_QUEUE })]
-      : []),
   ],
   controllers: [
     AnnualFolderTemplatesController,
@@ -70,9 +59,15 @@ const redisAvailable = isRedisConfigured();
     AwardCategoriesService,
     EvaluationService,
     RankingsService,
+    // 8.4-C extended score calculators
+    FolderScoreService,
+    FinanceScoreService,
+    CamporeeScoreService,
+    EvidenceScoreService,
+    WeightsResolverService,
+    CompositeScoreService,
     // Calc services (ClassScoreService etc.) are provided by MemberRankingsModule
     // (imported above) and available here via its exports — no re-declaration needed.
-    ...(redisAvailable ? [RankingsProcessor] : []),
   ],
   exports: [
     AnnualFoldersService,

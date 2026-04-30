@@ -121,13 +121,12 @@ export class AnalyticsController {
     description:
       'Returns job counts (active, waiting, completed, failed, delayed) and ' +
       'paused status for a single BullMQ queue. ' +
-      'Supported queues: notifications, achievements, data-exports, ' +
-      'monthly-reports, rankings, finance-period.',
+      'Supported queues: notifications, achievements, emails, background-jobs.',
   })
   @ApiParam({
     name: 'queueName',
     description: 'BullMQ queue name',
-    example: 'monthly-reports',
+    example: 'background-jobs',
   })
   @ApiOkResponse({
     description: 'Queue health data',

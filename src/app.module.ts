@@ -54,6 +54,8 @@ import { DataExportModule } from './data-export/data-export.module';
 import { EmailModule } from './common/email/email.module';
 import { QrModule } from './qr/qr.module';
 import { SupportModule } from './support/support.module';
+import { BackgroundJobsModule } from './background-jobs/background-jobs.module';
+import { RankingWeightsModule } from './ranking-weights/ranking-weights.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 
@@ -229,6 +231,8 @@ import { buildBullRootConfig } from './config/bullmq.config';
     EmailModule,
     QrModule,
     SupportModule,
+    BackgroundJobsModule,
+    RankingWeightsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
