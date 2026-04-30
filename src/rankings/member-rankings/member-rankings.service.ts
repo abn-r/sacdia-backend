@@ -60,20 +60,24 @@ export class MemberRankingsService {
   // ========================================
 
   async list(params: ListParams): Promise<PaginatedResponse<MemberRankingResponseDto>> {
+    const safeLimit = Math.min(Math.max(params.limit, 1), 100); // clamp [1, 100]
+    const safePage = Math.max(params.page, 1); // clamp >= 1
+    const skip = (safePage - 1) * safeLimit;
+
     const where = this.buildScopeWhere(params.profile, {
       yearId: params.yearId,
       clubId: params.clubId,
       sectionId: params.sectionId,
     });
     this.logger.log(
-      `list: year=${params.yearId} page=${params.page} limit=${params.limit}`,
+      `list: year=${params.yearId} page=${safePage} limit=${safeLimit}`,
     );
 
     const [rows, total] = await Promise.all([
       this.prisma.enrollmentRanking.findMany({
         where,
-        skip: (params.page - 1) * params.limit,
-        take: params.limit,
+        skip,
+        take: safeLimit,
         orderBy: { rank_position: 'asc' },
         include: {
           user: { select: { name: true } },
@@ -87,8 +91,8 @@ export class MemberRankingsService {
     return {
       data: rows.map((r) => MemberRankingResponseDto.fromEnrollmentRanking(r)),
       total,
-      page: params.page,
-      limit: params.limit,
+      page: safePage,
+      limit: safeLimit,
     };
   }
 
@@ -330,6 +334,11 @@ export class MemberRankingsService {
           ...assignmentLfIds,
         ]),
       );
+
+      if (lfIds.length === 0) {
+        // Explicit deny: caller has read_lf perm but no LF assigned
+        return { ecclesiastical_year_id: -1 };
+      }
 
       return {
         ...yearFilter,

@@ -441,4 +441,30 @@ describe('MemberRankingsController', () => {
       );
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 10. N3 scope-escape regression: director-club requesting foreign club_id
+  //     → 200 with empty rankings (scope intersection)
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('GET /member-rankings as director-club requesting foreign club_id → 200 with empty rankings (scope intersection)', () => {
+    it('returns empty result when caller requests a club outside their scope', async () => {
+      const profile = makeProfile(
+        'director-foreign-uuid',
+        ['member_rankings:read_club'],
+        [1], // caller belongs to club 1
+      );
+      // caller requests club_id=99 they don't belong to
+      // service must intersect → empty effectiveClubIds → impossible filter → empty result
+      jest.spyOn(mockService, 'list').mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 });
+
+      const req = { user: { user_id: profile.profile.user_id }, authorization: profile };
+
+      const result = await controller.list(req, YEAR_ID, '99');
+
+      expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
+      expect(mockService.list).toHaveBeenCalledWith(
+        expect.objectContaining({ profile, clubId: 99 }),
+      );
+    });
+  });
 });
