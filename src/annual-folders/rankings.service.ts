@@ -11,6 +11,9 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { RANKINGS_QUEUE, RankingsTriggerJobData } from './rankings.types';
+import { MemberCompositeScoreService } from '../rankings/member-rankings/services/member-composite-score.service';
+import { SectionAggregationService } from '../rankings/section-rankings/services/section-aggregation.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -65,6 +68,10 @@ export class RankingsService {
     @Optional()
     @InjectQueue(RANKINGS_QUEUE)
     private readonly rankingsQueue: Queue | null,
+    // 8.4-A new — member + section ranking pipeline
+    private readonly memberCompositeScore: MemberCompositeScoreService,
+    private readonly sectionAggregation: SectionAggregationService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   // ========================================
@@ -83,6 +90,7 @@ export class RankingsService {
         triggeredAt: new Date().toISOString(),
       };
       await this.rankingsQueue.add('recalculate', jobData, {
+        jobId: 'rankings-recalculate', // dedup at queue layer — prevents concurrent runs of recalculateAll across BullMQ
         attempts: 5,
         backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
         removeOnComplete: { age: 7 * 86_400 },
@@ -298,6 +306,269 @@ export class RankingsService {
   }
 
   // ========================================
+  // 8.4-A ORCHESTRATOR
+  // ========================================
+
+  /**
+   * Full recalculation orchestrator — called by RankingsProcessor (BullMQ)
+   * and the HTTP trigger endpoint.
+   *
+   * Step 1: club-level rankings (8.4-C existing, unchanged)
+   * Step 2: per-enrollment member rankings (8.4-A new)
+   * Step 3: section aggregate rankings (8.4-A new)
+   *
+   * Two independent kill-switches:
+   *   ranking.recalculation_enabled        → global gate (all steps)
+   *   member_ranking.recalculation_enabled → steps 2+3 only
+   *
+   * Step 3 always runs even if step 2 threw a partial/total error.
+   */
+  async recalculateAll(yearId?: number): Promise<void> {
+    const globalEnabled = await this.systemConfig.get('ranking.recalculation_enabled');
+    if (globalEnabled === 'false') {
+      this.logger.warn('[rankings] global kill-switch off — skipping all recalculation');
+      return;
+    }
+
+    // Step 1: clubs (8.4-C existing — untouched)
+    await this.recalculateRankings(yearId);
+
+    // 8.4-A kill-switch
+    const memberEnabled = await this.systemConfig.get('member_ranking.recalculation_enabled');
+    if (memberEnabled === 'false') {
+      this.logger.warn('[rankings] member_ranking kill-switch off — skipping steps 2 and 3');
+      return;
+    }
+
+    // Step 2: enrollments (continues to step 3 even if step 2 throws)
+    try {
+      await this.recalculateEnrollmentRankings(yearId);
+    } catch (err) {
+      this.logger.error(
+        '[member-rankings] recalculateEnrollmentRankings failed, continuing to section aggregates',
+        (err as Error).stack,
+      );
+    }
+
+    // Step 3: sections
+    try {
+      await this.recalculateSectionAggregates(yearId);
+    } catch (err) {
+      this.logger.error(
+        '[section-rankings] recalculateSectionAggregates failed',
+        (err as Error).stack,
+      );
+    }
+  }
+
+  // ========================================
+  // 8.4-A MEMBER RANKINGS
+  // ========================================
+
+  /**
+   * Recalculates per-enrollment composite scores for all active enrollments
+   * in the given ecclesiastical year, then assigns DENSE_RANK positions.
+   *
+   * Clubs are processed in chunks of 50 to bound peak memory.
+   * Per-enrollment errors log+skip without bubbling — a single corrupt
+   * enrollment never aborts the entire pass.
+   */
+  async recalculateEnrollmentRankings(ecclesiasticalYearId?: number): Promise<void> {
+    const year = await this.resolveYear(ecclesiasticalYearId);
+    const yearId = year.year_id;
+    this.logger.log(`[member-rankings] Recalc started ecclesiastical_year_id=${yearId}`);
+
+    const clubs = await this.prisma.clubs.findMany({
+      where: { active: true },
+      select: { club_id: true },
+    });
+
+    let totalEnrollments = 0;
+    let totalSkipped = 0;
+
+    const chunkSize = 50;
+    for (let i = 0; i < clubs.length; i += chunkSize) {
+      const chunk = clubs.slice(i, i + chunkSize);
+      for (const c of chunk) {
+        const sections = await this.prisma.club_sections.findMany({
+          where: { main_club_id: c.club_id, active: true },
+          select: { club_section_id: true, club_type_id: true },
+        });
+        if (sections.length === 0) continue;
+
+        const clubTypeIds = [...new Set(sections.map((s) => s.club_type_id))];
+        const classes = await this.prisma.classes.findMany({
+          where: { club_type_id: { in: clubTypeIds } },
+          select: { class_id: true, club_type_id: true },
+        });
+        const classIdSet = classes.map((cls) => cls.class_id);
+        if (classIdSet.length === 0) continue;
+
+        // Map club_type_id → first club_section_id of that type for the club.
+        // First-wins is intentional: clubs with multiple sections of the same
+        // type use the first section as the ranking anchor (rare in practice).
+        // All enrollments in any section of that type share the same anchor.
+        const sectionByClubType = new Map<number, number>();
+        for (const s of sections) {
+          if (!sectionByClubType.has(s.club_type_id)) {
+            sectionByClubType.set(s.club_type_id, s.club_section_id);
+          }
+        }
+        const classToClubType = new Map<number, number>();
+        for (const cls of classes) {
+          classToClubType.set(cls.class_id, cls.club_type_id);
+        }
+
+        const enrollments = await this.prisma.enrollments.findMany({
+          where: {
+            ecclesiastical_year_id: yearId,
+            active: true,
+            class_id: { in: classIdSet },
+          },
+          select: { enrollment_id: true, user_id: true, class_id: true },
+        });
+
+        for (const e of enrollments) {
+          try {
+            const result = await this.memberCompositeScore.calculate(
+              e.enrollment_id,
+              yearId,
+            );
+            if (!result) {
+              totalSkipped++;
+              continue;
+            }
+
+            const clubTypeId = classToClubType.get(e.class_id);
+            const clubSectionId = clubTypeId
+              ? (sectionByClubType.get(clubTypeId) ?? null)
+              : null;
+
+            await this.prisma.enrollmentRanking.upsert({
+              where: {
+                enrollment_id_ecclesiastical_year_id: {
+                  enrollment_id: e.enrollment_id,
+                  ecclesiastical_year_id: yearId,
+                },
+              },
+              create: {
+                enrollment_id: e.enrollment_id,
+                user_id: e.user_id,
+                club_id: c.club_id,
+                club_section_id: clubSectionId,
+                ecclesiastical_year_id: yearId,
+                class_score_pct: result.class_score_pct,
+                investiture_score_pct: result.investiture_score_pct,
+                camporee_score_pct: result.camporee_score_pct,
+                composite_score_pct: result.composite_score_pct,
+                composite_calculated_at: new Date(),
+              },
+              update: {
+                class_score_pct: result.class_score_pct,
+                investiture_score_pct: result.investiture_score_pct,
+                camporee_score_pct: result.camporee_score_pct,
+                composite_score_pct: result.composite_score_pct,
+                composite_calculated_at: new Date(),
+                modified_at: new Date(),
+              },
+            });
+            totalEnrollments++;
+          } catch (err) {
+            this.logger.error({
+              msg: '[member-rankings] enrollment skip',
+              enrollment_id: e.enrollment_id,
+              ecclesiastical_year_id: yearId,
+              error: (err as Error).message,
+              stack: (err as Error).stack,
+            });
+            totalSkipped++;
+          }
+        }
+      }
+    }
+
+    await this.updateEnrollmentRankPositions(yearId);
+
+    this.logger.log(
+      `[member-rankings] Recalc done enrollments=${totalEnrollments} skipped=${totalSkipped}`,
+    );
+  }
+
+  // ========================================
+  // 8.4-A SECTION RANKINGS
+  // ========================================
+
+  /**
+   * Aggregates per-section composite scores from the enrollment_rankings table,
+   * upserts section_rankings rows, then assigns DENSE_RANK positions.
+   *
+   * Per-section errors log+skip — a single broken section never aborts the pass.
+   */
+  async recalculateSectionAggregates(ecclesiasticalYearId?: number): Promise<void> {
+    const year = await this.resolveYear(ecclesiasticalYearId);
+    const yearId = year.year_id;
+    this.logger.log(`[section-rankings] Recalc started ecclesiastical_year_id=${yearId}`);
+
+    const sections = await this.prisma.club_sections.findMany({
+      where: { active: true },
+      select: { club_section_id: true, main_club_id: true },
+    });
+
+    let totalSections = 0;
+    let totalEmpty = 0;
+    let totalErrors = 0;
+
+    for (const s of sections) {
+      // Orphan sections without a parent club cannot rank — skip
+      if (s.main_club_id === null) continue;
+
+      try {
+        const agg = await this.sectionAggregation.aggregate(s.club_section_id, yearId);
+        if (agg.composite_score_pct === null) totalEmpty++;
+
+        await this.prisma.sectionRanking.upsert({
+          where: {
+            club_section_id_ecclesiastical_year_id: {
+              club_section_id: s.club_section_id,
+              ecclesiastical_year_id: yearId,
+            },
+          },
+          create: {
+            club_section_id: s.club_section_id,
+            club_id: s.main_club_id,
+            ecclesiastical_year_id: yearId,
+            composite_score_pct: agg.composite_score_pct,
+            active_enrollment_count: agg.active_enrollment_count,
+            composite_calculated_at: new Date(),
+          },
+          update: {
+            composite_score_pct: agg.composite_score_pct,
+            active_enrollment_count: agg.active_enrollment_count,
+            composite_calculated_at: new Date(),
+            modified_at: new Date(),
+          },
+        });
+        totalSections++;
+      } catch (err) {
+        this.logger.error({
+          msg: '[section-rankings] section skip',
+          club_section_id: s.club_section_id,
+          ecclesiastical_year_id: yearId,
+          error: (err as Error).message,
+          stack: (err as Error).stack,
+        });
+        totalErrors++;
+      }
+    }
+
+    await this.updateSectionRankPositions(yearId);
+
+    this.logger.log(
+      `[section-rankings] Recalc done sections=${totalSections} empty=${totalEmpty} errors=${totalErrors}`,
+    );
+  }
+
+  // ========================================
   // GET RANKINGS FOR A YEAR
   // ========================================
 
@@ -413,6 +684,54 @@ export class RankingsService {
   // ========================================
   // PRIVATE HELPERS
   // ========================================
+
+  /**
+   * Assigns DENSE_RANK positions for all enrollment_rankings rows belonging
+   * to the given ecclesiastical year.
+   *
+   * Partition: (club_id, ecclesiastical_year_id)
+   * Order: composite_score_pct DESC NULLS LAST
+   * Semantics: ties share the same rank; NULLs are ranked last (not excluded).
+   */
+  private async updateEnrollmentRankPositions(yearId: number): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE enrollment_rankings er
+      SET rank_position = sub.rnk
+      FROM (
+        SELECT id,
+          DENSE_RANK() OVER (
+            PARTITION BY club_id, ecclesiastical_year_id
+            ORDER BY composite_score_pct DESC NULLS LAST
+          ) AS rnk
+        FROM enrollment_rankings
+        WHERE ecclesiastical_year_id = ${yearId}
+      ) sub
+      WHERE er.id = sub.id
+    `;
+  }
+
+  /**
+   * Assigns DENSE_RANK positions for all section_rankings rows belonging
+   * to the given ecclesiastical year.
+   *
+   * Same semantics as updateEnrollmentRankPositions but for sections.
+   */
+  private async updateSectionRankPositions(yearId: number): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE section_rankings sr
+      SET rank_position = sub.rnk
+      FROM (
+        SELECT id,
+          DENSE_RANK() OVER (
+            PARTITION BY club_id, ecclesiastical_year_id
+            ORDER BY composite_score_pct DESC NULLS LAST
+          ) AS rnk
+        FROM section_rankings
+        WHERE ecclesiastical_year_id = ${yearId}
+      ) sub
+      WHERE sr.id = sub.id
+    `;
+  }
 
   /**
    * Resolves to the active ecclesiastical year if no yearId is provided.
