@@ -4,10 +4,7 @@ import * as Sentry from '@sentry/node';
 import { Job } from 'bullmq';
 import { RankingsService } from './rankings.service';
 import { CronRunLogger } from '../common/services/cron-run-logger.service';
-import {
-  RANKINGS_QUEUE,
-  RankingsTriggerJobData,
-} from './rankings.types';
+import { RANKINGS_QUEUE, RankingsTriggerJobData } from './rankings.types';
 
 export { RANKINGS_QUEUE };
 export type { RankingsTriggerJobData };
@@ -42,7 +39,8 @@ export class RankingsProcessor
         `(attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1})`,
     );
 
-    // recalculateRankings() acquires a per-year distributed lock internally —
+    // recalculateAll() is the full orchestrator (club + enrollment + section steps).
+    // recalculateRankings() acquires a per-year distributed lock for step 1 —
     // the idempotency guard is already in place. BullMQ retry will call this
     // again on failure; if a previous attempt is somehow still running the
     // lock prevents concurrent duplication (throws AppConflictException).
@@ -50,9 +48,9 @@ export class RankingsProcessor
     return this.cronLogger.track(
       'rankings-recalculate',
       async () => {
-        const result = await this.rankingsService.recalculateRankings();
-        this.logger.log(`Rankings recalculated: ${result.updated} records`);
-        return { itemsProcessed: result.updated };
+        await this.rankingsService.recalculateAll();
+        this.logger.log('Rankings recalculation (all steps) completed');
+        return { itemsProcessed: 1 };
       },
       { bull_job_id: job.id, triggered_at: job.data.triggeredAt },
     );

@@ -1,5 +1,9 @@
-import { IsString, IsInt, IsOptional, MaxLength, Min } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsIn, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  AWARD_CATEGORY_SCOPES,
+  type AwardCategoryScope,
+} from './award-category-scope.const';
 
 export class CreateAwardCategoryDto {
   @ApiProperty({
@@ -70,4 +74,15 @@ export class CreateAwardCategoryDto {
   @IsInt()
   @Min(0)
   order?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Scope de la categoría: aplica a club, sección o miembro (default: club)',
+    example: 'club',
+    enum: AWARD_CATEGORY_SCOPES,
+    default: 'club',
+  })
+  @IsOptional()
+  @IsIn(AWARD_CATEGORY_SCOPES)
+  scope?: AwardCategoryScope;
 }

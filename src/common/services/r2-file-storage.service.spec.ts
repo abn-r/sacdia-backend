@@ -28,9 +28,7 @@ import { StorageBucketAlias } from './file-storage.service';
 const mockS3Send = jest.fn();
 
 jest.mock('@aws-sdk/client-s3', () => {
-  const actual = jest.requireActual(
-    '@aws-sdk/client-s3',
-  ) as typeof import('@aws-sdk/client-s3');
+  const actual = jest.requireActual('@aws-sdk/client-s3');
   return {
     ...actual,
     S3Client: jest.fn().mockImplementation(() => ({

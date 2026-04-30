@@ -150,8 +150,7 @@ export class TranslationService {
       const data: Record<string, string | null | Date> = {};
       for (const f of fields) {
         const v = t[f as keyof typeof t];
-        data[f] =
-          v === '' || v === undefined || v === null ? null : (v as string);
+        data[f] = v === '' || v === undefined || v === null ? null : v;
       }
 
       await tx[translationModel].upsert({

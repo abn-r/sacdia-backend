@@ -7,6 +7,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { CreateAwardCategoryDto } from './dto/create-award-category.dto';
 import { UpdateAwardCategoryDto } from './dto/update-award-category.dto';
+import { type AwardCategoryScope } from './dto/award-category-scope.const';
 
 @Injectable()
 export class AwardCategoriesService {
@@ -55,6 +56,7 @@ export class AwardCategoriesService {
         icon: dto.icon ?? null,
         order: dto.order ?? 0,
         active: true,
+        ...(dto.scope !== undefined && { scope: dto.scope }),
       },
       include: {
         club_type: dto.club_type_id
@@ -68,13 +70,14 @@ export class AwardCategoriesService {
    * List award categories with optional filters.
    * Results are sorted by order ASC, then name ASC.
    */
-  async findAll(clubTypeId?: number, active?: boolean) {
+  async findAll(clubTypeId?: number, active?: boolean, scope?: AwardCategoryScope) {
     const activeFilter = active !== undefined ? active : true;
 
     return this.prisma.award_categories.findMany({
       where: {
         active: activeFilter,
         ...(clubTypeId !== undefined && { club_type_id: clubTypeId }),
+        ...(scope !== undefined && { scope }),
       },
       include: {
         club_type: { select: { club_type_id: true, name: true } },
@@ -155,6 +158,7 @@ export class AwardCategoriesService {
         ...(dto.max_points !== undefined && { max_points: dto.max_points }),
         ...(dto.icon !== undefined && { icon: dto.icon }),
         ...(dto.order !== undefined && { order: dto.order }),
+        ...(dto.scope !== undefined && { scope: dto.scope }),
       },
       include: {
         club_type: { select: { club_type_id: true, name: true } },

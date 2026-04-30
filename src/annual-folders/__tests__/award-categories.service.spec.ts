@@ -198,6 +198,44 @@ describe('AwardCategoriesService', () => {
 
       expect(result).toHaveLength(0);
     });
+
+    it('scope=club → where clause includes { scope: "club" }', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue([
+        { award_category_id: 'cat-1', name: 'Alpha', scope: 'club', active: true },
+      ]);
+
+      await service.findAll(undefined, undefined, 'club');
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ scope: 'club' }),
+        }),
+      );
+    });
+
+    it('scope=member → where clause includes { scope: "member" }', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+
+      await service.findAll(undefined, undefined, 'member');
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ scope: 'member' }),
+        }),
+      );
+    });
+
+    it('scope=section → where clause includes { scope: "section" }', async () => {
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+
+      await service.findAll(undefined, undefined, 'section');
+
+      expect(mockPrismaService.award_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ scope: 'section' }),
+        }),
+      );
+    });
   });
 
   // ================================================================

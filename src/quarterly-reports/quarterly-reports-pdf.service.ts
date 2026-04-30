@@ -77,7 +77,7 @@ export class QuarterlyReportsPdfService {
       this.i18n.translate(`quarterly_reports.${key}`, {
         lang: locale,
         args,
-      }) as string;
+      });
 
     const reportData = report as any;
     const computed = reportData.computed_data as QuarterlyComputedData;

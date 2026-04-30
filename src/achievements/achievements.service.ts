@@ -5,7 +5,10 @@ import { achievement_type, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HandlerRegistry } from './handlers/handler.registry';
 import { EmitEventDto } from './dto/emit-event.dto';
-import { ACHIEVEMENTS_QUEUE } from './achievements.constants';
+import {
+  ACHIEVEMENTS_QUEUE,
+  ACHIEVEMENT_DEFAULT_BADGE_URL,
+} from './achievements.constants';
 import { EvaluateJobData } from './achievements.processor';
 import {
   FILE_STORAGE_SERVICE,
@@ -133,12 +136,7 @@ export class AchievementsService {
 
     const mappedData = data.map((item) => ({
       ...item,
-      badge_image_url: item.badge_image_key
-        ? this.fileStorage.resolvePublicUrl(
-            StorageBucketAlias.ACHIEVEMENTS_BADGES,
-            item.badge_image_key,
-          )
-        : null,
+      badge_image_url: this.resolveBadgeUrl(item.badge_image_key),
     }));
 
     return {
@@ -252,12 +250,7 @@ export class AchievementsService {
       // Append badge_image_url derived from the (possibly masked) badge_image_key
       const maskedWithUrl = {
         ...masked,
-        badge_image_url: masked.badge_image_key
-          ? this.fileStorage.resolvePublicUrl(
-              StorageBucketAlias.ACHIEVEMENTS_BADGES,
-              masked.badge_image_key,
-            )
-          : null,
+        badge_image_url: this.resolveBadgeUrl(masked.badge_image_key),
       };
 
       categoryMap.get(cat.achievement_category_id)!.achievements.push({
@@ -298,12 +291,7 @@ export class AchievementsService {
 
     const achievementWithUrl = {
       ...achievement,
-      badge_image_url: achievement.badge_image_key
-        ? this.fileStorage.resolvePublicUrl(
-            StorageBucketAlias.ACHIEVEMENTS_BADGES,
-            achievement.badge_image_key,
-          )
-        : null,
+      badge_image_url: this.resolveBadgeUrl(achievement.badge_image_key),
     };
 
     if (!userId) {
@@ -394,6 +382,35 @@ export class AchievementsService {
         `Failed to enqueue retroactive evaluation for user=${userId} achievement=${achievementId}: ${(err as Error).message}`,
       );
       return { queued: false };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // resolveBadgeUrl (private helper)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve a badge image URL from its R2 storage key.
+   *
+   * Falls back to ACHIEVEMENT_DEFAULT_BADGE_URL when:
+   *  - key is null / undefined / empty
+   *  - the R2 bucket config env vars are missing (e.g. local dev without R2_BUCKET_ACHIEVEMENTS_BADGES
+   *    or R2_PUBLIC_URL_ACHIEVEMENTS_BADGES set)
+   *
+   * This prevents a missing R2 config from turning into a 500 on read-only endpoints.
+   */
+  resolveBadgeUrl(key: string | null | undefined): string {
+    if (!key) return ACHIEVEMENT_DEFAULT_BADGE_URL;
+    try {
+      return this.fileStorage.resolvePublicUrl(
+        StorageBucketAlias.ACHIEVEMENTS_BADGES,
+        key,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `resolveBadgeUrl: falling back to default badge URL — ${(err as Error).message}`,
+      );
+      return ACHIEVEMENT_DEFAULT_BADGE_URL;
     }
   }
 }

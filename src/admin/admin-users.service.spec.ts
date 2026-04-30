@@ -805,7 +805,6 @@ describe('AdminUsersService', () => {
 
       await service.updateUser('user-1', dto);
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const firstCallArg = mockPrismaService.users.update.mock.calls[0][0];
       const callData = (firstCallArg as { data: Record<string, unknown> }).data;
 

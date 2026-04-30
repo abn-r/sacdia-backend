@@ -92,7 +92,7 @@ export class AdminCronAlertsService {
         id: r.id,
         job_name: r.job_name,
         condition: r.condition,
-        details: (r.details as Record<string, unknown> | null) ?? null,
+        details: r.details ?? null,
         alerted_at: r.alerted_at,
         resolved_at: r.resolved_at,
       })),
@@ -131,7 +131,7 @@ export class AdminCronAlertsService {
       id: row.id,
       job_name: row.job_name,
       condition: row.condition,
-      details: (row.details as Record<string, unknown> | null) ?? null,
+      details: row.details ?? null,
       alerted_at: row.alerted_at,
       resolved_at: row.resolved_at,
     };
