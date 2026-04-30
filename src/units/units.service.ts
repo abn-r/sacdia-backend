@@ -13,6 +13,7 @@ import {
   AppBadRequestException,
   AppConflictException,
   AppForbiddenException,
+  AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -500,7 +501,12 @@ export class UnitsService {
         include: this.weeklyRecordInclude,
       });
 
-      return this.transformWeeklyRecord(created!);
+      if (!created) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.INTERNAL_SERVER_ERROR,
+        );
+      }
+      return this.transformWeeklyRecord(created);
     });
   }
 
