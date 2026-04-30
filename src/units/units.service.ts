@@ -436,7 +436,7 @@ export class UnitsService {
     const validatedScores: { category_id: number; points: number }[] = [];
 
     if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const localFieldId = this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
           ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
@@ -532,7 +532,7 @@ export class UnitsService {
     const validatedScores: { category_id: number; points: number }[] = [];
 
     if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const localFieldId = this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
           ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
