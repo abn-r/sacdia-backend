@@ -613,4 +613,10 @@ export enum ErrorCode {
 
   // ── Rankings ──────────────────────────────────────────────────────────────
   RANKING_WEIGHTS_DEFAULT_NOT_FOUND = 'RANKING_WEIGHTS_DEFAULT_NOT_FOUND',
+
+  // ── Member Rankings ───────────────────────────────────────────────────────
+  MEMBER_RANKING_NOT_FOUND = 'MEMBER_RANKING_NOT_FOUND',
+  MEMBER_RANKING_HIDDEN = 'MEMBER_RANKING_HIDDEN',
+  MEMBER_RANKING_SCOPE_DENIED = 'MEMBER_RANKING_SCOPE_DENIED',
+  RECALCULATION_DISABLED = 'RECALCULATION_DISABLED',
 }

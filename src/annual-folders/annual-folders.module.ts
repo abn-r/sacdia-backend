@@ -18,14 +18,13 @@ import { ClubEnrollmentsModule } from '../club-enrollments/club-enrollments.modu
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
-// 8.4-A — member + section ranking calculation pipeline
-import { ClassScoreService } from '../rankings/member-rankings/services/class-score.service';
-import { InvestitureScoreService } from '../rankings/member-rankings/services/investiture-score.service';
-import { CamporeeScoreService } from '../rankings/member-rankings/services/camporee-score.service';
-import { EnrollmentClubResolverService } from '../rankings/member-rankings/services/enrollment-club-resolver.service';
-import { EnrollmentWeightsResolverService } from '../rankings/member-rankings/services/enrollment-weights-resolver.service';
-import { MemberCompositeScoreService } from '../rankings/member-rankings/services/member-composite-score.service';
-import { SectionAggregationService } from '../rankings/section-rankings/services/section-aggregation.service';
+// 8.4-A Task 12 — REST module for member ranking endpoints.
+// MemberRankingsModule is the single source of truth for all calc services
+// (ClassScoreService, InvestitureScoreService, CamporeeScoreService,
+//  EnrollmentClubResolverService, EnrollmentWeightsResolverService,
+//  MemberCompositeScoreService, SectionAggregationService).
+// They are exported from MemberRankingsModule and available here via import.
+import { MemberRankingsModule } from '../rankings/member-rankings/member-rankings.module';
 
 function isRedisConfigured(): boolean {
   const rawUrl = process.env.REDIS_URL?.trim();
@@ -46,6 +45,7 @@ const redisAvailable = isRedisConfigured();
     ClubEnrollmentsModule,
     CatalogsModule,
     SystemConfigModule, // provides SystemConfigService for kill-switches
+    MemberRankingsModule, // Task 12 — REST endpoints for member rankings
     ...(redisAvailable
       ? [BullModule.registerQueue({ name: RANKINGS_QUEUE })]
       : []),
@@ -63,14 +63,8 @@ const redisAvailable = isRedisConfigured();
     AwardCategoriesService,
     EvaluationService,
     RankingsService,
-    // 8.4-A new — calculation pipeline (standalone @Injectable services)
-    ClassScoreService,
-    InvestitureScoreService,
-    CamporeeScoreService,
-    EnrollmentClubResolverService,
-    EnrollmentWeightsResolverService,
-    MemberCompositeScoreService,
-    SectionAggregationService,
+    // Calc services (ClassScoreService etc.) are provided by MemberRankingsModule
+    // (imported above) and available here via its exports — no re-declaration needed.
     ...(redisAvailable ? [RankingsProcessor] : []),
   ],
   exports: [
