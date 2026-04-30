@@ -31,11 +31,11 @@ import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-qu
   ],
   controllers: [
     AnnualFolderTemplatesController,
+    RankingsController,
     AnnualFoldersController,
     AnnualFolderBySectionController,
     AwardCategoriesController,
     EvaluationController,
-    RankingsController,
   ],
   providers: [
     AnnualFoldersService,
