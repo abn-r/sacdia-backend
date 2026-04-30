@@ -47,6 +47,7 @@
   "AWARD_CATEGORY_POINTS_INVALID": "min_points ({minPoints}) cannot be greater than max_points ({maxPoints})",
   "AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND": "Club type with ID {id} not found",
   "AWARD_CATEGORY_NOT_FOUND": "Award category with ID {id} not found",
+  "AWARD_CATEGORY_SCOPE_INVALID": "Invalid scope value. Must be one of: club, section, member",
   "CAMPOREE_NOT_FOUND": "Camporee with ID {id} not found",
   "CAMPOREE_NOT_ACTIVE": "Camporee is not active",
   "CAMPOREE_YEAR_NOT_ACTIVE": "No active ecclesiastical year found. Please activate an ecclesiastical year first",

@@ -22,10 +22,16 @@ import { AwardCategoriesService } from './award-categories.service';
 import { CreateAwardCategoryDto } from './dto/create-award-category.dto';
 import { UpdateAwardCategoryDto } from './dto/update-award-category.dto';
 import {
+  AWARD_CATEGORY_SCOPES,
+  type AwardCategoryScope,
+} from './dto/award-category-scope.const';
+import {
   AuthorizationResource,
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @ApiTags('Award Categories')
 @ApiBearerAuth()
@@ -66,16 +72,32 @@ export class AwardCategoriesController {
     description: 'Filter by active status (default: true)',
     example: true,
   })
+  @ApiQuery({
+    name: 'scope',
+    required: false,
+    description: 'Filter by category scope',
+    enum: AWARD_CATEGORY_SCOPES,
+  })
   @ApiResponse({ status: 200, description: 'List of award categories' })
+  @ApiResponse({ status: 400, description: 'Invalid scope value' })
   async findAll(
     @Query('club_type_id') clubTypeId?: string,
     @Query('active') active?: string,
+    @Query('scope') scope?: string,
   ) {
+    if (scope !== undefined && !AWARD_CATEGORY_SCOPES.includes(scope as AwardCategoryScope)) {
+      throw new AppBadRequestException(ErrorCode.AWARD_CATEGORY_SCOPE_INVALID);
+    }
+
     const clubTypeIdParsed =
       clubTypeId !== undefined ? parseInt(clubTypeId, 10) : undefined;
     const activeParsed = active !== undefined ? active === 'true' : undefined;
 
-    const data = await this.service.findAll(clubTypeIdParsed, activeParsed);
+    const data = await this.service.findAll(
+      clubTypeIdParsed,
+      activeParsed,
+      scope as AwardCategoryScope | undefined,
+    );
     return { status: 'success', data };
   }
 

@@ -47,6 +47,7 @@
   "AWARD_CATEGORY_POINTS_INVALID": "min_points ({minPoints}) não pode ser maior que max_points ({maxPoints})",
   "AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND": "Tipo de clube com ID {id} não encontrado",
   "AWARD_CATEGORY_NOT_FOUND": "Categoria de prêmio com ID {id} não encontrada",
+  "AWARD_CATEGORY_SCOPE_INVALID": "Valor de scope inválido. Deve ser um dos seguintes: club, section, member",
   "CAMPOREE_NOT_FOUND": "Acampamento com ID {id} não encontrado",
   "CAMPOREE_NOT_ACTIVE": "O acampamento não está ativo",
   "CAMPOREE_YEAR_NOT_ACTIVE": "Nenhum ano eclesiástico ativo encontrado. Por favor, ative um ano eclesiástico primeiro",

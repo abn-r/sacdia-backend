@@ -47,6 +47,7 @@
   "AWARD_CATEGORY_POINTS_INVALID": "min_points ({minPoints}) ne peut pas être supérieur à max_points ({maxPoints})",
   "AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND": "Type de club avec l’ID {id} introuvable",
   "AWARD_CATEGORY_NOT_FOUND": "Catégorie de récompense avec l’ID {id} introuvable",
+  "AWARD_CATEGORY_SCOPE_INVALID": "Valeur de scope invalide. Doit être l’une des suivantes : club, section, member",
   "CAMPOREE_NOT_FOUND": "Camporee avec l’ID {id} introuvable",
   "CAMPOREE_NOT_ACTIVE": "Le camporee n’est pas actif",
   "CAMPOREE_YEAR_NOT_ACTIVE": "Aucune année ecclésiastique active trouvée. Veuillez en activer une d’abord",
