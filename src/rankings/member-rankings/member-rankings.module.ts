@@ -7,7 +7,6 @@ import { CamporeeScoreService } from './services/camporee-score.service';
 import { EnrollmentClubResolverService } from './services/enrollment-club-resolver.service';
 import { EnrollmentWeightsResolverService } from './services/enrollment-weights-resolver.service';
 import { MemberCompositeScoreService } from './services/member-composite-score.service';
-import { SectionAggregationService } from '../section-rankings/services/section-aggregation.service';
 import { SystemConfigModule } from '../../system-config/system-config.module';
 import { AnnualFoldersModule } from '../../annual-folders/annual-folders.module';
 
@@ -17,9 +16,11 @@ import { AnnualFoldersModule } from '../../annual-folders/annual-folders.module'
  * Wiring strategy:
  *   - Calculation services (ClassScoreService, InvestitureScoreService,
  *     CamporeeScoreService, EnrollmentClubResolverService,
- *     EnrollmentWeightsResolverService, MemberCompositeScoreService,
- *     SectionAggregationService) are the single source of truth — all
- *     declared and exported here. AnnualFoldersModule must NOT re-declare them.
+ *     EnrollmentWeightsResolverService, MemberCompositeScoreService)
+ *     are the single source of truth — all declared and exported here.
+ *   - SectionAggregationService ownership MOVED to SectionRankingsModule
+ *     (Task 13 Q1.b) — its semantic home. AnnualFoldersModule now imports
+ *     SectionRankingsModule directly to get SectionAggregationService.
  *   - RankingsService (owned by AnnualFoldersModule) is needed for
  *     triggerRecalculate — imported via forwardRef to guard against circular
  *     dependency at Nest module resolution time.
@@ -42,7 +43,6 @@ import { AnnualFoldersModule } from '../../annual-folders/annual-folders.module'
     EnrollmentClubResolverService,
     EnrollmentWeightsResolverService,
     MemberCompositeScoreService,
-    SectionAggregationService,
   ],
   exports: [
     MemberRankingsService,
@@ -52,7 +52,6 @@ import { AnnualFoldersModule } from '../../annual-folders/annual-folders.module'
     EnrollmentClubResolverService,
     EnrollmentWeightsResolverService,
     MemberCompositeScoreService,
-    SectionAggregationService,
   ],
 })
 export class MemberRankingsModule {}

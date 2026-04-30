@@ -19,12 +19,15 @@ import { CatalogsModule } from '../catalogs/catalogs.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { isPlaceholderUrl } from '../config/bullmq.config';
 // 8.4-A Task 12 — REST module for member ranking endpoints.
-// MemberRankingsModule is the single source of truth for all calc services
+// MemberRankingsModule is the single source of truth for member calc services
 // (ClassScoreService, InvestitureScoreService, CamporeeScoreService,
 //  EnrollmentClubResolverService, EnrollmentWeightsResolverService,
-//  MemberCompositeScoreService, SectionAggregationService).
-// They are exported from MemberRankingsModule and available here via import.
+//  MemberCompositeScoreService).
 import { MemberRankingsModule } from '../rankings/member-rankings/member-rankings.module';
+// 8.4-A Task 13 — REST module for section ranking endpoints.
+// SectionRankingsModule owns SectionAggregationService (Q1.b ownership move).
+// Import here so RankingsService can inject SectionAggregationService.
+import { SectionRankingsModule } from '../rankings/section-rankings/section-rankings.module';
 
 function isRedisConfigured(): boolean {
   const rawUrl = process.env.REDIS_URL?.trim();
@@ -46,6 +49,7 @@ const redisAvailable = isRedisConfigured();
     CatalogsModule,
     SystemConfigModule, // provides SystemConfigService for kill-switches
     MemberRankingsModule, // Task 12 — REST endpoints for member rankings
+    SectionRankingsModule, // Task 13 — REST endpoints for section rankings + SectionAggregationService owner
     ...(redisAvailable
       ? [BullModule.registerQueue({ name: RANKINGS_QUEUE })]
       : []),
