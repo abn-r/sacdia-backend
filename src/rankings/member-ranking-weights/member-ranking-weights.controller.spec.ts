@@ -133,9 +133,9 @@ describe('MemberRankingWeightsController', () => {
 
       const dto = { class_pct: 50, investiture_pct: 30, camporee_pct: 30 };
 
-      const error = await controller
+      const error = (await controller
         .create(mockReq as any, dto as any)
-        .catch((e) => e) as AppBadRequestException;
+        .catch((e) => e)) as AppBadRequestException;
 
       expect(error).toBeInstanceOf(AppBadRequestException);
       expect(error.code).toBe(ErrorCode.WEIGHTS_SUM_INVALID);
@@ -157,9 +157,9 @@ describe('MemberRankingWeightsController', () => {
 
       const dto = { class_pct: -10, investiture_pct: 80, camporee_pct: 30 };
 
-      const error = await controller
+      const error = (await controller
         .create(mockReq as any, dto as any)
-        .catch((e) => e) as AppBadRequestException;
+        .catch((e) => e)) as AppBadRequestException;
 
       expect(error).toBeInstanceOf(AppBadRequestException);
       expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
@@ -183,9 +183,9 @@ describe('MemberRankingWeightsController', () => {
         ecclesiastical_year_id: 3,
       };
 
-      const error = await controller
+      const error = (await controller
         .create(mockReq as any, dto as any)
-        .catch((e) => e) as AppConflictException;
+        .catch((e) => e)) as AppConflictException;
 
       expect(error).toBeInstanceOf(AppConflictException);
       expect(error.code).toBe(ErrorCode.WEIGHTS_CONFLICT);
@@ -202,9 +202,9 @@ describe('MemberRankingWeightsController', () => {
         new AppBadRequestException(ErrorCode.DEFAULT_WEIGHTS_NOT_DELETABLE),
       );
 
-      const error = await controller
+      const error = (await controller
         .remove(mockReq as any, WEIGHT_ID)
-        .catch((e) => e) as AppBadRequestException;
+        .catch((e) => e)) as AppBadRequestException;
 
       expect(error).toBeInstanceOf(AppBadRequestException);
       expect(error.code).toBe(ErrorCode.DEFAULT_WEIGHTS_NOT_DELETABLE);
@@ -226,9 +226,9 @@ describe('MemberRankingWeightsController', () => {
         new AppNotFoundException(ErrorCode.WEIGHTS_NOT_FOUND),
       );
 
-      const error = await controller
+      const error = (await controller
         .findOne('not-a-valid-uuid')
-        .catch((e) => e) as AppNotFoundException;
+        .catch((e) => e)) as AppNotFoundException;
 
       expect(error).toBeInstanceOf(AppNotFoundException);
       expect(error.code).toBe(ErrorCode.WEIGHTS_NOT_FOUND);
@@ -247,14 +247,18 @@ describe('MemberRankingWeightsController', () => {
 
       const dto = { class_pct: 60 }; // would make 60 + 30 + 20 = 110 or 60 + existing = ≠ 100
 
-      const error = await controller
+      const error = (await controller
         .update(mockReq as any, WEIGHT_ID, dto as any)
-        .catch((e) => e) as AppBadRequestException;
+        .catch((e) => e)) as AppBadRequestException;
 
       expect(error).toBeInstanceOf(AppBadRequestException);
       expect(error.code).toBe(ErrorCode.WEIGHTS_SUM_INVALID);
       expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
-      expect(mockService.update).toHaveBeenCalledWith(WEIGHT_ID, dto, TEST_USER_ID);
+      expect(mockService.update).toHaveBeenCalledWith(
+        WEIGHT_ID,
+        dto,
+        TEST_USER_ID,
+      );
     });
   });
 

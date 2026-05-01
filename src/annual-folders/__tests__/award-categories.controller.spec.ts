@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { AppBadRequestException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { award_tier_enum } from '@prisma/client';
 
 // ---------------------------------------------------------------------------
 // Shared mock data
@@ -22,6 +23,7 @@ const mockCategory = {
   order: 0,
   scope: 'club',
   active: true,
+  tier: null as award_tier_enum | null,
 };
 
 // ---------------------------------------------------------------------------
@@ -52,9 +54,7 @@ describe('AwardCategoriesController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AwardCategoriesController],
-      providers: [
-        { provide: AwardCategoriesService, useValue: mockService },
-      ],
+      providers: [{ provide: AwardCategoriesService, useValue: mockService }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(allowGuard)
@@ -62,7 +62,9 @@ describe('AwardCategoriesController', () => {
       .useValue(allowGuard)
       .compile();
 
-    controller = module.get<AwardCategoriesController>(AwardCategoriesController);
+    controller = module.get<AwardCategoriesController>(
+      AwardCategoriesController,
+    );
   });
 
   it('should be defined', () => {
@@ -83,6 +85,7 @@ describe('AwardCategoriesController', () => {
         undefined,
         undefined,
         'club',
+        false,
       );
       expect(result).toEqual({ status: 'success', data: [mockCategory] });
     });
@@ -98,6 +101,7 @@ describe('AwardCategoriesController', () => {
         undefined,
         undefined,
         'member',
+        false,
       );
       expect(result).toEqual({ status: 'success', data: [] });
     });
@@ -113,6 +117,7 @@ describe('AwardCategoriesController', () => {
         undefined,
         undefined,
         'section',
+        false,
       );
       expect(result).toEqual({ status: 'success', data: [] });
     });
@@ -120,9 +125,9 @@ describe('AwardCategoriesController', () => {
 
   describe('GET / — scope=invalid → throws AppBadRequestException AWARD_CATEGORY_SCOPE_INVALID', () => {
     it('throws 400 with AWARD_CATEGORY_SCOPE_INVALID error code', async () => {
-      const error = await controller
+      const error = (await controller
         .findAll(undefined, undefined, 'invalid')
-        .catch((e) => e) as AppBadRequestException;
+        .catch((e) => e)) as AppBadRequestException;
 
       expect(error).toBeInstanceOf(AppBadRequestException);
       expect(error.code).toBe(ErrorCode.AWARD_CATEGORY_SCOPE_INVALID);
@@ -143,6 +148,7 @@ describe('AwardCategoriesController', () => {
         undefined,
         undefined,
         undefined,
+        false,
       );
       expect(result).toEqual({ status: 'success', data: [mockCategory] });
     });
@@ -154,7 +160,11 @@ describe('AwardCategoriesController', () => {
 
   describe('POST / — scope="member" in body → forwards to service.create', () => {
     it('creates a category with scope="member" and returns 201 shape', async () => {
-      const dto = { name: 'Distinción', min_points: 50, scope: 'member' as const };
+      const dto = {
+        name: 'Distinción',
+        min_points: 50,
+        scope: 'member' as const,
+      };
       const created = { ...mockCategory, scope: 'member', name: 'Distinción' };
       mockService.create.mockResolvedValueOnce(created);
 
@@ -162,6 +172,66 @@ describe('AwardCategoriesController', () => {
 
       expect(mockService.create).toHaveBeenCalledWith(dto);
       expect(result).toEqual({ status: 'success', data: created });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // tier field — create with explicit tier
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('POST / — tier=GOLD in body → forwards to service.create', () => {
+    it('creates a category with tier="GOLD" and returns it in response', async () => {
+      const dto = {
+        name: 'Placa de Oro',
+        min_points: 90,
+        tier: award_tier_enum.GOLD,
+      };
+      const created = {
+        ...mockCategory,
+        name: 'Placa de Oro',
+        tier: award_tier_enum.GOLD,
+      };
+      mockService.create.mockResolvedValueOnce(created);
+
+      const result = await controller.create(dto);
+
+      expect(mockService.create).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ status: 'success', data: created });
+      expect((result as any).data.tier).toBe(award_tier_enum.GOLD);
+    });
+  });
+
+  describe('POST / — tier omitted → response preserves tier=null from row', () => {
+    it('creates a category without tier and response exposes tier: null', async () => {
+      const dto = { name: 'Sin Tier', min_points: 50 };
+      const created = { ...mockCategory, name: 'Sin Tier', tier: null };
+      mockService.create.mockResolvedValueOnce(created);
+
+      const result = await controller.create(dto);
+
+      expect(mockService.create).toHaveBeenCalledWith(dto);
+      expect((result as any).data.tier).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // tier field — update (PATCH) with tier=SILVER
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('PATCH /:categoryId — tier updated from NULL to SILVER', () => {
+    it('calls service.update with tier=SILVER and returns updated shape', async () => {
+      const updated = { ...mockCategory, tier: award_tier_enum.SILVER };
+      mockService.update.mockResolvedValueOnce(updated);
+
+      const result = await controller.update('cat-uuid-1', {
+        tier: award_tier_enum.SILVER,
+      });
+
+      expect(mockService.update).toHaveBeenCalledWith('cat-uuid-1', {
+        tier: award_tier_enum.SILVER,
+      });
+      expect(result).toEqual({ status: 'success', data: updated });
+      expect((result as any).data.tier).toBe(award_tier_enum.SILVER);
     });
   });
 });

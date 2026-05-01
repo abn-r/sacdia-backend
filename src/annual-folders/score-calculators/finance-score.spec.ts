@@ -4,7 +4,10 @@ import { FinanceScoreService } from './finance-score';
 
 describe('FinanceScoreService.calc', () => {
   let svc: FinanceScoreService;
-  let prisma: { $queryRaw: jest.Mock; system_config: { findUnique: jest.Mock } };
+  let prisma: {
+    $queryRaw: jest.Mock;
+    system_config: { findUnique: jest.Mock };
+  };
 
   beforeEach(async () => {
     prisma = {

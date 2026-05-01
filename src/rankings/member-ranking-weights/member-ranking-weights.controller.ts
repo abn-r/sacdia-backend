@@ -67,7 +67,11 @@ export class MemberRankingWeightsController {
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 50 })
-  @ApiResponse({ status: 200, type: MemberRankingWeightsResponseDto, isArray: true })
+  @ApiResponse({
+    status: 200,
+    type: MemberRankingWeightsResponseDto,
+    isArray: true,
+  })
   async list(
     @Query('page') pageRaw?: string,
     @Query('limit') limitRaw?: string,
@@ -95,8 +99,15 @@ export class MemberRankingWeightsController {
     description: 'Weight configuration created.',
     type: MemberRankingWeightsResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'WEIGHTS_SUM_INVALID — pcts do not sum to 100.' })
-  @ApiResponse({ status: 409, description: 'WEIGHTS_CONFLICT — duplicate (club_type_id, ecclesiastical_year_id).' })
+  @ApiResponse({
+    status: 400,
+    description: 'WEIGHTS_SUM_INVALID — pcts do not sum to 100.',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'WEIGHTS_CONFLICT — duplicate (club_type_id, ecclesiastical_year_id).',
+  })
   async create(@Req() req: any, @Body() dto: CreateMemberRankingWeightsDto) {
     return this.service.create(dto, req.user.user_id);
   }

@@ -549,10 +549,17 @@ export class RankingsService {
    *             club rankings (step 1) and section aggregates (step 3) always run full
    *             regardless of mode because they are cheap aggregations, not per-row scans.
    */
-  async recalculateAll(yearId?: number, mode: 'full' | 'delta' = 'full'): Promise<void> {
-    const globalEnabled = await this.systemConfig.get('ranking.recalculation_enabled');
+  async recalculateAll(
+    yearId?: number,
+    mode: 'full' | 'delta' = 'full',
+  ): Promise<void> {
+    const globalEnabled = await this.systemConfig.get(
+      'ranking.recalculation_enabled',
+    );
     if (globalEnabled === 'false') {
-      this.logger.warn('[rankings] global kill-switch off — skipping all recalculation');
+      this.logger.warn(
+        '[rankings] global kill-switch off — skipping all recalculation',
+      );
       return;
     }
 
@@ -560,9 +567,13 @@ export class RankingsService {
     await this.recalculateRankings(yearId);
 
     // 8.4-A kill-switch
-    const memberEnabled = await this.systemConfig.get('member_ranking.recalculation_enabled');
+    const memberEnabled = await this.systemConfig.get(
+      'member_ranking.recalculation_enabled',
+    );
     if (memberEnabled === 'false') {
-      this.logger.warn('[rankings] member_ranking kill-switch off — skipping steps 2 and 3');
+      this.logger.warn(
+        '[rankings] member_ranking kill-switch off — skipping steps 2 and 3',
+      );
       return;
     }
 
@@ -760,10 +771,14 @@ export class RankingsService {
    *
    * Per-section errors log+skip — a single broken section never aborts the pass.
    */
-  async recalculateSectionAggregates(ecclesiasticalYearId?: number): Promise<void> {
+  async recalculateSectionAggregates(
+    ecclesiasticalYearId?: number,
+  ): Promise<void> {
     const year = await this.resolveYear(ecclesiasticalYearId);
     const yearId = year.year_id;
-    this.logger.log(`[section-rankings] Recalc started ecclesiastical_year_id=${yearId}`);
+    this.logger.log(
+      `[section-rankings] Recalc started ecclesiastical_year_id=${yearId}`,
+    );
 
     const sections = await this.prisma.club_sections.findMany({
       where: { active: true },
@@ -779,7 +794,10 @@ export class RankingsService {
       if (s.main_club_id === null) continue;
 
       try {
-        const agg = await this.sectionAggregation.aggregate(s.club_section_id, yearId);
+        const agg = await this.sectionAggregation.aggregate(
+          s.club_section_id,
+          yearId,
+        );
         if (agg.composite_score_pct === null) totalEmpty++;
 
         await this.prisma.sectionRanking.upsert({
@@ -951,7 +969,8 @@ export class RankingsService {
         camporee_score_pct: Number(r.camporee_score_pct),
         evidence_score_pct: Number(r.evidence_score_pct),
         composite_score_pct: Number(r.composite_score_pct),
-        composite_calculated_at: r.composite_calculated_at?.toISOString() ?? null,
+        composite_calculated_at:
+          r.composite_calculated_at?.toISOString() ?? null,
       })),
     };
   }
@@ -1017,13 +1036,23 @@ export class RankingsService {
       await Promise.all([
         this.folderScore.calc(enrollmentId, ecclesiasticalYearId),
         this.financeScore.calc(clubId, calendarYear),
-        this.camporeeScore.calc(clubId, localFieldId, unionId, ecclesiasticalYearId),
+        this.camporeeScore.calc(
+          clubId,
+          localFieldId,
+          unionId,
+          ecclesiasticalYearId,
+        ),
         this.evidenceScore.calc(clubId, ecclesiasticalYearId),
         this.weightsResolver.resolve(clubSection.club_type_id),
       ]);
 
     const composite = this.compositeScore.compose(
-      { folder: folderPct, finance: financePct, camporee: camporeePct, evidence: evidencePct },
+      {
+        folder: folderPct,
+        finance: financePct,
+        camporee: camporeePct,
+        evidence: evidencePct,
+      },
       weights,
     );
 
@@ -1034,10 +1063,17 @@ export class RankingsService {
     const deadlineDay = parseInt(deadlineRow?.config_value ?? '5', 10);
 
     // 4. Auxiliary detail queries — run in parallel
-    const [folderDetailRows, closedMonthsRows, localScopeRows, unionScopeRows, evRows] =
-      await Promise.all([
-        // 4b. Folder: earned/max/sections from VALIDATED evaluations
-        this.prisma.$queryRaw<{ earned: bigint; max: bigint; sections: bigint }[]>`
+    const [
+      folderDetailRows,
+      closedMonthsRows,
+      localScopeRows,
+      unionScopeRows,
+      evRows,
+    ] = await Promise.all([
+      // 4b. Folder: earned/max/sections from VALIDATED evaluations
+      this.prisma.$queryRaw<
+        { earned: bigint; max: bigint; sections: bigint }[]
+      >`
           SELECT COALESCE(SUM(e.earned_points), 0)::bigint AS earned,
                  COALESCE(SUM(e.max_points), 0)::bigint    AS max,
                  COUNT(*)::bigint                          AS sections
@@ -1049,8 +1085,8 @@ export class RankingsService {
             AND e.status = 'VALIDATED'::annual_folder_section_status_enum
         `,
 
-        // 4c. Finance: list of months closed on time
-        this.prisma.$queryRaw<{ month: number }[]>`
+      // 4c. Finance: list of months closed on time
+      this.prisma.$queryRaw<{ month: number }[]>`
           SELECT month FROM finance_period_closings
           WHERE club_id = ${clubId}
             AND year = ${calendarYear}
@@ -1058,8 +1094,8 @@ export class RankingsService {
             AND closed_at <= (make_timestamptz(year, month + 1, ${deadlineDay}, 23, 59, 59, 'UTC') AT TIME ZONE 'UTC')
         `,
 
-        // 4d. Camporee: local events in scope for club's local field
-        this.prisma.$queryRaw<{ id: number; name: string; attended: boolean }[]>`
+      // 4d. Camporee: local events in scope for club's local field
+      this.prisma.$queryRaw<{ id: number; name: string; attended: boolean }[]>`
           SELECT lc.local_camporee_id AS id,
                  lc.name              AS name,
                  COALESCE(BOOL_OR(cc.status = 'approved'), false) AS attended
@@ -1073,10 +1109,14 @@ export class RankingsService {
           GROUP BY lc.local_camporee_id, lc.name
         `,
 
-        // 4e. Camporee: union events in scope (skipped when no union)
-        unionId == null
-          ? Promise.resolve([] as { id: number; name: string; attended: boolean }[])
-          : this.prisma.$queryRaw<{ id: number; name: string; attended: boolean }[]>`
+      // 4e. Camporee: union events in scope (skipped when no union)
+      unionId == null
+        ? Promise.resolve(
+            [] as { id: number; name: string; attended: boolean }[],
+          )
+        : this.prisma.$queryRaw<
+            { id: number; name: string; attended: boolean }[]
+          >`
               SELECT uc.union_camporee_id AS id,
                      uc.name              AS name,
                      COALESCE(BOOL_OR(cc.union_camporee_id = uc.union_camporee_id AND cc.status = 'approved'), false) AS attended
@@ -1090,8 +1130,10 @@ export class RankingsService {
               GROUP BY uc.union_camporee_id, uc.name
             `,
 
-        // 4f. Evidence: validated / rejected / pending counts
-        this.prisma.$queryRaw<{ validated: bigint; rejected: bigint; pending: bigint }[]>`
+      // 4f. Evidence: validated / rejected / pending counts
+      this.prisma.$queryRaw<
+        { validated: bigint; rejected: bigint; pending: bigint }[]
+      >`
           SELECT
             COUNT(*) FILTER (WHERE r.status = 'VALIDATED'::evidence_validation_enum)::bigint AS validated,
             COUNT(*) FILTER (WHERE r.status = 'REJECTED'::evidence_validation_enum)::bigint  AS rejected,
@@ -1102,7 +1144,7 @@ export class RankingsService {
           WHERE cs.main_club_id = ${clubId}
             AND f.ecclesiastical_year_id = ${ecclesiasticalYearId}
         `,
-      ]);
+    ]);
 
     // Build closed months set from the raw query result
     const closedSet = new Set(closedMonthsRows.map((r) => r.month));

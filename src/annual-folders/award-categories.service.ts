@@ -71,6 +71,7 @@ export class AwardCategoriesService {
         ...(dto.max_composite_pct != null && {
           max_composite_pct: dto.max_composite_pct,
         }),
+        ...(dto.tier !== undefined && { tier: dto.tier }),
       },
       include: {
         club_type: dto.club_type_id
@@ -195,6 +196,7 @@ export class AwardCategoriesService {
         ...(dto.max_composite_pct !== undefined && {
           max_composite_pct: dto.max_composite_pct,
         }),
+        ...(dto.tier !== undefined && { tier: dto.tier }),
       },
       include: {
         club_type: { select: { club_type_id: true, name: true } },

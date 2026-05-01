@@ -55,20 +55,29 @@ export class SectionRankingsController {
     mode: 'any',
   })
   @ApiOperation({
-    summary: 'Get members for a specific section ordered by rank_position ASC NULLS LAST',
+    summary:
+      'Get members for a specific section ordered by rank_position ASC NULLS LAST',
     description:
       'Returns enrollment rankings for the given section, ordered by rank_position ascending with nulls last. ' +
       'Access is validated against the caller RBAC scope (same 3-tier waterfall as GET /). ' +
       'sectionId is an INTEGER (not UUID).',
   })
-  @ApiParam({ name: 'sectionId', type: Number, description: 'Club section ID (integer)' })
+  @ApiParam({
+    name: 'sectionId',
+    type: Number,
+    description: 'Club section ID (integer)',
+  })
   @ApiQuery({ name: 'year_id', required: true, type: Number })
   @ApiResponse({ status: 200, type: [MemberRankingResponseDto] })
   @ApiResponse({
     status: 403,
-    description: 'MEMBER_RANKING_SCOPE_DENIED — caller does not have access to this section',
+    description:
+      'MEMBER_RANKING_SCOPE_DENIED — caller does not have access to this section',
   })
-  @ApiResponse({ status: 404, description: 'MEMBER_RANKING_NOT_FOUND — section does not exist' })
+  @ApiResponse({
+    status: 404,
+    description: 'MEMBER_RANKING_NOT_FOUND — section does not exist',
+  })
   async getMembers(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Query('year_id', ParseIntPipe) yearId: number,
@@ -113,7 +122,8 @@ export class SectionRankingsController {
   })
   @ApiResponse({
     status: 403,
-    description: 'MEMBER_RANKING_SCOPE_DENIED — caller has no section_rankings permission',
+    description:
+      'MEMBER_RANKING_SCOPE_DENIED — caller has no section_rankings permission',
   })
   async list(
     @Req() req: any,
@@ -121,7 +131,12 @@ export class SectionRankingsController {
     @Query('club_id') clubIdRaw?: string,
     @Query('page') pageRaw?: string,
     @Query('limit') limitRaw?: string,
-  ): Promise<{ data: SectionRankingResponseDto[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: SectionRankingResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     this.logger.log(`list: yearId=${yearId} clubId=${clubIdRaw}`);
     return this.service.list({
       profile: req.authorization,

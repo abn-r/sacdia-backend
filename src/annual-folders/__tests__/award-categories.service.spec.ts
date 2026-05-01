@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
+import { award_tier_enum } from '@prisma/client';
 import { AwardCategoriesService } from '../award-categories.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -56,6 +57,7 @@ describe('AwardCategoriesService', () => {
       icon: null,
       order: 0,
       active: true,
+      tier: null as award_tier_enum | null,
     };
 
     it('should create a category successfully without club_type_id', async () => {
@@ -155,6 +157,44 @@ describe('AwardCategoriesService', () => {
         min_composite_pct: 70,
         max_composite_pct: 80,
       });
+    });
+
+    it('should include tier=GOLD in Prisma data when tier is provided', async () => {
+      const dto = { ...baseDto, tier: award_tier_enum.GOLD };
+      mockPrismaService.award_categories.create.mockResolvedValue({
+        ...mockCategory,
+        tier: award_tier_enum.GOLD,
+      });
+
+      const result = await service.create(dto);
+
+      expect(mockPrismaService.award_categories.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ tier: award_tier_enum.GOLD }),
+        }),
+      );
+      expect(result.tier).toBe(award_tier_enum.GOLD);
+    });
+
+    it('should NOT include tier key in Prisma data when tier is omitted', async () => {
+      mockPrismaService.award_categories.create.mockResolvedValue(mockCategory);
+
+      await service.create(baseDto);
+
+      const callArg =
+        mockPrismaService.award_categories.create.mock.calls[0][0];
+      expect(callArg.data).not.toHaveProperty('tier');
+    });
+
+    it('should expose tier=null from DB row when tier was not set', async () => {
+      mockPrismaService.award_categories.create.mockResolvedValue({
+        ...mockCategory,
+        tier: null,
+      });
+
+      const result = await service.create(baseDto);
+
+      expect(result.tier).toBeNull();
     });
   });
 
@@ -401,6 +441,43 @@ describe('AwardCategoriesService', () => {
       ).rejects.toThrow(BadRequestException);
 
       expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
+    });
+
+    it('should update tier from NULL to SILVER when tier is provided', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.award_categories.update.mockResolvedValue({
+        ...existingCategory,
+        tier: award_tier_enum.SILVER,
+      });
+
+      const result = await service.update(categoryId, {
+        tier: award_tier_enum.SILVER,
+      });
+
+      expect(mockPrismaService.award_categories.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ tier: award_tier_enum.SILVER }),
+        }),
+      );
+      expect(result.tier).toBe(award_tier_enum.SILVER);
+    });
+
+    it('should NOT include tier key in Prisma data when tier is omitted from update dto', async () => {
+      mockPrismaService.award_categories.findUnique.mockResolvedValue(
+        existingCategory,
+      );
+      mockPrismaService.award_categories.update.mockResolvedValue({
+        ...existingCategory,
+        name: 'Updated Name',
+      });
+
+      await service.update(categoryId, { name: 'Updated Name' });
+
+      const callArg =
+        mockPrismaService.award_categories.update.mock.calls[0][0];
+      expect(callArg.data).not.toHaveProperty('tier');
     });
   });
 

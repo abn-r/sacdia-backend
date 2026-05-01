@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AppForbiddenException, AppNotFoundException } from '../../common/errors/app.exception';
+import {
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 import { SectionRankingResponseDto } from './dto/section-ranking-response.dto';
@@ -26,7 +29,9 @@ export class SectionRankingsService {
   // LIST — paginated, RBAC scope-filtered
   // ========================================
 
-  async list(params: ListParams): Promise<PaginatedResponse<SectionRankingResponseDto>> {
+  async list(
+    params: ListParams,
+  ): Promise<PaginatedResponse<SectionRankingResponseDto>> {
     const safeLimit = Math.min(Math.max(params.limit, 1), 100); // clamp [1, 100]
     const safePage = Math.max(params.page, 1); // clamp >= 1
     const skip = (safePage - 1) * safeLimit;
@@ -44,9 +49,7 @@ export class SectionRankingsService {
         where,
         skip,
         take: safeLimit,
-        orderBy: [
-          { rank_position: { sort: 'asc', nulls: 'last' } },
-        ],
+        orderBy: [{ rank_position: { sort: 'asc', nulls: 'last' } }],
         include: {
           club_section: { select: { name: true } },
         },
@@ -84,7 +87,11 @@ export class SectionRankingsService {
     }
 
     if (!section.clubs) {
-      this.logger.warn({ msg: '[section-rankings] orphan section', sectionId, ecclesiastical_year_id: yearId });
+      this.logger.warn({
+        msg: '[section-rankings] orphan section',
+        sectionId,
+        ecclesiastical_year_id: yearId,
+      });
       throw new AppNotFoundException(ErrorCode.MEMBER_RANKING_NOT_FOUND);
     }
 
@@ -92,7 +99,10 @@ export class SectionRankingsService {
     this.validateSectionScope(profile, {
       club_section_id: sectionId,
       club_id: section.clubs.club_id,
-      club: { club_id: section.clubs.club_id, local_field_id: section.clubs.local_field_id },
+      club: {
+        club_id: section.clubs.club_id,
+        local_field_id: section.clubs.local_field_id,
+      },
     });
 
     // 3. Fetch enrollment rankings for this section, ordered by rank_position ASC NULLS LAST
@@ -101,9 +111,7 @@ export class SectionRankingsService {
         club_section_id: sectionId,
         ecclesiastical_year_id: yearId,
       },
-      orderBy: [
-        { rank_position: { sort: 'asc', nulls: 'last' } },
-      ],
+      orderBy: [{ rank_position: { sort: 'asc', nulls: 'last' } }],
       include: {
         user: { select: { name: true } },
         club_section: { select: { name: true } },
@@ -149,7 +157,8 @@ export class SectionRankingsService {
 
     // Local-field access — restrict to clubs in caller's local fields
     if (perms.includes('section_rankings:read_lf')) {
-      const globalLfId = profile.authorization.effective.scope.global.local_field?.id;
+      const globalLfId =
+        profile.authorization.effective.scope.global.local_field?.id;
       const assignmentLfIds = profile.authorization.grants.club_assignments
         .map((g) => g.scope.local_field?.id)
         .filter((id): id is number => typeof id === 'number');
@@ -219,7 +228,8 @@ export class SectionRankingsService {
     if (perms.includes('section_rankings:read_lf')) {
       const rowLfId = section.club?.local_field_id ?? null;
 
-      const globalLfId = profile.authorization.effective.scope.global.local_field?.id;
+      const globalLfId =
+        profile.authorization.effective.scope.global.local_field?.id;
       const assignmentLfIds = profile.authorization.grants.club_assignments
         .map((g) => g.scope.local_field?.id)
         .filter((id): id is number => typeof id === 'number');

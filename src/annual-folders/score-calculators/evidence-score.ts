@@ -6,7 +6,9 @@ export class EvidenceScoreService {
   constructor(private readonly prisma: PrismaService) {}
 
   async calc(clubId: number, ecclesiasticalYearId: number): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ validated: bigint; rejected: bigint }[]>`
+    const rows = await this.prisma.$queryRaw<
+      { validated: bigint; rejected: bigint }[]
+    >`
       SELECT
         COUNT(*) FILTER (WHERE r.status = 'VALIDATED'::evidence_validation_enum)::bigint AS validated,
         COUNT(*) FILTER (WHERE r.status = 'REJECTED'::evidence_validation_enum)::bigint  AS rejected

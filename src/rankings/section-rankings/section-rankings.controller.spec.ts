@@ -4,9 +4,7 @@ import { SectionRankingsController } from './section-rankings.controller';
 import { SectionRankingsService } from './section-rankings.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import {
-  AppForbiddenException,
-} from '../../common/errors/app.exception';
+import { AppForbiddenException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { SectionRankingResponseDto } from './dto/section-ranking-response.dto';
 import { MemberRankingResponseDto } from '../member-rankings/dto/member-ranking-response.dto';
@@ -83,11 +81,15 @@ function makeProfile(
           role_name: 'director',
           permissions,
           club: { club_id: clubId, club_name: `Club ${clubId}` },
-          section: { club_section_id: sectionIds[i] ?? clubId * 10, club_type_name: null },
+          section: {
+            club_section_id: sectionIds[i] ?? clubId * 10,
+            club_type_name: null,
+          },
           scope: {
-            local_field: localFieldIds[i] !== undefined
-              ? { id: localFieldIds[i], name: `LF ${localFieldIds[i]}` }
-              : undefined,
+            local_field:
+              localFieldIds[i] !== undefined
+                ? { id: localFieldIds[i], name: `LF ${localFieldIds[i]}` }
+                : undefined,
           },
           status: 'active',
           start_date: null,
@@ -95,19 +97,28 @@ function makeProfile(
           expires_at: null,
         })),
       },
-      active_assignment: { assignment_id: clubIds.length > 0 ? 'assign-0' : null },
+      active_assignment: {
+        assignment_id: clubIds.length > 0 ? 'assign-0' : null,
+      },
       effective: {
         permissions,
         scope: {
           global: {},
-          club: clubIds.length > 0
-            ? {
-                assignment_id: 'assign-0',
-                role_name: 'director',
-                club: { club_id: clubIds[0], club_name: `Club ${clubIds[0]}` },
-                section: { club_section_id: sectionIds[0] ?? clubIds[0] * 10, club_type_name: null },
-              }
-            : null,
+          club:
+            clubIds.length > 0
+              ? {
+                  assignment_id: 'assign-0',
+                  role_name: 'director',
+                  club: {
+                    club_id: clubIds[0],
+                    club_name: `Club ${clubIds[0]}`,
+                  },
+                  section: {
+                    club_section_id: sectionIds[0] ?? clubIds[0] * 10,
+                    club_type_name: null,
+                  },
+                }
+              : null,
         },
       },
     },
@@ -121,7 +132,9 @@ function makeProfile(
 }
 
 // Profile for a plain member (no section_rankings permissions)
-const memberProfile = makeProfile('user-uuid-001', ['member_rankings:read_self']);
+const memberProfile = makeProfile('user-uuid-001', [
+  'member_rankings:read_self',
+]);
 
 // Profile for a club director (read_club) with club 99, section 10
 const directorProfile = makeProfile(
@@ -157,9 +170,7 @@ describe('SectionRankingsController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SectionRankingsController],
-      providers: [
-        { provide: SectionRankingsService, useValue: mockService },
-      ],
+      providers: [{ provide: SectionRankingsService, useValue: mockService }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(allowGuard)
@@ -167,7 +178,9 @@ describe('SectionRankingsController', () => {
       .useValue(allowGuard)
       .compile();
 
-    controller = module.get<SectionRankingsController>(SectionRankingsController);
+    controller = module.get<SectionRankingsController>(
+      SectionRankingsController,
+    );
   });
 
   it('should be defined', () => {
@@ -220,9 +233,9 @@ describe('SectionRankingsController', () => {
         authorization: memberProfile,
       };
 
-      const thrown = await controller
+      const thrown = (await controller
         .list(req, YEAR_ID)
-        .catch((e) => e) as AppForbiddenException;
+        .catch((e) => e)) as AppForbiddenException;
 
       expect(thrown).toBeInstanceOf(AppForbiddenException);
       expect(thrown.code).toBe(ErrorCode.MEMBER_RANKING_SCOPE_DENIED);
@@ -239,16 +252,16 @@ describe('SectionRankingsController', () => {
       // In E2E tests the pipe would reject "abc" automatically.
       // For unit tests we verify that the handler propagates errors — a NaN
       // sectionId results in an error from the service layer.
-      mockService.getMembers.mockRejectedValueOnce(new Error('Invalid integer'));
+      mockService.getMembers.mockRejectedValueOnce(
+        new Error('Invalid integer'),
+      );
 
       const req = {
         user: { user_id: directorProfile.profile.user_id },
         authorization: directorProfile,
       };
 
-      await expect(
-        controller.getMembers(NaN, YEAR_ID, req),
-      ).rejects.toThrow();
+      await expect(controller.getMembers(NaN, YEAR_ID, req)).rejects.toThrow();
     });
   });
 
@@ -264,9 +277,14 @@ describe('SectionRankingsController', () => {
       );
       // caller requests club_id=99 they don't belong to
       // service must intersect → empty effectiveClubIds → impossible filter → empty result
-      jest.spyOn(mockService, 'list').mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 });
+      jest
+        .spyOn(mockService, 'list')
+        .mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 });
 
-      const req = { user: { user_id: profile.profile.user_id }, authorization: profile };
+      const req = {
+        user: { user_id: profile.profile.user_id },
+        authorization: profile,
+      };
 
       const result = await controller.list(req, YEAR_ID, '99');
 
@@ -286,8 +304,18 @@ describe('SectionRankingsController', () => {
       // passes correct args and returns the ordered array as-is.
       const orderedMembers: MemberRankingResponseDto[] = [
         { ...mockMemberRow, rank_position: 1 },
-        { ...mockMemberRow, enrollment_id: 43, user_id: 'user-uuid-002', rank_position: 2 },
-        { ...mockMemberRow, enrollment_id: 44, user_id: 'user-uuid-003', rank_position: null },
+        {
+          ...mockMemberRow,
+          enrollment_id: 43,
+          user_id: 'user-uuid-002',
+          rank_position: 2,
+        },
+        {
+          ...mockMemberRow,
+          enrollment_id: 44,
+          user_id: 'user-uuid-003',
+          rank_position: null,
+        },
       ];
       mockService.getMembers.mockResolvedValueOnce(orderedMembers);
 
