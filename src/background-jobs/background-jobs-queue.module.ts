@@ -31,6 +31,6 @@ const redisAvailable = isRedisConfigured();
       ? [BullModule.registerQueue({ name: BACKGROUND_JOBS_QUEUE })]
       : []),
   ],
-  exports: [BullModule],
+  exports: redisAvailable ? [BullModule] : [],
 })
 export class BackgroundJobsQueueModule {}
