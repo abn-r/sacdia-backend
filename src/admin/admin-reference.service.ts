@@ -588,7 +588,10 @@ export class AdminReferenceService {
 
   async listEcclesiasticalYears() {
     // One record per year: expected to grow by at most one row per year.
+    // Filter to active=true so deactivated/historical years are not surfaced
+    // for new administrative selections.
     return this.prisma.ecclesiastical_years.findMany({
+      where: { active: true },
       orderBy: { start_date: 'desc' },
       take: 100,
     });
