@@ -48,11 +48,11 @@ import { MemberRankingWeightsModule } from '../rankings/member-ranking-weights/m
   ],
   controllers: [
     AnnualFolderTemplatesController,
+    RankingsController,
     AnnualFoldersController,
     AnnualFolderBySectionController,
     AwardCategoriesController,
     EvaluationController,
-    RankingsController,
   ],
   providers: [
     AnnualFoldersService,
