@@ -615,7 +615,11 @@ describe('RankingsService', () => {
       // and the manual HTTP path honor it.
       const result = await service.recalculateRankings();
 
-      expect(result).toEqual({ updated: 0, skipped: true, reason: 'kill-switch' });
+      expect(result).toEqual({
+        updated: 0,
+        skipped: true,
+        reason: 'kill-switch',
+      });
       // Nothing should have been fetched or upserted
       expect(
         mockPrismaService.ecclesiastical_years.findFirst,
@@ -633,7 +637,9 @@ describe('RankingsService', () => {
       mockPrismaService.annual_folders.findMany.mockResolvedValue([]);
 
       // Should proceed normally — no throw, no early return
-      await expect(service.handleRankingsRecalculation()).resolves.not.toThrow();
+      await expect(
+        service.handleRankingsRecalculation(),
+      ).resolves.not.toThrow();
     });
 
     // ================================================================
@@ -1026,7 +1032,8 @@ describe('RankingsService', () => {
 
     it('recalculateAll: skips enrollments+sections if global kill-switch off', async () => {
       mockSystemConfig.get.mockImplementation((key: string) => {
-        if (key === 'ranking.recalculation_enabled') return Promise.resolve('false');
+        if (key === 'ranking.recalculation_enabled')
+          return Promise.resolve('false');
         return Promise.resolve(null);
       });
 
@@ -1051,8 +1058,10 @@ describe('RankingsService', () => {
 
     it('recalculateAll: skips ONLY steps 2 and 3 if member kill-switch off', async () => {
       mockSystemConfig.get.mockImplementation((key: string) => {
-        if (key === 'ranking.recalculation_enabled') return Promise.resolve('true');
-        if (key === 'member_ranking.recalculation_enabled') return Promise.resolve('false');
+        if (key === 'ranking.recalculation_enabled')
+          return Promise.resolve('true');
+        if (key === 'member_ranking.recalculation_enabled')
+          return Promise.resolve('false');
         return Promise.resolve(null);
       });
 
@@ -1121,7 +1130,9 @@ describe('RankingsService', () => {
       ).resolves.toBeUndefined();
 
       // Only the successful enrollment triggers an upsert
-      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(
+        1,
+      );
     });
 
     it('recalculateSectionAggregates: per-section error skips', async () => {
@@ -1156,7 +1167,9 @@ describe('RankingsService', () => {
   describe('recalculateEnrollmentRankings — delta mode', () => {
     // Shared setup: 1 club → 1 section (type 2) → 1 class (id 5) → enrolled members
     const setupClubChain = () => {
-      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(mockActiveYear);
+      mockPrismaService.ecclesiastical_years.findUnique.mockResolvedValue(
+        mockActiveYear,
+      );
       mockPrismaService.clubs.findMany.mockResolvedValue([{ club_id: 10 }]);
       mockPrismaService.club_sections.findMany.mockResolvedValue([
         { club_section_id: 100, club_type_id: 2 },
@@ -1190,7 +1203,9 @@ describe('RankingsService', () => {
       await service.recalculateEnrollmentRankings(2026, 'delta');
 
       // Verify aggregate was called to determine previousRecalc
-      expect(mockPrismaService.enrollmentRanking.aggregate).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.enrollmentRanking.aggregate,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { ecclesiastical_year_id: 2026 },
           _max: { composite_calculated_at: true },
@@ -1207,7 +1222,9 @@ describe('RankingsService', () => {
       );
 
       // The eligible enrollment was processed
-      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(
+        1,
+      );
     });
 
     it('mode=delta + previousRecalc set + no enrollments pass filter → skips (upsert not called)', async () => {
@@ -1251,11 +1268,14 @@ describe('RankingsService', () => {
       await service.recalculateEnrollmentRankings(2026, 'delta');
 
       // findMany must NOT include last_progress_change filter (full mode fallback)
-      const findManyCall = mockPrismaService.enrollments.findMany.mock.calls[0][0];
+      const findManyCall =
+        mockPrismaService.enrollments.findMany.mock.calls[0][0];
       expect(findManyCall.where).not.toHaveProperty('last_progress_change');
 
       // Enrollment was still processed (full mode behaviour)
-      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(
+        1,
+      );
     });
 
     it('mode=full (default) → ignores last_progress_change, processes all enrollments', async () => {
@@ -1270,14 +1290,19 @@ describe('RankingsService', () => {
       await service.recalculateEnrollmentRankings(2026); // default mode = 'full'
 
       // aggregate is never called in full mode
-      expect(mockPrismaService.enrollmentRanking.aggregate).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.enrollmentRanking.aggregate,
+      ).not.toHaveBeenCalled();
 
       // findMany has no last_progress_change filter
-      const findManyCall = mockPrismaService.enrollments.findMany.mock.calls[0][0];
+      const findManyCall =
+        mockPrismaService.enrollments.findMany.mock.calls[0][0];
       expect(findManyCall.where).not.toHaveProperty('last_progress_change');
 
       // Both enrollments processed
-      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(
+        2,
+      );
     });
 
     it('mode=delta filter applied at Prisma query — WHERE clause includes gt: previousRecalc', async () => {
@@ -1321,7 +1346,9 @@ describe('RankingsService', () => {
       // argument is a TemplateStringsArray. We stringify the call args to inspect
       // the SQL fragments embedded in the template strings array.
       const callArgs = mockPrismaService.$executeRaw.mock.calls[0];
-      const sqlStrings: string = (callArgs[0] as TemplateStringsArray).join('__PARAM__');
+      const sqlStrings: string = (callArgs[0] as TemplateStringsArray).join(
+        '__PARAM__',
+      );
 
       expect(sqlStrings).toContain('DENSE_RANK()');
       expect(sqlStrings).toContain('NULLS LAST');
@@ -1337,7 +1364,9 @@ describe('RankingsService', () => {
       expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
 
       const callArgs = mockPrismaService.$executeRaw.mock.calls[0];
-      const sqlStrings: string = (callArgs[0] as TemplateStringsArray).join('__PARAM__');
+      const sqlStrings: string = (callArgs[0] as TemplateStringsArray).join(
+        '__PARAM__',
+      );
 
       expect(sqlStrings).toContain('DENSE_RANK()');
       expect(sqlStrings).toContain('NULLS LAST');

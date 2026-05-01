@@ -93,7 +93,10 @@ export class AwardCategoriesController {
     @Query('scope') scope?: string,
     @Query('include_legacy') includeLegacy?: string,
   ) {
-    if (scope !== undefined && !AWARD_CATEGORY_SCOPES.includes(scope as AwardCategoryScope)) {
+    if (
+      scope !== undefined &&
+      !AWARD_CATEGORY_SCOPES.includes(scope as AwardCategoryScope)
+    ) {
       throw new AppBadRequestException(ErrorCode.AWARD_CATEGORY_SCOPE_INVALID);
     }
 

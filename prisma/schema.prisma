@@ -2253,9 +2253,10 @@ model award_categories {
   created_at        DateTime @default(now()) @db.Timestamptz(6)
   modified_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  min_composite_pct Decimal? @db.Decimal(5, 2)
-  max_composite_pct Decimal? @db.Decimal(5, 2)
-  is_legacy         Boolean  @default(false)
+  min_composite_pct Decimal?        @db.Decimal(5, 2)
+  max_composite_pct Decimal?        @db.Decimal(5, 2)
+  is_legacy         Boolean         @default(false)
+  tier              award_tier_enum?
 
   club_type           club_types?            @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   rankings            club_annual_rankings[]
@@ -2510,6 +2511,13 @@ enum achievement_tier {
   SILVER
   GOLD
   PLATINUM
+  DIAMOND
+}
+
+enum award_tier_enum {
+  BRONZE
+  SILVER
+  GOLD
   DIAMOND
 }
 

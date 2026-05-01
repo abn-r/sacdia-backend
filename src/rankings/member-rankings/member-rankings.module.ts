@@ -30,10 +30,7 @@ import { AnnualFoldersModule } from '../../annual-folders/annual-folders.module'
  * This module is imported from AnnualFoldersModule.imports[] (Task 12 Q2.a).
  */
 @Module({
-  imports: [
-    SystemConfigModule,
-    forwardRef(() => AnnualFoldersModule),
-  ],
+  imports: [SystemConfigModule, forwardRef(() => AnnualFoldersModule)],
   controllers: [MemberRankingsController],
   providers: [
     MemberRankingsService,

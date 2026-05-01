@@ -22,13 +22,16 @@ export class SectionRankingResponseDto {
   })
   rank_position!: number | null;
 
-  @ApiProperty({ description: 'Number of active enrollments in this section for the year' })
+  @ApiProperty({
+    description: 'Number of active enrollments in this section for the year',
+  })
   active_enrollment_count!: number;
 
   @ApiPropertyOptional({
     type: AwardedCategoryDto,
     nullable: true,
-    description: 'Award category assigned to this section (null = not yet wired at section level)',
+    description:
+      'Award category assigned to this section (null = not yet wired at section level)',
   })
   awarded_category!: AwardedCategoryDto | null;
 

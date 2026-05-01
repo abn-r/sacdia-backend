@@ -11,7 +11,15 @@ import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
  */
 describe('RankingsController', () => {
   let controller: RankingsController;
-  let rankingsService: jest.Mocked<Pick<RankingsService, 'getRankings' | 'getRankingForClub' | 'getBreakdown' | 'recalculateRankings'>>;
+  let rankingsService: jest.Mocked<
+    Pick<
+      RankingsService,
+      | 'getRankings'
+      | 'getRankingForClub'
+      | 'getBreakdown'
+      | 'recalculateRankings'
+    >
+  >;
 
   beforeEach(async () => {
     rankingsService = {
@@ -113,9 +121,9 @@ describe('RankingsController', () => {
         new Error('enrollment not found'),
       );
 
-      await expect(
-        controller.getBreakdown('missing-uuid', 99),
-      ).rejects.toThrow('enrollment not found');
+      await expect(controller.getBreakdown('missing-uuid', 99)).rejects.toThrow(
+        'enrollment not found',
+      );
     });
   });
 });

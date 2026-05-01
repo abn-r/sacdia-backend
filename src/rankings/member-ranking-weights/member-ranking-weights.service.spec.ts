@@ -88,9 +88,9 @@ describe('MemberRankingWeightsService', () => {
   it('create: 50 + 30 + 30 = 110 → throws WEIGHTS_SUM_INVALID', async () => {
     const dto = { class_pct: 50, investiture_pct: 30, camporee_pct: 30 };
 
-    const error = await service
+    const error = (await service
       .create(dto as any, USER_ID)
-      .catch((e) => e) as AppBadRequestException;
+      .catch((e) => e)) as AppBadRequestException;
 
     expect(error).toBeInstanceOf(AppBadRequestException);
     expect(error.code).toBe(ErrorCode.WEIGHTS_SUM_INVALID);
@@ -107,7 +107,11 @@ describe('MemberRankingWeightsService', () => {
   // off-by-one-cent inputs like 99.99.
 
   it('create: 33.33 + 33.33 + 33.33 = 99.99 → throws WEIGHTS_SUM_INVALID', async () => {
-    const dto = { class_pct: 33.33, investiture_pct: 33.33, camporee_pct: 33.33 };
+    const dto = {
+      class_pct: 33.33,
+      investiture_pct: 33.33,
+      camporee_pct: 33.33,
+    };
 
     await expect(service.create(dto as any, USER_ID)).rejects.toThrow(
       AppBadRequestException,
@@ -122,9 +126,9 @@ describe('MemberRankingWeightsService', () => {
       makeRow({ class_pct: 50, investiture_pct: 30, camporee_pct: 20 }),
     );
 
-    const error = await service
+    const error = (await service
       .update(ID, { class_pct: 60 } as any, USER_ID)
-      .catch((e) => e) as AppBadRequestException;
+      .catch((e) => e)) as AppBadRequestException;
 
     expect(error).toBeInstanceOf(AppBadRequestException);
     expect(error.code).toBe(ErrorCode.WEIGHTS_SUM_INVALID);
@@ -134,8 +138,16 @@ describe('MemberRankingWeightsService', () => {
   // ── Test 5: PATCH merge happy path → {40,40,20} = 100 → passes ───────────
 
   it('update: merge existing{50,30,20} + dto{class_pct:40,investiture_pct:40} → 100 → passes', async () => {
-    const existing = makeRow({ class_pct: 50, investiture_pct: 30, camporee_pct: 20 });
-    const updated = makeRow({ class_pct: 40, investiture_pct: 40, camporee_pct: 20 });
+    const existing = makeRow({
+      class_pct: 50,
+      investiture_pct: 30,
+      camporee_pct: 20,
+    });
+    const updated = makeRow({
+      class_pct: 40,
+      investiture_pct: 40,
+      camporee_pct: 20,
+    });
 
     prisma.enrollmentRankingWeight.findUnique.mockResolvedValueOnce(existing);
     prisma.enrollmentRankingWeight.update.mockResolvedValueOnce(updated);
@@ -155,9 +167,9 @@ describe('MemberRankingWeightsService', () => {
   it('remove: findUnique returns null → throws WEIGHTS_NOT_FOUND; is_default check not reached', async () => {
     prisma.enrollmentRankingWeight.findUnique.mockResolvedValueOnce(null);
 
-    const error = await service
+    const error = (await service
       .remove(ID, USER_ID)
-      .catch((e) => e) as AppNotFoundException;
+      .catch((e) => e)) as AppNotFoundException;
 
     expect(error).toBeInstanceOf(AppNotFoundException);
     expect(error.code).toBe(ErrorCode.WEIGHTS_NOT_FOUND);
@@ -172,9 +184,9 @@ describe('MemberRankingWeightsService', () => {
       makeRow({ is_default: true }),
     );
 
-    const error = await service
+    const error = (await service
       .remove(ID, USER_ID)
-      .catch((e) => e) as AppBadRequestException;
+      .catch((e) => e)) as AppBadRequestException;
 
     expect(error).toBeInstanceOf(AppBadRequestException);
     expect(error.code).toBe(ErrorCode.DEFAULT_WEIGHTS_NOT_DELETABLE);
@@ -192,9 +204,9 @@ describe('MemberRankingWeightsService', () => {
     });
     prisma.enrollmentRankingWeight.create.mockRejectedValueOnce(prismaError);
 
-    const error = await service
+    const error = (await service
       .create(dto as any, USER_ID)
-      .catch((e) => e) as AppConflictException;
+      .catch((e) => e)) as AppConflictException;
 
     expect(error).toBeInstanceOf(AppConflictException);
     expect(error.code).toBe(ErrorCode.WEIGHTS_CONFLICT);

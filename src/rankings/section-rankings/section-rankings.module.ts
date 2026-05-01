@@ -18,13 +18,7 @@ import { SectionAggregationService } from './services/section-aggregation.servic
 @Module({
   imports: [],
   controllers: [SectionRankingsController],
-  providers: [
-    SectionRankingsService,
-    SectionAggregationService,
-  ],
-  exports: [
-    SectionRankingsService,
-    SectionAggregationService,
-  ],
+  providers: [SectionRankingsService, SectionAggregationService],
+  exports: [SectionRankingsService, SectionAggregationService],
 })
 export class SectionRankingsModule {}

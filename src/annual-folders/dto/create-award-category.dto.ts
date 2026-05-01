@@ -4,11 +4,13 @@ import {
   IsNumber,
   IsOptional,
   IsIn,
+  IsEnum,
   MaxLength,
   Min,
   Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { award_tier_enum } from '@prisma/client';
 import {
   AWARD_CATEGORY_SCOPES,
   type AwardCategoryScope,
@@ -122,4 +124,13 @@ export class CreateAwardCategoryDto {
   @Min(0)
   @Max(100)
   max_composite_pct?: number;
+
+  @ApiPropertyOptional({
+    enum: award_tier_enum,
+    nullable: true,
+    description: 'Tier classification (Bronze/Silver/Gold/Diamond)',
+  })
+  @IsOptional()
+  @IsEnum(award_tier_enum)
+  tier?: award_tier_enum | null;
 }

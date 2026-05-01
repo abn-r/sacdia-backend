@@ -257,7 +257,10 @@ export class MemberRankingWeightsService {
    *     The global seed row (NULL, NULL) must never be removed — it is the
    *     last-resort fallback used by EnrollmentWeightsResolverService.
    */
-  async remove(id: string, triggeredBy: string): Promise<{ status: 'deleted' }> {
+  async remove(
+    id: string,
+    triggeredBy: string,
+  ): Promise<{ status: 'deleted' }> {
     const row = await this.prisma.enrollmentRankingWeight.findUnique({
       where: { id },
     });

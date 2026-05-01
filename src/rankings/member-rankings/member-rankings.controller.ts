@@ -136,7 +136,12 @@ export class MemberRankingsController {
       clubId = parsed;
     }
     const mode: 'full' | 'delta' = modeRaw === 'delta' ? 'delta' : 'full';
-    return this.service.triggerRecalculate(yearId, req.user.user_id, clubId, mode);
+    return this.service.triggerRecalculate(
+      yearId,
+      req.user.user_id,
+      clubId,
+      mode,
+    );
   }
 
   // ========================================
@@ -161,12 +166,17 @@ export class MemberRankingsController {
       'Access is validated against the caller RBAC scope. ' +
       'enrollmentId is an INTEGER (not UUID).',
   })
-  @ApiParam({ name: 'enrollmentId', type: Number, description: 'Enrollment ID (integer)' })
+  @ApiParam({
+    name: 'enrollmentId',
+    type: Number,
+    description: 'Enrollment ID (integer)',
+  })
   @ApiQuery({ name: 'year_id', required: true, type: Number })
   @ApiResponse({ status: 200, type: MemberBreakdownDto })
   @ApiResponse({
     status: 403,
-    description: 'MEMBER_RANKING_SCOPE_DENIED — caller does not have access to this enrollment',
+    description:
+      'MEMBER_RANKING_SCOPE_DENIED — caller does not have access to this enrollment',
   })
   @ApiResponse({ status: 404, description: 'MEMBER_RANKING_NOT_FOUND' })
   async getBreakdown(

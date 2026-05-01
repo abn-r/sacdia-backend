@@ -27,10 +27,7 @@ export class SectionAggregationService {
       return { composite_score_pct: null, active_enrollment_count: 0 };
     }
 
-    const sum = rows.reduce(
-      (acc, r) => acc + Number(r.composite_score_pct),
-      0,
-    );
+    const sum = rows.reduce((acc, r) => acc + Number(r.composite_score_pct), 0);
     const avg = sum / rows.length;
     return {
       composite_score_pct: Math.min(Math.max(avg, 0), 100),

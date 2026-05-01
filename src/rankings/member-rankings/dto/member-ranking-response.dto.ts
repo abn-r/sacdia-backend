@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { award_tier_enum } from '@prisma/client';
 
 export class AwardedCategoryDto {
   @ApiProperty()
@@ -15,6 +16,9 @@ export class AwardedCategoryDto {
 
   @ApiProperty()
   max_pct!: number;
+
+  @ApiPropertyOptional({ enum: award_tier_enum, nullable: true })
+  tier!: award_tier_enum | null;
 }
 
 export class MemberRankingResponseDto {
@@ -75,7 +79,8 @@ export class MemberRankingResponseDto {
           ? Number(row.camporee_score_pct)
           : null,
       composite_score_pct:
-        row.composite_score_pct !== null && row.composite_score_pct !== undefined
+        row.composite_score_pct !== null &&
+        row.composite_score_pct !== undefined
           ? Number(row.composite_score_pct)
           : null,
       rank_position: row.rank_position ?? null,
@@ -86,6 +91,7 @@ export class MemberRankingResponseDto {
             icon: row.awarded_category.icon ?? null,
             min_pct: Number(row.awarded_category.min_composite_pct),
             max_pct: Number(row.awarded_category.max_composite_pct),
+            tier: row.awarded_category.tier ?? null,
           }
         : null,
       composite_calculated_at:
