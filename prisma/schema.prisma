@@ -389,6 +389,8 @@ model clubs {
   local_fields            local_fields           @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
   quarterly_reports       quarterly_reports[]
   annual_reports          annual_reports[]
+
+  @@index([local_field_id], map: "idx_clubs_local_field_id")
 }
 
 model club_sections {
