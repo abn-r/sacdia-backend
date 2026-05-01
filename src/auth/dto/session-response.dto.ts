@@ -33,6 +33,7 @@ export class SessionItemDto {
   ip_address: string | null;
 
   @ApiProperty({
+    type: String,
     description: 'Geographic location — reserved for future GeoIP integration',
     example: null,
     nullable: true,
