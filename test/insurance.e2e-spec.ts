@@ -11,8 +11,14 @@ import { AppModule } from '../src/app.module';
 import { JwtAuthGuard } from '../src/common/guards';
 import { InsuranceService } from '../src/insurance/insurance.service';
 
+// Stable UUID fixtures — deterministic across runs; required because
+// users.user_id and related FK columns are declared @db.Uuid in Prisma schema.
+// Passing non-UUID strings (e.g. "insured-user-1") raises P2007.
+const FIX_USER_SUB = '00000000-0000-0000-0000-000000000001';
+const FIX_MEMBER_ID = '00000000-0000-0000-0000-000000000002';
+
 const TEST_USER = {
-  sub: 'insured-user-1',
+  sub: FIX_USER_SUB,
   email: 'insurance@test.local',
 };
 
@@ -76,7 +82,7 @@ describe('Insurance E2E', () => {
   it('GET /clubs/:clubId/sections/:sectionId/members/insurance returns the mapped list', async () => {
     mockInsuranceService.listMembersInsurance.mockResolvedValue([
       {
-        user_id: 'member-1',
+        user_id: FIX_MEMBER_ID,
         name: 'Juan',
         paternal_last_name: 'García',
         maternal_last_name: 'López',
@@ -110,7 +116,7 @@ describe('Insurance E2E', () => {
       status: 'success',
       data: [
         {
-          user_id: 'member-1',
+          user_id: FIX_MEMBER_ID,
           name: 'Juan',
           paternal_last_name: 'García',
           maternal_last_name: 'López',
@@ -134,7 +140,7 @@ describe('Insurance E2E', () => {
 
   it('GET /users/:memberId/insurance returns the member insurance detail', async () => {
     mockInsuranceService.getMemberInsurance.mockResolvedValue({
-      user_id: 'member-1',
+      user_id: FIX_MEMBER_ID,
       name: 'Juan',
       paternal_last_name: 'García',
       maternal_last_name: 'López',
@@ -159,21 +165,21 @@ describe('Insurance E2E', () => {
     });
 
     const response = await request(app.getHttpServer())
-      .get('/api/v1/users/member-1/insurance')
+      .get(`/api/v1/users/${FIX_MEMBER_ID}/insurance`)
       .set(authHeaders())
       .expect(200);
 
     expect(response.body).toEqual({
       status: 'success',
       data: expect.objectContaining({
-        user_id: 'member-1',
+        user_id: FIX_MEMBER_ID,
         insurance: expect.objectContaining({
           insurance_id: 101,
         }),
       }),
     });
     expect(mockInsuranceService.getMemberInsurance).toHaveBeenCalledWith(
-      'member-1',
+      FIX_MEMBER_ID,
     );
   });
 
@@ -189,7 +195,7 @@ describe('Insurance E2E', () => {
     });
 
     const response = await request(app.getHttpServer())
-      .post('/api/v1/users/member-1/insurance')
+      .post(`/api/v1/users/${FIX_MEMBER_ID}/insurance`)
       .set(authHeaders())
       .field('insurance_type', 'CAMPOREE')
       .field('policy_number', 'POL-202')
@@ -215,7 +221,7 @@ describe('Insurance E2E', () => {
     expect(mockInsuranceService.createInsurance).toHaveBeenCalledTimes(1);
     const [memberId, body, file, user] =
       mockInsuranceService.createInsurance.mock.calls[0];
-    expect(memberId).toBe('member-1');
+    expect(memberId).toBe(FIX_MEMBER_ID);
     expect(body).toEqual(
       expect.objectContaining({
         insurance_type: 'CAMPOREE',
