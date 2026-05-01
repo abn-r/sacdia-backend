@@ -45,7 +45,8 @@ function isPlaceholderRedisUrl(value: string): boolean {
             try {
               new URL(rawRedisUrl);
 
-              const { default: KeyvRedis } = await import('@keyv/redis');
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const KeyvRedis = require('@keyv/redis').default as new (url: string) => unknown;
               console.log('🔄 Attempting to connect to Redis...');
 
               const keyvRedis = new KeyvRedis(rawRedisUrl);
