@@ -24,12 +24,17 @@ import {
   CreateAssignmentRequestDto,
   ReviewAssignmentRequestDto,
 } from './dto';
-import { RequirePermissions, CurrentUser } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  CurrentUser,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('requests')
 @Controller('requests')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'active_assignment' })
 @ApiBearerAuth()
 export class RequestsController {
   constructor(private readonly requestsService: RequestsService) {}
@@ -39,7 +44,7 @@ export class RequestsController {
   // ========================================
 
   @Post('transfers')
-  @RequirePermissions('clubs:read')
+  @RequirePermissions('requests:read')
   @ApiOperation({
     summary: 'Crear solicitud de transferencia',
     description:
@@ -67,7 +72,7 @@ export class RequestsController {
   }
 
   @Get('transfers')
-  @RequirePermissions('club_roles:read')
+  @RequirePermissions('requests:read')
   @ApiOperation({
     summary: 'Listar solicitudes de transferencia',
     description: 'Lista solicitudes de transferencia con filtros opcionales',
@@ -100,7 +105,7 @@ export class RequestsController {
   }
 
   @Get('transfers/:requestId')
-  @RequirePermissions('club_roles:read')
+  @RequirePermissions('requests:read')
   @ApiOperation({
     summary: 'Obtener solicitud de transferencia',
     description:
@@ -122,7 +127,7 @@ export class RequestsController {
   }
 
   @Post('transfers/:requestId/review')
-  @RequirePermissions('club_roles:assign')
+  @RequirePermissions('requests:review')
   @ApiOperation({
     summary: 'Revisar solicitud de transferencia',
     description:
@@ -159,7 +164,7 @@ export class RequestsController {
   // ========================================
 
   @Post('assignments')
-  @RequirePermissions('club_roles:assign')
+  @RequirePermissions('requests:review')
   @ApiOperation({
     summary: 'Crear solicitud de asignación de rol',
     description:
@@ -188,7 +193,7 @@ export class RequestsController {
   }
 
   @Get('assignments')
-  @RequirePermissions('club_roles:read')
+  @RequirePermissions('requests:read')
   @ApiOperation({
     summary: 'Listar solicitudes de asignación de rol',
     description:
@@ -222,7 +227,7 @@ export class RequestsController {
   }
 
   @Get('assignments/:requestId')
-  @RequirePermissions('club_roles:read')
+  @RequirePermissions('requests:read')
   @ApiOperation({
     summary: 'Obtener solicitud de asignación de rol',
     description:
@@ -244,7 +249,7 @@ export class RequestsController {
   }
 
   @Post('assignments/:requestId/review')
-  @RequirePermissions('club_roles:assign')
+  @RequirePermissions('requests:review')
   @ApiOperation({
     summary: 'Revisar solicitud de asignación de rol',
     description:

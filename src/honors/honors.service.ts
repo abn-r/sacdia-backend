@@ -1,12 +1,11 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppConflictException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -26,6 +25,16 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { TranslationService } from '../common/services/translation.service';
+import { AchievementsService } from '../achievements/achievements.service';
+import pLimit from 'p-limit';
+
+// Cap concurrent presign calls for USERS_HONORS bucket images. A single honor
+// detail request resolves certificate + document + N image URLs. Without the
+// cap, a bulk getUserHonors response (up to 500 honors × N images each) would
+// fire thousands of simultaneous HMAC presigns. Cap is 20, matching the pattern
+// used by PROFILE_URL_LIMITER in camporees.service.ts.
+export const HONOR_DETAIL_URL_LIMITER = pLimit(20);
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -41,6 +50,8 @@ export class HonorsService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly achievementsService: AchievementsService,
+    private readonly translationService: TranslationService,
   ) {}
 
   // ========================================
@@ -51,6 +62,7 @@ export class HonorsService {
     filters?: HonorFiltersDto,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
+    const locale = this.translationService.getCurrentLocale();
     const where = {
       active: true,
       ...(filters?.categoryId && { honors_category_id: filters.categoryId }),
@@ -64,6 +76,10 @@ export class HonorsService {
         include: {
           honors_categories: { select: { name: true, icon: true } },
           club_types: { select: { name: true } },
+          translations: {
+            where: { locale },
+            select: { locale: true, name: true, description: true },
+          },
         },
         orderBy: [{ honors_category_id: 'asc' }, { name: 'asc' }],
         skip: pagination?.skip ?? 0,
@@ -72,14 +88,22 @@ export class HonorsService {
       this.prisma.honors.count({ where }),
     ]);
 
-    return createPaginatedResult(
+    const translated = this.translationService.translateMany(
       data,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
+
+    return createPaginatedResult(
+      translated,
       total,
       pagination ?? new PaginationDto(),
     );
   }
 
   async getGroupedByCategory(filters?: HonorFiltersDto) {
+    const locale = this.translationService.getCurrentLocale();
     const where = {
       active: true,
       ...(filters?.categoryId && { honors_category_id: filters.categoryId }),
@@ -100,6 +124,10 @@ export class HonorsService {
         material_url: true,
         club_type_id: true,
         honors_category_id: true,
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
         honors_categories: {
           select: {
             honor_category_id: true,
@@ -136,7 +164,15 @@ export class HonorsService {
       }
     >();
 
-    for (const honor of honors) {
+    // Apply translations to honors before grouping
+    const translatedHonors = this.translationService.translateMany(
+      honors,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
+
+    for (const honor of translatedHonors as any[]) {
       const category = honor.honors_categories;
       const key = category?.honor_category_id
         ? String(category.honor_category_id)
@@ -177,36 +213,85 @@ export class HonorsService {
   }
 
   async findOne(honorId: number) {
+    const locale = this.translationService.getCurrentLocale();
     const honor = await this.prisma.honors.findUnique({
       where: { honor_id: honorId, active: true },
       include: {
         honors_categories: true,
         club_types: { select: { name: true } },
-        master_honors: { select: { name: true } },
+        master_honors: {
+          select: {
+            name: true,
+            translations: {
+              where: { locale },
+              select: { locale: true, name: true },
+            },
+          },
+        },
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
       },
     });
 
     if (!honor) {
-      throw new NotFoundException(`Honor with ID ${honorId} not found`);
+      throw new AppNotFoundException(ErrorCode.HONOR_NOT_FOUND);
     }
 
-    return honor;
+    // Translate honor
+    const translatedHonor = this.translationService.translateMany(
+      [honor],
+      locale,
+      ['name', 'description'],
+      'translations',
+    )[0];
+
+    // Translate master_honor name if present
+    if (translatedHonor.master_honors) {
+      const masterTranslated = this.translationService.translateMany(
+        [translatedHonor.master_honors],
+        locale,
+        ['name'],
+        'translations',
+      )[0];
+      (translatedHonor as any).master_honors = masterTranslated;
+    }
+
+    return translatedHonor;
   }
 
   async getCategories() {
     // Small catalog table: expected to remain under ~100 rows.
     // No pagination needed; a safety cap is applied as a precaution.
-    return this.prisma.honors_categories.findMany({
+    //
+    // Approach X i18n: Spanish (es) lives in main table columns.
+    // For non-es locales, JOIN honors_categories_translations and overlay fields.
+    // If no translation row exists for the requested locale, fall back to Spanish.
+    const locale = this.translationService.getCurrentLocale();
+
+    const records = await this.prisma.honors_categories.findMany({
       where: { active: true },
       select: {
         honor_category_id: true,
         name: true,
         description: true,
         icon: true,
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
       },
       orderBy: { name: 'asc' },
       take: 200,
     });
+
+    return this.translationService.translateMany(
+      records,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
   }
 
   // ========================================
@@ -238,13 +323,15 @@ export class HonorsService {
     });
 
     return Promise.all(
-      honors.map((userHonor) => this.mapUserHonorPrivateUrls(userHonor)),
+      honors.map((userHonor) =>
+        HONOR_DETAIL_URL_LIMITER(() => this.mapUserHonorPrivateUrls(userHonor)),
+      ),
     );
   }
 
   async startHonor(userId: string, honorId: number, dto?: StartHonorDto) {
     // Verificar que el honor existe y está activo
-    await this.findOne(honorId);
+    const honor = await this.findOne(honorId);
 
     // Buscar si existe un registro previo (activo o inactivo)
     const existing = await this.prisma.users_honors.findFirst({
@@ -256,7 +343,7 @@ export class HonorsService {
 
     // Si ya está activo, rechazar
     if (existing && existing.active) {
-      throw new ConflictException('User already has this honor in progress');
+      throw new AppConflictException(ErrorCode.HONOR_USER_ALREADY_IN_PROGRESS);
     }
 
     // Si existe pero está inactivo, reactivar; si no, crear nuevo
@@ -288,6 +375,23 @@ export class HonorsService {
         },
       });
 
+      try {
+        await this.achievementsService.emitEvent({
+          userId,
+          eventType: 'honor.started',
+          payload: {
+            honor_id: honor.honor_id,
+            category_id: honor.honors_category_id,
+            honor_name: honor.name,
+            club_type_id: honor.club_type_id,
+          },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to emit achievement event: ${(error as Error).message}`,
+        );
+      }
+
       return this.mapUserHonorPrivateUrls(updated);
     }
 
@@ -313,6 +417,23 @@ export class HonorsService {
         },
       },
     });
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId,
+        eventType: 'honor.started',
+        payload: {
+          honor_id: honor.honor_id,
+          category_id: honor.honors_category_id,
+          honor_name: honor.name,
+          club_type_id: honor.club_type_id,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
+    }
 
     return this.mapUserHonorPrivateUrls(created);
   }
@@ -381,9 +502,9 @@ export class HonorsService {
     }
 
     if (duplicated.size > 0) {
-      throw new BadRequestException(
-        `Duplicate honorId values in payload: ${Array.from(duplicated).join(', ')}`,
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_BULK_DUPLICATE_IDS, {
+        ids: Array.from(duplicated).join(', '),
+      });
     }
 
     const activeHonors = await this.prisma.honors.findMany({
@@ -399,9 +520,9 @@ export class HonorsService {
       (honorId) => !activeHonorIds.has(honorId),
     );
     if (missingHonorIds.length > 0) {
-      throw new NotFoundException(
-        `Honors not found or inactive: ${missingHonorIds.join(', ')}`,
-      );
+      throw new AppNotFoundException(ErrorCode.HONOR_BULK_NOT_FOUND, {
+        ids: missingHonorIds.join(', '),
+      });
     }
 
     const existingUserHonors = await this.prisma.users_honors.findMany({
@@ -460,7 +581,7 @@ export class HonorsService {
     const createdOrUpdated = await Promise.all(operations);
     return Promise.all(
       createdOrUpdated.map((userHonor) =>
-        this.mapUserHonorPrivateUrls(userHonor),
+        HONOR_DETAIL_URL_LIMITER(() => this.mapUserHonorPrivateUrls(userHonor)),
       ),
     );
   }
@@ -479,9 +600,15 @@ export class HonorsService {
     const imageFiles = files.images ?? [];
 
     if (!certificateFile && !documentFile && imageFiles.length === 0) {
-      throw new BadRequestException(
-        'At least one file is required: certificate, document or images',
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_REQUIRED);
+    }
+
+    // Hard cap: reject requests that exceed the maximum number of images per
+    // upload. The controller enforces maxCount: 10 via Multer, but this guard
+    // defends against direct service calls (tests, CLI, future callers) that
+    // bypass the HTTP layer. Keeps the presign fan-out bounded at 10 URLs max.
+    if (imageFiles.length > 10) {
+      throw new AppBadRequestException(ErrorCode.HONOR_EVIDENCE_MAX_REACHED);
     }
 
     await this.findOne(honorId);
@@ -584,8 +711,8 @@ export class HonorsService {
       }
     } catch (error) {
       await this.rollbackUploadedObjects(uploadedObjects);
-      throw new InternalServerErrorException(
-        'Error al subir archivos del honor',
+      throw new AppInternalServerErrorException(
+        ErrorCode.HONOR_FILE_UPLOAD_FAILED,
       );
     }
 
@@ -638,8 +765,8 @@ export class HonorsService {
       );
     } catch (error) {
       await this.rollbackUploadedObjects(uploadedObjects);
-      throw new InternalServerErrorException(
-        'Error al guardar evidencias del honor',
+      throw new AppInternalServerErrorException(
+        ErrorCode.HONOR_FILE_UPLOAD_FAILED,
       );
     }
 
@@ -678,8 +805,13 @@ export class HonorsService {
                 )
               : null,
           images: await Promise.all(
-            uploadedImageUrls.map(async (url) =>
-              this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+            uploadedImageUrls.map((url) =>
+              HONOR_DETAIL_URL_LIMITER(() =>
+                this.resolvePrivateAssetUrl(
+                  StorageBucketAlias.USERS_HONORS,
+                  url,
+                ),
+              ),
             ),
           ),
         },
@@ -702,7 +834,7 @@ export class HonorsService {
     });
 
     if (!userHonor) {
-      throw new NotFoundException('User honor not found');
+      throw new AppNotFoundException(ErrorCode.HONOR_USER_HONOR_NOT_FOUND);
     }
 
     const updateData: any = {
@@ -751,7 +883,7 @@ export class HonorsService {
     });
 
     if (!userHonor) {
-      throw new NotFoundException('User honor not found');
+      throw new AppNotFoundException(ErrorCode.HONOR_USER_HONOR_NOT_FOUND);
     }
 
     return this.prisma.users_honors.update({
@@ -857,30 +989,32 @@ export class HonorsService {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Invalid certificate format. Allowed: PDF, JPG, PNG, WEBP',
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_INVALID_FORMAT, {
+        allowed: 'PDF, JPG, PNG, WEBP',
+      });
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException(
-        'Certificate file too large. Max size: 10MB',
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_TOO_LARGE, {
+        max_mb: '10',
+      });
     }
   }
 
   private validateImageFile(file: Express.Multer.File) {
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Invalid image format. Allowed: JPG, PNG, WEBP',
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_INVALID_FORMAT, {
+        allowed: 'JPG, PNG, WEBP',
+      });
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException('Image file too large. Max size: 10MB');
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_TOO_LARGE, {
+        max_mb: '10',
+      });
     }
   }
 
@@ -894,14 +1028,16 @@ export class HonorsService {
       'image/webp',
     ];
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Invalid document format. Allowed: PDF, DOC, DOCX, JPG, PNG, WEBP',
-      );
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_INVALID_FORMAT, {
+        allowed: 'PDF, DOC, DOCX, JPG, PNG, WEBP',
+      });
     }
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException('Document file too large. Max size: 10MB');
+      throw new AppBadRequestException(ErrorCode.HONOR_FILE_TOO_LARGE, {
+        max_mb: '10',
+      });
     }
   }
 
@@ -1008,7 +1144,9 @@ export class HonorsService {
       );
       images = await Promise.all(
         urls.map((url) =>
-          this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+          HONOR_DETAIL_URL_LIMITER(() =>
+            this.resolvePrivateAssetUrl(StorageBucketAlias.USERS_HONORS, url),
+          ),
         ),
       );
     }

@@ -3,7 +3,8 @@ import { OAuthService } from './oauth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 
 /**
  * OAuthService unit tests — Better Auth edition (W3-008 Part 3).
@@ -493,7 +494,7 @@ describe('OAuthService', () => {
     it('should throw BadRequestException for invalid provider', async () => {
       await expect(
         service.disconnectProvider('user-123', 'github'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_OAUTH_PROVIDER_INVALID });
     });
 
     it('should throw BadRequestException when user would lose last auth method', async () => {
@@ -504,7 +505,7 @@ describe('OAuthService', () => {
 
       await expect(
         service.disconnectProvider('user-123', 'google'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_OAUTH_ONLY_AUTH_METHOD });
     });
 
     it('should delete the account row when user has credential fallback', async () => {
@@ -534,7 +535,9 @@ describe('OAuthService', () => {
 
       await expect(
         service.disconnectProvider('user-123', 'google'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_OAUTH_PROVIDER_NOT_CONNECTED,
+      });
     });
   });
 });

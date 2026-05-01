@@ -39,6 +39,8 @@ import {
   UpdatePaymentDto,
   RejectEnrollmentDto,
   CamporeeStatusQueryDto,
+  UnionMembersPaginationDto,
+  CamporeeMembersPaginationDto,
 } from './dto';
 
 @ApiTags('camporees')
@@ -63,7 +65,7 @@ export class CamporeesController {
   @ApiQuery({ name: 'active', required: false, type: Boolean })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @RequirePermissions('activities:read')
+  @RequirePermissions('camporees:read')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiResponse({ status: 200, description: 'Lista paginada de camporees' })
   async findAll(
@@ -100,7 +102,7 @@ export class CamporeesController {
   @ApiQuery({ name: 'year', required: false, type: Number })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @RequirePermissions('activities:read')
+  @RequirePermissions('camporees:read')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiResponse({
     status: 200,
@@ -133,7 +135,7 @@ export class CamporeesController {
   @Get('union/:camporeeId')
   @ApiOperation({ summary: 'Obtener camporee de unión por ID' })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @RequirePermissions('activities:read')
+  @RequirePermissions('camporees:read')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiResponse({ status: 200, description: 'Camporee de unión encontrado' })
   @ApiResponse({
@@ -145,7 +147,7 @@ export class CamporeesController {
   }
 
   @Post('union')
-  @RequirePermissions('activities:create')
+  @RequirePermissions('camporees:create')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Crear camporee de unión',
@@ -163,7 +165,7 @@ export class CamporeesController {
   }
 
   @Patch('union/:camporeeId')
-  @RequirePermissions('activities:update')
+  @RequirePermissions('camporees:update')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Actualizar camporee de unión' })
   @ApiParam({ name: 'camporeeId', type: Number })
@@ -180,7 +182,7 @@ export class CamporeesController {
   }
 
   @Delete('union/:camporeeId')
-  @RequirePermissions('activities:delete')
+  @RequirePermissions('camporees:delete')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Desactivar camporee de unión' })
   @ApiParam({ name: 'camporeeId', type: Number })
@@ -306,7 +308,8 @@ export class CamporeesController {
   @ApiOperation({
     summary: 'Listar miembros del camporee de unión',
     description:
-      'Obtiene la lista de miembros registrados en el camporee de unión',
+      'Obtiene la lista paginada de miembros registrados en el camporee de unión. ' +
+      'Página 1-indexed, límite 1-200 (default 100).',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiQuery({
@@ -320,13 +323,30 @@ export class CamporeesController {
       'cancelled',
     ],
   })
-  @ApiResponse({ status: 200, description: 'Lista de miembros' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Número de página (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Elementos por página, máximo 200 (default: 100)',
+  })
+  @ApiResponse({ status: 200, description: 'Lista paginada de miembros' })
   @ApiResponse({ status: 404, description: 'Camporee de unión no encontrado' })
   async getUnionMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: CamporeeStatusQueryDto,
+    @Query() pagination: UnionMembersPaginationDto,
   ) {
-    return this.camporeesService.getUnionMembers(camporeeId, query.status);
+    return this.camporeesService.getUnionMembers(
+      camporeeId,
+      query.status,
+      pagination,
+    );
   }
 
   @Delete('union/:camporeeId/members/:userId')
@@ -679,7 +699,7 @@ export class CamporeesController {
   @Get(':camporeeId')
   @ApiOperation({ summary: 'Obtener camporee por ID' })
   @ApiParam({ name: 'camporeeId', type: Number })
-  @RequirePermissions('activities:read')
+  @RequirePermissions('camporees:read')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiResponse({ status: 200, description: 'Camporee encontrado' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
@@ -688,7 +708,7 @@ export class CamporeesController {
   }
 
   @Post()
-  @RequirePermissions('activities:create')
+  @RequirePermissions('camporees:create')
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Crear camporee',
@@ -702,7 +722,7 @@ export class CamporeesController {
   }
 
   @Patch(':camporeeId')
-  @RequirePermissions('activities:update')
+  @RequirePermissions('camporees:update')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Actualizar camporee' })
   @ApiParam({ name: 'camporeeId', type: Number })
@@ -716,7 +736,7 @@ export class CamporeesController {
   }
 
   @Delete(':camporeeId')
-  @RequirePermissions('activities:delete')
+  @RequirePermissions('camporees:delete')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({ summary: 'Desactivar camporee' })
   @ApiParam({ name: 'camporeeId', type: Number })
@@ -753,7 +773,9 @@ export class CamporeesController {
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Listar miembros del camporee',
-    description: 'Obtiene la lista de miembros registrados en el camporee',
+    description:
+      'Obtiene la lista paginada de miembros registrados en el camporee. ' +
+      'Página 1-indexed, límite 1-100 (default 50).',
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiQuery({
@@ -761,13 +783,30 @@ export class CamporeesController {
     required: false,
     enum: ['registered', 'pending_approval', 'approved', 'rejected'],
   })
-  @ApiResponse({ status: 200, description: 'Lista de miembros' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Número de página (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Elementos por página, máximo 100 (default: 50)',
+  })
+  @ApiResponse({ status: 200, description: 'Lista paginada de miembros' })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() query: CamporeeStatusQueryDto,
+    @Query() pagination: CamporeeMembersPaginationDto,
   ) {
-    return this.camporeesService.getMembers(camporeeId, query.status);
+    return this.camporeesService.getMembers(
+      camporeeId,
+      query.status,
+      pagination,
+    );
   }
 
   @Delete(':camporeeId/members/:userId')
@@ -951,6 +990,7 @@ export class CamporeesController {
 
   @Patch('payments/:paymentId')
   @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Actualizar pago',
     description: 'Actualiza los datos de un pago registrado',
@@ -967,6 +1007,7 @@ export class CamporeesController {
 
   @Patch('payments/:camporeePaymentId/approve')
   @RequirePermissions('attendance:approve_late')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Aprobar pago tardío de camporee' })
   @ApiParam({
     name: 'camporeePaymentId',
@@ -987,6 +1028,7 @@ export class CamporeesController {
 
   @Patch('payments/:camporeePaymentId/reject')
   @RequirePermissions('attendance:approve_late')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Rechazar pago tardío de camporee' })
   @ApiParam({
     name: 'camporeePaymentId',

@@ -1,12 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import {
+  AppNotFoundException,
+  AppConflictException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class MembershipRequestsService {
+  private readonly logger = new Logger(MembershipRequestsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -44,68 +53,94 @@ export class MembershipRequestsService {
   /**
    * Approve a pending membership request.
    * Sets status to 'active' and clears expires_at.
+   *
+   * Uses an atomic updateMany with the status guard in the WHERE clause to
+   * prevent TOCTOU races where concurrent approvals both pass a prior findFirst
+   * check and both succeed.
+   *
+   * NOTE (audit trail): approvedById is accepted but not persisted — the schema
+   * does not have approved_by_id / approved_at columns on club_role_assignments.
+   * A separate migration is required to close this audit gap.
    */
   async approve(assignmentId: string, approvedById: string) {
-    const assignment = await this.prisma.club_role_assignments.findFirst({
-      where: {
-        assignment_id: assignmentId,
-        status: 'pending',
-        active: true,
-      },
-    });
+    const [result, assignment] = await this.prisma.$transaction([
+      this.prisma.club_role_assignments.updateMany({
+        where: { assignment_id: assignmentId, status: 'pending', active: true },
+        data: { status: 'active', expires_at: null, modified_at: new Date() },
+      }),
+      this.prisma.club_role_assignments.findUnique({
+        where: { assignment_id: assignmentId },
+      }),
+    ]);
 
-    if (!assignment) {
-      throw new NotFoundException('Solicitud no encontrada');
+    if (result.count === 0) {
+      if (!assignment) {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
 
-    const updated = await this.prisma.club_role_assignments.update({
-      where: { assignment_id: assignmentId },
-      data: {
-        status: 'active',
-        expires_at: null,
-        modified_at: new Date(),
-      },
-    });
-
     await this.authorizationContext.invalidateUserAuthorizationCache(
-      assignment.user_id,
+      assignment!.user_id,
     );
 
-    return updated;
+    this.emitRealtimeInvalidation(
+      assignment!.club_section_id,
+      assignment!.assignment_id,
+      'UPDATED',
+      approvedById,
+    );
+
+    return assignment;
   }
 
   /**
    * Reject a pending membership request.
    * Sets status to 'rejected', clears expires_at, and stores optional reason.
+   *
+   * Uses an atomic updateMany with the status guard in the WHERE clause to
+   * prevent TOCTOU races where concurrent rejections both pass a prior findFirst
+   * check and both succeed.
+   *
+   * NOTE (audit trail): rejectedById is accepted but not persisted — the schema
+   * does not have rejected_by_id / rejected_at columns on club_role_assignments.
+   * A separate migration is required to close this audit gap.
    */
   async reject(assignmentId: string, rejectedById: string, reason?: string) {
-    const assignment = await this.prisma.club_role_assignments.findFirst({
-      where: {
-        assignment_id: assignmentId,
-        status: 'pending',
-        active: true,
-      },
-    });
+    const [result, assignment] = await this.prisma.$transaction([
+      this.prisma.club_role_assignments.updateMany({
+        where: { assignment_id: assignmentId, status: 'pending', active: true },
+        data: {
+          status: 'rejected',
+          expires_at: null,
+          rejection_reason: reason ?? null,
+          modified_at: new Date(),
+        },
+      }),
+      this.prisma.club_role_assignments.findUnique({
+        where: { assignment_id: assignmentId },
+      }),
+    ]);
 
-    if (!assignment) {
-      throw new NotFoundException('Solicitud no encontrada');
+    if (result.count === 0) {
+      if (!assignment) {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+      throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
     }
 
-    const updated = await this.prisma.club_role_assignments.update({
-      where: { assignment_id: assignmentId },
-      data: {
-        status: 'rejected',
-        expires_at: null,
-        rejection_reason: reason ?? null,
-        modified_at: new Date(),
-      },
-    });
-
     await this.authorizationContext.invalidateUserAuthorizationCache(
-      assignment.user_id,
+      assignment!.user_id,
     );
 
-    return updated;
+    this.emitRealtimeInvalidation(
+      assignment!.club_section_id,
+      assignment!.assignment_id,
+      'DELETED',
+      rejectedById,
+    );
+
+    return assignment;
   }
 
   /**
@@ -136,5 +171,28 @@ export class MembershipRequestsService {
     });
 
     return result.count;
+  }
+
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number | string,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'members',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 }

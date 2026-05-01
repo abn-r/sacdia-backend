@@ -1,13 +1,13 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogsService } from '../catalogs/catalogs.service';
 import { CreateClubEnrollmentDto, UpdateClubEnrollmentDto } from './dto';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+  AppConflictException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class ClubEnrollmentsService {
@@ -34,15 +34,11 @@ export class ClubEnrollmentsService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Club section with ID ${sectionId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.CE_SECTION_NOT_FOUND);
     }
 
     if (section.main_club_id !== clubId) {
-      throw new BadRequestException(
-        `Section ${sectionId} does not belong to club ${clubId}`,
-      );
+      throw new AppBadRequestException(ErrorCode.CE_SECTION_NOT_FOUND);
     }
 
     // Get current ecclesiastical year
@@ -61,9 +57,7 @@ export class ClubEnrollmentsService {
       });
 
       if (existing) {
-        throw new ConflictException(
-          `An enrollment already exists for section ${sectionId} in the current ecclesiastical year`,
-        );
+        throw new AppConflictException(ErrorCode.CE_ALREADY_ENROLLED);
       }
 
       this.validateSecretaryTreasurerConstraint(dto);
@@ -108,7 +102,8 @@ export class ClubEnrollmentsService {
   // ========================================
 
   async findCurrentBySectionId(sectionId: number) {
-    const currentYear = await this.catalogsService.getCurrentEcclesiasticalYear();
+    const currentYear =
+      await this.catalogsService.getCurrentEcclesiasticalYear();
     if (!currentYear) {
       return null;
     }
@@ -179,9 +174,7 @@ export class ClubEnrollmentsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Enrollment with ID ${enrollmentId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.CE_ENROLLMENT_NOT_FOUND);
     }
 
     this.validateSecretaryTreasurerConstraint(dto);
@@ -253,18 +246,18 @@ export class ClubEnrollmentsService {
     const hasCombinedRole = dto.secretary_treasurer_id;
 
     if (hasIndividualRoles && hasCombinedRole) {
-      throw new BadRequestException(
-        'secretary_treasurer_id is mutually exclusive with secretary_id and treasurer_id. ' +
-          'A club must use either the combined role or separate roles, not both.',
+      throw new AppBadRequestException(
+        ErrorCode.CE_ECCLESIASTICAL_YEAR_REQUIRED,
       );
     }
   }
 
   private async getActiveEcclesiasticalYear() {
-    const currentYear = await this.catalogsService.getCurrentEcclesiasticalYear();
+    const currentYear =
+      await this.catalogsService.getCurrentEcclesiasticalYear();
 
     if (!currentYear) {
-      throw new BadRequestException('No active ecclesiastical year configured');
+      throw new AppBadRequestException(ErrorCode.CE_NO_ACTIVE_YEAR);
     }
 
     return currentYear;

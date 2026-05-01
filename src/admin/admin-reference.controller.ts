@@ -16,13 +16,23 @@ import {
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  PermissionsGuard,
+  GlobalRolesGuard,
+} from '../common/guards';
 import { AdminReferenceService } from './admin-reference.service';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import {
   CreateActivityTypeDto,
   CreateAllergyDto,
+  CreateClubIdealDto,
+  CreateClubTypeDto,
   CreateDiseaseDto,
   CreateEcclesiasticalYearDto,
   CreateHonorCategoryDto,
@@ -31,6 +41,8 @@ import {
   CreateRelationshipTypeDto,
   UpdateActivityTypeDto,
   UpdateAllergyDto,
+  UpdateClubIdealDto,
+  UpdateClubTypeDto,
   UpdateDiseaseDto,
   UpdateEcclesiasticalYearDto,
   UpdateHonorCategoryDto,
@@ -42,6 +54,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminReferenceController {
   constructor(
@@ -287,6 +300,114 @@ export class AdminReferenceController {
   @ApiOperation({ summary: 'List club ideals for admin' })
   async listClubIdeals() {
     const data = await this.referenceService.listClubIdeals();
+    return { status: 'success', data };
+  }
+
+  @Post('club-ideals')
+  @GlobalRoles('super_admin')
+  @RequirePermissions('catalogs:create')
+  @ApiOperation({ summary: 'Create club ideal (super_admin only)' })
+  async createClubIdeal(
+    @Body() dto: CreateClubIdealDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.createClubIdeal(
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Patch('club-ideals/:clubIdealId')
+  @RequirePermissions('catalogs:update')
+  @ApiOperation({
+    summary: 'Update club ideal (admin: edit only; super_admin: full edit)',
+  })
+  async updateClubIdeal(
+    @Param('clubIdealId', ParseIntPipe) clubIdealId: number,
+    @Body() dto: UpdateClubIdealDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.updateClubIdeal(
+      clubIdealId,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('club-ideals/:clubIdealId')
+  @GlobalRoles('super_admin')
+  @RequirePermissions('catalogs:delete')
+  @ApiOperation({ summary: 'Soft delete club ideal (super_admin only)' })
+  async deleteClubIdeal(
+    @Param('clubIdealId', ParseIntPipe) clubIdealId: number,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.deleteClubIdeal(
+      clubIdealId,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  // ========================================
+  // CLUB TYPES
+  // ========================================
+
+  @Get('club-types')
+  @RequirePermissions('catalogs:read')
+  @ApiOperation({ summary: 'List all club types for admin management' })
+  async listClubTypes() {
+    const data = await this.referenceService.listClubTypes();
+    return { status: 'success', data };
+  }
+
+  @Post('club-types')
+  @GlobalRoles('super_admin')
+  @RequirePermissions('catalogs:create')
+  @ApiOperation({ summary: 'Create club type (super_admin only)' })
+  async createClubType(
+    @Body() dto: CreateClubTypeDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.createClubType(
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Patch('club-types/:clubTypeId')
+  @RequirePermissions('catalogs:update')
+  @ApiOperation({
+    summary: 'Update club type (admin: edit only; super_admin: full edit)',
+  })
+  async updateClubType(
+    @Param('clubTypeId', ParseIntPipe) clubTypeId: number,
+    @Body() dto: UpdateClubTypeDto,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.updateClubType(
+      clubTypeId,
+      dto,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('club-types/:clubTypeId')
+  @GlobalRoles('super_admin')
+  @RequirePermissions('catalogs:delete')
+  @ApiOperation({ summary: 'Soft delete club type (super_admin only)' })
+  async deleteClubType(
+    @Param('clubTypeId', ParseIntPipe) clubTypeId: number,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.referenceService.deleteClubType(
+      clubTypeId,
+      this.getActorId(req),
+    );
     return { status: 'success', data };
   }
 

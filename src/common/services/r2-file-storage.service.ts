@@ -1,8 +1,6 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AppInternalServerErrorException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectsCommand,
@@ -64,12 +62,19 @@ export class R2FileStorageService implements FileStorageService {
         `Error uploading object to R2 bucket=${config.bucket} key=${objectKey}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error uploading file to R2');
+      throw new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED);
     }
 
     return {
       key: objectKey,
-      url: this.buildPublicUrl(config.publicBaseUrl, normalizedKey),
+      // objectKey already includes the keyPrefix. buildPublicUrl will detect
+      // whether the prefix is already embedded in publicBaseUrl (embedded-prefix
+      // pattern) and avoid doubling it, or prepend it when the base URL is bare.
+      url: this.buildPublicUrl(
+        config.publicBaseUrl,
+        objectKey,
+        config.keyPrefix,
+      ),
     };
   }
 
@@ -101,14 +106,15 @@ export class R2FileStorageService implements FileStorageService {
             (item) => `${item.Key || 'unknown'} (${item.Code || 'unknown'})`,
           ).join(', ')}`,
         );
-        throw new InternalServerErrorException('Error deleting files from R2');
+        throw new AppInternalServerErrorException(ErrorCode.R2_DELETE_FAILED);
       }
     } catch (error) {
+      if (error instanceof AppInternalServerErrorException) throw error;
       this.logger.error(
         `Error deleting objects from R2 bucket=${bucket}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error deleting files from R2');
+      throw new AppInternalServerErrorException(ErrorCode.R2_DELETE_FAILED);
     }
   }
 
@@ -131,6 +137,14 @@ export class R2FileStorageService implements FileStorageService {
     if (!encodedRelativeKey) return null;
     const relativeKey = decodeURIComponent(encodedRelativeKey);
 
+    // relativeKey is the path segment extracted directly from the URL.
+    // For a correctly-stored URL it already includes the keyPrefix
+    // (e.g. "user-profiles/photo-abc.jpeg"). toObjectKey would double-prepend
+    // the prefix in that case, so we guard with hasKeyPrefix first.
+    if (this.hasKeyPrefix(keyPrefix, relativeKey)) {
+      return this.normalizeKey(relativeKey);
+    }
+
     return this.toObjectKey(keyPrefix, relativeKey);
   }
 
@@ -151,8 +165,13 @@ export class R2FileStorageService implements FileStorageService {
     }
 
     if (config.isPublic) {
-      const relativeKey = this.toRelativeKey(config.keyPrefix, objectKey);
-      return this.buildPublicUrl(config.publicBaseUrl, relativeKey);
+      // objectKey carries the full key with prefix. buildPublicUrl handles the
+      // embedded-vs-bare publicBaseUrl distinction automatically.
+      return this.buildPublicUrl(
+        config.publicBaseUrl,
+        objectKey,
+        config.keyPrefix,
+      );
     }
 
     const expiresIn = this.resolveSignedUrlExpiration(
@@ -172,17 +191,115 @@ export class R2FileStorageService implements FileStorageService {
         `Error generating signed URL for R2 bucket=${config.bucket} key=${objectKey}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error generating signed URL');
+      throw new AppInternalServerErrorException(ErrorCode.R2_SIGNED_URL_FAILED);
     }
   }
 
-  private buildPublicUrl(publicBaseUrl: string, relativeKey: string) {
+  /**
+   * Resolve a stored object key to its public CDN URL synchronously.
+   * Only valid for buckets configured with isPublic: true (e.g. ACHIEVEMENTS_BADGES).
+   * Throws InternalServerErrorException if called on a private bucket.
+   */
+  resolvePublicUrl(bucketAlias: StorageBucketAlias, key: string): string {
+    const config = this.getBucketConfig(bucketAlias);
+    if (!config.isPublic) {
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
+    }
+    // Normalize the incoming key and ensure it carries the bucket prefix.
+    // - If the key already starts with the prefix (full object key), use it as-is.
+    // - If it is a bare filename (no prefix), prepend the prefix via toObjectKey.
+    // We must NOT use toRelativeKey here — that was Bug #1 (stripped the prefix).
+    const normalized = this.normalizeKey(key);
+    const objectKey = this.hasKeyPrefix(config.keyPrefix, normalized)
+      ? normalized
+      : this.toObjectKey(config.keyPrefix, normalized);
+    return this.buildPublicUrl(
+      config.publicBaseUrl,
+      objectKey,
+      config.keyPrefix,
+    );
+  }
+
+  /**
+   * Build the CDN public URL for an object stored in R2.
+   *
+   * ENV INCONSISTENCY (2026-04):
+   *   Some buckets embed the keyPrefix as a path segment in publicBaseUrl
+   *   (e.g. HONORS_IMAGES → "https://pub.r2.dev/honors", prefix = "honors").
+   *   Others expose a bare domain and rely on the prefix being prepended here
+   *   (e.g. USER_PROFILES → "https://pub-xxx.r2.dev", prefix = "user-profiles").
+   *
+   *   When the prefix is already embedded in publicBaseUrl we must NOT inject it
+   *   again — doing so produces double-prefix paths like ".../honors/honors/img.png".
+   *   When it is NOT embedded we must prepend it so the full object key appears in
+   *   the URL (Bug #1 regression: omitting it broke prefixed buckets).
+   *
+   *   Future cleanup: standardise all R2_PUBLIC_URL_* vars to bare domain form so
+   *   the service always controls the full path.
+   *
+   * @param publicBaseUrl  Configured public base URL for the bucket.
+   * @param objectKey      Full R2 object key — already includes the keyPrefix
+   *                       (e.g. "user-profiles/photo.jpg", "honors/badge.png").
+   * @param keyPrefix      The bucket's keyPrefix as configured.
+   */
+  private buildPublicUrl(
+    publicBaseUrl: string,
+    objectKey: string,
+    keyPrefix: string,
+  ): string {
     const normalizedBase = this.normalizeBaseUrl(publicBaseUrl);
-    const normalizedKey = this.normalizeKey(relativeKey)
+    const normalizedPrefix = keyPrefix.trim().replace(/^\/+|\/+$/g, '');
+
+    // Determine which key segment to append after the base URL.
+    // If the prefix is already embedded in publicBaseUrl (e.g. ".../honors"),
+    // we strip the prefix from objectKey so it isn't duplicated.
+    // Otherwise we use objectKey as-is (it already carries the prefix).
+    let pathKey: string;
+    if (
+      normalizedPrefix &&
+      this.isKeyPrefixInPublicBaseUrl(normalizedBase, normalizedPrefix)
+    ) {
+      pathKey = this.toRelativeKey(normalizedPrefix, objectKey);
+    } else {
+      pathKey = objectKey;
+    }
+
+    const normalizedKey = this.normalizeKey(pathKey)
       .split('/')
       .map((segment) => encodeURIComponent(segment))
       .join('/');
     return `${normalizedBase}/${normalizedKey}`;
+  }
+
+  /**
+   * Returns true when the keyPrefix is already embedded as the last path
+   * segment of publicBaseUrl (or part of its path).
+   *
+   * Examples:
+   *   isKeyPrefixInPublicBaseUrl("https://pub.r2.dev/honors", "honors") → true
+   *   isKeyPrefixInPublicBaseUrl("https://pub.r2.dev/secure-documents/activities", "activities") → true
+   *   isKeyPrefixInPublicBaseUrl("https://pub-xxx.r2.dev", "user-profiles") → false
+   *   isKeyPrefixInPublicBaseUrl("https://pub.r2.dev", "") → false
+   */
+  private isKeyPrefixInPublicBaseUrl(
+    publicBaseUrl: string,
+    keyPrefix: string,
+  ): boolean {
+    const normalizedPrefix = keyPrefix.trim().replace(/^\/+|\/+$/g, '');
+    if (!normalizedPrefix) return false;
+    try {
+      const url = new URL(publicBaseUrl);
+      const basePath = url.pathname.trim().replace(/^\/+|\/+$/g, '');
+      if (!basePath) return false;
+      // Match if the basePath IS the prefix, ends with /prefix, or starts with prefix/
+      return (
+        basePath === normalizedPrefix ||
+        basePath.endsWith(`/${normalizedPrefix}`) ||
+        basePath.startsWith(`${normalizedPrefix}/`)
+      );
+    } catch {
+      return false;
+    }
   }
 
   private async assertKeyDoesNotExist(bucket: string, key: string) {
@@ -193,12 +310,10 @@ export class R2FileStorageService implements FileStorageService {
           Key: key,
         }),
       );
-      throw new InternalServerErrorException(
-        `R2 object already exists: ${key}`,
-      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED);
     } catch (error) {
       if (
-        error instanceof InternalServerErrorException ||
+        error instanceof AppInternalServerErrorException ||
         this.isNotFoundError(error)
       ) {
         if (this.isNotFoundError(error)) return;
@@ -209,7 +324,7 @@ export class R2FileStorageService implements FileStorageService {
         `Error checking object existence in R2 bucket=${bucket} key=${key}`,
         error instanceof Error ? error.stack : String(error),
       );
-      throw new InternalServerErrorException('Error validating R2 object key');
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
   }
 
@@ -256,7 +371,7 @@ export class R2FileStorageService implements FileStorageService {
           bucket: this.getRequiredEnv('R2_BUCKET_USER_PROFILES'),
           publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_USER_PROFILES'),
           keyPrefix: this.getOptionalEnv('R2_KEY_PREFIX_USER_PROFILES'),
-          isPublic: false,
+          isPublic: true,
         };
       case StorageBucketAlias.HONORS_IMAGES:
         return {
@@ -336,9 +451,31 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.ACHIEVEMENTS_BADGES:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_ACHIEVEMENTS_BADGES'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_ACHIEVEMENTS_BADGES',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_ACHIEVEMENTS_BADGES',
+            'achievements/badges',
+          ),
+          isPublic: true,
+        };
+      case StorageBucketAlias.DATA_EXPORTS:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_DATA_EXPORTS'),
+          publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_DATA_EXPORTS'),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_DATA_EXPORTS',
+            'data-exports',
+          ),
+          isPublic: false,
+        };
       default:
-        throw new InternalServerErrorException(
-          `Unsupported storage bucket alias: ${bucketAlias}`,
+        throw new AppInternalServerErrorException(
+          ErrorCode.R2_VALIDATION_FAILED,
         );
     }
   }
@@ -346,9 +483,7 @@ export class R2FileStorageService implements FileStorageService {
   private getRequiredEnv(name: string) {
     const value = this.configService.get<string>(name)?.trim();
     if (!value) {
-      throw new InternalServerErrorException(
-        `Missing required env var: ${name}`,
-      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
     return value;
   }

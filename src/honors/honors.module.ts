@@ -9,9 +9,10 @@ import { HonorRequirementsService } from './honor-requirements.service';
 import { AdminHonorsController } from '../admin/admin-honors.controller';
 import { AdminHonorsService } from '../admin/admin-honors.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AchievementsModule } from '../achievements/achievements.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AchievementsModule],
   controllers: [
     HonorsController,
     UserHonorsController,

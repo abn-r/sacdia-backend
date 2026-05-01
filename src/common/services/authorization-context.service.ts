@@ -1,9 +1,6 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  Inject,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
+import { AppUnauthorizedException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -357,7 +354,7 @@ export class AuthorizationContextService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Usuario no encontrado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_CONTEXT_USER_NOT_FOUND);
     }
 
     const globalScope = this.buildUserScope(user);
@@ -492,6 +489,23 @@ export class AuthorizationContextService {
     );
   }
 
+  /**
+   * Returns true if the user holds the `super_admin` global role.
+   *
+   * `super_admin` is the god-mode role in SACDIA: it bypasses every
+   * role-based and territory-based restriction in the system.
+   * This method is the single canonical check for that concept —
+   * use it instead of inlining `hasAnyGlobalRole(userId, ['super_admin'])`
+   * or checking `roleNames.has('super_admin')` directly on a snapshot.
+   *
+   * Delegates internally to `hasAnyGlobalRole`, which leverages the
+   * existing auth-context cache (TTL 5 min), so repeated calls within
+   * the same request window are cheap.
+   */
+  async isSuperAdmin(userId: string): Promise<boolean> {
+    return this.hasAnyGlobalRole(userId, ['super_admin']);
+  }
+
   async canManageClub(userId: string, clubId: number): Promise<boolean> {
     const [resolved, club] = await Promise.all([
       this.resolveUserAuthorization(userId),
@@ -521,7 +535,7 @@ export class AuthorizationContextService {
     const localFieldId = scope.local_field?.id;
     const unionId = scope.union?.id;
 
-    if (roleNames.has('super_admin')) {
+    if (await this.isSuperAdmin(userId)) {
       return true;
     }
 

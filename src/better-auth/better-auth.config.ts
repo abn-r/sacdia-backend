@@ -26,7 +26,24 @@ import { PrismaClient } from '@prisma/client';
  * The user.fields mapping below is intentionally minimal — we only keep the
  * fields BA needs internally for READ operations during OAuth flows.
  */
-export function createBetterAuth(prisma: PrismaClient) {
+// The explicit cast to `ReturnType<typeof betterAuth>` prevents TS2742
+// ("inferred type cannot be named without a reference to an internal zod path")
+// which fires when a dependent package resolves zod at a different install depth
+// (e.g. after a better-auth version bump that brings in zod v4 transitively).
+//
+// WHY A CAST IS NECESSARY:
+//   betterAuth<Options>() → Auth<Options>
+//   The concrete Options type inferred here is a deeply-nested object that
+//   references internal zod paths. Auth<BetterAuthOptions> (the default/unparameterised
+//   form) is not assignable from Auth<ConcreteOptions> because the `api` property
+//   is typed via InferAPI<...> which is variant in the plugin set.
+//   There is no way to write a non-inferred return type that is both assignable
+//   from the concrete value AND free of the internal zod reference — hence the cast.
+//
+// FIDELITY: Consumers only access `ba.api` (already typed as `any` at the call
+// site in better-auth.service.ts) and the `handler` property — both present on
+// Auth<BetterAuthOptions>. The cast does not regress runtime behaviour.
+export function createBetterAuth(prisma: PrismaClient): ReturnType<typeof betterAuth> {
   return betterAuth({
     database: prismaAdapter(prisma, {
       provider: 'postgresql',
@@ -63,7 +80,7 @@ export function createBetterAuth(prisma: PrismaClient) {
     },
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: process.env.BETTER_AUTH_BASE_URL,
-  });
+  }) as unknown as ReturnType<typeof betterAuth>;
 }
 
 export type BetterAuthInstance = ReturnType<typeof createBetterAuth>;

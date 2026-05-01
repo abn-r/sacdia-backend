@@ -16,6 +16,9 @@ pnpm prisma migrate deploy
 pnpm run verify:fcm-migration
 ```
 
+**Variables de entorno**: `.env.example` es la fuente de verdad para todos los nombres de env vars.
+Copiar a `.env` y completar los valores. Claves marcadas `# <SECRET>` nunca deben commitearse.
+
 ## Módulos principales
 
 ```text
@@ -71,6 +74,7 @@ src/
 - **`evidence_validation_enum`**: Enum previamente definido pero no utilizado. Migrado: 6 servicios que usaban VARCHAR con valores en español (`pendiente`, `validada`, `rechazada`) ahora usan el enum (`PENDING`, `VALIDATED`, `REJECTED`). Afecta `folders_section_records.status` y `class_section_progress.status`.
 - **Honor images → evidence_files**: Migracion SQL con `jsonb_array_elements` que extrajo URLs del JSON legacy `users_honors.images` hacia filas en `evidence_files` con FK `user_honor_id`. El servicio de honores usa dual-read (evidence_files primario, JSON fallback).
 - **UpdateActivityDto**: Acepta `club_section_ids` para reasociar secciones en actividades conjuntas. Usa patron upsert (activar/desactivar) por el unique constraint `(activity_id, club_section_id)`.
+- **FCM realtime invalidation**: Nuevo job type `realtime.invalidate` en la cola `notifications` (BullMQ). API pública: `NotificationsService.sendSilentToSection(sectionId, resource, action, entityId, actorId)` — cualquier módulo puede llamarla para extender la invalidación a otras entidades (`members`, `monthly_reports`, etc.). El processor (`NotificationsProcessor.handleRealtimeInvalidate`) consulta `user_fcm_tokens` filtrando por `users.club_role_assignments.club_section_id` + grants activos y excluye al actor. Payload FCM: `data: { type: 'cache_invalidate', sectionId, resource, action: CREATED|UPDATED|DELETED, entityId, actorId, timestamp }` — data-only, APNS `content-available:1`, Android high priority. Hooked en `ActivitiesService.create/update/remove/createJointActivity` como fire-and-forget (sin `await`) para no bloquear la respuesta.
 
 ## Documentación
 

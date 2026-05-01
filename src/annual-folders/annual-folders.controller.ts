@@ -54,6 +54,7 @@ type CurrentUserPayload = {
 @ApiTags('Annual Folders - Templates')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('annual-folders/templates')
 export class AnnualFolderTemplatesController {
   constructor(private readonly service: AnnualFoldersService) {}
@@ -184,7 +185,34 @@ export class AnnualFoldersController {
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({ summary: 'Get annual folder with sections and evidences' })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
-  @ApiResponse({ status: 200, description: 'Folder details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Folder details',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          annual_folder_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+          status: 'open',
+          submitted_at: null,
+          closed_at: null,
+          evaluated_at: null,
+          created_at: '2026-04-14T10:00:00.000Z',
+          total_earned_points: 0,
+          total_max_points: 100,
+          progress_percentage: 0,
+          local_camporee_id: 5,
+          union_camporee_id: null,
+          requires_union_confirmation: false,
+          club_enrollment: {},
+          template: {},
+          sections: [],
+          total_sections: 0,
+          total_evidences: 0,
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async getFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
     const data = await this.service.getFolder(folderId);
@@ -195,7 +223,34 @@ export class AnnualFoldersController {
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({ summary: 'Get annual folder by enrollment ID' })
   @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
-  @ApiResponse({ status: 200, description: 'Folder details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Folder details',
+    schema: {
+      example: {
+        status: 'success',
+        data: {
+          annual_folder_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+          status: 'open',
+          submitted_at: null,
+          closed_at: null,
+          evaluated_at: null,
+          created_at: '2026-04-14T10:00:00.000Z',
+          total_earned_points: 0,
+          total_max_points: 100,
+          progress_percentage: 0,
+          local_camporee_id: null,
+          union_camporee_id: 12,
+          requires_union_confirmation: true,
+          club_enrollment: {},
+          template: {},
+          sections: [],
+          total_sections: 0,
+          total_evidences: 0,
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Folder not found for enrollment' })
   async getFolderByEnrollment(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
@@ -230,7 +285,10 @@ export class AnnualFoldersController {
     },
   })
   @ApiResponse({ status: 201, description: 'Evidence uploaded' })
-  @ApiResponse({ status: 400, description: 'Folder is not open or invalid file' })
+  @ApiResponse({
+    status: 400,
+    description: 'Folder is not open or invalid file',
+  })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
   async uploadEvidence(
     @Param('folderId', ParseUUIDPipe) folderId: string,
@@ -264,8 +322,9 @@ export class AnnualFoldersController {
   async updateEvidence(
     @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
     @Body() dto: UpdateEvidenceDto,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.service.updateEvidence(evidenceId, dto);
+    const data = await this.service.updateEvidence(evidenceId, dto, user.sub);
     return { status: 'success', data };
   }
 
@@ -276,8 +335,11 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 200, description: 'Evidence deleted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Evidence not found' })
-  async deleteEvidence(@Param('evidenceId', ParseUUIDPipe) evidenceId: string) {
-    const data = await this.service.deleteEvidence(evidenceId);
+  async deleteEvidence(
+    @Param('evidenceId', ParseUUIDPipe) evidenceId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.deleteEvidence(evidenceId, user.sub);
     return { status: 'success', ...data };
   }
 
@@ -289,7 +351,8 @@ export class AnnualFoldersController {
   @Get(':folderId/sections/:sectionId/status')
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({
-    summary: 'Get the current status of a single section within an annual folder',
+    summary:
+      'Get the current status of a single section within an annual folder',
     description:
       'Returns section metadata, evidence count, submission record (if submitted), and evaluation record (if evaluated). Useful for the Flutter app to show per-section progress.',
   })
@@ -330,7 +393,11 @@ export class AnnualFoldersController {
     @Param('sectionId', ParseUUIDPipe) sectionId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.service.submitSection(folderId, sectionId, user.sub);
+    const data = await this.service.submitSection(
+      folderId,
+      sectionId,
+      user.sub,
+    );
     return { status: 'success', data };
   }
 
@@ -351,8 +418,11 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 200, description: 'Folder submitted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async submitFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
-    const data = await this.service.submitFolder(folderId);
+  async submitFolder(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.submitFolder(folderId, user.sub);
     return { status: 'success', data };
   }
 
@@ -370,8 +440,11 @@ export class AnnualFoldersController {
     description: "Folder is not in 'submitted' or 'evaluated' status",
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async closeFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
-    const data = await this.service.closeFolder(folderId);
+  async closeFolder(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.closeFolder(folderId, user.sub);
     return { status: 'success', data };
   }
 }

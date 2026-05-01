@@ -11,7 +11,6 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
-  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -33,6 +32,10 @@ import {
   OptionalJwtAuthGuard,
   PermissionsGuard,
 } from '../common/guards';
+import {
+  FileValidationPipe,
+  ALLOWED_MIME_TYPES,
+} from '../common/pipes/file-validation.pipe';
 import {
   AuthorizationResource,
   RequirePermissions,
@@ -115,7 +118,7 @@ export class UserHonorRequirementsController {
 
   @Patch(':honorId/requirements/progress/batch')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @RequirePermissions('user_honors:update')
+  @RequirePermissions('user_honors:submit')
   @ApiOperation({
     summary: 'Actualizar progreso de múltiples requisitos',
     description:
@@ -148,7 +151,7 @@ export class UserHonorRequirementsController {
 
   @Patch(':honorId/requirements/:requirementId/progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
-  @RequirePermissions('user_honors:update')
+  @RequirePermissions('user_honors:submit')
   @ApiOperation({
     summary: 'Actualizar progreso de un requisito individual',
     description:
@@ -182,7 +185,9 @@ export class UserHonorRequirementsController {
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:create')
   @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ summary: 'Subir evidencia (imagen o archivo) para un requisito' })
+  @ApiOperation({
+    summary: 'Subir evidencia (imagen o archivo) para un requisito',
+  })
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'honorId', type: Number })
   @ApiParam({ name: 'requirementId', type: Number })
@@ -190,20 +195,23 @@ export class UserHonorRequirementsController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('honorId', ParseIntPipe) honorId: number,
     @Param('requirementId', ParseIntPipe) requirementId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
+        maxSize: 25 * 1024 * 1024,
+      }),
+    )
+    file: Express.Multer.File,
   ) {
-    const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+    const imageTypes = ALLOWED_MIME_TYPES.IMAGES;
     const evidenceType = imageTypes.includes(file.mimetype) ? 'IMAGE' : 'FILE';
 
-    const maxSize = evidenceType === 'IMAGE' ? 10 * 1024 * 1024 : 25 * 1024 * 1024;
-    if (file.size > maxSize) {
-      throw new BadRequestException(
-        `Archivo demasiado grande. Máximo: ${maxSize / (1024 * 1024)}MB`,
-      );
-    }
-
     const data = await this.honorRequirementsService.uploadEvidence(
-      userId, honorId, requirementId, file, evidenceType,
+      userId,
+      honorId,
+      requirementId,
+      file,
+      evidenceType,
     );
     return { status: 'success', data };
   }
@@ -222,7 +230,10 @@ export class UserHonorRequirementsController {
     @Body() dto: CreateEvidenceLinkDto,
   ) {
     const data = await this.honorRequirementsService.addEvidenceLink(
-      userId, honorId, requirementId, dto.url,
+      userId,
+      honorId,
+      requirementId,
+      dto.url,
     );
     return { status: 'success', data };
   }
@@ -240,7 +251,9 @@ export class UserHonorRequirementsController {
     @Param('requirementId', ParseIntPipe) requirementId: number,
   ) {
     const data = await this.honorRequirementsService.getEvidences(
-      userId, honorId, requirementId,
+      userId,
+      honorId,
+      requirementId,
     );
     return { status: 'success', data };
   }
@@ -260,7 +273,10 @@ export class UserHonorRequirementsController {
     @Param('evidenceId', ParseIntPipe) evidenceId: number,
   ) {
     const data = await this.honorRequirementsService.deleteEvidence(
-      userId, honorId, requirementId, evidenceId,
+      userId,
+      honorId,
+      requirementId,
+      evidenceId,
     );
     return { status: 'success', data };
   }

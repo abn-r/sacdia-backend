@@ -1,9 +1,6 @@
 import {
   Inject,
   Injectable,
-  BadRequestException,
-  UnauthorizedException,
-  InternalServerErrorException,
   ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
@@ -25,6 +22,13 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { EmailService } from '../common/email/email.service';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+  AppUnauthorizedException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -57,6 +61,7 @@ export class AuthService {
     private readonly tokenBlacklist: TokenBlacklistService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly emailService: EmailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -102,7 +107,7 @@ export class AuthService {
         });
 
         if (!userRole) {
-          throw new InternalServerErrorException('User role not found');
+          throw new AppBadRequestException(ErrorCode.AUTH_USER_ROLE_NOT_FOUND);
         }
 
         await tx.users_roles.create({
@@ -134,7 +139,10 @@ export class AuthService {
 
     // Auto-send verification email after successful registration.
     // Fire-and-forget: a failure here does NOT block registration.
-    this.createAndLogVerificationToken(baResult.user.email).catch((e) =>
+    this.createAndLogVerificationToken(
+      baResult.user.email,
+      baResult.user.name,
+    ).catch((e) =>
       this.logger.warn(
         `Failed to create verification token during registration for ${baResult.user.id}: ${e instanceof Error ? e.message : String(e)}`,
       ),
@@ -194,7 +202,7 @@ export class AuthService {
       this.logger.warn(
         `Login failed for ${maskedEmail}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     if (!baResult?.user || !baResult.session) {
@@ -204,7 +212,7 @@ export class AuthService {
           email: maskedEmail,
         }),
       );
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     // 2. Load SACDIA user profile and verify post-registration state
@@ -240,7 +248,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Usuario no encontrado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 
     const needsPostRegistration = user.users_pr
@@ -307,13 +315,14 @@ export class AuthService {
           }),
         );
 
-        throw new BadRequestException({
-          message:
-            'refresh_token was removed. Use refreshToken in request body.',
-          code: LEGACY_SNAKE_CASE_REMOVED_CODE,
-          removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
-          use: 'refreshToken',
-        });
+        throw new AppBadRequestException(
+          ErrorCode.AUTH_REFRESH_TOKEN_LEGACY_REMOVED,
+          {
+            code: LEGACY_SNAKE_CASE_REMOVED_CODE,
+            removedAt: LEGACY_SNAKE_CASE_REMOVED_AT,
+            use: 'refreshToken',
+          },
+        );
       }
 
       refreshToken = dto.refresh_token;
@@ -328,7 +337,7 @@ export class AuthService {
     }
 
     if (!refreshToken) {
-      throw new BadRequestException('refreshToken es requerido');
+      throw new AppBadRequestException(ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED);
     }
 
     // The "refresh token" sent by clients IS the BA opaque session token.
@@ -347,7 +356,7 @@ export class AuthService {
           userAgent: context?.userAgent ?? 'unknown',
         }),
       );
-      throw new UnauthorizedException('Refresh token inválido o expirado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
     }
 
     if (!baResult?.session) {
@@ -359,7 +368,7 @@ export class AuthService {
           userAgent: context?.userAgent ?? 'unknown',
         }),
       );
-      throw new UnauthorizedException('Refresh token inválido o expirado');
+      throw new AppUnauthorizedException(ErrorCode.AUTH_REFRESH_TOKEN_INVALID);
     }
 
     this.logger.log(
@@ -493,12 +502,10 @@ export class AuthService {
         `Password reset request error: ${error instanceof Error ? error.message : String(error)}`,
         error,
       );
-      throw new BadRequestException('Error al solicitar recuperación');
+      throw new AppBadRequestException(ErrorCode.AUTH_PASSWORD_RESET_FAILED);
     }
 
-    this.logger.log(
-      `Password reset requested for: ${maskEmail(dto.email)}`,
-    );
+    this.logger.log(`Password reset requested for: ${maskEmail(dto.email)}`);
 
     return {
       success: true,
@@ -565,9 +572,9 @@ export class AuthService {
     });
 
     if (!assignment) {
-      throw new BadRequestException(
-        'La asignación no pertenece al usuario o no está activa',
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND, {
+        assignmentId: dto.assignment_id,
+      });
     }
 
     await this.prisma.users_pr.upsert({
@@ -578,6 +585,11 @@ export class AuthService {
         active_club_assignment_id: dto.assignment_id,
       },
     });
+
+    // Invalidate the cached authorization context so the next call to
+    // resolveUserAuthorization re-reads from DB and picks up the new
+    // active_club_assignment_id we just persisted.
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
 
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
@@ -607,7 +619,9 @@ export class AuthService {
     });
 
     if (!userPr) {
-      throw new BadRequestException('Post-registro no iniciado');
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_POST_REGISTRATION_NOT_STARTED,
+      );
     }
 
     let nextStep: string | null = null;
@@ -647,7 +661,7 @@ export class AuthService {
     });
 
     if (!dbUser) {
-      throw new BadRequestException('Usuario no encontrado');
+      throw new AppNotFoundException(ErrorCode.AUTH_USER_NOT_FOUND, { userId });
     }
 
     if (dbUser.email_verified) {
@@ -678,7 +692,9 @@ export class AuthService {
     });
 
     if (!verification) {
-      throw new BadRequestException('Token inválido o ya utilizado');
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_INVALID,
+      );
     }
 
     if (verification.expiresAt < new Date()) {
@@ -686,7 +702,9 @@ export class AuthService {
       await this.prisma.verification.delete({
         where: { id: verification.id },
       });
-      throw new BadRequestException('Token expirado. Solicitá uno nuevo');
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRED,
+      );
     }
 
     // Mark user as verified and delete the token in a transaction
@@ -711,20 +729,21 @@ export class AuthService {
   }
 
   /**
-   * Creates a 24h verification token in the `verification` table.
+   * Creates a 24h verification token in the `verification` table and enqueues
+   * a verification email via the emails BullMQ queue.
    *
-   * SECURITY: The raw token is NEVER logged — it is a credential. Only masked email
-   * and expiry are logged. The NODE_ENV guard was removed: even in development, logging
-   * a raw token creates a credential-in-logs risk that outweighs any debugging benefit.
+   * SECURITY: The raw token is NEVER logged — it is a credential. The token is
+   * embedded in a deep link passed to EmailService (not logged by EmailService either).
    *
-   * EMAIL_ENABLED guard: if no email transport is configured the method logs a warning
-   * but does NOT throw — the caller (register, sendVerificationEmail) treats this as
-   * fire-and-forget. Token is still persisted so it can be delivered once transport
-   * is enabled.
-   *
-   * TODO(production): replace the log statement with an actual email delivery call.
+   * EMAIL_ENABLED gate: enforced at the EmailProcessor level. This method always
+   * enqueues — if EMAIL_ENABLED=false, the processor silently drops the job.
+   * The token is still persisted so it can be verified if the user receives the
+   * email through other means (e.g., resend flow).
    */
-  private async createAndLogVerificationToken(email: string): Promise<void> {
+  private async createAndLogVerificationToken(
+    email: string,
+    userName?: string,
+  ): Promise<void> {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
@@ -737,17 +756,21 @@ export class AuthService {
       },
     });
 
-    if (process.env.EMAIL_ENABLED !== 'true') {
-      this.logger.warn(
-        `[EMAIL_DISABLED] Verification token created for ${maskEmail(email)} but EMAIL_ENABLED is not set — email not sent.`,
-      );
-      return;
-    }
+    // Build deep link — token is embedded in URL, never logged separately.
+    // The mobile app handles sacdia://verify-email?token=<token> internally
+    // and calls POST /api/v1/auth/verify-email/confirm with the token in the body.
+    const verificationUrl = `sacdia://verify-email?token=${token}`;
 
-    // TODO(production): send verification email with link containing the token.
-    // SECURITY: Never log the raw token — it is a credential.
+    // Enqueue email — fire-and-forget from the processor's perspective.
+    // The caller wraps this entire method in .catch() already.
+    await this.emailService.sendEmailVerification({
+      email,
+      verificationUrl,
+      userName,
+    });
+
     this.logger.log(
-      `Verification email queued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
+      `Verification email enqueued for ${maskEmail(email)} (expires ${expiresAt.toISOString()})`,
     );
   }
 
@@ -781,5 +804,4 @@ export class AuthService {
   private shouldRejectSnakeCase(): boolean {
     return process.env.AUTH_REJECT_SNAKE_CASE?.toLowerCase() !== 'false';
   }
-
 }

@@ -19,7 +19,11 @@ import {
 } from '@nestjs/swagger';
 import { ValidationService } from './validation.service';
 import { SubmitForReviewDto, ReviewValidationDto } from './dto';
-import { CurrentUser, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  CurrentUser,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 type CurrentUserPayload = {
@@ -38,7 +42,8 @@ export class ValidationController {
   // ========================================
 
   @Post('submit')
-  @RequirePermissions('classes:update')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @RequirePermissions('validation:submit')
   @ApiOperation({
     summary: 'Enviar clase/honor a revision',
     description:
@@ -66,7 +71,8 @@ export class ValidationController {
   // ========================================
 
   @Post(':entityType/:entityId/review')
-  @RequirePermissions('classes:update')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @RequirePermissions('validation:review')
   @ApiOperation({
     summary: 'Aprobar o rechazar clase/honor',
     description:
@@ -108,7 +114,8 @@ export class ValidationController {
   // ========================================
 
   @Get('pending')
-  @RequirePermissions('classes:read')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @RequirePermissions('validation:read')
   @ApiOperation({
     summary: 'Listar items pendientes de revision',
     description:
@@ -143,7 +150,8 @@ export class ValidationController {
   // ========================================
 
   @Get(':entityType/:entityId/history')
-  @RequirePermissions('classes:read')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @RequirePermissions('validation:read')
   @ApiOperation({
     summary: 'Historial de validacion',
     description:
@@ -173,7 +181,8 @@ export class ValidationController {
   // ========================================
 
   @Get('eligibility/:userId')
-  @RequirePermissions('users:read_detail')
+  @RequirePermissions('validation:read')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Verificar elegibilidad para investidura',
     description:

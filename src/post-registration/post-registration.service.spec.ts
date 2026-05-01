@@ -1,5 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PostRegistrationService } from './post-registration.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
@@ -183,11 +183,7 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep1('target-user-1', adminActor),
-      ).rejects.toThrow(
-        new BadRequestException(
-          'No se puede completar el paso 1 para este usuario',
-        ),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
     });
   });
 
@@ -202,11 +198,9 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep2(ownerActor.actorUserId, ownerActor),
-      ).rejects.toThrow(
-        new BadRequestException(
-          'Debe agregar al menos un contacto de emergencia',
-        ),
-      );
+      ).rejects.toMatchObject({
+        code: ErrorCode.POST_REG_EMERGENCY_CONTACT_REQUIRED,
+      });
     });
 
     it('should hide detailed validation feedback from third-party completion', async () => {
@@ -219,11 +213,7 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep2('target-user-1', adminActor),
-      ).rejects.toThrow(
-        new BadRequestException(
-          'No se puede completar el paso 2 para este usuario',
-        ),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
     });
 
     it('should return a minimal success payload for third-party completion', async () => {
@@ -346,7 +336,7 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep3(userId, dto, ownerActor),
-      ).rejects.toThrow('No se pudo resolver la inscripción anual operativa');
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_ENROLLMENT_FAILED });
     });
 
     it('should recover member assignment on duplicate create race', async () => {
@@ -389,7 +379,7 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep3(userId, dto, ownerActor),
-      ).rejects.toThrow('No hay año eclesiástico activo configurado');
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NO_ACTIVE_YEAR });
 
       expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
@@ -400,7 +390,7 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep3(userId, dto, ownerActor),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_CLASS_NOT_FOUND });
 
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
     });
@@ -419,11 +409,7 @@ describe('PostRegistrationService', () => {
 
       await expect(
         service.completeStep3(userId, dto, adminActor),
-      ).rejects.toThrow(
-        new BadRequestException(
-          'No se puede completar el paso 3 para este usuario',
-        ),
-      );
+      ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
     });
   });
 });

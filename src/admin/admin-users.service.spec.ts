@@ -1,5 +1,5 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { user_approval_status } from '@prisma/client';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
@@ -325,7 +325,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.listUsers('actor-admin', buildListQuery()),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
 
     it('should reject coordinator without local_field_id', async () => {
@@ -338,7 +338,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.listUsers('actor-coordinator', buildListQuery()),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
 
     it('should enforce UNION scope for assistant_admin with union_id', async () => {
@@ -370,7 +370,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.listUsers('actor-assistant-admin', buildListQuery()),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
   });
 
@@ -449,7 +449,7 @@ describe('AdminUsersService', () => {
 
       await expect(
         service.getUserById('actor-admin', 'user-outside-scope'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_NOT_FOUND });
 
       const findFirstCalls = mockPrismaService.users.findFirst.mock
         .calls as Array<[unknown?]>;
@@ -755,6 +755,66 @@ describe('AdminUsersService', () => {
         },
       });
       expect(result).toEqual(expected);
+    });
+
+    it('should flip a pending user to approved: sets approval_status=approved, active=true, rejection_reason=null', async () => {
+      // Simulates the transition triggered by PATCH /admin/users/:id/approval
+      // with { approved: true } — the canonical approval endpoint.
+      const pendingUser = {
+        user_id: 'pending-user',
+        approval_status: user_approval_status.pending,
+        rejection_reason: null,
+        active: false,
+      };
+      const approvedUser = {
+        ...pendingUser,
+        approval_status: user_approval_status.approved,
+        active: true,
+      };
+      mockPrismaService.users.update.mockResolvedValue(approvedUser);
+
+      const result = await service.updateUserApproval(pendingUser.user_id, {
+        approved: true,
+      });
+
+      // Verify the Prisma payload atomically updates both status + active
+      expect(mockPrismaService.users.update).toHaveBeenCalledWith({
+        where: { user_id: 'pending-user' },
+        data: {
+          approval_status: user_approval_status.approved,
+          rejection_reason: null,
+          active: true,
+        },
+      });
+
+      // Verify the returned record reflects the approved state
+      expect(result.approval_status).toBe(user_approval_status.approved);
+      expect(result.active).toBe(true);
+      expect(result.rejection_reason).toBeNull();
+    });
+
+    it('should not pass legacy approval/approved fields to Prisma via updateUser', async () => {
+      // Guards against clients that send { approval: 1, approved: true }
+      // alongside approval_status — only known Prisma columns must be forwarded.
+      const dto = {
+        approval_status: user_approval_status.approved,
+        active: true,
+      };
+      const expected = { user_id: 'user-1', ...dto };
+      mockPrismaService.users.update.mockResolvedValue(expected);
+
+      await service.updateUser('user-1', dto);
+
+      const firstCallArg = mockPrismaService.users.update.mock.calls[0][0];
+      const callData = (firstCallArg as { data: Record<string, unknown> }).data;
+
+      // Prisma payload must NOT contain unknown fields
+      expect(callData).not.toHaveProperty('approval');
+      expect(callData).not.toHaveProperty('approved');
+      expect(callData).toMatchObject({
+        approval_status: user_approval_status.approved,
+        active: true,
+      });
     });
   });
 

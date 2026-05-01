@@ -5,6 +5,7 @@ import {
   Param,
   Delete,
   Get,
+  Patch,
   Put,
   Request,
   UseGuards,
@@ -12,10 +13,17 @@ import {
   Query,
   ParseIntPipe,
   DefaultValuePipe,
-  BadRequestException,
   ParseEnumPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiResponse,
+  ApiParam,
+} from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { FcmTokensService } from './fcm-tokens.service';
@@ -26,7 +34,10 @@ import {
   IsObject,
   IsBoolean,
 } from 'class-validator';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import {
   JwtAuthGuard,
   OwnerOrAdminGuard,
@@ -105,6 +116,7 @@ export class NotificationsController {
 
   @Post('send')
   @RequirePermissions('notifications:send')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Send notification to specific user' })
   async sendToUser(@Body() dto: SendNotificationDto, @Request() req) {
     return this.notificationsService.sendToUser(
@@ -116,6 +128,7 @@ export class NotificationsController {
 
   @Post('broadcast')
   @RequirePermissions('notifications:broadcast')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Send notification to all users' })
   async broadcast(@Body() dto: BroadcastNotificationDto, @Request() req) {
     return this.notificationsService.broadcast(
@@ -127,6 +140,7 @@ export class NotificationsController {
 
   @Post('club/:instanceType/:instanceId')
   @RequirePermissions('notifications:club')
+  @AuthorizationResource({ type: 'active_assignment' }) // TODO(rbac): verify notifications:club is club-scoped in seed
   @ApiOperation({ summary: 'Send notification to club members' })
   async sendToClub(
     @Param('instanceType', new ParseEnumPipe(ClubInstanceType))
@@ -143,30 +157,83 @@ export class NotificationsController {
     );
   }
 
-  // TODO [SECURITY M-2]: Admin notification history shows ALL logs regardless of
-  // the admin's territory/scope. A local field admin can currently see notification
-  // logs for all users across all clubs and fields.
-  // Fix: retrieve the caller's authorization context (local_field_id or union_id)
-  // via AuthorizationContextService and pass it to getNotificationHistory so the
-  // service can filter notification_logs by the scoped territory. Only super_admin
-  // should receive unfiltered results. This requires extending both the service
-  // query and the AuthorizationContextService to expose scope information.
+  @RequirePermissions('notifications:send')
   @Get('history')
   @ApiOperation({
     summary: 'Get paginated notification history',
     description:
-      'Admins (admin|super_admin) see all logs. Regular users see only their own notifications (target_type=user). NOTE: admin scope restriction by territory is pending implementation.',
+      'Admins see notification audit logs scoped to their territory/scope; super_admin receives the unfiltered audit trail. Regular users see only their own notifications (target_type=user).',
   })
   async getHistory(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Request() req,
   ) {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
     return this.notificationsService.getNotificationHistory(
       req.user.sub,
       page,
-      limit,
+      safeLimit,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inbox helpers (unread count, mark read, mark all read)
+  // ---------------------------------------------------------------------------
+
+  @Get('unread-count')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Get unread notification count for the current user',
+    description:
+      'Returns the number of notification_deliveries where read_at is null for the calling user.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Unread count',
+    schema: { example: { count: 3 } },
+  })
+  async getUnreadCount(@Request() req) {
+    return this.notificationsService.getUnreadCount(req.user.sub);
+  }
+
+  @Patch('read-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Mark all unread notifications as read',
+    description:
+      'Bulk sets read_at = NOW() for all unread deliveries of the calling user.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Count of updated rows',
+    schema: { example: { updated: 5 } },
+  })
+  async markAllRead(@Request() req) {
+    return this.notificationsService.markAllDeliveriesRead(req.user.sub);
+  }
+
+  @Patch(':deliveryId/read')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Mark a single notification delivery as read',
+    description:
+      'Sets read_at = NOW() for the given delivery. Returns 404 if not found or not owned by the caller.',
+  })
+  @ApiParam({
+    name: 'deliveryId',
+    description: 'UUID of the notification_deliveries row',
+  })
+  @ApiResponse({ status: 200, description: 'Updated delivery row' })
+  @ApiResponse({
+    status: 404,
+    description: 'Delivery not found or not owned by caller',
+  })
+  async markRead(
+    @Param('deliveryId', ParseUUIDPipe) deliveryId: string,
+    @Request() req,
+  ) {
+    return this.notificationsService.markDeliveryRead(deliveryId, req.user.sub);
   }
 
   // ---------------------------------------------------------------------------
@@ -201,9 +268,7 @@ export class NotificationsController {
   ) {
     const validCategory = NOTIFICATION_CATEGORIES.find((c) => c === category);
     if (!validCategory) {
-      throw new BadRequestException(
-        `Unknown category "${category}". Valid categories: ${NOTIFICATION_CATEGORIES.join(', ')}`,
-      );
+      throw new AppBadRequestException(ErrorCode.NOTIF_INVALID_CATEGORY);
     }
     const preferences = await this.preferencesService.setPreference(
       req.user.sub,

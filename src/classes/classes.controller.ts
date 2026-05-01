@@ -153,7 +153,7 @@ export class UserClassesController {
   }
 
   @Post('enroll')
-  @RequirePermissions('classes:update')
+  @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Inscribir usuario en clase',
@@ -208,7 +208,7 @@ export class UserClassesController {
   }
 
   @Patch(':classId/progress')
-  @RequirePermissions('classes:update')
+  @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de sección',
@@ -248,7 +248,7 @@ export class UserClassesController {
 
   @Post(':classId/sections/:sectionId/submit')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermissions('classes:update')
+  @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Submit a class section for validation',
@@ -281,7 +281,7 @@ export class UserClassesController {
 
   @Post(':classId/sections/:sectionId/files')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermissions('classes:update')
+  @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
@@ -327,7 +327,7 @@ export class UserClassesController {
 
   @Delete(':classId/sections/:sectionId/files/:fileId')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermissions('classes:update')
+  @RequirePermissions('classes:submit_progress')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Delete evidence file for a class section',

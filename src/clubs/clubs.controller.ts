@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   Post,
@@ -12,6 +11,8 @@ import {
   ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiTags,
   ApiOperation,
@@ -114,6 +115,7 @@ export class ClubsController {
 
   @Post()
   @RequirePermissions('clubs:create')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Crear nuevo club' })
   @ApiResponse({ status: 201, description: 'Club creado' })
   async create(@Body() dto: CreateClubDto) {
@@ -162,7 +164,10 @@ export class ClubsController {
       'Lista las secciones del club (Aventureros, Conquistadores, GM). No requiere permiso club_sections:read — diseñado para permitir la selección de sección durante el post-registro. La respuesta es intencionalmente limitada a campos de identificación (id, nombre, tipo); los detalles operacionales (cuota, cupo, horarios, contacto) se omiten para reducir la superficie de exposición.',
   })
   @ApiParam({ name: 'clubId', type: Number })
-  @ApiResponse({ status: 200, description: 'Secciones del club (campos de identificación)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Secciones del club (campos de identificación)',
+  })
   async getSections(@Param('clubId', ParseIntPipe) clubId: number) {
     return this.clubsService.getSections(clubId);
   }
@@ -254,8 +259,8 @@ export class ClubsController {
     @Body() dto: AssignRoleDto,
   ) {
     if (dto.club_section_id && dto.club_section_id !== sectionId) {
-      throw new BadRequestException(
-        'club_section_id in body must match route sectionId',
+      throw new AppBadRequestException(
+        ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID,
       );
     }
 

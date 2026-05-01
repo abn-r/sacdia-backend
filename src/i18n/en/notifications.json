@@ -1,0 +1,12 @@
+{
+  "notifications": {
+    "system_alert": {
+      "cron_consecutive_failures_title": "Cron Job Alert: {jobName}",
+      "cron_consecutive_failures_body": "{count} consecutive failures detected (threshold: {threshold}).",
+      "cron_duration_title": "Cron Job Slow: {jobName}",
+      "cron_duration_body": "Last run took {durationMs} ms, exceeding the {thresholdMs} ms threshold.",
+      "cron_failure_rate_title": "Cron Job High Failure Rate: {jobName}",
+      "cron_failure_rate_body": "{rate}% failure rate in the last 24 h ({failed}/{total} runs failed)."
+    }
+  }
+}

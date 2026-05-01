@@ -1,12 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ActivitiesService } from './activities.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AchievementsService } from '../achievements/achievements.service';
 
 describe('ActivitiesService', () => {
   let service: ActivitiesService;
@@ -38,6 +39,11 @@ describe('ActivitiesService', () => {
 
   const mockNotificationsService = {
     sendToClubMembers: jest.fn().mockResolvedValue(undefined),
+    sendSilentToSection: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockAchievementsService = {
+    emitEvent: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -47,6 +53,7 @@ describe('ActivitiesService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: AchievementsService, useValue: mockAchievementsService },
       ],
     }).compile();
 
@@ -62,7 +69,7 @@ describe('ActivitiesService', () => {
   });
 
   describe('findByClub', () => {
-    it('should return paginated activities for a club', async () => {
+    it('should return paginated activities scoped to userSectionId (member path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [
@@ -78,13 +85,54 @@ describe('ActivitiesService', () => {
       mockPrismaService.activities.findMany.mockResolvedValue(mockActivities);
       mockPrismaService.activities.count.mockResolvedValue(1);
 
-      const result = await service.findByClub(1);
+      // Member of section 1 — should only see activities with an instance in section 1.
+      const result = await service.findByClub(1, undefined, undefined, 1);
 
       expect(result.data).toEqual([{ ...mockActivities[0], instances: [] }]);
       expect(result.meta.total).toBe(1);
+      expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            activity_instances: {
+              some: { active: true, club_section_id: 1 },
+            },
+          }),
+        }),
+      );
     });
 
-    it('should return empty page when no sections match the clubTypeId filter', async () => {
+    it('should return all club activities when userSectionId is null (admin bypass)', async () => {
+      const mockClub = {
+        club_id: 1,
+        club_sections: [
+          { club_section_id: 1, club_type_id: 1 },
+          { club_section_id: 2, club_type_id: 2 },
+        ],
+      };
+      const mockActivities = [
+        { activity_id: 1, name: 'Campamento', active: true },
+      ];
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
+      mockPrismaService.activities.findMany.mockResolvedValue(mockActivities);
+      mockPrismaService.activities.count.mockResolvedValue(1);
+
+      // Admin — userSectionId null means broad club-level filter.
+      const result = await service.findByClub(1, undefined, undefined, null);
+
+      expect(result.data).toEqual([{ ...mockActivities[0], instances: [] }]);
+      expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            activity_instances: {
+              some: { active: true, club_section_id: { in: [1, 2] } },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('should return empty page when no sections match the clubTypeId filter (admin path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [{ club_section_id: 1, club_type_id: 1 }],
@@ -92,14 +140,20 @@ describe('ActivitiesService', () => {
 
       mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
 
-      const result = await service.findByClub(1, { clubTypeId: 99 });
+      // Admin with clubTypeId filter that matches nothing.
+      const result = await service.findByClub(
+        1,
+        { clubTypeId: 99 },
+        undefined,
+        null,
+      );
 
       expect(result.data).toEqual([]);
       expect(result.meta.total).toBe(0);
       expect(mockPrismaService.activities.findMany).not.toHaveBeenCalled();
     });
 
-    it('should filter by active flag when provided', async () => {
+    it('should filter by active flag when provided (member path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [{ club_section_id: 1, club_type_id: 1 }],
@@ -110,7 +164,12 @@ describe('ActivitiesService', () => {
       mockPrismaService.activities.findMany.mockResolvedValue(mockActivities);
       mockPrismaService.activities.count.mockResolvedValue(1);
 
-      const result = await service.findByClub(1, { active: true });
+      const result = await service.findByClub(
+        1,
+        { active: true },
+        undefined,
+        1,
+      );
 
       expect(result.data).toHaveLength(1);
       expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
@@ -120,7 +179,7 @@ describe('ActivitiesService', () => {
       );
     });
 
-    it('should filter by activityTypeId when provided', async () => {
+    it('should filter by activityTypeId when provided (member path)', async () => {
       const mockClub = {
         club_id: 1,
         club_sections: [{ club_section_id: 1, club_type_id: 1 }],
@@ -130,7 +189,7 @@ describe('ActivitiesService', () => {
       mockPrismaService.activities.findMany.mockResolvedValue([]);
       mockPrismaService.activities.count.mockResolvedValue(0);
 
-      await service.findByClub(1, { activityTypeId: 2 });
+      await service.findByClub(1, { activityTypeId: 2 }, undefined, 1);
 
       expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -142,7 +201,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when club not found', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.findByClub(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findByClub(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_CLUB_NOT_FOUND,
+      });
     });
   });
 
@@ -160,7 +221,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when not found', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
   });
 
@@ -223,7 +286,7 @@ describe('ActivitiesService', () => {
 
       await expect(
         service.create(1, createDto as any, 'user-123'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_SECTION_ID_REQUIRED });
     });
 
     it('should throw when section does not belong to club', async () => {
@@ -246,7 +309,7 @@ describe('ActivitiesService', () => {
 
       await expect(
         service.create(1, createDto as any, 'user-123'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_SECTION_WRONG_CLUB });
     });
   });
 
@@ -281,9 +344,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when activity does not exist', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(999, { name: 'X' })).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.update(999, { name: 'X' })).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
 
     it('should not call update when dto has no fields', async () => {
@@ -331,7 +394,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when activity does not exist', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove(999)).rejects.toThrow(NotFoundException);
+      await expect(service.remove(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
   });
 
@@ -356,7 +421,7 @@ describe('ActivitiesService', () => {
 
       await expect(
         service.recordAttendance(999, { user_ids: ['user-1'] }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
     });
   });
 
@@ -416,9 +481,9 @@ describe('ActivitiesService', () => {
     it('should throw NotFoundException when activity does not exist', async () => {
       mockPrismaService.activities.findUnique.mockResolvedValue(null);
 
-      await expect(service.getAttendance(999)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getAttendance(999)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
     });
 
     it('should resolve signed URLs for attendee user_image when it is a string', async () => {
@@ -446,6 +511,178 @@ describe('ActivitiesService', () => {
       );
       expect(result.attendees[0].user_image).toBe(
         'https://signed.example/profiles/juan.jpg',
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T2.5 — realtime invalidation hooks
+  // ---------------------------------------------------------------------------
+  describe('realtime invalidation (sendSilentToSection hook)', () => {
+    const ACTOR = 'actor-uuid-0001';
+    const SECTION_ID = 10;
+
+    it('create(): calls sendSilentToSection with CREATED action after successful DB write', async () => {
+      const createDto = {
+        name: 'Campamento',
+        club_type_id: 1,
+        lat: 19.4326,
+        long: -99.1332,
+        activity_place: 'Parque Nacional',
+        image: 'img.jpg',
+        activity_type_id: 1,
+        club_section_id: SECTION_ID,
+      };
+      const mockActivity = {
+        activity_id: 7,
+        ...createDto,
+        activity_instances: [],
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: SECTION_ID,
+        main_club_id: 1,
+        club_type_id: 1,
+      });
+      mockPrismaService.activities.create.mockResolvedValue(mockActivity);
+
+      await service.create(1, createDto, ACTOR);
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sectionId: SECTION_ID,
+          resource: 'activities',
+          action: 'CREATED',
+          entityId: 7,
+          actorId: ACTOR,
+        }),
+      );
+    });
+
+    it('create(): does NOT call sendSilentToSection when DB write throws', async () => {
+      const createDto = {
+        name: 'Campamento',
+        club_type_id: 1,
+        lat: 0,
+        long: 0,
+        activity_place: 'X',
+        image: '',
+        activity_type_id: 1,
+        club_section_id: SECTION_ID,
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_section_id: SECTION_ID,
+        main_club_id: 1,
+        club_type_id: 1,
+      });
+      mockPrismaService.activities.create.mockRejectedValue(
+        new Error('DB constraint violation'),
+      );
+
+      await expect(service.create(1, createDto, ACTOR)).rejects.toThrow(
+        'DB constraint violation',
+      );
+      expect(
+        mockNotificationsService.sendSilentToSection,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('update(): calls sendSilentToSection with UPDATED action after successful DB write', async () => {
+      const existing = {
+        activity_id: 3,
+        club_section_id: SECTION_ID,
+        is_joint: false,
+        club_sections: { main_club_id: 1 },
+        activity_instances: [],
+      };
+      const updated = { ...existing, name: 'Retiro', activity_instances: [] };
+
+      mockPrismaService.activities.findUnique.mockResolvedValueOnce(existing);
+      mockPrismaService.activities.update.mockResolvedValue(updated);
+
+      await service.update(3, { name: 'Retiro' }, ACTOR);
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sectionId: SECTION_ID,
+          resource: 'activities',
+          action: 'UPDATED',
+          entityId: 3,
+          actorId: ACTOR,
+        }),
+      );
+    });
+
+    it('update(): does NOT call sendSilentToSection when activity not found', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.update(999, { name: 'X' }, ACTOR),
+      ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_NOT_FOUND });
+      expect(
+        mockNotificationsService.sendSilentToSection,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('remove(): calls sendSilentToSection with DELETED action after successful soft-delete', async () => {
+      const existing = {
+        activity_id: 5,
+        club_section_id: SECTION_ID,
+        active: true,
+      };
+
+      mockPrismaService.activities.findUnique.mockResolvedValue(existing);
+      mockPrismaService.activities.update.mockResolvedValue({
+        ...existing,
+        active: false,
+      });
+
+      await service.remove(5, ACTOR);
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sectionId: SECTION_ID,
+          resource: 'activities',
+          action: 'DELETED',
+          entityId: 5,
+          actorId: ACTOR,
+        }),
+      );
+    });
+
+    it('remove(): does NOT call sendSilentToSection when activity not found', async () => {
+      mockPrismaService.activities.findUnique.mockResolvedValue(null);
+
+      await expect(service.remove(999, ACTOR)).rejects.toMatchObject({
+        code: ErrorCode.ACTIVITY_NOT_FOUND,
+      });
+      expect(
+        mockNotificationsService.sendSilentToSection,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('remove(): uses fallback actorId "system" when actorId is not provided', async () => {
+      const existing = {
+        activity_id: 6,
+        club_section_id: SECTION_ID,
+        active: true,
+      };
+
+      mockPrismaService.activities.findUnique.mockResolvedValue(existing);
+      mockPrismaService.activities.update.mockResolvedValue({
+        ...existing,
+        active: false,
+      });
+
+      await service.remove(6); // no actorId
+
+      expect(mockNotificationsService.sendSilentToSection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'system',
+        }),
       );
     });
   });

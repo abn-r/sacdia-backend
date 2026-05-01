@@ -21,12 +21,22 @@ import {
 import { AwardCategoriesService } from './award-categories.service';
 import { CreateAwardCategoryDto } from './dto/create-award-category.dto';
 import { UpdateAwardCategoryDto } from './dto/update-award-category.dto';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AWARD_CATEGORY_SCOPES,
+  type AwardCategoryScope,
+} from './dto/award-category-scope.const';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @ApiTags('Award Categories')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('award-categories')
 export class AwardCategoriesController {
   constructor(private readonly service: AwardCategoriesService) {}
@@ -62,16 +72,45 @@ export class AwardCategoriesController {
     description: 'Filter by active status (default: true)',
     example: true,
   })
+  @ApiQuery({
+    name: 'scope',
+    required: false,
+    description: 'Filter by category scope',
+    enum: AWARD_CATEGORY_SCOPES,
+  })
+  @ApiQuery({
+    name: 'include_legacy',
+    required: false,
+    description:
+      'Include legacy categories (is_legacy=true). Default: false — only current composite-based categories are returned.',
+    example: false,
+  })
   @ApiResponse({ status: 200, description: 'List of award categories' })
+  @ApiResponse({ status: 400, description: 'Invalid scope value' })
   async findAll(
     @Query('club_type_id') clubTypeId?: string,
     @Query('active') active?: string,
+    @Query('scope') scope?: string,
+    @Query('include_legacy') includeLegacy?: string,
   ) {
+    if (
+      scope !== undefined &&
+      !AWARD_CATEGORY_SCOPES.includes(scope as AwardCategoryScope)
+    ) {
+      throw new AppBadRequestException(ErrorCode.AWARD_CATEGORY_SCOPE_INVALID);
+    }
+
     const clubTypeIdParsed =
       clubTypeId !== undefined ? parseInt(clubTypeId, 10) : undefined;
     const activeParsed = active !== undefined ? active === 'true' : undefined;
+    const includeLegacyParsed = includeLegacy === 'true';
 
-    const data = await this.service.findAll(clubTypeIdParsed, activeParsed);
+    const data = await this.service.findAll(
+      clubTypeIdParsed,
+      activeParsed,
+      scope as AwardCategoryScope | undefined,
+      includeLegacyParsed,
+    );
     return { status: 'success', data };
   }
 

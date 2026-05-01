@@ -23,7 +23,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { CreateResourceDto } from './dto/create-resource.dto';
 import { UpdateResourceDto } from './dto/update-resource.dto';
@@ -33,6 +36,7 @@ import { ResourcesService } from './resources.service';
 @ApiTags('Resources')
 @Controller('resources')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @ApiBearerAuth()
 export class ResourcesController {
   constructor(private readonly resourcesService: ResourcesService) {}

@@ -31,12 +31,54 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class MemberOfMonthController {
-  constructor(
-    private readonly memberOfMonthService: MemberOfMonthService,
-  ) {}
+  constructor(private readonly memberOfMonthService: MemberOfMonthService) {}
+
+  @Get('member-of-month/admin/list')
+  @RequirePermissions('mom:supervise')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({
+    summary: 'Listar miembro del mes multi-sección (admin/coordinator)',
+  })
+  @ApiQuery({ name: 'club_type_id', required: false, type: Number })
+  @ApiQuery({ name: 'local_field_id', required: false, type: Number })
+  @ApiQuery({ name: 'club_id', required: false, type: Number })
+  @ApiQuery({ name: 'section_id', required: false, type: Number })
+  @ApiQuery({ name: 'year', required: false, type: Number })
+  @ApiQuery({ name: 'month', required: false, type: Number })
+  @ApiQuery({ name: 'notified', required: false, type: Boolean })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async listForAdmin(
+    @Req() req: any,
+    @Query('club_type_id', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
+    @Query('club_id', new ParseIntPipe({ optional: true })) clubId?: number,
+    @Query('section_id', new ParseIntPipe({ optional: true }))
+    sectionId?: number,
+    @Query('year', new ParseIntPipe({ optional: true })) year?: number,
+    @Query('month', new ParseIntPipe({ optional: true })) month?: number,
+    @Query('notified') notified?: string,
+    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    const data = await this.memberOfMonthService.listForAdmin(req.user.sub, {
+      clubTypeId,
+      localFieldId,
+      clubId,
+      sectionId,
+      year,
+      month,
+      notified: notified !== undefined ? notified === 'true' : undefined,
+      page,
+      limit,
+    });
+    return { status: 'success', data };
+  }
 
   @Get('clubs/:clubId/sections/:sectionId/member-of-month')
-  @RequirePermissions('units:read')
+  @RequirePermissions('mom:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Obtener miembro del mes actual de la sección' })
   @ApiParam({ name: 'clubId', type: Number })
@@ -51,13 +93,23 @@ export class MemberOfMonthController {
   }
 
   @Get('clubs/:clubId/sections/:sectionId/member-of-month/history')
-  @RequirePermissions('units:read')
+  @RequirePermissions('mom:read')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({ summary: 'Obtener historial paginado de miembro del mes' })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Página (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Resultados por página (default 12)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Página (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Resultados por página (default 12)',
+  })
   @ApiResponse({ status: 200, description: 'Historial de miembro del mes' })
   @ApiResponse({ status: 404, description: 'Sección no encontrada' })
   async getMemberOfMonthHistory(
@@ -75,7 +127,7 @@ export class MemberOfMonthController {
   }
 
   @Post('clubs/:clubId/sections/:sectionId/member-of-month/evaluate')
-  @RequirePermissions('units:update')
+  @RequirePermissions('mom:evaluate')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
@@ -84,8 +136,14 @@ export class MemberOfMonthController {
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
-  @ApiResponse({ status: 201, description: 'Evaluación ejecutada exitosamente' })
-  @ApiResponse({ status: 403, description: 'Solo directores pueden ejecutar esta acción' })
+  @ApiResponse({
+    status: 201,
+    description: 'Evaluación ejecutada exitosamente',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo directores pueden ejecutar esta acción',
+  })
   @ApiResponse({ status: 404, description: 'Sección no encontrada' })
   async evaluateMemberOfMonth(
     @Param('clubId', ParseIntPipe) clubId: number,

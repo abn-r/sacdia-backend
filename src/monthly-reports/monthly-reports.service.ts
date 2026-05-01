@@ -1,17 +1,22 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { UpdateManualDataDto } from './dto';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class MonthlyReportsService {
   private readonly logger = new Logger(MonthlyReportsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -76,8 +81,8 @@ export class MonthlyReportsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${enrollmentId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND,
       );
     }
 
@@ -132,15 +137,11 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     if (report.status !== 'draft') {
-      throw new BadRequestException(
-        `Cannot update manual data for a report with status '${report.status}'. Only draft reports can be edited.`,
-      );
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
     }
 
     // Build update data, filtering out undefined values
@@ -176,15 +177,11 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     if (report.status !== 'draft') {
-      throw new BadRequestException(
-        `Cannot generate a report with status '${report.status}'. Only draft reports can be generated.`,
-      );
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
     }
 
     // Get live preview data to freeze
@@ -218,15 +215,11 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     if (report.status !== 'generated') {
-      throw new BadRequestException(
-        `Cannot submit a report with status '${report.status}'. Only generated reports can be submitted.`,
-      );
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_GENERATED);
     }
 
     return this.prisma.monthly_reports.update({
@@ -273,9 +266,7 @@ export class MonthlyReportsService {
     });
 
     if (!report) {
-      throw new NotFoundException(
-        `Monthly report with ID ${reportId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
     }
 
     return report;
@@ -311,6 +302,133 @@ export class MonthlyReportsService {
   }
 
   // ========================================
+  // LIST REPORTS FOR ADMIN (multi-club supervision)
+  // ========================================
+
+  /**
+   * Paginated list of monthly reports across clubs.
+   * - super_admin / admin: can filter by any local_field_id supplied in filters.
+   * - coordinator: scope is forced to their own local_field_id (filters.localFieldId ignored).
+   * Roles and territory scope are derived from the resolved authorization profile
+   * so that this method never trusts unverified JWT claims directly.
+   */
+  async listForAdmin(
+    userId: string,
+    filters: {
+      clubTypeId?: number;
+      localFieldId?: number;
+      year?: number;
+      month?: number;
+      status?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+
+    const globalRoleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    const isAdmin =
+      globalRoleNames.has('admin') || globalRoleNames.has('super_admin');
+
+    const userLocalFieldId = resolved.authorization.effective.scope.global
+      .local_field?.id as number | undefined;
+
+    const scopedLocalFieldId: number | undefined = isAdmin
+      ? filters.localFieldId
+      : userLocalFieldId;
+
+    const page = filters.page ?? 1;
+    const limit = Math.min(filters.limit ?? 25, 100);
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.monthly_reportsWhereInput = {
+      ...(filters.year !== undefined && { year: filters.year }),
+      ...(filters.month !== undefined && { month: filters.month }),
+      ...(filters.status && { status: filters.status }),
+      club_enrollment: {
+        club_section: {
+          ...(filters.clubTypeId !== undefined && {
+            club_type_id: filters.clubTypeId,
+          }),
+          ...(scopedLocalFieldId !== undefined && {
+            clubs: { local_field_id: scopedLocalFieldId },
+          }),
+        },
+      },
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.monthly_reports.count({ where }),
+      this.prisma.monthly_reports.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        include: {
+          club_enrollment: {
+            include: {
+              club_section: {
+                include: {
+                  club_types: { select: { club_type_id: true, name: true } },
+                  clubs: {
+                    select: {
+                      name: true,
+                      local_field_id: true,
+                      local_fields: { select: { name: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          submitter: {
+            select: {
+              user_id: true,
+              name: true,
+              paternal_last_name: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const items = rows.map((r) => {
+      const section = r.club_enrollment.club_section;
+      const submitterName = r.submitter
+        ? `${r.submitter.name ?? ''} ${r.submitter.paternal_last_name ?? ''}`.trim() ||
+          null
+        : null;
+      const memberCount =
+        (r.snapshot_data as { member_count?: number } | null)?.member_count ??
+        null;
+      return {
+        monthly_report_id: r.monthly_report_id,
+        club_enrollment_id: r.club_enrollment_id,
+        month: r.month,
+        year: r.year,
+        status: r.status,
+        generated_at: r.generated_at,
+        submitted_at: r.submitted_at,
+        club_name: section.clubs?.name ?? null,
+        club_type: section.club_types?.name ?? null,
+        club_type_id: section.club_types?.club_type_id ?? null,
+        local_field: section.clubs?.local_fields?.name ?? null,
+        local_field_id: section.clubs?.local_field_id ?? null,
+        submitter_name: submitterName,
+        member_count: memberCount,
+      };
+    });
+
+    return { total, page, limit, items };
+  }
+
+  // ========================================
   // GET SUBMITTED COUNT
   // ========================================
 
@@ -326,6 +444,171 @@ export class MonthlyReportsService {
         status: 'submitted',
       },
     });
+  }
+
+  // ========================================
+  // AUTO-GENERATION (used by cron and BullMQ processor)
+  // ========================================
+
+  /**
+   * Runs the full auto-generation loop for the given month/year (or the
+   * previous month if no arguments are supplied).
+   *
+   * This method:
+   * 1. Reads system_config to check whether auto-generation is enabled and
+   *    to determine the configured day-of-month.
+   * 2. Checks that today is the configured day (when called from the cron
+   *    trigger, this will be true; when called from a BullMQ retry it will
+   *    also be true because the job was enqueued on that day).
+   * 3. Iterates over all active club enrollments, calling getOrCreateDraft()
+   *    and generate() for each one that is still in draft status.
+   *
+   * Idempotency is guaranteed by the draft status check — a report that has
+   * already been generated or submitted is skipped silently. BullMQ retries
+   * are therefore safe.
+   *
+   * @param forceDate - Optional date to use instead of today (useful for
+   *                    testing and manual back-fills).
+   */
+  async runAutoGeneration(
+    forceDate?: Date,
+  ): Promise<{ itemsProcessed: number }> {
+    // 1. Read system_config to check if auto-generation is enabled
+    const enabledConfig = await this.prisma.system_config.findUnique({
+      where: { config_key: 'reports.auto_generate_enabled' },
+    });
+
+    if (!enabledConfig || enabledConfig.config_value !== 'true') {
+      this.logger.log('Auto-generation is disabled. Skipping.');
+      return { itemsProcessed: 0 };
+    }
+
+    // 2. Read the configured day of month
+    const dayConfig = await this.prisma.system_config.findUnique({
+      where: { config_key: 'reports.auto_generate_day' },
+    });
+
+    const configuredDay = dayConfig ? parseInt(dayConfig.config_value, 10) : 5;
+
+    if (isNaN(configuredDay) || configuredDay < 1 || configuredDay > 28) {
+      this.logger.warn(
+        `Invalid auto_generate_day value: "${dayConfig?.config_value}". Must be 1-28. Skipping.`,
+      );
+      return { itemsProcessed: 0 };
+    }
+
+    // 3. Check if today is the configured day
+    const today = forceDate ?? new Date();
+    const currentDay = today.getDate();
+
+    if (currentDay !== configuredDay) {
+      this.logger.debug(
+        `Today is day ${currentDay}, configured day is ${configuredDay}. Skipping.`,
+      );
+      return { itemsProcessed: 0 };
+    }
+
+    this.logger.log(
+      `Today is the configured auto-generation day (${configuredDay}). Starting report generation...`,
+    );
+
+    // 4. Calculate the PREVIOUS month and year
+    const prevMonth = today.getMonth() === 0 ? 12 : today.getMonth();
+    const prevYear =
+      today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+
+    this.logger.log(
+      `Generating reports for ${prevYear}-${String(prevMonth).padStart(2, '0')}`,
+    );
+
+    // 5. Get all active club enrollments
+    const activeEnrollments = await this.prisma.club_enrollments.findMany({
+      where: { status: 'active' },
+      select: {
+        club_enrollment_id: true,
+        club_section: {
+          select: {
+            clubs: { select: { name: true } },
+            club_types: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    if (activeEnrollments.length === 0) {
+      this.logger.log('No active club enrollments found. Nothing to generate.');
+      return { itemsProcessed: 0 };
+    }
+
+    this.logger.log(
+      `Found ${activeEnrollments.length} active enrollment(s). Processing...`,
+    );
+
+    // 6. For each enrollment, get or create draft and then generate
+    let successCount = 0;
+    let skipCount = 0;
+    let errorCount = 0;
+    const errors: { enrollmentId: string; clubName: string; error: string }[] =
+      [];
+
+    for (const enrollment of activeEnrollments) {
+      const clubName = enrollment.club_section?.clubs?.name ?? 'Unknown club';
+      const clubType =
+        enrollment.club_section?.club_types?.name ?? 'Unknown type';
+      const label = `${clubName} (${clubType})`;
+
+      try {
+        const draft = await this.getOrCreateDraft(
+          enrollment.club_enrollment_id,
+          prevMonth,
+          prevYear,
+        );
+
+        if (draft.status !== 'draft') {
+          this.logger.debug(
+            `Report for ${label} already has status "${draft.status}". Skipping.`,
+          );
+          skipCount++;
+          continue;
+        }
+
+        await this.generate(
+          draft.monthly_report_id,
+          'system', // userId = 'system' for auto-generated reports
+        );
+
+        successCount++;
+        this.logger.log(`Generated report for ${label}`);
+      } catch (error) {
+        errorCount++;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        errors.push({
+          enrollmentId: enrollment.club_enrollment_id,
+          clubName: label,
+          error: errorMessage,
+        });
+        this.logger.error(
+          `Failed to generate report for ${label}: ${errorMessage}`,
+        );
+      }
+    }
+
+    // 7. Log summary
+    this.logger.log(
+      `Auto-generation complete for ${prevYear}-${String(prevMonth).padStart(2, '0')}: ` +
+        `${successCount} generated, ${skipCount} skipped (already processed), ${errorCount} errors`,
+    );
+
+    if (errors.length > 0) {
+      this.logger.warn(
+        `Errors during auto-generation:\n${errors
+          .map((e) => `  - ${e.clubName} (${e.enrollmentId}): ${e.error}`)
+          .join('\n')}`,
+      );
+    }
+
+    return { itemsProcessed: successCount };
   }
 
   // ========================================
@@ -554,10 +837,10 @@ export class MonthlyReportsService {
 
   private validateMonthYear(month: number, year: number) {
     if (month < 1 || month > 12) {
-      throw new BadRequestException('Month must be between 1 and 12');
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_MONTH);
     }
     if (year < 2020 || year > 2100) {
-      throw new BadRequestException('Year must be between 2020 and 2100');
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_YEAR);
     }
   }
 
@@ -567,8 +850,8 @@ export class MonthlyReportsService {
     });
 
     if (!enrollment) {
-      throw new NotFoundException(
-        `Club enrollment with ID ${enrollmentId} not found`,
+      throw new AppNotFoundException(
+        ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND,
       );
     }
 

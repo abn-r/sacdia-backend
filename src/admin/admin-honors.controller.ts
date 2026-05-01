@@ -10,9 +10,22 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  PermissionsGuard,
+  GlobalRolesGuard,
+} from '../common/guards';
 import { AdminHonorsService } from './admin-honors.service';
 import {
   BatchReviewDto,
@@ -25,6 +38,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin/honors')
 export class AdminHonorsController {
   constructor(private readonly adminHonorsService: AdminHonorsService) {}
@@ -40,13 +54,12 @@ export class AdminHonorsController {
    */
   @Get('requirements/pending-review')
   @RequirePermissions('honors:read')
-  @ApiOperation({ summary: 'List requirements pending admin review (paginated)' })
+  @ApiOperation({
+    summary: 'List requirements pending admin review (paginated)',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  async getPendingReview(
-    @Query('page') page = 1,
-    @Query('limit') limit = 20,
-  ) {
+  async getPendingReview(@Query('page') page = 1, @Query('limit') limit = 20) {
     const data = await this.adminHonorsService.getPendingReview(
       Number(page),
       Number(limit),
@@ -156,7 +169,10 @@ export class AdminHonorsController {
     @Param('honorId', ParseIntPipe) honorId: number,
     @Body() dto: ReorderRequirementsDto,
   ) {
-    const data = await this.adminHonorsService.reorderRequirements(honorId, dto);
+    const data = await this.adminHonorsService.reorderRequirements(
+      honorId,
+      dto,
+    );
     return { status: 'success', data };
   }
 }

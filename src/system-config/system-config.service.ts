@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { AppNotFoundException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -17,12 +19,21 @@ export class SystemConfigService {
     });
 
     if (!config) {
-      throw new NotFoundException(
-        `Configuracion con clave '${key}' no encontrada`,
-      );
+      throw new AppNotFoundException(ErrorCode.SYSTEM_CONFIG_NOT_FOUND);
     }
 
     return config;
+  }
+
+  /**
+   * Non-throwing variant — returns null when the config key is not found.
+   * Prefer this for optional feature flags and kill-switches.
+   */
+  async get(key: string): Promise<string | null> {
+    const config = await this.prisma.system_config.findUnique({
+      where: { config_key: key },
+    });
+    return config?.config_value ?? null;
   }
 
   async updateByKey(key: string, configValue: string) {
@@ -31,9 +42,7 @@ export class SystemConfigService {
     });
 
     if (!existing) {
-      throw new NotFoundException(
-        `Configuracion con clave '${key}' no encontrada`,
-      );
+      throw new AppNotFoundException(ErrorCode.SYSTEM_CONFIG_NOT_FOUND);
     }
 
     return this.prisma.system_config.update({

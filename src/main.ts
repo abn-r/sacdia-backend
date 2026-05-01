@@ -1,3 +1,9 @@
+// Must be the first import: populates process.env from .env BEFORE any
+// @Module decorator body or top-level module code runs. Without this, all
+// isRedisConfigured() / buildBullRootConfig() checks execute at file-load
+// time with an empty process.env, causing BullMQ queue registration to be
+// skipped even when REDIS_URL is present in .env.
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -11,8 +17,9 @@ import { timeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+// NOTE: HttpExceptionFilter and AllExceptionsFilter are registered via APP_FILTER
+// in CommonModule so they receive I18nService via DI. Do NOT use useGlobalFilters()
+// here — that would instantiate them without injection and break i18n.
 
 // ==========================================
 // PROCESS-LEVEL SAFETY NET
@@ -61,6 +68,10 @@ async function bootstrap() {
     Sentry.init({
       dsn: process.env.SENTRY_DSN,
       environment: process.env.NODE_ENV || 'development',
+      release:
+        process.env.SENTRY_RELEASE ||
+        process.env.RENDER_GIT_COMMIT ||
+        undefined,
       tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
       profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
       beforeSend(event) {
@@ -180,11 +191,9 @@ async function bootstrap() {
   // ==========================================
   app.useBodyParser('json', { limit: '10mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
-
-  // Global Multer file size limit — 10 MB safety net for multipart uploads.
-  // Individual FileInterceptor usages may impose stricter per-endpoint limits;
-  // this catches any upload that bypasses per-route configuration.
-  app.useBodyParser('raw', { limit: '10mb', type: 'multipart/form-data' });
+  // Multipart/form-data size limits live in AppModule via MulterModule.register().
+  // Do NOT add a raw body parser for multipart here — it consumes the stream
+  // before Multer can parse boundaries, causing "Unexpected end of form" 400s.
 
   // ==========================================
   // CORS
@@ -227,15 +236,11 @@ async function bootstrap() {
   // ==========================================
   // SEGURIDAD - Global Filters (Exception Handling)
   // ==========================================
-  // Filters are evaluated top-down; the first whose @Catch() metadata matches
-  // wins. The specific filter (HttpException) MUST precede the catch-all,
-  // otherwise AllExceptionsFilter swallows every HttpException and converts
-  // 400/404/403 into generic 500s — losing masking, validation details, and
-  // the real status code at the client.
-  app.useGlobalFilters(
-    new HttpExceptionFilter(), // Specific: HttpException + subclasses with safe logging
-    new AllExceptionsFilter(), // Catch-all fallback for non-HTTP exceptions
-  );
+  // Filters are registered via APP_FILTER providers in CommonModule so that
+  // I18nService can be injected via NestJS DI. The specificity guarantee
+  // (@Catch(HttpException) > @Catch()) ensures HttpExceptionFilter handles
+  // all HttpException subclasses (including AppException) before AllExceptionsFilter.
+  // DO NOT call app.useGlobalFilters() here — it bypasses DI and breaks i18n injection.
 
   // ==========================================
   // AUDITORÍA - Global Interceptors

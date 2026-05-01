@@ -15,3 +15,12 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # p-limit v6+ is ESM-only and breaks the CJS runtime (Node 22 LTS).
+      # Dependabot PRs #19 and #22 were closed for this reason.
+      - dependency-name: "p-limit"
+        versions: [">=6"]
+      # Pin @types/node to the Node 22 LTS major. Major bumps (v23+, v24+)
+      # would pull in types for a newer Node than the runtime target.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]

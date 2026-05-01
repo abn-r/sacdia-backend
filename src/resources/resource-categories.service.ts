@@ -1,8 +1,9 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateResourceCategoryDto } from './dto/create-resource-category.dto';
 import { UpdateResourceCategoryDto } from './dto/update-resource-category.dto';
@@ -29,7 +30,7 @@ export class ResourceCategoriesService {
       where: { resource_category_id: id },
     });
     if (!category) {
-      throw new NotFoundException('Categoría de recurso no encontrada');
+      throw new AppNotFoundException(ErrorCode.RESOURCE_CATEGORY_NOT_FOUND);
     }
     return category;
   }
@@ -48,9 +49,7 @@ export class ResourceCategoriesService {
       where: { resource_category_id: id, active: true },
     });
     if (resourceCount > 0) {
-      throw new BadRequestException(
-        `No se puede eliminar la categoría porque tiene ${resourceCount} recurso(s) activo(s)`,
-      );
+      throw new AppBadRequestException(ErrorCode.RESOURCE_CATEGORY_IN_USE);
     }
     return this.prisma.resource_categories.update({
       where: { resource_category_id: id },

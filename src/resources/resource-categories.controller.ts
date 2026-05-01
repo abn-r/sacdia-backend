@@ -16,7 +16,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { CreateResourceCategoryDto } from './dto/create-resource-category.dto';
 import { UpdateResourceCategoryDto } from './dto/update-resource-category.dto';
@@ -25,6 +28,7 @@ import { ResourceCategoriesService } from './resource-categories.service';
 @ApiTags('resource-categories')
 @Controller('resource-categories')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @ApiBearerAuth()
 export class ResourceCategoriesController {
   constructor(private readonly service: ResourceCategoriesService) {}

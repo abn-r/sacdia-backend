@@ -1,9 +1,6 @@
-import {
-  Injectable,
-  BadRequestException,
-  Logger,
-  Inject,
-} from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
 import { OAuthCallbackDto } from './dto/oauth-callback.dto';
@@ -82,8 +79,9 @@ export class OAuthService {
       this.logger.warn(
         `OAuth redirect URL rejected — not in allowlist: ${url}`,
       );
-      throw new BadRequestException(
-        'La URL de redirección proporcionada no está permitida.',
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_OAUTH_REDIRECT_NOT_ALLOWED,
+        { url },
       );
     }
   }
@@ -249,9 +247,10 @@ export class OAuthService {
   async disconnectProvider(userId: string, provider: string) {
     const validProviders = OAuthService.VALID_PROVIDERS as readonly string[];
     if (!validProviders.includes(provider)) {
-      throw new BadRequestException(
-        `Provider inválido. Usa: ${OAuthService.VALID_PROVIDERS.join(', ')}`,
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_OAUTH_PROVIDER_INVALID, {
+        provider,
+        valid: OAuthService.VALID_PROVIDERS.join(', '),
+      });
     }
 
     // Safety check: ensure the user retains at least one authentication method
@@ -269,10 +268,7 @@ export class OAuthService {
       ).length > 0;
 
     if (!hasPasswordAccount && !hasOtherOAuth) {
-      throw new BadRequestException(
-        'No podés desconectar el único método de autenticación. ' +
-          'Configurá una contraseña primero.',
-      );
+      throw new AppBadRequestException(ErrorCode.AUTH_OAUTH_ONLY_AUTH_METHOD);
     }
 
     const deleted = await this.prisma.account.deleteMany({
@@ -280,8 +276,9 @@ export class OAuthService {
     });
 
     if (deleted.count === 0) {
-      throw new BadRequestException(
-        `El provider '${provider}' no está conectado a esta cuenta.`,
+      throw new AppBadRequestException(
+        ErrorCode.AUTH_OAUTH_PROVIDER_NOT_CONNECTED,
+        { provider },
       );
     }
 

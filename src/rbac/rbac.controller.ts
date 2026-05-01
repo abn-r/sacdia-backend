@@ -7,22 +7,29 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   ParseUUIDPipe,
   Put,
   Headers,
-  ForbiddenException,
 } from '@nestjs/common';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
   ApiHeader,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
 import {
   JwtAuthGuard,
   PermissionsGuard,
@@ -34,10 +41,13 @@ import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
 import { AssignRoleDto } from './dto/assign-role.dto';
 import { BootstrapAdminDto } from './dto/bootstrap-admin.dto';
+import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
 
 @ApiTags('rbac')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('admin/rbac')
 export class RbacController {
   constructor(private readonly rbacService: RbacService) {}
@@ -96,9 +106,19 @@ export class RbacController {
   @Get('roles')
   @RequirePermissions('roles:read')
   @ApiOperation({ summary: 'Listar roles con sus permisos' })
+  @ApiQuery({
+    name: 'active',
+    required: false,
+    enum: ['true', 'false', 'all'],
+    description: 'Filtrar por estado: true (default), false, all',
+  })
   @ApiResponse({ status: 200, description: 'Lista de roles con permisos' })
-  async listRoles() {
-    const data = await this.rbacService.listRoles();
+  async listRoles(@Query('active') active?: string) {
+    let activeFilter: boolean | undefined = true;
+    if (active === 'false') activeFilter = false;
+    else if (active === 'all') activeFilter = undefined;
+
+    const data = await this.rbacService.listRoles(activeFilter);
     return { status: 'success', data };
   }
 
@@ -108,6 +128,59 @@ export class RbacController {
   @ApiResponse({ status: 200, description: 'Rol con permisos' })
   async getRole(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.rbacService.getRoleWithPermissions(id);
+    return { status: 'success', data };
+  }
+
+  // ─── Role CRUD (super_admin only) ───────────────────────────
+
+  @Post('roles')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('super_admin')
+  @ApiOperation({ summary: 'Crear un nuevo rol' })
+  @ApiResponse({ status: 201, description: 'Rol creado con sus permisos' })
+  @ApiResponse({ status: 400, description: 'Nombre inválido o reservado' })
+  @ApiResponse({ status: 404, description: 'Algún permission_id no existe' })
+  @ApiResponse({ status: 409, description: 'Ya existe un rol con ese nombre' })
+  async createRole(@Body() dto: CreateRoleDto) {
+    const data = await this.rbacService.createRole(dto);
+    return { status: 'success', data };
+  }
+
+  @Patch('roles/:id')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('super_admin')
+  @ApiOperation({ summary: 'Actualizar descripción y/o permisos de un rol' })
+  @ApiResponse({ status: 200, description: 'Rol actualizado' })
+  @ApiResponse({
+    status: 400,
+    description: 'role_name inmutable o body inválido',
+  })
+  @ApiResponse({ status: 403, description: 'El rol super_admin es protegido' })
+  @ApiResponse({ status: 404, description: 'Rol no encontrado' })
+  async updateRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRoleDto,
+  ) {
+    const data = await this.rbacService.updateRole(id, dto);
+    return { status: 'success', data };
+  }
+
+  @Delete('roles/:id')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @GlobalRoles('super_admin')
+  @ApiOperation({ summary: 'Desactivar (soft delete) un rol' })
+  @ApiResponse({
+    status: 200,
+    description: 'Rol desactivado: { success: true, role_id }',
+  })
+  @ApiResponse({ status: 403, description: 'El rol super_admin es protegido' })
+  @ApiResponse({ status: 404, description: 'Rol no encontrado' })
+  @ApiResponse({
+    status: 409,
+    description: 'El rol tiene usuarios asignados activos',
+  })
+  async deactivateRole(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.rbacService.deactivateRole(id);
     return { status: 'success', data };
   }
 
@@ -260,13 +333,11 @@ export class RbacBootstrapController {
     const configuredSecret = this.configService.get<string>('BOOTSTRAP_SECRET');
 
     if (!configuredSecret) {
-      throw new ForbiddenException(
-        'Bootstrap endpoint is disabled. Set BOOTSTRAP_SECRET to enable it.',
-      );
+      throw new AppForbiddenException(ErrorCode.RBAC_BOOTSTRAP_FORBIDDEN);
     }
 
     if (!bootstrapSecret) {
-      throw new ForbiddenException('Invalid bootstrap secret.');
+      throw new AppForbiddenException(ErrorCode.RBAC_BOOTSTRAP_SECRET_INVALID);
     }
 
     const secretBuffer = Buffer.from(configuredSecret, 'utf8');
@@ -276,7 +347,7 @@ export class RbacBootstrapController {
       secretBuffer.length !== providedBuffer.length ||
       !timingSafeEqual(secretBuffer, providedBuffer)
     ) {
-      throw new ForbiddenException('Invalid bootstrap secret.');
+      throw new AppForbiddenException(ErrorCode.RBAC_BOOTSTRAP_SECRET_INVALID);
     }
 
     return this.rbacService.bootstrapAdmin(dto.user_id);

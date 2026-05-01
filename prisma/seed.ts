@@ -61,31 +61,37 @@ async function main() {
         data: [
             {
                 role_name: 'super_admin',
+                description: 'Full system access with unrestricted control over all platform features, users, clubs, and configuration.',
                 role_category: 'GLOBAL',
                 active: true,
             },
             {
                 role_name: 'admin',
+                description: 'Platform administrator with broad access to manage clubs, users, catalogs, and system settings.',
                 role_category: 'GLOBAL',
                 active: true,
             },
             {
                 role_name: 'assistant_admin',
+                description: 'Assistant administrator who supports platform management tasks with limited administrative privileges.',
                 role_category: 'GLOBAL',
                 active: true,
             },
             {
                 role_name: 'coordinator',
+                description: 'Regional or district coordinator responsible for overseeing multiple clubs within a geographic area.',
                 role_category: 'GLOBAL',
                 active: true,
             },
             {
                 role_name: 'pastor',
+                description: 'Church pastor with visibility into club activities and spiritual oversight responsibilities.',
                 role_category: 'GLOBAL',
                 active: true,
             },
             {
                 role_name: 'user',
+                description: 'Standard authenticated user with access to their own profile and club membership data.',
                 role_category: 'GLOBAL',
                 active: true,
             },
@@ -99,36 +105,43 @@ async function main() {
         data: [
             {
                 role_name: 'director',
+                description: 'Club director responsible for overall club leadership, planning, and operations.',
                 role_category: 'CLUB',
                 active: true,
             },
             {
                 role_name: 'deputy_director',
+                description: 'Deputy director who assists the club director and assumes leadership in their absence.',
                 role_category: 'CLUB',
                 active: true,
             },
             {
                 role_name: 'secretary',
+                description: 'Club secretary responsible for record-keeping, attendance tracking, and administrative documentation.',
                 role_category: 'CLUB',
                 active: true,
             },
             {
                 role_name: 'treasurer',
+                description: 'Club treasurer who manages financial records, budgets, dues, and expense reporting.',
                 role_category: 'CLUB',
                 active: true,
             },
             {
                 role_name: 'counselor',
+                description: 'Unit counselor who guides and mentors a group of club members in their spiritual and personal development.',
                 role_category: 'CLUB',
                 active: true,
             },
             {
                 role_name: 'instructor',
+                description: 'Instructor who teaches honors, classes, and specialized skills to club members.',
                 role_category: 'CLUB',
                 active: true,
             },
             {
                 role_name: 'member',
+                description: 'Regular club member participating in Pathfinder, Adventurer, or Master Guide club activities.',
                 role_category: 'CLUB',
                 active: true,
             },

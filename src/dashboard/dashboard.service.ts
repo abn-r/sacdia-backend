@@ -9,7 +9,10 @@ import type { FileStorageService } from '../common/services/file-storage.service
 export interface UpcomingActivityDto {
   id: number;
   title: string;
+  /** @deprecated Use `activity_date` + `activity_time` instead. Will be removed in a future version. */
   date: string;
+  activity_date: string | null;
+  activity_time: string | null;
   location: string | null;
 }
 
@@ -20,6 +23,7 @@ export interface DashboardSummaryDto {
   club_type: string | null;
   user_role: string | null;
   current_class_name: string | null;
+  current_class_id: number | null;
   class_progress: number;
   honors_completed: number;
   honors_in_progress: number;
@@ -40,7 +44,7 @@ export class DashboardService {
   ) {}
 
   async getSummary(userId: string): Promise<DashboardSummaryDto> {
-    const [user, enrollment, honors, clubAssignment] = await Promise.all([
+    const [user, enrollment, honors, userPr] = await Promise.all([
       this.prisma.users.findUnique({
         where: { user_id: userId },
         select: {
@@ -63,9 +67,55 @@ export class DashboardService {
         where: { user_id: userId, active: true },
         select: { validate: true },
       }),
-      this.prisma.club_role_assignments.findFirst({
-        where: { user_id: userId, active: true },
-        orderBy: { created_at: 'desc' },
+      // Read the persisted active context from users_pr — this is the single
+      // source of truth set by PATCH /auth/me/context. Mirrors exactly the
+      // logic used by AuthorizationContextService.resolveUserAuthorization().
+      this.prisma.users_pr.findUnique({
+        where: { user_id: userId },
+        select: { active_club_assignment_id: true },
+      }),
+    ]);
+
+    // Resolve the active club assignment using the same priority order as
+    // AuthorizationContextService: persisted ID first, then most-recent fallback.
+    const clubAssignment = await (async () => {
+      const activeAssignmentId = userPr?.active_club_assignment_id;
+
+      if (activeAssignmentId) {
+        // Try to fetch the explicitly chosen assignment first.
+        const explicit = await this.prisma.club_role_assignments.findFirst({
+          where: {
+            assignment_id: activeAssignmentId,
+            user_id: userId,
+            active: true,
+            status: 'active',
+          },
+          select: {
+            club_sections: {
+              select: {
+                club_section_id: true,
+                club_types: { select: { name: true } },
+                clubs: { select: { name: true } },
+              },
+            },
+            roles: { select: { role_name: true } },
+          },
+        });
+
+        if (explicit) return explicit;
+
+        // If the stored ID is no longer active (e.g. revoked), fall through to
+        // the same auto-select that AuthorizationContextService uses.
+        this.logger.warn(
+          `Dashboard: stored active_club_assignment_id ${activeAssignmentId} is no longer active for user ${userId}. Falling back to most recent.`,
+        );
+      }
+
+      // Fallback: most recently started active assignment — mirrors
+      // AuthorizationContextService's activeClubGrants[0] (ordered by start_date desc).
+      return this.prisma.club_role_assignments.findFirst({
+        where: { user_id: userId, active: true, status: 'active' },
+        orderBy: { start_date: 'desc' },
         select: {
           club_sections: {
             select: {
@@ -76,8 +126,8 @@ export class DashboardService {
           },
           roles: { select: { role_name: true } },
         },
-      }),
-    ]);
+      });
+    })();
 
     // ----------------------------------------
     // User name
@@ -175,23 +225,28 @@ export class DashboardService {
       });
 
       for (const a of activities) {
-        // Combine activity_date (Date) with activity_time (HH:mm string) into a
-        // single ISO timestamp so the Flutter widget can display both day and time.
-        let activityDateTime: string;
-        if (a.activity_date) {
-          const dateStr = a.activity_date.toISOString().split('T')[0]; // YYYY-MM-DD
-          const timeStr = a.activity_time ?? '00:00';
-          activityDateTime = new Date(
-            `${dateStr}T${timeStr}:00.000Z`,
-          ).toISOString();
-        } else {
-          activityDateTime = new Date().toISOString();
-        }
+        // Extract date-only string (YYYY-MM-DD) directly from the UTC midnight
+        // Date value stored in the DB (@db.Date). Using split('T')[0] on the
+        // ISO string is safe because Prisma stores @db.Date as UTC midnight,
+        // so the date component is always correct regardless of the server TZ.
+        const activityDateOnly = a.activity_date
+          ? a.activity_date.toISOString().split('T')[0]
+          : null;
+
+        // Build the deprecated combined field using the date-only string to
+        // avoid the UTC-offset bug that treated local HH:mm as if it were UTC.
+        // Kept for backwards-compat — consumers should migrate to activity_date
+        // + activity_time fields.
+        const legacyDate = activityDateOnly
+          ? `${activityDateOnly}T${a.activity_time ?? '00:00'}:00`
+          : new Date().toISOString();
 
         upcomingActivities.push({
           id: a.activity_id,
           title: a.name,
-          date: activityDateTime,
+          date: legacyDate,
+          activity_date: activityDateOnly,
+          activity_time: a.activity_time ?? null,
           location: a.activity_place ?? null,
         });
       }
@@ -204,6 +259,7 @@ export class DashboardService {
       club_type: clubType,
       user_role: userRole,
       current_class_name: currentClassName,
+      current_class_id: enrollment?.class_id ?? null,
       class_progress: classProgress,
       honors_completed: honorsCompleted,
       honors_in_progress: honorsInProgress,

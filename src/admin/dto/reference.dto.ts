@@ -2,10 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsDateString,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
 
 export class CreateRelationshipTypeDto {
@@ -233,6 +235,94 @@ export class UpdateEcclesiasticalYearDto {
   end_date?: string;
 
   @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+// ==================== CLUB TYPES ====================
+
+export class CreateClubTypeDto {
+  @ApiProperty({ example: 'Conquistadores' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  name: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class UpdateClubTypeDto {
+  @ApiPropertyOptional({ example: 'Conquistadores' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  name?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+// ==================== CLUB IDEALS ====================
+
+export class CreateClubIdealDto {
+  @ApiProperty({ example: 'Ser leal a Dios' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  name: string;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  club_type_id: number;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  ideal_order: number;
+
+  @ApiPropertyOptional({
+    example: 'El conquistador es leal a Dios, a sus jefes y a su patria.',
+  })
+  @IsOptional()
+  @IsString()
+  ideal?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class UpdateClubIdealDto {
+  @ApiPropertyOptional({ example: 'Ser leal a Dios' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  name?: string;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  ideal_order?: number;
+
+  @ApiPropertyOptional({
+    example: 'El conquistador es leal a Dios, a sus jefes y a su patria.',
+  })
+  @IsOptional()
+  @IsString()
+  ideal?: string;
+
+  @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
   active?: boolean;

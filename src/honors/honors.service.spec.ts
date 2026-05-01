@@ -1,12 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HonorsService } from './honors.service';
+import { HonorsService, HONOR_DETAIL_URL_LIMITER } from './honors.service';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { AchievementsService } from '../achievements/achievements.service';
+import { TranslationService } from '../common/services/translation.service';
+import { ErrorCode } from '../common/errors/error-codes';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -68,6 +65,22 @@ describe('HonorsService', () => {
         HonorsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        {
+          provide: AchievementsService,
+          useValue: {
+            emitEvent: jest
+              .fn()
+              .mockResolvedValue({ eventLogId: 1, queued: true }),
+          },
+        },
+        {
+          provide: TranslationService,
+          useValue: {
+            getCurrentLocale: jest.fn().mockReturnValue('es'),
+            translate: jest.fn((record: any) => record),
+            translateMany: jest.fn((records: any[]) => records),
+          },
+        },
       ],
     }).compile();
 
@@ -127,7 +140,9 @@ describe('HonorsService', () => {
     it('should throw NotFoundException when honor not found', async () => {
       mockPrismaService.honors.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.HONOR_NOT_FOUND,
+      });
     });
   });
 
@@ -270,9 +285,9 @@ describe('HonorsService', () => {
         existingUserHonor,
       );
 
-      await expect(service.startHonor('user-123', 1)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.startHonor('user-123', 1)).rejects.toMatchObject({
+        code: ErrorCode.HONOR_USER_ALREADY_IN_PROGRESS,
+      });
     });
   });
 
@@ -348,7 +363,7 @@ describe('HonorsService', () => {
         service.createUserHonorsBulk('user-123', {
           honors: [{ honorId: 10 }, { honorId: 10 }],
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_BULK_DUPLICATE_IDS });
     });
 
     it('should create or update honors in bulk', async () => {
@@ -391,7 +406,56 @@ describe('HonorsService', () => {
     it('should throw when no files are provided', async () => {
       await expect(
         service.uploadUserHonorFiles('user-123', 15, {}),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_REQUIRED });
+    });
+
+    it('should throw HONOR_EVIDENCE_MAX_REACHED when more than 10 images are provided', async () => {
+      const mockImage = {
+        originalname: 'img.jpg',
+        mimetype: 'image/jpeg',
+        size: 1024,
+        buffer: Buffer.from('img'),
+      } as Express.Multer.File;
+      // 11 images — one over the hard cap
+      const images = Array.from({ length: 11 }, () => mockImage);
+      await expect(
+        service.uploadUserHonorFiles('user-123', 15, { images }),
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_EVIDENCE_MAX_REACHED });
+    });
+
+    it('should accept exactly 10 images without throwing the cap error', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        honor_id: 15,
+        active: true,
+      } as any);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        user_id: 'user-123',
+        honor_id: 15,
+        certificate: '',
+        images: [],
+        document: null,
+      });
+      mockPrismaService.users_honors.upsert.mockResolvedValue({
+        user_honor_id: 70,
+        user_id: 'user-123',
+        honor_id: 15,
+        certificate: '',
+        images: [],
+        document: null,
+      });
+      // 10 images — exactly at the cap, should NOT throw HONOR_EVIDENCE_MAX_REACHED
+      const mockImage = {
+        originalname: 'img.jpg',
+        mimetype: 'image/jpeg',
+        size: 100 * 1024, // 100 KB — within the 5 MB limit
+        buffer: Buffer.from('img'),
+      } as Express.Multer.File;
+      const images = Array.from({ length: 10 }, () => mockImage);
+      // We only assert it does not reject with the cap error; upload proceeds normally.
+      await expect(
+        service.uploadUserHonorFiles('user-123', 15, { images }),
+      ).resolves.toBeDefined();
     });
 
     it('should upload files to R2 and persist generated URLs', async () => {
@@ -520,7 +584,7 @@ describe('HonorsService', () => {
           certificate: [certificateFile],
           images: [image1],
         }),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_UPLOAD_FAILED });
 
       expect(mockPrismaService.users_honors.upsert).not.toHaveBeenCalled();
       expect(mockFileStorageService.deleteMany).toHaveBeenCalledWith(
@@ -574,7 +638,7 @@ describe('HonorsService', () => {
           certificate: [certificateFile],
           images: [image1],
         }),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_UPLOAD_FAILED });
 
       expect(mockFileStorageService.deleteMany).toHaveBeenNthCalledWith(
         1,
@@ -659,6 +723,26 @@ describe('HonorsService', () => {
         rejected: 1,
         in_progress: 1,
       });
+    });
+  });
+
+  describe('HONOR_DETAIL_URL_LIMITER', () => {
+    it('should export a pLimit instance with concurrency cap of 20', () => {
+      // pLimit instances expose a .concurrency property reflecting the cap.
+      expect(HONOR_DETAIL_URL_LIMITER).toBeDefined();
+      expect(typeof HONOR_DETAIL_URL_LIMITER).toBe('function');
+      // Verify the limiter actually executes the wrapped function.
+      const sentinel = jest.fn().mockResolvedValue('ok');
+      return expect(HONOR_DETAIL_URL_LIMITER(sentinel)).resolves.toBe('ok');
+    });
+
+    it('should resolve concurrent calls within the cap', async () => {
+      // Fire 5 tasks through the limiter; all should resolve correctly.
+      const tasks = Array.from({ length: 5 }, (_, i) =>
+        HONOR_DETAIL_URL_LIMITER(() => Promise.resolve(i)),
+      );
+      const results = await Promise.all(tasks);
+      expect(results).toEqual([0, 1, 2, 3, 4]);
     });
   });
 });

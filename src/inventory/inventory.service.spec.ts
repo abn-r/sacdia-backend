@@ -1,7 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ErrorCode } from '../common/errors/error-codes';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TranslationService } from '../common/services/translation.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 
@@ -57,10 +58,16 @@ describe('InventoryService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    const mockTranslationService: Partial<TranslationService> = {
+      getCurrentLocale: jest.fn().mockReturnValue('es'),
+      translateMany: jest.fn().mockImplementation((records) => records),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: TranslationService, useValue: mockTranslationService },
       ],
     }).compile();
 
@@ -116,26 +123,28 @@ describe('InventoryService', () => {
   // ============================================================
 
   describe('findAllByClub', () => {
-    it('TC03 - happy path: returns items with category info mapped', async () => {
+    it('TC03 - happy path (admin/null): returns items with category info, meta has club_id', async () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([baseItem]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([
         baseCategory,
       ]);
 
-      const result = await service.findAllByClub(10);
+      const result = await service.findAllByClub(5, undefined, null);
 
       expect(result.data).toHaveLength(1);
       expect(result.data[0].inventory_id).toBe(100);
       expect(result.data[0].category?.name).toBe('Camping');
       expect(result.meta.total_items).toBe(1);
-      expect(result.meta.club_section_id).toBe(10);
+      expect(result.meta.club_id).toBe(5);
+      // admin path: no club_section_id in meta
+      expect((result.meta as any).club_section_id).toBeUndefined();
     });
 
     it('TC04 - filters by categoryId when provided', async () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      await service.findAllByClub(10, 1);
+      await service.findAllByClub(5, 1, null);
 
       expect(mockPrismaService.club_inventory.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -151,7 +160,7 @@ describe('InventoryService', () => {
       ]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      const result = await service.findAllByClub(10);
+      const result = await service.findAllByClub(5, undefined, null);
 
       expect(result.data[0].category).toBeNull();
     });
@@ -160,10 +169,44 @@ describe('InventoryService', () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      const result = await service.findAllByClub(10);
+      const result = await service.findAllByClub(5, undefined, null);
 
       expect(result.data).toHaveLength(0);
       expect(result.meta.total_items).toBe(0);
+    });
+
+    it('TC07-rbac - member path: where clause filters by club_section_id + main_club_id', async () => {
+      mockPrismaService.club_inventory.findMany.mockResolvedValue([baseItem]);
+      mockPrismaService.inventory_categories.findMany.mockResolvedValue([
+        baseCategory,
+      ]);
+
+      const result = await service.findAllByClub(5, undefined, 10);
+
+      expect(mockPrismaService.club_inventory.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            club_section_id: 10,
+            club_sections: { main_club_id: 5 },
+          }),
+        }),
+      );
+      expect(result.meta.club_id).toBe(5);
+      expect((result.meta as any).club_section_id).toBe(10);
+    });
+
+    it('TC08-rbac - admin path (null): where clause filters only by main_club_id, no club_section_id', async () => {
+      mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
+      mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
+
+      await service.findAllByClub(5, undefined, null);
+
+      const calledWith =
+        mockPrismaService.club_inventory.findMany.mock.calls[0][0];
+      expect(calledWith.where).toMatchObject({
+        club_sections: { main_club_id: 5 },
+      });
+      expect(calledWith.where.club_section_id).toBeUndefined();
     });
   });
 
@@ -203,7 +246,9 @@ describe('InventoryService', () => {
     it('TC09 - error: item not found → NotFoundException', async () => {
       mockPrismaService.club_inventory.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.INVENTORY_NOT_FOUND,
+      });
     });
 
     it('TC10 - returns null category when category record not found in DB', async () => {
@@ -256,9 +301,11 @@ describe('InventoryService', () => {
     it('TC12 - error: category not found → NotFoundException', async () => {
       mockPrismaService.inventory_categories.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(10, createDto, 'user-abc')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.create(10, createDto, 'user-abc'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVENTORY_CATEGORY_NOT_FOUND,
+      });
     });
 
     it('TC13 - error: category inactive → NotFoundException', async () => {
@@ -267,9 +314,11 @@ describe('InventoryService', () => {
         active: false,
       });
 
-      await expect(service.create(10, createDto, 'user-abc')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.create(10, createDto, 'user-abc'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVENTORY_CATEGORY_NOT_FOUND,
+      });
     });
 
     it('TC14 - error: club section not found → NotFoundException', async () => {
@@ -278,9 +327,11 @@ describe('InventoryService', () => {
       );
       mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(10, createDto, 'user-abc')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.create(10, createDto, 'user-abc'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVENTORY_SECTION_NOT_FOUND,
+      });
     });
 
     it('TC15 - logInventoryChange is called after successful create', async () => {
@@ -334,9 +385,11 @@ describe('InventoryService', () => {
     it('TC17 - error: item not found → NotFoundException', async () => {
       mockPrismaService.club_inventory.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(999, updateDto, 'user-abc')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.update(999, updateDto, 'user-abc'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVENTORY_NOT_FOUND,
+      });
     });
 
     it('TC18 - error: new category not found → NotFoundException', async () => {
@@ -349,7 +402,7 @@ describe('InventoryService', () => {
 
       await expect(
         service.update(100, dtoWithCategory, 'user-abc'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVENTORY_CATEGORY_NOT_FOUND });
     });
 
     it('TC19 - error: new category inactive → NotFoundException', async () => {
@@ -366,7 +419,7 @@ describe('InventoryService', () => {
 
       await expect(
         service.update(100, dtoWithCategory, 'user-abc'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.INVENTORY_CATEGORY_NOT_FOUND });
     });
 
     it('TC20 - returns null category when updated item has no category', async () => {
@@ -408,9 +461,9 @@ describe('InventoryService', () => {
     it('TC22 - error: item not found → NotFoundException', async () => {
       mockPrismaService.club_inventory.findUnique.mockResolvedValue(null);
 
-      await expect(service.delete(999, 'user-abc')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.delete(999, 'user-abc')).rejects.toMatchObject({
+        code: ErrorCode.INVENTORY_NOT_FOUND,
+      });
     });
 
     it('TC23 - logInventoryChange is called with DELETE action', async () => {

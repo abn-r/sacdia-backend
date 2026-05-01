@@ -1,7 +1,17 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { Cron } from '@nestjs/schedule';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import {
+  BACKGROUND_JOBS_QUEUE,
+  BackgroundJobName,
+  FinancePeriodCloseMonthPayload,
+} from '../background-jobs/background-jobs.types';
 
 type CategoryBreakdownItem = {
   finance_category_id: number;
@@ -28,6 +38,10 @@ export class FinancePeriodService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly cronLogger: CronRunLogger,
+    @Optional()
+    @InjectQueue(BACKGROUND_JOBS_QUEUE)
+    private readonly financePeriodQueue: Queue | null,
   ) {}
 
   async closeMonthForClub(
@@ -115,67 +129,116 @@ export class FinancePeriodService {
     ]);
 
     if (!isAdmin) {
-      throw new ForbiddenException(`El periodo ${month}/${year} está cerrado`);
+      throw new AppForbiddenException(ErrorCode.FINANCE_PERIOD_CLOSED);
     }
   }
 
-  @Cron('0 0 1 * *', { name: 'finance-period-closing' })
+  @Cron('0 0 1 * *', { name: 'finance-period-closing', timeZone: 'UTC' })
   async handleMonthlyClosing(): Promise<void> {
     const { month, year } = this.getPreviousMonth(new Date());
     const period = `${year}-${String(month).padStart(2, '0')}`;
 
+    this.logger.log(
+      `Finance period-closing cron triggered for ${period} — enqueuing BullMQ job...`,
+    );
+
+    if (this.financePeriodQueue) {
+      const jobData: FinancePeriodCloseMonthPayload = {
+        triggeredAt: new Date().toISOString(),
+        year,
+        month,
+      };
+      await this.financePeriodQueue.add(
+        BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH,
+        jobData,
+        {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 60_000 }, // 1 min → 2 → 4 → 8 → 16 min
+          removeOnComplete: { age: 7 * 86_400 },
+          removeOnFail: { age: 30 * 86_400 },
+        },
+      );
+      this.logger.log(
+        `finance-period-closing job enqueued for ${period} with 5 attempts + exponential backoff`,
+      );
+    } else {
+      // Redis unavailable — execute directly (no retry fallback)
+      this.logger.warn(
+        `BullMQ queue unavailable — running finance-period closing for ${period} directly (no retry)`,
+      );
+      await this.runMonthlyClosing(year, month);
+    }
+  }
+
+  /**
+   * Runs the full batched monthly-closing loop for the given year/month.
+   * Called by the BullMQ processor (with retry) and as a direct fallback
+   * when Redis is unavailable.
+   *
+   * Idempotency: closeMonthForClub() returns null when the period is already
+   * closed, so retries are safe.
+   */
+  async runMonthlyClosing(
+    year: number,
+    month: number,
+  ): Promise<{ itemsProcessed: number }> {
+    const period = `${year}-${String(month).padStart(2, '0')}`;
     this.logger.log(`Starting monthly period closing for ${period}...`);
 
-    const BATCH_SIZE = 50;
-    let offset = 0;
-    let totalProcessed = 0;
-    let successCount = 0;
-    let skipCount = 0;
-    let errorCount = 0;
+    return this.cronLogger.track('finance-period-closing', async () => {
+      const BATCH_SIZE = 50;
+      let offset = 0;
+      let totalProcessed = 0;
+      let successCount = 0;
+      let skipCount = 0;
+      let errorCount = 0;
 
-    while (true) {
-      const clubs = await this.prisma.clubs.findMany({
-        where: { active: true },
-        select: { club_id: true, name: true },
-        skip: offset,
-        take: BATCH_SIZE,
-        orderBy: { club_id: 'asc' },
-      });
+      while (true) {
+        const clubs = await this.prisma.clubs.findMany({
+          where: { active: true },
+          select: { club_id: true, name: true },
+          skip: offset,
+          take: BATCH_SIZE,
+          orderBy: { club_id: 'asc' },
+        });
 
-      if (clubs.length === 0) break;
+        if (clubs.length === 0) break;
 
-      for (const club of clubs) {
-        totalProcessed++;
-        try {
-          const result = await this.closeMonthForClub(
-            club.club_id,
-            year,
-            month,
-          );
-          if (result) {
-            successCount++;
-            this.logger.log(
-              `Closed period ${period} for club "${club.name}" (ID: ${club.club_id})`,
+        for (const club of clubs) {
+          totalProcessed++;
+          try {
+            const result = await this.closeMonthForClub(
+              club.club_id,
+              year,
+              month,
             );
-          } else {
-            skipCount++;
+            if (result) {
+              successCount++;
+              this.logger.log(
+                `Closed period ${period} for club "${club.name}" (ID: ${club.club_id})`,
+              );
+            } else {
+              skipCount++;
+            }
+          } catch (error) {
+            errorCount++;
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              `Failed to close period ${period} for club "${club.name}" (ID: ${club.club_id}): ${message}`,
+            );
           }
-        } catch (error) {
-          errorCount++;
-          const message =
-            error instanceof Error ? error.message : String(error);
-          this.logger.error(
-            `Failed to close period ${period} for club "${club.name}" (ID: ${club.club_id}): ${message}`,
-          );
         }
+
+        offset += BATCH_SIZE;
       }
 
-      offset += BATCH_SIZE;
-    }
+      this.logger.log(
+        `Period closing complete for ${period}: ${successCount} closed, ${skipCount} skipped (already closed), ${errorCount} errors, ${totalProcessed} total`,
+      );
 
-    this.logger.log(
-      `Period closing complete for ${period}: ${successCount} closed, ${skipCount} skipped (already closed), ${errorCount} errors, ${totalProcessed} total`,
-    );
+      return { itemsProcessed: totalProcessed };
+    });
   }
 
   private getPreviousMonth(date: Date): { month: number; year: number } {

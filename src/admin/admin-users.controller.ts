@@ -19,8 +19,16 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { RequirePermissions, GlobalRoles } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard, GlobalRolesGuard } from '../common/guards';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+  GlobalRoles,
+} from '../common/decorators';
+import {
+  JwtAuthGuard,
+  PermissionsGuard,
+  GlobalRolesGuard,
+} from '../common/guards';
 import {
   AdminCurrentOperationalEnrollmentDto,
   AdminListUsersQueryDto,
@@ -35,6 +43,7 @@ import { AdminUsersService } from './admin-users.service';
 @ApiExtraModels(AdminCurrentOperationalEnrollmentDto, AdminTrajectoryClassDto)
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
 @GlobalRoles('admin', 'super_admin')
+@AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
@@ -125,7 +134,7 @@ export class AdminUsersController {
   }
 
   @Patch('users/:userId/approval')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Approve or reject a user' })
   async updateUserApproval(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -136,7 +145,7 @@ export class AdminUsersController {
   }
 
   @Patch('users/:userId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Update user administrative fields' })
   async updateUser(
     @Param('userId', ParseUUIDPipe) userId: string,

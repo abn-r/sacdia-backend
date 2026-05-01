@@ -1,11 +1,13 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { CreateAwardCategoryDto } from './dto/create-award-category.dto';
 import { UpdateAwardCategoryDto } from './dto/update-award-category.dto';
+import { type AwardCategoryScope } from './dto/award-category-scope.const';
 
 @Injectable()
 export class AwardCategoriesService {
@@ -22,9 +24,21 @@ export class AwardCategoriesService {
       dto.max_points !== null &&
       dto.min_points > dto.max_points
     ) {
-      throw new BadRequestException(
-        `min_points (${dto.min_points}) cannot be greater than max_points (${dto.max_points})`,
+      throw new AppBadRequestException(
+        ErrorCode.AWARD_CATEGORY_POINTS_INVALID,
+        {
+          minPoints: dto.min_points,
+          maxPoints: dto.max_points,
+        },
       );
+    }
+
+    if (dto.min_composite_pct != null && dto.max_composite_pct != null) {
+      if (dto.min_composite_pct >= dto.max_composite_pct) {
+        throw new BadRequestException(
+          'min_composite_pct must be less than max_composite_pct',
+        );
+      }
     }
 
     if (dto.club_type_id !== undefined && dto.club_type_id !== null) {
@@ -33,8 +47,9 @@ export class AwardCategoriesService {
       });
 
       if (!clubType) {
-        throw new NotFoundException(
-          `Club type with ID ${dto.club_type_id} not found`,
+        throw new AppNotFoundException(
+          ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND,
+          { id: dto.club_type_id },
         );
       }
     }
@@ -49,6 +64,14 @@ export class AwardCategoriesService {
         icon: dto.icon ?? null,
         order: dto.order ?? 0,
         active: true,
+        ...(dto.scope !== undefined && { scope: dto.scope }),
+        ...(dto.min_composite_pct != null && {
+          min_composite_pct: dto.min_composite_pct,
+        }),
+        ...(dto.max_composite_pct != null && {
+          max_composite_pct: dto.max_composite_pct,
+        }),
+        ...(dto.tier !== undefined && { tier: dto.tier }),
       },
       include: {
         club_type: dto.club_type_id
@@ -61,14 +84,23 @@ export class AwardCategoriesService {
   /**
    * List award categories with optional filters.
    * Results are sorted by order ASC, then name ASC.
+   * By default, legacy categories (is_legacy=true) are excluded.
+   * Pass includeLegacy=true to include them.
    */
-  async findAll(clubTypeId?: number, active?: boolean) {
+  async findAll(
+    clubTypeId?: number,
+    active?: boolean,
+    scope?: AwardCategoryScope,
+    includeLegacy?: boolean,
+  ) {
     const activeFilter = active !== undefined ? active : true;
 
     return this.prisma.award_categories.findMany({
       where: {
         active: activeFilter,
         ...(clubTypeId !== undefined && { club_type_id: clubTypeId }),
+        ...(scope !== undefined && { scope }),
+        ...(!includeLegacy && { is_legacy: false }),
       },
       include: {
         club_type: { select: { club_type_id: true, name: true } },
@@ -90,7 +122,9 @@ export class AwardCategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Award category with ID ${id} not found`);
+      throw new AppNotFoundException(ErrorCode.AWARD_CATEGORY_NOT_FOUND, {
+        id,
+      });
     }
 
     return category;
@@ -113,9 +147,21 @@ export class AwardCategoriesService {
       effectiveMaxPoints !== undefined &&
       effectiveMinPoints > effectiveMaxPoints
     ) {
-      throw new BadRequestException(
-        `min_points (${effectiveMinPoints}) cannot be greater than max_points (${effectiveMaxPoints})`,
+      throw new AppBadRequestException(
+        ErrorCode.AWARD_CATEGORY_POINTS_INVALID,
+        {
+          minPoints: effectiveMinPoints,
+          maxPoints: effectiveMaxPoints,
+        },
       );
+    }
+
+    if (dto.min_composite_pct != null && dto.max_composite_pct != null) {
+      if (dto.min_composite_pct >= dto.max_composite_pct) {
+        throw new BadRequestException(
+          'min_composite_pct must be less than max_composite_pct',
+        );
+      }
     }
 
     if (dto.club_type_id !== undefined && dto.club_type_id !== null) {
@@ -124,8 +170,9 @@ export class AwardCategoriesService {
       });
 
       if (!clubType) {
-        throw new NotFoundException(
-          `Club type with ID ${dto.club_type_id} not found`,
+        throw new AppNotFoundException(
+          ErrorCode.AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND,
+          { id: dto.club_type_id },
         );
       }
     }
@@ -142,6 +189,14 @@ export class AwardCategoriesService {
         ...(dto.max_points !== undefined && { max_points: dto.max_points }),
         ...(dto.icon !== undefined && { icon: dto.icon }),
         ...(dto.order !== undefined && { order: dto.order }),
+        ...(dto.scope !== undefined && { scope: dto.scope }),
+        ...(dto.min_composite_pct !== undefined && {
+          min_composite_pct: dto.min_composite_pct,
+        }),
+        ...(dto.max_composite_pct !== undefined && {
+          max_composite_pct: dto.max_composite_pct,
+        }),
+        ...(dto.tier !== undefined && { tier: dto.tier }),
       },
       include: {
         club_type: { select: { club_type_id: true, name: true } },

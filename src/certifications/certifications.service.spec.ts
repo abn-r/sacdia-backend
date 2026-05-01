@@ -1,12 +1,7 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CertificationsService } from './certifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { EnrollCertificationDto } from './dto/enroll-certification.dto';
 import { UpdateCertificationProgressDto } from './dto/update-progress.dto';
@@ -235,7 +230,9 @@ describe('CertificationsService', () => {
     it('TC06 - not found → NotFoundException', async () => {
       mockPrisma.certifications.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.CERT_NOT_FOUND,
+      });
     });
 
     it('TC07 - includes modules nested under certification', async () => {
@@ -308,26 +305,26 @@ describe('CertificationsService', () => {
         baseEnrollment,
       );
 
-      await expect(service.enrollUser(USER_ID, dto)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_ALREADY_ENROLLED,
+      });
     });
 
     it('TC10 - not eligible (no INVESTIDO enrollment) → ForbiddenException', async () => {
       mockPrisma.enrollments.findFirst.mockResolvedValue(null);
 
-      await expect(service.enrollUser(USER_ID, dto)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_ELIGIBILITY_REQUIRED,
+      });
     });
 
     it('TC11 - certification not found → NotFoundException', async () => {
       mockPrisma.enrollments.findFirst.mockResolvedValue(eligibleEnrollment);
       mockPrisma.certifications.findUnique.mockResolvedValue(null);
 
-      await expect(service.enrollUser(USER_ID, dto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_NOT_FOUND,
+      });
     });
 
     it('TC12 - certification inactive → NotFoundException', async () => {
@@ -337,17 +334,17 @@ describe('CertificationsService', () => {
         active: false,
       });
 
-      await expect(service.enrollUser(USER_ID, dto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_NOT_FOUND,
+      });
     });
 
     it('TC13 - validateEligibility queries enrollments with correct filters', async () => {
       mockPrisma.enrollments.findFirst.mockResolvedValue(null);
 
-      await expect(service.enrollUser(USER_ID, dto)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.enrollUser(USER_ID, dto)).rejects.toMatchObject({
+        code: ErrorCode.CERT_ELIGIBILITY_REQUIRED,
+      });
 
       expect(mockPrisma.enrollments.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -536,7 +533,7 @@ describe('CertificationsService', () => {
 
       await expect(
         service.getCertificationProgress(USER_ID, CERT_ID),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC22 - progress_percentage = 0 when no modules completed', async () => {
@@ -721,7 +718,7 @@ describe('CertificationsService', () => {
 
       await expect(
         service.updateProgress(USER_ID, CERT_ID, dto),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC29 - section does not belong to module/certification → BadRequestException', async () => {
@@ -730,7 +727,7 @@ describe('CertificationsService', () => {
 
       await expect(
         service.updateProgress(USER_ID, CERT_ID, dto),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_SECTION_INVALID });
     });
 
     it('TC30 - progress_percentage calculation included in response', async () => {
@@ -774,7 +771,7 @@ describe('CertificationsService', () => {
 
       await expect(
         service.deleteCertification(USER_ID, CERT_ID),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
     });
 
     it('TC33 - only queries active enrollments', async () => {
@@ -782,7 +779,7 @@ describe('CertificationsService', () => {
 
       await expect(
         service.deleteCertification(USER_ID, CERT_ID),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.CERT_ENROLLMENT_NOT_FOUND });
 
       expect(mockPrisma.users_certifications.findFirst).toHaveBeenCalledWith({
         where: {

@@ -25,12 +25,16 @@ import type { Response } from 'express';
 import { MonthlyReportsService } from './monthly-reports.service';
 import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { UpdateManualDataDto } from './dto';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('monthly-reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('monthly-reports')
 export class MonthlyReportsController {
   constructor(
@@ -284,6 +288,48 @@ export class MonthlyReportsController {
     });
 
     res.end(pdfBuffer);
+  }
+
+  // ========================================
+  // LIST REPORTS FOR ADMIN (multi-club supervision)
+  // ========================================
+
+  @Get('admin/list')
+  @RequirePermissions('reports:read')
+  @ApiOperation({ summary: 'Listar reportes multi-club (admin/coordinator)' })
+  @ApiQuery({ name: 'club_type_id', required: false, type: Number })
+  @ApiQuery({ name: 'local_field_id', required: false, type: Number })
+  @ApiQuery({ name: 'year', required: false, type: Number })
+  @ApiQuery({ name: 'month', required: false, type: Number })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['draft', 'generated', 'submitted'],
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async listForAdmin(
+    @Req() req: any,
+    @Query('club_type_id', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
+    @Query('year', new ParseIntPipe({ optional: true })) year?: number,
+    @Query('month', new ParseIntPipe({ optional: true })) month?: number,
+    @Query('status') status?: string,
+    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    const data = await this.monthlyReportsService.listForAdmin(req.user.sub, {
+      clubTypeId,
+      localFieldId,
+      year,
+      month,
+      status,
+      page,
+      limit,
+    });
+    return { status: 'success', data };
   }
 
   // ========================================

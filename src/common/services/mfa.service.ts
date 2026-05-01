@@ -1,4 +1,6 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { AppUnauthorizedException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import { BetterAuthService } from '../../better-auth/better-auth.service';
 
 // ---------------------------------------------------------------------------
@@ -76,9 +78,13 @@ export class MfaService {
    * in the Authorization header and a 6-digit TOTP code in the body. On success
    * a new JWT without `mfa_pending` is returned, granting full aal2 access.
    *
-   * @param userId - User's UUID from the SACDIA JWT (populated by JwtAuthGuard).
-   * @param email  - User's email from the SACDIA JWT (needed to re-sign).
-   * @param code   - 6-digit TOTP code from the authenticator app.
+   * @param userId     - User's UUID from the SACDIA JWT (populated by JwtAuthGuard).
+   * @param email      - User's email from the SACDIA JWT (needed to re-sign).
+   * @param code       - 6-digit TOTP code from the authenticator app.
+   * @param sessionId  - BA session row ID from the aal1 JWT `sid` claim. When present,
+   *                     it is forwarded to `signJwt` so the resulting aal2 token
+   *                     preserves the `sid` claim and GET /auth/sessions can correctly
+   *                     mark `is_current`. Null/undefined for legacy tokens.
    * @returns `{ verified: true, accessToken }` on success;
    *          `{ verified: false }` on invalid TOTP code.
    * @throws UnauthorizedException when TOTP is not enrolled.
@@ -87,12 +93,11 @@ export class MfaService {
     userId: string,
     email: string,
     code: string,
+    sessionId?: string | null,
   ): Promise<{ verified: boolean; accessToken?: string }> {
     const { enabled } = await this.betterAuthService.hasTotpEnabled(userId);
     if (!enabled) {
-      throw new UnauthorizedException(
-        'TOTP is not enrolled for this user. Call POST /auth/mfa/enroll first.',
-      );
+      throw new AppUnauthorizedException(ErrorCode.MFA_CODE_INVALID);
     }
 
     const result = await this.betterAuthService.verifyTotp(userId, code);
@@ -103,9 +108,12 @@ export class MfaService {
     }
 
     // Issue a full aal2 JWT (no mfa_pending flag) to replace the aal1 token.
+    // Forward sessionId so the new token preserves the `sid` claim — this is
+    // what allows GET /auth/sessions to correctly mark `is_current`.
     const accessToken = this.betterAuthService.signJwt(
       { id: userId, email },
       false,
+      sessionId ?? undefined,
     );
 
     this.logger.log(

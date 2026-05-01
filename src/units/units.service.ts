@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateUnitDto,
@@ -14,12 +8,24 @@ import {
   UpdateWeeklyRecordDto,
 } from './dto';
 import { ScoringCategoriesService } from '../scoring-categories/scoring-categories.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppForbiddenException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class UnitsService {
+  private readonly logger = new Logger(UnitsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly scoringCategoriesService: ScoringCategoriesService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private readonly unitInclude = {
@@ -101,7 +107,7 @@ export class UnitsService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.UNIT_CLUB_NOT_FOUND);
     }
 
     const sectionIds = club.club_sections.map((s) => s.club_section_id);
@@ -119,13 +125,13 @@ export class UnitsService {
   }
 
   async findOne(unitId: number) {
-    const unit = await this.prisma.units.findUnique({
-      where: { unit_id: unitId },
+    const unit = await this.prisma.units.findFirst({
+      where: { unit_id: unitId, active: true },
       include: this.unitInclude,
     });
 
     if (!unit) {
-      throw new NotFoundException(`Unit with ID ${unitId} not found`);
+      throw new AppNotFoundException(ErrorCode.UNIT_NOT_FOUND);
     }
 
     return unit;
@@ -138,7 +144,7 @@ export class UnitsService {
     });
 
     if (!club) {
-      throw new NotFoundException(`Club with ID ${clubId} not found`);
+      throw new AppNotFoundException(ErrorCode.UNIT_CLUB_NOT_FOUND);
     }
 
     if (dto.club_section_id) {
@@ -148,15 +154,11 @@ export class UnitsService {
       });
 
       if (!section) {
-        throw new BadRequestException(
-          `Sección ${dto.club_section_id} no existe`,
-        );
+        throw new AppBadRequestException(ErrorCode.UNIT_SECTION_NOT_FOUND);
       }
 
       if (section.main_club_id !== clubId) {
-        throw new BadRequestException(
-          `Sección ${dto.club_section_id} no pertenece al clubId=${clubId}`,
-        );
+        throw new AppBadRequestException(ErrorCode.UNIT_SECTION_WRONG_CLUB);
       }
     }
 
@@ -224,7 +226,7 @@ export class UnitsService {
     });
 
     if (!userExists) {
-      throw new NotFoundException(`User with ID ${dto.user_id} not found`);
+      throw new AppNotFoundException(ErrorCode.UNIT_USER_NOT_FOUND);
     }
 
     // Service-layer validation: user can only be in ONE active unit per club_section
@@ -241,8 +243,8 @@ export class UnitsService {
       });
 
       if (conflictingMembership) {
-        throw new ConflictException(
-          'El miembro ya pertenece a una unidad activa en esta sección.',
+        throw new AppConflictException(
+          ErrorCode.UNIT_MEMBER_ALREADY_IN_SECTION,
         );
       }
     }
@@ -252,14 +254,13 @@ export class UnitsService {
       where: { unit_id: unitId, user_id: dto.user_id },
     });
 
+    let result;
     if (existingInThisUnit) {
       if (existingInThisUnit.active) {
-        throw new ConflictException(
-          `User ${dto.user_id} is already an active member of unit ${unitId}`,
-        );
+        throw new AppConflictException(ErrorCode.UNIT_MEMBER_ALREADY_IN_UNIT);
       }
 
-      return this.prisma.unit_members.update({
+      result = await this.prisma.unit_members.update({
         where: { unit_member_id: existingInThisUnit.unit_member_id },
         data: {
           unit_id: unitId,
@@ -267,36 +268,47 @@ export class UnitsService {
           modified_at: new Date(),
         },
       });
+    } else {
+      result = await this.prisma.unit_members.create({
+        data: {
+          unit_id: unitId,
+          user_id: dto.user_id,
+          active: true,
+          created_at: new Date(),
+          modified_at: new Date(),
+        },
+      });
     }
 
-    return this.prisma.unit_members.create({
-      data: {
-        unit_id: unitId,
-        user_id: dto.user_id,
-        active: true,
-        created_at: new Date(),
-        modified_at: new Date(),
-      },
-    });
+    this.emitRealtimeInvalidation(
+      unit.club_section_id,
+      unitId,
+      'UPDATED',
+      dto.user_id,
+    );
+
+    return result;
   }
 
   async removeMember(unitId: number, memberId: number) {
-    await this.findOne(unitId);
+    const unit = await this.findOne(unitId);
 
     const member = await this.prisma.unit_members.findFirst({
       where: { unit_member_id: memberId, unit_id: unitId },
     });
 
     if (!member) {
-      throw new NotFoundException(
-        `Member with ID ${memberId} not found in unit ${unitId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.UNIT_MEMBER_NOT_FOUND);
     }
 
-    return this.prisma.unit_members.update({
+    const removed = await this.prisma.unit_members.update({
       where: { unit_member_id: memberId },
       data: { active: false, modified_at: new Date() },
     });
+
+    this.emitRealtimeInvalidation(unit.club_section_id, unitId, 'UPDATED');
+
+    return removed;
   }
 
   // ========================================
@@ -307,35 +319,33 @@ export class UnitsService {
    * Transforms a raw Prisma weekly_records row (with weekly_record_scores included)
    * into the flat response shape expected by the frontend and Flutter clients.
    */
-  private transformWeeklyRecord(
-    record: {
-      record_id: number;
+  private transformWeeklyRecord(record: {
+    record_id: number;
+    user_id: string;
+    week: number;
+    year: number;
+    attendance: number;
+    punctuality: number;
+    points: number;
+    active: boolean;
+    created_at: Date;
+    modified_at: Date;
+    users?: {
       user_id: string;
-      week: number;
-      year: number;
-      attendance: number;
-      punctuality: number;
+      name: string | null;
+      paternal_last_name: string | null;
+      user_image: string | null;
+    };
+    weekly_record_scores?: Array<{
+      category_id: number;
       points: number;
-      active: boolean;
-      created_at: Date;
-      modified_at: Date;
-      users?: {
-        user_id: string;
-        name: string | null;
-        paternal_last_name: string | null;
-        user_image: string | null;
-      };
-      weekly_record_scores?: Array<{
-        category_id: number;
-        points: number;
-        scoring_category: {
-          scoring_category_id: number;
-          name: string;
-          max_points: number;
-        } | null;
-      }>;
-    },
-  ) {
+      scoring_category: {
+        scoring_category_id: number;
+        name: string;
+        max_points: number;
+      } | null;
+    }>;
+  }) {
     const { weekly_record_scores, ...rest } = record;
     return {
       ...rest,
@@ -393,7 +403,11 @@ export class UnitsService {
     return records.map((r) => this.transformWeeklyRecord(r));
   }
 
-  async createWeeklyRecord(unitId: number, dto: CreateWeeklyRecordDto) {
+  async createWeeklyRecord(
+    unitId: number,
+    dto: CreateWeeklyRecordDto,
+    userId: string,
+  ) {
     const unit = await this.findOne(unitId);
 
     const isMember = unit.unit_members.some(
@@ -401,21 +415,21 @@ export class UnitsService {
     );
 
     if (!isMember) {
-      throw new BadRequestException(
-        `User ${dto.user_id} is not an active member of unit ${unitId}`,
-      );
+      throw new AppBadRequestException(ErrorCode.UNIT_MEMBER_NOT_ACTIVE);
     }
 
     const existing = await this.prisma.weekly_records.findUnique({
       where: {
-        user_id_week_year: { user_id: dto.user_id, week: dto.week, year: dto.year },
+        user_id_week_year: {
+          user_id: dto.user_id,
+          week: dto.week,
+          year: dto.year,
+        },
       },
     });
 
     if (existing) {
-      throw new ConflictException(
-        `Weekly record for user ${dto.user_id} on week ${dto.week}/${dto.year} already exists`,
-      );
+      throw new AppConflictException(ErrorCode.UNIT_WEEKLY_RECORD_DUPLICATE);
     }
 
     // Validate and resolve scores if provided
@@ -423,7 +437,7 @@ export class UnitsService {
     const validatedScores: { category_id: number; points: number }[] = [];
 
     if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const localFieldId = this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
           ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
@@ -438,13 +452,13 @@ export class UnitsService {
       for (const scoreEntry of dto.scores) {
         const category = categoryMap.get(scoreEntry.category_id);
         if (!category) {
-          throw new BadRequestException(
-            `Category ${scoreEntry.category_id} is not active or not available for this club's local field`,
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
           );
         }
         if (scoreEntry.points > category.max_points) {
-          throw new BadRequestException(
-            `Points ${scoreEntry.points} exceeds max_points ${category.max_points} for category "${category.name}"`,
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX,
           );
         }
         calculatedPoints += scoreEntry.points;
@@ -466,6 +480,7 @@ export class UnitsService {
           punctuality: dto.punctuality ?? 0,
           points: calculatedPoints,
           active: true,
+          created_by: userId,
           created_at: new Date(),
           modified_at: new Date(),
         },
@@ -486,7 +501,12 @@ export class UnitsService {
         include: this.weeklyRecordInclude,
       });
 
-      return this.transformWeeklyRecord(created!);
+      if (!created) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.INTERNAL_SERVER_ERROR,
+        );
+      }
+      return this.transformWeeklyRecord(created);
     });
   }
 
@@ -502,9 +522,7 @@ export class UnitsService {
     });
 
     if (!record) {
-      throw new NotFoundException(
-        `Weekly record with ID ${recordId} not found`,
-      );
+      throw new AppNotFoundException(ErrorCode.UNIT_WEEKLY_RECORD_NOT_FOUND);
     }
 
     // C3: Verify the record belongs to an active member of this unit
@@ -512,9 +530,7 @@ export class UnitsService {
       where: { unit_id: unitId, user_id: record.user_id, active: true },
     });
     if (!isMemberOfUnit) {
-      throw new ForbiddenException(
-        'El registro no pertenece a un miembro de esta unidad',
-      );
+      throw new AppForbiddenException(ErrorCode.UNIT_WEEKLY_RECORD_WRONG_UNIT);
     }
 
     // Validate and process scores if provided
@@ -522,7 +538,7 @@ export class UnitsService {
     const validatedScores: { category_id: number; points: number }[] = [];
 
     if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = await this.resolveLocalFieldForUnit(unit);
+      const localFieldId = this.resolveLocalFieldForUnit(unit);
       const availableCategories =
         localFieldId !== null
           ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
@@ -537,13 +553,13 @@ export class UnitsService {
       for (const scoreEntry of dto.scores) {
         const category = categoryMap.get(scoreEntry.category_id);
         if (!category) {
-          throw new BadRequestException(
-            `Category ${scoreEntry.category_id} is not active or not available for this club's local field`,
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
           );
         }
         if (scoreEntry.points > category.max_points) {
-          throw new BadRequestException(
-            `Points ${scoreEntry.points} exceeds max_points ${category.max_points} for category "${category.name}"`,
+          throw new AppBadRequestException(
+            ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX,
           );
         }
         validatedScores.push({
@@ -610,8 +626,30 @@ export class UnitsService {
   private resolveLocalFieldForUnit(
     unit: Awaited<ReturnType<typeof this.findOne>>,
   ): number | null {
-    const localFieldId =
-      unit.club_sections?.clubs?.local_field_id ?? null;
+    const localFieldId = unit.club_sections?.clubs?.local_field_id ?? null;
     return localFieldId;
+  }
+
+  private emitRealtimeInvalidation(
+    sectionId: number | null | undefined,
+    entityId: number | string,
+    action: 'CREATED' | 'UPDATED' | 'DELETED',
+    actorId?: string,
+  ): void {
+    if (!sectionId) return;
+    this.notificationsService
+      .sendSilentToSection({
+        sectionId,
+        resource: 'members',
+        action,
+        entityId,
+        actorId: actorId ?? 'system',
+        timestamp: new Date().toISOString(),
+      })
+      .catch((err: Error) =>
+        this.logger.error(
+          `emitRealtimeInvalidation failed (section=${sectionId}, entity=${entityId}, action=${action}): ${err.message}`,
+        ),
+      );
   }
 }

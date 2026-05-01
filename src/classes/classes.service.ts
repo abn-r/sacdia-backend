@@ -1,13 +1,15 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+  AppBadRequestException,
+  AppConflictException,
+  AppForbiddenException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, evidence_validation_enum } from '@prisma/client';
+import { TranslationService } from '../common/services/translation.service';
+import { AchievementsService } from '../achievements/achievements.service';
 import {
   PaginationDto,
   PaginatedResult,
@@ -18,6 +20,13 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import pLimit from 'p-limit';
+
+// Concurrency cap for the evidence URL presign fan-out in getUserProgress.
+// Worst case: 10 sections × 20 evidence files = 200 concurrent HMAC presigns
+// against the private CLASS_EVIDENCE bucket. Cap matches the pattern established
+// in camporees.service.ts (PROFILE_URL_LIMITER = pLimit(20)).
+export const EVIDENCE_URL_LIMITER = pLimit(20);
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -28,12 +37,15 @@ const ALLOWED_MIME_TYPES = new Set([
 
 @Injectable()
 export class ClassesService {
+  private readonly logger = new Logger(ClassesService.name);
   private siblingTypeIdsCache: Promise<number[]> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly achievementsService: AchievementsService,
+    private readonly translationService: TranslationService,
   ) {}
 
   private getSiblingClubTypeIds(): Promise<number[]> {
@@ -79,9 +91,7 @@ export class ClassesService {
         enrollment.user_id !== params.userId ||
         enrollment.class_id !== params.classId
       ) {
-        throw new NotFoundException(
-          'No se encontro la inscripcion anual solicitada para esta clase',
-        );
+        throw new AppNotFoundException(ErrorCode.CLASS_ENROLLMENT_NOT_FOUND);
       }
 
       return {
@@ -101,9 +111,7 @@ export class ClassesService {
     });
 
     if (!activeYear) {
-      throw new NotFoundException(
-        'No existe una inscripcion anual activa para esta clase',
-      );
+      throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
     }
 
     const enrollments = await this.prisma.enrollments.findMany({
@@ -120,17 +128,11 @@ export class ClassesService {
     });
 
     if (enrollments.length === 0) {
-      throw new NotFoundException(
-        'No existe una inscripcion anual activa para esta clase',
-      );
+      throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
     }
 
     if (enrollments.length > 1) {
-      throw new ConflictException({
-        code: 'ENROLLMENT_RESOLUTION_AMBIGUOUS',
-        message:
-          'La solicitud es ambigua. Envia enrollmentId o enrollment_id para seleccionar la inscripcion anual correcta.',
-      });
+      throw new AppConflictException(ErrorCode.CLASS_ENROLLMENT_AMBIGUOUS);
     }
 
     return {
@@ -147,6 +149,7 @@ export class ClassesService {
     clubTypeId?: number,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
+    const locale = this.translationService.getCurrentLocale();
     const where = {
       active: true,
       ...(clubTypeId && { club_type_id: clubTypeId }),
@@ -158,6 +161,10 @@ export class ClassesService {
         include: {
           club_types: { select: { name: true } },
           _count: { select: { class_modules: true } },
+          translations: {
+            where: { locale },
+            select: { locale: true, name: true, description: true },
+          },
         },
         orderBy: [{ club_type_id: 'asc' }, { display_order: 'asc' }],
         skip: pagination?.skip ?? 0,
@@ -166,23 +173,45 @@ export class ClassesService {
       this.prisma.classes.count({ where }),
     ]);
 
-    return createPaginatedResult(
+    const translated = this.translationService.translateMany(
       data,
+      locale,
+      ['name', 'description'],
+      'translations',
+    );
+
+    return createPaginatedResult(
+      translated,
       total,
       pagination ?? new PaginationDto(),
     );
   }
 
   async findOne(classId: number) {
+    const locale = this.translationService.getCurrentLocale();
     const classData = await this.prisma.classes.findUnique({
       where: { class_id: classId },
       include: {
         club_types: { select: { name: true } },
+        translations: {
+          where: { locale },
+          select: { locale: true, name: true, description: true },
+        },
         class_modules: {
           where: { active: true },
           include: {
+            translations: {
+              where: { locale },
+              select: { locale: true, name: true, description: true },
+            },
             class_sections: {
               where: { active: true },
+              include: {
+                translations: {
+                  where: { locale },
+                  select: { locale: true, name: true, description: true },
+                },
+              },
               orderBy: { section_id: 'asc' },
             },
           },
@@ -192,10 +221,41 @@ export class ClassesService {
     });
 
     if (!classData) {
-      throw new NotFoundException(`Class with ID ${classId} not found`);
+      throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
     }
 
-    return classData;
+    // Translate the top-level class
+    const translatedClass = this.translationService.translateMany(
+      [classData],
+      locale,
+      ['name', 'description'],
+      'translations',
+    )[0];
+
+    // Translate nested modules and sections
+    if (translatedClass.class_modules) {
+      // translateMany strips the `translations` key — cast to keep the
+      // surrounding structure assignable to the Prisma-inferred type.
+      (translatedClass as any).class_modules =
+        this.translationService.translateMany(
+          translatedClass.class_modules,
+          locale,
+          ['name', 'description'],
+          'translations',
+        );
+      for (const mod of (translatedClass as any).class_modules) {
+        if (mod.class_sections) {
+          mod.class_sections = this.translationService.translateMany(
+            mod.class_sections as Record<string, unknown>[],
+            locale,
+            ['name', 'description'],
+            'translations',
+          );
+        }
+      }
+    }
+
+    return translatedClass;
   }
 
   async getModules(classId: number) {
@@ -212,7 +272,7 @@ export class ClassesService {
     classId: number,
     ecclesiasticalYearId: number,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const enrollment = await this.prisma.$transaction(async (tx) => {
       // 1. Get target class with its club type name so we can classify the pool
       //    without relying on hardcoded exact-match strings that break under
       //    encoding/collation differences in the DB.
@@ -221,14 +281,15 @@ export class ClassesService {
         include: { club_types: { select: { name: true } } },
       });
       if (!targetClass) {
-        throw new NotFoundException('Clase no encontrada');
+        throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
       }
 
       const clubTypeName = targetClass.club_types?.name?.toLowerCase() ?? '';
 
       // Classify the pool using case-insensitive partial matching.
       // "guía" / "guia" covers both accented and unaccented variants.
-      const isGm = clubTypeName.includes('guia') || clubTypeName.includes('guía');
+      const isGm =
+        clubTypeName.includes('guia') || clubTypeName.includes('guía');
       const isAventuConquis =
         clubTypeName.includes('aventurer') ||
         clubTypeName.includes('conquistador');
@@ -247,8 +308,8 @@ export class ClassesService {
           },
         });
         if (!hasInvestiture) {
-          throw new ForbiddenException(
-            'Necesitás haber sido investido en al menos una clase de Guías Mayores',
+          throw new AppForbiddenException(
+            ErrorCode.CLASS_GM_INVESTITURE_REQUIRED,
           );
         }
       }
@@ -281,8 +342,8 @@ export class ClassesService {
           },
         });
         if (activeCount >= 1) {
-          throw new ConflictException(
-            'Ya tenés una inscripción activa en Aventureros/Conquistadores',
+          throw new AppConflictException(
+            ErrorCode.CLASS_MAX_AVENTU_CONQUIS_ACTIVE,
           );
         }
       } else if (isGm) {
@@ -295,9 +356,7 @@ export class ClassesService {
           },
         });
         if (activeCount >= 2) {
-          throw new ConflictException(
-            'Ya tenés 2 inscripciones activas en Guías Mayores',
-          );
+          throw new AppConflictException(ErrorCode.CLASS_MAX_GM_ACTIVE);
         }
       }
 
@@ -314,16 +373,14 @@ export class ClassesService {
 
       if (existing) {
         if (existing.active) {
-          throw new ConflictException(
-            'El usuario ya tiene una inscripción activa para esta clase en el año eclesiástico indicado',
-          );
+          throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
         }
 
         return tx.enrollments.update({
           where: { enrollment_id: existing.enrollment_id },
           data: { active: true },
           include: {
-            classes: { select: { name: true } },
+            classes: { select: { name: true, club_type_id: true } },
             ecclesiastical_year: {
               select: { start_date: true, end_date: true },
             },
@@ -339,11 +396,29 @@ export class ClassesService {
           enrollment_date: new Date(),
         },
         include: {
-          classes: { select: { name: true } },
+          classes: { select: { name: true, club_type_id: true } },
           ecclesiastical_year: { select: { start_date: true, end_date: true } },
         },
       });
     });
+
+    try {
+      await this.achievementsService.emitEvent({
+        userId,
+        eventType: 'class.started',
+        payload: {
+          class_id: classId,
+          class_name: enrollment.classes?.name ?? null,
+          club_type_id: enrollment.classes?.club_type_id ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to emit achievement event: ${(error as Error).message}`,
+      );
+    }
+
+    return enrollment;
   }
 
   async getUserEnrollments(userId: string, ecclesiasticalYearId?: number) {
@@ -374,6 +449,7 @@ export class ClassesService {
             class_id: true,
             name: true,
             description: true,
+            asset_code: true,
             club_types: { select: { name: true } },
           },
         },
@@ -498,17 +574,23 @@ export class ClassesService {
       },
     });
 
-    // Pre-sign all evidence file URLs in a single parallel batch
+    // Pre-sign all evidence file URLs with a concurrency cap.
+    // Without the cap, a worst-case request (10 sections × 20 files) would fire
+    // 200 simultaneous HMAC presigns against the private CLASS_EVIDENCE bucket,
+    // blocking the event loop for 1-4 seconds. Cap is 20, matching the pattern
+    // used by PROFILE_URL_LIMITER in camporees.service.ts.
     const allEvidenceFiles = sectionProgress.flatMap((sp) => sp.evidence_files);
     const signedUrlMap = new Map<number, string>();
     await Promise.all(
-      allEvidenceFiles.map(async (ef) => {
-        const signedUrl = await this.fileStorage.getSignedDownloadUrl(
-          StorageBucketAlias.CLASS_EVIDENCE,
-          ef.file_url,
-        );
-        signedUrlMap.set(ef.evidence_file_id, signedUrl);
-      }),
+      allEvidenceFiles.map((ef) =>
+        EVIDENCE_URL_LIMITER(async () => {
+          const signedUrl = await this.fileStorage.getSignedDownloadUrl(
+            StorageBucketAlias.CLASS_EVIDENCE,
+            ef.file_url,
+          );
+          signedUrlMap.set(ef.evidence_file_id, signedUrl);
+        }),
+      ),
     );
 
     // Calculate completion
@@ -553,7 +635,7 @@ export class ClassesService {
             score: progress?.score || 0,
             evidences: progress?.evidences || null,
             evidence_files: evidenceFiles,
-            status: progress?.status || 'PENDING',
+            status: progress?.status ?? evidence_validation_enum.PENDING,
             submitted_by_name: null,
             submitted_at: progress?.submitted_at?.toISOString() || null,
             validated_by_name: null,
@@ -700,13 +782,11 @@ export class ClassesService {
     file: Express.Multer.File,
   ) {
     if (!file?.buffer) {
-      throw new BadRequestException('File is required');
+      throw new AppBadRequestException(ErrorCode.CLASS_FILE_REQUIRED);
     }
 
     if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-      throw new BadRequestException(
-        'Invalid file type. Allowed: PDF, JPG, PNG, WEBP',
-      );
+      throw new AppBadRequestException(ErrorCode.CLASS_FILE_INVALID_TYPE);
     }
 
     // Validate the section belongs to this class and get its module_id
@@ -720,9 +800,7 @@ export class ClassesService {
     });
 
     if (!section) {
-      throw new NotFoundException(
-        `Section ${sectionId} not found in class ${classId}`,
-      );
+      throw new AppNotFoundException(ErrorCode.CLASS_SECTION_NOT_FOUND);
     }
 
     // Find or create section progress (upsert pattern)
@@ -810,18 +888,19 @@ export class ClassesService {
     });
 
     if (!sectionProgress) {
-      throw new NotFoundException(
-        `Section progress for section ${sectionId} not found for user ${userId} in class ${classId}`,
+      throw new AppNotFoundException(
+        ErrorCode.CLASS_SECTION_PROGRESS_NOT_FOUND,
       );
     }
 
     // Must be in PENDING or REJECTED status to submit
     if (
-      sectionProgress.status !== 'PENDING' &&
-      sectionProgress.status !== 'REJECTED'
+      sectionProgress.status !== evidence_validation_enum.PENDING &&
+      sectionProgress.status !== evidence_validation_enum.REJECTED
     ) {
-      throw new BadRequestException(
-        `Section is already in status '${sectionProgress.status}' and cannot be submitted`,
+      throw new AppBadRequestException(
+        ErrorCode.CLASS_SECTION_ALREADY_SUBMITTED,
+        { status: String(sectionProgress.status) },
       );
     }
 
@@ -830,9 +909,7 @@ export class ClassesService {
       !sectionProgress.evidence_files ||
       sectionProgress.evidence_files.length === 0
     ) {
-      throw new BadRequestException(
-        'At least one evidence file is required to submit a section for validation',
-      );
+      throw new AppBadRequestException(ErrorCode.CLASS_SECTION_NO_EVIDENCE);
     }
 
     const updated = await this.prisma.class_section_progress.update({
@@ -840,7 +917,7 @@ export class ClassesService {
         section_progress_id: sectionProgress.section_progress_id,
       },
       data: {
-        status: 'PENDING',
+        status: evidence_validation_enum.SUBMITTED,
         submitted_by_id: userId,
         submitted_at: new Date(),
         modified_at: new Date(),
@@ -873,7 +950,7 @@ export class ClassesService {
     });
 
     if (!sectionProgress) {
-      throw new NotFoundException('Evidence file not found');
+      throw new AppNotFoundException(ErrorCode.CLASS_EVIDENCE_FILE_NOT_FOUND);
     }
 
     const fileRecord = await (this.prisma as any).evidence_files.findFirst({
@@ -894,7 +971,7 @@ export class ClassesService {
     });
 
     if (!fileRecord) {
-      throw new NotFoundException('Evidence file not found');
+      throw new AppNotFoundException(ErrorCode.CLASS_EVIDENCE_FILE_NOT_FOUND);
     }
 
     const r2Key = this.fileStorage.extractKeyFromPublicUrl(
@@ -1031,9 +1108,7 @@ export class ClassesService {
     }
 
     if (targetClass.display_order > maxAllowedOrder) {
-      throw new BadRequestException(
-        'No puedes inscribirte en una clase superior a tu nivel actual',
-      );
+      throw new AppBadRequestException(ErrorCode.CLASS_LEVEL_TOO_HIGH);
     }
   }
 

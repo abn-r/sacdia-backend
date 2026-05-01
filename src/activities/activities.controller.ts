@@ -80,10 +80,20 @@ export class ActivitiesController {
     activityTypeId?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Request() req?: any,
   ) {
     const pagination = new PaginationDto();
     if (page) pagination.page = page;
     if (limit) pagination.limit = Math.min(limit, 100);
+
+    // PermissionsGuard sets req.authorization after resolving the user profile.
+    // For regular club members, effective.scope.club holds their active section.
+    // For admins / club-managers (canManageClub bypass), scope.club may be null —
+    // in that case we pass null so the service falls back to the broad club filter.
+    const userSectionId: number | null =
+      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
+        | number
+        | undefined) ?? null;
 
     return this.activitiesService.findByClub(
       clubId,
@@ -94,6 +104,7 @@ export class ActivitiesController {
         activityTypeId,
       },
       pagination,
+      userSectionId,
     );
   }
 
@@ -146,8 +157,9 @@ export class ActivitiesController {
   async update(
     @Param('activityId', ParseIntPipe) activityId: number,
     @Body() dto: UpdateActivityDto,
+    @Request() req: any,
   ) {
-    return this.activitiesService.update(activityId, dto);
+    return this.activitiesService.update(activityId, dto, req.user.sub);
   }
 
   @Delete('activities/:activityId')
@@ -156,8 +168,11 @@ export class ActivitiesController {
   @ApiOperation({ summary: 'Desactivar actividad' })
   @ApiParam({ name: 'activityId', type: Number })
   @ApiResponse({ status: 200, description: 'Actividad desactivada' })
-  async remove(@Param('activityId', ParseIntPipe) activityId: number) {
-    return this.activitiesService.remove(activityId);
+  async remove(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @Request() req: any,
+  ) {
+    return this.activitiesService.remove(activityId, req.user.sub);
   }
 
   @Post('activities/:activityId/image')

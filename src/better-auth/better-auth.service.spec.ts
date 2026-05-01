@@ -1,11 +1,15 @@
-import {
-  ConflictException,
-  NotFoundException,
-  ServiceUnavailableException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ServiceUnavailableException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { JwtService } from '@nestjs/jwt';
 import { BetterAuthService } from './better-auth.service';
+
+const mockEmailService = {
+  sendDataExportReady: jest.fn().mockResolvedValue(undefined),
+  sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+  sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+  sendAccountDeletionConfirmed: jest.fn().mockResolvedValue(undefined),
+  enqueue: jest.fn().mockResolvedValue(undefined),
+};
 
 /**
  * BetterAuthService unit tests — Option C custom HS256 JWT.
@@ -111,6 +115,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -130,6 +135,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -151,6 +157,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -172,6 +179,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const token = service.signJwt({
@@ -193,6 +201,7 @@ describe('BetterAuthService', () => {
         realJwtService,
         mockPrisma as any,
         mockBaInstance as any,
+        mockEmailService as any,
       );
 
       const before = Math.floor(Date.now() / 1000);
@@ -226,6 +235,7 @@ describe('BetterAuthService', () => {
       mockJwtService,
       mockPrisma as any,
       mockBaInstance as any,
+      mockEmailService as any,
     );
     return { svc, mockJwtService };
   }
@@ -319,7 +329,7 @@ describe('BetterAuthService', () => {
 
       await expect(
         svc.createUser('test@example.com', 'Password123!', 'Test User'),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_EMAIL_ALREADY_IN_USE });
 
       expect(mockUsersCreate).not.toHaveBeenCalled();
     });
@@ -361,7 +371,7 @@ describe('BetterAuthService', () => {
 
       await expect(
         svc.signInWithPassword('unknown@example.com', 'Password123!'),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
 
     it('should throw UnauthorizedException when account is not found', async () => {
@@ -372,7 +382,7 @@ describe('BetterAuthService', () => {
 
       await expect(
         svc.signInWithPassword('test@example.com', 'Password123!'),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
 
     it('should throw UnauthorizedException when password is wrong', async () => {
@@ -387,7 +397,7 @@ describe('BetterAuthService', () => {
 
       await expect(
         svc.signInWithPassword('test@example.com', 'WrongPassword!'),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
     });
   });
 
@@ -494,9 +504,11 @@ describe('BetterAuthService', () => {
       mockQueryRaw.mockResolvedValue([]);
       mockSessionFindFirst.mockResolvedValue(null);
 
-      await expect(svc.refreshSession('non-existent-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        svc.refreshSession('non-existent-token'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_SESSION_EXPIRED,
+      });
       expect(mockQueryRaw).toHaveBeenCalledTimes(1);
       // Secondary lookup to distinguish not-found vs expired
       expect(mockSessionFindFirst).toHaveBeenCalledWith({
@@ -513,9 +525,11 @@ describe('BetterAuthService', () => {
       mockSessionFindFirst.mockResolvedValue({ id: 'session-id-abc' }); // token exists
       mockSessionDeleteMany.mockResolvedValue({ count: 1 });
 
-      await expect(svc.refreshSession('expired-session-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        svc.refreshSession('expired-session-token'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.AUTH_SESSION_EXPIRED,
+      });
       expect(mockQueryRaw).toHaveBeenCalledTimes(1);
       expect(mockSessionFindFirst).toHaveBeenCalledWith({
         where: { token: 'expired-session-token' },
@@ -619,7 +633,7 @@ describe('BetterAuthService', () => {
 
       await expect(
         svc.updatePasswordById('user-uuid-123', 'NewPassword123!'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.USER_NOT_FOUND });
     });
   });
 });

@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FinancesService } from './finances.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
+import { ErrorCode } from '../common/errors/error-codes';
 import { FinancePeriodService } from './finance-period.service';
+import { TranslationService } from '../common/services/translation.service';
 
 describe('FinancesService', () => {
   let service: FinancesService;
@@ -30,12 +32,18 @@ describe('FinancesService', () => {
     validatePeriodOpen: jest.fn(),
   };
 
+  const mockTranslationService: Partial<TranslationService> = {
+    getCurrentLocale: jest.fn().mockReturnValue('es'),
+    translateMany: jest.fn().mockImplementation((records) => records),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancesService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FinancePeriodService, useValue: mockFinancePeriodService },
+        { provide: TranslationService, useValue: mockTranslationService },
       ],
     }).compile();
 
@@ -106,7 +114,9 @@ describe('FinancesService', () => {
     it('should throw NotFoundException when club not found', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.findByClub(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findByClub(999)).rejects.toMatchObject({
+        code: ErrorCode.FINANCE_CLUB_NOT_FOUND,
+      });
     });
   });
 
@@ -169,7 +179,9 @@ describe('FinancesService', () => {
     it('should throw NotFoundException when not found', async () => {
       mockPrismaService.finances.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.FINANCE_TRANSACTION_NOT_FOUND,
+      });
     });
   });
 

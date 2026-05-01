@@ -3,11 +3,13 @@ import {
   Post,
   Get,
   Patch,
+  Delete,
   Body,
   UseGuards,
   Headers,
   HttpCode,
   HttpStatus,
+  Ip,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -18,6 +20,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { AccountDeletionService } from './account-deletion.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
@@ -25,6 +28,7 @@ import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SetActiveClubContextDto } from './dto/set-active-club-context.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -32,7 +36,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly accountDeletionService: AccountDeletionService,
+  ) {}
 
   @Post('register')
   // Strict rate limit: 5 attempts per minute on registration
@@ -328,6 +335,59 @@ export class AuthController {
   })
   async getCompletionStatus(@CurrentUser() user: { userId: string }) {
     return this.authService.getCompletionStatus(user.userId);
+  }
+
+  /**
+   * DELETE /auth/me — Account self-deletion (Apple guideline 5.1.1v)
+   *
+   * Requires current password in body for re-authentication.
+   * Rate limited to 1 request per hour per user to prevent abuse.
+   *
+   * On success:
+   *   - All BA sessions revoked
+   *   - User soft-deleted (active = false) + PII anonymized
+   *   - FCM tokens deactivated
+   *   - Profile picture removed from R2
+   *   - Audit log entry created
+   *
+   * Response: 204 No Content
+   */
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  // Strict rate limit: 1 request per hour — destructive action, no retry spam
+  @Throttle({ default: { ttl: 3600000, limit: 1 } })
+  @ApiOperation({
+    summary: 'Eliminar cuenta del usuario autenticado',
+    description:
+      'Elimina de forma permanente la cuenta. Requiere contraseña actual para confirmación. ' +
+      'Revoca todas las sesiones, anonimiza PII y elimina archivos de almacenamiento. ' +
+      'Requerido por Apple App Store guideline 5.1.1(v).',
+  })
+  @ApiBody({ type: DeleteAccountDto })
+  @ApiResponse({
+    status: 204,
+    description: 'Cuenta eliminada exitosamente',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Contraseña incorrecta o token inválido',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiadas solicitudes — límite de 1 por hora',
+  })
+  async deleteAccount(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: DeleteAccountDto,
+    @Ip() ip: string,
+  ): Promise<void> {
+    await this.accountDeletionService.deleteAccount(
+      user.userId,
+      dto.password,
+      ip,
+    );
   }
 
   private extractBearerToken(authorization?: string): string | undefined {

@@ -1,10 +1,10 @@
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import {
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+  AppForbiddenException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -71,14 +71,22 @@ export class PermissionsGuard implements CanActivate {
     const userId = request.user?.sub;
 
     if (!userId) {
-      throw new ForbiddenException('User not authenticated');
+      throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
     }
 
     const resource =
       this.reflector.getAllAndOverride<AuthorizationResourceMetadata>(
         AUTHORIZATION_RESOURCE_KEY,
         [context.getHandler(), context.getClass()],
-      ) ?? { type: 'global' };
+      );
+
+    if (!resource) {
+      const className = context.getClass().name;
+      const handlerName = context.getHandler().name;
+      throw new AppInternalServerErrorException(
+        ErrorCode.GUARD_RBAC_MISCONFIGURATION,
+      );
+    }
     const sensitiveUserSubresource =
       this.reflector.getAllAndOverride<SensitiveUserSubresourceMetadata>(
         SENSITIVE_USER_SUBRESOURCE_KEY,
@@ -104,9 +112,7 @@ export class PermissionsGuard implements CanActivate {
         sensitiveUserSubresource,
       )
     ) {
-      throw new ForbiddenException(
-        this.buildPermissionsErrorMessage(requirement, resource),
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
 
     switch (resource.type) {
@@ -120,7 +126,6 @@ export class PermissionsGuard implements CanActivate {
         return this.validateTerritoryScope(
           resolved,
           await this.resolveCamporeeScope(request, resource),
-          'You need an active assignment or global scope for this camporee',
         );
       case 'union_camporee':
         return this.validateUnionCamporeeScope(
@@ -259,17 +264,6 @@ export class PermissionsGuard implements CanActivate {
     return new Set(activeGrant?.permissions ?? []);
   }
 
-  private buildPermissionsErrorMessage(
-    requirement: PermissionRequirement,
-    resource: AuthorizationResourceMetadata,
-  ): string {
-    if (resource.type === 'global' || resource.type === 'user') {
-      return `Missing required global permissions: ${requirement.permissions.join(', ')}`;
-    }
-
-    return `Missing required permissions: ${requirement.permissions.join(', ')}`;
-  }
-
   private async validateClubScope(
     userId: string,
     request: any,
@@ -288,9 +282,7 @@ export class PermissionsGuard implements CanActivate {
     const activeClubScope = resolved.authorization.effective.scope.club;
 
     if (!activeClubScope || activeClubScope.club.club_id !== clubId) {
-      throw new ForbiddenException(
-        'You need an active club assignment for this club',
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     return true;
@@ -317,9 +309,7 @@ export class PermissionsGuard implements CanActivate {
       activeClubScope.club.club_id !== resourceScope.mainClubId ||
       activeClubScope.section.club_section_id !== resourceScope.instanceId
     ) {
-      throw new ForbiddenException(
-        'You need an active club assignment for this exact instance',
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     return true;
@@ -351,17 +341,13 @@ export class PermissionsGuard implements CanActivate {
       !activeClubScope ||
       activeClubScope.club.club_id !== resourceScope.mainClubId
     ) {
-      throw new ForbiddenException(
-        'You need an active club assignment for this club',
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     const activeSectionId = activeClubScope.section.club_section_id;
 
     if (!resourceScope.participatingSectionIds.includes(activeSectionId)) {
-      throw new ForbiddenException(
-        'You need an active club assignment in one of the participating sections of this joint activity',
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     return true;
@@ -370,7 +356,6 @@ export class PermissionsGuard implements CanActivate {
   private validateTerritoryScope(
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedTerritoryScope,
-    errorMessage: string,
   ): boolean {
     const globalRoleNames = new Set(
       resolved.authorization.grants.global_roles.map((grant) =>
@@ -429,7 +414,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    throw new ForbiddenException(errorMessage);
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   private isResourceOwner(
@@ -478,7 +463,7 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!activity) {
-      throw new NotFoundException('Activity not found');
+      throw new AppNotFoundException(ErrorCode.ACTIVITY_NOT_FOUND);
     }
 
     // For joint activities, resolve authorization using all participating sections
@@ -486,9 +471,7 @@ export class PermissionsGuard implements CanActivate {
       const mainClubId = activity.club_sections?.main_club_id;
 
       if (!mainClubId) {
-        throw new ForbiddenException(
-          'Unable to resolve the club for this joint activity',
-        );
+        throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
       }
 
       const participatingSectionIds = activity.activity_instances
@@ -531,7 +514,7 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!camporee) {
-      throw new NotFoundException('Camporee not found');
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND);
     }
 
     return {
@@ -563,7 +546,9 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!camporee) {
-      throw new NotFoundException('Union camporee not found');
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+      );
     }
 
     return {
@@ -618,8 +603,8 @@ export class PermissionsGuard implements CanActivate {
       (globalRoleNames.has('admin') ||
         globalRoleNames.has('assistant_admin') ||
         globalRoleNames.has('coordinator') ||
-        globalRoleNames.has('director_lf') ||
-        globalRoleNames.has('assistant_lf'))
+        globalRoleNames.has('director-lf') ||
+        globalRoleNames.has('assistant-lf'))
     ) {
       return true;
     }
@@ -635,9 +620,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    throw new ForbiddenException(
-      'You need a union-level or higher assignment for this union camporee',
-    );
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   private async resolveFinanceScope(
@@ -664,7 +647,7 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!finance) {
-      throw new NotFoundException('Finance record not found');
+      throw new AppNotFoundException(ErrorCode.FINANCE_TRANSACTION_NOT_FOUND);
     }
 
     return this.buildInstanceScopeFromSection(finance.club_sections);
@@ -685,7 +668,7 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!section) {
-      throw new NotFoundException('Club section not found');
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     }
 
     return this.buildInstanceScopeFromSection(section);
@@ -715,7 +698,7 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!inventoryItem) {
-      throw new NotFoundException('Inventory item not found');
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
     }
 
     return this.buildInstanceScopeFromSection(inventoryItem.club_sections);
@@ -734,7 +717,7 @@ export class PermissionsGuard implements CanActivate {
     );
 
     if (!assignmentId) {
-      throw new ForbiddenException('Assignment ID not found in request');
+      throw new AppForbiddenException(ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID);
     }
 
     const assignment = await this.prisma.club_role_assignments.findUnique({
@@ -752,7 +735,7 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!assignment) {
-      throw new NotFoundException('Club assignment not found');
+      throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
     }
 
     return this.buildInstanceScopeFromSection(assignment.club_sections);
@@ -766,9 +749,7 @@ export class PermissionsGuard implements CanActivate {
     } | null,
   ): ResolvedInstanceScope {
     if (!section || !section.main_club_id) {
-      throw new ForbiddenException(
-        'Unable to resolve the club instance for this resource',
-      );
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     // Map club_type_id to instance type name for backward compatibility
@@ -815,13 +796,13 @@ export class PermissionsGuard implements CanActivate {
 
   private getRequiredNumericValue(
     value: unknown,
-    errorMessage: string,
+    _errorMessage: string,
   ): number {
     const parsed =
       typeof value === 'number' ? value : Number.parseInt(String(value), 10);
 
     if (!Number.isFinite(parsed)) {
-      throw new ForbiddenException(errorMessage);
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     return parsed;
@@ -829,10 +810,10 @@ export class PermissionsGuard implements CanActivate {
 
   private requireMainClubId(
     value: number | null | undefined,
-    errorMessage: string,
+    _errorMessage: string,
   ): number {
     if (!Number.isFinite(value)) {
-      throw new ForbiddenException(errorMessage);
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
     }
 
     return value as number;

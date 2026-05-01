@@ -1,5 +1,5 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { ErrorCode } from '../errors/error-codes';
 
 describe('JwtAuthGuard', () => {
   const mockContext = {
@@ -30,6 +30,8 @@ describe('JwtAuthGuard', () => {
         { message: 'No auth token' },
         mockContext,
       ),
-    ).toThrow(UnauthorizedException);
+    ).toThrow(
+      expect.objectContaining({ code: ErrorCode.GUARD_JWT_UNAUTHORIZED }),
+    );
   });
 });

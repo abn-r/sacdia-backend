@@ -4,10 +4,11 @@ import { CamporeesService } from './camporees.service';
 import { CamporeeLateApprovalsService } from './camporee-late-approvals.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AchievementsModule } from '../achievements/achievements.module';
 import { ClubRolesGuard } from '../common/guards';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule],
+  imports: [PrismaModule, NotificationsModule, AchievementsModule],
   controllers: [CamporeesController],
   providers: [CamporeesService, CamporeeLateApprovalsService, ClubRolesGuard],
   exports: [CamporeesService, CamporeeLateApprovalsService],

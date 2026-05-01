@@ -85,7 +85,7 @@ export class UsersController {
   }
 
   @Patch(':userId')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Actualizar información personal del usuario' })
   @ApiResponse({ status: 200, description: 'Usuario actualizado' })
@@ -206,7 +206,7 @@ export class UsersController {
   }
 
   @Post(':userId/profile-picture')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
@@ -237,7 +237,7 @@ export class UsersController {
   }
 
   @Delete(':userId/profile-picture')
-  @RequirePermissions('users:update')
+  @RequirePermissions('users:update_profile')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @ApiOperation({ summary: 'Eliminar foto de perfil' })
   @ApiResponse({ status: 200, description: 'Foto eliminada' })

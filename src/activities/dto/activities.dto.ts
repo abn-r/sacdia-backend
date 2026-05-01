@@ -83,7 +83,9 @@ export class CreateActivityDto {
   })
   @IsOptional()
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'activity_time must be in HH:mm format' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'activity_time must be in HH:mm format',
+  })
   activity_time?: string;
 
   @ApiPropertyOptional({
@@ -113,7 +115,10 @@ export class CreateActivityDto {
 
   @ApiPropertyOptional({ description: 'URL de la imagen de la actividad' })
   @IsOptional()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { message: 'image must be a valid URL' })
+  @IsUrl(
+    { protocols: ['http', 'https'], require_protocol: true },
+    { message: 'image must be a valid URL' },
+  )
   image?: string;
 
   @ApiPropertyOptional({
@@ -203,7 +208,9 @@ export class UpdateActivityDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'activity_time must be in HH:mm format' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'activity_time must be in HH:mm format',
+  })
   activity_time?: string;
 
   @ApiPropertyOptional({
@@ -234,7 +241,10 @@ export class UpdateActivityDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { message: 'image must be a valid URL' })
+  @IsUrl(
+    { protocols: ['http', 'https'], require_protocol: true },
+    { message: 'image must be a valid URL' },
+  )
   image?: string;
 
   @ApiPropertyOptional()

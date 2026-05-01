@@ -36,10 +36,21 @@ export function parseRedisConnectionOptions(
   return options;
 }
 
+export function isPlaceholderUrl(value: string): boolean {
+  return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
+    value.includes(token),
+  );
+}
+
 /**
  * Returns a BullModule.forRoot() configuration that reads REDIS_URL from the
  * environment. If REDIS_URL is not set or contains placeholder values, returns
- * a no-op module that lets the app start without a queue connection.
+ * an empty array so the app starts without any queue connection.
+ *
+ * IMPORTANT: This function must be called AFTER dotenv has populated
+ * process.env. In main.ts, `import 'dotenv/config'` must be the first import
+ * so that all subsequent @Module decorator evaluations (which run at file-load
+ * time, before NestJS DI initialization) see the correct env vars.
  *
  * Usage in AppModule:
  *   imports: [..., ...buildBullRootConfig()]
@@ -61,13 +72,7 @@ export function buildBullRootConfig() {
       }),
     ];
   } catch {
-    console.warn('⚠️  REDIS_URL is not a valid URL — BullMQ queue disabled.');
+    console.warn('BullMQ: REDIS_URL is not a valid URL — queue disabled.');
     return [];
   }
-}
-
-function isPlaceholderUrl(value: string): boolean {
-  return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
-    value.includes(token),
-  );
 }

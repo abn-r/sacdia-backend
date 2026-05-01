@@ -2,11 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnitsService } from './units.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScoringCategoriesService } from '../scoring-categories/scoring-categories.service';
-import {
-  NotFoundException,
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 describe('UnitsService', () => {
   let service: UnitsService;
@@ -21,6 +18,7 @@ describe('UnitsService', () => {
     units: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -57,7 +55,16 @@ describe('UnitsService', () => {
       providers: [
         UnitsService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: ScoringCategoriesService, useValue: mockScoringCategoriesService },
+        {
+          provide: ScoringCategoriesService,
+          useValue: mockScoringCategoriesService,
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            sendSilentToSection: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -100,7 +107,9 @@ describe('UnitsService', () => {
     it('should throw NotFoundException when club does not exist', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.findByClub(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findByClub(999)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_CLUB_NOT_FOUND,
+      });
     });
 
     it('should query without section filter when club has no sections', async () => {
@@ -128,7 +137,7 @@ describe('UnitsService', () => {
   describe('findOne', () => {
     it('should return a unit by id', async () => {
       const mockUnit = { unit_id: 1, name: 'Falange Norte', unit_members: [] };
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
 
       const result = await service.findOne(1);
 
@@ -136,9 +145,11 @@ describe('UnitsService', () => {
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue(null);
+      mockPrismaService.units.findFirst.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_NOT_FOUND,
+      });
     });
   });
 
@@ -181,18 +192,18 @@ describe('UnitsService', () => {
     it('should throw NotFoundException when club does not exist', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(999, createDto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.create(999, createDto)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_CLUB_NOT_FOUND,
+      });
     });
 
     it('should throw BadRequestException when section does not exist', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
       mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(1, createDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.create(1, createDto)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_SECTION_NOT_FOUND,
+      });
     });
 
     it('should throw BadRequestException when section belongs to a different club', async () => {
@@ -201,9 +212,9 @@ describe('UnitsService', () => {
         main_club_id: 99,
       });
 
-      await expect(service.create(1, createDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.create(1, createDto)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_SECTION_WRONG_CLUB,
+      });
     });
 
     it('should create a unit without club_section_id', async () => {
@@ -230,7 +241,7 @@ describe('UnitsService', () => {
       const existing = { unit_id: 1, name: 'Falange Norte', unit_members: [] };
       const updated = { unit_id: 1, name: 'Falange Sur', unit_members: [] };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(existing);
+      mockPrismaService.units.findFirst.mockResolvedValue(existing);
       mockPrismaService.units.update.mockResolvedValue(updated);
 
       const result = await service.update(1, { name: 'Falange Sur' });
@@ -245,11 +256,11 @@ describe('UnitsService', () => {
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue(null);
+      mockPrismaService.units.findFirst.mockResolvedValue(null);
 
-      await expect(service.update(999, { name: 'X' })).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.update(999, { name: 'X' })).rejects.toMatchObject({
+        code: ErrorCode.UNIT_NOT_FOUND,
+      });
     });
   });
 
@@ -261,7 +272,7 @@ describe('UnitsService', () => {
     it('should soft-delete the unit', async () => {
       const existing = { unit_id: 1, name: 'Falange Norte', unit_members: [] };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(existing);
+      mockPrismaService.units.findFirst.mockResolvedValue(existing);
       mockPrismaService.units.update.mockResolvedValue({
         ...existing,
         active: false,
@@ -277,9 +288,11 @@ describe('UnitsService', () => {
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue(null);
+      mockPrismaService.units.findFirst.mockResolvedValue(null);
 
-      await expect(service.remove(999)).rejects.toThrow(NotFoundException);
+      await expect(service.remove(999)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_NOT_FOUND,
+      });
     });
   });
 
@@ -299,7 +312,7 @@ describe('UnitsService', () => {
         active: true,
       };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
@@ -332,7 +345,7 @@ describe('UnitsService', () => {
       };
       const reactivated = { ...existingInactive, unit_id: 1, active: true };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
@@ -358,7 +371,7 @@ describe('UnitsService', () => {
         active: true,
       };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
@@ -368,29 +381,29 @@ describe('UnitsService', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(existingActive);
 
-      await expect(service.addMember(1, dto)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.addMember(1, dto)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_MEMBER_ALREADY_IN_UNIT,
+      });
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue(null);
+      mockPrismaService.units.findFirst.mockResolvedValue(null);
 
-      await expect(service.addMember(999, dto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.addMember(999, dto)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_NOT_FOUND,
+      });
     });
 
     it('should throw NotFoundException when user does not exist', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue({
+      mockPrismaService.units.findFirst.mockResolvedValue({
         unit_id: 1,
         unit_members: [],
       });
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
-      await expect(service.addMember(1, dto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.addMember(1, dto)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_USER_NOT_FOUND,
+      });
     });
   });
 
@@ -408,7 +421,7 @@ describe('UnitsService', () => {
         active: true,
       };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.unit_members.findFirst.mockResolvedValue(mockMember);
       mockPrismaService.unit_members.update.mockResolvedValue({
         ...mockMember,
@@ -425,15 +438,15 @@ describe('UnitsService', () => {
     });
 
     it('should throw NotFoundException when member not found in unit', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue({
+      mockPrismaService.units.findFirst.mockResolvedValue({
         unit_id: 1,
         unit_members: [],
       });
       mockPrismaService.unit_members.findFirst.mockResolvedValue(null);
 
-      await expect(service.removeMember(1, 999)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.removeMember(1, 999)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_MEMBER_NOT_FOUND,
+      });
     });
   });
 
@@ -460,20 +473,26 @@ describe('UnitsService', () => {
         },
       ];
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.weekly_records.findMany.mockResolvedValue(mockRecords);
 
       const result = await service.findWeeklyRecords(1);
 
       // transformWeeklyRecord strips weekly_record_scores and adds scores: []
       expect(result).toEqual([
-        { record_id: 1, user_id: 'uuid-user-1', week: 1, points: 10, scores: [] },
+        {
+          record_id: 1,
+          user_id: 'uuid-user-1',
+          week: 1,
+          points: 10,
+          scores: [],
+        },
       ]);
     });
 
     it('should return empty array when unit has no active members', async () => {
       const mockUnit = { unit_id: 1, unit_members: [] };
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
 
       const result = await service.findWeeklyRecords(1);
 
@@ -482,11 +501,11 @@ describe('UnitsService', () => {
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue(null);
+      mockPrismaService.units.findFirst.mockResolvedValue(null);
 
-      await expect(service.findWeeklyRecords(999)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.findWeeklyRecords(999)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_NOT_FOUND,
+      });
     });
   });
 
@@ -510,24 +529,24 @@ describe('UnitsService', () => {
       };
       const mockRecord = { record_id: 1, ...dto, points: 0, active: true };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.weekly_records.findUnique
         .mockResolvedValueOnce(null) // conflict check
         .mockResolvedValueOnce(mockRecord); // final fetch inside transaction
       mockPrismaService.weekly_records.create.mockResolvedValue(mockRecord);
 
-      const result = await service.createWeeklyRecord(1, dto);
+      const result = await service.createWeeklyRecord(1, dto, dto.user_id);
 
       expect(result).toBeDefined();
     });
 
     it('should throw BadRequestException when user is not a member of the unit', async () => {
       const mockUnit = { unit_id: 1, unit_members: [] };
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
 
-      await expect(service.createWeeklyRecord(1, dto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.createWeeklyRecord(1, dto, dto.user_id),
+      ).rejects.toMatchObject({ code: ErrorCode.UNIT_MEMBER_NOT_ACTIVE });
     });
 
     it('should throw ConflictException when record for that week already exists', async () => {
@@ -537,14 +556,14 @@ describe('UnitsService', () => {
       };
       const existingRecord = { record_id: 1, ...dto };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.weekly_records.findUnique.mockResolvedValue(
         existingRecord,
       );
 
-      await expect(service.createWeeklyRecord(1, dto)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.createWeeklyRecord(1, dto, dto.user_id),
+      ).rejects.toMatchObject({ code: ErrorCode.UNIT_WEEKLY_RECORD_DUPLICATE });
     });
   });
 
@@ -565,7 +584,7 @@ describe('UnitsService', () => {
       };
       const updated = { ...mockRecord, points: 20 };
 
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.weekly_records.findFirst.mockResolvedValue(mockRecord);
       mockPrismaService.unit_members.findFirst.mockResolvedValue({
         unit_member_id: 1,
@@ -585,20 +604,20 @@ describe('UnitsService', () => {
 
     it('should throw NotFoundException when record does not exist', async () => {
       const mockUnit = { unit_id: 1, unit_members: [] };
-      mockPrismaService.units.findUnique.mockResolvedValue(mockUnit);
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
       mockPrismaService.weekly_records.findFirst.mockResolvedValue(null);
 
       await expect(
         service.updateWeeklyRecord(1, 999, { attendance: 1 }),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ code: ErrorCode.UNIT_WEEKLY_RECORD_NOT_FOUND });
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {
-      mockPrismaService.units.findUnique.mockResolvedValue(null);
+      mockPrismaService.units.findFirst.mockResolvedValue(null);
 
-      await expect(service.updateWeeklyRecord(999, 10, {})).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.updateWeeklyRecord(999, 10, {}),
+      ).rejects.toMatchObject({ code: ErrorCode.UNIT_NOT_FOUND });
     });
   });
 });

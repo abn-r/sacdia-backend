@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClubsService } from './clubs.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotFoundException } from '@nestjs/common';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 describe('ClubsService', () => {
   let service: ClubsService;
@@ -51,6 +52,10 @@ describe('ClubsService', () => {
         {
           provide: AuthorizationContextService,
           useValue: { invalidateUserAuthorizationCache: jest.fn() },
+        },
+        {
+          provide: NotificationsService,
+          useValue: { sendSilentToSection: jest.fn() },
         },
       ],
     }).compile();
@@ -108,7 +113,9 @@ describe('ClubsService', () => {
     it('should throw NotFoundException when club not found', async () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(999)).rejects.toMatchObject({
+        code: ErrorCode.CLUB_NOT_FOUND,
+      });
     });
   });
 

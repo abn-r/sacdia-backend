@@ -12,6 +12,13 @@ export enum StorageBucketAlias {
   INSURANCE_EVIDENCE = 'INSURANCE_EVIDENCE',
   CLASS_EVIDENCE = 'CLASS_EVIDENCE',
   RESOURCES_FILES = 'RESOURCES_FILES',
+  ACHIEVEMENTS_BADGES = 'ACHIEVEMENTS_BADGES',
+  /**
+   * Private bucket for GDPR data export JSON files.
+   * Objects are served via presigned URLs (TTL 15 min) — never public.
+   * Env vars: R2_BUCKET_DATA_EXPORTS, R2_PUBLIC_URL_DATA_EXPORTS (required).
+   */
+  DATA_EXPORTS = 'DATA_EXPORTS',
 }
 
 export type UploadFileOptions = {
@@ -45,4 +52,9 @@ export interface FileStorageService {
     keyOrPublicUrl: string,
     options?: SignedUrlOptions,
   ): Promise<string>;
+  /**
+   * Resolve a stored key to its public CDN URL synchronously.
+   * Only valid for public buckets (isPublic: true). Throws if the bucket is private.
+   */
+  resolvePublicUrl(bucketAlias: StorageBucketAlias, key: string): string;
 }

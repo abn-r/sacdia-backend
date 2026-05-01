@@ -8,6 +8,8 @@ import {
   IsEnum,
   IsInt,
   Min,
+  MaxLength,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -17,26 +19,34 @@ export class UpdateUserDto {
   @ApiPropertyOptional({ example: 'Carlos' })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   name?: string;
 
   @ApiPropertyOptional({ example: 'Mendoza' })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   paternal_last_name?: string;
 
   @ApiPropertyOptional({ example: 'Ruiz' })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   maternal_last_name?: string;
 
   @ApiPropertyOptional({ example: '+52 55 1234 5678' })
   @IsOptional()
   @IsString()
+  @MaxLength(25)
+  @Matches(/^\+?[\d\s\-(). ext]{7,25}$/, {
+    message: 'phone must be a valid phone number',
+  })
   phone?: string;
 
   @ApiPropertyOptional({ example: 'Av. Reforma 123, CDMX' })
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   address?: string;
 
   @ApiPropertyOptional({ example: 'M', enum: ['M', 'F'] })

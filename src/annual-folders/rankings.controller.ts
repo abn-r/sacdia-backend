@@ -2,11 +2,13 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -16,12 +18,17 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { RankingsService } from './rankings.service';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import { RankingBreakdownDto } from './dto/ranking-breakdown.dto';
 
 @ApiTags('Annual Folders - Rankings')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
+@AuthorizationResource({ type: 'global' })
 @Controller('annual-folders/rankings')
 export class RankingsController {
   constructor(private readonly rankingsService: RankingsService) {}
@@ -117,11 +124,47 @@ export class RankingsController {
   }
 
   // ========================================
+  // BREAKDOWN — per-component drill-down
+  // ========================================
+
+  @Get(':enrollmentId/breakdown')
+  @RequirePermissions('rankings:read')
+  @ApiOperation({
+    summary: 'Per-component score breakdown for a club enrollment',
+    description:
+      'Returns the composite score, the four component scores (folder, finance, camporee, evidence), ' +
+      'the weights applied (with source), and auxiliary detail per component: ' +
+      'folder section evaluations summary, finance months closed/missed list + deadline day, ' +
+      'camporee events list with per-event attended status, evidence validated/rejected/pending counts.',
+  })
+  @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
+  @ApiQuery({
+    name: 'year_id',
+    required: true,
+    description: 'Ecclesiastical year ID',
+    example: 5,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Breakdown of composite score into components',
+  })
+  @ApiResponse({ status: 404, description: 'Club enrollment not found' })
+  async getBreakdown(
+    @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @Query('year_id', ParseIntPipe) yearId: number,
+  ): Promise<RankingBreakdownDto> {
+    return this.rankingsService.getBreakdown(enrollmentId, yearId);
+  }
+
+  // ========================================
   // MANUAL RECALCULATION TRIGGER
   // ========================================
 
   @Post('recalculate')
   @RequirePermissions('rankings:recalculate')
+  // Rate limit: 1 call per 5 minutes — this endpoint runs a full system-wide
+  // DB transaction; even a single extra concurrent run can DoS the DB.
+  @Throttle({ default: { ttl: 300_000, limit: 1 } })
   @ApiOperation({
     summary: 'Manually trigger a rankings recalculation',
     description:
@@ -147,6 +190,14 @@ export class RankingsController {
     },
   })
   @ApiResponse({ status: 404, description: 'Year not found or no active year' })
+  @ApiResponse({
+    status: 409,
+    description: 'Recalculation already in progress for this year (lock held)',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit exceeded — 1 call per 5 minutes per user',
+  })
   async recalculate(@Query('year_id') yearIdRaw?: string) {
     const yearId =
       yearIdRaw !== undefined ? parseInt(yearIdRaw, 10) : undefined;

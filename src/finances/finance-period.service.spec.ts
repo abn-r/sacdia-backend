@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FinancePeriodService } from './finance-period.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { Logger, ForbiddenException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CronRunLogger } from '../common/services/cron-run-logger.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 describe('FinancePeriodService', () => {
   let service: FinancePeriodService;
@@ -26,6 +28,15 @@ describe('FinancePeriodService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContextService,
+        },
+        {
+          provide: CronRunLogger,
+          useValue: {
+            track: jest.fn(async (_name: string, fn: () => Promise<any>) =>
+              fn(),
+            ),
+            trackSkipped: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
@@ -275,11 +286,7 @@ describe('FinancePeriodService', () => {
 
       await expect(
         service.validatePeriodOpen(1, 2026, 2, 'user-123'),
-      ).rejects.toThrow(ForbiddenException);
-
-      await expect(
-        service.validatePeriodOpen(1, 2026, 2, 'user-123'),
-      ).rejects.toThrow('El periodo 2/2026 está cerrado');
+      ).rejects.toMatchObject({ code: ErrorCode.FINANCE_PERIOD_CLOSED });
     });
 
     it('should allow when period is closed and user is admin', async () => {
