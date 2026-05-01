@@ -47,6 +47,7 @@
   "AWARD_CATEGORY_POINTS_INVALID": "min_points ({minPoints}) no puede ser mayor que max_points ({maxPoints})",
   "AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND": "Tipo de club con ID {id} no encontrado",
   "AWARD_CATEGORY_NOT_FOUND": "Categoría de premio con ID {id} no encontrada",
+  "AWARD_CATEGORY_SCOPE_INVALID": "Valor de scope inválido. Debe ser uno de: club, section, member",
   "CAMPOREE_NOT_FOUND": "Campamento con ID {id} no encontrado",
   "CAMPOREE_NOT_ACTIVE": "El campamento no está activo",
   "CAMPOREE_YEAR_NOT_ACTIVE": "No se encontró un año eclesiástico activo. Por favor, activá un año eclesiástico primero",
@@ -461,5 +462,10 @@
   "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club no encontrado",
   "ANNUAL_REPORT_YEAR_NOT_FOUND": "Año eclesiástico no encontrado",
   "ANNUAL_REPORT_PDF_NOT_READY": "El informe anual no tiene datos computados. Regenere el informe primero",
-  "CRON_ALERT_NOT_FOUND": "Registro de alerta de cron no encontrado."
+  "CRON_ALERT_NOT_FOUND": "Registro de alerta de cron no encontrado.",
+  "WEIGHTS_SUM_INVALID": "Los porcentajes de pesos deben sumar 100; se recibió {sum}.",
+  "WEIGHTS_CONFLICT": "Ya existe una configuración de pesos para esta combinación de tipo de club y año eclesiástico.",
+  "DEFAULT_WEIGHTS_NOT_DELETABLE": "La fila de pesos global predeterminada no puede eliminarse.",
+  "WEIGHTS_NOT_FOUND": "Configuración de pesos de clasificación no encontrada.",
+  "RECALCULATION_DISABLED": "El recálculo de rankings está desactivado en configuración del sistema."
 }

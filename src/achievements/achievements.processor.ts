@@ -79,7 +79,7 @@ export class AchievementsProcessor
       AchievementJobType
     >,
   ) {
-    switch (job.name as AchievementJobType) {
+    switch (job.name) {
       case 'evaluate':
         return this.handleEvaluate(job as Job<EvaluateJobData>);
       case 'retroactive-evaluate':

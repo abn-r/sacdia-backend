@@ -180,7 +180,7 @@ export class AdminAchievementsService {
       await this._validatePrerequisite(dto.prerequisite_id, null);
     }
 
-    return this.prisma.achievements.create({
+    const created = await this.prisma.achievements.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -200,6 +200,13 @@ export class AdminAchievementsService {
       },
       include: { category: true },
     });
+
+    return {
+      ...created,
+      badge_image_url: this.achievementsService.resolveBadgeUrl(
+        created.badge_image_key,
+      ),
+    };
   }
 
   async updateAchievement(achievementId: number, dto: UpdateAchievementDto) {
@@ -220,7 +227,7 @@ export class AdminAchievementsService {
       await this._validatePrerequisite(dto.prerequisite_id, achievementId);
     }
 
-    return this.prisma.achievements.update({
+    const updated = await this.prisma.achievements.update({
       where: { achievement_id: achievementId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -250,6 +257,13 @@ export class AdminAchievementsService {
       } as Prisma.achievementsUncheckedUpdateInput,
       include: { category: true },
     });
+
+    return {
+      ...updated,
+      badge_image_url: this.achievementsService.resolveBadgeUrl(
+        updated.badge_image_key,
+      ),
+    };
   }
 
   async deleteAchievement(achievementId: number) {

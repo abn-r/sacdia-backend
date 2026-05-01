@@ -4,9 +4,10 @@ import { MemberOfMonthService } from './member-of-month.service';
 import { MemberOfMonthCronService } from './member-of-month-cron.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AchievementsModule } from '../achievements/achievements.module';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule],
+  imports: [PrismaModule, NotificationsModule, AchievementsModule],
   controllers: [MemberOfMonthController],
   providers: [MemberOfMonthService, MemberOfMonthCronService],
   exports: [MemberOfMonthService],

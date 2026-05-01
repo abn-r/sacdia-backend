@@ -163,7 +163,7 @@ export class MonthlyReportsPdfService {
       this.i18n.translate(`monthly_reports.${key}`, {
         lang: locale,
         args,
-      }) as string;
+      });
 
     // Cast to any to access include relations (Prisma types are inferred at compile time)
     const reportData = report as any;

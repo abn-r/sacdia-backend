@@ -25,6 +25,17 @@ export class SystemConfigService {
     return config;
   }
 
+  /**
+   * Non-throwing variant — returns null when the config key is not found.
+   * Prefer this for optional feature flags and kill-switches.
+   */
+  async get(key: string): Promise<string | null> {
+    const config = await this.prisma.system_config.findUnique({
+      where: { config_key: key },
+    });
+    return config?.config_value ?? null;
+  }
+
   async updateByKey(key: string, configValue: string) {
     const existing = await this.prisma.system_config.findUnique({
       where: { config_key: key },

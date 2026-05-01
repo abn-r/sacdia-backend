@@ -47,6 +47,7 @@
   "AWARD_CATEGORY_POINTS_INVALID": "min_points ({minPoints}) cannot be greater than max_points ({maxPoints})",
   "AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND": "Club type with ID {id} not found",
   "AWARD_CATEGORY_NOT_FOUND": "Award category with ID {id} not found",
+  "AWARD_CATEGORY_SCOPE_INVALID": "Invalid scope value. Must be one of: club, section, member",
   "CAMPOREE_NOT_FOUND": "Camporee with ID {id} not found",
   "CAMPOREE_NOT_ACTIVE": "Camporee is not active",
   "CAMPOREE_YEAR_NOT_ACTIVE": "No active ecclesiastical year found. Please activate an ecclesiastical year first",
@@ -461,5 +462,10 @@
   "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club not found",
   "ANNUAL_REPORT_YEAR_NOT_FOUND": "Ecclesiastical year not found",
   "ANNUAL_REPORT_PDF_NOT_READY": "Annual report has no computed data. Regenerate the report first",
-  "CRON_ALERT_NOT_FOUND": "Cron alert record not found."
+  "CRON_ALERT_NOT_FOUND": "Cron alert record not found.",
+  "WEIGHTS_SUM_INVALID": "Weight percentages must sum to 100; got {sum}.",
+  "WEIGHTS_CONFLICT": "A weight configuration already exists for this club type and ecclesiastical year combination.",
+  "DEFAULT_WEIGHTS_NOT_DELETABLE": "The global default weight row cannot be deleted.",
+  "WEIGHTS_NOT_FOUND": "Ranking weight configuration not found.",
+  "RECALCULATION_DISABLED": "Ranking recalculation is currently disabled in system settings."
 }

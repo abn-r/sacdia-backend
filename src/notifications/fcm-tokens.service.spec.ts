@@ -205,7 +205,7 @@ describe('FcmTokensService', () => {
       // Confirm no prune happened (count 0)
       const deleteCall =
         txMock.user_fcm_tokens.deleteMany.mock.results[0].value;
-      expect(deleteCall).resolves ?? undefined; // async resolves to { count: 0 }
+      await expect(deleteCall).resolves.toEqual({ count: 0 });
     });
   });
 

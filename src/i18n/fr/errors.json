@@ -47,6 +47,7 @@
   "AWARD_CATEGORY_POINTS_INVALID": "min_points ({minPoints}) ne peut pas être supérieur à max_points ({maxPoints})",
   "AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND": "Type de club avec l’ID {id} introuvable",
   "AWARD_CATEGORY_NOT_FOUND": "Catégorie de récompense avec l’ID {id} introuvable",
+  "AWARD_CATEGORY_SCOPE_INVALID": "Valeur de scope invalide. Doit être l’une des suivantes : club, section, member",
   "CAMPOREE_NOT_FOUND": "Camporee avec l’ID {id} introuvable",
   "CAMPOREE_NOT_ACTIVE": "Le camporee n’est pas actif",
   "CAMPOREE_YEAR_NOT_ACTIVE": "Aucune année ecclésiastique active trouvée. Veuillez en activer une d’abord",
@@ -461,5 +462,10 @@
   "ANNUAL_REPORT_CLUB_NOT_FOUND": "Club introuvable",
   "ANNUAL_REPORT_YEAR_NOT_FOUND": "Année ecclésiastique introuvable",
   "ANNUAL_REPORT_PDF_NOT_READY": "Le rapport annuel n'a pas de données calculées. Régénérez le rapport d'abord",
-  "CRON_ALERT_NOT_FOUND": "Enregistrement d'alerte cron introuvable."
+  "CRON_ALERT_NOT_FOUND": "Enregistrement d'alerte cron introuvable.",
+  "WEIGHTS_SUM_INVALID": "Les pourcentages de pondération doivent totaliser 100; reçu {sum}.",
+  "WEIGHTS_CONFLICT": "Une configuration de pondération existe déjà pour cette combinaison de type de club et d'année ecclésiastique.",
+  "DEFAULT_WEIGHTS_NOT_DELETABLE": "La ligne de pondération par défaut globale ne peut pas être supprimée.",
+  "WEIGHTS_NOT_FOUND": "Configuration de pondération de classement introuvable.",
+  "RECALCULATION_DISABLED": "Le recalcul des classements est actuellement désactivé dans les paramètres système."
 }

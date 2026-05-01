@@ -1,5 +1,12 @@
 export const ACHIEVEMENTS_QUEUE = 'achievements';
 
+/**
+ * Default badge image URL served when an achievement has no badge_image_key.
+ * Points to the publicly accessible R2 CDN object.
+ */
+export const ACHIEVEMENT_DEFAULT_BADGE_URL =
+  'https://pub-c8aa231ae66c46ff96fc5e811994d9d2.r2.dev/achievements/achievements_default.png';
+
 export const ACHIEVEMENT_CACHE_KEYS = {
   CATALOG: 'achievements:catalog',
   USER_PROGRESS: (userId: string) => `achievements:user:${userId}`,

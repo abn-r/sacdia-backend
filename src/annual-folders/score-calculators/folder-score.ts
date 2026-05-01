@@ -5,7 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class FolderScoreService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async calc(enrollmentId: string, ecclesiasticalYearId: number): Promise<number> {
+  async calc(
+    enrollmentId: string,
+    ecclesiasticalYearId: number,
+  ): Promise<number> {
     const rows = await this.prisma.$queryRaw<{ earned: bigint; max: bigint }[]>`
       SELECT
         COALESCE(SUM(e.earned_points), 0)::bigint AS earned,

@@ -18,10 +18,12 @@ export class AchievementResponseDto {
   @ApiProperty({ description: 'Descripción del logro' })
   description: string;
 
-  @ApiPropertyOptional({
-    description: 'URL firmada del badge (generada desde badge_image_key)',
+  @ApiProperty({
+    description:
+      'URL pública del badge. Retorna la URL del CDN cuando badge_image_key está presente, ' +
+      'o la imagen por defecto cuando no hay badge asignado.',
   })
-  badge_image_url?: string | null;
+  badge_image_url: string;
 
   @ApiProperty({ description: 'Tipo de logro', enum: achievement_type })
   type: achievement_type;

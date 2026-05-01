@@ -231,10 +231,10 @@ export class FinancesService {
     const sortDir = dto.sortOrder ?? 'desc';
     const orderBy =
       dto.sortBy === 'amount'
-        ? [{ amount: sortDir as 'asc' | 'desc' }]
+        ? [{ amount: sortDir }]
         : dto.sortBy === 'category'
-          ? [{ finances_categories: { name: sortDir as 'asc' | 'desc' } }]
-          : [{ finance_date: sortDir as 'asc' | 'desc' }];
+          ? [{ finances_categories: { name: sortDir } }]
+          : [{ finance_date: sortDir }];
 
     const [data, total] = await Promise.all([
       this.prisma.finances.findMany({

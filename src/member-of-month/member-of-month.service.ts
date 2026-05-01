@@ -8,6 +8,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AchievementsService } from '../achievements/achievements.service';
+import { ACHIEVEMENT_EVENTS } from '../achievements/events/achievement-events';
 
 export interface MemberResult {
   user_id: string;
@@ -22,6 +24,7 @@ export class MemberOfMonthService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly achievementsService: AchievementsService,
   ) {}
 
   // ============================================================
@@ -359,7 +362,27 @@ export class MemberOfMonthService {
       });
     });
 
-    // 5. Send notifications (non-blocking)
+    // 5. Emit achievement event for each winner — fire-and-forget, never blocks
+    for (const winner of winners) {
+      try {
+        await this.achievementsService.emitEvent({
+          userId: winner.user_id,
+          eventType: ACHIEVEMENT_EVENTS.MEMBER_OF_MONTH,
+          payload: {
+            section_id: sectionId,
+            month,
+            year,
+            total_points: Number(winner.total_points),
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to emit ${ACHIEVEMENT_EVENTS.MEMBER_OF_MONTH} for user ${winner.user_id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // 6. Send notifications (non-blocking)
     this.sendMemberOfMonthNotifications(sectionId, winners, month, year).catch(
       (err) => {
         this.logger.warn(

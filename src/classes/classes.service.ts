@@ -244,9 +244,9 @@ export class ClassesService {
           'translations',
         );
       for (const mod of (translatedClass as any).class_modules) {
-        if ((mod as any).class_sections) {
-          (mod as any).class_sections = this.translationService.translateMany(
-            (mod as any).class_sections as Record<string, unknown>[],
+        if (mod.class_sections) {
+          mod.class_sections = this.translationService.translateMany(
+            mod.class_sections as Record<string, unknown>[],
             locale,
             ['name', 'description'],
             'translations',
@@ -449,6 +449,7 @@ export class ClassesService {
             class_id: true,
             name: true,
             description: true,
+            asset_code: true,
             club_types: { select: { name: true } },
           },
         },

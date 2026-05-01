@@ -203,19 +203,14 @@ export class AccountDeletionService {
   }
 
   private async deleteProfilePictureFromR2(userImage: string): Promise<void> {
-    try {
-      const key = this.fileStorage.extractKeyFromPublicUrl(
-        StorageBucketAlias.USER_PROFILES,
-        userImage,
-      );
-      const keyToDelete = key ?? userImage;
+    const key = this.fileStorage.extractKeyFromPublicUrl(
+      StorageBucketAlias.USER_PROFILES,
+      userImage,
+    );
+    const keyToDelete = key ?? userImage;
 
-      await this.fileStorage.deleteMany(StorageBucketAlias.USER_PROFILES, [
-        keyToDelete,
-      ]);
-    } catch (err) {
-      // Re-throw so the fire-and-forget caller can log it
-      throw err;
-    }
+    await this.fileStorage.deleteMany(StorageBucketAlias.USER_PROFILES, [
+      keyToDelete,
+    ]);
   }
 }
