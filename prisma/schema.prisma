@@ -271,6 +271,7 @@ model classes {
   minimum_age            Int
   requires_invested_gm   Boolean                  @default(false)
   display_order          Int                      @default(0)
+  asset_code             String?                  @db.VarChar(10)
   created_at             DateTime                 @default(now()) @db.Timestamptz(6)
   modified_at            DateTime                 @default(now()) @db.Timestamptz(6)
   material_url           String?                  @db.VarChar

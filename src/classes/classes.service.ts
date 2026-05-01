@@ -449,6 +449,7 @@ export class ClassesService {
             class_id: true,
             name: true,
             description: true,
+            asset_code: true,
             club_types: { select: { name: true } },
           },
         },
