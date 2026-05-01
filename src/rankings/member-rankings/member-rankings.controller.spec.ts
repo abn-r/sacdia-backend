@@ -73,11 +73,15 @@ function makeProfile(
           role_name: 'director',
           permissions,
           club: { club_id: clubId, club_name: `Club ${clubId}` },
-          section: { club_section_id: sectionIds[i] ?? clubId * 10, club_type_name: null },
+          section: {
+            club_section_id: sectionIds[i] ?? clubId * 10,
+            club_type_name: null,
+          },
           scope: {
-            local_field: localFieldIds[i] !== undefined
-              ? { id: localFieldIds[i], name: `LF ${localFieldIds[i]}` }
-              : undefined,
+            local_field:
+              localFieldIds[i] !== undefined
+                ? { id: localFieldIds[i], name: `LF ${localFieldIds[i]}` }
+                : undefined,
           },
           status: 'active',
           start_date: null,
@@ -85,19 +89,28 @@ function makeProfile(
           expires_at: null,
         })),
       },
-      active_assignment: { assignment_id: clubIds.length > 0 ? 'assign-0' : null },
+      active_assignment: {
+        assignment_id: clubIds.length > 0 ? 'assign-0' : null,
+      },
       effective: {
         permissions,
         scope: {
           global: {},
-          club: clubIds.length > 0
-            ? {
-                assignment_id: 'assign-0',
-                role_name: 'director',
-                club: { club_id: clubIds[0], club_name: `Club ${clubIds[0]}` },
-                section: { club_section_id: sectionIds[0] ?? clubIds[0] * 10, club_type_name: null },
-              }
-            : null,
+          club:
+            clubIds.length > 0
+              ? {
+                  assignment_id: 'assign-0',
+                  role_name: 'director',
+                  club: {
+                    club_id: clubIds[0],
+                    club_name: `Club ${clubIds[0]}`,
+                  },
+                  section: {
+                    club_section_id: sectionIds[0] ?? clubIds[0] * 10,
+                    club_type_name: null,
+                  },
+                }
+              : null,
         },
       },
     },
@@ -133,9 +146,9 @@ const directorProfileDifferentClub = makeProfile(
 const lfProfileLf1 = makeProfile(
   'lf-admin-uuid-001',
   ['member_rankings:read_lf'],
-  [10],   // club 10 is in LF 1
+  [10], // club 10 is in LF 1
   [100],
-  [1],    // localFieldIds[0] = 1
+  [1], // localFieldIds[0] = 1
 );
 
 // ---------------------------------------------------------------------------
@@ -165,9 +178,7 @@ describe('MemberRankingsController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MemberRankingsController],
-      providers: [
-        { provide: MemberRankingsService, useValue: mockService },
-      ],
+      providers: [{ provide: MemberRankingsService, useValue: mockService }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(allowGuard)
@@ -223,15 +234,17 @@ describe('MemberRankingsController', () => {
       );
       mockService.list.mockRejectedValue(scopeError);
 
-      const otherProfile = makeProfile('other-user-id', ['member_rankings:read_self']);
+      const otherProfile = makeProfile('other-user-id', [
+        'member_rankings:read_self',
+      ]);
       const req = {
         user: { user_id: 'other-user-id' },
         authorization: otherProfile,
       };
 
-      const thrown = await controller
+      const thrown = (await controller
         .list(req, YEAR_ID)
-        .catch((e) => e) as AppForbiddenException;
+        .catch((e) => e)) as AppForbiddenException;
 
       expect(thrown).toBeInstanceOf(AppForbiddenException);
       expect(thrown.code).toBe(ErrorCode.MEMBER_RANKING_SCOPE_DENIED);
@@ -304,9 +317,9 @@ describe('MemberRankingsController', () => {
         authorization: selfProfile,
       };
 
-      const error = await controller
+      const error = (await controller
         .getMyRanking(req, YEAR_ID)
-        .catch((e) => e) as AppForbiddenException;
+        .catch((e) => e)) as AppForbiddenException;
 
       expect(error).toBeInstanceOf(AppForbiddenException);
       expect(error.code).toBe(ErrorCode.MEMBER_RANKING_HIDDEN);
@@ -322,10 +335,23 @@ describe('MemberRankingsController', () => {
       const myRankingResult = {
         member: mockRankingRow,
         visibility_mode: 'self_and_top_n' as const,
+        total_in_section: 24,
         top_n: [
-          { member_name: 'Miembro #1', composite_score_pct: 95, rank_position: 1 },
-          { member_name: 'Miembro #2', composite_score_pct: 90, rank_position: 2 },
-          { member_name: 'Miembro #3', composite_score_pct: 82, rank_position: 3 },
+          {
+            member_name: 'Miembro #1',
+            composite_score_pct: 95,
+            rank_position: 1,
+          },
+          {
+            member_name: 'Miembro #2',
+            composite_score_pct: 90,
+            rank_position: 2,
+          },
+          {
+            member_name: 'Miembro #3',
+            composite_score_pct: 82,
+            rank_position: 3,
+          },
         ],
       };
 
@@ -338,6 +364,7 @@ describe('MemberRankingsController', () => {
       const result = await controller.getMyRanking(req, YEAR_ID);
 
       expect(result.visibility_mode).toBe('self_and_top_n');
+      expect(result.total_in_section).toBe(24);
       expect(Array.isArray(result.top_n)).toBe(true);
       expect(result.top_n).toHaveLength(3);
       // Q1.a: anonymized — no real names in top_n
@@ -390,11 +417,14 @@ describe('MemberRankingsController', () => {
         new AppBadRequestException(ErrorCode.RECALCULATION_DISABLED),
       );
 
-      const req = { user: { user_id: 'admin-uuid-001' }, authorization: selfProfile };
+      const req = {
+        user: { user_id: 'admin-uuid-001' },
+        authorization: selfProfile,
+      };
 
-      const error = await controller
+      const error = (await controller
         .recalculate(req, YEAR_ID)
-        .catch((e) => e) as AppBadRequestException;
+        .catch((e) => e)) as AppBadRequestException;
 
       expect(error).toBeInstanceOf(AppBadRequestException);
       expect(error.code).toBe(ErrorCode.RECALCULATION_DISABLED);
@@ -426,9 +456,9 @@ describe('MemberRankingsController', () => {
         authorization: lfProfileLf1,
       };
 
-      const error = await controller
+      const error = (await controller
         .getBreakdown(ENROLLMENT_ID, YEAR_ID, req)
-        .catch((e) => e) as AppForbiddenException;
+        .catch((e) => e)) as AppForbiddenException;
 
       expect(error).toBeInstanceOf(AppForbiddenException);
       expect(error.code).toBe(ErrorCode.MEMBER_RANKING_SCOPE_DENIED);
@@ -456,9 +486,14 @@ describe('MemberRankingsController', () => {
       );
       // caller requests club_id=99 they don't belong to
       // service must intersect → empty effectiveClubIds → impossible filter → empty result
-      jest.spyOn(mockService, 'list').mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 });
+      jest
+        .spyOn(mockService, 'list')
+        .mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 });
 
-      const req = { user: { user_id: profile.profile.user_id }, authorization: profile };
+      const req = {
+        user: { user_id: profile.profile.user_id },
+        authorization: profile,
+      };
 
       const result = await controller.list(req, YEAR_ID, '99');
 
