@@ -28,6 +28,15 @@ export class MemberMyRankingDto {
   })
   visibility_mode!: VisibilityMode;
 
+  @ApiProperty({
+    type: Number,
+    description:
+      'Total number of members ranked in the same section and ecclesiastical year. ' +
+      '0 when the caller has no section assigned.',
+    example: 24,
+  })
+  total_in_section!: number;
+
   @ApiPropertyOptional({
     type: [AnonymizedTopNEntryDto],
     nullable: true,

@@ -8,9 +8,7 @@ import {
   AppNotFoundException,
 } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
-import {
-  MemberRankingResponseDto,
-} from './dto/member-ranking-response.dto';
+import { MemberRankingResponseDto } from './dto/member-ranking-response.dto';
 import {
   MemberBreakdownDto,
   ClassBreakdownDto,
@@ -59,7 +57,9 @@ export class MemberRankingsService {
   // LIST — paginated, RBAC scope-filtered
   // ========================================
 
-  async list(params: ListParams): Promise<PaginatedResponse<MemberRankingResponseDto>> {
+  async list(
+    params: ListParams,
+  ): Promise<PaginatedResponse<MemberRankingResponseDto>> {
     const safeLimit = Math.min(Math.max(params.limit, 1), 100); // clamp [1, 100]
     const safePage = Math.max(params.page, 1); // clamp >= 1
     const skip = (safePage - 1) * safeLimit;
@@ -105,8 +105,9 @@ export class MemberRankingsService {
     yearId: number,
   ): Promise<MemberMyRankingDto> {
     const visibility =
-      ((await this.systemConfig.get('member_ranking.member_visibility')) as VisibilityMode | null) ??
-      'self_only';
+      ((await this.systemConfig.get(
+        'member_ranking.member_visibility',
+      )) as VisibilityMode | null) ?? 'self_only';
 
     if (visibility === 'hidden') {
       this.logger.warn(`getMyRanking: visibility=hidden for user=${userId}`);
@@ -126,6 +127,17 @@ export class MemberRankingsService {
     const memberDto = own
       ? MemberRankingResponseDto.fromEnrollmentRanking(own)
       : null;
+
+    // COUNT of members in the same section + year (meta info, not anonymity-protected)
+    const totalInSection =
+      own?.club_section_id != null
+        ? await this.prisma.enrollmentRanking.count({
+            where: {
+              club_section_id: own.club_section_id,
+              ecclesiastical_year_id: yearId,
+            },
+          })
+        : 0;
 
     let topN: AnonymizedTopNEntryDto[] | undefined;
 
@@ -147,9 +159,7 @@ export class MemberRankingsService {
       topN = topRows.map((r, idx) => ({
         member_name: `Miembro #${idx + 1}`,
         composite_score_pct:
-          r.composite_score_pct !== null
-            ? Number(r.composite_score_pct)
-            : null,
+          r.composite_score_pct !== null ? Number(r.composite_score_pct) : null,
         rank_position: r.rank_position,
       }));
     }
@@ -157,6 +167,7 @@ export class MemberRankingsService {
     return {
       member: memberDto,
       visibility_mode: visibility,
+      total_in_section: totalInSection,
       top_n: topN,
     };
   }
@@ -207,7 +218,12 @@ export class MemberRankingsService {
           clubTypeId: (enrollment as any).classes?.club_type_id ?? null,
           ecclesiasticalYearId: yearId,
         })
-      : { class_pct: 0, investiture_pct: 0, camporee_pct: 0, source: 'unknown' };
+      : {
+          class_pct: 0,
+          investiture_pct: 0,
+          camporee_pct: 0,
+          source: 'unknown',
+        };
 
     // 4. Build sub-breakdowns from raw DB data
     const classBreakdown = await this.buildClassBreakdown(
@@ -215,7 +231,8 @@ export class MemberRankingsService {
       row.club_id,
       yearId,
     );
-    const investitureBreakdown = await this.buildInvestitureBreakdown(enrollmentId);
+    const investitureBreakdown =
+      await this.buildInvestitureBreakdown(enrollmentId);
     const camporeeBreakdown = await this.buildCamporeeBreakdown(
       enrollmentId,
       row.user_id,
@@ -248,7 +265,12 @@ export class MemberRankingsService {
     triggeredBy: string,
     clubId?: number,
     mode: 'full' | 'delta' = 'full',
-  ): Promise<{ triggered: boolean; ecclesiastical_year_id: number; club_id?: number; mode: string }> {
+  ): Promise<{
+    triggered: boolean;
+    ecclesiastical_year_id: number;
+    club_id?: number;
+    mode: string;
+  }> {
     const enabled = await this.systemConfig.get(
       'member_ranking.recalculation_enabled',
     );
@@ -328,7 +350,8 @@ export class MemberRankingsService {
     //   1. Global scope (for LF-level global roles)
     //   2. Each club assignment's territorial scope
     if (perms.includes('member_rankings:read_lf')) {
-      const globalLfId = profile.authorization.effective.scope.global.local_field?.id;
+      const globalLfId =
+        profile.authorization.effective.scope.global.local_field?.id;
       const assignmentLfIds = profile.authorization.grants.club_assignments
         .map((g) => g.scope.local_field?.id)
         .filter((id): id is number => typeof id === 'number');
@@ -426,7 +449,8 @@ export class MemberRankingsService {
       // Verify the row's club local_field_id is in the caller's local field set.
       const rowLfId = row.club?.local_field_id ?? null;
 
-      const globalLfId = profile.authorization.effective.scope.global.local_field?.id;
+      const globalLfId =
+        profile.authorization.effective.scope.global.local_field?.id;
       const assignmentLfIds = profile.authorization.grants.club_assignments
         .map((g) => g.scope.local_field?.id)
         .filter((id): id is number => typeof id === 'number');
@@ -452,7 +476,10 @@ export class MemberRankingsService {
       const sectionIds = profile.authorization.grants.club_assignments.map(
         (g) => g.section.club_section_id,
       );
-      if (row.club_section_id !== null && sectionIds.includes(row.club_section_id)) {
+      if (
+        row.club_section_id !== null &&
+        sectionIds.includes(row.club_section_id)
+      ) {
         return;
       }
       throw new AppForbiddenException(ErrorCode.MEMBER_RANKING_SCOPE_DENIED);
@@ -474,7 +501,11 @@ export class MemberRankingsService {
     });
 
     if (!enrollment) {
-      return { completed_sections: 0, required_sections: 0, folder_status: null };
+      return {
+        completed_sections: 0,
+        required_sections: 0,
+        folder_status: null,
+      };
     }
 
     const [completedCount, requiredCount] = await Promise.all([
@@ -561,7 +592,8 @@ export class MemberRankingsService {
 
     const orClauses: Array<Record<string, unknown>> = [];
     if (localIds.length > 0) orClauses.push({ camporee_id: { in: localIds } });
-    if (unionIds.length > 0) orClauses.push({ union_camporee_id: { in: unionIds } });
+    if (unionIds.length > 0)
+      orClauses.push({ union_camporee_id: { in: unionIds } });
 
     const participatedCount = await this.prisma.camporee_members.count({
       where: {
