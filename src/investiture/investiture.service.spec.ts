@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AchievementsService } from '../achievements/achievements.service';
 import { InvestitureService } from './investiture.service';
@@ -880,7 +881,7 @@ describe('InvestitureService', () => {
 
       // actor is neither owner nor admin
       await expect(service.getHistory(1, 'other-user')).rejects.toThrow(
-        ForbiddenException,
+        AppForbiddenException,
       );
     });
   });
