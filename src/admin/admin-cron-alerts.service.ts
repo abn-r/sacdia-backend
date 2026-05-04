@@ -78,7 +78,7 @@ export class AdminCronAlertsService {
        FROM cron_alerts_log
        ${whereClause}
        ORDER BY alerted_at DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
+       LIMIT $${idx} OFFSET $${idx + 1}`,
       ...values,
       limit,
       offset,
