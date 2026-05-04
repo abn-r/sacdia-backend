@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { Multer } from 'multer';
 import pLimit from 'p-limit';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -528,7 +529,7 @@ export class AnnualFoldersService {
     sectionId: string,
     dto: UploadEvidenceDto,
     userId: string,
-    file: Express.Multer.File,
+    file: Multer.File,
   ) {
     if (!file?.buffer) {
       throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_FILE_REQUIRED);
@@ -925,7 +926,7 @@ export class AnnualFoldersService {
     );
   }
 
-  private resolveFileExtension(file: Express.Multer.File): string {
+  private resolveFileExtension(file: Multer.File): string {
     const original = file.originalname ?? '';
     const ext = original.includes('.')
       ? original.split('.').pop()?.toLowerCase()

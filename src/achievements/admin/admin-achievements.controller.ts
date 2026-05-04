@@ -13,6 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Multer } from 'multer';
 import { AppBadRequestException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import {
@@ -321,7 +322,7 @@ export class AdminAchievementsController {
   @ApiResponse({ status: 404, description: 'Achievement not found' })
   async uploadBadgeImage(
     @Param('achievementId', ParseIntPipe) achievementId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: Multer.File,
   ) {
     if (!file) {
       throw new AppBadRequestException(

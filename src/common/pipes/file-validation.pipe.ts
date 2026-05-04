@@ -1,4 +1,5 @@
 import { PipeTransform, Injectable } from '@nestjs/common';
+import type { Multer } from 'multer';
 import { AppBadRequestException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 
@@ -42,7 +43,7 @@ export class FileValidationPipe implements PipeTransform {
       options.allowedMimeTypes ?? ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS;
   }
 
-  transform(file: Express.Multer.File | undefined) {
+  transform(file: Multer.File | undefined) {
     if (!file) return file;
 
     this.validateSize(file);
@@ -52,19 +53,19 @@ export class FileValidationPipe implements PipeTransform {
     return file;
   }
 
-  private validateSize(file: Express.Multer.File) {
+  private validateSize(file: Multer.File) {
     if (file.size > this.maxSize) {
       throw new AppBadRequestException(ErrorCode.FILE_TOO_LARGE);
     }
   }
 
-  private validateMimeType(file: Express.Multer.File) {
+  private validateMimeType(file: Multer.File) {
     if (!this.allowedMimeTypes.includes(file.mimetype)) {
       throw new AppBadRequestException(ErrorCode.FILE_TYPE_INVALID);
     }
   }
 
-  private validateMagicBytes(file: Express.Multer.File) {
+  private validateMagicBytes(file: Multer.File) {
     const expected = MAGIC_BYTES[file.mimetype];
     if (!expected || !file.buffer) return;
 
@@ -91,7 +92,7 @@ export class FilesValidationPipe implements PipeTransform {
     }
   }
 
-  transform(files: Record<string, Express.Multer.File[]> | undefined) {
+  transform(files: Record<string, Multer.File[]> | undefined) {
     if (!files) return files;
 
     for (const [field, fileList] of Object.entries(files)) {

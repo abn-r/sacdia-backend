@@ -14,6 +14,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Multer } from 'multer';
 import {
   FileValidationPipe,
   ALLOWED_MIME_TYPES,
@@ -200,7 +201,7 @@ export class ActivitiesController {
         allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES,
       }),
     )
-    file: Express.Multer.File,
+    file: Multer.File,
   ) {
     return this.activitiesService.uploadImage(activityId, file);
   }

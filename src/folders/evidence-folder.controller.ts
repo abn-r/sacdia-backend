@@ -10,6 +10,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Multer } from 'multer';
 import {
   FileValidationPipe,
   ALLOWED_MIME_TYPES,
@@ -121,7 +122,7 @@ export class EvidenceFolderController {
         allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
       }),
     )
-    file: Express.Multer.File,
+    file: Multer.File,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const data = await this.evidenceFolderService.uploadFile(
