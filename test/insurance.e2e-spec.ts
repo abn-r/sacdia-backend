@@ -8,7 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { JwtAuthGuard } from '../src/common/guards';
+import { JwtAuthGuard, PermissionsGuard } from '../src/common/guards';
 import { InsuranceService } from '../src/insurance/insurance.service';
 
 // Stable UUID fixtures — deterministic across runs; required because
@@ -42,6 +42,10 @@ describe('Insurance E2E', () => {
     updateInsurance: jest.fn(),
   };
 
+  const mockPermissionsGuard = {
+    canActivate: jest.fn().mockReturnValue(true),
+  };
+
   beforeAll(async () => {
     delete process.env.REDIS_URL;
     delete process.env.FIREBASE_PROJECT_ID;
@@ -60,6 +64,8 @@ describe('Insurance E2E', () => {
       .useValue(mockInsuranceService)
       .overrideGuard(JwtAuthGuard)
       .useClass(MockJwtAuthGuard)
+      .overrideGuard(PermissionsGuard)
+      .useValue(mockPermissionsGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
