@@ -1358,13 +1358,12 @@ export class RankingsService {
       for (let i = 0; i < group.length; i++) {
         const record = group[i];
         const score = Number(record.composite_score_pct);
-        if (prevScore === null) {
-          rank = 1;
-        } else if (score === prevScore) {
-          rank = prevRank; // tie — same rank as previous
-        } else {
+        if (prevScore !== null && score !== prevScore) {
           rank = prevRank + 1; // dense ranking: next sequential rank after a tie group
+        } else if (prevScore !== null) {
+          rank = prevRank; // tie — same rank as previous
         }
+        // else: prevScore === null → first iteration, rank stays = 1
         prevScore = score;
         prevRank = rank;
         updates.push({ ranking_id: record.ranking_id, rank_position: rank });
