@@ -16,7 +16,7 @@ export class CreateTemplateSectionDto {
   })
   @IsString()
   @MaxLength(200)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({
     description: 'Descripción de la sección',
@@ -33,7 +33,7 @@ export class CreateTemplateSectionDto {
   })
   @IsInt()
   @Min(0)
-  order: number;
+  declare order: number;
 
   @ApiPropertyOptional({
     description: 'Si la sección es obligatoria',
@@ -46,7 +46,7 @@ export class CreateTemplateSectionDto {
   @ApiProperty({ description: 'Maximum points for this section', example: 100 })
   @IsInt()
   @Min(0)
-  max_points: number;
+  declare max_points: number;
 
   @ApiPropertyOptional({
     description: 'Minimum points required',

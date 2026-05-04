@@ -7,5 +7,5 @@ export class AssignRoleDto {
     description: 'ID del rol a asignar al usuario',
   })
   @IsUUID('4')
-  role_id: string;
+  declare role_id: string;
 }

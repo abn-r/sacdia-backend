@@ -24,7 +24,7 @@ export class CreateAwardCategoryDto {
   })
   @IsString()
   @MaxLength(200)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({
     description: 'Descripción de la categoría',
@@ -51,7 +51,7 @@ export class CreateAwardCategoryDto {
   })
   @IsInt()
   @Min(0)
-  min_points: number;
+  declare min_points: number;
 
   @ApiPropertyOptional({
     description:

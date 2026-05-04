@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import 'multer';
 import {
   AppBadRequestException,
   AppInternalServerErrorException,

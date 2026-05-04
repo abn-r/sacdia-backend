@@ -11,24 +11,24 @@ export class RegisterDto {
   @ApiProperty({ example: 'Juan', description: 'Nombre del usuario' })
   @IsString()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 'García', description: 'Apellido paterno' })
   @IsString()
   @MaxLength(50)
-  paternal_last_name: string;
+  declare paternal_last_name: string;
 
   @ApiProperty({ example: 'López', description: 'Apellido materno' })
   @IsString()
   @MaxLength(50)
-  maternal_last_name: string;
+  declare maternal_last_name: string;
 
   @ApiProperty({
     example: 'juan.garcia@example.com',
     description: 'Correo electrónico',
   })
   @IsEmail()
-  email: string;
+  declare email: string;
 
   @ApiProperty({
     example: 'Password123!',
@@ -42,5 +42,5 @@ export class RegisterDto {
     message:
       'La contraseña debe incluir: mayúscula, minúscula, número y carácter especial (@$!%*?&)',
   })
-  password: string;
+  declare password: string;
 }

@@ -20,7 +20,7 @@ export class CreatePaymentDto {
   })
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
-  amount: number;
+  declare amount: number;
 
   @ApiProperty({
     description: 'Tipo de pago',
@@ -30,7 +30,7 @@ export class CreatePaymentDto {
   @IsString()
   @IsNotEmpty()
   @IsIn(['inscription', 'materials', 'other'])
-  payment_type: string;
+  declare payment_type: string;
 
   @ApiPropertyOptional({
     description: 'Referencia o número de recibo',
@@ -55,5 +55,5 @@ export class CreatePaymentDto {
     example: '2026-03-20',
   })
   @IsDateString()
-  paid_at: string;
+  declare paid_at: string;
 }

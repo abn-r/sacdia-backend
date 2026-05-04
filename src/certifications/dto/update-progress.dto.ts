@@ -8,7 +8,7 @@ export class UpdateCertificationProgressDto {
   })
   @IsInt()
   @IsPositive()
-  module_id: number;
+  declare module_id: number;
 
   @ApiProperty({
     description: 'ID de la sección del módulo',
@@ -16,12 +16,12 @@ export class UpdateCertificationProgressDto {
   })
   @IsInt()
   @IsPositive()
-  section_id: number;
+  declare section_id: number;
 
   @ApiProperty({
     description: 'Estado de completado de la sección',
     example: true,
   })
   @IsBoolean()
-  completed: boolean;
+  declare completed: boolean;
 }

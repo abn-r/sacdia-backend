@@ -20,7 +20,7 @@ export class RegisterMemberDto {
   })
   @IsUUID()
   @IsNotEmpty()
-  user_id: string;
+  declare user_id: string;
 
   @ApiProperty({
     description: 'Tipo de camporee (local o unión)',
@@ -30,7 +30,7 @@ export class RegisterMemberDto {
   @IsString()
   @IsIn(['local', 'union'])
   @MaxLength(50)
-  camporee_type: 'local' | 'union';
+  declare camporee_type: 'local' | 'union';
 
   @ApiPropertyOptional({
     description: 'Nombre del club (requerido para registros de nivel unión)',

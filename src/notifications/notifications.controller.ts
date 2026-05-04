@@ -54,21 +54,21 @@ enum ClubInstanceType {
 // DTOs
 class UpdatePreferenceDto {
   @IsBoolean()
-  enabled: boolean;
+  declare enabled: boolean;
 }
 
 class SendNotificationDto {
   @IsString()
   @IsNotEmpty()
-  userId: string;
+  declare userId: string;
 
   @IsString()
   @IsNotEmpty()
-  title: string;
+  declare title: string;
 
   @IsString()
   @IsNotEmpty()
-  body: string;
+  declare body: string;
 
   @IsObject()
   @IsOptional()
@@ -78,11 +78,11 @@ class SendNotificationDto {
 class BroadcastNotificationDto {
   @IsString()
   @IsNotEmpty()
-  title: string;
+  declare title: string;
 
   @IsString()
   @IsNotEmpty()
-  body: string;
+  declare body: string;
 
   @IsObject()
   @IsOptional()
@@ -92,7 +92,7 @@ class BroadcastNotificationDto {
 class RegisterFcmTokenDto {
   @IsString()
   @IsNotEmpty()
-  token: string;
+  declare token: string;
 
   @IsString()
   @IsOptional()

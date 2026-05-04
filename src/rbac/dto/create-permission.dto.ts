@@ -19,7 +19,7 @@ export class CreatePermissionDto {
     message:
       'permission_name debe seguir el formato resource:action (lowercase, separado por :)',
   })
-  permission_name: string;
+  declare permission_name: string;
 
   @ApiPropertyOptional({ example: 'Ver listado de usuarios' })
   @IsString()

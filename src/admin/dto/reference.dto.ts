@@ -15,7 +15,7 @@ export class CreateRelationshipTypeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ example: 'Relación padre-hijo' })
   @IsOptional()
@@ -52,7 +52,7 @@ export class CreateAllergyDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ example: 'Alergia estacional al polen' })
   @IsOptional()
@@ -89,7 +89,7 @@ export class CreateDiseaseDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ example: 'Enfermedad respiratoria crónica' })
   @IsOptional()
@@ -126,7 +126,7 @@ export class CreateMedicineDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ example: 'Analgésico antiinflamatorio' })
   @IsOptional()
@@ -163,13 +163,13 @@ export class CreateActivityTypeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  code: string;
+  declare code: string;
 
   @ApiProperty({ example: 'Culto de Adoración' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ example: 'Servicio de adoración semanal' })
   @IsOptional()
@@ -211,11 +211,11 @@ export class UpdateActivityTypeDto {
 export class CreateEcclesiasticalYearDto {
   @ApiProperty({ example: '2026-01-01' })
   @IsDateString()
-  start_date: string;
+  declare start_date: string;
 
   @ApiProperty({ example: '2026-12-31' })
   @IsDateString()
-  end_date: string;
+  declare end_date: string;
 
   @ApiPropertyOptional({ example: false })
   @IsOptional()
@@ -247,7 +247,7 @@ export class CreateClubTypeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -276,17 +276,17 @@ export class CreateClubIdealDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
-  club_type_id: number;
+  declare club_type_id: number;
 
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
-  ideal_order: number;
+  declare ideal_order: number;
 
   @ApiPropertyOptional({
     example: 'El conquistador es leal a Dios, a sus jefes y a su patria.',

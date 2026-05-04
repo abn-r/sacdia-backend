@@ -193,9 +193,9 @@ export class InvestitureService {
           'investiture:submitted',
         );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.error(
-        `Notification failed for investiture submission ${enrollmentId}: ${error.message}`,
+        `Notification failed for investiture submission ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -373,9 +373,9 @@ export class InvestitureService {
           'investiture:rejected',
         );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for investiture rejection ${enrollmentId}: ${error.message}`,
+        `Notification failed for investiture rejection ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -493,9 +493,9 @@ export class InvestitureService {
         },
         'investiture:invested',
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for investiture completion ${enrollmentId}: ${error.message}`,
+        `Notification failed for investiture completion ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -1549,9 +1549,9 @@ export class InvestitureService {
           );
           break;
       }
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for investiture transition ${enrollmentId}: ${error.message}`,
+        `Notification failed for investiture transition ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 

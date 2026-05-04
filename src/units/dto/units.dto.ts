@@ -15,19 +15,19 @@ import { Type } from 'class-transformer';
 export class CreateUnitDto {
   @ApiProperty({ description: 'Nombre de la unidad' })
   @IsString()
-  name: string;
+  declare name: string;
 
   @ApiProperty({ description: 'UUID del capitán de la unidad' })
   @IsUUID()
-  captain_id: string;
+  declare captain_id: string;
 
   @ApiProperty({ description: 'UUID del secretario de la unidad' })
   @IsUUID()
-  secretary_id: string;
+  declare secretary_id: string;
 
   @ApiProperty({ description: 'UUID del consejero/asesor de la unidad' })
   @IsUUID()
-  advisor_id: string;
+  declare advisor_id: string;
 
   @ApiPropertyOptional({
     description: 'UUID del consejero suplente (opcional)',
@@ -41,7 +41,7 @@ export class CreateUnitDto {
   })
   @Type(() => Number)
   @IsInt()
-  club_type_id: number;
+  declare club_type_id: number;
 
   @ApiPropertyOptional({ description: 'ID de la sección del club' })
   @IsOptional()
@@ -97,7 +97,7 @@ export class UpdateUnitDto {
 export class AddUnitMemberDto {
   @ApiProperty({ description: 'UUID del usuario a agregar como miembro' })
   @IsUUID()
-  user_id: string;
+  declare user_id: string;
 }
 
 export class ScoreEntryDto {
@@ -105,33 +105,33 @@ export class ScoreEntryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  category_id: number;
+  declare category_id: number;
 
   @ApiProperty({ description: 'Puntos para esta categoría', minimum: 0 })
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  points: number;
+  declare points: number;
 }
 
 export class CreateWeeklyRecordDto {
   @ApiProperty({ description: 'UUID del usuario' })
   @IsUUID()
-  user_id: string;
+  declare user_id: string;
 
   @ApiProperty({ description: 'Número de semana' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(53)
-  week: number;
+  declare week: number;
 
   @ApiProperty({ description: 'Año del registro (ej: 2026)' })
   @Type(() => Number)
   @IsInt()
   @Min(2020)
   @Max(2100)
-  year: number;
+  declare year: number;
 
   @ApiPropertyOptional({ description: 'Asistencia (0 o 1)' })
   @IsOptional()

@@ -5,7 +5,7 @@ import { Type } from 'class-transformer';
 export class AssignRoleDto {
   @ApiProperty({ description: 'ID del usuario' })
   @IsUUID()
-  user_id: string;
+  declare user_id: string;
 
   @ApiPropertyOptional({
     description: 'ID del rol a asignar (preferido, formato UUID)',

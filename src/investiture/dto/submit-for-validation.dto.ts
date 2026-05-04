@@ -15,7 +15,7 @@ export class SubmitForValidationDto {
   })
   @IsInt()
   @IsPositive()
-  club_id: number;
+  declare club_id: number;
 
   @ApiPropertyOptional({
     description: 'Comentario opcional del consejero/director',

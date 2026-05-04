@@ -20,7 +20,7 @@ export class ValidateEnrollmentDto {
   })
   @IsEnum(InvestitureValidationAction)
   @IsNotEmpty()
-  action: InvestitureValidationAction;
+  declare action: InvestitureValidationAction;
 
   @ApiPropertyOptional({
     description: 'Comentarios del validador. Requerido si action=REJECTED',

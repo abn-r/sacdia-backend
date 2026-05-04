@@ -128,9 +128,9 @@ export class NotificationPreferencesService {
 
       // No row means default enabled
       return pref === null ? true : pref.enabled;
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Failed to check notification preference for user ${userId}, category ${category}: ${err.message} — defaulting to allowed`,
+        `Failed to check notification preference for user ${userId}, category ${category}: ${err instanceof Error ? err.message : String(err)} — defaulting to allowed`,
       );
       return true;
     }
@@ -176,9 +176,9 @@ export class NotificationPreferencesService {
 
       const optedOutSet = new Set(optedOut.map((r) => r.user_id));
       return new Set(userIds.filter((id) => !optedOutSet.has(id)));
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Failed to filter users by notification preference for category ${category}: ${err.message} — defaulting to all allowed`,
+        `Failed to filter users by notification preference for category ${category}: ${err instanceof Error ? err.message : String(err)} — defaulting to all allowed`,
       );
       return new Set(userIds);
     }

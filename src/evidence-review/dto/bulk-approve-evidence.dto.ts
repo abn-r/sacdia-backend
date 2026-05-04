@@ -26,7 +26,7 @@ export class BulkApproveEvidenceDto {
   })
   @IsInt({ each: true })
   @Min(1, { each: true })
-  ids: number[];
+  declare ids: number[];
 
   @ApiProperty({
     description: 'Tipo de evidencia a aprobar en bloque',
@@ -36,7 +36,7 @@ export class BulkApproveEvidenceDto {
   @IsEnum(['folder', 'class', 'honor'], {
     message: 'type debe ser uno de: folder, class, honor',
   })
-  type: EvidenceType;
+  declare type: EvidenceType;
 
   @ApiPropertyOptional({
     description: 'Comentario opcional del aprobador',

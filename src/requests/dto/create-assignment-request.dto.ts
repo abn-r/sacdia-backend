@@ -9,17 +9,17 @@ export class CreateAssignmentRequestDto {
   })
   @Type(() => Number)
   @IsInt()
-  club_section_id: number;
+  declare club_section_id: number;
 
   @ApiProperty({
     description: 'ID del usuario que recibirá el rol',
   })
   @IsUUID()
-  user_id: string;
+  declare user_id: string;
 
   @ApiProperty({
     description: 'ID del rol a asignar',
   })
   @IsUUID()
-  role_id: string;
+  declare role_id: string;
 }

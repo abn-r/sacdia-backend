@@ -114,9 +114,9 @@ export class ValidationService {
           'validation:class_submitted',
         );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for class submission ${enrollmentId}: ${error.message}`,
+        `Notification failed for class submission ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -206,9 +206,9 @@ export class ValidationService {
           'validation:honor_submitted',
         );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for honor submission ${userHonorId}: ${error.message}`,
+        `Notification failed for honor submission ${userHonorId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -329,9 +329,9 @@ export class ValidationService {
         },
         `validation:class_${action}`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for class review ${enrollmentId}: ${error.message}`,
+        `Notification failed for class review ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -405,9 +405,9 @@ export class ValidationService {
         },
         `validation:honor_${action}`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for honor review ${userHonorId}: ${error.message}`,
+        `Notification failed for honor review ${userHonorId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 

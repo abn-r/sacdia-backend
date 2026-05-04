@@ -50,7 +50,7 @@ function IsAfterOrEqualDate(
 export class CreateActivityDto {
   @ApiProperty({ description: 'Nombre de la actividad' })
   @IsString()
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ description: 'Descripción de la actividad' })
   @IsOptional()
@@ -69,13 +69,13 @@ export class CreateActivityDto {
   @IsNumber()
   @Min(-90)
   @Max(90)
-  lat: number;
+  declare lat: number;
 
   @ApiProperty({ description: 'Longitud del lugar' })
   @IsNumber()
   @Min(-180)
   @Max(180)
-  long: number;
+  declare long: number;
 
   @ApiPropertyOptional({
     description: 'Hora de la actividad (HH:mm)',
@@ -111,7 +111,7 @@ export class CreateActivityDto {
 
   @ApiProperty({ description: 'Lugar de la actividad' })
   @IsString()
-  activity_place: string;
+  declare activity_place: string;
 
   @ApiPropertyOptional({ description: 'URL de la imagen de la actividad' })
   @IsOptional()
@@ -134,7 +134,7 @@ export class CreateActivityDto {
       'ID del tipo de actividad (catálogo activity_types: 1=Regular, 2=Especial, 3=Camporee)',
   })
   @IsInt()
-  activity_type_id: number;
+  declare activity_type_id: number;
 
   @ApiPropertyOptional({ description: 'Link de reunión virtual' })
   @IsOptional()
@@ -299,7 +299,7 @@ export class RecordAttendanceDto {
   @ApiProperty({ description: 'Lista de IDs de usuarios que asistieron' })
   @IsArray()
   @IsUUID('4', { each: true })
-  user_ids: string[];
+  declare user_ids: string[];
 }
 
 export class ActivityFiltersDto {
