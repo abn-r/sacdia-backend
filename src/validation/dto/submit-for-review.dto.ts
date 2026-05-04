@@ -9,7 +9,7 @@ export class SubmitForReviewDto {
   })
   @IsString()
   @IsIn(['class', 'honor'])
-  entity_type: 'class' | 'honor';
+  declare entity_type: 'class' | 'honor';
 
   @ApiProperty({
     description:
@@ -17,5 +17,5 @@ export class SubmitForReviewDto {
     example: 42,
   })
   @IsInt()
-  entity_id: number;
+  declare entity_id: number;
 }

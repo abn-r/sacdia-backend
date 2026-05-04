@@ -23,7 +23,7 @@ export class BulkRejectEnrollmentsDto {
   })
   @IsInt({ each: true })
   @Min(1, { each: true })
-  enrollmentIds: number[];
+  declare enrollmentIds: number[];
 
   @ApiProperty({
     description: 'Motivo del rechazo (obligatorio para operaciones en bloque)',
@@ -33,5 +33,5 @@ export class BulkRejectEnrollmentsDto {
   @IsString()
   @IsNotEmpty({ message: 'El motivo del rechazo es obligatorio' })
   @MaxLength(1000)
-  comments: string;
+  declare comments: string;
 }

@@ -14,13 +14,13 @@ export class CreateCountryDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 'MX' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(8)
-  abbreviation: string;
+  declare abbreviation: string;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -54,18 +54,18 @@ export class CreateUnionDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 'UMN' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(8)
-  abbreviation: string;
+  declare abbreviation: string;
 
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
-  country_id: number;
+  declare country_id: number;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -105,18 +105,18 @@ export class CreateLocalFieldDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 'CN' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(8)
-  abbreviation: string;
+  declare abbreviation: string;
 
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
-  union_id: number;
+  declare union_id: number;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -156,12 +156,12 @@ export class CreateDistrictDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
-  local_field_id: number;
+  declare local_field_id: number;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -194,12 +194,12 @@ export class CreateChurchDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
-  district_id: number;
+  declare district_id: number;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

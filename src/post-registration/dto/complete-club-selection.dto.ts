@@ -4,27 +4,27 @@ import { ApiProperty } from '@nestjs/swagger';
 export class CompleteClubSelectionDto {
   @ApiProperty({ example: 1, description: 'ID del país' })
   @IsInt()
-  country_id: number;
+  declare country_id: number;
 
   @ApiProperty({ example: 1, description: 'ID de la unión' })
   @IsInt()
-  union_id: number;
+  declare union_id: number;
 
   @ApiProperty({ example: 1, description: 'ID del campo local' })
   @IsInt()
-  local_field_id: number;
+  declare local_field_id: number;
 
   @ApiProperty({
     example: 1,
     description: 'ID de la sección del club',
   })
   @IsInt()
-  club_section_id: number;
+  declare club_section_id: number;
 
   @ApiProperty({
     example: 1,
     description: 'ID de la clase a inscribirse',
   })
   @IsInt()
-  class_id: number;
+  declare class_id: number;
 }

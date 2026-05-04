@@ -9,7 +9,7 @@ export class EvaluateSectionDto {
   })
   @IsInt()
   @Min(0)
-  earned_points: number;
+  declare earned_points: number;
 
   @ApiPropertyOptional({
     description: 'Notas del evaluador sobre esta sección',

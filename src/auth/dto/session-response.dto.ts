@@ -8,14 +8,14 @@ export class SessionItemDto {
     description: 'BA session DB row UUID',
     example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
   })
-  session_id: string;
+  declare session_id: string;
 
   @ApiProperty({
     description: 'Device type inferred from User-Agent',
     enum: ['ios', 'android', 'web', 'unknown'],
     example: 'ios',
   })
-  device_type: DeviceType;
+  declare device_type: DeviceType;
 
   @ApiProperty({
     description:
@@ -23,14 +23,14 @@ export class SessionItemDto {
     example: 'iPhone',
     nullable: true,
   })
-  device_name: string | null;
+  declare device_name: string | null;
 
   @ApiProperty({
     description: 'IP address of the session origin (may be masked)',
     example: '203.0.113.0',
     nullable: true,
   })
-  ip_address: string | null;
+  declare ip_address: string | null;
 
   @ApiProperty({
     type: String,
@@ -38,39 +38,39 @@ export class SessionItemDto {
     example: null,
     nullable: true,
   })
-  location: null;
+  declare location: null;
 
   @ApiProperty({
     description: 'Raw User-Agent string, null when absent',
     example: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)',
     nullable: true,
   })
-  user_agent: string | null;
+  declare user_agent: string | null;
 
   @ApiProperty({
     description: 'ISO 8601 timestamp when the session was created',
     example: '2026-04-17T10:00:00.000Z',
   })
-  created_at: string;
+  declare created_at: string;
 
   @ApiProperty({
     description:
       'ISO 8601 timestamp of last session update (proxy for last activity)',
     example: '2026-04-17T15:30:00.000Z',
   })
-  last_active_at: string;
+  declare last_active_at: string;
 
   @ApiProperty({
     description:
       'true when this session matches the session_id in the caller JWT (sid claim)',
   })
-  is_current: boolean;
+  declare is_current: boolean;
 
   @ApiProperty({
     description: 'ISO 8601 timestamp when the session expires',
     example: '2026-04-24T10:00:00.000Z',
   })
-  expires_at: string;
+  declare expires_at: string;
 }
 
 export class SessionListResponseDto {
@@ -78,7 +78,7 @@ export class SessionListResponseDto {
     type: [SessionItemDto],
     description: 'Active sessions for the authenticated user',
   })
-  sessions: SessionItemDto[];
+  declare sessions: SessionItemDto[];
 
   @ApiProperty({
     description:
@@ -87,7 +87,7 @@ export class SessionListResponseDto {
     example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
     nullable: true,
   })
-  current_session_id: string | null;
+  declare current_session_id: string | null;
 }
 
 export class RevokeAllSessionsResponseDto {
@@ -95,5 +95,5 @@ export class RevokeAllSessionsResponseDto {
     description: 'Number of sessions revoked (excludes current session)',
     example: 3,
   })
-  revoked_count: number;
+  declare revoked_count: number;
 }

@@ -17,7 +17,7 @@ export class CreateItemDto {
   @IsString()
   @MinLength(3)
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiProperty({
     description: 'Descripción detallada del item',
@@ -35,7 +35,7 @@ export class CreateItemDto {
   })
   @IsInt()
   @IsPositive()
-  inventory_category_id: number;
+  declare inventory_category_id: number;
 
   @ApiProperty({
     description: 'Cantidad disponible',
@@ -43,12 +43,12 @@ export class CreateItemDto {
   })
   @IsInt()
   @Min(0)
-  amount: number;
+  declare amount: number;
 
   @ApiProperty({
     description: 'Tipo de instancia de club (adv, pathf, mg)',
     example: 'pathf',
   })
   @IsString()
-  instanceType: 'adv' | 'pathf' | 'mg';
+  declare instanceType: 'adv' | 'pathf' | 'mg';
 }

@@ -107,9 +107,9 @@ export class RequestsService {
         },
         'requests:transfer_created',
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for transfer request ${result.transfer_request_id}: ${error.message}`,
+        `Notification failed for transfer request ${result.transfer_request_id}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -247,9 +247,9 @@ export class RequestsService {
         { type: 'transfer', entity_id: requestId, action },
         `requests:transfer_${action}`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for transfer review ${requestId}: ${error.message}`,
+        `Notification failed for transfer review ${requestId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -445,9 +445,9 @@ export class RequestsService {
         { type: 'assignment', entity_id: result.request_id, status: 'pending' },
         'requests:assignment_created',
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for assignment request ${result.request_id}: ${error.message}`,
+        `Notification failed for assignment request ${result.request_id}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -637,9 +637,9 @@ export class RequestsService {
           assignmentSource,
         );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Notification failed for assignment review ${requestId}: ${error.message}`,
+        `Notification failed for assignment review ${requestId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 

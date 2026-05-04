@@ -10,5 +10,5 @@ export class RejectInvestitureDto {
   @IsString()
   @IsNotEmpty({ message: 'El motivo del rechazo es obligatorio' })
   @MaxLength(1000)
-  reason: string;
+  declare reason: string;
 }

@@ -15,7 +15,7 @@ export class CreateCategoryDto {
   })
   @IsString()
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({
     description: 'Descripción de la categoría',

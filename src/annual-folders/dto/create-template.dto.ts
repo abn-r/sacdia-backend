@@ -16,7 +16,7 @@ export class CreateTemplateDto {
   })
   @IsString()
   @MaxLength(200)
-  name: string;
+  declare name: string;
 
   @ApiProperty({
     description:
@@ -24,14 +24,14 @@ export class CreateTemplateDto {
     example: 2,
   })
   @IsInt()
-  club_type_id: number;
+  declare club_type_id: number;
 
   @ApiProperty({
     description: 'ID del año eclesiástico',
     example: 1,
   })
   @IsInt()
-  ecclesiastical_year_id: number;
+  declare ecclesiastical_year_id: number;
 
   @ApiPropertyOptional({
     description: 'Si el template está activo',

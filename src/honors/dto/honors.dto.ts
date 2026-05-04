@@ -60,7 +60,7 @@ export class UpdateUserHonorDto {
 export class CreateUserHonorDto {
   @ApiProperty({ description: 'ID del honor/especialidad' })
   @IsInt()
-  honorId: number;
+  declare honorId: number;
 
   @ApiPropertyOptional({ description: 'Fecha de registro/inicio del honor' })
   @IsOptional()
@@ -105,7 +105,7 @@ export class BulkCreateUserHonorsDto {
   @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => CreateUserHonorDto)
-  honors: CreateUserHonorDto[];
+  declare honors: CreateUserHonorDto[];
 }
 
 export class HonorFiltersDto {

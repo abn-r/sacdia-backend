@@ -21,7 +21,7 @@ export class MeetingScheduleItemDto {
   @ApiProperty({ example: 'Sábado', description: 'Día de la reunión' })
   @IsString()
   @IsNotEmpty()
-  day: string;
+  declare day: string;
 
   @ApiProperty({
     example: '09:00',
@@ -29,7 +29,7 @@ export class MeetingScheduleItemDto {
   })
   @IsString()
   @IsNotEmpty()
-  time: string;
+  declare time: string;
 }
 
 export class CreateClubEnrollmentDto {

@@ -13,7 +13,7 @@ export class UpdateUserAllergiesDto {
   @Type(() => Number)
   @IsInt({ each: true })
   @Min(1, { each: true })
-  allergy_ids: number[];
+  declare allergy_ids: number[];
 }
 
 export class UpdateUserDiseasesDto {
@@ -27,7 +27,7 @@ export class UpdateUserDiseasesDto {
   @Type(() => Number)
   @IsInt({ each: true })
   @Min(1, { each: true })
-  disease_ids: number[];
+  declare disease_ids: number[];
 }
 
 export class UpdateUserMedicinesDto {
@@ -41,5 +41,5 @@ export class UpdateUserMedicinesDto {
   @Type(() => Number)
   @IsInt({ each: true })
   @Min(1, { each: true })
-  medicine_ids: number[];
+  declare medicine_ids: number[];
 }

@@ -9,7 +9,7 @@ export class CreateTransferRequestDto {
   })
   @Type(() => Number)
   @IsInt()
-  from_section_id: number;
+  declare from_section_id: number;
 
   @ApiProperty({
     description: 'ID de la sección de destino',
@@ -17,7 +17,7 @@ export class CreateTransferRequestDto {
   })
   @Type(() => Number)
   @IsInt()
-  to_section_id: number;
+  declare to_section_id: number;
 
   @ApiPropertyOptional({
     description: 'Motivo de la solicitud de transferencia',
