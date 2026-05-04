@@ -14,7 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Multer } from 'multer';
+import 'multer';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -299,7 +299,7 @@ export class AnnualFoldersController {
         allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES_AND_DOCUMENTS,
       }),
     )
-    file: Multer.File,
+    file: Express.Multer.File,
     @Body() dto: UploadEvidenceDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {

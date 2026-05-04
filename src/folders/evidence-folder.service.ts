@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Multer } from 'multer';
+import 'multer';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -179,7 +179,7 @@ export class EvidenceFolderService {
     userId: string,
     clubSectionId: number,
     sectionId: number,
-    file: Multer.File,
+    file: Express.Multer.File,
   ) {
     if (!file?.buffer) {
       throw new AppBadRequestException(ErrorCode.FOLDER_EVIDENCE_FILE_REQUIRED);
@@ -583,14 +583,14 @@ export class EvidenceFolderService {
     }, 0);
   }
 
-  private resolveEvidenceFileType(file: Multer.File) {
+  private resolveEvidenceFileType(file: Express.Multer.File) {
     return file.mimetype === 'application/pdf' ||
       file.originalname?.toLowerCase().endsWith('.pdf')
       ? 'pdf'
       : 'image';
   }
 
-  private resolveFileExtension(file: Multer.File) {
+  private resolveFileExtension(file: Express.Multer.File) {
     const original = file.originalname ?? '';
     const ext = original.includes('.')
       ? original.split('.').pop()?.toLowerCase()

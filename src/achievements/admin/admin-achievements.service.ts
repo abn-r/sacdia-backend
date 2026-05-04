@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { Multer } from 'multer';
+import 'multer';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
@@ -282,7 +282,7 @@ export class AdminAchievementsService {
 
   async uploadBadgeImage(
     achievementId: number,
-    file: Multer.File,
+    file: Express.Multer.File,
   ): Promise<{ badge_image_key: string; badge_image_url: string }> {
     const achievement = await this.getAchievementById(achievementId);
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Multer } from 'multer';
+import 'multer';
 import {
   AppBadRequestException,
   AppInternalServerErrorException,
@@ -913,7 +913,7 @@ export class ActivitiesService {
     });
   }
 
-  async uploadImage(activityId: number, file: Multer.File) {
+  async uploadImage(activityId: number, file: Express.Multer.File) {
     // Validate mime type
     const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedMimeTypes.includes(file.mimetype)) {

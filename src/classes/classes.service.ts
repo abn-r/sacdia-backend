@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Multer } from 'multer';
+import 'multer';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -780,7 +780,7 @@ export class ClassesService {
     userId: string,
     classId: number,
     sectionId: number,
-    file: Multer.File,
+    file: Express.Multer.File,
   ) {
     if (!file?.buffer) {
       throw new AppBadRequestException(ErrorCode.CLASS_FILE_REQUIRED);
@@ -1127,14 +1127,14 @@ export class ClassesService {
     return parts.join(' ').trim() || null;
   }
 
-  private resolveEvidenceFileType(file: Multer.File) {
+  private resolveEvidenceFileType(file: Express.Multer.File) {
     return file.mimetype === 'application/pdf' ||
       file.originalname?.toLowerCase().endsWith('.pdf')
       ? 'pdf'
       : 'image';
   }
 
-  private resolveFileExtension(file: Multer.File) {
+  private resolveFileExtension(file: Express.Multer.File) {
     const original = file.originalname ?? '';
     const ext = original.includes('.')
       ? original.split('.').pop()?.toLowerCase()
