@@ -30,12 +30,14 @@ export class SupportService {
         category: dto.category,
         title: dto.title,
         description: dto.description,
-        // Prisma InputJsonValue — castear a `any` para esquivar la firma
-        // estricta (`JsonValue` no acepta Record<string, unknown> directo).
-        device_info: dto.deviceInfo as unknown as object,
+        // Prisma 7 tightened InputJsonValue — Record<string, unknown> is not
+        // directly assignable because TS can't verify values are JSON-safe
+        // (could contain Symbols/functions). Cast at service layer following
+        // the same pattern used across the codebase (clubs, activities, honors).
+        device_info: dto.deviceInfo as Prisma.InputJsonValue,
         user_context:
           dto.userContext !== undefined
-            ? (dto.userContext as unknown as object)
+            ? (dto.userContext as Prisma.InputJsonValue)
             : Prisma.JsonNull,
       },
       select: {
