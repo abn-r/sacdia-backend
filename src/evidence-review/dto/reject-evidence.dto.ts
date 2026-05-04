@@ -11,5 +11,5 @@ export class RejectEvidenceDto {
   @IsString()
   @MinLength(1, { message: 'El motivo de rechazo es obligatorio' })
   @MaxLength(1000, { message: 'Máximo 1000 caracteres' })
-  reason: string;
+  declare reason: string;
 }

@@ -446,9 +446,9 @@ export class MemberOfMonthService {
           },
           data: { notified: true },
         });
-      } catch (err) {
+      } catch (err: unknown) {
         this.logger.warn(
-          `Failed to notify winner ${winner.user_id}: ${err.message}`,
+          `Failed to notify winner ${winner.user_id}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }
@@ -495,9 +495,9 @@ export class MemberOfMonthService {
             },
             'units:member_of_month_director',
           );
-        } catch (err) {
+        } catch (err: unknown) {
           this.logger.warn(
-            `Failed to notify director ${directorId}: ${err.message}`,
+            `Failed to notify director ${directorId}: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }

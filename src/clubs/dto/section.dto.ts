@@ -18,7 +18,7 @@ export class CreateClubSectionDto {
   })
   @Type(() => Number)
   @IsInt()
-  club_type_id: number;
+  declare club_type_id: number;
 
   @ApiPropertyOptional({ example: 1 })
   @IsOptional()

@@ -26,7 +26,7 @@ export class CatalogTranslationDto {
   @IsIn(['pt-BR', 'en', 'fr'], {
     message: 'Locale must be one of: pt-BR, en, fr (es lives in main fields)',
   })
-  locale: 'pt-BR' | 'en' | 'fr';
+  declare locale: 'pt-BR' | 'en' | 'fr';
 
   @ApiPropertyOptional({
     description:

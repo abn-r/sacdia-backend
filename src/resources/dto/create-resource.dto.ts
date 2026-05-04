@@ -13,7 +13,7 @@ export class CreateResourceDto {
   @ApiProperty({ description: 'Título del recurso', maxLength: 255 })
   @IsString()
   @MaxLength(255)
-  title: string;
+  declare title: string;
 
   @ApiPropertyOptional({ description: 'Descripción del recurso' })
   @IsOptional()
@@ -26,7 +26,7 @@ export class CreateResourceDto {
   })
   @IsString()
   @IsIn(['document', 'audio', 'image', 'video_link', 'text'])
-  resource_type: string;
+  declare resource_type: string;
 
   @ApiPropertyOptional({ description: 'ID de la categoría del recurso' })
   @IsOptional()
@@ -48,7 +48,7 @@ export class CreateResourceDto {
   })
   @IsString()
   @IsIn(['system', 'union', 'local_field'])
-  scope_level: string;
+  declare scope_level: string;
 
   @ApiPropertyOptional({
     description:

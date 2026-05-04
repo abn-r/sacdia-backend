@@ -5,7 +5,7 @@ export class CreateResourceCategoryDto {
   @ApiProperty({ description: 'Nombre de la categoría', maxLength: 100 })
   @IsString()
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ description: 'Descripción de la categoría' })
   @IsOptional()

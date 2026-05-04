@@ -7,5 +7,5 @@ export class BootstrapAdminDto {
     description: 'ID del usuario que será el primer super_admin',
   })
   @IsUUID('4')
-  user_id: string;
+  declare user_id: string;
 }

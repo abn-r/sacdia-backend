@@ -11,22 +11,22 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class EnrollClassDto {
   @ApiProperty({ description: 'ID de la clase' })
   @IsInt()
-  class_id: number;
+  declare class_id: number;
 
   @ApiProperty({ description: 'ID del año eclesiástico' })
   @IsInt()
   @Min(1)
-  ecclesiastical_year_id: number;
+  declare ecclesiastical_year_id: number;
 }
 
 export class UpdateProgressDto {
   @ApiProperty({ description: 'ID del módulo' })
   @IsInt()
-  module_id: number;
+  declare module_id: number;
 
   @ApiProperty({ description: 'ID de la sección' })
   @IsInt()
-  section_id: number;
+  declare section_id: number;
 
   @ApiProperty({
     description: 'Puntaje obtenido (0-100)',
@@ -36,7 +36,7 @@ export class UpdateProgressDto {
   @IsNumber()
   @Min(0)
   @Max(100)
-  score: number;
+  declare score: number;
 
   @ApiPropertyOptional({
     description: 'Evidencias en formato JSON (URLs, notas, etc.)',

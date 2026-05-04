@@ -29,7 +29,7 @@ export class CreateRoleDto {
   @Matches(/^[a-z_]+$/, {
     message: 'role_name debe contener solo letras minúsculas y guiones bajos',
   })
-  role_name: string;
+  declare role_name: string;
 
   @ApiProperty({
     example: 'Rol encargado de la tesorería del club',
@@ -39,7 +39,7 @@ export class CreateRoleDto {
   @IsNotEmpty()
   @MinLength(10)
   @MaxLength(500)
-  description: string;
+  declare description: string;
 
   @ApiProperty({
     enum: RoleCategoryEnum,
@@ -49,7 +49,7 @@ export class CreateRoleDto {
   @IsEnum(RoleCategoryEnum, {
     message: 'role_category debe ser GLOBAL o CLUB',
   })
-  role_category: RoleCategoryEnum;
+  declare role_category: RoleCategoryEnum;
 
   @ApiPropertyOptional({
     example: ['uuid-1', 'uuid-2'],

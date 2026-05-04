@@ -21,7 +21,7 @@ export class OAuthCallbackDto {
   })
   @IsString()
   @IsNotEmpty()
-  session_token: string;
+  declare session_token: string;
 
   @ApiProperty({
     description: 'OAuth provider used (google, apple)',
@@ -29,7 +29,7 @@ export class OAuthCallbackDto {
   })
   @IsString()
   @IsNotEmpty()
-  provider: string;
+  declare provider: string;
 
   @ApiProperty({
     description: 'Redirect URI used during OAuth initiation (must match)',

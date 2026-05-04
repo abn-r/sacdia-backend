@@ -9,7 +9,7 @@ export class EnrollMfaDto {
   })
   @IsString()
   @MaxLength(128)
-  password: string;
+  declare password: string;
 }
 
 export class VerifyMfaDto {
@@ -20,7 +20,7 @@ export class VerifyMfaDto {
   })
   @IsString()
   @Length(6, 6, { message: 'El código debe tener exactamente 6 dígitos' })
-  code: string;
+  declare code: string;
 }
 
 export class DisableMfaDto {
@@ -31,5 +31,5 @@ export class DisableMfaDto {
   })
   @IsString()
   @MaxLength(128)
-  password: string;
+  declare password: string;
 }

@@ -35,7 +35,7 @@ export class BulkApproveEnrollmentsDto {
   })
   @IsInt({ each: true })
   @Min(1, { each: true })
-  enrollmentIds: number[];
+  declare enrollmentIds: number[];
 
   @ApiProperty({
     description:
@@ -47,7 +47,7 @@ export class BulkApproveEnrollmentsDto {
     message:
       'action debe ser uno de: coordinator-approve, field-approve, invest',
   })
-  action: BulkApproveAction;
+  declare action: BulkApproveAction;
 
   @ApiPropertyOptional({
     description: 'Comentario opcional del aprobador',

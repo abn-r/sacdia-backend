@@ -8,7 +8,7 @@ export class CreateInvestitureConfigDto {
   })
   @IsInt()
   @IsPositive()
-  local_field_id: number;
+  declare local_field_id: number;
 
   @ApiProperty({
     description: 'ID del año eclesiástico',
@@ -16,19 +16,19 @@ export class CreateInvestitureConfigDto {
   })
   @IsInt()
   @IsPositive()
-  ecclesiastical_year_id: number;
+  declare ecclesiastical_year_id: number;
 
   @ApiProperty({
     description: 'Fecha límite de envío a validación (YYYY-MM-DD)',
     example: '2026-05-15',
   })
   @IsDateString()
-  submission_deadline: string;
+  declare submission_deadline: string;
 
   @ApiProperty({
     description: 'Fecha de la ceremonia de investidura (YYYY-MM-DD)',
     example: '2026-06-01',
   })
   @IsDateString()
-  investiture_date: string;
+  declare investiture_date: string;
 }

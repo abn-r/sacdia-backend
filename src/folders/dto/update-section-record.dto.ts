@@ -9,7 +9,7 @@ export class UpdateSectionRecordDto {
   })
   @IsInt()
   @Min(0)
-  points: number;
+  declare points: number;
 
   @ApiProperty({
     description: 'Evidencias en formato JSON flexible',
@@ -21,5 +21,5 @@ export class UpdateSectionRecordDto {
     },
   })
   @IsObject()
-  evidences: Record<string, any>;
+  declare evidences: Record<string, any>;
 }

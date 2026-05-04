@@ -16,13 +16,13 @@ export enum InsuranceType {
 
 export class CreateInsuranceDto {
   @IsEnum(InsuranceType)
-  insurance_type: InsuranceType;
+  declare insurance_type: InsuranceType;
 
   @IsDateString()
-  start_date: string;
+  declare start_date: string;
 
   @IsDateString()
-  end_date: string;
+  declare end_date: string;
 
   @IsOptional()
   @IsString()

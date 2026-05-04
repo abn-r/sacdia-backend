@@ -16,11 +16,11 @@ import { Type } from 'class-transformer';
 export class UpdateRequirementProgressDto {
   @ApiProperty({ description: 'ID del requisito del honor' })
   @IsInt()
-  requirementId: number;
+  declare requirementId: number;
 
   @ApiProperty({ description: 'Indica si el requisito fue completado' })
   @IsBoolean()
-  completed: boolean;
+  declare completed: boolean;
 
   @ApiPropertyOptional({
     description: 'Respuesta de texto del usuario al requisito',
@@ -53,7 +53,7 @@ export class BulkUpdateRequirementProgressDto {
   })
   @ValidateNested({ each: true })
   @Type(() => UpdateRequirementProgressDto)
-  requirements: UpdateRequirementProgressDto[];
+  declare requirements: UpdateRequirementProgressDto[];
 }
 
 // ---------------------------------------------------------------------------
@@ -69,13 +69,13 @@ export enum EvidenceType {
 export class CreateEvidenceLinkDto {
   @ApiProperty({ description: 'URL del enlace externo' })
   @IsUrl()
-  url: string;
+  declare url: string;
 }
 
 export class DeleteEvidenceDto {
   @ApiProperty({ description: 'ID de la evidencia a eliminar' })
   @IsInt()
-  evidenceId: number;
+  declare evidenceId: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ export class DeleteEvidenceDto {
 export class CreateRequirementDto {
   @ApiProperty({ description: 'ID del honor' })
   @IsInt()
-  honorId: number;
+  declare honorId: number;
 
   @ApiPropertyOptional({
     description: 'ID del requisito padre (null = top-level)',
@@ -96,7 +96,7 @@ export class CreateRequirementDto {
 
   @ApiProperty({ description: 'Número de orden del requisito' })
   @IsInt()
-  requirementNumber: number;
+  declare requirementNumber: number;
 
   @ApiPropertyOptional({
     description: 'Etiqueta visual (e.g., "1", "a", "ii")',
@@ -108,7 +108,7 @@ export class CreateRequirementDto {
 
   @ApiProperty({ description: 'Texto del requisito' })
   @IsString()
-  requirementText: string;
+  declare requirementText: string;
 
   @ApiPropertyOptional({
     description: 'Texto de referencia (tablas, material adicional)',
@@ -190,16 +190,16 @@ export class ReorderRequirementsDto {
   })
   @IsArray()
   @IsInt({ each: true })
-  requirementIds: number[];
+  declare requirementIds: number[];
 }
 
 export class BatchReviewDto {
   @ApiProperty({ description: 'IDs de requisitos a aprobar', type: [Number] })
   @IsArray()
   @IsInt({ each: true })
-  requirementIds: number[];
+  declare requirementIds: number[];
 
   @ApiProperty({ description: 'true = aprobar, false = rechazar' })
   @IsBoolean()
-  approved: boolean;
+  declare approved: boolean;
 }

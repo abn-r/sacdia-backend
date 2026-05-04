@@ -17,7 +17,7 @@ export class CreateScoringCategoryDto {
   @ApiProperty({ description: 'Nombre de la categoría (máx 100 chars)' })
   @IsString()
   @MaxLength(100)
-  name: string;
+  declare name: string;
 
   @ApiProperty({
     description: 'Puntos máximos por sesión para esta categoría',
@@ -28,7 +28,7 @@ export class CreateScoringCategoryDto {
   @IsInt()
   @Min(1)
   @Max(1000)
-  max_points: number;
+  declare max_points: number;
 
   @ApiPropertyOptional({
     description:

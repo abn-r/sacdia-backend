@@ -13,12 +13,12 @@ export class LoginDto {
     description: 'Correo electrónico',
   })
   @IsEmail()
-  email: string;
+  declare email: string;
 
   @ApiProperty({ example: 'Password123!', description: 'Contraseña' })
   @IsNotEmpty({ message: 'Password is required' })
   @IsString()
   @MinLength(1)
   @MaxLength(128)
-  password: string;
+  declare password: string;
 }

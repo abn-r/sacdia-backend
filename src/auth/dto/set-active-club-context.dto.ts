@@ -7,5 +7,5 @@ export class SetActiveClubContextDto {
     format: 'uuid',
   })
   @IsUUID()
-  assignment_id: string;
+  declare assignment_id: string;
 }
