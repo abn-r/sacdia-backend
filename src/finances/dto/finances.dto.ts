@@ -13,17 +13,17 @@ import { Type } from 'class-transformer';
 export class CreateFinanceDto {
   @ApiProperty({ description: 'Año del movimiento' })
   @IsInt()
-  year: number;
+  declare year: number;
 
   @ApiProperty({ description: 'Mes del movimiento (1-12)' })
   @IsInt()
   @Min(1)
   @Max(12)
-  month: number;
+  declare month: number;
 
   @ApiProperty({ description: 'Monto del movimiento (en centavos)' })
   @IsInt()
-  amount: number;
+  declare amount: number;
 
   @ApiPropertyOptional({ description: 'Descripción del movimiento' })
   @IsOptional()
@@ -34,21 +34,21 @@ export class CreateFinanceDto {
     description: 'Tipo de club (1=Aventureros, 2=Conquistadores, 3=GM)',
   })
   @IsInt()
-  club_type_id: number;
+  declare club_type_id: number;
 
   @ApiProperty({ description: 'ID de la categoría financiera' })
   @IsInt()
-  finance_category_id: number;
+  declare finance_category_id: number;
 
   @ApiProperty({ description: 'Fecha del movimiento' })
   @IsDateString()
-  finance_date: string;
+  declare finance_date: string;
 
   @ApiProperty({
     description: 'ID de la sección del club (FK a club_sections)',
   })
   @IsInt()
-  club_section_id: number;
+  declare club_section_id: number;
 
   @ApiPropertyOptional({
     description:

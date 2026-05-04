@@ -9,7 +9,7 @@ export class ReviewValidationDto {
   })
   @IsString()
   @IsIn(['approved', 'rejected'])
-  action: 'approved' | 'rejected';
+  declare action: 'approved' | 'rejected';
 
   @ApiPropertyOptional({
     description: 'Comentario de la revision (requerido si se rechaza)',

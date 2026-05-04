@@ -11,5 +11,5 @@ export class EnrollClubDto {
   })
   @IsInt()
   @IsNotEmpty()
-  club_section_id: number;
+  declare club_section_id: number;
 }

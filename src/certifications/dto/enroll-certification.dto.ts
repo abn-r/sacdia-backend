@@ -8,5 +8,5 @@ export class EnrollCertificationDto {
   })
   @IsInt()
   @IsPositive()
-  certification_id: number;
+  declare certification_id: number;
 }

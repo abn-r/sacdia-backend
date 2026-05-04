@@ -10,7 +10,7 @@ export class ReviewAssignmentRequestDto {
   @IsEnum(['approved', 'rejected'], {
     message: 'action must be either "approved" or "rejected"',
   })
-  action: 'approved' | 'rejected';
+  declare action: 'approved' | 'rejected';
 
   @ApiPropertyOptional({
     description: 'Comentario del revisor',

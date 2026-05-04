@@ -23,7 +23,7 @@ export class CreateUnionCamporeeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({
     description: 'Descripción detallada del camporee de unión',
@@ -39,42 +39,42 @@ export class CreateUnionCamporeeDto {
     example: '2024-09-20',
   })
   @IsDateString()
-  start_date: string;
+  declare start_date: string;
 
   @ApiProperty({
     description: 'Fecha de finalización del camporee (formato ISO 8601)',
     example: '2024-09-22',
   })
   @IsDateString()
-  end_date: string;
+  declare end_date: string;
 
   @ApiProperty({
     description: 'ID de la unión organizadora',
     example: 1,
   })
   @IsInt()
-  union_id: number;
+  declare union_id: number;
 
   @ApiProperty({
     description: 'Indica si incluye participantes de Aventureros',
     example: true,
   })
   @IsBoolean()
-  includes_adventurers: boolean;
+  declare includes_adventurers: boolean;
 
   @ApiProperty({
     description: 'Indica si incluye participantes de Conquistadores',
     example: true,
   })
   @IsBoolean()
-  includes_pathfinders: boolean;
+  declare includes_pathfinders: boolean;
 
   @ApiProperty({
     description: 'Indica si incluye participantes de Guías Mayores',
     example: false,
   })
   @IsBoolean()
-  includes_master_guides: boolean;
+  declare includes_master_guides: boolean;
 
   @ApiProperty({
     description: 'Lugar donde se realizará el camporee de unión',
@@ -83,7 +83,7 @@ export class CreateUnionCamporeeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  union_camporee_place: string;
+  declare union_camporee_place: string;
 
   @ApiPropertyOptional({
     description: 'Costo de inscripción al camporee (en moneda local)',

@@ -53,5 +53,5 @@ export class CreateLegalRepresentativeDto {
 
   @ApiProperty({ description: 'UUID del tipo de relación' })
   @IsUUID()
-  relationship_type_id: string;
+  declare relationship_type_id: string;
 }

@@ -272,9 +272,9 @@ export class NotificationsService {
         data,
         source,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Failed to send section-role notification: ${error.message}`,
+        `Failed to send section-role notification: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -325,9 +325,9 @@ export class NotificationsService {
         source,
         unionId,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Failed to send global-role notification: ${error.message}`,
+        `Failed to send global-role notification: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -350,9 +350,9 @@ export class NotificationsService {
   ): Promise<void> {
     try {
       await this.sendToUser({ userId, title, body, data }, 'system', source);
-    } catch (error) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `Failed to enqueue notification to user ${userId}: ${error.message}`,
+        `Failed to enqueue notification to user ${userId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

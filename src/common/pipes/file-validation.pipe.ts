@@ -1,4 +1,5 @@
 import { PipeTransform, Injectable } from '@nestjs/common';
+import 'multer';
 import { AppBadRequestException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 

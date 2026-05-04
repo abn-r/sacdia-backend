@@ -9,5 +9,5 @@ export class AssignPermissionsDto {
   @IsArray()
   @ArrayMinSize(1)
   @IsUUID('4', { each: true })
-  permission_ids: string[];
+  declare permission_ids: string[];
 }

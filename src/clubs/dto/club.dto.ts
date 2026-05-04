@@ -12,7 +12,7 @@ export class CreateClubDto {
   @ApiProperty({ example: 'Club Central', description: 'Nombre del club' })
   @IsString()
   @MaxLength(50)
-  name: string;
+  declare name: string;
 
   @ApiPropertyOptional({ description: 'Descripción del club' })
   @IsOptional()
@@ -21,15 +21,15 @@ export class CreateClubDto {
 
   @ApiProperty({ example: 1, description: 'ID del campo local' })
   @IsInt()
-  local_field_id: number;
+  declare local_field_id: number;
 
   @ApiProperty({ example: 1, description: 'ID del distrito' })
   @IsInt()
-  districlub_type_id: number;
+  declare districlub_type_id: number;
 
   @ApiProperty({ example: 1, description: 'ID de la iglesia' })
   @IsInt()
-  church_id: number;
+  declare church_id: number;
 
   @ApiPropertyOptional({ description: 'Dirección del club' })
   @IsOptional()

@@ -10,5 +10,5 @@ export class UpdateSystemConfigDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(500)
-  config_value: string;
+  declare config_value: string;
 }

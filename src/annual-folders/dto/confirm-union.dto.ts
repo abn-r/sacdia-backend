@@ -9,7 +9,7 @@ export class ConfirmUnionDto {
     example: union_evaluation_decision_enum.APPROVED,
   })
   @IsEnum(union_evaluation_decision_enum)
-  decision: union_evaluation_decision_enum;
+  declare decision: union_evaluation_decision_enum;
 
   @ApiPropertyOptional({
     description: 'Optional override/confirmation note',

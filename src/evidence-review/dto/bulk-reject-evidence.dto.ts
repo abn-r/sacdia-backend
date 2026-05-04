@@ -25,7 +25,7 @@ export class BulkRejectEvidenceDto {
   })
   @IsInt({ each: true })
   @Min(1, { each: true })
-  ids: number[];
+  declare ids: number[];
 
   @ApiProperty({
     description: 'Tipo de evidencia a rechazar en bloque',
@@ -35,7 +35,7 @@ export class BulkRejectEvidenceDto {
   @IsEnum(['folder', 'class', 'honor'], {
     message: 'type debe ser uno de: folder, class, honor',
   })
-  type: EvidenceType;
+  declare type: EvidenceType;
 
   @ApiProperty({
     description: 'Motivo del rechazo (obligatorio)',
@@ -46,5 +46,5 @@ export class BulkRejectEvidenceDto {
   @IsString()
   @MinLength(1, { message: 'El motivo de rechazo es obligatorio' })
   @MaxLength(1000, { message: 'Máximo 1000 caracteres' })
-  reason: string;
+  declare reason: string;
 }

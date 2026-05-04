@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import 'multer';
 import pLimit from 'p-limit';
 import { PrismaService } from '../prisma/prisma.service';
 import {

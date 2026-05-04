@@ -7,44 +7,44 @@ import {
 
 export class AchievementResponseDto {
   @ApiProperty({ description: 'ID único del logro' })
-  achievement_id: number;
+  declare achievement_id: number;
 
   @ApiProperty({ description: 'ID de la categoría' })
-  category_id: number;
+  declare category_id: number;
 
   @ApiProperty({ description: 'Nombre del logro' })
-  name: string;
+  declare name: string;
 
   @ApiProperty({ description: 'Descripción del logro' })
-  description: string;
+  declare description: string;
 
   @ApiProperty({
     description:
       'URL pública del badge. Retorna la URL del CDN cuando badge_image_key está presente, ' +
       'o la imagen por defecto cuando no hay badge asignado.',
   })
-  badge_image_url: string;
+  declare badge_image_url: string;
 
   @ApiProperty({ description: 'Tipo de logro', enum: achievement_type })
-  type: achievement_type;
+  declare type: achievement_type;
 
   @ApiProperty({ description: 'Alcance del logro', enum: achievement_scope })
-  scope: achievement_scope;
+  declare scope: achievement_scope;
 
   @ApiProperty({ description: 'Nivel del logro', enum: achievement_tier })
-  tier: achievement_tier;
+  declare tier: achievement_tier;
 
   @ApiProperty({ description: 'Puntos que otorga el logro' })
-  points: number;
+  declare points: number;
 
   @ApiProperty({ description: 'Criterios de evaluación del logro' })
-  criteria: Record<string, unknown>;
+  declare criteria: Record<string, unknown>;
 
   @ApiProperty({ description: 'Logro secreto' })
-  secret: boolean;
+  declare secret: boolean;
 
   @ApiProperty({ description: 'El logro puede obtenerse más de una vez' })
-  repeatable: boolean;
+  declare repeatable: boolean;
 
   @ApiPropertyOptional({
     description: 'Número máximo de veces que se puede obtener',
@@ -58,11 +58,11 @@ export class AchievementResponseDto {
   prerequisite_id?: number | null;
 
   @ApiProperty({ description: 'Estado activo' })
-  active: boolean;
+  declare active: boolean;
 
   @ApiProperty({ description: 'Fecha de creación' })
-  created_at: Date;
+  declare created_at: Date;
 
   @ApiProperty({ description: 'Fecha de última modificación' })
-  modified_at: Date;
+  declare modified_at: Date;
 }

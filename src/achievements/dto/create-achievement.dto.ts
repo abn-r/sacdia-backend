@@ -19,25 +19,25 @@ export class CreateAchievementDto {
   @ApiProperty({ description: 'Nombre del logro', maxLength: 200 })
   @IsString()
   @MaxLength(200)
-  name: string;
+  declare name: string;
 
   @ApiProperty({ description: 'Descripción del logro', maxLength: 1000 })
   @IsString()
   @MaxLength(1000)
-  description: string;
+  declare description: string;
 
   @ApiProperty({
     description: 'ID de la categoría a la que pertenece el logro',
   })
   @IsInt()
-  category_id: number;
+  declare category_id: number;
 
   @ApiProperty({
     description: 'Tipo de logro',
     enum: achievement_type,
   })
   @IsEnum(achievement_type)
-  type: achievement_type;
+  declare type: achievement_type;
 
   @ApiPropertyOptional({
     description: 'Alcance del logro',
@@ -68,7 +68,7 @@ export class CreateAchievementDto {
 
   @ApiProperty({ description: 'Criterios de evaluación del logro (JSON)' })
   @IsObject()
-  criteria: Record<string, unknown>;
+  declare criteria: Record<string, unknown>;
 
   @ApiPropertyOptional({
     description: 'Logro secreto (no visible hasta desbloquearse)',

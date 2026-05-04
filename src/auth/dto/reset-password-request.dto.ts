@@ -7,5 +7,5 @@ export class ResetPasswordRequestDto {
     description: 'Correo para recuperación',
   })
   @IsEmail()
-  email: string;
+  declare email: string;
 }

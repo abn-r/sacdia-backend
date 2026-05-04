@@ -34,8 +34,9 @@ export class FirebaseAdminModule {
         console.log(
           `✅ Firebase Admin initialized successfully (source: ${credentials.source})`,
         );
-      } catch (error) {
-        console.error('❌ Failed to initialize Firebase Admin:', error.message);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('❌ Failed to initialize Firebase Admin:', message);
         console.warn('Firebase services (FCM) will be disabled.');
       }
     }
