@@ -585,11 +585,18 @@ export class ClassesService {
     await Promise.all(
       allEvidenceFiles.map((ef) =>
         EVIDENCE_URL_LIMITER(async () => {
-          const signedUrl = await this.fileStorage.getSignedDownloadUrl(
-            StorageBucketAlias.CLASS_EVIDENCE,
-            ef.file_url,
-          );
-          signedUrlMap.set(ef.evidence_file_id, signedUrl);
+          try {
+            const signedUrl = await this.fileStorage.getSignedDownloadUrl(
+              StorageBucketAlias.CLASS_EVIDENCE,
+              ef.file_url,
+            );
+            signedUrlMap.set(ef.evidence_file_id, signedUrl);
+          } catch (err) {
+            this.logger.warn(
+              `Failed to presign evidence URL for file ${ef.evidence_file_id} (class ${classId}, user ${userId}): ${(err as Error).message}`,
+            );
+            signedUrlMap.set(ef.evidence_file_id, ef.file_url);
+          }
         }),
       ),
     );
