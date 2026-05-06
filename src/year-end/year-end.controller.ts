@@ -29,7 +29,7 @@ export class YearEndController {
   // ========================================
 
   @Get(':yearId/preview')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Vista previa del impacto de cierre de ano',
     description:
@@ -55,7 +55,7 @@ export class YearEndController {
   // ========================================
 
   @Post(':yearId/close')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Cerrar ano eclesiastico',
     description:

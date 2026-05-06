@@ -704,12 +704,12 @@ export class AdminUsersService {
 
     const roles = this.extractRoleNames(actor.users_roles);
 
-    if (roles.includes('super_admin')) {
+    if (roles.includes('super-admin')) {
       return { type: 'ALL', roles };
     }
 
     const hasAdminLevelRole =
-      roles.includes('admin') || roles.includes('assistant_admin');
+      roles.includes('admin') || roles.includes('assistant-admin');
 
     if (hasAdminLevelRole) {
       if (actor.union_id) {

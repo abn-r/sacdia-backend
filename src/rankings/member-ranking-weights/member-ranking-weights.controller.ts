@@ -37,7 +37,7 @@ import { MemberRankingWeightsResponseDto } from './dto/member-ranking-weights-re
 /**
  * Admin CRUD endpoints for `enrollment_ranking_weights`.
  *
- * All routes require the caller to be `admin` or `super_admin` (GlobalRolesGuard)
+ * All routes require the caller to be `admin` or `super-admin` (GlobalRolesGuard)
  * AND hold the corresponding permission (PermissionsGuard) — defence-in-depth
  * following the admin-honors.controller pattern.
  *
@@ -46,7 +46,7 @@ import { MemberRankingWeightsResponseDto } from './dto/member-ranking-weights-re
 @ApiTags('Member Ranking Weights')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @AuthorizationResource({ type: 'global' })
 @Controller('member-ranking-weights')
 export class MemberRankingWeightsController {

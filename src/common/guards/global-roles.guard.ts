@@ -9,9 +9,9 @@ import {
 } from '../decorators/global-roles.decorator';
 
 const GLOBAL_ROLE_ALIASES: Record<GlobalRoleType, GlobalRoleType[]> = {
-  super_admin: ['super_admin'],
-  admin: ['admin', 'assistant_admin'],
-  assistant_admin: ['assistant_admin', 'admin'],
+  'super-admin': ['super-admin'],
+  admin: ['admin', 'assistant-admin'],
+  'assistant-admin': ['assistant-admin', 'admin'],
   coordinator: ['coordinator'],
   pastor: ['pastor'],
   user: ['user'],
@@ -42,7 +42,7 @@ export class GlobalRolesGuard implements CanActivate {
       throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
     }
 
-    // super_admin bypasses all role-based restrictions (god mode)
+    // super-admin bypasses all role-based restrictions (god mode)
     if (await this.authorizationContext.isSuperAdmin(user.sub)) {
       return true;
     }

@@ -24,7 +24,7 @@ import { AdminCronAlertsService } from './admin-cron-alerts.service';
 @ApiTags('admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @Controller('admin/cron-alerts')
 export class AdminCronAlertsController {
   constructor(private readonly cronAlertsService: AdminCronAlertsService) {}
@@ -107,9 +107,9 @@ export class AdminCronAlertsController {
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post(':id/resolve')
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @ApiOperation({
-    summary: 'Manually resolve a cron alert (super_admin only)',
+    summary: 'Manually resolve a cron alert (super-admin only)',
     description:
       'Sets resolved_at = now() on the given cron_alerts_log row, closing the open alert. ' +
       'The action is audited via the caller user ID.',

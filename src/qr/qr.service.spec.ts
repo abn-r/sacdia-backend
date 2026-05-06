@@ -35,6 +35,12 @@ describe('QrService', () => {
       findFirst: jest.fn(),
       findMany: jest.fn(),
     },
+    enrollments: {
+      findFirst: jest.fn(),
+    },
+    emergency_contacts: {
+      findFirst: jest.fn(),
+    },
   };
 
   const mockAchievementsService = {
@@ -141,6 +147,9 @@ describe('QrService', () => {
         avatar: 'https://signed.example/avatar.png',
         club_name: 'Club Test',
         section_name: 'Pathfinders',
+        current_class: null,
+        blood_type: null,
+        emergency_contact: null,
       },
       authorization: {
         grants: { global_roles: [], club_assignments: [] },
@@ -185,6 +194,15 @@ describe('QrService', () => {
     });
     mockJwtService.sign.mockReturnValue('jwt-qr-token');
     mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: 'O+' });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue({
+      classes: { name: 'Conquistador' },
+    });
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue({
+      name: 'María García',
+      phone: '+1234567890',
+      relationship_types: { name: 'Madre' },
+    });
 
     const result = await service.getMyCard('user-1');
 
@@ -198,6 +216,13 @@ describe('QrService', () => {
         avatar: null,
         club_name: null,
         section_name: null,
+        current_class: 'Conquistador',
+        blood_type: 'O+',
+        emergency_contact: {
+          name: 'María García',
+          phone: '+1234567890',
+          relationship: 'Madre',
+        },
       },
       visual: {
         title: 'SACDIA',
@@ -208,6 +233,49 @@ describe('QrService', () => {
         section_name: null,
       },
     });
+  });
+
+  it('returns null for card extras when no enrollment or emergency contact exists', async () => {
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
+      profile: {
+        user_id: 'user-2',
+        email: 'new@sacdia.app',
+        name: 'Pedro',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: null,
+      },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: ['qr:issue_self'],
+          scope: { global: {}, club: null },
+        },
+      },
+      legacy: {
+        club: null,
+        club_context: {
+          active_assignment_id: null,
+          active: null,
+          available: [],
+        },
+        permissions: ['qr:issue_self'],
+        roles: ['user'],
+      },
+      post_register_complete: false,
+    });
+    mockJwtService.sign.mockReturnValue('jwt-qr-token-2');
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: null });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue(null);
+
+    const result = await service.getMyCard('user-2');
+
+    expect(result.member.current_class).toBeNull();
+    expect(result.member.blood_type).toBeNull();
+    expect(result.member.emergency_contact).toBeNull();
   });
 
   it('generates a PDF buffer for the card', async () => {
@@ -242,6 +310,9 @@ describe('QrService', () => {
     });
     mockJwtService.sign.mockReturnValue('jwt-qr-token');
     mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: null });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue(null);
 
     const buffer = await service.generateMyCardPdf('user-1');
 

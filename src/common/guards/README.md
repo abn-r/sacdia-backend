@@ -23,7 +23,7 @@ getProfile() { ... }
 
 **Usage**:
 ```typescript
-@ClubRoles('director', 'deputy_director')
+@ClubRoles('director', 'deputy-director')
 @UseGuards(JwtAuthGuard, ClubRolesGuard)
 @Post('clubs/:clubId/instances')
 createInstance() { ... }
@@ -35,7 +35,7 @@ createInstance() { ... }
 
 **Roles**:
 - director
-- deputy_director
+- deputy-director
 - secretary
 - treasurer
 - counselor
@@ -50,7 +50,7 @@ createInstance() { ... }
 
 **Usage**:
 ```typescript
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
 @Post('honors/catalog')
 createHonor() { ... }
@@ -59,13 +59,13 @@ createHonor() { ... }
 **Checks**: `users_roles` table for active global roles
 
 **Roles**:
-- super_admin: Full system access
+- super-admin: Full system access
 - admin: Local field administration
 - coordinator: Union/association level
 - user: Regular user (default)
 
 **Operational requirement (admin user management scope)**:
-- `super_admin`: scope `ALL` (all users)
+- `super-admin`: scope `ALL` (all users)
 - `admin`: scope from actor location. If `union_id` exists => `UNION`; else requires `local_field_id` => `LOCAL_FIELD`
 - `coordinator`: requires `local_field_id` => `LOCAL_FIELD`
 - If scope data is missing for `admin`/`coordinator`, backend must return `403` (misconfigured role assignment)
@@ -84,7 +84,7 @@ getUserHonors(@Param('userId') userId: string) { ... }
 
 **Logic**:
 1. ✅ Allow if `user.sub === params.userId` (owner)
-2. ✅ Allow if user has admin/coordinator/super_admin role
+2. ✅ Allow if user has admin/coordinator/super-admin role
 3. ❌ Otherwise deny
 
 **Use Cases**:
@@ -119,7 +119,7 @@ getUserProfile() { ... }
 
 ### Admin Only
 ```typescript
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
 @Delete('users/:userId')
 deleteUser() { ... }
@@ -127,7 +127,7 @@ deleteUser() { ... }
 
 ### Club Role Required
 ```typescript
-@ClubRoles('director', 'deputy_director')
+@ClubRoles('director', 'deputy-director')
 @UseGuards(JwtAuthGuard, ClubRolesGuard)
 @Post('clubs/:clubId/activities')
 createActivity() { ... }
@@ -161,9 +161,9 @@ JwtAuthGuard rejects invalid/missing token
 ### 403 Forbidden
 Authorization guard rejects insufficient permissions:
 - `"User not authenticated"`
-- `"You need one of these global roles: admin, super_admin"`
+- `"You need one of these global roles: admin, super-admin"`
 - `"You can only access your own resources unless you have admin privileges"`
-- `"You need one of these club roles: director, deputy_director"`
+- `"You need one of these club roles: director, deputy-director"`
 
 ---
 
@@ -209,7 +209,7 @@ export class UserResourceController { ... }
 ### Admin-Only Routes
 ```typescript
 @Controller('admin')
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
 export class AdminController { ... }
 ```

@@ -23,11 +23,11 @@ export class HealthController {
 
   @Get('details')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Detailed health status (admin only)',
     description:
-      'Returns database, cache, FCM and Sentry status. Requires admin or super_admin role.',
+      'Returns database, cache, FCM and Sentry status. Requires admin or super-admin role.',
   })
   async details() {
     const dbStatus = await this.checkDatabase();

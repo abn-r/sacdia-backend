@@ -125,7 +125,7 @@ export class FinancePeriodService {
 
     const isAdmin = await this.authorizationContext.hasAnyGlobalRole(userId, [
       'admin',
-      'super_admin',
+      'super-admin',
     ]);
 
     if (!isAdmin) {

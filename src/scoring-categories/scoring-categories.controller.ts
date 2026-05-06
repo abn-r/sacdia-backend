@@ -40,12 +40,12 @@ export class ScoringCategoriesController {
   ) {}
 
   // ========================================
-  // DIVISION LEVEL (admin / super_admin only)
+  // DIVISION LEVEL (admin / super-admin only)
   // ========================================
 
   @Get('divisions/scoring-categories')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:read')
   @ApiOperation({ summary: 'Listar categorías de puntuación a nivel división' })
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
@@ -55,7 +55,7 @@ export class ScoringCategoriesController {
 
   @Post('divisions/scoring-categories')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:manage')
   @ApiOperation({ summary: 'Crear categoría de puntuación a nivel división' })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
@@ -65,7 +65,7 @@ export class ScoringCategoriesController {
 
   @Patch('divisions/scoring-categories/:id')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:manage')
   @ApiOperation({
     summary: 'Actualizar categoría de puntuación a nivel división',
@@ -86,7 +86,7 @@ export class ScoringCategoriesController {
 
   @Delete('divisions/scoring-categories/:id')
   @UseGuards(GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @RequirePermissions('scoring_categories:manage')
   @ApiOperation({
     summary:

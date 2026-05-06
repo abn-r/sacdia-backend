@@ -60,7 +60,7 @@ async function main() {
     await prisma.roles.createMany({
         data: [
             {
-                role_name: 'super_admin',
+                role_name: 'super-admin',
                 description: 'Full system access with unrestricted control over all platform features, users, clubs, and configuration.',
                 role_category: 'GLOBAL',
                 active: true,
@@ -72,7 +72,7 @@ async function main() {
                 active: true,
             },
             {
-                role_name: 'assistant_admin',
+                role_name: 'assistant-admin',
                 description: 'Assistant administrator who supports platform management tasks with limited administrative privileges.',
                 role_category: 'GLOBAL',
                 active: true,
@@ -110,7 +110,7 @@ async function main() {
                 active: true,
             },
             {
-                role_name: 'deputy_director',
+                role_name: 'deputy-director',
                 description: 'Deputy director who assists the club director and assumes leadership in their absence.',
                 role_category: 'CLUB',
                 active: true,
@@ -176,7 +176,7 @@ async function main() {
         skipDuplicates: true,
     });
 
-    // Seed admin user (super_admin)
+    // Seed admin user (super-admin)
     console.log('📝 Seeding admin user...');
     const adminEmail = 'admin@sacdia.com';
     const existingAdmin = await prisma.users.findUnique({
@@ -211,7 +211,7 @@ async function main() {
         });
 
         const superAdminRole = await prisma.roles.findUnique({
-            where: { role_name: 'super_admin' },
+            where: { role_name: 'super-admin' },
         });
 
         if (superAdminRole) {
@@ -235,7 +235,7 @@ async function main() {
             },
         });
 
-        console.log(`✅ Admin user created: ${adminEmail} (super_admin)`);
+        console.log(`✅ Admin user created: ${adminEmail} (super-admin)`);
     } else {
         console.log(`⏭️  Admin user already exists: ${adminEmail}`);
     }

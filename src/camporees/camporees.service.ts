@@ -2210,7 +2210,7 @@ export class CamporeesService {
     }
 
     const globalRoles = authorization.grants.global_roles;
-    if (this.hasGlobalRole(globalRoles, ['super_admin'])) {
+    if (this.hasGlobalRole(globalRoles, ['super-admin'])) {
       return null;
     }
 
@@ -2220,7 +2220,7 @@ export class CamporeesService {
       typeof globalLocalFieldId === 'number' &&
       this.hasGlobalRole(globalRoles, [
         'admin',
-        'assistant_admin',
+        'assistant-admin',
         'coordinator',
       ])
     ) {
@@ -2230,7 +2230,7 @@ export class CamporeesService {
     const globalUnionId = globalScope.union?.id;
     if (
       typeof globalUnionId === 'number' &&
-      this.hasGlobalRole(globalRoles, ['admin', 'assistant_admin'])
+      this.hasGlobalRole(globalRoles, ['admin', 'assistant-admin'])
     ) {
       return { type: 'union', id: globalUnionId };
     }

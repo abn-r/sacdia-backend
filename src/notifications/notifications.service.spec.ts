@@ -669,8 +669,8 @@ describe('NotificationsService', () => {
         mockAuthorizationContextService.hasAnyGlobalRole,
       ).toHaveBeenCalledWith(CALLER_ID, [
         'admin',
-        'super_admin',
-        'assistant_admin',
+        'super-admin',
+        'assistant-admin',
       ]);
       // Must NOT query notification_logs directly for regular users
       expect(
@@ -920,7 +920,7 @@ describe('NotificationsService', () => {
           profile: { user_id: SENT_BY },
           authorization: buildAuthorizationSnapshot({
             globalPermissions: ['notifications:club'],
-            globalRoleName: 'super_admin',
+            globalRoleName: 'super-admin',
             countryId: 30,
           }),
         } as any,
