@@ -149,10 +149,10 @@ export class RbacService {
     });
   }
 
-  // ─── Role CRUD (super_admin only) ───────────────────────────
+  // ─── Role CRUD (super-admin only) ───────────────────────────
 
   async createRole(dto: CreateRoleDto) {
-    if (dto.role_name === 'super_admin') {
+    if (dto.role_name === 'super-admin') {
       throw new AppBadRequestException(ErrorCode.RBAC_ROLE_NAME_RESERVED, {
         name: dto.role_name,
       });
@@ -241,7 +241,7 @@ export class RbacService {
       });
     }
 
-    if (role.role_name === 'super_admin') {
+    if (role.role_name === 'super-admin') {
       throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
@@ -309,7 +309,7 @@ export class RbacService {
       });
     }
 
-    if (role.role_name === 'super_admin') {
+    if (role.role_name === 'super-admin') {
       throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
@@ -637,12 +637,12 @@ export class RbacService {
   }
 
   async bootstrapAdmin(userId: string) {
-    // Check if any super_admin already exists
+    // Check if any super-admin already exists
     const existingSuperAdmin = await this.prisma.users_roles.findFirst({
       where: {
         active: true,
         roles: {
-          role_name: 'super_admin',
+          role_name: 'super-admin',
           active: true,
         },
       },
@@ -664,7 +664,7 @@ export class RbacService {
     }
 
     const superAdminRole = await this.prisma.roles.findFirst({
-      where: { role_name: 'super_admin', active: true },
+      where: { role_name: 'super-admin', active: true },
     });
 
     if (!superAdminRole) {
@@ -679,16 +679,16 @@ export class RbacService {
     });
 
     this.logger.warn(
-      `BOOTSTRAP: Usuario ${maskEmail(user.email)} (${userId}) asignado como primer super_admin`,
+      `BOOTSTRAP: Usuario ${maskEmail(user.email)} (${userId}) asignado como primer super-admin`,
     );
 
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
 
     return {
       success: true,
-      message: `Usuario ${user.email} es ahora super_admin`,
+      message: `Usuario ${user.email} es ahora super-admin`,
       user_id: userId,
-      role: 'super_admin',
+      role: 'super-admin',
     };
   }
 

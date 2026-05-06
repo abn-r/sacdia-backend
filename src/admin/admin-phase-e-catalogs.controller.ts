@@ -2,7 +2,7 @@
  * AdminPhaseECatalogsController — Phase E i18n admin CRUD endpoints.
  *
  * All endpoints live under /api/v1/admin/* (matching the AdminModule controller prefix).
- * Guards: JwtAuthGuard + GlobalRolesGuard (admin|super_admin) + PermissionsGuard.
+ * Guards: JwtAuthGuard + GlobalRolesGuard (admin|super-admin) + PermissionsGuard.
  *
  * Endpoint paths (kebab-case, REST-conventional):
  *   GET    /admin/classes
@@ -113,7 +113,7 @@ import {
 @ApiTags('Admin - Phase E Catalogs (i18n)')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminPhaseECatalogsController {

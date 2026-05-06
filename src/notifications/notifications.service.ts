@@ -399,8 +399,8 @@ export class NotificationsService {
   /**
    * Obtener historial paginado de notificaciones.
    *
-   * - Admins (admin | super_admin | assistant_admin): devuelve audit log
-   *   territorialmente filtrado según el scope del caller. Only super_admin
+   * - Admins (admin | super-admin | assistant-admin): devuelve audit log
+   *   territorialmente filtrado según el scope del caller. Only super-admin
    *   receives the unfiltered audit trail.
    *
    * - Usuarios regulares: consulta notification_deliveries (mailbox-per-user).
@@ -419,7 +419,7 @@ export class NotificationsService {
 
     const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
       callerUserId,
-      ['admin', 'super_admin', 'assistant_admin'],
+      ['admin', 'super-admin', 'assistant-admin'],
     );
 
     const skip = (page - 1) * safeLimit;
@@ -522,7 +522,7 @@ export class NotificationsService {
       ),
     );
 
-    if (globalRoleNames.has('super_admin')) {
+    if (globalRoleNames.has('super-admin')) {
       return {};
     }
 

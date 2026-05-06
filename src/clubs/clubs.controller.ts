@@ -124,7 +124,7 @@ export class ClubsController {
 
   @Patch(':clubId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy_director')
+  @ClubRoles('director', 'deputy-director')
   @RequirePermissions('clubs:update')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
@@ -185,7 +185,7 @@ export class ClubsController {
 
   @Post(':clubId/sections')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy_director')
+  @ClubRoles('director', 'deputy-director')
   @RequirePermissions('club_sections:create')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
@@ -205,7 +205,7 @@ export class ClubsController {
 
   @Patch(':clubId/sections/:sectionId')
   @UseGuards(ClubRolesGuard)
-  @ClubRoles('director', 'deputy_director', 'secretary')
+  @ClubRoles('director', 'deputy-director', 'secretary')
   @RequirePermissions('club_sections:update')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({

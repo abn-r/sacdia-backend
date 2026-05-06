@@ -25,11 +25,11 @@ export class SystemConfigController {
   // ========================================
 
   @Get()
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Listar todas las configuraciones del sistema',
     description:
-      'Obtiene todas las claves de configuracion del sistema. Solo admin/super_admin.',
+      'Obtiene todas las claves de configuracion del sistema. Solo admin/super-admin.',
   })
   @ApiResponse({
     status: 200,
@@ -44,7 +44,7 @@ export class SystemConfigController {
   // ========================================
 
   @Get(':key')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Obtener una configuracion por clave',
     description:
@@ -67,11 +67,11 @@ export class SystemConfigController {
   // ========================================
 
   @Patch(':key')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Actualizar una configuracion del sistema',
     description:
-      'Actualiza el valor de una configuracion existente. Solo admin/super_admin.',
+      'Actualiza el valor de una configuracion existente. Solo admin/super-admin.',
   })
   @ApiParam({
     name: 'key',

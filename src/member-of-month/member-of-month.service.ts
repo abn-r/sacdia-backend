@@ -182,7 +182,7 @@ export class MemberOfMonthService {
         (g: { role_name: string }) => g.role_name.toLowerCase(),
       ),
     );
-    const isAdmin = globalRoles.has('admin') || globalRoles.has('super_admin');
+    const isAdmin = globalRoles.has('admin') || globalRoles.has('super-admin');
 
     const userLocalFieldId = resolved.authorization.effective.scope.global
       .local_field?.id as number | undefined;

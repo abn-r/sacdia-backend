@@ -14,7 +14,7 @@ import { AdminNotificationsService } from './admin-notifications.service';
 @ApiBearerAuth()
 @Controller('admin/notifications')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 export class AdminNotificationsController {
   constructor(
     private readonly adminNotificationsService: AdminNotificationsService,
@@ -25,7 +25,7 @@ export class AdminNotificationsController {
     summary: 'FCM notification delivery metrics for administrators',
     description:
       'Returns active/inactive FCM token counts and a per-day delivery success rate. ' +
-      'Requires admin or super_admin global role.',
+      'Requires admin or super-admin global role.',
   })
   @ApiOkResponse({
     description: 'Notification delivery stats',

@@ -614,7 +614,7 @@ export class InvestitureService {
    * Autorización dual: admin/coordinator pueden ver cualquier historial;
    * director/consejero solo si tienen rol activo en el club del enrollment.
    *
-   * MVP simplification: global roles (admin/coordinator/super_admin/assistant_admin) bypass
+   * MVP simplification: global roles (admin/coordinator/super-admin/assistant-admin) bypass
    * authorization entirely. Others may only view their own enrollment's history.
    */
   async getHistory(
@@ -646,8 +646,8 @@ export class InvestitureService {
     const allowedGlobalRoles = [
       'admin',
       'coordinator',
-      'super_admin',
-      'assistant_admin',
+      'super-admin',
+      'assistant-admin',
     ];
     const hasGlobalAccess = await this.authorizationContext.hasAnyGlobalRole(
       actorId,
@@ -891,7 +891,7 @@ export class InvestitureService {
     if (dto.action === 'field-approve') {
       const isAdmin = await this.authorizationContext.hasAnyGlobalRole(
         actorId,
-        ['admin', 'assistant_admin', 'super_admin'],
+        ['admin', 'assistant-admin', 'super-admin'],
       );
       if (!isAdmin) {
         throw new AppForbiddenException(
@@ -1148,7 +1148,7 @@ export class InvestitureService {
           if (dto.action === 'coordinator-approve') {
             if (!enrollment.users.local_field_id) return Promise.resolve();
             return this.notifications.sendToGlobalRole(
-              ['assistant_admin', 'admin'],
+              ['assistant-admin', 'admin'],
               'Investidura aprobada por coordinador',
               'Un enrollment ha sido aprobado por el coordinador y requiere aprobación del campo',
               notifData(enrollment.enrollment_id),
@@ -1525,10 +1525,10 @@ export class InvestitureService {
           break;
 
         case investiture_status_enum.COORDINATOR_APPROVED:
-          // Coordinator approved → notify field (assistant_admin)
+          // Coordinator approved → notify field (assistant-admin)
           if (enrollment.users.local_field_id) {
             void this.notifications.sendToGlobalRole(
-              ['assistant_admin', 'admin'],
+              ['assistant-admin', 'admin'],
               'Investidura aprobada por coordinador',
               'Un enrollment ha sido aprobado por el coordinador y requiere aprobación del campo',
               notifData,

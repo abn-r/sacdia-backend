@@ -8,7 +8,7 @@ export const CLUB_ROLES_KEY = 'club_roles';
 
 export type ClubRoleType =
   | 'director'
-  | 'deputy_director'
+  | 'deputy-director'
   | 'secretary'
   | 'treasurer'
   | 'counselor'
@@ -17,7 +17,7 @@ export type ClubRoleType =
   | 'member';
 
 const CLUB_ROLE_ALIASES: Record<string, string> = {
-  subdirector: 'deputy_director',
+  subdirector: 'deputy-director',
   secretario: 'secretary',
   tesorero: 'treasurer',
   consejero: 'counselor',

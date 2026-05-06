@@ -603,7 +603,7 @@ export class AnnualFoldersService {
   /**
    * Asserts that `userId` is allowed to mutate evidence in the folder that
    * owns `evidenceId`. Access is granted when ANY of these is true:
-   *   1. The user holds the `super_admin` global role (god-mode bypass).
+   *   1. The user holds the `super-admin` global role (god-mode bypass).
    *   2. The user has at least one active `club_role_assignment` whose
    *      section belongs to the same club that owns the annual folder.
    *
@@ -612,7 +612,7 @@ export class AnnualFoldersService {
    * cannot be resolved (should not happen in normal flow but kept for safety).
    *
    * NOTE: This check intentionally does NOT replicate the H-02 pattern from
-   * scoring-categories (which omits the super_admin bypass). Super-admins must
+   * scoring-categories (which omits the super-admin bypass). Super-admins must
    * remain unblocked.
    */
   private async assertEvidenceClubAccess(
@@ -655,7 +655,7 @@ export class AnnualFoldersService {
       );
     }
 
-    // 1. Super-admin bypass — users_roles → roles (GLOBAL category, super_admin name)
+    // 1. Super-admin bypass — users_roles → roles (GLOBAL category, super-admin name)
     const superAdminGrant = await this.prisma.users_roles.findFirst({
       where: {
         user_id: userId,
@@ -663,7 +663,7 @@ export class AnnualFoldersService {
         roles: {
           active: true,
           role_category: 'GLOBAL',
-          role_name: 'super_admin',
+          role_name: 'super-admin',
         },
       },
       select: { user_role_id: true },
@@ -699,7 +699,7 @@ export class AnnualFoldersService {
   /**
    * Asserts that `userId` is allowed to submit or close the folder identified
    * by `folderId`. Access is granted when ANY of these is true:
-   *   1. The user holds the `super_admin` global role (god-mode bypass).
+   *   1. The user holds the `super-admin` global role (god-mode bypass).
    *   2. The user has at least one active `club_role_assignment` whose section
    *      belongs to the same club that owns the annual folder.
    *
@@ -754,7 +754,7 @@ export class AnnualFoldersService {
         roles: {
           active: true,
           role_category: 'GLOBAL',
-          role_name: 'super_admin',
+          role_name: 'super-admin',
         },
       },
       select: { user_role_id: true },
@@ -790,7 +790,7 @@ export class AnnualFoldersService {
   /**
    * Asserts that the reviewer (`userId`) may annotate evidence identified by
    * `evidenceId`. Access is granted when ANY of these is true:
-   *   1. The user holds the `super_admin` global role.
+   *   1. The user holds the `super-admin` global role.
    *   2. The user has an active club_role_assignment in the evidence's exact
    *      club (same as the assertEvidenceClubAccess club-level check).
    *   3. The reviewer's `users.local_field_id` matches the evidence club's
@@ -863,7 +863,7 @@ export class AnnualFoldersService {
         roles: {
           active: true,
           role_category: 'GLOBAL',
-          role_name: 'super_admin',
+          role_name: 'super-admin',
         },
       },
       select: { user_role_id: true },
@@ -1051,7 +1051,7 @@ export class AnnualFoldersService {
     reviewerUserId: string,
   ) {
     // Territory check: evidence's club must be within the reviewer's
-    // local_field or union territory (super_admin bypass applies).
+    // local_field or union territory (super-admin bypass applies).
     await this.assertEvidenceTerritoryAccess(evidenceId, reviewerUserId);
 
     const evidence = await this.prisma.annual_folder_evidences.findUnique({
@@ -1365,7 +1365,7 @@ export class AnnualFoldersService {
    *
    * [H-03] Club ownership is verified before the transaction opens: the caller
    * must have at least one active club_role_assignment in the same club that
-   * owns the folder (super_admin bypass applies).
+   * owns the folder (super-admin bypass applies).
    *
    * TODO: consider enforcing that ALL required sections have at least one
    * entry in annual_folder_section_submissions before allowing the transition.
@@ -1414,7 +1414,7 @@ export class AnnualFoldersService {
    *
    * [H-03] Club ownership is verified before the transaction opens: the caller
    * must have at least one active club_role_assignment in the same club that
-   * owns the folder (super_admin bypass applies).
+   * owns the folder (super-admin bypass applies).
    */
   async closeFolder(folderId: string, userId: string) {
     // H-03: verify caller belongs to the club that owns this folder

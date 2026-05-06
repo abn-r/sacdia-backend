@@ -343,11 +343,39 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
--- Rankings
+-- Rankings (folder/club level — original)
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('rankings:read', 'View club rankings and leaderboards', true),
-  ('rankings:recalculate', 'Trigger rankings recalculation', true)
+  ('rankings:recalculate', 'Trigger rankings recalculate', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Member Rankings (8.4-A — enrollment ranking per member)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('member_rankings:read_self',    'Read own member ranking', true),
+  ('member_rankings:read_section', 'Read section member rankings', true),
+  ('member_rankings:read_club',    'Read club member rankings', true),
+  ('member_rankings:read_lf',      'Read local field member rankings', true),
+  ('member_rankings:read_global',  'Read all member rankings', true),
+  ('member_ranking_weights:read',  'Read member ranking weights', true),
+  ('member_ranking_weights:write', 'Write/CRUD member ranking weights', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
+-- Section Rankings (8.4-A — ranking per club section)
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('section_rankings:read_club',   'Read club section rankings', true),
+  ('section_rankings:read_lf',     'Read local field section rankings', true),
+  ('section_rankings:read_global', 'Read all section rankings', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -535,7 +563,7 @@ ON CONFLICT (permission_name) DO UPDATE SET
 -- Registration Assistance (global, field-level)
 -- ============================
 -- Used exclusively on POST step-1/2/3 complete endpoints to allow
--- field-level staff (director_lf, assistant_lf, admin, super_admin) to
+-- field-level staff (director_lf, assistant_lf, admin, super-admin) to
 -- complete post-registration on behalf of a third-party user.
 -- Does NOT fall back to users:update — intentionally more restrictive.
 INSERT INTO permissions (permission_name, description, active) VALUES

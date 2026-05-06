@@ -63,7 +63,7 @@ describe('GlobalRolesGuard', () => {
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_USER_NOT_AUTHENTICATED });
   });
 
-  it('should allow super_admin user when roles list does not include super_admin', async () => {
+  it('should allow super-admin user when roles list does not include super-admin', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin', 'coordinator']);
     // isSuperAdmin bypass → true: god-mode, short-circuit
     mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(true);
@@ -80,7 +80,7 @@ describe('GlobalRolesGuard', () => {
     expect(mockAuthorizationContext.hasAnyGlobalRole).not.toHaveBeenCalled();
   });
 
-  it('should not grant bypass to non-super_admin users', async () => {
+  it('should not grant bypass to non-super-admin users', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin', 'coordinator']);
     // isSuperAdmin → false, then role check → false
     mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
@@ -105,7 +105,7 @@ describe('GlobalRolesGuard', () => {
     ).resolves.toBe(true);
   });
 
-  it('should expand admin alias to include assistant_admin', async () => {
+  it('should expand admin alias to include assistant-admin', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin']);
     // isSuperAdmin → false, role check (expanded) → true
     mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
@@ -117,11 +117,11 @@ describe('GlobalRolesGuard', () => {
       ),
     ).resolves.toBe(true);
 
-    // Verify aliases were expanded: admin → [admin, assistant_admin]
+    // Verify aliases were expanded: admin → [admin, assistant-admin]
     const firstRoleCall =
       mockAuthorizationContext.hasAnyGlobalRole.mock.calls[0];
     expect(firstRoleCall[1]).toEqual(
-      expect.arrayContaining(['admin', 'assistant_admin']),
+      expect.arrayContaining(['admin', 'assistant-admin']),
     );
   });
 

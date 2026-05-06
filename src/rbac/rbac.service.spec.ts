@@ -45,7 +45,7 @@ const baseRole = {
 
 const superAdminRole = {
   role_id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
-  role_name: 'super_admin',
+  role_name: 'super-admin',
   description: 'Super administrador con control total del sistema',
   role_category: 'GLOBAL',
   active: true,
@@ -668,10 +668,10 @@ describe('RbacService', () => {
       );
     });
 
-    it('TC-CR3 - error: throws BadRequestException when role_name is "super_admin"', async () => {
+    it('TC-CR3 - error: throws BadRequestException when role_name is "super-admin"', async () => {
       const reserved: CreateRoleDto = {
         ...dto,
-        role_name: 'super_admin',
+        role_name: 'super-admin',
       };
 
       await expect(service.createRole(reserved)).rejects.toMatchObject({
@@ -704,10 +704,10 @@ describe('RbacService', () => {
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
 
-    it('TC-CR6 - error: role_name pattern "super_admin" blocked even with different casing is still blocked at exact match', async () => {
-      // Pattern validation happens at DTO layer (via @Matches), but service also blocks exact 'super_admin'
+    it('TC-CR6 - error: role_name pattern "super-admin" blocked even with different casing is still blocked at exact match', async () => {
+      // Pattern validation happens at DTO layer (via @Matches), but service also blocks exact 'super-admin'
       await expect(
-        service.createRole({ ...dto, role_name: 'super_admin' }),
+        service.createRole({ ...dto, role_name: 'super-admin' }),
       ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_NAME_RESERVED });
     });
   });
@@ -742,7 +742,7 @@ describe('RbacService', () => {
       expect(result!.description).toBe(updateDto.description);
     });
 
-    it('TC-UR2 - error: throws ForbiddenException when updating super_admin role', async () => {
+    it('TC-UR2 - error: throws ForbiddenException when updating super-admin role', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
 
       await expect(
@@ -799,7 +799,7 @@ describe('RbacService', () => {
       );
     });
 
-    it('TC-DR2 - error: throws ForbiddenException when role is super_admin', async () => {
+    it('TC-DR2 - error: throws ForbiddenException when role is super-admin', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
 
       await expect(

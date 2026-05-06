@@ -37,7 +37,7 @@ import {
 @ApiTags('Admin - Honors Requirements')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @AuthorizationResource({ type: 'global' })
 @Controller('admin/honors')
 export class AdminHonorsController {

@@ -25,7 +25,7 @@ const DEDUPE_WINDOW_HOURS = 6;
 const MAX_RECENT_FAILURES_IN_EMAIL = 5;
 
 /** Global role names considered "super admin" for alert targeting. */
-const ADMIN_ROLE_NAMES = ['super_admin'];
+const ADMIN_ROLE_NAMES = ['super-admin'];
 
 /** Source tag used when creating in-app notifications for system alerts. */
 const ALERT_NOTIFICATION_SOURCE = 'system_alert:cron_failure';
@@ -63,7 +63,7 @@ interface AlertTrigger {
  * CronAlertService
  *
  * Polls cron_run_log every 15 minutes and fires email + in-app alerts to
- * super_admin users when any of these conditions are met for a job:
+ * super-admin users when any of these conditions are met for a job:
  *
  *   1. consecutive_failures  — 3+ failures in a row (no successful run between them)
  *   2. duration              — latest run exceeded the expected duration threshold
@@ -101,7 +101,7 @@ export class CronAlertService {
 
       if (adminUsers.length === 0) {
         this.logger.warn(
-          'CronAlertService: alert conditions found but no super_admin users to notify',
+          'CronAlertService: alert conditions found but no super-admin users to notify',
         );
         return;
       }
