@@ -151,6 +151,13 @@ export class QrService {
 
   async generateMyCardPdf(userId: string): Promise<Buffer> {
     const card = await this.getMyCard(userId);
+
+    // Fetch avatar bytes from the signed R2 URL (best-effort — never blocks PDF)
+    let avatarBuffer: Buffer | null = null;
+    if (card.member.avatar) {
+      avatarBuffer = await this.fetchAvatarBuffer(card.member.avatar);
+    }
+
     const doc = new PDFDocument({
       size: 'A6',
       layout: 'portrait',
@@ -170,10 +177,78 @@ export class QrService {
       doc.on('error', reject);
     });
 
-    await this.drawCardPdf(doc, card);
+    await this.drawCardPdf(doc, card, avatarBuffer);
     doc.end();
 
     return pdfReady;
+  }
+
+  /**
+   * Fetches avatar image bytes from the given signed URL.
+   * Returns null on any failure — timeout, bad content-type, oversized payload,
+   * or network error — so the PDF renders the initials fallback instead.
+   */
+  private async fetchAvatarBuffer(url: string): Promise<Buffer | null> {
+    const MAX_BYTES = 5 * 1024 * 1024; // 5 MB cap
+
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) {
+        this.logger.warn(
+          `fetchAvatarBuffer: HTTP ${response.status} for avatar URL — skipping`,
+        );
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.startsWith('image/')) {
+        this.logger.warn(
+          `fetchAvatarBuffer: unexpected content-type "${contentType}" — skipping`,
+        );
+        return null;
+      }
+
+      // webp is not supported by pdfkit natively — skip it
+      if (contentType.includes('webp')) {
+        this.logger.warn(
+          'fetchAvatarBuffer: webp avatar not supported by pdfkit — skipping',
+        );
+        return null;
+      }
+
+      // Guard against oversized payloads using Content-Length header
+      const contentLength = parseInt(
+        response.headers.get('content-length') ?? '0',
+        10,
+      );
+      if (contentLength > MAX_BYTES) {
+        this.logger.warn(
+          `fetchAvatarBuffer: Content-Length ${contentLength} exceeds 5 MB cap — skipping`,
+        );
+        return null;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buf = Buffer.from(arrayBuffer);
+
+      // Secondary size check after reading (Content-Length may be absent)
+      if (buf.length > MAX_BYTES) {
+        this.logger.warn(
+          `fetchAvatarBuffer: actual buffer ${buf.length} bytes exceeds 5 MB cap — skipping`,
+        );
+        return null;
+      }
+
+      return buf;
+    } catch (error) {
+      this.logger.warn(
+        `fetchAvatarBuffer: failed to fetch avatar — ${(error as Error).message}`,
+      );
+      return null;
+    }
   }
 
   /**
@@ -669,6 +744,7 @@ export class QrService {
   private async drawCardPdf(
     doc: InstanceType<typeof PDFDocument>,
     card: QrCardResponse,
+    avatarBuffer: Buffer | null,
   ): Promise<void> {
     const seccion = QrService.resolveSeccionCode(
       card.member.club_name,
@@ -723,25 +799,76 @@ export class QrService {
     // ── 2. Identity block ──────────────────────────────────────────────────
     let cursor = headerH + 16;
 
+    const avatarSize = 56; // pt — circle diameter
+    const avatarRadius = avatarSize / 2;
+    const avatarCx = marginH + avatarRadius;
+    const avatarCy = cursor + avatarRadius;
+
+    // Text block starts to the right of the avatar with 12pt gap
+    const textX = marginH + avatarSize + 12;
+    const textW = contentW - avatarSize - 12;
+
+    // ── Avatar circle (photo or initials fallback) ─────────────────────────
+    if (avatarBuffer) {
+      // Clip to circle, draw image, restore
+      doc.save();
+      doc.circle(avatarCx, avatarCy, avatarRadius).clip();
+      doc.image(avatarBuffer, marginH, cursor, { fit: [avatarSize, avatarSize] });
+      doc.restore();
+    } else {
+      // Filled circle in section primary colour
+      doc.circle(avatarCx, avatarCy, avatarRadius).fill(palette.primary);
+
+      // Compute 1- or 2-letter initials from full_name
+      const words = card.member.full_name.trim().split(/\s+/);
+      const initials =
+        words.length >= 2
+          ? `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase()
+          : (words[0][0] ?? '?').toUpperCase();
+
+      const initialsSize = initials.length === 1 ? 22 : 18;
+      // Vertically centre text inside the circle
+      const initialsY = avatarCy - initialsSize * 0.38;
+      doc
+        .fillColor('#FFFFFF')
+        .font('Helvetica-Bold')
+        .fontSize(initialsSize)
+        .text(initials, marginH, initialsY, {
+          width: avatarSize,
+          align: 'center',
+          lineBreak: false,
+        });
+    }
+
+    // Border ring around avatar circle in accent colour (2pt)
+    doc
+      .circle(avatarCx, avatarCy, avatarRadius)
+      .lineWidth(2)
+      .strokeColor(palette.accent)
+      .stroke();
+
+    // Full name to the right of the avatar
     doc
       .fillColor('#111827')
       .font('Helvetica-Bold')
-      .fontSize(22)
-      .text(card.member.full_name, marginH, cursor, {
-        width: contentW,
+      .fontSize(18)
+      .text(card.member.full_name, textX, cursor, {
+        width: textW,
         align: 'left',
       });
-    cursor += doc.currentLineHeight(true) + 4;
+
+    // Advance cursor past the taller of the avatar circle or the name block
+    const nameBlockH = doc.currentLineHeight(true);
+    cursor += Math.max(avatarSize, nameBlockH) + 4;
 
     if (card.member.current_class) {
       doc
         .fillColor('#374151')
         .font('Helvetica')
         .fontSize(12)
-        .text(card.member.current_class, marginH, cursor, {
-          width: contentW,
+        .text(card.member.current_class, textX, headerH + 16 + avatarSize - doc.currentLineHeight(true) - 2, {
+          width: textW,
         });
-      cursor += doc.currentLineHeight(true);
     }
 
     // Thin rule below identity block
