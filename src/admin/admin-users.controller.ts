@@ -42,7 +42,7 @@ import { AdminUsersService } from './admin-users.service';
 @ApiBearerAuth()
 @ApiExtraModels(AdminCurrentOperationalEnrollmentDto, AdminTrajectoryClassDto)
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminUsersController {

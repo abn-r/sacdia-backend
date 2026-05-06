@@ -225,12 +225,12 @@ describe('AdminUsersService', () => {
   });
 
   describe('listUsers', () => {
-    it('should allow super_admin with ALL scope', async () => {
+    it('should allow super-admin with ALL scope', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'actor-super',
         union_id: null,
         local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super_admin' } }],
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
       });
       mockPrismaService.users.findMany.mockResolvedValue([
         {
@@ -341,12 +341,12 @@ describe('AdminUsersService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
 
-    it('should enforce UNION scope for assistant_admin with union_id', async () => {
+    it('should enforce UNION scope for assistant-admin with union_id', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'actor-assistant-admin',
         union_id: 12,
         local_field_id: 44,
-        users_roles: [{ roles: { role_name: 'assistant_admin' } }],
+        users_roles: [{ roles: { role_name: 'assistant-admin' } }],
       });
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
@@ -360,12 +360,12 @@ describe('AdminUsersService', () => {
       );
     });
 
-    it('should reject assistant_admin without union_id/local_field_id', async () => {
+    it('should reject assistant-admin without union_id/local_field_id', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'actor-assistant-admin',
         union_id: null,
         local_field_id: null,
-        users_roles: [{ roles: { role_name: 'assistant_admin' } }],
+        users_roles: [{ roles: { role_name: 'assistant-admin' } }],
       });
 
       await expect(
@@ -380,7 +380,7 @@ describe('AdminUsersService', () => {
         user_id: 'actor-super',
         union_id: null,
         local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super_admin' } }],
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
       });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization(['users:read_detail']),
@@ -563,7 +563,7 @@ describe('AdminUsersService', () => {
         user_id: 'actor-super',
         union_id: null,
         local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super_admin' } }],
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
       });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization(['users:read_detail']),
@@ -610,7 +610,7 @@ describe('AdminUsersService', () => {
         user_id: 'actor-super',
         union_id: null,
         local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super_admin' } }],
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
       });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization(['users:read_detail']),
@@ -637,7 +637,7 @@ describe('AdminUsersService', () => {
         user_id: 'actor-super',
         union_id: null,
         local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super_admin' } }],
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
       });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization(['users:read_detail']),
@@ -668,7 +668,7 @@ describe('AdminUsersService', () => {
         user_id: 'actor-super',
         union_id: null,
         local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super_admin' } }],
+        users_roles: [{ roles: { role_name: 'super-admin' } }],
       });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
         buildResolvedAuthorization(['users:read_detail']),

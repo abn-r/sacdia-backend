@@ -1778,14 +1778,14 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 DELETE FROM role_permissions
 WHERE role_id = (
   SELECT role_id FROM roles
-  WHERE role_name = 'super_admin' AND role_category = 'GLOBAL' AND active = true
+  WHERE role_name = 'super-admin' AND role_category = 'GLOBAL' AND active = true
 );
 
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
 CROSS JOIN permissions p
-WHERE r.role_name = 'super_admin'
+WHERE r.role_name = 'super-admin'
   AND r.role_category = 'GLOBAL'
   AND r.active = true
   AND p.active = true
@@ -1809,7 +1809,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ============================
 -- resources:* — field/union/dia directors and assistants
 -- ============================
--- admin and super_admin pick these up automatically via their wildcard grants.
+-- admin and super-admin pick these up automatically via their wildcard grants.
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
@@ -1869,8 +1869,8 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ============================
 -- ranking_weights:* — 8.4-C grants
 -- ============================
--- super_admin and admin pick up both permissions automatically via their
--- wildcard grants above (super_admin: all active; admin: all active except :delete).
+-- super-admin and admin pick up both permissions automatically via their
+-- wildcard grants above (super-admin: all active; admin: all active except :delete).
 --
 -- Union-level roles (director-union, assistant-union): read + write.
 -- These roles copy permissions from assistant-lf which uses an explicit list,

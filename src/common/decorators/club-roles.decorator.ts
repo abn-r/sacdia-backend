@@ -6,7 +6,7 @@ import { CLUB_ROLES_KEY, type ClubRoleType } from '../guards/club-roles.guard';
  *
  * @example
  * // Require director or deputy director role
- * @ClubRoles('director', 'deputy_director')
+ * @ClubRoles('director', 'deputy-director')
  * @UseGuards(JwtAuthGuard, ClubRolesGuard)
  * @Post('clubs/:clubId/instances')
  * createInstance() { ... }

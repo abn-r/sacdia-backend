@@ -39,7 +39,7 @@ export interface AdminMfaStatusDto {
  * AdminAuthService — Admin-scoped session and MFA management.
  *
  * This service operates on OTHER users' sessions and MFA — not the caller's own.
- * All operations require admin/super_admin role (enforced at controller level).
+ * All operations require admin/super-admin role (enforced at controller level).
  *
  * Session data is read/written directly from the Prisma `session` table.
  * MFA (TOTP) data lives in the `verification` table via BetterAuthService.

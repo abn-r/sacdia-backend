@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 import {
   AuthorizationContextService,
   type ResolvedAuthorizationProfile,
@@ -29,7 +30,7 @@ const QR_PRIVATE_ASSET_TTL_SECONDS = 300;
 const QR_CARD_TITLE = 'SACDIA';
 const QR_CARD_SUBTITLE = 'Credencial virtual';
 
-const ADMIN_SCOPE_ROLES = new Set(['admin', 'super_admin', 'coordinator']);
+const ADMIN_SCOPE_ROLES = new Set(['admin', 'super-admin', 'coordinator']);
 
 type QrMemberPayload = {
   sub: string;
@@ -39,12 +40,21 @@ type QrMemberPayload = {
   ver: number;
 };
 
+type QrEmergencyContact = {
+  name: string;
+  phone: string;
+  relationship: string;
+};
+
 type QrMemberView = {
   user_id: string;
   full_name: string;
   avatar: string | null;
   club_name: string | null;
   section_name: string | null;
+  current_class?: string | null;
+  blood_type?: string | null;
+  emergency_contact?: QrEmergencyContact | null;
 };
 
 type QrCardVisual = {
@@ -121,12 +131,21 @@ export class QrService {
   async getMyCard(userId: string): Promise<QrCardResponse> {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
-    const member = await this.resolveMemberView(resolved);
+
+    const [member, cardExtras] = await Promise.all([
+      this.resolveMemberView(resolved),
+      this.resolveCardExtras(userId),
+    ]);
+
+    const enrichedMember: QrMemberView = {
+      ...member,
+      ...cardExtras,
+    };
 
     return {
       ...this.generateMemberToken(userId),
-      member,
-      visual: this.buildCardVisual(resolved, member),
+      member: enrichedMember,
+      visual: this.buildCardVisual(resolved, enrichedMember),
     };
   }
 
@@ -151,7 +170,7 @@ export class QrService {
       doc.on('error', reject);
     });
 
-    this.drawCardPdf(doc, card);
+    await this.drawCardPdf(doc, card);
     doc.end();
 
     return pdfReady;
@@ -354,7 +373,7 @@ export class QrService {
   /**
    * Enforces the same activity-scope rule as `@AuthorizationResource(activity)`
    * used by `/activities/:id/attendance`: the caller must either (a) hold a
-   * global role that owns every activity (`admin`/`super_admin`/`coordinator`)
+   * global role that owns every activity (`admin`/`super-admin`/`coordinator`)
    * or (b) have an active assignment in the activity's section (or any of the
    * participating sections, for joint activities).
    */
@@ -410,6 +429,71 @@ export class QrService {
     if (!intersects) {
       throw new AppForbiddenException(ErrorCode.QR_ACCESS_DENIED);
     }
+  }
+
+  /**
+   * Fetches the three extra fields used exclusively by the credential card:
+   * current_class, blood_type, and emergency_contact.
+   * Single query — no N+1.
+   */
+  private async resolveCardExtras(userId: string): Promise<{
+    current_class: string | null;
+    blood_type: string | null;
+    emergency_contact: QrEmergencyContact | null;
+  }> {
+    const [userRow, latestEnrollment, primaryContact] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { user_id: userId },
+        select: { blood: true },
+      }),
+      this.prisma.enrollments.findFirst({
+        where: { user_id: userId, active: true },
+        orderBy: { enrollment_date: 'desc' },
+        select: {
+          classes: { select: { name: true } },
+        },
+      }),
+      this.prisma.emergency_contacts.findFirst({
+        where: {
+          owner_id: userId,
+          active: true,
+        },
+        orderBy: [
+          // primary contacts first, then most recently created
+          { primary: 'desc' },
+          { created_at: 'desc' },
+        ],
+        select: {
+          name: true,
+          phone: true,
+          relationship_types: { select: { name: true } },
+        },
+      }),
+    ]);
+
+    const bloodType = userRow?.blood ?? null;
+    if (bloodType === null && !userRow) {
+      this.logger.warn(
+        `resolveCardExtras: user ${userId} not found — blood_type will be null`,
+      );
+    }
+
+    const currentClass = latestEnrollment?.classes?.name ?? null;
+
+    const emergencyContact = primaryContact
+      ? {
+          name: primaryContact.name,
+          phone: primaryContact.phone,
+          relationship: primaryContact.relationship_types.name,
+        }
+      : null;
+
+    return {
+      current_class: currentClass,
+      // Prisma maps the DB enum value (e.g. "A+") directly to the string
+      blood_type: bloodType as string | null,
+      emergency_contact: emergencyContact,
+    };
   }
 
   private async resolveMemberView(
@@ -473,6 +557,9 @@ export class QrService {
     email: string | null;
     fallback_club_name?: string | null;
     fallback_section_name?: string | null;
+    current_class?: string | null;
+    blood_type?: string | null;
+    emergency_contact?: QrEmergencyContact | null;
   }): QrMemberView {
     const fullName = [
       input.name,
@@ -493,6 +580,9 @@ export class QrService {
       avatar: input.user_image ?? null,
       club_name: clubName ?? input.fallback_club_name ?? null,
       section_name: sectionName ?? input.fallback_section_name ?? null,
+      current_class: input.current_class ?? null,
+      blood_type: input.blood_type ?? null,
+      emergency_contact: input.emergency_contact ?? null,
     };
   }
 
@@ -532,53 +622,295 @@ export class QrService {
     }
   }
 
-  private drawCardPdf(
+  // ── PDF rendering ──────────────────────────────────────────────────────────
+
+  /**
+   * Derives the sectional code (AV / CQ / GM) from the combined lowercased
+   * club_name + section_name strings. Mirrors the logic in
+   * `credencial_view_model.dart:_seccionFromCard`. Order matters: AV is
+   * checked before CQ because "aventurero" contains no overlap with "conq".
+   */
+  private static resolveSeccionCode(
+    clubName: string | null | undefined,
+    sectionName: string | null | undefined,
+  ): 'AV' | 'CQ' | 'GM' {
+    const source = `${clubName ?? ''} ${sectionName ?? ''}`.toLowerCase();
+    if (source.includes('avent')) return 'AV';
+    if (source.includes('guia') || source.includes('guía') || source.includes('mayor')) return 'GM';
+    if (source.includes('conq')) return 'CQ';
+    return 'CQ'; // default — most common section in SACDIA
+  }
+
+  /** Palette keyed by SeccionCode. */
+  private static readonly SECTION_PALETTE: Record<
+    'AV' | 'CQ' | 'GM',
+    { primary: string; primaryDark: string; accent: string }
+  > = {
+    AV: { primary: '#1F6FB5', primaryDark: '#143F66', accent: '#FFC72C' },
+    CQ: { primary: '#C8102E', primaryDark: '#7A0A1C', accent: '#FFD400' },
+    GM: { primary: '#0E7C3A', primaryDark: '#054021', accent: '#F2C94C' },
+  };
+
+  /**
+   * Derives the folio string in the format SAC-YYYY-XXXX-XXXX.
+   * Mirrors Flutter's `_folio()` fallback path (no cardIdShort on this side):
+   * takes the last 8 chars of the JWT token, uppercases them, and splits
+   * them 4-4 with a dash.
+   */
+  private static deriveFolio(token: string): string {
+    const year = new Date().getFullYear();
+    const suffix =
+      token.length >= 8
+        ? token.slice(-8).toUpperCase()
+        : token.toUpperCase().padStart(8, '0');
+    return `SAC-${year}-${suffix.slice(0, 4)}-${suffix.slice(4)}`;
+  }
+
+  private async drawCardPdf(
     doc: InstanceType<typeof PDFDocument>,
     card: QrCardResponse,
-  ): void {
+  ): Promise<void> {
+    const seccion = QrService.resolveSeccionCode(
+      card.member.club_name,
+      card.member.section_name,
+    );
+    const palette = QrService.SECTION_PALETTE[seccion];
+    const folio = QrService.deriveFolio(card.token);
+
+    // A6 portrait: 419.53 x 595.28 pt. Inner width with 18pt margins on each side.
+    const pageW = 419.53;
+    const marginH = 18;
+    const contentW = pageW - marginH * 2;
+
+    // ── 1. Header bar ──────────────────────────────────────────────────────
+    const headerH = 72;
+    const accentStripW = 6;
+
+    // Header background (primaryDark)
+    doc.rect(0, 0, pageW, headerH).fill(palette.primaryDark);
+
+    // Accent strip on the right edge
+    doc.rect(pageW - accentStripW, 0, accentStripW, headerH).fill(palette.accent);
+
+    // 4pt accent bottom border
+    doc.rect(0, headerH - 4, pageW - accentStripW, 4).fill(palette.accent);
+
+    // Brand: "SACDIA" large + subtitle small — white, vertically centred
     doc
-      .fontSize(16)
+      .fillColor('#FFFFFF')
       .font('Helvetica-Bold')
-      .text(card.visual.title, { align: 'center' });
+      .fontSize(22)
+      .text('SACDIA', marginH, 16, { width: contentW - accentStripW });
 
-    doc.moveDown(0.5);
     doc
-      .fontSize(11)
       .font('Helvetica')
-      .text(card.visual.subtitle, { align: 'center' });
+      .fontSize(9)
+      .fillColor('#FFFFFF')
+      .text('Credencial virtual', marginH, 44, {
+        width: contentW - accentStripW,
+      });
 
-    doc.moveDown(1);
-    doc.fontSize(13).font('Helvetica-Bold').text(card.member.full_name, {
-      align: 'center',
-    });
-    doc.fontSize(9).font('Helvetica').text(card.member.user_id, {
-      align: 'center',
-    });
-
-    doc.moveDown(1);
-    doc.fontSize(10).font('Helvetica-Bold').text('QR token:', {
-      align: 'left',
-    });
+    // Section acronym badge (top-right inside header, before accent strip)
     doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(palette.accent)
+      .text(seccion, pageW - accentStripW - 36, 27, {
+        width: 30,
+        align: 'right',
+      });
+
+    // ── 2. Identity block ──────────────────────────────────────────────────
+    let cursor = headerH + 16;
+
+    doc
+      .fillColor('#111827')
+      .font('Helvetica-Bold')
+      .fontSize(22)
+      .text(card.member.full_name, marginH, cursor, {
+        width: contentW,
+        align: 'left',
+      });
+    cursor += doc.currentLineHeight(true) + 4;
+
+    if (card.member.current_class) {
+      doc
+        .fillColor('#374151')
+        .font('Helvetica')
+        .fontSize(12)
+        .text(card.member.current_class, marginH, cursor, {
+          width: contentW,
+        });
+      cursor += doc.currentLineHeight(true);
+    }
+
+    // Thin rule below identity block
+    cursor += 10;
+    doc
+      .moveTo(marginH, cursor)
+      .lineTo(pageW - marginH, cursor)
+      .strokeColor('#E5E7EB')
+      .lineWidth(0.5)
+      .stroke();
+    cursor += 10;
+
+    // ── 3. QR bitmap ──────────────────────────────────────────────────────
+    const qrSize = 180;
+    const qrBuffer = await QRCode.toBuffer(card.token, {
+      type: 'png',
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      scale: 8,
+      color: {
+        dark: palette.primaryDark,
+        light: '#FFFFFF',
+      },
+    });
+
+    const qrX = marginH + (contentW - qrSize) / 2;
+    doc.image(qrBuffer, qrX, cursor, { fit: [qrSize, qrSize], align: 'center' });
+    cursor += qrSize + 10;
+
+    // Folio label below QR
+    doc
+      .fillColor('#6B7280')
       .font('Courier')
       .fontSize(8)
-      .text(card.token, { align: 'left', width: 210 });
+      .text(folio, marginH, cursor, { width: contentW, align: 'center' });
+    cursor += doc.currentLineHeight(true) + 14;
 
-    doc.moveDown(0.8);
-    doc.font('Helvetica-Bold').text('Club:', { continued: true });
-    doc.font('Helvetica').text(` ${card.visual.club_name ?? 'N/A'}`);
-    doc.font('Helvetica-Bold').text('Sección:', { continued: true });
-    doc.font('Helvetica').text(` ${card.visual.section_name ?? 'N/A'}`);
+    // ── 4. Data grid (2 columns) ──────────────────────────────────────────
+    const colW = (contentW - 8) / 2;
+    const labelColor = '#6B7280';
+    const valueColor = '#111827';
 
-    doc.moveDown(1);
+    interface GridItem { label: string; value: string }
+    const gridItems: GridItem[] = [
+      { label: 'CLUB', value: card.member.club_name ?? 'N/A' },
+      { label: 'SECCIÓN', value: card.member.section_name ?? 'N/A' },
+      { label: 'SANGRE', value: card.member.blood_type ?? '—' },
+      { label: 'FOLIO', value: folio },
+    ];
+
+    for (let i = 0; i < gridItems.length; i += 2) {
+      const left = gridItems[i];
+      const right = gridItems[i + 1];
+
+      // Left column
+      doc
+        .fillColor(labelColor)
+        .font('Helvetica')
+        .fontSize(9)
+        .text(left.label, marginH, cursor, { width: colW });
+      doc
+        .fillColor(valueColor)
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .text(left.value, marginH, cursor + 11, { width: colW });
+
+      // Right column
+      if (right) {
+        const rightX = marginH + colW + 8;
+        doc
+          .fillColor(labelColor)
+          .font('Helvetica')
+          .fontSize(9)
+          .text(right.label, rightX, cursor, { width: colW });
+        doc
+          .fillColor(valueColor)
+          .font('Helvetica-Bold')
+          .fontSize(12)
+          .text(right.value, rightX, cursor + 11, { width: colW });
+      }
+
+      cursor += 30;
+    }
+
+    // ── 5. Emergency contact card (conditional) ────────────────────────────
+    if (card.member.emergency_contact) {
+      const ec = card.member.emergency_contact;
+      cursor += 6;
+      const ecH = 54;
+      const ecAccentW = 6;
+
+      // Box fill
+      doc.rect(marginH, cursor, contentW, ecH).fill('#FBE9EC');
+
+      // Red accent strip on left
+      doc.rect(marginH, cursor, ecAccentW, ecH).fill('#C8102E');
+
+      // Label: "EMERGENCIA · {RELATIONSHIP}" uppercase
+      const ecRelation = ec.relationship.toUpperCase();
+      doc
+        .fillColor('#6B7280')
+        .font('Helvetica')
+        .fontSize(9)
+        .text(
+          `EMERGENCIA · ${ecRelation}`,
+          marginH + ecAccentW + 8,
+          cursor + 6,
+          { width: contentW - ecAccentW - 10 },
+        );
+
+      // Contact name
+      doc
+        .fillColor('#111827')
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .text(ec.name, marginH + ecAccentW + 8, cursor + 18, {
+          width: contentW - ecAccentW - 10,
+        });
+
+      // Phone number (red, monospace)
+      doc
+        .fillColor('#C8102E')
+        .font('Courier')
+        .fontSize(12)
+        .text(ec.phone, marginH + ecAccentW + 8, cursor + 34, {
+          width: contentW - ecAccentW - 10,
+        });
+
+      cursor += ecH;
+    }
+
+    // ── 6. Footer ─────────────────────────────────────────────────────────
+    const pageH = 595.28;
+    const footerY = pageH - 42;
+
     doc
-      .fontSize(8)
+      .moveTo(marginH, footerY - 6)
+      .lineTo(pageW - marginH, footerY - 6)
+      .strokeColor('#E5E7EB')
+      .lineWidth(0.5)
+      .stroke();
+
+    doc
+      .fillColor('#9CA3AF')
       .font('Helvetica')
+      .fontSize(8)
       .text(
-        'Fallback técnico: el PDF expone el token en texto porque el backend no ' +
-          'incluye una librería de renderizado QR bitmap. El cliente puede dibujar ' +
-          'el QR visual desde /qr/me/card.',
-        { align: 'left' },
+        'Iglesia Adventista del Séptimo Día · Ministerio Juvenil',
+        marginH,
+        footerY,
+        { width: contentW * 0.65 },
       );
+
+    doc
+      .fillColor('#9CA3AF')
+      .font('Courier')
+      .fontSize(8)
+      .text('sacdia.org', marginH + contentW * 0.65, footerY, {
+        width: contentW * 0.35,
+        align: 'right',
+      });
+
+    doc
+      .fillColor('#9CA3AF')
+      .font('Courier')
+      .fontSize(9)
+      .text(folio, marginH, footerY + 12, {
+        width: contentW,
+        align: 'center',
+      });
   }
 }

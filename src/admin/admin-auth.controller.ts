@@ -40,7 +40,7 @@ import {
  * All endpoints operate on TARGET users (identified by :userId param),
  * not the currently authenticated admin. They are guarded by:
  *   - JwtAuthGuard          — valid SACDIA JWT required
- *   - GlobalRolesGuard      — admin or super_admin global role required
+ *   - GlobalRolesGuard      — admin or super-admin global role required
  *   - PermissionsGuard      — users:update permission required
  *
  * These guards are applied at the class level — identical to AdminUsersController.
@@ -48,7 +48,7 @@ import {
 @ApiTags('admin-auth')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @AuthorizationResource({ type: 'global' })
 @Controller('admin/users/:userId')
 export class AdminAuthController {
@@ -64,7 +64,7 @@ export class AdminAuthController {
     summary: 'List all active sessions for a user',
     description:
       'Returns all non-expired sessions for the target user. ' +
-      'Requires admin or super_admin role.',
+      'Requires admin or super-admin role.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({
@@ -93,7 +93,7 @@ export class AdminAuthController {
     summary: 'Revoke a specific session for a user',
     description:
       'Deletes a specific session token, forcing the device to re-authenticate. ' +
-      'Requires admin or super_admin role.',
+      'Requires admin or super-admin role.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiParam({
@@ -121,7 +121,7 @@ export class AdminAuthController {
     summary: 'Revoke all sessions for a user',
     description:
       'Deletes ALL sessions for the target user, forcing a complete re-authentication ' +
-      'across all devices. Requires admin or super_admin role.',
+      'across all devices. Requires admin or super-admin role.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({
@@ -157,7 +157,7 @@ export class AdminAuthController {
     summary: 'Get MFA enrollment status for a user',
     description:
       'Returns whether the target user has TOTP 2FA enrolled. ' +
-      'Requires admin or super_admin role.',
+      'Requires admin or super-admin role.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({
@@ -187,7 +187,7 @@ export class AdminAuthController {
     description:
       'Disables TOTP 2FA for the target user without requiring their password. ' +
       'This is an admin override — the user will need to re-enroll 2FA after this. ' +
-      'Requires admin or super_admin role.',
+      'Requires admin or super-admin role.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({ status: 200, description: 'MFA disabled' })
@@ -212,7 +212,7 @@ export class AdminAuthController {
     description:
       "Updates the target user's password without requiring their current password. " +
       'This is an admin override. Revoke all sessions afterwards if immediate lockout is required. ' +
-      'Requires admin or super_admin role.',
+      'Requires admin or super-admin role.',
   })
   @ApiParam({ name: 'userId', type: String, description: 'Target user UUID' })
   @ApiResponse({ status: 200, description: 'Password updated' })

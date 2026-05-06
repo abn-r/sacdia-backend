@@ -165,7 +165,7 @@ describe('ScoringCategoriesService', () => {
   });
 
   describe('super-admin bypass (H-02)', () => {
-    it('allows super_admin to read union categories without a club_role_assignment', async () => {
+    it('allows super-admin to read union categories without a club_role_assignment', async () => {
       mockAuthContext.isSuperAdmin.mockResolvedValue(true);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
@@ -176,7 +176,7 @@ describe('ScoringCategoriesService', () => {
       expect(mockPrisma.club_role_assignments.findFirst).not.toHaveBeenCalled();
     });
 
-    it('allows super_admin to read local field categories without a club_role_assignment', async () => {
+    it('allows super-admin to read local field categories without a club_role_assignment', async () => {
       mockAuthContext.isSuperAdmin.mockResolvedValue(true);
       mockPrisma.local_fields.findUnique.mockResolvedValue({ union_id: 7 });
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
