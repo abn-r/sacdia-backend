@@ -278,7 +278,7 @@ describe('QrService', () => {
     expect(result.member.emergency_contact).toBeNull();
   });
 
-  it('generates a PDF buffer for the card', async () => {
+  it('generates a PDF buffer for the card — no avatar, no fetch attempted', async () => {
     mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
       profile: {
         user_id: 'user-1',
@@ -314,10 +314,139 @@ describe('QrService', () => {
     mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
     mockPrismaService.emergency_contacts.findFirst.mockResolvedValue(null);
 
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
     const buffer = await service.generateMyCardPdf('user-1');
 
     expect(Buffer.isBuffer(buffer)).toBe(true);
     expect(buffer.length).toBeGreaterThan(500);
+    // avatar is null — fetch must never be called
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+  });
+
+  it('generates a PDF buffer for the card — avatar URL present, fetch mocked successfully', async () => {
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
+      profile: {
+        user_id: 'user-1',
+        email: 'member@sacdia.app',
+        name: 'Juan',
+        paternal_last_name: 'Pérez',
+        maternal_last_name: null,
+        user_image: 'user-profiles/avatar.png',
+      },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: ['qr:issue_self'],
+          scope: { global: {}, club: null },
+        },
+      },
+      legacy: {
+        club: null,
+        club_context: {
+          active_assignment_id: null,
+          active: null,
+          available: [],
+        },
+        permissions: ['qr:issue_self'],
+        roles: ['user'],
+      },
+      post_register_complete: false,
+    });
+    mockJwtService.sign.mockReturnValue('jwt-qr-token');
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: null });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue(null);
+    mockFileStorageService.getSignedDownloadUrl.mockResolvedValue(
+      'https://signed.example/avatar.png',
+    );
+
+    // Minimal 1x1 PNG (67 bytes — valid PNG header so pdfkit accepts it)
+    const minimalPng = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489' +
+      '0000000a49444154789c6260000000020001e221bc330000000049454e44ae426082',
+      'hex',
+    );
+
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) => {
+          if (name === 'content-type') return 'image/png';
+          if (name === 'content-length') return String(minimalPng.length);
+          return null;
+        },
+      },
+      arrayBuffer: async () => minimalPng.buffer,
+    } as unknown as Response);
+
+    const buffer = await service.generateMyCardPdf('user-1');
+
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(500);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://signed.example/avatar.png',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('generates a PDF buffer even when avatar fetch fails', async () => {
+    mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue({
+      profile: {
+        user_id: 'user-1',
+        email: 'member@sacdia.app',
+        name: 'Juan',
+        paternal_last_name: null,
+        maternal_last_name: null,
+        user_image: 'user-profiles/avatar.png',
+      },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: ['qr:issue_self'],
+          scope: { global: {}, club: null },
+        },
+      },
+      legacy: {
+        club: null,
+        club_context: {
+          active_assignment_id: null,
+          active: null,
+          available: [],
+        },
+        permissions: ['qr:issue_self'],
+        roles: ['user'],
+      },
+      post_register_complete: false,
+    });
+    mockJwtService.sign.mockReturnValue('jwt-qr-token');
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({ blood: null });
+    mockPrismaService.enrollments.findFirst.mockResolvedValue(null);
+    mockPrismaService.emergency_contacts.findFirst.mockResolvedValue(null);
+    mockFileStorageService.getSignedDownloadUrl.mockResolvedValue(
+      'https://signed.example/avatar.png',
+    );
+
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('network error'));
+
+    // PDF must still resolve — fetch failure is non-fatal
+    const buffer = await service.generateMyCardPdf('user-1');
+
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(500);
+
+    fetchSpy.mockRestore();
   });
 
   it('returns canonical validation results and keeps the legacy scan shape', async () => {
