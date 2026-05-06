@@ -65,7 +65,7 @@ src/
 ## Seguridad
 
 - `JwtAuthGuard` en endpoints protegidos.
-- `GlobalRolesGuard` para administración (`admin|super_admin`).
+- `GlobalRolesGuard` para administración (`admin|super-admin`).
 - `OwnerOrAdminGuard` para recursos por usuario.
 
 ## Migraciones recientes
