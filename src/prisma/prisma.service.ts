@@ -9,6 +9,8 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
+const DEFAULT_POOL_CONNECTION_TIMEOUT_MS = 15000;
+
 @Injectable()
 export class PrismaService
   extends PrismaClient
@@ -19,16 +21,22 @@ export class PrismaService
 
   constructor(private configService: ConfigService) {
     const connectionString = configService.get<string>('DATABASE_URL');
+    const connectionTimeoutMillis = configService.get<number>(
+      'PRISMA_POOL_CONNECTION_TIMEOUT_MS',
+      DEFAULT_POOL_CONNECTION_TIMEOUT_MS,
+    );
 
     // Neon cold-start mitigation: default idleTimeoutMillis is 10s which causes
     // a new TCP handshake + TLS negotiation on every request after brief idle.
     // keepAlive prevents the OS from closing the TCP connection silently,
     // and idleTimeoutMillis: 30000 gives Neon enough time to reuse the slot.
+    // connectionTimeoutMillis defaults to 15s so dev/serverless Neon cold starts
+    // have time to resume before Prisma gives up on the pooled connection.
     const pool = new Pool({
       connectionString,
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,
     });

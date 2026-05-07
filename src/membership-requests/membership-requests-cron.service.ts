@@ -15,10 +15,10 @@ export class MembershipRequestsCronService {
   ) {}
 
   /**
-   * Runs every hour to expire stale pending membership requests.
+   * Runs hourly at minute 3 to expire stale pending membership requests.
    * Reads timeout from system_config (default: 8 days).
    */
-  @Cron('0 * * * *', { name: 'membership-requests-expiry', timeZone: 'UTC' })
+  @Cron('3 * * * *', { name: 'membership-requests-expiry', timeZone: 'UTC' })
   async handleExpiry(): Promise<void> {
     const acquired = await this.lockService.tryAcquire(
       'cron:membership-requests-expiry',
