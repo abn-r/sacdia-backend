@@ -62,8 +62,9 @@ interface AlertTrigger {
 /**
  * CronAlertService
  *
- * Polls cron_run_log every 15 minutes and fires email + in-app alerts to
- * super-admin users when any of these conditions are met for a job:
+ * Polls cron_run_log every 15 minutes, offset from minute 00, and fires email
+ * + in-app alerts to super-admin users when any of these conditions are met
+ * for a job:
  *
  *   1. consecutive_failures  — 3+ failures in a row (no successful run between them)
  *   2. duration              — latest run exceeded the expected duration threshold
@@ -85,7 +86,7 @@ export class CronAlertService {
 
   // ── Scheduled check ────────────────────────────────────────────────────────
 
-  @Cron('*/15 * * * *', { name: 'cron-alert-check' })
+  @Cron('5,20,35,50 * * * *', { name: 'cron-alert-check' })
   async checkAndAlertFailures(): Promise<void> {
     this.logger.debug('CronAlertService: running failure check');
 
