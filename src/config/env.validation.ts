@@ -4,6 +4,10 @@ export const envValidationSchema = Joi.object({
   // Database (required)
   DATABASE_URL: Joi.string().uri().required(),
   DATABASE_DIRECT_URL: Joi.string().uri().optional(),
+  PRISMA_POOL_CONNECTION_TIMEOUT_MS: Joi.number()
+    .integer()
+    .positive()
+    .default(15000),
 
   // Better Auth (required)
   BETTER_AUTH_SECRET: Joi.string().min(32).required(),
