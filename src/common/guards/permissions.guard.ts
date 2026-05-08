@@ -122,6 +122,12 @@ export class PermissionsGuard implements CanActivate {
         return true;
       case 'club':
         return this.validateClubScope(userId, request, resolved, resource);
+      case 'club_section':
+        return this.validateInstanceScope(
+          userId,
+          resolved,
+          await this.resolveClubSectionScope(request, resource),
+        );
       case 'camporee':
         return this.validateTerritoryScope(
           resolved,
@@ -173,6 +179,30 @@ export class PermissionsGuard implements CanActivate {
           userId,
           resolved,
           await this.resolveClubAssignmentScope(request, resource),
+        );
+      case 'investiture_enrollment':
+        return this.validateInstanceScope(
+          userId,
+          resolved,
+          await this.resolveInvestitureEnrollmentScope(request, resource),
+        );
+      case 'monthly_report':
+        return this.validateInstanceScope(
+          userId,
+          resolved,
+          await this.resolveMonthlyReportScope(request, resource),
+        );
+      case 'insurance_member':
+        return this.validateAnyInstanceScope(
+          userId,
+          resolved,
+          await this.resolveInsuranceMemberScopes(request, resource),
+        );
+      case 'insurance_record':
+        return this.validateAnyInstanceScope(
+          userId,
+          resolved,
+          await this.resolveInsuranceRecordScopes(request, resource),
         );
       default:
         return true;
@@ -313,6 +343,42 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  private async validateAnyInstanceScope(
+    userId: string,
+    resolved: ResolvedAuthorizationProfile,
+    resourceScopes: ResolvedInstanceScope[],
+  ): Promise<boolean> {
+    if (resourceScopes.length === 0) {
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    }
+
+    for (const resourceScope of resourceScopes) {
+      if (
+        await this.authorizationContext.canManageClub(
+          userId,
+          resourceScope.mainClubId,
+        )
+      ) {
+        return true;
+      }
+    }
+
+    const activeClubScope = resolved.authorization.effective.scope.club;
+
+    if (
+      activeClubScope &&
+      resourceScopes.some(
+        (resourceScope) =>
+          activeClubScope.club.club_id === resourceScope.mainClubId &&
+          activeClubScope.section.club_section_id === resourceScope.instanceId,
+      )
+    ) {
+      return true;
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   /**
@@ -653,6 +719,31 @@ export class PermissionsGuard implements CanActivate {
     return this.buildInstanceScopeFromSection(finance.club_sections);
   }
 
+  private async resolveClubSectionScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedInstanceScope> {
+    const sectionId = this.getRequiredNumericValue(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'sectionId'),
+      'Club section ID not found in request',
+    );
+    const expectedClubId = this.getRequiredNumericValue(
+      this.getRequestValue(request, 'param', resource.clubIdParam ?? 'clubId'),
+      'Club ID not found in request',
+    );
+
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { club_section_id: true, main_club_id: true, club_type_id: true },
+    });
+
+    if (!section || section.main_club_id !== expectedClubId) {
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+    }
+
+    return this.buildInstanceScopeFromSection(section);
+  }
+
   private async resolveInventoryInstanceScope(
     request: any,
     resource: AuthorizationResourceMetadata,
@@ -739,6 +830,207 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return this.buildInstanceScopeFromSection(assignment.club_sections);
+  }
+
+  private async resolveInvestitureEnrollmentScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedInstanceScope> {
+    const enrollmentId = this.getRequiredNumericValue(
+      this.getRequestValue(
+        request,
+        'param',
+        resource.idParam ?? 'enrollmentId',
+      ),
+      'Investiture enrollment ID not found in request',
+    );
+
+    const enrollment = await this.prisma.enrollments.findFirst({
+      where: { enrollment_id: enrollmentId, active: true },
+      select: {
+        user_id: true,
+        ecclesiastical_year_id: true,
+        classes: { select: { club_type_id: true } },
+      },
+    });
+
+    if (!enrollment) {
+      throw new AppNotFoundException(
+        ErrorCode.INVESTITURE_ENROLLMENT_NOT_FOUND,
+      );
+    }
+
+    const assignment = await this.prisma.club_role_assignments.findFirst({
+      where: {
+        user_id: enrollment.user_id,
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
+        club_sections: {
+          club_type_id: enrollment.classes.club_type_id,
+        },
+      },
+      select: {
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
+      },
+    });
+
+    return this.buildInstanceScopeFromSection(
+      assignment?.club_sections ?? null,
+    );
+  }
+
+  private async resolveMonthlyReportScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedInstanceScope> {
+    const reportId = this.getRequestValue(request, 'param', 'reportId');
+
+    if (reportId) {
+      const report = await this.prisma.monthly_reports.findUnique({
+        where: { monthly_report_id: String(reportId) },
+        select: {
+          club_enrollment: {
+            select: {
+              club_section: {
+                select: {
+                  club_section_id: true,
+                  main_club_id: true,
+                  club_type_id: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!report) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      return this.buildInstanceScopeFromSection(
+        report.club_enrollment.club_section,
+      );
+    }
+
+    const enrollmentId = String(
+      this.getRequestValue(
+        request,
+        'param',
+        resource.idParam ?? 'enrollmentId',
+      ) ?? '',
+    );
+
+    if (!enrollmentId) {
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    }
+
+    const enrollment = await this.prisma.club_enrollments.findUnique({
+      where: { club_enrollment_id: enrollmentId },
+      select: {
+        club_section: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
+      },
+    });
+
+    if (!enrollment) {
+      throw new AppNotFoundException(
+        ErrorCode.MONTHLY_REPORT_ENROLLMENT_NOT_FOUND,
+      );
+    }
+
+    return this.buildInstanceScopeFromSection(enrollment.club_section);
+  }
+
+  private async resolveInsuranceMemberScopes(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedInstanceScope[]> {
+    const memberId = String(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'memberId') ??
+        '',
+    );
+
+    if (!memberId) {
+      throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    }
+
+    const member = await this.prisma.users.findUnique({
+      where: { user_id: memberId },
+      select: { user_id: true },
+    });
+
+    if (!member) {
+      throw new AppNotFoundException(ErrorCode.INSURANCE_MEMBER_NOT_FOUND);
+    }
+
+    return this.resolveMemberAssignmentScopes(memberId);
+  }
+
+  private async resolveInsuranceRecordScopes(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedInstanceScope[]> {
+    const insuranceId = this.getRequiredNumericValue(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'insuranceId'),
+      'Insurance ID not found in request',
+    );
+
+    const insurance = await this.prisma.member_insurances.findUnique({
+      where: { insurance_id: insuranceId },
+      select: { user_id: true },
+    });
+
+    if (!insurance) {
+      throw new AppNotFoundException(ErrorCode.INSURANCE_NOT_FOUND);
+    }
+
+    return this.resolveMemberAssignmentScopes(insurance.user_id);
+  }
+
+  private async resolveMemberAssignmentScopes(
+    memberId: string,
+  ): Promise<ResolvedInstanceScope[]> {
+    const assignments = await this.prisma.club_role_assignments.findMany({
+      where: {
+        user_id: memberId,
+        active: true,
+        status: 'active',
+      },
+      select: {
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
+      },
+    });
+
+    return assignments
+      .map((assignment) => assignment.club_sections)
+      .filter(
+        (
+          section,
+        ): section is {
+          club_section_id: number;
+          main_club_id: number;
+          club_type_id: number;
+        } => Boolean(section?.main_club_id),
+      )
+      .map((section) => this.buildInstanceScopeFromSection(section));
   }
 
   private buildInstanceScopeFromSection(

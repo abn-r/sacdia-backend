@@ -5,6 +5,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { UpdateManualDataDto } from './dto';
 import {
   AppBadRequestException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -335,6 +336,13 @@ export class MonthlyReportsService {
 
     const isAdmin =
       globalRoleNames.has('admin') || globalRoleNames.has('super-admin');
+    const isScopedAdmin =
+      globalRoleNames.has('coordinator') ||
+      globalRoleNames.has('assistant-admin');
+
+    if (!isAdmin && !isScopedAdmin) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
 
     const userLocalFieldId = resolved.authorization.effective.scope.global
       .local_field?.id as number | undefined;
@@ -342,6 +350,10 @@ export class MonthlyReportsService {
     const scopedLocalFieldId: number | undefined = isAdmin
       ? filters.localFieldId
       : userLocalFieldId;
+
+    if (!isAdmin && scopedLocalFieldId === undefined) {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? 25, 100);
