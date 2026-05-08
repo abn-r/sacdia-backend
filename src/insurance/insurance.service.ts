@@ -71,12 +71,15 @@ export class InsuranceService {
   }
 
   async listMembersInsurance(clubId: number, sectionId: number) {
-    void clubId;
+    await this.validateClubSection(clubId, sectionId);
 
     const assignments = await this.db.club_role_assignments.findMany({
       where: {
         club_section_id: sectionId,
         active: true,
+        club_sections: {
+          main_club_id: clubId,
+        },
       },
       select: {
         user_id: true,
@@ -122,6 +125,23 @@ export class InsuranceService {
     );
 
     return result;
+  }
+
+  private async validateClubSection(
+    clubId: number,
+    sectionId: number,
+  ): Promise<void> {
+    const section = await this.db.club_sections.findFirst({
+      where: {
+        club_section_id: sectionId,
+        main_club_id: clubId,
+      },
+      select: { club_section_id: true },
+    });
+
+    if (!section) {
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+    }
   }
 
   async getMemberInsurance(memberId: string) {

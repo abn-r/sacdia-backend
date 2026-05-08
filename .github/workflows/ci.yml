@@ -73,8 +73,10 @@ jobs:
         run: pnpm prisma generate
 
       - name: Run unit tests
-        continue-on-error: true
-        run: pnpm jest --coverage --passWithNoTests
+        # TypeScript 6 requires an explicit rootDir when ts-jest compiles each
+        # spec file in isolation; keep the CI gate blocking without changing
+        # the project tsconfig in this hardening slice.
+        run: pnpm jest --coverage --passWithNoTests --globals '{"ts-jest":{"tsconfig":{"rootDir":"."}}}'
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v3
