@@ -107,6 +107,10 @@ export class MfaService {
       return { verified: false };
     }
 
+    if (sessionId) {
+      await this.betterAuthService.markMfaSessionAssured(userId, sessionId);
+    }
+
     // Issue a full aal2 JWT (no mfa_pending flag) to replace the aal1 token.
     // Forward sessionId so the new token preserves the `sid` claim — this is
     // what allows GET /auth/sessions to correctly mark `is_current`.

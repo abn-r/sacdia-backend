@@ -557,7 +557,11 @@ export class RbacService {
     });
   }
 
-  async assignRoleToUser(userId: string, roleId: string) {
+  async assignRoleToUser(
+    userId: string,
+    roleId: string,
+    actorUserId: string,
+  ) {
     const [user, role] = await Promise.all([
       this.prisma.users.findUnique({
         where: { user_id: userId },
@@ -580,6 +584,8 @@ export class RbacService {
         id: roleId,
       });
     }
+
+    await this.assertCanMutateProtectedRole(role.role_name, actorUserId);
 
     const existing = await this.prisma.users_roles.findFirst({
       where: { user_id: userId, role_id: roleId },
@@ -614,9 +620,20 @@ export class RbacService {
     return { success: true, message: 'Rol asignado' };
   }
 
-  async removeRoleFromUser(userId: string, roleId: string) {
+  async removeRoleFromUser(
+    userId: string,
+    roleId: string,
+    actorUserId: string,
+  ) {
     const assignment = await this.prisma.users_roles.findFirst({
       where: { user_id: userId, role_id: roleId, active: true },
+      include: {
+        roles: {
+          select: {
+            role_name: true,
+          },
+        },
+      },
     });
 
     if (!assignment) {
@@ -626,6 +643,11 @@ export class RbacService {
       });
     }
 
+    await this.assertCanMutateProtectedRole(
+      assignment.roles.role_name,
+      actorUserId,
+    );
+
     await this.prisma.users_roles.update({
       where: { user_role_id: assignment.user_role_id },
       data: { active: false, modified_at: new Date() },
@@ -634,6 +656,22 @@ export class RbacService {
     this.logger.log(`Rol ${roleId} removido del usuario ${userId}`);
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
     return { success: true, message: 'Rol removido del usuario' };
+  }
+
+  private async assertCanMutateProtectedRole(
+    roleName: string,
+    actorUserId: string,
+  ): Promise<void> {
+    if (roleName !== 'super-admin') {
+      return;
+    }
+
+    const actorIsSuperAdmin =
+      await this.authorizationContext.isSuperAdmin(actorUserId);
+
+    if (!actorIsSuperAdmin) {
+      throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
+    }
   }
 
   async bootstrapAdmin(userId: string) {

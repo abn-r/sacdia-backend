@@ -50,9 +50,9 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
 
-  // JWT access tokens are 1h (3600 s) — balances UX with token exposure window.
-  // Refresh flow extends sessions seamlessly. Used as the blacklist TTL.
-  private static readonly JWT_TTL_SECONDS = 3600;
+  // JWT access tokens are 8h (28800 s), matching BetterAuthModule/AuthModule.
+  // Used as the blacklist TTL so revocation records outlive issued access tokens.
+  private static readonly JWT_TTL_SECONDS = 28800;
 
   constructor(
     private prisma: PrismaService,
@@ -267,7 +267,7 @@ export class AuthService {
       status: 'success',
       data: {
         ...buildAuthTokenResponse({
-          // HS256 JWT signed by SACDIA (Option C) — short-lived (1h)
+          // HS256 JWT signed by SACDIA (Option C) — short-lived (8h)
           accessToken: baResult.accessToken,
           // BA opaque session token — this IS the long-lived credential (7 days, sliding)
           // Clients must send this as `refreshToken` to POST /auth/refresh
@@ -407,7 +407,7 @@ export class AuthService {
     // Strategy:
     //   If refreshToken present → revoke BA session (best effort).
     //   If only accessToken present → nothing to revoke on BA side; return success.
-    //   The JWT will expire naturally within 1h.
+    //   The JWT will expire naturally within 8h.
 
     let path: LogoutPath = 'none';
     let revocationAttempted = false;
@@ -433,7 +433,7 @@ export class AuthService {
       }
     } else if (accessToken) {
       // Access token is a SACDIA JWT — BA has no record of it.
-      // Best effort: mark as access-only logout (token expires in ≤1h naturally).
+      // Best effort: mark as access-only logout (token expires in ≤8h naturally).
       path = 'access_only';
       revocationAttempted = false;
       reason = 'no_session_token_provided';
@@ -447,7 +447,7 @@ export class AuthService {
     }
 
     // Blacklist the SACDIA JWT access token so it is rejected immediately
-    // by JwtStrategy even if the client reuses it before the 1h natural expiry.
+    // by JwtStrategy even if the client reuses it before the 8h natural expiry.
     if (accessToken) {
       try {
         await this.tokenBlacklist.blacklistToken(
@@ -516,15 +516,25 @@ export class AuthService {
   /**
    * Updates the password for the currently authenticated user (self-service).
    *
-   * Delegates to BetterAuthService.updatePasswordById() which writes directly
-   * to the `account` table — no Better Auth admin plugin required.
-   *
    * For admin-scoped password updates (setting another user's password without
    * their current password), see AdminAuthService.setUserPassword() and
    * POST /api/v1/admin/users/:userId/password.
    */
-  async updatePassword(userId: string, newPassword: string): Promise<void> {
-    await this.betterAuthService.updatePasswordById(userId, newPassword);
+  async updateOwnPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    await this.betterAuthService.updateOwnPassword(
+      userId,
+      currentPassword,
+      newPassword,
+    );
+    await this.prisma.session.deleteMany({ where: { userId } });
+    await this.tokenBlacklist.blacklistAllUserTokens(
+      userId,
+      AuthService.JWT_TTL_SECONDS,
+    );
     this.logger.log(`Self-service password updated for user: ${userId}`);
   }
 
