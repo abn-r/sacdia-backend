@@ -60,6 +60,9 @@ describe('AuthService', () => {
       findFirst: jest.fn(),
       delete: jest.fn(),
     },
+    session: {
+      deleteMany: jest.fn(),
+    },
   };
 
   // -------------------------------------------------------------------------
@@ -71,6 +74,7 @@ describe('AuthService', () => {
     refreshSession: jest.fn(),
     signOut: jest.fn(),
     resetPasswordForEmail: jest.fn(),
+    updateOwnPassword: jest.fn(),
     updatePasswordById: jest.fn(),
     signJwt: jest.fn(),
   };
@@ -318,7 +322,7 @@ describe('AuthService', () => {
       expect(result).toEqual({
         status: 'success',
         data: {
-          // accessToken = SACDIA HS256 JWT (1h)
+          // accessToken = SACDIA HS256 JWT (8h)
           accessToken: 'sacdia-hs256-jwt',
           // refreshToken = BA opaque session token (7-day sliding credential)
           refreshToken: 'ba-opaque-session-token',
@@ -589,17 +593,51 @@ describe('AuthService', () => {
   // updatePassword()
   // ---------------------------------------------------------------------------
   describe('updatePassword', () => {
-    it('should delegate to betterAuthService.updatePasswordById', async () => {
-      mockBetterAuthService.updatePasswordById.mockResolvedValue(undefined);
+    it('should require the current password and revoke sessions/tokens after a successful update', async () => {
+      mockBetterAuthService.updateOwnPassword.mockResolvedValue(undefined);
+      mockPrismaService.session.deleteMany.mockResolvedValue({ count: 2 });
+      mockTokenBlacklistService.blacklistAllUserTokens.mockResolvedValue(
+        undefined,
+      );
 
       await expect(
-        service.updatePassword('user-123', 'NewPassword123!'),
+        service.updateOwnPassword(
+          'user-123',
+          'CurrentPassword123!',
+          'NewPassword123!',
+        ),
       ).resolves.toBeUndefined();
 
-      expect(mockBetterAuthService.updatePasswordById).toHaveBeenCalledWith(
+      expect(mockBetterAuthService.updateOwnPassword).toHaveBeenCalledWith(
         'user-123',
+        'CurrentPassword123!',
         'NewPassword123!',
       );
+      expect(mockPrismaService.session.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123' },
+      });
+      expect(
+        mockTokenBlacklistService.blacklistAllUserTokens,
+      ).toHaveBeenCalledWith('user-123', 28800);
+    });
+
+    it('should not revoke sessions when current password validation fails', async () => {
+      mockBetterAuthService.updateOwnPassword.mockRejectedValue(
+        new UnauthorizedException('Invalid password'),
+      );
+
+      await expect(
+        service.updateOwnPassword(
+          'user-123',
+          'WrongPassword123!',
+          'NewPassword123!',
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockPrismaService.session.deleteMany).not.toHaveBeenCalled();
+      expect(
+        mockTokenBlacklistService.blacklistAllUserTokens,
+      ).not.toHaveBeenCalled();
     });
   });
 

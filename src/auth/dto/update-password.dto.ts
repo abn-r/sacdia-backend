@@ -3,6 +3,18 @@ import { IsString, MinLength, MaxLength, Matches } from 'class-validator';
 
 export class UpdatePasswordDto {
   @ApiProperty({
+    description: 'Contraseña actual del usuario autenticado',
+    minLength: 8,
+    example: 'CurrentPassword123!',
+  })
+  @IsString()
+  @MinLength(8, {
+    message: 'La contraseña actual debe tener al menos 8 caracteres',
+  })
+  @MaxLength(128)
+  currentPassword!: string;
+
+  @ApiProperty({
     description:
       'Nueva contraseña del usuario autenticado (mínimo 8 caracteres, debe incluir mayúscula, minúscula, número y carácter especial)',
     minLength: 8,

@@ -53,6 +53,7 @@ describe('BetterAuthService', () => {
     verification: {
       create: mockVerificationCreate,
       findFirst: mockVerificationFindFirst,
+      deleteMany: jest.fn(),
     },
     $queryRaw: mockQueryRaw,
   };
@@ -109,7 +110,7 @@ describe('BetterAuthService', () => {
     it('should return a valid 3-part JWT string', () => {
       const realJwtService = new JwtService({
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
-        signOptions: { expiresIn: '1h', algorithm: 'HS256' },
+        signOptions: { expiresIn: '8h', algorithm: 'HS256' },
       });
       const service = new BetterAuthService(
         realJwtService,
@@ -129,7 +130,7 @@ describe('BetterAuthService', () => {
     it('should produce a JWT with alg=HS256 in the header', () => {
       const realJwtService = new JwtService({
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
-        signOptions: { expiresIn: '1h', algorithm: 'HS256' },
+        signOptions: { expiresIn: '8h', algorithm: 'HS256' },
       });
       const service = new BetterAuthService(
         realJwtService,
@@ -151,7 +152,7 @@ describe('BetterAuthService', () => {
     it('should embed sub = user.id in the JWT payload', () => {
       const realJwtService = new JwtService({
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
-        signOptions: { expiresIn: '1h', algorithm: 'HS256' },
+        signOptions: { expiresIn: '8h', algorithm: 'HS256' },
       });
       const service = new BetterAuthService(
         realJwtService,
@@ -173,7 +174,7 @@ describe('BetterAuthService', () => {
     it('should embed email in the JWT payload', () => {
       const realJwtService = new JwtService({
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
-        signOptions: { expiresIn: '1h', algorithm: 'HS256' },
+        signOptions: { expiresIn: '8h', algorithm: 'HS256' },
       });
       const service = new BetterAuthService(
         realJwtService,
@@ -192,10 +193,10 @@ describe('BetterAuthService', () => {
       expect(payload.email).toBe('test@example.com');
     });
 
-    it('should issue a 1-hour token (exp - iat = 3600)', () => {
+    it('should issue an 8-hour token (exp - iat = 28800)', () => {
       const realJwtService = new JwtService({
         secret: 'test-secret-min-32-chars-for-hs256-hmac',
-        signOptions: { expiresIn: '1h', algorithm: 'HS256' },
+        signOptions: { expiresIn: '8h', algorithm: 'HS256' },
       });
       const service = new BetterAuthService(
         realJwtService,
@@ -216,8 +217,8 @@ describe('BetterAuthService', () => {
       );
       const duration = payload.exp - payload.iat;
 
-      expect(duration).toBeGreaterThanOrEqual(3599);
-      expect(duration).toBeLessThanOrEqual(3600);
+      expect(duration).toBeGreaterThanOrEqual(28799);
+      expect(duration).toBeLessThanOrEqual(28800);
       expect(payload.iat).toBeGreaterThanOrEqual(before);
       expect(payload.iat).toBeLessThanOrEqual(after);
     });
@@ -475,6 +476,48 @@ describe('BetterAuthService', () => {
       expect(mockQueryRaw).toHaveBeenCalledTimes(1);
     });
 
+    it('should issue aal2 when TOTP is enrolled and session assurance is valid', async () => {
+      const { svc, mockJwtService } = buildService();
+
+      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
+      mockVerificationFindFirst
+        .mockResolvedValueOnce({ id: 'totp-record-id' })
+        .mockResolvedValueOnce({ id: 'mfa-session-assurance-id' });
+
+      await svc.refreshSession('raw-opaque-session-token');
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: 'user-uuid-123',
+          email: 'test@example.com',
+          sid: 'session-id-abc',
+        }),
+      );
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        expect.not.objectContaining({ mfa_pending: true }),
+      );
+    });
+
+    it('should issue aal1 mfa_pending when TOTP is enrolled but session assurance is missing', async () => {
+      const { svc, mockJwtService } = buildService();
+
+      mockQueryRaw.mockResolvedValue([mockRefreshRow]);
+      mockVerificationFindFirst
+        .mockResolvedValueOnce({ id: 'totp-record-id' })
+        .mockResolvedValueOnce(null);
+
+      await svc.refreshSession('raw-opaque-session-token');
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: 'user-uuid-123',
+          email: 'test@example.com',
+          sid: 'session-id-abc',
+          mfa_pending: true,
+        }),
+      );
+    });
+
     it('should map all RefreshRow fields correctly onto BaSession and BaUser', async () => {
       const { svc } = buildService();
 
@@ -634,6 +677,57 @@ describe('BetterAuthService', () => {
       await expect(
         svc.updatePasswordById('user-uuid-123', 'NewPassword123!'),
       ).rejects.toMatchObject({ code: ErrorCode.USER_NOT_FOUND });
+    });
+  });
+
+  describe('updateOwnPassword', () => {
+    it('should reject when current password is wrong', async () => {
+      const { svc } = buildService();
+      const bcrypt = require('bcryptjs');
+      const realHash = await bcrypt.hash('CorrectPassword123!', 12);
+
+      mockAccountFindFirst.mockResolvedValue({
+        ...mockDbAccount,
+        password: realHash,
+      });
+
+      await expect(
+        svc.updateOwnPassword(
+          'user-uuid-123',
+          'WrongPassword123!',
+          'NewPassword123!',
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.AUTH_INVALID_CREDENTIALS });
+      expect(mockAccountUpdate).not.toHaveBeenCalled();
+    });
+
+    it('should update hash when current password is correct', async () => {
+      const { svc } = buildService();
+      const bcrypt = require('bcryptjs');
+      const realHash = await bcrypt.hash('CurrentPassword123!', 12);
+
+      mockAccountFindFirst.mockResolvedValue({
+        ...mockDbAccount,
+        password: realHash,
+      });
+      mockAccountUpdate.mockResolvedValue({});
+
+      await expect(
+        svc.updateOwnPassword(
+          'user-uuid-123',
+          'CurrentPassword123!',
+          'NewPassword123!',
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(mockAccountUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockDbAccount.id },
+          data: expect.objectContaining({
+            password: expect.stringMatching(/^\$2[ab]\$12\$/),
+          }),
+        }),
+      );
     });
   });
 });
