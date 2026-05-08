@@ -50,7 +50,7 @@ describe('Phase 3 permission cleanup — seed files', () => {
       //     AND p.permission_name IN (...);
       const normalized = rolePermissionsSeed.replace(/\s+/g, ' ');
       expect(normalized).toMatch(
-        /DELETE FROM role_permissions USING permissions p WHERE role_permissions\.permission_id = p\.permission_id AND p\.permission_name IN \('users:update', 'classes:update', 'user_honors:update'(, 'classes:validate')?\);/,
+        /DELETE FROM role_permissions USING permissions p WHERE role_permissions\.permission_id = p\.permission_id AND p\.permission_name IN \('users:update', 'classes:update', 'user_honors:update'(, 'classes:validate')?(, 'qr:issue_self')?\);/,
       );
     });
 

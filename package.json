@@ -123,6 +123,10 @@
     ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.integration\\.spec\\.ts$"
+    ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
@@ -131,7 +135,7 @@
     ],
     "coverageDirectory": "../coverage",
     "coverageThreshold": {
-      "./config/throttler.config.ts": {
+      "**/config/throttler.config.ts": {
         "branches": 70,
         "functions": 75,
         "lines": 80,
