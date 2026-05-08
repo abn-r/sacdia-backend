@@ -23,7 +23,7 @@ import { PrismaService } from '../prisma/prisma.service';
  * BA instance is kept for OAuth (signInSocial, callbackOAuth) and TOTP (future).
  *
  * Secret: BETTER_AUTH_SECRET (signs SACDIA HS256 JWTs — replaces legacy Supabase JWT).
- * Expiry: 1h — short-lived; clients must call refresh when it expires.
+ * Expiry: 8h — clients must call refresh when it expires.
  */
 @Module({
   imports: [

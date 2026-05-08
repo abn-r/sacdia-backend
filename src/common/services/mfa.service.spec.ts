@@ -17,6 +17,7 @@ describe('MfaService', () => {
   const mockVerifyTotp = jest.fn();
   const mockDisableTotp = jest.fn();
   const mockHasTotpEnabled = jest.fn();
+  const mockMarkMfaSessionAssured = jest.fn();
   const mockSignJwt = jest.fn().mockReturnValue('mock-aal2-token');
 
   const mockBetterAuthService = {
@@ -24,6 +25,7 @@ describe('MfaService', () => {
     verifyTotp: mockVerifyTotp,
     disableTotp: mockDisableTotp,
     hasTotpEnabled: mockHasTotpEnabled,
+    markMfaSessionAssured: mockMarkMfaSessionAssured,
     signJwt: mockSignJwt,
   };
 
@@ -116,6 +118,10 @@ describe('MfaService', () => {
         false,
         SESSION_ID,
       );
+      expect(mockMarkMfaSessionAssured).toHaveBeenCalledWith(
+        USER_ID,
+        SESSION_ID,
+      );
     });
 
     it('should pass undefined to signJwt when sessionId is null (legacy token)', async () => {
@@ -129,6 +135,7 @@ describe('MfaService', () => {
         false,
         undefined,
       );
+      expect(mockMarkMfaSessionAssured).not.toHaveBeenCalled();
     });
 
     it('should return { verified: false } when code is invalid', async () => {

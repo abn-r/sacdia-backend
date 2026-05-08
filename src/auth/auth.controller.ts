@@ -245,7 +245,11 @@ export class AuthController {
     @CurrentUser() user: { userId: string },
     @Body() dto: UpdatePasswordDto,
   ) {
-    await this.authService.updatePassword(user.userId, dto.password);
+    await this.authService.updateOwnPassword(
+      user.userId,
+      dto.currentPassword,
+      dto.password,
+    );
     return { status: 'success', message: 'Password updated' };
   }
 

@@ -1,12 +1,21 @@
 import { Injectable, ExecutionContext, Logger } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
-import { AppUnauthorizedException } from '../errors/app.exception';
+import {
+  AppForbiddenException,
+  AppUnauthorizedException,
+} from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
+import { SKIP_MFA_CHECK_KEY } from './mfa.guard';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
   private readonly logger = new Logger(JwtAuthGuard.name);
+
+  constructor(private readonly reflector: Reflector) {
+    super();
+  }
 
   canActivate(context: ExecutionContext) {
     return super.canActivate(context);
@@ -27,6 +36,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       );
 
       throw new AppUnauthorizedException(ErrorCode.GUARD_JWT_UNAUTHORIZED);
+    }
+
+    const skipMfaCheck = this.reflector.getAllAndOverride<boolean>(
+      SKIP_MFA_CHECK_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!skipMfaCheck && user.mfa_pending === true) {
+      throw new AppForbiddenException(ErrorCode.GUARD_MFA_REQUIRED);
     }
 
     return user;

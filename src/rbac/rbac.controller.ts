@@ -29,6 +29,7 @@ import {
   AuthorizationResource,
   RequirePermissions,
   GlobalRoles,
+  CurrentUser,
 } from '../common/decorators';
 import {
   JwtAuthGuard,
@@ -271,10 +272,15 @@ export class RbacController {
   @ApiOperation({ summary: 'Asignar un rol a un usuario' })
   @ApiResponse({ status: 201, description: 'Rol asignado al usuario' })
   async assignRoleToUser(
+    @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: AssignRoleDto,
   ) {
-    return this.rbacService.assignRoleToUser(userId, dto.role_id);
+    return this.rbacService.assignRoleToUser(
+      userId,
+      dto.role_id,
+      actor.userId,
+    );
   }
 
   @Delete('users/:userId/roles/:roleId')
@@ -283,10 +289,11 @@ export class RbacController {
   @ApiOperation({ summary: 'Remover un rol de un usuario' })
   @ApiResponse({ status: 200, description: 'Rol removido del usuario' })
   async removeRoleFromUser(
+    @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('roleId', ParseUUIDPipe) roleId: string,
   ) {
-    return this.rbacService.removeRoleFromUser(userId, roleId);
+    return this.rbacService.removeRoleFromUser(userId, roleId, actor.userId);
   }
 }
 

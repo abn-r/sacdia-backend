@@ -85,12 +85,18 @@ export interface IBetterAuthService {
   signOut(sessionToken: string): Promise<void>;
   resetPasswordForEmail(email: string, redirectTo?: string): Promise<void>;
   updatePasswordById(userId: string, newPassword: string): Promise<void>;
+  updateOwnPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void>;
 
   // -- TOTP / MFA -----------------------------------------------------------
   enrollTotp(userId: string, password: string): Promise<BaTotpEnrollResult>;
   verifyTotp(userId: string, code: string): Promise<{ verified: boolean }>;
   disableTotp(userId: string, password: string): Promise<void>;
   hasTotpEnabled(userId: string): Promise<{ enabled: boolean }>;
+  markMfaSessionAssured(userId: string, sessionId: string): Promise<void>;
 
   // -- OAuth ----------------------------------------------------------------
   getOAuthUrl(
@@ -314,8 +320,8 @@ export class BetterAuthService implements IBetterAuthService {
 
     // 4. Check MFA enrollment — if TOTP is active, issue a restricted token
     //    with mfa_pending: true. The client must call POST /auth/mfa/verify to
-    //    obtain a full aal2 token. MfaGuard blocks protected endpoints while
-    //    mfa_pending is true.
+    //    obtain a full aal2 token. JwtAuthGuard blocks protected endpoints while
+    //    mfa_pending is true unless @SkipMfaCheck() is present.
     const { enabled: mfaEnabled } = await this.hasTotpEnabled(dbUser.user_id);
 
     // 5. Create session + sign JWT
@@ -424,9 +430,9 @@ export class BetterAuthService implements IBetterAuthService {
     // SECURITY NOTE — JWT blacklisting:
     // refreshSession issues a new HS256 JWT but cannot blacklist the previous one
     // because the old access token is not sent to this endpoint (clients send only
-    // the opaque session token). Mitigation: JWTs are short-lived (1h). A proper
+    // the opaque session token). Mitigation: JWTs are short-lived (8h). A proper
     // blacklist would require a Redis store keyed by jti or token hash — defer to
-    // a future hardening pass if the 1h window is deemed insufficient.
+    // a future hardening pass if the 8h window is deemed insufficient.
 
     const session = mapDbSessionToBaSession({
       id: row.id,
@@ -449,7 +455,15 @@ export class BetterAuthService implements IBetterAuthService {
       modified_at: row.u_modified_at,
     });
 
-    const accessToken = this.signJwt(user, false, session.id);
+    const { enabled: mfaEnabled } = await this.hasTotpEnabled(user.id);
+    const sessionAssured = mfaEnabled
+      ? await this.hasMfaSessionAssurance(user.id, session.id)
+      : false;
+    const accessToken = this.signJwt(
+      user,
+      mfaEnabled && !sessionAssured,
+      session.id,
+    );
 
     this.logger.log(`Session refreshed for user: ${user.id}`);
     return { user, session, accessToken };
@@ -562,6 +576,15 @@ export class BetterAuthService implements IBetterAuthService {
     this.logger.log(`Password updated for user: ${userId}`);
   }
 
+  async updateOwnPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    await this.verifyUserPassword(userId, currentPassword);
+    await this.updatePasswordById(userId, newPassword);
+  }
+
   // ---------------------------------------------------------------------------
   // TOTP / MFA methods
   // ---------------------------------------------------------------------------
@@ -581,6 +604,10 @@ export class BetterAuthService implements IBetterAuthService {
 
   private totpIdentifier(userId: string): string {
     return `totp:${userId}`;
+  }
+
+  private mfaSessionIdentifier(sessionId: string): string {
+    return `mfa-session:${sessionId}`;
   }
 
   /**
@@ -760,6 +787,52 @@ export class BetterAuthService implements IBetterAuthService {
     return { enabled: !!record };
   }
 
+  async markMfaSessionAssured(
+    userId: string,
+    sessionId: string,
+  ): Promise<void> {
+    const session = await this.prisma.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+        expiresAt: { gt: new Date() },
+      },
+      select: { expiresAt: true },
+    });
+
+    if (!session) {
+      throw new AppUnauthorizedException(ErrorCode.AUTH_SESSION_EXPIRED);
+    }
+
+    const now = new Date();
+    await this.prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier: this.mfaSessionIdentifier(sessionId),
+        value: userId,
+        expiresAt: session.expiresAt,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  }
+
+  private async hasMfaSessionAssurance(
+    userId: string,
+    sessionId: string,
+  ): Promise<boolean> {
+    const record = await this.prisma.verification.findFirst({
+      where: {
+        identifier: this.mfaSessionIdentifier(sessionId),
+        value: userId,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+
+    return !!record;
+  }
+
   // ---------------------------------------------------------------------------
   // OAuth methods
   // ---------------------------------------------------------------------------
@@ -879,7 +952,7 @@ export class BetterAuthService implements IBetterAuthService {
    * @param mfaPending  - When `true`, the token carries `mfa_pending: true`,
    *                      indicating the second factor (TOTP) has not been
    *                      verified yet. Protected endpoints should reject these
-   *                      tokens via MfaGuard until the user calls
+   *                      tokens via JwtAuthGuard until the user calls
    *                      POST /auth/mfa/verify successfully.
    * @param sessionId   - Optional BA session DB row `id` (UUID). When present,
    *                      enables `is_current` comparison in GET /auth/sessions.
