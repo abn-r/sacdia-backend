@@ -32,17 +32,15 @@ import { ErrorCode } from '../../common/errors/error-codes';
 // Types
 // ---------------------------------------------------------------------------
 
-type ImageMimeType = 'image/png' | 'image/svg+xml' | 'image/webp';
+type ImageMimeType = 'image/png' | 'image/webp';
 
 const ALLOWED_IMAGE_MIME_TYPES: ImageMimeType[] = [
   'image/png',
-  'image/svg+xml',
   'image/webp',
 ];
 
 const MIME_TO_EXT: Record<ImageMimeType, string> = {
   'image/png': 'png',
-  'image/svg+xml': 'svg',
   'image/webp': 'webp',
 };
 

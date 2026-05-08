@@ -470,11 +470,9 @@ first.
 
 ---
 
-## CI concern (separate initiative)
+## CI concern (resolved for unit tests)
 
-The `unit-test` job in `.github/workflows/` currently runs with `continue-on-error: true`. This
-is what allowed 32 test failures to silently accumulate as warnings for weeks without triggering
-any alert. Fixing the CI setting is NOT in scope for Option B — the strategy is lazy per-domain
-repair — but it should be addressed as a separate follow-up once the debt index is substantially
-reduced. Until then, the harness restoration commits (`5cb7ac6`, `b4e05b8`) ensure at least that
-failures are visible locally when running `pnpm run test:e2e`.
+The `unit-test` job used to run with `continue-on-error: true`, which allowed failures to accumulate
+as warnings. As of the P0+P1 backend hardening change, unit tests are blocking again in CI. The
+remaining debt in this document is still useful for domain-by-domain E2E repair, but it is no longer
+hidden behind a non-blocking unit-test job.

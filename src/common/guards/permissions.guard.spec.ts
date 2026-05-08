@@ -19,11 +19,20 @@ describe('PermissionsGuard', () => {
   };
 
   const mockPrisma = {
+    enrollments: { findFirst: jest.fn() },
+    monthly_reports: { findUnique: jest.fn() },
+    club_enrollments: { findUnique: jest.fn() },
+    users: { findUnique: jest.fn() },
+    member_insurances: { findUnique: jest.fn() },
     activities: { findUnique: jest.fn() },
     finances: { findUnique: jest.fn() },
     local_camporees: { findUnique: jest.fn() },
     club_inventory: { findUnique: jest.fn() },
-    club_role_assignments: { findUnique: jest.fn() },
+    club_role_assignments: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
     club_sections: { findUnique: jest.fn() },
   };
 
@@ -124,6 +133,7 @@ describe('PermissionsGuard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAuthorizationContext.canManageClub.mockResolvedValue(false);
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {
         return undefined;
@@ -314,6 +324,77 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+  });
+
+  it('rejects a club section resource when the section is outside the actor scope', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['insurance:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return {
+          type: 'club_section',
+          idParam: 'sectionId',
+          clubIdParam: 'clubId',
+        };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['insurance:read'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockAuthorizationContext.canManageClub.mockResolvedValue(false);
+    mockPrisma.club_sections.findUnique.mockResolvedValue({
+      club_section_id: 44,
+      main_club_id: 10,
+      club_type_id: 2,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { clubId: '10', sectionId: '44' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+  });
+
+  it('throws not found for a club section resource when sectionId does not belong to clubId', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['insurance:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return {
+          type: 'club_section',
+          idParam: 'sectionId',
+          clubIdParam: 'clubId',
+        };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({ activeClubPermissions: ['insurance:read'] }),
+    );
+    mockPrisma.club_sections.findUnique.mockResolvedValue({
+      club_section_id: 44,
+      main_club_id: 99,
+      club_type_id: 2,
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { clubId: '10', sectionId: '44' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.CLUB_SECTION_NOT_FOUND });
   });
 
   it('allows an instance resource when the active assignment matches the exact instance', async () => {
@@ -562,5 +643,161 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND });
+  });
+
+  it('rejects investiture enrollment mutation when actor permission is scoped to another club section', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['investiture:submit'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'investiture_enrollment', idParam: 'enrollmentId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['investiture:submit'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.enrollments.findFirst.mockResolvedValue({
+      user_id: 'member-b',
+      ecclesiastical_year_id: 2026,
+      classes: { club_type_id: 2 },
+    });
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+      club_sections: {
+        club_section_id: 44,
+        main_club_id: 99,
+        club_type_id: 2,
+      },
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { enrollmentId: '123' },
+          body: { club_id: 10 },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+  });
+
+  it('rejects monthly report access when actor active assignment is outside the report scope', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['reports:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'monthly_report', idParam: 'reportId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['reports:read'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.monthly_reports.findUnique.mockResolvedValue({
+      club_enrollment: {
+        club_section: {
+          club_section_id: 44,
+          main_club_id: 99,
+          club_type_id: 2,
+        },
+      },
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { reportId: '28f20ec9-4f10-4827-b4cd-29ccbc423c34' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+  });
+
+  it('rejects insurance member access when actor has insurance permission only in another section', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['insurance:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'insurance_member', idParam: 'memberId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['insurance:read'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.users.findUnique.mockResolvedValue({ user_id: 'member-b' });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      {
+        club_sections: {
+          club_section_id: 44,
+          main_club_id: 99,
+          club_type_id: 2,
+        },
+      },
+    ]);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { memberId: 'member-b' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+  });
+
+  it('rejects insurance record updates when the insured member is outside actor scope', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['insurance:update'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'insurance_record', idParam: 'insuranceId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['insurance:update'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.member_insurances.findUnique.mockResolvedValue({
+      user_id: 'member-b',
+    });
+    mockPrisma.club_role_assignments.findMany.mockResolvedValue([
+      {
+        club_sections: {
+          club_section_id: 44,
+          main_club_id: 99,
+          club_type_id: 2,
+        },
+      },
+    ]);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { insuranceId: '123' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
   });
 });

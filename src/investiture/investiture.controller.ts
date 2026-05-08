@@ -10,6 +10,8 @@ import {
   ParseIntPipe,
   UseGuards,
   Request,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -36,8 +38,14 @@ import {
   JwtAuthGuard,
   GlobalRolesGuard,
   ClubRolesGuard,
+  PermissionsGuard,
 } from '../common/guards';
-import { GlobalRoles, ClubRoles } from '../common/decorators';
+import {
+  GlobalRoles,
+  ClubRoles,
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 
 @ApiTags('investiture')
 @ApiBearerAuth()
@@ -51,8 +59,14 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/:enrollmentId/submit')
-  @UseGuards(JwtAuthGuard, ClubRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, ClubRolesGuard, PermissionsGuard)
   @ClubRoles('director', 'counselor')
+  @RequirePermissions('investiture:submit')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary:
       'Enviar enrollment a validación de investidura (consejero/director)',
@@ -99,8 +113,14 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/:enrollmentId/club-approve')
-  @UseGuards(JwtAuthGuard, ClubRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, ClubRolesGuard, PermissionsGuard)
   @ClubRoles('director')
+  @RequirePermissions('investiture:validate')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary: 'Director de sección aprueba enrollment para investidura',
   })
@@ -139,8 +159,14 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/:enrollmentId/coordinator-approve')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:validate')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({ summary: 'Coordinador aprueba enrollment para investidura' })
   @ApiParam({
     name: 'enrollmentId',
@@ -177,8 +203,14 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/:enrollmentId/field-approve')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin')
+  @RequirePermissions('investiture:validate')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({ summary: 'Campo local aprueba enrollment para investidura' })
   @ApiParam({
     name: 'enrollmentId',
@@ -215,8 +247,14 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/:enrollmentId/invest')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:mark_invested')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary:
       'Registrar investidura formal de un enrollment (después de FIELD_APPROVED)',
@@ -257,8 +295,14 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/:enrollmentId/reject')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:validate')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary: 'Rechazar enrollment en cualquier nivel del flujo de aprobación',
   })
@@ -291,6 +335,7 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/bulk-approve')
+  @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
   @ApiOperation({
@@ -339,6 +384,7 @@ export class InvestitureController {
   // ========================================
 
   @Post('investiture/enrollments/bulk-reject')
+  @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'coordinator')
   @ApiOperation({
@@ -486,8 +532,14 @@ export class InvestitureController {
   // ========================================
 
   @Post('enrollments/:enrollmentId/submit-for-validation')
-  @UseGuards(JwtAuthGuard, ClubRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, ClubRolesGuard, PermissionsGuard)
   @ClubRoles('director', 'counselor')
+  @RequirePermissions('investiture:submit')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary: '[LEGACY] Enviar enrollment a validación de investidura',
   })
@@ -512,8 +564,14 @@ export class InvestitureController {
   }
 
   @Post('enrollments/:enrollmentId/validate')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:validate')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary: '[LEGACY] Aprobar o rechazar enrollment para investidura',
   })
@@ -538,8 +596,14 @@ export class InvestitureController {
   }
 
   @Post('enrollments/:enrollmentId/investiture')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin', 'coordinator')
+  @RequirePermissions('investiture:mark_invested')
+  @AuthorizationResource({
+    type: 'investiture_enrollment',
+    idParam: 'enrollmentId',
+  })
   @ApiOperation({
     summary: '[LEGACY] Registrar investidura formal de un enrollment',
   })

@@ -90,6 +90,8 @@ src/
 - Deploy: Render.com (los pasos de Vercel fueron removidos)
 - ESLint: reglas `no-unsafe-*` deshabilitadas para compatibilidad con Prisma (8328 → 0 errores)
 - Jest: `transformIgnorePatterns: []` para paquetes ESM; `prisma generate` corre antes de los tests
-- Unit tests: `continue-on-error: true` hasta estabilizar suite
+- Unit tests: bloqueantes; el job ya no usa `continue-on-error`
+- Rate limiting: `@nestjs/throttler` usa storage Redis distribuido cuando `REDIS_URL` está configurado.
+  En producción, Redis es requerido y la app falla al iniciar si falta, es inválido o no conecta.
 - BullMQ: handlers `error`/`failed` en workers para prevenir crashes por desconexión de Redis
 - `process.on('uncaughtException'/'unhandledRejection')` como red de seguridad en producción

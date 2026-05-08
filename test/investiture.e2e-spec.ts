@@ -16,6 +16,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import {
   JwtAuthGuard,
+  PermissionsGuard,
   GlobalRolesGuard,
   ClubRolesGuard,
 } from '../src/common/guards';
@@ -45,6 +46,19 @@ class MockGlobalRolesGuard implements CanActivate {
 @Injectable()
 class MockClubRolesGuard implements CanActivate {
   canActivate(): boolean {
+    return true;
+  }
+}
+
+@Injectable()
+class MockPermissionsGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+    req.authorization = {
+      grants: { global_roles: [], club_assignments: [] },
+      active_assignment: { assignment_id: null },
+      effective: { permissions: [], scope: { global: {}, club: null } },
+    };
     return true;
   }
 }
@@ -95,6 +109,8 @@ describe('Investiture E2E', () => {
       .useClass(MockGlobalRolesGuard)
       .overrideGuard(ClubRolesGuard)
       .useClass(MockClubRolesGuard)
+      .overrideGuard(PermissionsGuard)
+      .useClass(MockPermissionsGuard)
       .overrideProvider(APP_GUARD)
       .useValue({ canActivate: () => true })
       .overrideGuard(ThrottlerGuard)
@@ -140,7 +156,7 @@ describe('Investiture E2E', () => {
         .post('/api/v1/enrollments/101/submit-for-validation')
         .set(authHeaders())
         .send({ club_id: 5, comments: 'Todos los requisitos completados.' })
-        .expect(201);
+        .expect(200);
 
       expect(response.body).toEqual({
         status: 'success',
@@ -209,7 +225,7 @@ describe('Investiture E2E', () => {
         .post('/api/v1/enrollments/404/submit-for-validation')
         .set(authHeaders())
         .send({ club_id: 7 })
-        .expect(201);
+        .expect(200);
 
       expect(response.body.status).toBe('success');
     });
@@ -220,7 +236,7 @@ describe('Investiture E2E', () => {
   // ============================================================
 
   describe('POST /api/v1/enrollments/:enrollmentId/validate', () => {
-    it('approve — returns 201 with investiture_status APPROVED', async () => {
+    it('approve — returns 200 with investiture_status APPROVED', async () => {
       mockInvestitureService.validateEnrollment.mockResolvedValue({
         enrollment_id: 101,
         investiture_status: 'APPROVED',
@@ -233,7 +249,7 @@ describe('Investiture E2E', () => {
         .post('/api/v1/enrollments/101/validate')
         .set(authHeaders())
         .send({ action: 'APPROVED' })
-        .expect(201);
+        .expect(200);
 
       expect(response.body).toEqual({
         status: 'success',
@@ -251,7 +267,7 @@ describe('Investiture E2E', () => {
       );
     });
 
-    it('reject with comments — returns 201 with investiture_status REJECTED and rejection_reason', async () => {
+    it('reject with comments — returns 200 with investiture_status REJECTED and rejection_reason', async () => {
       mockInvestitureService.validateEnrollment.mockResolvedValue({
         enrollment_id: 101,
         investiture_status: 'REJECTED',
@@ -267,7 +283,7 @@ describe('Investiture E2E', () => {
           action: 'REJECTED',
           comments: 'Faltan evidencias del honor de Primeros Auxilios.',
         })
-        .expect(201);
+        .expect(200);
 
       expect(response.body).toEqual({
         status: 'success',
@@ -321,7 +337,7 @@ describe('Investiture E2E', () => {
   // ============================================================
 
   describe('POST /api/v1/enrollments/:enrollmentId/investiture', () => {
-    it('marks enrollment as investido — returns 201 with investiture_status INVESTIDO', async () => {
+    it('marks enrollment as investido — returns 200 with investiture_status INVESTIDO', async () => {
       mockInvestitureService.markInvestido.mockResolvedValue({
         enrollment_id: 101,
         investiture_status: 'INVESTIDO',
@@ -334,7 +350,7 @@ describe('Investiture E2E', () => {
         .send({
           comments: 'Investidura realizada en el campamento de primavera 2026.',
         })
-        .expect(201);
+        .expect(200);
 
       expect(response.body).toEqual({
         status: 'success',
@@ -379,7 +395,7 @@ describe('Investiture E2E', () => {
         .expect(409);
     });
 
-    it('without optional comments — still succeeds with 201', async () => {
+    it('without optional comments — still succeeds with 200', async () => {
       mockInvestitureService.markInvestido.mockResolvedValue({
         enrollment_id: 808,
         investiture_status: 'INVESTIDO',
@@ -390,7 +406,7 @@ describe('Investiture E2E', () => {
         .post('/api/v1/enrollments/808/investiture')
         .set(authHeaders())
         .send({})
-        .expect(201);
+        .expect(200);
 
       expect(response.body.status).toBe('success');
       expect(response.body.data.investiture_status).toBe('INVESTIDO');

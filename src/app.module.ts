@@ -1,5 +1,5 @@
 import { Module, RequestMethod } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import * as path from 'path';
@@ -58,6 +58,7 @@ import { BackgroundJobsModule } from './background-jobs/background-jobs.module';
 import { RankingWeightsModule } from './ranking-weights/ranking-weights.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
+import { buildThrottlerOptions } from './config/throttler.config';
 
 @Module({
   imports: [
@@ -152,23 +153,11 @@ import { buildBullRootConfig } from './config/bullmq.config';
     // ==========================================
     // SEGURIDAD - Rate Limiting
     // ==========================================
-    ThrottlerModule.forRoot([
-      {
-        name: 'short',
-        ttl: 1000, // 1 segundo
-        limit: 3, // 3 requests por segundo
-      },
-      {
-        name: 'medium',
-        ttl: 10000, // 10 segundos
-        limit: 20, // 20 requests por 10 segundos
-      },
-      {
-        name: 'long',
-        ttl: 60000, // 1 minuto
-        limit: 100, // 100 requests por minuto
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: buildThrottlerOptions,
+    }),
 
     // ==========================================
     // MULTIPART UPLOADS - Global Multer limits

@@ -6,6 +6,7 @@ export type AuthorizationResourceType =
   | 'global'
   | 'active_assignment'
   | 'club'
+  | 'club_section'
   | 'camporee'
   | 'union_camporee'
   | 'activity'
@@ -13,6 +14,10 @@ export type AuthorizationResourceType =
   | 'inventory_instance'
   | 'inventory_item'
   | 'club_assignment'
+  | 'investiture_enrollment'
+  | 'monthly_report'
+  | 'insurance_member'
+  | 'insurance_record'
   | 'user';
 
 export type AuthorizationResourceValueSource = 'param' | 'query' | 'body';
