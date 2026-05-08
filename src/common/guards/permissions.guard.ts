@@ -363,7 +363,7 @@ export class PermissionsGuard implements CanActivate {
       ),
     );
 
-    if (globalRoleNames.has('super_admin')) {
+    if (globalRoleNames.has('super-admin')) {
       return true;
     }
 
@@ -376,7 +376,7 @@ export class PermissionsGuard implements CanActivate {
       typeof globalLocalFieldId === 'number' &&
       globalLocalFieldId === resourceScope.localFieldId &&
       (globalRoleNames.has('admin') ||
-        globalRoleNames.has('assistant_admin') ||
+        globalRoleNames.has('assistant-admin') ||
         globalRoleNames.has('coordinator'))
     ) {
       return true;
@@ -386,7 +386,7 @@ export class PermissionsGuard implements CanActivate {
       typeof resourceScope.unionId === 'number' &&
       typeof globalUnionId === 'number' &&
       globalUnionId === resourceScope.unionId &&
-      (globalRoleNames.has('admin') || globalRoleNames.has('assistant_admin'))
+      (globalRoleNames.has('admin') || globalRoleNames.has('assistant-admin'))
     ) {
       return true;
     }
@@ -567,7 +567,7 @@ export class PermissionsGuard implements CanActivate {
       ),
     );
 
-    if (globalRoleNames.has('super_admin')) {
+    if (globalRoleNames.has('super-admin')) {
       return true;
     }
 
@@ -578,7 +578,7 @@ export class PermissionsGuard implements CanActivate {
     if (
       typeof globalUnionId === 'number' &&
       globalUnionId === resourceScope.unionId &&
-      (globalRoleNames.has('admin') || globalRoleNames.has('assistant_admin'))
+      (globalRoleNames.has('admin') || globalRoleNames.has('assistant-admin'))
     ) {
       return true;
     }
@@ -601,7 +601,7 @@ export class PermissionsGuard implements CanActivate {
     if (
       typeof globalLocalFieldId === 'number' &&
       (globalRoleNames.has('admin') ||
-        globalRoleNames.has('assistant_admin') ||
+        globalRoleNames.has('assistant-admin') ||
         globalRoleNames.has('coordinator') ||
         globalRoleNames.has('director-lf') ||
         globalRoleNames.has('assistant-lf'))

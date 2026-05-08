@@ -58,7 +58,7 @@ describe('AnnualFoldersService — setReviewerNote', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
-    // assertEvidenceTerritoryAccess: super_admin bypass path
+    // assertEvidenceTerritoryAccess: super-admin bypass path
     users_roles: {
       findFirst: jest.fn(),
     },
@@ -82,7 +82,7 @@ describe('AnnualFoldersService — setReviewerNote', () => {
 
     service = module.get<AnnualFoldersService>(AnnualFoldersService);
 
-    // Default: super_admin bypass (simplest path through territory check)
+    // Default: super-admin bypass (simplest path through territory check)
     mockPrismaService.users_roles.findFirst.mockResolvedValue({
       user_role_id: 'sa-role-id',
     });

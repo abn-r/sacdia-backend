@@ -4,6 +4,10 @@ export const envValidationSchema = Joi.object({
   // Database (required)
   DATABASE_URL: Joi.string().uri().required(),
   DATABASE_DIRECT_URL: Joi.string().uri().optional(),
+  PRISMA_POOL_CONNECTION_TIMEOUT_MS: Joi.number()
+    .integer()
+    .positive()
+    .default(15000),
 
   // Better Auth (required)
   BETTER_AUTH_SECRET: Joi.string().min(32).required(),
@@ -66,26 +70,26 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_HONORS_IMAGES: Joi.string().uri().optional(),
   R2_KEY_PREFIX_HONORS_IMAGES: Joi.string().allow('').optional(),
 
-  R2_BUCKET_HONORS_PDF: Joi.string().optional(),
-  R2_PUBLIC_URL_HONORS_PDF: Joi.string().uri().optional(),
+  R2_BUCKET_HONORS_PDF: Joi.string().required(),
+  R2_PUBLIC_URL_HONORS_PDF: Joi.string().uri().required(),
   R2_KEY_PREFIX_HONORS_PDF: Joi.string().allow('').optional(),
 
   R2_BUCKET_CLASSES_DOCUMENTS: Joi.string().optional(),
   R2_PUBLIC_URL_CLASSES_DOCUMENTS: Joi.string().uri().optional(),
   R2_KEY_PREFIX_CLASSES_DOCUMENTS: Joi.string().allow('').optional(),
 
-  R2_BUCKET_EVIDENCE_FILES: Joi.string().optional(),
-  R2_PUBLIC_URL_EVIDENCE_FILES: Joi.string().uri().optional(),
+  R2_BUCKET_EVIDENCE_FILES: Joi.string().required(),
+  R2_PUBLIC_URL_EVIDENCE_FILES: Joi.string().uri().required(),
   R2_KEY_PREFIX_EVIDENCE_FILES: Joi.string().allow('').optional(),
   R2_KEY_PREFIX_CLASS_EVIDENCE: Joi.string().allow('').optional(),
 
-  R2_BUCKET_INSURANCE_EVIDENCE: Joi.string().optional(),
-  R2_PUBLIC_URL_INSURANCE_EVIDENCE: Joi.string().uri().optional(),
+  R2_BUCKET_INSURANCE_EVIDENCE: Joi.string().required(),
+  R2_PUBLIC_URL_INSURANCE_EVIDENCE: Joi.string().uri().required(),
   R2_KEY_PREFIX_INSURANCE_EVIDENCE: Joi.string().allow('').optional(),
 
   // Cloudflare R2 — GDPR data exports bucket (private, presigned URLs only)
-  R2_BUCKET_DATA_EXPORTS: Joi.string().optional(),
-  R2_PUBLIC_URL_DATA_EXPORTS: Joi.string().uri().optional(),
+  R2_BUCKET_DATA_EXPORTS: Joi.string().required(),
+  R2_PUBLIC_URL_DATA_EXPORTS: Joi.string().uri().required(),
   R2_KEY_PREFIX_DATA_EXPORTS: Joi.string().allow('').optional(),
 
   // Firebase

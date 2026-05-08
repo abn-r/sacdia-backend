@@ -112,7 +112,7 @@ const mockPrismaService = {
     create: jest.fn(),
     update: jest.fn(),
   },
-  // super_admin bypass for assertEvidenceClubAccess / assertEvidenceTerritoryAccess
+  // super-admin bypass for assertEvidenceClubAccess / assertEvidenceTerritoryAccess
   users_roles: {
     findFirst: jest.fn(),
   },
@@ -139,7 +139,7 @@ describe('AnnualFoldersService — single-evidence presign', () => {
 
     service = module.get<AnnualFoldersService>(AnnualFoldersService);
 
-    // Default: super_admin bypass for all access-check methods
+    // Default: super-admin bypass for all access-check methods
     mockPrismaService.users_roles.findFirst.mockResolvedValue({
       user_role_id: 'sa-role-id',
     });

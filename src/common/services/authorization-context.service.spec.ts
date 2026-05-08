@@ -68,7 +68,7 @@ describe('AuthorizationContextService', () => {
       users_roles: [
         {
           roles: {
-            role_name: 'assistant_admin',
+            role_name: 'assistant-admin',
             role_permissions: [
               { permissions: { permission_name: 'clubs:read' } },
               { permissions: { permission_name: 'reports:read' } },
@@ -151,7 +151,7 @@ describe('AuthorizationContextService', () => {
     expect(result.post_register_complete).toBe(true);
     expect(result.authorization.grants.global_roles).toEqual([
       {
-        role_name: 'assistant_admin',
+        role_name: 'assistant-admin',
         permissions: ['clubs:read', 'reports:read'],
         scope: {
           country: { id: 1, name: 'México' },
@@ -221,15 +221,15 @@ describe('AuthorizationContextService', () => {
       club_role_assignments: [],
     });
 
-    it('should return true when user has super_admin role', async () => {
+    it('should return true when user has super-admin role', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(
-        buildUserWithRole('super_admin'),
+        buildUserWithRole('super-admin'),
       );
 
       await expect(service.isSuperAdmin('user-sa')).resolves.toBe(true);
     });
 
-    it('should return false when user has a non-super_admin role', async () => {
+    it('should return false when user has a non-super-admin role', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(
         buildUserWithRole('admin'),
       );

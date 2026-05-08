@@ -124,6 +124,12 @@ pnpm run migrate:storage-urls:r2
 - `ALLOWED_ORIGINS`
 - `AUTH_REJECT_SNAKE_CASE` (default general: `true`; ventana temporal: `false`)
 
+### Runtime / desarrollo
+
+- `PRISMA_POOL_CONNECTION_TIMEOUT_MS` (default: `15000`) — timeout del pool
+  `pg` usado por PrismaService; ayuda a tolerar cold starts de Neon en
+  dev/serverless.
+
 ## Migración de URLs a R2
 
 El script `migrate:storage-urls:r2` normaliza URLs legacy en BD hacia los valores actuales de `R2_PUBLIC_URL_*` y `R2_KEY_PREFIX_*`.

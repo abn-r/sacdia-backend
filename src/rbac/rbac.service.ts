@@ -149,10 +149,10 @@ export class RbacService {
     });
   }
 
-  // ─── Role CRUD (super_admin only) ───────────────────────────
+  // ─── Role CRUD (super-admin only) ───────────────────────────
 
   async createRole(dto: CreateRoleDto) {
-    if (dto.role_name === 'super_admin') {
+    if (dto.role_name === 'super-admin') {
       throw new AppBadRequestException(ErrorCode.RBAC_ROLE_NAME_RESERVED, {
         name: dto.role_name,
       });
@@ -241,7 +241,7 @@ export class RbacService {
       });
     }
 
-    if (role.role_name === 'super_admin') {
+    if (role.role_name === 'super-admin') {
       throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
@@ -309,7 +309,7 @@ export class RbacService {
       });
     }
 
-    if (role.role_name === 'super_admin') {
+    if (role.role_name === 'super-admin') {
       throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
     }
 
@@ -557,7 +557,11 @@ export class RbacService {
     });
   }
 
-  async assignRoleToUser(userId: string, roleId: string) {
+  async assignRoleToUser(
+    userId: string,
+    roleId: string,
+    actorUserId: string,
+  ) {
     const [user, role] = await Promise.all([
       this.prisma.users.findUnique({
         where: { user_id: userId },
@@ -580,6 +584,8 @@ export class RbacService {
         id: roleId,
       });
     }
+
+    await this.assertCanMutateProtectedRole(role.role_name, actorUserId);
 
     const existing = await this.prisma.users_roles.findFirst({
       where: { user_id: userId, role_id: roleId },
@@ -614,9 +620,20 @@ export class RbacService {
     return { success: true, message: 'Rol asignado' };
   }
 
-  async removeRoleFromUser(userId: string, roleId: string) {
+  async removeRoleFromUser(
+    userId: string,
+    roleId: string,
+    actorUserId: string,
+  ) {
     const assignment = await this.prisma.users_roles.findFirst({
       where: { user_id: userId, role_id: roleId, active: true },
+      include: {
+        roles: {
+          select: {
+            role_name: true,
+          },
+        },
+      },
     });
 
     if (!assignment) {
@@ -625,6 +642,11 @@ export class RbacService {
         roleId,
       });
     }
+
+    await this.assertCanMutateProtectedRole(
+      assignment.roles.role_name,
+      actorUserId,
+    );
 
     await this.prisma.users_roles.update({
       where: { user_role_id: assignment.user_role_id },
@@ -636,13 +658,29 @@ export class RbacService {
     return { success: true, message: 'Rol removido del usuario' };
   }
 
+  private async assertCanMutateProtectedRole(
+    roleName: string,
+    actorUserId: string,
+  ): Promise<void> {
+    if (roleName !== 'super-admin') {
+      return;
+    }
+
+    const actorIsSuperAdmin =
+      await this.authorizationContext.isSuperAdmin(actorUserId);
+
+    if (!actorIsSuperAdmin) {
+      throw new AppForbiddenException(ErrorCode.RBAC_ROLE_PROTECTED);
+    }
+  }
+
   async bootstrapAdmin(userId: string) {
-    // Check if any super_admin already exists
+    // Check if any super-admin already exists
     const existingSuperAdmin = await this.prisma.users_roles.findFirst({
       where: {
         active: true,
         roles: {
-          role_name: 'super_admin',
+          role_name: 'super-admin',
           active: true,
         },
       },
@@ -664,7 +702,7 @@ export class RbacService {
     }
 
     const superAdminRole = await this.prisma.roles.findFirst({
-      where: { role_name: 'super_admin', active: true },
+      where: { role_name: 'super-admin', active: true },
     });
 
     if (!superAdminRole) {
@@ -679,16 +717,16 @@ export class RbacService {
     });
 
     this.logger.warn(
-      `BOOTSTRAP: Usuario ${maskEmail(user.email)} (${userId}) asignado como primer super_admin`,
+      `BOOTSTRAP: Usuario ${maskEmail(user.email)} (${userId}) asignado como primer super-admin`,
     );
 
     await this.authorizationContext.invalidateUserAuthorizationCache(userId);
 
     return {
       success: true,
-      message: `Usuario ${user.email} es ahora super_admin`,
+      message: `Usuario ${user.email} es ahora super-admin`,
       user_id: userId,
-      role: 'super_admin',
+      role: 'super-admin',
     };
   }
 

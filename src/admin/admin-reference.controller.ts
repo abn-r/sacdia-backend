@@ -53,7 +53,7 @@ import {
 @ApiTags('admin-reference')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-@GlobalRoles('admin', 'super_admin')
+@GlobalRoles('admin', 'super-admin')
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminReferenceController {
@@ -304,9 +304,9 @@ export class AdminReferenceController {
   }
 
   @Post('club-ideals')
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create club ideal (super_admin only)' })
+  @ApiOperation({ summary: 'Create club ideal (super-admin only)' })
   async createClubIdeal(
     @Body() dto: CreateClubIdealDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
@@ -321,7 +321,7 @@ export class AdminReferenceController {
   @Patch('club-ideals/:clubIdealId')
   @RequirePermissions('catalogs:update')
   @ApiOperation({
-    summary: 'Update club ideal (admin: edit only; super_admin: full edit)',
+    summary: 'Update club ideal (admin: edit only; super-admin: full edit)',
   })
   async updateClubIdeal(
     @Param('clubIdealId', ParseIntPipe) clubIdealId: number,
@@ -337,9 +337,9 @@ export class AdminReferenceController {
   }
 
   @Delete('club-ideals/:clubIdealId')
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @RequirePermissions('catalogs:delete')
-  @ApiOperation({ summary: 'Soft delete club ideal (super_admin only)' })
+  @ApiOperation({ summary: 'Soft delete club ideal (super-admin only)' })
   async deleteClubIdeal(
     @Param('clubIdealId', ParseIntPipe) clubIdealId: number,
     @Req() req: ExpressRequest & { user: { sub: string } },
@@ -364,9 +364,9 @@ export class AdminReferenceController {
   }
 
   @Post('club-types')
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create club type (super_admin only)' })
+  @ApiOperation({ summary: 'Create club type (super-admin only)' })
   async createClubType(
     @Body() dto: CreateClubTypeDto,
     @Req() req: ExpressRequest & { user: { sub: string } },
@@ -381,7 +381,7 @@ export class AdminReferenceController {
   @Patch('club-types/:clubTypeId')
   @RequirePermissions('catalogs:update')
   @ApiOperation({
-    summary: 'Update club type (admin: edit only; super_admin: full edit)',
+    summary: 'Update club type (admin: edit only; super-admin: full edit)',
   })
   async updateClubType(
     @Param('clubTypeId', ParseIntPipe) clubTypeId: number,
@@ -397,9 +397,9 @@ export class AdminReferenceController {
   }
 
   @Delete('club-types/:clubTypeId')
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @RequirePermissions('catalogs:delete')
-  @ApiOperation({ summary: 'Soft delete club type (super_admin only)' })
+  @ApiOperation({ summary: 'Soft delete club type (super-admin only)' })
   async deleteClubType(
     @Param('clubTypeId', ParseIntPipe) clubTypeId: number,
     @Req() req: ExpressRequest & { user: { sub: string } },

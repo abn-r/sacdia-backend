@@ -307,7 +307,7 @@ export class MonthlyReportsService {
 
   /**
    * Paginated list of monthly reports across clubs.
-   * - super_admin / admin: can filter by any local_field_id supplied in filters.
+   * - super-admin / admin: can filter by any local_field_id supplied in filters.
    * - coordinator: scope is forced to their own local_field_id (filters.localFieldId ignored).
    * Roles and territory scope are derived from the resolved authorization profile
    * so that this method never trusts unverified JWT claims directly.
@@ -334,7 +334,7 @@ export class MonthlyReportsService {
     );
 
     const isAdmin =
-      globalRoleNames.has('admin') || globalRoleNames.has('super_admin');
+      globalRoleNames.has('admin') || globalRoleNames.has('super-admin');
 
     const userLocalFieldId = resolved.authorization.effective.scope.global
       .local_field?.id as number | undefined;

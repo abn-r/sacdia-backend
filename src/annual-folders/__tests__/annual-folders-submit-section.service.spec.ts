@@ -73,7 +73,7 @@ const mockPrismaService = {
   annual_folder_evidences: {
     count: jest.fn(),
   },
-  // assertFolderClubAccess: super_admin bypass path
+  // assertFolderClubAccess: super-admin bypass path
   users_roles: {
     findFirst: jest.fn(),
   },
@@ -122,7 +122,7 @@ describe('AnnualFoldersService — submitSection', () => {
     mockTx.annual_folder_section_evaluations.updateMany.mockResolvedValue({
       count: 1,
     });
-    // assertFolderClubAccess: super_admin bypass (simplest path)
+    // assertFolderClubAccess: super-admin bypass (simplest path)
     mockPrismaService.users_roles.findFirst.mockResolvedValue({
       user_role_id: 'sa-role-id',
     });

@@ -188,7 +188,10 @@ WHERE r.role_name = 'member'
 
     -- Validation (own domain — Sprint E)
     'validation:read',
-    'validation:submit'
+    'validation:submit',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -300,7 +303,96 @@ WHERE r.role_name = 'counselor'
     -- Validation (own domain — Sprint E)
     'validation:submit',
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
+-- INSTRUCTOR role (CLUB)
+-- ============================
+-- Instructor teaches honors, classes, and specialized skills.
+-- Minimal permissions: own trajectory, club read, catalogs, personal data,
+-- validation, and own ranking.
+
+DELETE FROM role_permissions
+WHERE role_id = (
+  SELECT role_id FROM roles
+  WHERE role_name = 'instructor' AND role_category = 'CLUB' AND active = true
+);
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name = 'instructor'
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN (
+    -- Classes & Honors (own trajectory)
+    'classes:read',
+    'user_honors:read',
+    'user_honors:create',
+    'user_honors:submit',
+    'user_honors:delete',
+    'user_honors:validate',
+
+    -- Club info (read only)
+    'clubs:read',
+    'club_sections:read',
+    'club_roles:read',
+
+    -- Catalogs (read only)
+    'catalogs:read',
+    'certifications:read',
+    'folders:read',
+
+    -- Personal data
+    'users:read',
+    'users:update_profile',
+    'emergency_contacts:read',
+    'emergency_contacts:update',
+    'health:read',
+    'health:update',
+    'legal_representative:read',
+    'legal_representative:update',
+
+    -- Activities (read + attendance)
+    'activities:read',
+    'attendance:read',
+    'attendance:manage',
+    'qr:validate',
+
+    -- Evidence & progress
+    'evidence_folders:read',
+    'evidence_folders:update',
+
+    -- User progression (view other users' progression)
+    'user_certifications:read',
+    'user_folders:read',
+
+    -- Dashboard
+    'dashboard:read',
+
+    -- Investiture (read only)
+    'investiture:read',
+
+    -- Requests (own domain)
+    'requests:read',
+
+    -- Achievements (own progress)
+    'achievements:read',
+
+    -- Validation (own domain — Sprint E)
+    'validation:submit',
+    'validation:review',
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -445,7 +537,10 @@ WHERE r.role_name = 'secretary'
     -- Validation (own domain — Sprint E)
     'validation:submit',
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -576,7 +671,10 @@ WHERE r.role_name = 'treasurer'
     -- Validation (own domain — Sprint E)
     'validation:submit',
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -721,7 +819,10 @@ WHERE r.role_name = 'secretary-treasurer'
     -- Validation (own domain — Sprint E)
     'validation:submit',
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -851,7 +952,13 @@ WHERE r.role_name = 'deputy-director'
     -- Validation (own domain — Sprint E)
     'validation:submit',
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Rankings (own ranking — 8.4-A)
+    'member_rankings:read_self',
+    'member_rankings:read_section',
+    'member_rankings:read_club',
+    'section_rankings:read_club'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1016,7 +1123,13 @@ WHERE r.role_name = 'director'
     -- Validation (own domain — Sprint E)
     'validation:submit',
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- Rankings (own + club-level — 8.4-A)
+    'member_rankings:read_self',
+    'member_rankings:read_section',
+    'member_rankings:read_club',
+    'section_rankings:read_club'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
@@ -1665,14 +1778,14 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 DELETE FROM role_permissions
 WHERE role_id = (
   SELECT role_id FROM roles
-  WHERE role_name = 'super_admin' AND role_category = 'GLOBAL' AND active = true
+  WHERE role_name = 'super-admin' AND role_category = 'GLOBAL' AND active = true
 );
 
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
 CROSS JOIN permissions p
-WHERE r.role_name = 'super_admin'
+WHERE r.role_name = 'super-admin'
   AND r.role_category = 'GLOBAL'
   AND r.active = true
   AND p.active = true
@@ -1696,7 +1809,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ============================
 -- resources:* — field/union/dia directors and assistants
 -- ============================
--- admin and super_admin pick these up automatically via their wildcard grants.
+-- admin and super-admin pick these up automatically via their wildcard grants.
 INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
 SELECT gen_random_uuid(), r.role_id, p.permission_id
 FROM roles r
@@ -1756,8 +1869,8 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- ============================
 -- ranking_weights:* — 8.4-C grants
 -- ============================
--- super_admin and admin pick up both permissions automatically via their
--- wildcard grants above (super_admin: all active; admin: all active except :delete).
+-- super-admin and admin pick up both permissions automatically via their
+-- wildcard grants above (super-admin: all active; admin: all active except :delete).
 --
 -- Union-level roles (director-union, assistant-union): read + write.
 -- These roles copy permissions from assistant-lf which uses an explicit list,

@@ -67,19 +67,19 @@ describe('Admin Users Scope E2E', () => {
     await request(app.getHttpServer()).get('/api/v1/admin/users').expect(401);
   });
 
-  it('should allow super_admin with ALL scope', async () => {
+  it('should allow super-admin with ALL scope', async () => {
     const token = makeToken('super-1', 'super@test.com');
 
     jest
       .spyOn(prisma.users_roles, 'findMany')
       .mockResolvedValue([
-        { roles: { role_name: 'super_admin', active: true } } as any,
+        { roles: { role_name: 'super-admin', active: true } } as any,
       ]);
     jest.spyOn(prisma.users, 'findUnique').mockResolvedValue({
       user_id: 'super-1',
       union_id: null,
       local_field_id: null,
-      users_roles: [{ roles: { role_name: 'super_admin' } }],
+      users_roles: [{ roles: { role_name: 'super-admin' } }],
     } as any);
     jest.spyOn(prisma.users, 'findMany').mockResolvedValue([] as any);
     jest.spyOn(prisma.users, 'count').mockResolvedValue(0 as any);

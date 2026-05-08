@@ -45,13 +45,17 @@ const baseRole = {
 
 const superAdminRole = {
   role_id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
-  role_name: 'super_admin',
+  role_name: 'super-admin',
   description: 'Super administrador con control total del sistema',
   role_category: 'GLOBAL',
   active: true,
   created_at: new Date('2025-01-01'),
   modified_at: new Date('2025-01-01'),
 };
+
+const USER_ID = '11111111-1111-1111-1111-111111111111';
+const ACTOR_ADMIN_ID = '22222222-2222-2222-2222-222222222222';
+const ACTOR_SUPER_ADMIN_ID = '33333333-3333-3333-3333-333333333333';
 
 const baseRoleWithPermissions = {
   ...baseRole,
@@ -92,6 +96,9 @@ const mockPrismaService = {
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+  },
+  users: {
+    findUnique: jest.fn(),
   },
   role_permissions: {
     findFirst: jest.fn(),
@@ -135,12 +142,107 @@ describe('RbacService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         {
           provide: AuthorizationContextService,
-          useValue: { invalidateUserAuthorizationCache: jest.fn() },
+          useValue: {
+            invalidateUserAuthorizationCache: jest.fn(),
+            isSuperAdmin: jest.fn().mockResolvedValue(false),
+          },
         },
       ],
     }).compile();
 
     service = module.get<RbacService>(RbacService);
+  });
+
+  describe('assignRoleToUser protected roles', () => {
+    it('allows admin to assign a normal role', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: USER_ID,
+      });
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+      mockPrismaService.users_roles.create.mockResolvedValue({});
+
+      await expect(
+        service.assignRoleToUser(USER_ID, ROLE_ID, ACTOR_ADMIN_ID),
+      ).resolves.toEqual({ success: true, message: 'Rol asignado' });
+
+      expect(mockPrismaService.users_roles.create).toHaveBeenCalledWith({
+        data: { user_id: USER_ID, role_id: ROLE_ID },
+      });
+    });
+
+    it('blocks admin/assistant-admin from assigning super-admin', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: USER_ID,
+      });
+      mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
+
+      await expect(
+        service.assignRoleToUser(
+          USER_ID,
+          superAdminRole.role_id,
+          ACTOR_ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_PROTECTED });
+
+      expect(mockPrismaService.users_roles.create).not.toHaveBeenCalled();
+    });
+
+    it('allows super-admin to assign super-admin', async () => {
+      const authorizationContext = (service as any).authorizationContext;
+      authorizationContext.isSuperAdmin.mockResolvedValue(true);
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: USER_ID,
+      });
+      mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
+      mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+      mockPrismaService.users_roles.create.mockResolvedValue({});
+
+      await expect(
+        service.assignRoleToUser(
+          USER_ID,
+          superAdminRole.role_id,
+          ACTOR_SUPER_ADMIN_ID,
+        ),
+      ).resolves.toEqual({ success: true, message: 'Rol asignado' });
+    });
+  });
+
+  describe('removeRoleFromUser protected roles', () => {
+    it('blocks admin/assistant-admin from removing super-admin', async () => {
+      mockPrismaService.users_roles.findFirst.mockResolvedValue({
+        user_role_id: 'user-role-id',
+        roles: superAdminRole,
+      });
+
+      await expect(
+        service.removeRoleFromUser(
+          USER_ID,
+          superAdminRole.role_id,
+          ACTOR_ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_PROTECTED });
+
+      expect(mockPrismaService.users_roles.update).not.toHaveBeenCalled();
+    });
+
+    it('allows super-admin to remove super-admin', async () => {
+      const authorizationContext = (service as any).authorizationContext;
+      authorizationContext.isSuperAdmin.mockResolvedValue(true);
+      mockPrismaService.users_roles.findFirst.mockResolvedValue({
+        user_role_id: 'user-role-id',
+        roles: superAdminRole,
+      });
+      mockPrismaService.users_roles.update.mockResolvedValue({});
+
+      await expect(
+        service.removeRoleFromUser(
+          USER_ID,
+          superAdminRole.role_id,
+          ACTOR_SUPER_ADMIN_ID,
+        ),
+      ).resolves.toEqual({ success: true, message: 'Rol removido del usuario' });
+    });
   });
 
   // ============================================================
@@ -668,10 +770,10 @@ describe('RbacService', () => {
       );
     });
 
-    it('TC-CR3 - error: throws BadRequestException when role_name is "super_admin"', async () => {
+    it('TC-CR3 - error: throws BadRequestException when role_name is "super-admin"', async () => {
       const reserved: CreateRoleDto = {
         ...dto,
-        role_name: 'super_admin',
+        role_name: 'super-admin',
       };
 
       await expect(service.createRole(reserved)).rejects.toMatchObject({
@@ -704,10 +806,10 @@ describe('RbacService', () => {
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
 
-    it('TC-CR6 - error: role_name pattern "super_admin" blocked even with different casing is still blocked at exact match', async () => {
-      // Pattern validation happens at DTO layer (via @Matches), but service also blocks exact 'super_admin'
+    it('TC-CR6 - error: role_name pattern "super-admin" blocked even with different casing is still blocked at exact match', async () => {
+      // Pattern validation happens at DTO layer (via @Matches), but service also blocks exact 'super-admin'
       await expect(
-        service.createRole({ ...dto, role_name: 'super_admin' }),
+        service.createRole({ ...dto, role_name: 'super-admin' }),
       ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_NAME_RESERVED });
     });
   });
@@ -742,7 +844,7 @@ describe('RbacService', () => {
       expect(result!.description).toBe(updateDto.description);
     });
 
-    it('TC-UR2 - error: throws ForbiddenException when updating super_admin role', async () => {
+    it('TC-UR2 - error: throws ForbiddenException when updating super-admin role', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
 
       await expect(
@@ -799,7 +901,7 @@ describe('RbacService', () => {
       );
     });
 
-    it('TC-DR2 - error: throws ForbiddenException when role is super_admin', async () => {
+    it('TC-DR2 - error: throws ForbiddenException when role is super-admin', async () => {
       mockPrismaService.roles.findUnique.mockResolvedValue(superAdminRole);
 
       await expect(

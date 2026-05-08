@@ -18,7 +18,7 @@ SELECT gen_random_uuid(), role_id, 1
 FROM roles WHERE role_name = 'director'
 ON CONFLICT (role_id) DO UPDATE SET max_per_section = EXCLUDED.max_per_section;
 
--- deputy_director: max 2 per section
+-- deputy-director: max 2 per section
 INSERT INTO role_slot_limits (role_slot_limit_id, role_id, max_per_section)
 SELECT gen_random_uuid(), role_id, 2
 FROM roles WHERE role_name = 'deputy-director'

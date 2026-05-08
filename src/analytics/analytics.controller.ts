@@ -71,7 +71,7 @@ export class AnalyticsController {
   }
 
   @Get('jobs-overview')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Overview de jobs y colas BullMQ (admin only)',
     description:
@@ -99,8 +99,8 @@ export class AnalyticsController {
   }
 
   @Post('jobs/:queue/:jobId/retry')
-  @GlobalRoles('super_admin')
-  @ApiOperation({ summary: 'Retry failed BullMQ job (super_admin only)' })
+  @GlobalRoles('super-admin')
+  @ApiOperation({ summary: 'Retry failed BullMQ job (super-admin only)' })
   @ApiParam({ name: 'queue', description: 'Queue name' })
   @ApiParam({ name: 'jobId', description: 'Job ID' })
   async retryJob(
@@ -115,7 +115,7 @@ export class AnalyticsController {
   }
 
   @Get('queues/:queueName/health')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({
     summary: 'Queue health snapshot (admin only)',
     description:
@@ -161,7 +161,7 @@ export class AnalyticsController {
   }
 
   @Get('cron-runs')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({ summary: 'Resumen de ejecuciones de cron jobs (admin only)' })
   @ApiOkResponse({
     description: 'Cron runs summary',
@@ -178,7 +178,7 @@ export class AnalyticsController {
   }
 
   @Get('cron-runs/history')
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({ summary: 'Historial paginado de cron runs con filtros' })
   @ApiQuery({ name: 'job_name', required: false })
   @ApiQuery({
@@ -228,7 +228,7 @@ export class AnalyticsController {
     );
 
     const isAdmin = roleNames.some((r) =>
-      ['admin', 'assistant_admin', 'super_admin'].includes(r),
+      ['admin', 'assistant-admin', 'super-admin'].includes(r),
     );
 
     if (isAdmin) {

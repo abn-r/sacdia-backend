@@ -483,6 +483,9 @@ export class R2FileStorageService implements FileStorageService {
   private getRequiredEnv(name: string) {
     const value = this.configService.get<string>(name)?.trim();
     if (!value) {
+      this.logger.error(
+        `R2 config error: required env var "${name}" is missing or empty`,
+      );
       throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
     return value;

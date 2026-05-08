@@ -56,7 +56,7 @@ describe('ClubRolesGuard', () => {
   });
 
   it('should allow when active assignment belongs to the club and role matches', async () => {
-    mockReflector.getAllAndOverride.mockReturnValue(['deputy_director']);
+    mockReflector.getAllAndOverride.mockReturnValue(['deputy-director']);
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
       authorization: {

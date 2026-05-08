@@ -29,6 +29,7 @@ import {
   AuthorizationResource,
   RequirePermissions,
   GlobalRoles,
+  CurrentUser,
 } from '../common/decorators';
 import {
   JwtAuthGuard,
@@ -131,11 +132,11 @@ export class RbacController {
     return { status: 'success', data };
   }
 
-  // ─── Role CRUD (super_admin only) ───────────────────────────
+  // ─── Role CRUD (super-admin only) ───────────────────────────
 
   @Post('roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @ApiOperation({ summary: 'Crear un nuevo rol' })
   @ApiResponse({ status: 201, description: 'Rol creado con sus permisos' })
   @ApiResponse({ status: 400, description: 'Nombre inválido o reservado' })
@@ -148,14 +149,14 @@ export class RbacController {
 
   @Patch('roles/:id')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @ApiOperation({ summary: 'Actualizar descripción y/o permisos de un rol' })
   @ApiResponse({ status: 200, description: 'Rol actualizado' })
   @ApiResponse({
     status: 400,
     description: 'role_name inmutable o body inválido',
   })
-  @ApiResponse({ status: 403, description: 'El rol super_admin es protegido' })
+  @ApiResponse({ status: 403, description: 'El rol super-admin es protegido' })
   @ApiResponse({ status: 404, description: 'Rol no encontrado' })
   async updateRole(
     @Param('id', ParseUUIDPipe) id: string,
@@ -167,13 +168,13 @@ export class RbacController {
 
   @Delete('roles/:id')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('super_admin')
+  @GlobalRoles('super-admin')
   @ApiOperation({ summary: 'Desactivar (soft delete) un rol' })
   @ApiResponse({
     status: 200,
     description: 'Rol desactivado: { success: true, role_id }',
   })
-  @ApiResponse({ status: 403, description: 'El rol super_admin es protegido' })
+  @ApiResponse({ status: 403, description: 'El rol super-admin es protegido' })
   @ApiResponse({ status: 404, description: 'Rol no encontrado' })
   @ApiResponse({
     status: 409,
@@ -257,7 +258,7 @@ export class RbacController {
 
   @Get('users/:userId/roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({ summary: 'Listar roles asignados a un usuario' })
   @ApiResponse({ status: 200, description: 'Lista de roles del usuario' })
   async getUserRoles(@Param('userId', ParseUUIDPipe) userId: string) {
@@ -267,26 +268,32 @@ export class RbacController {
 
   @Post('users/:userId/roles')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({ summary: 'Asignar un rol a un usuario' })
   @ApiResponse({ status: 201, description: 'Rol asignado al usuario' })
   async assignRoleToUser(
+    @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: AssignRoleDto,
   ) {
-    return this.rbacService.assignRoleToUser(userId, dto.role_id);
+    return this.rbacService.assignRoleToUser(
+      userId,
+      dto.role_id,
+      actor.userId,
+    );
   }
 
   @Delete('users/:userId/roles/:roleId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'super_admin')
+  @GlobalRoles('admin', 'super-admin')
   @ApiOperation({ summary: 'Remover un rol de un usuario' })
   @ApiResponse({ status: 200, description: 'Rol removido del usuario' })
   async removeRoleFromUser(
+    @CurrentUser() actor: { userId: string },
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('roleId', ParseUUIDPipe) roleId: string,
   ) {
-    return this.rbacService.removeRoleFromUser(userId, roleId);
+    return this.rbacService.removeRoleFromUser(userId, roleId, actor.userId);
   }
 }
 
@@ -306,7 +313,7 @@ export class RbacBootstrapController {
   // Rate limit estricto: 1 request por minuto (protección contra race condition en deploy)
   @Throttle({ default: { ttl: 60000, limit: 1 } })
   @ApiOperation({
-    summary: 'Crear el primer super_admin (solo funciona si no existe ninguno)',
+    summary: 'Crear el primer super-admin (solo funciona si no existe ninguno)',
     description:
       'Requiere el header x-bootstrap-secret con el valor de BOOTSTRAP_SECRET. ' +
       'Si BOOTSTRAP_SECRET no está configurado, el endpoint está deshabilitado.',
@@ -316,7 +323,7 @@ export class RbacBootstrapController {
     description: 'Secret de bootstrap definido en BOOTSTRAP_SECRET (env var)',
     required: true,
   })
-  @ApiResponse({ status: 201, description: 'Primer super_admin creado' })
+  @ApiResponse({ status: 201, description: 'Primer super-admin creado' })
   @ApiResponse({
     status: 403,
     description:
@@ -324,7 +331,7 @@ export class RbacBootstrapController {
   })
   @ApiResponse({
     status: 409,
-    description: 'Ya existe un super_admin',
+    description: 'Ya existe un super-admin',
   })
   async bootstrapAdmin(
     @Headers('x-bootstrap-secret') bootstrapSecret: string | undefined,

@@ -6,7 +6,7 @@ import { ErrorCode } from '../errors/error-codes';
 /**
  * Guard que permite acceso si:
  * 1. El usuario es el propietario del recurso (userId en params coincide con el usuario autenticado)
- * 2. El usuario tiene un rol global administrativo (admin, assistant_admin, coordinator, super_admin)
+ * 2. El usuario tiene un rol global administrativo (admin, assistant-admin, coordinator, super-admin)
  */
 @Injectable()
 export class OwnerOrAdminGuard implements CanActivate {
@@ -37,9 +37,9 @@ export class OwnerOrAdminGuard implements CanActivate {
     // Caso 2: El usuario tiene rol administrativo global
     const isAdmin = await this.authorizationContext.hasAnyGlobalRole(user.sub, [
       'admin',
-      'assistant_admin',
+      'assistant-admin',
       'coordinator',
-      'super_admin',
+      'super-admin',
     ]);
 
     if (isAdmin) {

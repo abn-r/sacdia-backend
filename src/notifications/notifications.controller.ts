@@ -162,7 +162,7 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'Get paginated notification history',
     description:
-      'Admins see notification audit logs scoped to their territory/scope; super_admin receives the unfiltered audit trail. Regular users see only their own notifications (target_type=user).',
+      'Admins see notification audit logs scoped to their territory/scope; super-admin receives the unfiltered audit trail. Regular users see only their own notifications (target_type=user).',
   })
   async getHistory(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,

@@ -304,7 +304,7 @@ describe('FinancePeriodService', () => {
 
       expect(
         mockAuthorizationContextService.hasAnyGlobalRole,
-      ).toHaveBeenCalledWith('admin-user-456', ['admin', 'super_admin']);
+      ).toHaveBeenCalledWith('admin-user-456', ['admin', 'super-admin']);
     });
   });
 
