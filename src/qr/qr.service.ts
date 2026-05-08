@@ -996,8 +996,6 @@ export class QrService {
         .text(ec.phone, marginH + ecAccentW + 8, cursor + 34, {
           width: contentW - ecAccentW - 10,
         });
-
-      cursor += ecH;
     }
 
     // ── 6. Footer ─────────────────────────────────────────────────────────
