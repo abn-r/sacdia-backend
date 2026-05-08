@@ -955,6 +955,16 @@ export class InvestitureService {
         continue;
       }
 
+      if (
+        !(await this.canActorManageInvestitureEnrollment(actorId, enrollment))
+      ) {
+        failed.push({
+          id,
+          reason: 'Sin acceso al scope del enrollment',
+        });
+        continue;
+      }
+
       succeeded.push(id);
     }
 
@@ -1201,6 +1211,8 @@ export class InvestitureService {
         enrollment_id: true,
         investiture_status: true,
         user_id: true,
+        ecclesiastical_year_id: true,
+        classes: { select: { club_type_id: true } },
       },
     });
 
@@ -1223,6 +1235,16 @@ export class InvestitureService {
         failed.push({
           id,
           reason: `No se puede rechazar un enrollment en estado ${enrollment.investiture_status}`,
+        });
+        continue;
+      }
+
+      if (
+        !(await this.canActorManageInvestitureEnrollment(actorId, enrollment))
+      ) {
+        failed.push({
+          id,
+          reason: 'Sin acceso al scope del enrollment',
         });
         continue;
       }
@@ -1410,6 +1432,59 @@ export class InvestitureService {
   // ========================================
   // PRIVATE HELPERS
   // ========================================
+
+  private async canActorManageInvestitureEnrollment(
+    actorId: string,
+    enrollment: {
+      user_id: string;
+      ecclesiastical_year_id: number;
+      classes: { club_type_id: number };
+    },
+  ): Promise<boolean> {
+    const memberAssignment = await this.prisma.club_role_assignments.findFirst({
+      where: {
+        user_id: enrollment.user_id,
+        active: true,
+        status: 'active',
+        ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
+        club_sections: {
+          club_type_id: enrollment.classes.club_type_id,
+        },
+      },
+      select: {
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+          },
+        },
+      },
+    });
+
+    const section = memberAssignment?.club_sections;
+
+    if (!section?.main_club_id) {
+      return false;
+    }
+
+    if (
+      await this.authorizationContext.canManageClub(
+        actorId,
+        section.main_club_id,
+      )
+    ) {
+      return true;
+    }
+
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorId);
+    const activeClubScope = resolved.authorization.effective.scope.club;
+
+    return (
+      activeClubScope?.club.club_id === section.main_club_id &&
+      activeClubScope.section.club_section_id === section.club_section_id
+    );
+  }
 
   /**
    * Generic state transition for the approval chain.

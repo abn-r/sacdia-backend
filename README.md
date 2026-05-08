@@ -146,7 +146,9 @@ pnpm run migrate:storage-urls:r2 -- --apply
 ```
 
 Notas:
-- Si `REDIS_URL` falla, el backend usa cache in-memory (no recomendado para prod).
+- En `NODE_ENV=production`, `REDIS_URL` es obligatorio para rate limiting distribuido.
+  Si falta, es inválido o Redis no responde, el backend falla al iniciar. En desarrollo/test
+  se permite fallback a memoria para no bloquear trabajo local.
 - Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
 - Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
 - Ventana de compatibilidad temporal: **2026-03-04 a 2026-03-18** con `AUTH_REJECT_SNAKE_CASE=false`.
@@ -168,6 +170,7 @@ Notas:
 
 3. Verificación
    - Levanta backend y revisa:
+     - `Using Redis-backed distributed throttler storage`
      - `✅ Redis cache connected successfully`
      - `✅ Firebase Admin initialized successfully`
    - Healthcheck:

@@ -273,7 +273,7 @@ async function bootstrap() {
         `## Sistema de Administración de Clubes de Conquistadores y Aventureros
 
 ### Módulos Disponibles
-- **Auth**: Autenticación con Supabase + JWT
+- **Auth**: Better Auth self-hosted + JWT SACDIA HS256
 - **Users**: Gestión de perfiles de usuario
 - **Catalogs**: Catálogos de referencia (países, iglesias, roles, etc.)
 - **Clubs**: Gestión de clubes e instancias (Aventureros, Conquistadores, GM)
@@ -283,7 +283,8 @@ async function bootstrap() {
 - **Finances**: Control financiero
 
 ### Autenticación
-Todos los endpoints protegidos requieren Bearer Token (JWT de Supabase).
+Todos los endpoints protegidos requieren Bearer Token (JWT SACDIA HS256)
+emitido por Better Auth self-hosted.
 
 ### Paginación
 Los endpoints de listado soportan: \`?page=1&limit=20\`

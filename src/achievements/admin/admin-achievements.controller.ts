@@ -271,7 +271,9 @@ export class AdminAchievementsController {
 
   /**
    * POST /api/v1/admin/achievements/:achievementId/image
-   * Upload badge image (PNG, SVG, or WebP, max 2 MB) to R2.
+   * Upload badge image (PNG or WebP, max 2 MB) to R2.
+   * SVG is intentionally rejected for public badges because active content in
+   * browser-rendered SVG can become an XSS boundary if served from a public CDN.
    */
   @Post(':achievementId/image')
   @RequirePermissions('achievements:manage')
@@ -282,7 +284,7 @@ export class AdminAchievementsController {
   @ApiOperation({
     summary: 'Upload badge image for an achievement',
     description:
-      'Accepts PNG, SVG, or WebP. Max size: 2 MB. Stores the file in R2 and updates badge_image_key.',
+      'Accepts PNG or WebP. SVG is intentionally rejected for public badges. Max size: 2 MB. Stores the file in R2 and updates badge_image_key.',
   })
   @ApiParam({ name: 'achievementId', type: Number })
   @ApiBody({
@@ -293,7 +295,7 @@ export class AdminAchievementsController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'Badge image (PNG, SVG, or WebP — max 2 MB)',
+          description: 'Badge image (PNG or WebP — max 2 MB)',
         },
       },
     },

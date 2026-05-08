@@ -23,6 +23,8 @@ La documentación funcional oficial del producto está en el repositorio padre: 
   - Barrido consolidado del estado real del backend (módulos, riesgos operativos, documentación vigente e hitos siguientes).
 - `docs/adr/ADR-0001-auth-session-compat-window.md`
   - Decisión arquitectónica operativa sobre compatibilidad temporal de `refresh_token` y fecha de cutback a contrato estricto.
+- `docs/reviews/security-audit-exceptions-2026-05-08.md`
+  - Excepción temporal para hallazgos `pnpm audit` de `next` transitivo vía Better Auth, con justificación runtime NestJS/no Next.
 - `docs/migrations/2026-02-21-emergency-contacts-relationship-type-uuid.md`
   - Migración de `emergency_contacts.relationship_type` (int legacy) a `relationship_type_id` (UUID) con FK a `relationship_types`.
 
@@ -50,6 +52,11 @@ Para reducir desactualización:
   - Contrato oficial de refresh: `refreshToken` (camelCase).
   - Ventana temporal de compatibilidad legacy activa hasta **2026-03-18**.
   - `logout` en modo best-effort para evitar bloqueo de UX por expiración de access token.
+- Seguridad runtime:
+  - Rate limiting usa Redis distribuido de forma obligatoria en producción (`REDIS_URL`);
+    en desarrollo/test puede caer a memoria.
+  - IP whitelist/CIDR para endpoints admin sigue **pendiente**: no existe
+    `ip-whitelist.guard.ts` ni decorator runtime activo en este repo.
 - Ver seguimiento en:
   - `docs/IMPLEMENTATION-SESSION-2026-03-04-session-stabilization.md`
   - `docs/BACKEND-PANORAMA-2026-03-04.md`
