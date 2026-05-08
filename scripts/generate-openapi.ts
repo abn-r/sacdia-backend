@@ -8,6 +8,7 @@ async function generateSwagger() {
   const app = await NestFactory.create(AppModule, { logger: false });
 
   // Configuración idéntica a main.ts para que el spec sea igual
+  app.setGlobalPrefix('api');
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: '1',
@@ -16,7 +17,7 @@ async function generateSwagger() {
   const config = new DocumentBuilder()
     .setTitle('SACDIA API')
     .setDescription(
-      `## Sistema de Administración de Clubes de Conquistadores y Aventureros\n\n### Módulos Disponibles\n- **Auth**: Autenticación con Supabase + JWT\n- **Users**: Gestión de perfiles de usuario\n- **Catalogs**: Catálogos de referencia\n- **Clubs**: Gestión de clubes e instancias\n- **Classes**: Clases progresivas\n- **Honors**: Especialidades\n- **Activities**: Actividades de club\n- **Finances**: Control financiero`,
+      `## Sistema de Administración de Clubes de Conquistadores y Aventureros\n\n### Módulos Disponibles\n- **Auth**: Better Auth self-hosted + JWT SACDIA HS256\n- **Users**: Gestión de perfiles de usuario\n- **Catalogs**: Catálogos de referencia\n- **Clubs**: Gestión de clubes e instancias\n- **Classes**: Clases progresivas\n- **Honors**: Especialidades\n- **Activities**: Actividades de club\n- **Finances**: Control financiero\n\n### Autenticación\nTodos los endpoints protegidos requieren Bearer Token (JWT SACDIA HS256) emitido por Better Auth self-hosted.`,
     )
     .setVersion('2.2.0')
     .setContact('SACDIA Team', 'https://sacdia.app', 'dev@sacdia.app')

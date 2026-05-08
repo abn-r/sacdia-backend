@@ -11,6 +11,8 @@ import {
   Res,
   ParseIntPipe,
   ParseUUIDPipe,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -27,9 +29,14 @@ import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { UpdateManualDataDto } from './dto';
 import {
   AuthorizationResource,
+  GlobalRoles,
   RequirePermissions,
 } from '../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import {
+  GlobalRolesGuard,
+  JwtAuthGuard,
+  PermissionsGuard,
+} from '../common/guards';
 
 @ApiTags('monthly-reports')
 @ApiBearerAuth()
@@ -48,6 +55,7 @@ export class MonthlyReportsController {
 
   @Get('preview/:enrollmentId')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'enrollmentId' })
   @ApiOperation({
     summary: 'Vista previa del informe mensual',
     description:
@@ -85,6 +93,7 @@ export class MonthlyReportsController {
 
   @Post(':enrollmentId')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'enrollmentId' })
   @ApiOperation({
     summary: 'Obtener o crear borrador de informe mensual',
     description:
@@ -120,6 +129,7 @@ export class MonthlyReportsController {
 
   @Patch(':reportId/manual-data')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Actualizar datos manuales del informe',
     description:
@@ -153,7 +163,9 @@ export class MonthlyReportsController {
   // ========================================
 
   @Post(':reportId/generate')
+  @HttpCode(HttpStatus.OK)
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Generar informe (congelar datos)',
     description:
@@ -187,7 +199,9 @@ export class MonthlyReportsController {
   // ========================================
 
   @Post(':reportId/submit')
+  @HttpCode(HttpStatus.OK)
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Enviar informe al campo',
     description:
@@ -222,6 +236,7 @@ export class MonthlyReportsController {
 
   @Get('enrollment/:enrollmentId')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'enrollmentId' })
   @ApiOperation({
     summary: 'Listar informes de una matrícula',
     description:
@@ -257,6 +272,7 @@ export class MonthlyReportsController {
 
   @Get(':reportId/pdf')
   @RequirePermissions('reports:download')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Descargar informe mensual en PDF',
     description:
@@ -295,7 +311,10 @@ export class MonthlyReportsController {
   // ========================================
 
   @Get('admin/list')
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
+  @GlobalRoles('admin', 'coordinator', 'assistant-admin')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Listar reportes multi-club (admin/coordinator)' })
   @ApiQuery({ name: 'club_type_id', required: false, type: Number })
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
@@ -338,6 +357,7 @@ export class MonthlyReportsController {
 
   @Get(':reportId')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'monthly_report', idParam: 'reportId' })
   @ApiOperation({
     summary: 'Obtener informe mensual',
     description:

@@ -2,6 +2,8 @@ import { Reflector } from '@nestjs/core';
 import { ClubRolesGuard } from './club-roles.guard';
 import { AuthorizationContextService } from '../services/authorization-context.service';
 import { ErrorCode } from '../errors/error-codes';
+import { AUTHORIZATION_RESOURCE_KEY } from '../decorators';
+import { PrismaService } from '../../prisma/prisma.service';
 
 describe('ClubRolesGuard', () => {
   const mockReflector = {
@@ -12,10 +14,15 @@ describe('ClubRolesGuard', () => {
     canManageClub: jest.fn(),
     resolveUserAuthorization: jest.fn(),
   };
+  const mockPrisma = {
+    enrollments: { findFirst: jest.fn() },
+    club_role_assignments: { findFirst: jest.fn() },
+  };
 
   const guard = new ClubRolesGuard(
     mockReflector as unknown as Reflector,
     mockAuthorizationContext as unknown as AuthorizationContextService,
+    mockPrisma as unknown as PrismaService,
   );
 
   const createContext = (request: Record<string, unknown>) =>
@@ -157,5 +164,57 @@ describe('ClubRolesGuard', () => {
         createContext({ user: { sub: 'user-123' }, params: { clubId: '10' } }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+
+  it('derives investiture club scope from enrollmentId instead of trusting body.club_id', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'investiture_enrollment', idParam: 'enrollmentId' };
+      }
+      return ['director'];
+    });
+    mockAuthorizationContext.canManageClub.mockResolvedValue(false);
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+      authorization: {
+        effective: {
+          scope: {
+            club: {
+              assignment_id: 'assignment-1',
+              role_name: 'director',
+              club: {
+                club_id: 10,
+                club_name: 'Club A',
+              },
+              section: {
+                club_section_id: 22,
+                club_type_name: 'Conquistadores',
+              },
+            },
+          },
+        },
+      },
+    });
+    mockPrisma.enrollments.findFirst.mockResolvedValue({
+      user_id: 'member-b',
+      ecclesiastical_year_id: 2026,
+      classes: { club_type_id: 2 },
+    });
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+      club_sections: { main_club_id: 99 },
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { enrollmentId: '123' },
+          body: { club_id: 10 },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+    expect(mockAuthorizationContext.canManageClub).toHaveBeenCalledWith(
+      'club-a-actor',
+      99,
+    );
   });
 });

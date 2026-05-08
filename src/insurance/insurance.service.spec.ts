@@ -14,6 +14,9 @@ describe('InsuranceService', () => {
     club_role_assignments: {
       findMany: jest.fn(),
     },
+    club_sections: {
+      findFirst: jest.fn(),
+    },
     member_insurances: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
@@ -56,6 +59,9 @@ describe('InsuranceService', () => {
   });
 
   it('lists members in the section with their latest active insurance and current class', async () => {
+    mockPrismaService.club_sections.findFirst.mockResolvedValue({
+      club_section_id: 21,
+    });
     mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
       {
         user_id: 'member-1',
@@ -99,7 +105,11 @@ describe('InsuranceService', () => {
       mockPrismaService.club_role_assignments.findMany,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { club_section_id: 21, active: true },
+        where: {
+          club_section_id: 21,
+          active: true,
+          club_sections: { main_club_id: 9 },
+        },
       }),
     );
     expect(mockPrismaService.member_insurances.findFirst).toHaveBeenCalledWith(
@@ -138,6 +148,22 @@ describe('InsuranceService', () => {
         },
       },
     ]);
+  });
+
+  it('rejects list requests when the section does not belong to the club', async () => {
+    mockPrismaService.club_sections.findFirst.mockResolvedValue(null);
+
+    await expect(service.listMembersInsurance(9, 21)).rejects.toMatchObject({
+      code: ErrorCode.CLUB_SECTION_NOT_FOUND,
+    });
+
+    expect(mockPrismaService.club_sections.findFirst).toHaveBeenCalledWith({
+      where: { club_section_id: 21, main_club_id: 9 },
+      select: { club_section_id: true },
+    });
+    expect(
+      mockPrismaService.club_role_assignments.findMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('returns member insurance detail with null insurance when no active insurance exists', async () => {

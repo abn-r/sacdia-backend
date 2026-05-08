@@ -553,7 +553,7 @@ describe('AdminAchievementsService', () => {
       });
     });
 
-    it('should support SVG file upload', async () => {
+    it('should reject SVG badge uploads because badges are served publicly', async () => {
       const mockAchievement = {
         achievement_id: 2,
         name: 'SVG Test',
@@ -564,14 +564,6 @@ describe('AdminAchievementsService', () => {
       mockAchievementsService.getAchievementDetail.mockResolvedValue({
         achievement: mockAchievement,
       });
-      mockFileStorageService.upload.mockResolvedValue({
-        key: 'achievements/badges/2_gold.svg',
-        url: 'https://cdn.r2.example/achievements/badges/2_gold.svg',
-      });
-      mockPrismaService.achievements.update.mockResolvedValue({
-        ...mockAchievement,
-        badge_image_key: 'achievements/badges/2_gold.svg',
-      });
 
       const svgFile: Express.Multer.File = {
         originalname: 'badge.svg',
@@ -580,9 +572,12 @@ describe('AdminAchievementsService', () => {
         buffer: Buffer.from('<svg/>'),
       } as Express.Multer.File;
 
-      const result = await service.uploadBadgeImage(2, svgFile);
+      await expect(service.uploadBadgeImage(2, svgFile)).rejects.toMatchObject({
+        code: ErrorCode.ACHIEVEMENT_BADGE_INVALID_TYPE,
+      });
 
-      expect(result.badge_image_key).toBe('achievements/badges/2_gold.svg');
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+      expect(mockPrismaService.achievements.update).not.toHaveBeenCalled();
     });
   });
 });
