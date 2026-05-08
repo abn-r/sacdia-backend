@@ -135,7 +135,7 @@
     ],
     "coverageDirectory": "../coverage",
     "coverageThreshold": {
-      "./config/throttler.config.ts": {
+      "**/config/throttler.config.ts": {
         "branches": 70,
         "functions": 75,
         "lines": 80,
