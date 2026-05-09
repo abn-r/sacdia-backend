@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Inject,
   Optional,
   Param,
   ParseIntPipe,
@@ -40,7 +41,8 @@ export class AnalyticsController {
     private readonly analyticsService: AnalyticsService,
     private readonly authorizationContext: AuthorizationContextService,
     @Optional()
-    private readonly jobsOverviewService: JobsOverviewService | undefined,
+    @Inject(JobsOverviewService)
+    private readonly jobsOverviewService: JobsOverviewService,
     private readonly cronRunsService: CronRunsService,
   ) {}
 
