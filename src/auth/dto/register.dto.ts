@@ -6,6 +6,7 @@ import {
   Matches,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { i18nValidationMessage } from 'nestjs-i18n';
 
 export class RegisterDto {
   @ApiProperty({ example: 'Juan', description: 'Nombre del usuario' })
@@ -36,11 +37,10 @@ export class RegisterDto {
       'Contraseña segura (mínimo 8 caracteres, debe incluir mayúscula, minúscula, número y carácter especial)',
   })
   @IsString()
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  @MinLength(8, { message: i18nValidationMessage('errors.VALIDATION.password_min_length', { min: 8 }) })
   @MaxLength(128)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message:
-      'La contraseña debe incluir: mayúscula, minúscula, número y carácter especial (@$!%*?&)',
+    message: i18nValidationMessage('errors.VALIDATION.password_format'),
   })
   declare password: string;
 }

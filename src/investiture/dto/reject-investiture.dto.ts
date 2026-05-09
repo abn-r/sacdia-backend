@@ -1,5 +1,6 @@
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { i18nValidationMessage } from 'nestjs-i18n';
 
 export class RejectInvestitureDto {
   @ApiProperty({
@@ -8,7 +9,7 @@ export class RejectInvestitureDto {
     example: 'Faltan evidencias del honor de Primeros Auxilios.',
   })
   @IsString()
-  @IsNotEmpty({ message: 'El motivo del rechazo es obligatorio' })
-  @MaxLength(1000)
+  @IsNotEmpty({ message: i18nValidationMessage('errors.VALIDATION.reject_reason_required') })
+  @MaxLength(1000, { message: i18nValidationMessage('errors.VALIDATION.reject_reason_max_length', { max: 1000 }) })
   declare reason: string;
 }

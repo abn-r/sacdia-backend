@@ -7,6 +7,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRankingWeightsDto } from './dto/create-ranking-weights.dto';
 import { UpdateRankingWeightsDto } from './dto/update-ranking-weights.dto';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class RankingWeightsService {
@@ -92,7 +94,7 @@ export class RankingWeightsService {
   async delete(id: string) {
     const row = await this.getById(id);
     if (row.club_type_id == null) {
-      throw new BadRequestException('Default global weights cannot be deleted');
+      throw new AppBadRequestException(ErrorCode.RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE);
     }
     return this.prisma.ranking_weight_configs.delete({
       where: { ranking_weight_config_id: id },

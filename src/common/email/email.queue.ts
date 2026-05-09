@@ -24,27 +24,33 @@ export type EmailJobType =
 // ---------------------------------------------------------------------------
 // Job payload shapes
 // ---------------------------------------------------------------------------
+export type SupportedEmailLocale = 'es' | 'en' | 'fr' | 'pt-BR';
+
 export interface DataExportReadyJobPayload {
   to: string;
   userId: string;
   exportId: string;
   deepLink: string;
   expiresAt: string; // ISO string — Date is not serializable over BullMQ
+  lang?: SupportedEmailLocale;
 }
 
 export interface EmailVerificationJobPayload {
   to: string;
   verificationUrl: string;
   userName?: string;
+  lang?: SupportedEmailLocale;
 }
 
 export interface PasswordResetJobPayload {
   to: string;
   resetUrl: string;
+  lang?: SupportedEmailLocale;
 }
 
 export interface AccountDeletionConfirmedJobPayload {
   to: string;
+  lang?: SupportedEmailLocale;
 }
 
 export interface CronAlertJobPayload {
