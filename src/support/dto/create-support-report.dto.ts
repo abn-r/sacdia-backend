@@ -7,6 +7,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { i18nValidationMessage } from 'nestjs-i18n';
 
 /**
  * Categoría del reporte — coincide con el enum de la app móvil
@@ -51,7 +52,7 @@ export class CreateSupportReportDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120, { message: 'title no puede superar 120 caracteres' })
+  @MaxLength(120, { message: i18nValidationMessage('errors.VALIDATION.support_title_max_length', { max: 120 }) })
   title!: string;
 
   @ApiProperty({
@@ -62,7 +63,7 @@ export class CreateSupportReportDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(2000, { message: 'description no puede superar 2000 caracteres' })
+  @MaxLength(2000, { message: i18nValidationMessage('errors.VALIDATION.support_description_max_length', { max: 2000 }) })
   description!: string;
 
   @ApiProperty({

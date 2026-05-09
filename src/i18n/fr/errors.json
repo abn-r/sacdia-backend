@@ -467,5 +467,18 @@
   "WEIGHTS_CONFLICT": "Une configuration de pondération existe déjà pour cette combinaison de type de club et d'année ecclésiastique.",
   "DEFAULT_WEIGHTS_NOT_DELETABLE": "La ligne de pondération par défaut globale ne peut pas être supprimée.",
   "WEIGHTS_NOT_FOUND": "Configuration de pondération de classement introuvable.",
-  "RECALCULATION_DISABLED": "Le recalcul des classements est actuellement désactivé dans les paramètres système."
+  "RECALCULATION_DISABLED": "Le recalcul des classements est actuellement désactivé dans les paramètres système.",
+  "VALIDATION": {
+    "field_required": "Ce champ est obligatoire",
+    "field_max_length": "Ce champ ne peut pas dépasser {max} caractères",
+    "password_min_length": "Le mot de passe doit comporter au moins {min} caractères",
+    "password_required": "Le mot de passe est obligatoire",
+    "password_format": "Le mot de passe doit inclure : majuscule, minuscule, chiffre et caractère spécial (@$!%*?&)",
+    "reject_reason_required": "Le motif du rejet est obligatoire",
+    "reject_reason_max_length": "Le motif du rejet ne peut pas dépasser {max} caractères",
+    "support_title_max_length": "Le titre ne peut pas dépasser {max} caractères",
+    "support_description_max_length": "La description ne peut pas dépasser {max} caractères"
+  },
+  "RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE": "La configuration de pondération globale par défaut ne peut pas être supprimée",
+  "MEMBER_RANKINGS_CLUB_ID_INVALID": "Le paramètre club_id doit être un entier positif"
 }

@@ -5,6 +5,7 @@ import { Job } from 'bullmq';
 import { render } from '@react-email/render';
 import * as React from 'react';
 import { ConfigService } from '@nestjs/config';
+import { I18nService } from 'nestjs-i18n';
 
 import {
   EMAIL_QUEUE,
@@ -19,6 +20,7 @@ import {
   AccountDeletionConfirmedJobPayload,
   CronAlertJobPayload,
   EmailJobPayload,
+  SupportedEmailLocale,
 } from './email.queue';
 import { EMAIL_PROVIDER } from './providers/email-provider.interface';
 import type { IEmailProvider } from './providers/email-provider.interface';
@@ -33,6 +35,15 @@ interface RenderedEmail {
   subject: string;
   html: string;
   text: string;
+}
+
+const SUPPORTED_LOCALES: SupportedEmailLocale[] = ['es', 'en', 'fr', 'pt-BR'];
+
+function resolveLang(raw: string | undefined): SupportedEmailLocale {
+  if (raw && (SUPPORTED_LOCALES as string[]).includes(raw)) {
+    return raw as SupportedEmailLocale;
+  }
+  return 'es';
 }
 
 /**
@@ -59,6 +70,7 @@ export class EmailProcessor
   constructor(
     @Inject(EMAIL_PROVIDER) private readonly provider: IEmailProvider,
     private readonly configService: ConfigService,
+    private readonly i18n: I18nService,
   ) {
     super();
     this.fromEmail =
@@ -127,12 +139,15 @@ export class EmailProcessor
     switch (jobName) {
       case EMAIL_JOB_DATA_EXPORT_READY: {
         const d = data as DataExportReadyJobPayload;
+        const lang = resolveLang(d.lang);
+        const subject = this.i18n.translate('emails.data_export_subject', { lang });
         const element = React.createElement(DataExportReadyEmail, {
           deepLink: d.deepLink,
           expiresAt: new Date(d.expiresAt),
+          lang,
         });
         return {
-          subject: 'Tu exportación de datos SACDIA está lista',
+          subject,
           html: await render(element),
           text: await render(element, { plainText: true }),
         };
@@ -140,12 +155,15 @@ export class EmailProcessor
 
       case EMAIL_JOB_EMAIL_VERIFICATION: {
         const d = data as EmailVerificationJobPayload;
+        const lang = resolveLang(d.lang);
+        const subject = this.i18n.translate('emails.email_verification_subject', { lang });
         const element = React.createElement(EmailVerificationEmail, {
           verificationUrl: d.verificationUrl,
           userName: d.userName,
+          lang,
         });
         return {
-          subject: 'Verificá tu correo — SACDIA',
+          subject,
           html: await render(element),
           text: await render(element, { plainText: true }),
         };
@@ -153,20 +171,26 @@ export class EmailProcessor
 
       case EMAIL_JOB_PASSWORD_RESET: {
         const d = data as PasswordResetJobPayload;
+        const lang = resolveLang(d.lang);
+        const subject = this.i18n.translate('emails.password_reset_subject', { lang });
         const element = React.createElement(PasswordResetEmail, {
           resetUrl: d.resetUrl,
+          lang,
         });
         return {
-          subject: 'Restablecé tu contraseña — SACDIA',
+          subject,
           html: await render(element),
           text: await render(element, { plainText: true }),
         };
       }
 
       case EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED: {
-        const element = React.createElement(AccountDeletionConfirmedEmail, {});
+        const d = data as AccountDeletionConfirmedJobPayload;
+        const lang = resolveLang(d.lang);
+        const subject = this.i18n.translate('emails.account_deletion_subject', { lang });
+        const element = React.createElement(AccountDeletionConfirmedEmail, { lang });
         return {
-          subject: 'Tu cuenta SACDIA fue eliminada',
+          subject,
           html: await render(element),
           text: await render(element, { plainText: true }),
         };
@@ -174,15 +198,6 @@ export class EmailProcessor
 
       case EMAIL_JOB_CRON_ALERT: {
         const d = data as CronAlertJobPayload;
-        const locale =
-          (d.locale as CronAlertCondition | undefined) ?? undefined;
-        const element = React.createElement(CronAlertEmail, {
-          jobName: d.jobName,
-          condition: d.condition as CronAlertCondition,
-          conditionDetail: d.conditionDetail,
-          recentFailures: d.recentFailures,
-          locale: d.locale as 'es' | 'en' | 'pt-BR' | 'fr' | undefined,
-        });
         const subjectMap: Record<string, string> = {
           es: `[SACDIA] Job ${d.jobName} alerta: ${d.condition}`,
           en: `[SACDIA] Job ${d.jobName} alert: ${d.condition}`,
@@ -190,7 +205,13 @@ export class EmailProcessor
           fr: `[SACDIA] Job ${d.jobName} alerte: ${d.condition}`,
         };
         const subject = subjectMap[d.locale ?? 'es'] ?? subjectMap['es'];
-        void locale; // locale variable consumed via element props
+        const element = React.createElement(CronAlertEmail, {
+          jobName: d.jobName,
+          condition: d.condition as CronAlertCondition,
+          conditionDetail: d.conditionDetail,
+          recentFailures: d.recentFailures,
+          locale: d.locale as 'es' | 'en' | 'pt-BR' | 'fr' | undefined,
+        });
         return {
           subject,
           html: await render(element),

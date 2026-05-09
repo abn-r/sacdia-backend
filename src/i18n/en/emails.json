@@ -1,0 +1,43 @@
+{
+  "data_export_subject": "Your SACDIA data export is ready",
+  "email_verification_subject": "Verify your email — SACDIA",
+  "password_reset_subject": "Reset your password — SACDIA",
+  "account_deletion_subject": "Your SACDIA account has been deleted",
+  "email_verification": {
+    "preview": "Verify your email address to activate your SACDIA account.",
+    "title": "Verify your email address",
+    "body": "{greeting}. To activate your SACDIA account, click the button below. This link is valid for 24 hours.",
+    "greeting_with_name": "Hello, {userName}",
+    "greeting_anonymous": "Hello",
+    "button": "Verify my email",
+    "footer": "If you did not create a SACDIA account, you can safely ignore this email. No changes will be made to your account."
+  },
+  "password_reset": {
+    "preview": "You received a request to reset your SACDIA password.",
+    "title": "Reset your password",
+    "body": "We received a request to reset the password for your SACDIA account. Click the button below to choose a new password. This link is valid for 1 hour.",
+    "button": "Reset password",
+    "footer": "If you did not request a password reset, you can safely ignore this email. Your current password will not change. If you suspect unauthorized activity, contact support at hola@sacdia.app."
+  },
+  "account_deletion": {
+    "preview": "Your SACDIA account has been successfully deleted.",
+    "title": "Your account has been deleted",
+    "body": "Your SACDIA account deletion request was processed successfully. Your personal data has been anonymized in accordance with the General Data Protection Regulation (GDPR).",
+    "data_summary_title": "What happened to your data?",
+    "data_summary": "— Your profile was anonymized (name, email, photo removed)\n— All your active sessions were revoked\n— Your password was permanently deleted\n— Your device tokens were deactivated",
+    "footer": "Anonymous historical records (honors, class progress, activities) may be retained for a retention period in accordance with our data policy. For more information, contact us at hola@sacdia.app."
+  },
+  "data_export": {
+    "preview": "Your SACDIA data export is ready to download.",
+    "title": "Your data export is ready",
+    "body": "We have generated your personal data export in accordance with GDPR. You can download it directly from the SACDIA app.",
+    "button": "View my data in the app",
+    "expires_note": "This link expires on {expiresAt} UTC. After that date, you will need to request a new export from Settings → Privacy → Export my data.",
+    "fallback_note": "If the button doesn't work, open the SACDIA app and navigate to Settings → Privacy → My exports."
+  },
+  "layout": {
+    "system_subtitle": "JA Clubs Administration System",
+    "footer_auto": "This email was sent automatically by SACDIA. If you did not take any action, you can safely ignore it.",
+    "footer_copyright": "© {year} SACDIA — JA Clubs Administration System. All rights reserved."
+  }
+}

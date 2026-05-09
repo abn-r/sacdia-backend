@@ -5,7 +5,8 @@
 // skipped even when REDIS_URL is present in .env.
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { VersioningType } from '@nestjs/common';
+import { I18nValidationPipe, I18nValidationExceptionFilter } from 'nestjs-i18n';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
@@ -224,14 +225,26 @@ async function bootstrap() {
   // ==========================================
   // VALIDACIÓN - Global Pipes
   // ==========================================
+  // I18nValidationPipe extends ValidationPipe and throws I18nValidationException
+  // (instead of vanilla BadRequestException) so the I18nValidationExceptionFilter
+  // below can translate class-validator messages via nestjs-i18n.
   app.useGlobalPipes(
     new SanitizePipe(), // XSS Sanitization
-    new ValidationPipe({
+    new I18nValidationPipe({
       whitelist: true,
       transform: true,
       forbidNonWhitelisted: true,
     }),
   );
+
+  // ==========================================
+  // VALIDACIÓN - I18n Validation Exception Filter
+  // ==========================================
+  // Registered here (not via APP_FILTER DI) because I18nValidationExceptionFilter
+  // does NOT require injected services — it reads I18nContext from the CLS store
+  // populated by nestjs-i18n middleware. Catches I18nValidationException thrown by
+  // I18nValidationPipe and returns translated field-level messages.
+  app.useGlobalFilters(new I18nValidationExceptionFilter({ detailedErrors: true }));
 
   // ==========================================
   // SEGURIDAD - Global Filters (Exception Handling)
