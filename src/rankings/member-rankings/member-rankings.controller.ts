@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   Post,
@@ -10,6 +9,8 @@ import {
   Req,
   Logger,
 } from '@nestjs/common';
+import { AppBadRequestException } from '../../common/errors/app.exception';
+import { ErrorCode } from '../../common/errors/error-codes';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
@@ -131,7 +132,7 @@ export class MemberRankingsController {
     if (clubIdRaw !== undefined) {
       const parsed = Number(clubIdRaw);
       if (!Number.isFinite(parsed) || parsed <= 0) {
-        throw new BadRequestException('club_id must be a positive integer');
+        throw new AppBadRequestException(ErrorCode.MEMBER_RANKINGS_CLUB_ID_INVALID);
       }
       clubId = parsed;
     }

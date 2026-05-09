@@ -1,0 +1,43 @@
+{
+  "data_export_subject": "Votre exportation de données SACDIA est prête",
+  "email_verification_subject": "Vérifiez votre e-mail — SACDIA",
+  "password_reset_subject": "Réinitialisez votre mot de passe — SACDIA",
+  "account_deletion_subject": "Votre compte SACDIA a été supprimé",
+  "email_verification": {
+    "preview": "Vérifiez votre adresse e-mail pour activer votre compte SACDIA.",
+    "title": "Vérifiez votre adresse e-mail",
+    "body": "{greeting}. Pour activer votre compte SACDIA, cliquez sur le bouton ci-dessous. Ce lien est valable pendant 24 heures.",
+    "greeting_with_name": "Bonjour, {userName}",
+    "greeting_anonymous": "Bonjour",
+    "button": "Vérifier mon e-mail",
+    "footer": "Si vous n'avez pas créé de compte SACDIA, vous pouvez ignorer cet e-mail en toute sécurité. Aucune modification ne sera apportée à votre compte."
+  },
+  "password_reset": {
+    "preview": "Vous avez reçu une demande de réinitialisation de votre mot de passe SACDIA.",
+    "title": "Réinitialiser votre mot de passe",
+    "body": "Nous avons reçu une demande de réinitialisation du mot de passe de votre compte SACDIA. Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe. Ce lien est valable pendant 1 heure.",
+    "button": "Réinitialiser le mot de passe",
+    "footer": "Si vous n'avez pas demandé de réinitialisation de mot de passe, vous pouvez ignorer cet e-mail. Votre mot de passe actuel ne changera pas. Si vous suspectez une activité non autorisée, contactez le support à hola@sacdia.app."
+  },
+  "account_deletion": {
+    "preview": "Votre compte SACDIA a été supprimé avec succès.",
+    "title": "Votre compte a été supprimé",
+    "body": "Votre demande de suppression de compte SACDIA a été traitée avec succès. Vos données personnelles ont été anonymisées conformément au Règlement Général sur la Protection des Données (RGPD).",
+    "data_summary_title": "Qu'est-il arrivé à vos données ?",
+    "data_summary": "— Votre profil a été anonymisé (nom, e-mail, photo supprimés)\n— Toutes vos sessions actives ont été révoquées\n— Votre mot de passe a été définitivement supprimé\n— Vos jetons d'appareil ont été désactivés",
+    "footer": "Les enregistrements historiques anonymes (honneurs, progression des cours, activités) peuvent être conservés pendant une période de rétention conformément à notre politique de données. Pour plus d'informations, contactez-nous à hola@sacdia.app."
+  },
+  "data_export": {
+    "preview": "Votre exportation de données SACDIA est prête à télécharger.",
+    "title": "Votre exportation de données est prête",
+    "body": "Nous avons généré votre exportation de données personnelles conformément au RGPD. Vous pouvez la télécharger directement depuis l'application SACDIA.",
+    "button": "Voir mes données dans l'application",
+    "expires_note": "Ce lien expire le {expiresAt} UTC. Passé cette date, vous devrez demander une nouvelle exportation depuis Paramètres → Confidentialité → Exporter mes données.",
+    "fallback_note": "Si le bouton ne fonctionne pas, ouvrez l'application SACDIA et accédez à Paramètres → Confidentialité → Mes exportations."
+  },
+  "layout": {
+    "system_subtitle": "Système d'Administration des Clubs JA",
+    "footer_auto": "Cet e-mail a été envoyé automatiquement par SACDIA. Si vous n'avez effectué aucune action, vous pouvez l'ignorer en toute sécurité.",
+    "footer_copyright": "© {year} SACDIA — Système d'Administration des Clubs JA. Tous droits réservés."
+  }
+}
