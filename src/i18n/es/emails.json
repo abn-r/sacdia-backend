@@ -1,0 +1,43 @@
+{
+  "data_export_subject": "Tu exportación de datos SACDIA está lista",
+  "email_verification_subject": "Verificá tu correo — SACDIA",
+  "password_reset_subject": "Restablecé tu contraseña — SACDIA",
+  "account_deletion_subject": "Tu cuenta SACDIA fue eliminada",
+  "email_verification": {
+    "preview": "Verificá tu dirección de correo para activar tu cuenta SACDIA.",
+    "title": "Verificá tu correo electrónico",
+    "body": "{greeting}. Para activar tu cuenta SACDIA, hacé clic en el botón de abajo. Este enlace es válido por 24 horas.",
+    "greeting_with_name": "Hola, {userName}",
+    "greeting_anonymous": "Hola",
+    "button": "Verificar mi correo",
+    "footer": "Si no creaste una cuenta en SACDIA, ignorá este correo. No se realizará ningún cambio en tu cuenta."
+  },
+  "password_reset": {
+    "preview": "Recibiste una solicitud para restablecer tu contraseña SACDIA.",
+    "title": "Restablecer contraseña",
+    "body": "Recibimos una solicitud para restablecer la contraseña de tu cuenta SACDIA. Hacé clic en el botón de abajo para elegir una nueva contraseña. Este enlace es válido por 1 hora.",
+    "button": "Restablecer contraseña",
+    "footer": "Si no solicitaste restablecer tu contraseña, ignorá este correo. Tu contraseña actual no cambiará. Si sospechás de actividad no autorizada, contactá soporte en hola@sacdia.app."
+  },
+  "account_deletion": {
+    "preview": "Tu cuenta SACDIA ha sido eliminada correctamente.",
+    "title": "Tu cuenta ha sido eliminada",
+    "body": "Tu solicitud de eliminación de cuenta en SACDIA fue procesada exitosamente. Tus datos personales han sido anonimizados conforme al Reglamento General de Protección de Datos (RGPD).",
+    "data_summary_title": "¿Qué ocurrió con tus datos?",
+    "data_summary": "— Tu perfil fue anonimizado (nombre, email, foto eliminados)\n— Todas tus sesiones activas fueron revocadas\n— Tu contraseña fue eliminada permanentemente\n— Tus tokens de dispositivo fueron desactivados",
+    "footer": "Registros históricos anónimos (honores, progreso de clases, actividades) pueden conservarse por un periodo de retención conforme a nuestra política de datos. Para más información, escribinos a hola@sacdia.app."
+  },
+  "data_export": {
+    "preview": "Tu exportación de datos SACDIA está lista para descargar.",
+    "title": "Tu exportación de datos está lista",
+    "body": "Hemos generado tu exportación de datos personales conforme al RGPD. Podés descargarla directamente desde la app SACDIA.",
+    "button": "Ver mis datos en la app",
+    "expires_note": "Este enlace expira el {expiresAt} UTC. Pasada esa fecha, deberás solicitar una nueva exportación desde Configuración → Privacidad → Exportar mis datos.",
+    "fallback_note": "Si el botón no funciona, abrí la app SACDIA y navegá a Configuración → Privacidad → Mis exportaciones."
+  },
+  "layout": {
+    "system_subtitle": "Sistema de Administración de Clubes JA",
+    "footer_auto": "Este correo fue enviado automáticamente por SACDIA. Si no realizaste ninguna acción, podés ignorarlo con seguridad.",
+    "footer_copyright": "© {year} SACDIA — Sistema de Administración de Clubes JA. Todos los derechos reservados."
+  }
+}

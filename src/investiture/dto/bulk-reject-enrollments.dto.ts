@@ -9,6 +9,7 @@ import {
   ArrayMaxSize,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { i18nValidationMessage } from 'nestjs-i18n';
 
 export class BulkRejectEnrollmentsDto {
   @ApiProperty({
@@ -31,7 +32,7 @@ export class BulkRejectEnrollmentsDto {
     example: 'Documentación incompleta revisada en sesión de coordinación.',
   })
   @IsString()
-  @IsNotEmpty({ message: 'El motivo del rechazo es obligatorio' })
-  @MaxLength(1000)
+  @IsNotEmpty({ message: i18nValidationMessage('errors.VALIDATION.reject_reason_required') })
+  @MaxLength(1000, { message: i18nValidationMessage('errors.VALIDATION.reject_reason_max_length', { max: 1000 }) })
   declare comments: string;
 }

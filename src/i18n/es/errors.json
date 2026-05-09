@@ -467,5 +467,18 @@
   "WEIGHTS_CONFLICT": "Ya existe una configuración de pesos para esta combinación de tipo de club y año eclesiástico.",
   "DEFAULT_WEIGHTS_NOT_DELETABLE": "La fila de pesos global predeterminada no puede eliminarse.",
   "WEIGHTS_NOT_FOUND": "Configuración de pesos de clasificación no encontrada.",
-  "RECALCULATION_DISABLED": "El recálculo de rankings está desactivado en configuración del sistema."
+  "RECALCULATION_DISABLED": "El recálculo de rankings está desactivado en configuración del sistema.",
+  "VALIDATION": {
+    "field_required": "Este campo es obligatorio",
+    "field_max_length": "Este campo no puede superar {max} caracteres",
+    "password_min_length": "La contraseña debe tener al menos {min} caracteres",
+    "password_required": "La contraseña es obligatoria",
+    "password_format": "La contraseña debe incluir: mayúscula, minúscula, número y carácter especial (@$!%*?&)",
+    "reject_reason_required": "El motivo del rechazo es obligatorio",
+    "reject_reason_max_length": "El motivo del rechazo no puede superar {max} caracteres",
+    "support_title_max_length": "El título no puede superar {max} caracteres",
+    "support_description_max_length": "La descripción no puede superar {max} caracteres"
+  },
+  "RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE": "La configuración de pesos global predeterminada no puede eliminarse",
+  "MEMBER_RANKINGS_CLUB_ID_INVALID": "El parámetro club_id debe ser un número entero positivo"
 }
