@@ -9,6 +9,7 @@ import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
+import { TranslationService } from '../common/services/translation.service';
 import {
   CreateChurchDto,
   CreateCountryDto,
@@ -29,6 +30,7 @@ export class AdminGeographyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly catalogCache: CatalogCacheService,
+    private readonly translationService: TranslationService,
   ) {}
 
   private normalizeName(value: string): string {
@@ -56,11 +58,14 @@ export class AdminGeographyService {
     );
   }
 
+  // ─── COUNTRIES ─────────────────────────────────────────────────────────────
+
   async listCountries() {
     // Geography catalog: bounded by number of countries in the system (~250 max).
     return this.prisma.countries.findMany({
       orderBy: { name: 'asc' },
       take: 300,
+      include: { translations: true },
     });
   }
 
@@ -68,21 +73,36 @@ export class AdminGeographyService {
     const name = this.normalizeName(dto.name);
     const abbreviation = this.normalizeAbbreviation(dto.abbreviation);
 
+    this.translationService.validateTranslations(dto.translations);
     await this.ensureCountryUnique(name, abbreviation);
 
-    const country = await this.prisma.countries.create({
-      data: {
-        name,
-        abbreviation,
-        active: dto.active ?? true,
-      },
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.countries.create({
+        data: {
+          name,
+          abbreviation,
+          active: dto.active ?? true,
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'countries_translations',
+        'country_id',
+        'countries_translations_unique_locale',
+        created.country_id,
+        dto.translations,
+        ['name'],
+      );
+
+      return created;
     });
 
-    this.logMutation('create', 'countries', country.country_id, actorId);
+    this.logMutation('create', 'countries', result.country_id, actorId);
 
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.COUNTRIES);
 
-    return country;
+    return result;
   }
 
   async updateCountry(
@@ -101,21 +121,37 @@ export class AdminGeographyService {
       await this.ensureCountryUnique(name, abbreviation, countryId);
     }
 
-    const country = await this.prisma.countries.update({
-      where: { country_id: countryId },
-      data: {
-        ...(name ? { name } : {}),
-        ...(abbreviation ? { abbreviation } : {}),
-        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-        modified_at: new Date(),
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.countries.update({
+        where: { country_id: countryId },
+        data: {
+          ...(name ? { name } : {}),
+          ...(abbreviation ? { abbreviation } : {}),
+          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+          modified_at: new Date(),
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'countries_translations',
+        'country_id',
+        'countries_translations_unique_locale',
+        countryId,
+        dto.translations,
+        ['name'],
+      );
+
+      return updated;
     });
 
     this.logMutation('update', 'countries', countryId, actorId);
 
     await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.COUNTRIES);
 
-    return country;
+    return result;
   }
 
   async deleteCountry(countryId: number, actorId: string) {
@@ -150,12 +186,15 @@ export class AdminGeographyService {
     return country;
   }
 
+  // ─── UNIONS ────────────────────────────────────────────────────────────────
+
   async listUnions(countryId?: number) {
     // Geography catalog: unions per country are in the tens at most.
     return this.prisma.unions.findMany({
       where: countryId ? { country_id: countryId } : undefined,
       orderBy: { name: 'asc' },
       take: 500,
+      include: { translations: true },
     });
   }
 
@@ -166,16 +205,32 @@ export class AdminGeographyService {
     const abbreviation = this.normalizeAbbreviation(dto.abbreviation);
     await this.ensureUnionUnique(name, abbreviation);
 
-    const union = await this.prisma.unions.create({
-      data: {
-        name,
-        abbreviation,
-        country_id: dto.country_id,
-        active: dto.active ?? true,
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.unions.create({
+        data: {
+          name,
+          abbreviation,
+          country_id: dto.country_id,
+          active: dto.active ?? true,
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'unions_translations',
+        'union_id',
+        'unions_translations_unique_locale',
+        created.union_id,
+        dto.translations,
+        ['name'],
+      );
+
+      return created;
     });
 
-    this.logMutation('create', 'unions', union.union_id, actorId);
+    this.logMutation('create', 'unions', result.union_id, actorId);
 
     // Invalidate both the unfiltered list and the country-filtered variant
     await this.catalogCache.invalidateMany([
@@ -183,7 +238,7 @@ export class AdminGeographyService {
       CATALOG_CACHE_KEYS.UNIONS(dto.country_id),
     ]);
 
-    return union;
+    return result;
   }
 
   async updateUnion(unionId: number, dto: UpdateUnionDto, actorId: string) {
@@ -202,15 +257,31 @@ export class AdminGeographyService {
       await this.ensureUnionUnique(name, abbreviation, unionId);
     }
 
-    const union = await this.prisma.unions.update({
-      where: { union_id: unionId },
-      data: {
-        ...(name ? { name } : {}),
-        ...(abbreviation ? { abbreviation } : {}),
-        ...(dto.country_id ? { country_id: dto.country_id } : {}),
-        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-        modified_at: new Date(),
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.unions.update({
+        where: { union_id: unionId },
+        data: {
+          ...(name ? { name } : {}),
+          ...(abbreviation ? { abbreviation } : {}),
+          ...(dto.country_id ? { country_id: dto.country_id } : {}),
+          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+          modified_at: new Date(),
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'unions_translations',
+        'union_id',
+        'unions_translations_unique_locale',
+        unionId,
+        dto.translations,
+        ['name'],
+      );
+
+      return updated;
     });
 
     this.logMutation('update', 'unions', unionId, actorId);
@@ -223,7 +294,7 @@ export class AdminGeographyService {
     }
     await this.catalogCache.invalidateMany(keysToInvalidate);
 
-    return union;
+    return result;
   }
 
   async deleteUnion(unionId: number, actorId: string) {
@@ -261,12 +332,15 @@ export class AdminGeographyService {
     return union;
   }
 
+  // ─── LOCAL FIELDS ──────────────────────────────────────────────────────────
+
   async listLocalFields(unionId?: number) {
     // Geography catalog: local fields per union are in the tens to low hundreds.
     return this.prisma.local_fields.findMany({
       where: unionId ? { union_id: unionId } : undefined,
       orderBy: { name: 'asc' },
       take: 1000,
+      include: { translations: true },
     });
   }
 
@@ -277,19 +351,35 @@ export class AdminGeographyService {
     const abbreviation = this.normalizeAbbreviation(dto.abbreviation);
     await this.ensureLocalFieldUnique(name, abbreviation);
 
-    const localField = await this.prisma.local_fields.create({
-      data: {
-        name,
-        abbreviation,
-        union_id: dto.union_id,
-        active: dto.active ?? true,
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.local_fields.create({
+        data: {
+          name,
+          abbreviation,
+          union_id: dto.union_id,
+          active: dto.active ?? true,
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'local_fields_translations',
+        'local_field_id',
+        'local_fields_translations_unique_locale',
+        created.local_field_id,
+        dto.translations,
+        ['name'],
+      );
+
+      return created;
     });
 
     this.logMutation(
       'create',
       'local_fields',
-      localField.local_field_id,
+      result.local_field_id,
       actorId,
     );
 
@@ -298,7 +388,7 @@ export class AdminGeographyService {
       CATALOG_CACHE_KEYS.LOCAL_FIELDS(dto.union_id),
     ]);
 
-    return localField;
+    return result;
   }
 
   async updateLocalField(
@@ -321,15 +411,31 @@ export class AdminGeographyService {
       await this.ensureLocalFieldUnique(name, abbreviation, localFieldId);
     }
 
-    const localField = await this.prisma.local_fields.update({
-      where: { local_field_id: localFieldId },
-      data: {
-        ...(name ? { name } : {}),
-        ...(abbreviation ? { abbreviation } : {}),
-        ...(dto.union_id ? { union_id: dto.union_id } : {}),
-        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-        modified_at: new Date(),
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.local_fields.update({
+        where: { local_field_id: localFieldId },
+        data: {
+          ...(name ? { name } : {}),
+          ...(abbreviation ? { abbreviation } : {}),
+          ...(dto.union_id ? { union_id: dto.union_id } : {}),
+          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+          modified_at: new Date(),
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'local_fields_translations',
+        'local_field_id',
+        'local_fields_translations_unique_locale',
+        localFieldId,
+        dto.translations,
+        ['name'],
+      );
+
+      return updated;
     });
 
     this.logMutation('update', 'local_fields', localFieldId, actorId);
@@ -341,7 +447,7 @@ export class AdminGeographyService {
     }
     await this.catalogCache.invalidateMany(keysToInvalidate);
 
-    return localField;
+    return result;
   }
 
   async deleteLocalField(localFieldId: number, actorId: string) {
@@ -379,12 +485,15 @@ export class AdminGeographyService {
     return localField;
   }
 
+  // ─── DISTRICTS ─────────────────────────────────────────────────────────────
+
   async listDistricts(localFieldId?: number) {
     // Geography catalog: districts per local field are in the tens.
     return this.prisma.districts.findMany({
       where: localFieldId ? { local_field_id: localFieldId } : undefined,
       orderBy: { name: 'asc' },
       take: 2000,
+      include: { translations: true },
     });
   }
 
@@ -404,18 +513,34 @@ export class AdminGeographyService {
       throw new AppConflictException(ErrorCode.ADMIN_DISTRICT_NAME_CONFLICT);
     }
 
-    const district = await this.prisma.districts.create({
-      data: {
-        name,
-        local_field_id: dto.local_field_id,
-        active: dto.active ?? true,
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.districts.create({
+        data: {
+          name,
+          local_field_id: dto.local_field_id,
+          active: dto.active ?? true,
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'districts_translations',
+        'districlub_type_id',
+        'districts_translations_unique_locale',
+        created.districlub_type_id,
+        dto.translations,
+        ['name'],
+      );
+
+      return created;
     });
 
     this.logMutation(
       'create',
       'districts',
-      district.districlub_type_id,
+      result.districlub_type_id,
       actorId,
     );
 
@@ -424,7 +549,7 @@ export class AdminGeographyService {
       CATALOG_CACHE_KEYS.DISTRICTS(dto.local_field_id),
     ]);
 
-    return district;
+    return result;
   }
 
   async updateDistrict(
@@ -456,14 +581,30 @@ export class AdminGeographyService {
       }
     }
 
-    const district = await this.prisma.districts.update({
-      where: { districlub_type_id: districtId },
-      data: {
-        ...(name ? { name } : {}),
-        ...(dto.local_field_id ? { local_field_id: dto.local_field_id } : {}),
-        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-        modified_at: new Date(),
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.districts.update({
+        where: { districlub_type_id: districtId },
+        data: {
+          ...(name ? { name } : {}),
+          ...(dto.local_field_id ? { local_field_id: dto.local_field_id } : {}),
+          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+          modified_at: new Date(),
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'districts_translations',
+        'districlub_type_id',
+        'districts_translations_unique_locale',
+        districtId,
+        dto.translations,
+        ['name'],
+      );
+
+      return updated;
     });
 
     this.logMutation('update', 'districts', districtId, actorId);
@@ -475,7 +616,7 @@ export class AdminGeographyService {
     }
     await this.catalogCache.invalidateMany(keysToInvalidate);
 
-    return district;
+    return result;
   }
 
   async deleteDistrict(districtId: number, actorId: string) {
@@ -513,12 +654,15 @@ export class AdminGeographyService {
     return district;
   }
 
+  // ─── CHURCHES ──────────────────────────────────────────────────────────────
+
   async listChurches(districtId?: number) {
     // Geography catalog: churches per district are in the tens to low hundreds.
     return this.prisma.churches.findMany({
       where: districtId ? { districlub_type_id: districtId } : undefined,
       orderBy: { name: 'asc' },
       take: 5000,
+      include: { translations: true },
     });
   }
 
@@ -538,22 +682,38 @@ export class AdminGeographyService {
       throw new AppConflictException(ErrorCode.ADMIN_CHURCH_NAME_CONFLICT);
     }
 
-    const church = await this.prisma.churches.create({
-      data: {
-        name,
-        districlub_type_id: dto.district_id,
-        active: dto.active ?? true,
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.churches.create({
+        data: {
+          name,
+          districlub_type_id: dto.district_id,
+          active: dto.active ?? true,
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'churches_translations',
+        'church_id',
+        'churches_translations_unique_locale',
+        created.church_id,
+        dto.translations,
+        ['name'],
+      );
+
+      return created;
     });
 
-    this.logMutation('create', 'churches', church.church_id, actorId);
+    this.logMutation('create', 'churches', result.church_id, actorId);
 
     await this.catalogCache.invalidateMany([
       CATALOG_CACHE_KEYS.CHURCHES(),
       CATALOG_CACHE_KEYS.CHURCHES(dto.district_id),
     ]);
 
-    return church;
+    return result;
   }
 
   async updateChurch(churchId: number, dto: UpdateChurchDto, actorId: string) {
@@ -581,14 +741,30 @@ export class AdminGeographyService {
       }
     }
 
-    const church = await this.prisma.churches.update({
-      where: { church_id: churchId },
-      data: {
-        ...(name ? { name } : {}),
-        ...(dto.district_id ? { districlub_type_id: dto.district_id } : {}),
-        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-        modified_at: new Date(),
-      },
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.churches.update({
+        where: { church_id: churchId },
+        data: {
+          ...(name ? { name } : {}),
+          ...(dto.district_id ? { districlub_type_id: dto.district_id } : {}),
+          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+          modified_at: new Date(),
+        },
+      });
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'churches_translations',
+        'church_id',
+        'churches_translations_unique_locale',
+        churchId,
+        dto.translations,
+        ['name'],
+      );
+
+      return updated;
     });
 
     this.logMutation('update', 'churches', churchId, actorId);
@@ -602,7 +778,7 @@ export class AdminGeographyService {
     }
     await this.catalogCache.invalidateMany(keysToInvalidate);
 
-    return church;
+    return result;
   }
 
   async deleteChurch(churchId: number, actorId: string) {
@@ -625,6 +801,8 @@ export class AdminGeographyService {
 
     return church;
   }
+
+  // ─── PRIVATE GUARDS ────────────────────────────────────────────────────────
 
   private async ensureCountryUnique(
     name?: string,
