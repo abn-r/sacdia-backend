@@ -9,6 +9,7 @@ import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
+import { TranslationService } from '../common/services/translation.service';
 import {
   CreateChurchDto,
   CreateCountryDto,
@@ -29,6 +30,7 @@ export class AdminGeographyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly catalogCache: CatalogCacheService,
+    private readonly translationService: TranslationService,
   ) {}
 
   private normalizeName(value: string): string {

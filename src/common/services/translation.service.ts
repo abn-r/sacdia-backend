@@ -125,6 +125,10 @@ export class TranslationService {
    * @param recordId          PK of the parent record.
    * @param translations      Array from the DTO (already validated via validateTranslations).
    * @param fields            Translatable fields to read from each translation entry.
+   *                          Supported values: 'name', 'description', 'ideal'.
+   *                          Defaults to ['name', 'description']. Pass ['name', 'ideal']
+   *                          for catalogs whose translation table carries an `ideal` column
+   *                          (e.g. club_ideals_translations).
    */
   async upsertTranslations(
     tx: any,
@@ -133,9 +137,9 @@ export class TranslationService {
     uniqueIndexName: string,
     recordId: number | string,
     translations:
-      | Array<{ locale: string; name?: string; description?: string }>
+      | Array<{ locale: string; name?: string; description?: string; ideal?: string }>
       | undefined,
-    fields: ('name' | 'description')[] = ['name', 'description'],
+    fields: ('name' | 'description' | 'ideal')[] = ['name', 'description'],
   ): Promise<void> {
     if (translations === undefined) return;
 
