@@ -69,6 +69,7 @@ export class SectionRankingsController {
   })
   @ApiQuery({ name: 'year_id', required: true, type: Number })
   @ApiResponse({ status: 200, type: [MemberRankingResponseDto] })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description:
@@ -120,6 +121,7 @@ export class SectionRankingsController {
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description:
