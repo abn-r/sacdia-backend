@@ -44,13 +44,13 @@ export class EvidenceReviewController {
   @ApiOperation({
     summary: 'Listar evidencias pendientes de revisión',
     description:
-      'Devuelve una lista paginada de evidencias (folders, clases y honores) ' +
+      'Devuelve una lista paginada de evidencias (clases y honores) ' +
       'en estado pendiente de validación. Filtrable por tipo.',
   })
   @ApiQuery({
     name: 'type',
     required: false,
-    enum: ['folder', 'class', 'honor'],
+    enum: ['class', 'honor'],
     description: 'Filtrar por tipo de evidencia',
   })
   @ApiQuery({
@@ -159,7 +159,7 @@ export class EvidenceReviewController {
   })
   @ApiParam({
     name: 'type',
-    enum: ['folder', 'class', 'honor'],
+    enum: ['class', 'honor'],
     description: 'Tipo de evidencia',
   })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })
@@ -184,7 +184,7 @@ export class EvidenceReviewController {
   @ApiOperation({ summary: 'Aprobar una evidencia' })
   @ApiParam({
     name: 'type',
-    enum: ['folder', 'class', 'honor'],
+    enum: ['class', 'honor'],
     description: 'Tipo de evidencia',
   })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })
@@ -215,7 +215,7 @@ export class EvidenceReviewController {
   @ApiOperation({ summary: 'Rechazar una evidencia con motivo' })
   @ApiParam({
     name: 'type',
-    enum: ['folder', 'class', 'honor'],
+    enum: ['class', 'honor'],
     description: 'Tipo de evidencia',
   })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })
@@ -246,7 +246,7 @@ export class EvidenceReviewController {
   @ApiOperation({ summary: 'Historial de validación de una evidencia' })
   @ApiParam({
     name: 'type',
-    enum: ['folder', 'class', 'honor'],
+    enum: ['class', 'honor'],
     description: 'Tipo de evidencia',
   })
   @ApiParam({ name: 'id', type: Number, description: 'ID del registro' })

@@ -788,6 +788,7 @@ export class ClassesService {
     classId: number,
     sectionId: number,
     file: Express.Multer.File,
+    enrollmentId?: number,
   ) {
     if (!file?.buffer) {
       throw new AppBadRequestException(ErrorCode.CLASS_FILE_REQUIRED);
@@ -811,22 +812,22 @@ export class ClassesService {
       throw new AppNotFoundException(ErrorCode.CLASS_SECTION_NOT_FOUND);
     }
 
-    // Find or create section progress (upsert pattern)
+    const resolved = await this.resolveProgressEnrollment({
+      userId,
+      classId,
+      enrollmentId,
+    });
+
+    // Find or create section progress using the annual enrollment owner.
     let sectionProgress = await this.prisma.class_section_progress.findFirst({
       where: {
-        user_id: userId,
-        class_id: classId,
+        enrollment_id: resolved.enrollmentId,
         section_id: sectionId,
         active: true,
       },
     });
 
     if (!sectionProgress) {
-      const resolved = await this.resolveProgressEnrollment({
-        userId,
-        classId,
-      });
-
       sectionProgress = await this.prisma.class_section_progress.create({
         data: {
           user_id: userId,
@@ -879,12 +880,22 @@ export class ClassesService {
     return this.mapEvidenceFile(created, signedUrl);
   }
 
-  async submitSection(userId: string, classId: number, sectionId: number) {
-    // Find the section progress
+  async submitSection(
+    userId: string,
+    classId: number,
+    sectionId: number,
+    enrollmentId?: number,
+  ) {
+    const resolved = await this.resolveProgressEnrollment({
+      userId,
+      classId,
+      enrollmentId,
+    });
+
+    // Find the section progress by annual enrollment owner.
     const sectionProgress = await this.prisma.class_section_progress.findFirst({
       where: {
-        user_id: userId,
-        class_id: classId,
+        enrollment_id: resolved.enrollmentId,
         section_id: sectionId,
         active: true,
       },
@@ -945,12 +956,18 @@ export class ClassesService {
     classId: number,
     sectionId: number,
     fileId: number,
+    enrollmentId?: number,
   ) {
-    // Resolve the section progress from sectionId
+    const resolved = await this.resolveProgressEnrollment({
+      userId,
+      classId,
+      enrollmentId,
+    });
+
+    // Resolve the section progress from the annual enrollment owner.
     const sectionProgress = await this.prisma.class_section_progress.findFirst({
       where: {
-        user_id: userId,
-        class_id: classId,
+        enrollment_id: resolved.enrollmentId,
         section_id: sectionId,
         active: true,
       },
