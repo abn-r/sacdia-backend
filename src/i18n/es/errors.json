@@ -480,5 +480,9 @@
     "support_description_max_length": "La descripción no puede superar {max} caracteres"
   },
   "RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE": "La configuración de pesos global predeterminada no puede eliminarse",
+  "RANKING_WEIGHTS_NOT_FOUND": "Configuración de pesos de ranking con ID {id} no encontrada",
+  "RANKING_WEIGHTS_GLOBAL_RESERVED": "club_type_id es requerido para configuraciones de override; la fila global predeterminada está pre-cargada y no puede crearse por este endpoint",
+  "RANKING_WEIGHTS_SUM_INVALID": "Los pesos deben sumar 100; se recibió {sum}",
+  "RANKING_WEIGHTS_CLUB_TYPE_CONFLICT": "Ya existe un override para el club_type_id {clubTypeId}",
   "MEMBER_RANKINGS_CLUB_ID_INVALID": "El parámetro club_id debe ser un número entero positivo"
 }

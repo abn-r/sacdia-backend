@@ -100,9 +100,6 @@ export class OAuthService {
   /**
    * Returns the Google OAuth authorization URL.
    *
-   * BEFORE: supabase.admin.auth.signInWithOAuth({ provider: 'google', ... })
-   * AFTER:  betterAuth.getOAuthUrl('google', redirectTo)
-   *
    * The client must redirect the user's browser to the returned `url`.
    * BA will handle the code exchange at its callback route and then redirect
    * the browser to `redirectTo` (our mobile deep-link or admin URL).
@@ -120,9 +117,6 @@ export class OAuthService {
 
   /**
    * Returns the Apple OAuth authorization URL.
-   *
-   * BEFORE: supabase.admin.auth.signInWithOAuth({ provider: 'apple', ... })
-   * AFTER:  betterAuth.getOAuthUrl('apple', redirectTo)
    */
   async initiateAppleSignIn(redirectUrl?: string) {
     if (redirectUrl) {
@@ -149,11 +143,6 @@ export class OAuthService {
    * 3. We call `refreshSession` to validate the token and get the BA user.
    * 4. We ensure the SACDIA `users` row exists (auto-provision on first login).
    * 5. We sign and return our HS256 JWT.
-   *
-   * BEFORE: received Supabase `access_token`, called supabase.admin.auth.getUser(),
-   *         updated `google_connected`/`apple_connected` boolean flags.
-   * AFTER:  receives BA opaque session token, validates via BetterAuthService,
-   *         reads connected providers from the `accounts` table.
    *
    * NOTE: `createUserFromOAuth` is intentionally kept for SACDIA-specific
    * provisioning (users_pr, users_roles) that BA does not handle.
@@ -217,12 +206,10 @@ export class OAuthService {
   /**
    * Returns the list of OAuth providers connected to a user.
    *
-   * BEFORE: read `google_connected`, `apple_connected`, `fb_connected` boolean
-   *         columns from the `users` table.
-   * AFTER:  query `accounts` table WHERE userId = userId, return providerId array.
-   *
-   * The `accounts` table is the canonical source of truth — populated by BA
-   * when the user authenticates via a social provider.
+   * Queries the `accounts` table WHERE userId = userId and returns the
+   * providerId array. The `accounts` table is the canonical source of
+   * truth — populated by BA when the user authenticates via a social
+   * provider.
    */
   async getConnectedProviders(userId: string): Promise<string[]> {
     const accounts = await this.prisma.account.findMany({
@@ -237,9 +224,7 @@ export class OAuthService {
   /**
    * Disconnects an OAuth provider from a user.
    *
-   * BEFORE: set `google_connected = false` / `apple_connected = false` in `users`.
-   * AFTER:  delete the row from the `accounts` table WHERE userId AND providerId.
-   *
+   * Deletes the row from the `accounts` table WHERE userId AND providerId.
    * This properly removes the OAuth link — not just a flag update.
    * If the user has no other auth method (no password account), we refuse
    * to prevent account lockout.
@@ -302,10 +287,8 @@ export class OAuthService {
    * that BA knows nothing about: `users_pr` (post-registration state) and
    * `users_roles` (default role assignment).
    *
-   * This method is idempotent — safe to call on every login.
-   *
-   * BEFORE: `createUserFromOAuth()` — called only when the user didn't exist.
-   * AFTER:  Called on every OAuth callback, creates missing rows if needed.
+   * This method is idempotent — safe to call on every login. Called on
+   * every OAuth callback, it creates missing rows if needed.
    */
   private async ensureSacdiaUserProvisioned(
     userId: string,

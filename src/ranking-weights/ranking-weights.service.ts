@@ -1,13 +1,12 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRankingWeightsDto } from './dto/create-ranking-weights.dto';
 import { UpdateRankingWeightsDto } from './dto/update-ranking-weights.dto';
-import { AppBadRequestException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
@@ -24,30 +23,30 @@ export class RankingWeightsService {
     const row = await this.prisma.ranking_weight_configs.findUnique({
       where: { ranking_weight_config_id: id },
     });
-    if (!row) throw new NotFoundException(`Ranking weight config not found: ${id}`);
+    if (!row) throw new AppNotFoundException(ErrorCode.RANKING_WEIGHTS_NOT_FOUND, { id });
     return row;
   }
 
   async create(dto: CreateRankingWeightsDto, userId?: string) {
     if (dto.club_type_id == null) {
-      throw new BadRequestException(
-        'club_type_id is required for overrides; the default global row is seeded and cannot be created via this endpoint',
-      );
+      throw new AppBadRequestException(ErrorCode.RANKING_WEIGHTS_GLOBAL_RESERVED);
     }
 
     const sum =
       dto.folder_weight + dto.finance_weight + dto.camporee_weight + dto.evidence_weight;
     if (sum !== 100) {
-      throw new BadRequestException(`Weights must sum to 100; got ${sum}`);
+      throw new AppBadRequestException(ErrorCode.RANKING_WEIGHTS_SUM_INVALID, {
+        sum: String(sum),
+      });
     }
 
     const existing = await this.prisma.ranking_weight_configs.findUnique({
       where: { club_type_id: dto.club_type_id },
     });
     if (existing) {
-      throw new ConflictException(
-        `Override already exists for club_type_id ${dto.club_type_id}`,
-      );
+      throw new AppConflictException(ErrorCode.RANKING_WEIGHTS_CLUB_TYPE_CONFLICT, {
+        clubTypeId: String(dto.club_type_id),
+      });
     }
 
     return this.prisma.ranking_weight_configs.create({
@@ -78,7 +77,9 @@ export class RankingWeightsService {
       merged.camporee_weight +
       merged.evidence_weight;
     if (sum !== 100) {
-      throw new BadRequestException(`Weights must sum to 100; got ${sum}`);
+      throw new AppBadRequestException(ErrorCode.RANKING_WEIGHTS_SUM_INVALID, {
+        sum: String(sum),
+      });
     }
 
     return this.prisma.ranking_weight_configs.update({

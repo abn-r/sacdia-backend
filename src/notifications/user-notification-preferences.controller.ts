@@ -83,6 +83,7 @@ export class UserNotificationPreferencesController {
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async getPreferences(
     @Request() req,
   ): Promise<NotificationPreferencesResponseDto> {
@@ -115,6 +116,7 @@ export class UserNotificationPreferencesController {
     description: 'Updated notification preferences',
     type: NotificationPreferencesResponseDto,
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async patchPreferences(
     @Body() dto: PatchNotificationPreferencesDto,
     @Request() req,
@@ -189,6 +191,7 @@ export class UserNotificationPreferencesController {
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async registerFcmToken(
     @Body() dto: RegisterFcmTokenRequestDto,
     @Request() req,
@@ -215,6 +218,7 @@ export class UserNotificationPreferencesController {
     description: 'UUID of the user_fcm_tokens row',
   })
   @ApiResponse({ status: 204, description: 'FCM token unregistered' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description: 'Token belongs to a different user',

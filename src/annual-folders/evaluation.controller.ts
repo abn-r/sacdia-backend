@@ -67,6 +67,11 @@ export class EvaluationController {
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section evaluated' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Missing annual_folders:evaluate (global) permission',
+  })
   @ApiResponse({
     status: 400,
     description: 'Folder status invalid or earned_points exceeds max_points',
@@ -100,6 +105,11 @@ export class EvaluationController {
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section reopened' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Missing annual_folders:evaluate (global) permission',
+  })
   @ApiResponse({
     status: 400,
     description: 'Folder status does not allow reopening',
@@ -155,6 +165,7 @@ export class EvaluationController {
     status: 400,
     description: 'Section not pre-approved or folder status invalid',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description: 'Missing annual_folders:evaluate (global) permission',
@@ -192,6 +203,11 @@ export class EvaluationController {
   @ApiOperation({ summary: 'Get all section evaluations for a folder' })
   @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
   @ApiResponse({ status: 200, description: 'List of section evaluations' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Requires annual_folders:evaluate or evidence_folders:read permission',
+  })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async getFolderEvaluations(
     @Param('folderId', ParseUUIDPipe) folderId: string,
@@ -250,6 +266,7 @@ export class EvaluationController {
     },
   })
   @ApiResponse({ status: 404, description: 'Evidence not found' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description: 'Missing annual_folders:evaluate permission',
