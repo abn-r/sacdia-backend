@@ -3,6 +3,7 @@ import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { GlobalRoles } from '../common/decorators';
@@ -30,6 +31,14 @@ export class AdminNotificationsController {
   @ApiOkResponse({
     description: 'Notification delivery stats',
     type: NotificationStatsResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid JWT',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller does not have admin or super-admin global role',
   })
   async getStats(
     @Query() query: NotificationStatsQueryDto,

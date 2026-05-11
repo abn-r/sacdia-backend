@@ -44,7 +44,12 @@ export class YearEndController {
     status: 200,
     description: 'Vista previa del impacto de cierre',
   })
-  @ApiResponse({ status: 404, description: 'Ano eclesiastico no encontrado' })
+  @ApiResponse({ status: 401, description: 'JWT ausente o inválido' })
+  @ApiResponse({
+    status: 403,
+    description: 'El caller no tiene rol admin o super-admin',
+  })
+  @ApiResponse({ status: 404, description: 'Año eclesiástico no encontrado' })
   async previewClosure(@Param('yearId', ParseIntPipe) yearId: number) {
     const data = await this.yearEndService.previewClosureImpact(yearId);
     return { status: 'success', data };
@@ -72,9 +77,14 @@ export class YearEndController {
   })
   @ApiResponse({
     status: 400,
-    description: 'El ano ya esta inactivo o cerrado',
+    description: 'El año ya está inactivo o cerrado',
   })
-  @ApiResponse({ status: 404, description: 'Ano eclesiastico no encontrado' })
+  @ApiResponse({ status: 401, description: 'JWT ausente o inválido' })
+  @ApiResponse({
+    status: 403,
+    description: 'El caller no tiene rol admin o super-admin',
+  })
+  @ApiResponse({ status: 404, description: 'Año eclesiástico no encontrado' })
   async closeYear(@Param('yearId', ParseIntPipe) yearId: number) {
     const data = await this.yearEndService.closeYear(yearId);
     return { status: 'success', data };
