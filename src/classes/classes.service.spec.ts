@@ -31,7 +31,18 @@ describe('ClassesService', () => {
     classes: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
     ecclesiastical_years: { findFirst: jest.fn() },
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
-    class_section_progress: { findMany: jest.fn() },
+    class_sections: { findFirst: jest.fn() },
+    class_section_progress: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    evidence_files: {
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
     club_types: {
       findMany: jest
         .fn()
@@ -65,6 +76,31 @@ describe('ClassesService', () => {
           ],
         },
       ],
+    });
+    mockPrismaService.class_sections.findFirst.mockResolvedValue({
+      section_id: 101,
+      module_id: 11,
+    });
+    mockPrismaService.class_section_progress.findFirst.mockResolvedValue(null);
+    mockPrismaService.class_section_progress.create.mockResolvedValue({
+      section_progress_id: 123,
+      enrollment_id: 901,
+      section_id: 101,
+      status: 'PENDING',
+    });
+    mockPrismaService.class_section_progress.update.mockResolvedValue({
+      section_progress_id: 123,
+      section_id: 101,
+      status: 'SUBMITTED',
+      submitted_at: new Date('2026-05-10T00:00:00.000Z'),
+    });
+    mockPrismaService.evidence_files.create.mockResolvedValue({
+      evidence_file_id: 55,
+      file_url: 'https://r2.example/class/123.pdf',
+      file_name: 'evidence.pdf',
+      file_type: 'document',
+      uploaded_at: new Date('2026-05-10T00:00:00.000Z'),
+      uploaded_by: null,
     });
 
     const mockFileStorageService = {
@@ -259,6 +295,77 @@ describe('ClassesService', () => {
         enrollment_id: 901,
         score: 80,
       });
+    });
+  });
+
+  describe('class evidence files', () => {
+    it('uploads evidence against an explicit enrollment-owned section progress', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+      });
+      const fileStorage = (service as any).fileStorage;
+      fileStorage.upload.mockResolvedValue({
+        url: 'https://r2.example/class/123.pdf',
+      });
+      fileStorage.getSignedDownloadUrl.mockResolvedValue(
+        'https://signed.example/class/123.pdf',
+      );
+
+      await (service as any).uploadSectionFile(
+        'user-1',
+        7,
+        101,
+        {
+          buffer: Buffer.from('pdf'),
+          mimetype: 'application/pdf',
+          originalname: 'evidence.pdf',
+        },
+        901,
+      );
+
+      expect(
+        mockPrismaService.class_section_progress.findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            enrollment_id: 901,
+            section_id: 101,
+            active: true,
+          }),
+        }),
+      );
+    });
+
+    it('submits evidence using explicit enrollment ownership', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'user-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+      });
+      mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
+        section_progress_id: 123,
+        section_id: 101,
+        status: 'PENDING',
+        evidence_files: [{ evidence_file_id: 55 }],
+      });
+
+      await (service as any).submitSection('user-1', 7, 101, 901);
+
+      expect(
+        mockPrismaService.class_section_progress.findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            enrollment_id: 901,
+            section_id: 101,
+            active: true,
+          }),
+        }),
+      );
     });
   });
 

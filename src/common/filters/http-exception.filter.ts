@@ -178,16 +178,27 @@ export class HttpExceptionFilter implements ExceptionFilter {
     return 'An error occurred';
   }
 
-  private sanitizeRequestBody(url: string, body: unknown): unknown {
-    if (!body || typeof body !== 'object') return body;
-    if (!url.includes('/auth/login')) return body;
-
-    return this.maskEmailInObject(body);
+  /**
+   * Redacts sensitive fields from any request body before they reach the log stream.
+   *
+   * Strategy: key-name matching (case-insensitive) against a well-known set of
+   * sensitive field names.  Values are replaced with `[REDACTED]` so the log
+   * shows that the field was present without leaking its contents.
+   *
+   * Email is handled specially: it is partially masked (user@domain → u***@domain)
+   * instead of fully redacted so developers can correlate failing requests to accounts
+   * without seeing the full address.
+   *
+   * SECURITY: This is defence-in-depth for dev logs.  Production already skips
+   * requestBody entirely (see the caller in `catch()`).
+   */
+  private sanitizeRequestBody(_url: string, body: unknown): unknown {
+    return this.redactSensitiveKeys(body);
   }
 
-  private maskEmailInObject(value: unknown): unknown {
+  private redactSensitiveKeys(value: unknown): unknown {
     if (Array.isArray(value)) {
-      return value.map((item) => this.maskEmailInObject(item));
+      return value.map((item) => this.redactSensitiveKeys(item));
     }
 
     if (!value || typeof value !== 'object') {
@@ -195,16 +206,69 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     const source = value as Record<string, unknown>;
-    const masked: Record<string, unknown> = {};
+    const result: Record<string, unknown> = {};
 
     for (const [key, raw] of Object.entries(source)) {
-      if (key.toLowerCase() === 'email' && typeof raw === 'string') {
-        masked[key] = maskEmail(raw);
+      const lk = key.toLowerCase();
+
+      if (lk === 'email' && typeof raw === 'string') {
+        result[key] = maskEmail(raw);
+      } else if (HttpExceptionFilter.SENSITIVE_KEYS.has(lk)) {
+        result[key] = '[REDACTED]';
       } else {
-        masked[key] = this.maskEmailInObject(raw);
+        result[key] = this.redactSensitiveKeys(raw);
       }
     }
 
-    return masked;
+    return result;
   }
+
+  /**
+   * Lowercase field names that must never appear in logs.
+   *
+   * Covers: password variants, tokens, secrets, OTP/MFA codes, PINs, SSNs,
+   * credit card numbers, CVV, IBAN, and any key containing "secret".
+   */
+  private static readonly SENSITIVE_KEYS = new Set([
+    'password',
+    'currentpassword',
+    'newpassword',
+    'oldpassword',
+    'confirm_password',
+    'confirmpassword',
+    'password_confirmation',
+    'passwordconfirmation',
+    'token',
+    'access_token',
+    'accesstoken',
+    'refresh_token',
+    'refreshtoken',
+    'session_token',
+    'sessiontoken',
+    'id_token',
+    'idtoken',
+    'authorization',
+    'secret',
+    'client_secret',
+    'clientsecret',
+    'api_key',
+    'apikey',
+    'private_key',
+    'privatekey',
+    'otp',
+    'totp',
+    'mfa_code',
+    'mfacode',
+    'code',
+    'pin',
+    'ssn',
+    'social_security_number',
+    'credit_card',
+    'creditcard',
+    'card_number',
+    'cardnumber',
+    'cvv',
+    'cvc',
+    'iban',
+  ]);
 }

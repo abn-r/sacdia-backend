@@ -259,6 +259,13 @@ export class UserClassesController {
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'classId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
+  @ApiQuery({
+    name: 'enrollmentId',
+    required: false,
+    type: Number,
+    description:
+      'Enrollment anual explícito para desambiguar evidencias de clase',
+  })
   @ApiResponse({ status: 200, description: 'Section submitted successfully' })
   @ApiResponse({ status: 400, description: 'No evidence files to submit' })
   @ApiResponse({ status: 404, description: 'Section progress not found' })
@@ -266,12 +273,15 @@ export class UserClassesController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
+    @Query('enrollmentId', new ParseIntPipe({ optional: true }))
+    enrollmentId: number | undefined,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.submitSection(
       currentUser.sub,
       classId,
       sectionId,
+      enrollmentId,
     );
     return { status: 'success', data };
   }
@@ -294,6 +304,13 @@ export class UserClassesController {
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'classId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
+  @ApiQuery({
+    name: 'enrollmentId',
+    required: false,
+    type: Number,
+    description:
+      'Enrollment anual explícito para desambiguar evidencias de clase',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -315,6 +332,8 @@ export class UserClassesController {
       }),
     )
     file: Express.Multer.File,
+    @Query('enrollmentId', new ParseIntPipe({ optional: true }))
+    enrollmentId: number | undefined,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.uploadSectionFile(
@@ -322,6 +341,7 @@ export class UserClassesController {
       classId,
       sectionId,
       file,
+      enrollmentId,
     );
     return { status: 'success', data };
   }
@@ -338,6 +358,13 @@ export class UserClassesController {
   @ApiParam({ name: 'classId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiParam({ name: 'fileId', type: Number })
+  @ApiQuery({
+    name: 'enrollmentId',
+    required: false,
+    type: Number,
+    description:
+      'Enrollment anual explícito para desambiguar evidencias de clase',
+  })
   @ApiResponse({ status: 200, description: 'File deleted successfully' })
   @ApiResponse({ status: 404, description: 'Evidence file not found' })
   async deleteSectionFile(
@@ -345,6 +372,8 @@ export class UserClassesController {
     @Param('classId', ParseIntPipe) classId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('fileId', ParseIntPipe) fileId: number,
+    @Query('enrollmentId', new ParseIntPipe({ optional: true }))
+    enrollmentId: number | undefined,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.deleteSectionFile(
@@ -352,6 +381,7 @@ export class UserClassesController {
       classId,
       sectionId,
       fileId,
+      enrollmentId,
     );
     return { status: 'success', data };
   }

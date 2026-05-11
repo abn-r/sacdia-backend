@@ -30,11 +30,11 @@ export class BulkRejectEvidenceDto {
 
   @ApiProperty({
     description: 'Tipo de evidencia a rechazar en bloque',
-    enum: ['folder', 'class', 'honor'],
+    enum: ['class', 'honor'],
     example: 'class',
   })
-  @IsEnum(['folder', 'class', 'honor'], {
-    message: 'type debe ser uno de: folder, class, honor',
+  @IsEnum(['class', 'honor'], {
+    message: 'type debe ser uno de: class, honor',
   })
   declare type: EvidenceType;
 
@@ -45,7 +45,14 @@ export class BulkRejectEvidenceDto {
     example: 'Imágenes borrosas. Por favor sube evidencia más clara.',
   })
   @IsString()
-  @MinLength(1, { message: i18nValidationMessage('errors.VALIDATION.reject_reason_required') })
-  @MaxLength(1000, { message: i18nValidationMessage('errors.VALIDATION.reject_reason_max_length', { max: 1000 }) })
+  @MinLength(1, {
+    message: i18nValidationMessage('errors.VALIDATION.reject_reason_required'),
+  })
+  @MaxLength(1000, {
+    message: i18nValidationMessage(
+      'errors.VALIDATION.reject_reason_max_length',
+      { max: 1000 },
+    ),
+  })
   declare reason: string;
 }
