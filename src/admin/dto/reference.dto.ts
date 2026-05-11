@@ -8,7 +8,12 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
+  ArrayMaxSize,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
+import { ClubIdealTranslationDto } from '../../common/dto/club-ideal-translation.dto';
 
 export class CreateRelationshipTypeDto {
   @ApiProperty({ example: 'Padre' })
@@ -26,6 +31,13 @@ export class CreateRelationshipTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateRelationshipTypeDto {
@@ -45,6 +57,13 @@ export class UpdateRelationshipTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateAllergyDto {
@@ -63,6 +82,13 @@ export class CreateAllergyDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateAllergyDto {
@@ -82,6 +108,13 @@ export class UpdateAllergyDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateDiseaseDto {
@@ -100,6 +133,13 @@ export class CreateDiseaseDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateDiseaseDto {
@@ -119,6 +159,13 @@ export class UpdateDiseaseDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateMedicineDto {
@@ -137,6 +184,13 @@ export class CreateMedicineDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateMedicineDto {
@@ -156,6 +210,13 @@ export class UpdateMedicineDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateActivityTypeDto {
@@ -180,6 +241,13 @@ export class CreateActivityTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Note: code is NOT translated.' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateActivityTypeDto {
@@ -206,6 +274,13 @@ export class UpdateActivityTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Note: code is NOT translated.' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateEcclesiasticalYearDto {
@@ -253,6 +328,13 @@ export class CreateClubTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Only name is translated for club types.' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateClubTypeDto {
@@ -267,6 +349,13 @@ export class UpdateClubTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Only name is translated for club types.' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 // ==================== CLUB IDEALS ====================
@@ -299,6 +388,13 @@ export class CreateClubIdealDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [ClubIdealTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Fields: name and ideal.' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ClubIdealTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: ClubIdealTranslationDto[];
 }
 
 export class UpdateClubIdealDto {
@@ -326,4 +422,11 @@ export class UpdateClubIdealDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [ClubIdealTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Fields: name and ideal.' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ClubIdealTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: ClubIdealTranslationDto[];
 }
