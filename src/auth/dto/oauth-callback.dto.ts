@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -18,25 +18,31 @@ export class OAuthCallbackDto {
     description:
       'Opaque Better Auth session token (returned after BA OAuth callback)',
     example: 'ba_session_abc123...',
+    maxLength: 2048,
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(2048)
   declare session_token: string;
 
   @ApiProperty({
     description: 'OAuth provider used (google, apple)',
     example: 'google',
+    maxLength: 32,
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(32)
   declare provider: string;
 
   @ApiProperty({
     description: 'Redirect URI used during OAuth initiation (must match)',
     example: 'https://sacdia.app/auth/callback',
     required: false,
+    maxLength: 512,
   })
   @IsOptional()
   @IsString()
+  @MaxLength(512)
   redirect_uri?: string;
 }
