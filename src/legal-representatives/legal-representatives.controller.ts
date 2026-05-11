@@ -36,6 +36,11 @@ export class LegalRepresentativesController {
     summary: 'Registrar representante legal (solo para menores de 18)',
   })
   @ApiResponse({ status: 201, description: 'Representante registrado' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Access denied: caller is not the user or does not have admin role',
+  })
   @ApiResponse({
     status: 400,
     description: 'Usuario mayor de edad o ya tiene representante',
@@ -55,6 +60,11 @@ export class LegalRepresentativesController {
     description:
       'Respuesta exitosa. Retorna representante o data=null cuando no existe',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Access denied: caller is not the user or does not have admin role',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async findOne(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.legalRepresentativesService.findOne(userId);
@@ -64,6 +74,11 @@ export class LegalRepresentativesController {
   @SensitiveUserSubresource('legal_representative', 'update')
   @ApiOperation({ summary: 'Actualizar representante legal' })
   @ApiResponse({ status: 200, description: 'Representante actualizado' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Access denied: caller is not the user or does not have admin role',
+  })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })
   async update(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -76,6 +91,11 @@ export class LegalRepresentativesController {
   @SensitiveUserSubresource('legal_representative', 'update')
   @ApiOperation({ summary: 'Eliminar representante legal' })
   @ApiResponse({ status: 200, description: 'Representante eliminado' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Access denied: caller is not the user or does not have admin role',
+  })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })
   async remove(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.legalRepresentativesService.remove(userId);

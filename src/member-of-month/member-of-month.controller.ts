@@ -48,6 +48,12 @@ export class MemberOfMonthController {
   @ApiQuery({ name: 'notified', required: false, type: Boolean })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Paginated list of member-of-month records' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (mom:supervise required)',
+  })
   async listForAdmin(
     @Req() req: any,
     @Query('club_type_id', new ParseIntPipe({ optional: true }))
@@ -84,6 +90,11 @@ export class MemberOfMonthController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Miembro(s) del mes actual' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (mom:read required)',
+  })
   @ApiResponse({ status: 404, description: 'Sección no encontrada' })
   async getCurrentMemberOfMonth(
     @Param('clubId', ParseIntPipe) clubId: number,
@@ -111,6 +122,11 @@ export class MemberOfMonthController {
     description: 'Resultados por página (default 12)',
   })
   @ApiResponse({ status: 200, description: 'Historial de miembro del mes' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (mom:read required)',
+  })
   @ApiResponse({ status: 404, description: 'Sección no encontrada' })
   async getMemberOfMonthHistory(
     @Param('clubId', ParseIntPipe) clubId: number,
@@ -140,6 +156,7 @@ export class MemberOfMonthController {
     status: 201,
     description: 'Evaluación ejecutada exitosamente',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description: 'Solo directores pueden ejecutar esta acción',

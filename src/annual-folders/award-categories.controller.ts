@@ -45,6 +45,11 @@ export class AwardCategoriesController {
   @RequirePermissions('award_categories:create')
   @ApiOperation({ summary: 'Create an award category' })
   @ApiResponse({ status: 201, description: 'Award category created' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (award_categories:create required)',
+  })
   @ApiResponse({ status: 404, description: 'Club type not found' })
   async create(@Body() dto: CreateAwardCategoryDto) {
     const data = await this.service.create(dto);
@@ -87,6 +92,11 @@ export class AwardCategoriesController {
   })
   @ApiResponse({ status: 200, description: 'List of award categories' })
   @ApiResponse({ status: 400, description: 'Invalid scope value' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (award_categories:read required)',
+  })
   async findAll(
     @Query('club_type_id') clubTypeId?: string,
     @Query('active') active?: string,
@@ -119,6 +129,11 @@ export class AwardCategoriesController {
   @ApiOperation({ summary: 'Get a single award category by ID' })
   @ApiParam({ name: 'categoryId', description: 'Award category UUID' })
   @ApiResponse({ status: 200, description: 'Award category details' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (award_categories:read required)',
+  })
   @ApiResponse({ status: 404, description: 'Award category not found' })
   async findOne(@Param('categoryId', ParseUUIDPipe) categoryId: string) {
     const data = await this.service.findOne(categoryId);
@@ -130,6 +145,11 @@ export class AwardCategoriesController {
   @ApiOperation({ summary: 'Update an award category' })
   @ApiParam({ name: 'categoryId', description: 'Award category UUID' })
   @ApiResponse({ status: 200, description: 'Award category updated' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (award_categories:update required)',
+  })
   @ApiResponse({
     status: 404,
     description: 'Award category or club type not found',
@@ -151,6 +171,11 @@ export class AwardCategoriesController {
   })
   @ApiParam({ name: 'categoryId', description: 'Award category UUID' })
   @ApiResponse({ status: 200, description: 'Award category deactivated' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (award_categories:delete required)',
+  })
   @ApiResponse({ status: 404, description: 'Award category not found' })
   async remove(@Param('categoryId', ParseUUIDPipe) categoryId: string) {
     const data = await this.service.remove(categoryId);

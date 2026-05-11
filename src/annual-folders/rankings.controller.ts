@@ -69,6 +69,11 @@ export class RankingsController {
     status: 200,
     description: 'Ranked list of clubs',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (rankings:read required)',
+  })
   async getRankings(
     @Query('club_type_id') clubTypeIdRaw: string,
     @Query('year_id') yearIdRaw: string,
@@ -107,6 +112,11 @@ export class RankingsController {
   @ApiResponse({
     status: 200,
     description: 'General and category-specific rankings for the club',
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (rankings:read required)',
   })
   @ApiResponse({ status: 404, description: 'Club enrollment not found' })
   async getRankingForClub(
@@ -148,6 +158,11 @@ export class RankingsController {
     status: 200,
     description: 'Breakdown of composite score into components',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (rankings:read required)',
+  })
   @ApiResponse({ status: 404, description: 'Club enrollment not found' })
   async getBreakdown(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
@@ -188,6 +203,11 @@ export class RankingsController {
         data: { message: 'Rankings recalculated', rankings_updated: 42 },
       },
     },
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (rankings:recalculate required)',
   })
   @ApiResponse({ status: 404, description: 'Year not found or no active year' })
   @ApiResponse({

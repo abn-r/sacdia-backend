@@ -1,8 +1,11 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RankingWeightsService } from '../ranking-weights.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AppBadRequestException } from '../../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppConflictException,
+  AppNotFoundException,
+} from '../../common/errors/app.exception';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -74,9 +77,9 @@ describe('RankingWeightsService', () => {
       await expect(service.getById('uuid-2')).resolves.toBe(overrideRow);
     });
 
-    it('throws NotFoundException when row is missing', async () => {
+    it('throws AppNotFoundException when row is missing', async () => {
       prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(null);
-      await expect(service.getById('missing-uuid')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getById('missing-uuid')).rejects.toBeInstanceOf(AppNotFoundException);
     });
   });
 
@@ -94,21 +97,21 @@ describe('RankingWeightsService', () => {
     it('rejects when club_type_id is null (default global reserved)', async () => {
       await expect(
         service.create({ ...validDto, club_type_id: undefined }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(AppBadRequestException);
       expect(prismaMock.ranking_weight_configs.create).not.toHaveBeenCalled();
     });
 
     it('rejects when weights do not sum to 100', async () => {
       await expect(
         service.create({ ...validDto, folder_weight: 10 }), // sum = 80
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(AppBadRequestException);
       expect(prismaMock.ranking_weight_configs.create).not.toHaveBeenCalled();
     });
 
-    it('rejects with ConflictException when override already exists', async () => {
+    it('rejects with AppConflictException when override already exists', async () => {
       prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(overrideRow);
 
-      await expect(service.create(validDto)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.create(validDto)).rejects.toBeInstanceOf(AppConflictException);
       expect(prismaMock.ranking_weight_configs.create).not.toHaveBeenCalled();
     });
 
@@ -140,7 +143,7 @@ describe('RankingWeightsService', () => {
       // overrideRow has 25/25/25/25; patching folder_weight=10 => sum=85
       await expect(
         service.update('uuid-2', { folder_weight: 10 }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(AppBadRequestException);
       expect(prismaMock.ranking_weight_configs.update).not.toHaveBeenCalled();
     });
 
