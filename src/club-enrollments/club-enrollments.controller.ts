@@ -47,6 +47,11 @@ export class ClubEnrollmentsController {
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 201, description: 'Inscripción creada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires club_instances:create permission for this club',
+  })
   @ApiResponse({
     status: 409,
     description: 'Ya existe una inscripción para esta sección y año',
@@ -82,6 +87,11 @@ export class ClubEnrollmentsController {
     description: 'Filtrar por ID de año eclesiástico',
   })
   @ApiResponse({ status: 200, description: 'Lista de inscripciones' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires club_instances:read permission for this club',
+  })
   async findAll(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
@@ -104,6 +114,11 @@ export class ClubEnrollmentsController {
     description:
       'Inscripción vigente, o null si la sección no tiene inscripción en el año actual',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires club_instances:read permission for this club',
+  })
   async findCurrent(@Param('sectionId', ParseIntPipe) sectionId: number) {
     const data =
       await this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
@@ -121,6 +136,11 @@ export class ClubEnrollmentsController {
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiParam({ name: 'enrollmentId', type: String })
   @ApiResponse({ status: 200, description: 'Inscripción actualizada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires club_instances:update permission for this club',
+  })
   @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
   async update(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
