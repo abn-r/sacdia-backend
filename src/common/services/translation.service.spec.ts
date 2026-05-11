@@ -347,5 +347,59 @@ describe('TranslationService', () => {
       expect(call.create.name).toBeNull();
       expect(call.create.description).toBe('FR desc');
     });
+
+    // ── fields: ['name', 'ideal'] — club_ideals_translations path ─────────────
+
+    describe("with fields: ['name', 'ideal']", () => {
+      const makeIdealTx = () => ({
+        club_ideals_translations: {
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+          upsert: jest.fn().mockResolvedValue({}),
+        },
+      });
+
+      it('upserts both name and ideal columns when both are provided', async () => {
+        const tx = makeIdealTx();
+        await service.upsertTranslations(
+          tx,
+          'club_ideals_translations',
+          'club_ideal_id',
+          'club_ideal_id_locale',
+          1,
+          [{ locale: 'en', name: 'Service', ideal: 'long ideal text' }],
+          ['name', 'ideal'],
+        );
+        expect(tx.club_ideals_translations.upsert).toHaveBeenCalledTimes(1);
+        const call = tx.club_ideals_translations.upsert.mock.calls[0][0];
+        expect(call.create).toMatchObject({
+          club_ideal_id: 1,
+          locale: 'en',
+          name: 'Service',
+          ideal: 'long ideal text',
+        });
+        expect(call.update).toMatchObject({
+          name: 'Service',
+          ideal: 'long ideal text',
+        });
+        // description must NOT be present — only fields in the override list
+        expect(call.create).not.toHaveProperty('description');
+      });
+
+      it('stores empty string ideal as null (same empty-string-to-null behavior)', async () => {
+        const tx = makeIdealTx();
+        await service.upsertTranslations(
+          tx,
+          'club_ideals_translations',
+          'club_ideal_id',
+          'club_ideal_id_locale',
+          2,
+          [{ locale: 'pt-BR', name: 'Serviço', ideal: '' }],
+          ['name', 'ideal'],
+        );
+        const call = tx.club_ideals_translations.upsert.mock.calls[0][0];
+        expect(call.create.ideal).toBeNull();
+        expect(call.create.name).toBe('Serviço');
+      });
+    });
   });
 });
