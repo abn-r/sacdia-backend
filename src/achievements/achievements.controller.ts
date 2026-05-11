@@ -75,6 +75,7 @@ export class AchievementsController {
     status: 200,
     description: 'User achievement summary grouped by category',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async getMyAchievements(@Request() req: { user: { userId: string } }) {
     return this.achievementsService.getUserAchievements(req.user.userId);
   }
@@ -84,8 +85,12 @@ export class AchievementsController {
    * Returns all active achievement categories.
    */
   @Get('categories')
-  @ApiOperation({ summary: 'List active achievement categories' })
+  @ApiOperation({
+    summary: 'List active achievement categories',
+    description: 'Returns all active achievement categories ordered by display_order.',
+  })
   @ApiResponse({ status: 200, description: 'List of active categories' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async getCategories() {
     return this.achievementsService.findActiveCategories();
   }
@@ -112,6 +117,7 @@ export class AchievementsController {
     status: 200,
     description: 'Paginated achievements grouped by category',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async listAchievements(
     @Request() req: { user: { userId: string } },
     @Query('categoryId', new ParseIntPipe({ optional: true }))
@@ -194,6 +200,7 @@ export class AchievementsController {
   })
   @ApiParam({ name: 'achievementId', type: Number })
   @ApiResponse({ status: 200, description: 'Achievement detail with progress' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 404,
     description: 'Achievement not found or inactive',

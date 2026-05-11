@@ -68,6 +68,10 @@ export class DataExportController {
     type: DataExportCreateResponseDto,
   })
   @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid JWT',
+  })
+  @ApiResponse({
     status: 429,
     description: 'A completed export already exists in the last 24h',
     type: DataExportRateLimitResponseDto,
@@ -92,11 +96,17 @@ export class DataExportController {
   @Get('data-exports')
   @ApiOperation({
     summary: 'List all data export requests for the current user',
+    description:
+      'Returns all export jobs for the authenticated user, ordered by creation date descending.',
   })
   @ApiResponse({
     status: 200,
     description: 'List of export requests',
     type: DataExportListResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid JWT',
   })
   async listExports(@Req() req: Request & { user: JwtUser }) {
     return this.dataExportService.listExports(req.user.sub);
@@ -132,6 +142,10 @@ export class DataExportController {
   })
   @ApiResponse({ status: 409, description: 'Export is pending or processing' })
   @ApiResponse({ status: 410, description: 'Export has expired' })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid JWT',
+  })
   @ApiResponse({
     status: 422,
     description: 'Export failed — check failure_reason',

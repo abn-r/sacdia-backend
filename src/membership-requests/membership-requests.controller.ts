@@ -50,6 +50,14 @@ export class MembershipRequestsController {
     status: 200,
     description: 'Lista de solicitudes pendientes',
   })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid JWT',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires club_members:approve permission for this club',
+  })
   async listPending(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
   ) {
@@ -69,6 +77,11 @@ export class MembershipRequestsController {
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Solicitud aprobada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires club_members:approve permission for this club',
+  })
   @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
   async approve(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
@@ -93,6 +106,11 @@ export class MembershipRequestsController {
   @ApiParam({ name: 'clubSectionId', type: Number })
   @ApiParam({ name: 'assignmentId', type: String })
   @ApiResponse({ status: 200, description: 'Solicitud rechazada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires club_members:approve permission for this club',
+  })
   @ApiResponse({ status: 404, description: 'Solicitud no encontrada' })
   async reject(
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,

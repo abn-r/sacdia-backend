@@ -48,6 +48,7 @@ export class ResourcesAppController {
     status: 200,
     description: 'Lista paginada de recursos visibles',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async getMyResources(@Query() query: ResourceQueryDto, @Request() req: any) {
     return this.resourcesService.getVisibleResources(query, req.authorization);
   }
@@ -65,6 +66,7 @@ export class ResourcesAppController {
   })
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso encontrado' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   async getMyResource(
     @Param('id', ParseUUIDPipe) id: string,
@@ -85,6 +87,7 @@ export class ResourcesAppController {
   })
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'URL firmada generada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 400,
     description: 'El recurso no tiene archivo asociado',
