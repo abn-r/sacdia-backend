@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request as ExpressRequest } from 'express';
@@ -85,6 +86,11 @@ export class AdminCronAlertsController {
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller does not have admin or super-admin global role',
+  })
   async getCronAlerts(
     @Query('jobName') jobName?: string,
     @Query('since') since?: string,
@@ -116,13 +122,22 @@ export class AdminCronAlertsController {
   })
   @ApiParam({ name: 'id', description: 'cron_alerts_log.id', type: Number })
   @ApiOkResponse({
-    description: 'Alert resolved',
+    description: 'Alert resolved successfully',
     schema: {
       properties: {
         status: { type: 'string', example: 'ok' },
         data: { type: 'object' },
       },
     },
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller does not have super-admin global role',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'cron_alerts_log row not found for the given id',
   })
   async resolveAlert(
     @Param('id', ParseIntPipe) id: number,

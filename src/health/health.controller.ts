@@ -1,6 +1,11 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Controller, Get, Inject, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import type { Cache } from 'cache-manager';
 import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,7 +21,18 @@ export class HealthController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Public ping — returns ok if API is reachable' })
+  @ApiOperation({
+    summary: 'Public ping — returns ok if API is reachable',
+    description:
+      'Lightweight liveness probe. Returns HTTP 200 with a timestamp whenever the Node process is running. No authentication required.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'API is reachable',
+    schema: {
+      example: { status: 'ok', timestamp: '2026-05-11T00:00:00.000Z' },
+    },
+  })
   ping() {
     return { status: 'ok', timestamp: new Date().toISOString() };
   }
@@ -24,10 +40,38 @@ export class HealthController {
   @Get('details')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
   @GlobalRoles('admin', 'super-admin')
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Detailed health status (admin only)',
     description:
-      'Returns database, cache, FCM and Sentry status. Requires admin or super-admin role.',
+      'Returns database, cache, FCM and Sentry status. ' +
+      'The overall status is "ok" when the database is reachable, "degraded" otherwise. ' +
+      'Requires admin or super-admin global role.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Health details for all infrastructure dependencies',
+    schema: {
+      example: {
+        status: 'ok',
+        timestamp: '2026-05-11T00:00:00.000Z',
+        uptime: 12345.6,
+        dependencies: {
+          database: { ok: true },
+          cache: { ok: true },
+          fcm: { configured: true, initialized: true },
+          sentry: { configured: true },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid JWT',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller does not have admin or super-admin global role',
   })
   async details() {
     const dbStatus = await this.checkDatabase();
