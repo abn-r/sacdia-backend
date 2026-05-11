@@ -480,5 +480,9 @@
     "support_description_max_length": "Description cannot exceed {max} characters"
   },
   "RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE": "The global default weight configuration cannot be deleted",
+  "RANKING_WEIGHTS_NOT_FOUND": "Ranking weight configuration with ID {id} not found",
+  "RANKING_WEIGHTS_GLOBAL_RESERVED": "club_type_id is required for override configurations; the global default row is pre-seeded and cannot be created via this endpoint",
+  "RANKING_WEIGHTS_SUM_INVALID": "Weights must sum to 100; got {sum}",
+  "RANKING_WEIGHTS_CLUB_TYPE_CONFLICT": "An override already exists for club_type_id {clubTypeId}",
   "MEMBER_RANKINGS_CLUB_ID_INVALID": "The club_id parameter must be a positive integer"
 }
