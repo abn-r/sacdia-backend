@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import { i18nValidationMessage } from 'nestjs-i18n';
 
 export class UpdatePasswordDto {
   @ApiProperty({
@@ -9,7 +10,7 @@ export class UpdatePasswordDto {
   })
   @IsString()
   @MinLength(8, {
-    message: 'La contraseña actual debe tener al menos 8 caracteres',
+    message: i18nValidationMessage('errors.VALIDATION.password_min_length', { min: 8 }),
   })
   @MaxLength(128)
   currentPassword!: string;
@@ -21,11 +22,10 @@ export class UpdatePasswordDto {
     example: 'NewPassword123!',
   })
   @IsString()
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  @MinLength(8, { message: i18nValidationMessage('errors.VALIDATION.password_min_length', { min: 8 }) })
   @MaxLength(128)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message:
-      'La contraseña debe incluir: mayúscula, minúscula, número y carácter especial (@$!%*?&)',
+    message: i18nValidationMessage('errors.VALIDATION.password_format'),
   })
   password!: string;
 }

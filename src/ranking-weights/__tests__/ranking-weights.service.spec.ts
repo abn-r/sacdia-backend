@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Test, TestingModule } from '@nestjs/testing';
 import { RankingWeightsService } from '../ranking-weights.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AppBadRequestException } from '../../common/errors/app.exception';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -175,7 +176,7 @@ describe('RankingWeightsService', () => {
   describe('delete()', () => {
     it('rejects when row is the default global (club_type_id = null)', async () => {
       prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(makeRow()); // club_type_id: null
-      await expect(service.delete('uuid-1')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.delete('uuid-1')).rejects.toBeInstanceOf(AppBadRequestException);
       expect(prismaMock.ranking_weight_configs.delete).not.toHaveBeenCalled();
     });
 

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import { i18nValidationMessage } from 'nestjs-i18n';
 
 // ---------------------------------------------------------------------------
 // Session DTOs
@@ -72,11 +73,10 @@ export class AdminSetPasswordDto {
     maxLength: 128,
   })
   @IsString()
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  @MinLength(8, { message: i18nValidationMessage('errors.VALIDATION.password_min_length', { min: 8 }) })
   @MaxLength(128)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message:
-      'La contraseña debe incluir: mayúscula, minúscula, número y carácter especial (@$!%*?&)',
+    message: i18nValidationMessage('errors.VALIDATION.password_format'),
   })
   newPassword!: string;
 }

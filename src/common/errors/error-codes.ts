@@ -626,4 +626,10 @@ export enum ErrorCode {
   WEIGHTS_CONFLICT = 'WEIGHTS_CONFLICT',
   DEFAULT_WEIGHTS_NOT_DELETABLE = 'DEFAULT_WEIGHTS_NOT_DELETABLE',
   WEIGHTS_NOT_FOUND = 'WEIGHTS_NOT_FOUND',
+
+  // ── Ranking Weights (domain errors) ──────────────────────────────────────
+  RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE = 'RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE',
+
+  // ── Member Rankings (domain errors) ──────────────────────────────────────
+  MEMBER_RANKINGS_CLUB_ID_INVALID = 'MEMBER_RANKINGS_CLUB_ID_INVALID',
 }

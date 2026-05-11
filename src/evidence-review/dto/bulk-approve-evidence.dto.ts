@@ -11,7 +11,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export type EvidenceType = 'folder' | 'class' | 'honor';
+export type EvidenceType = 'class' | 'honor';
 
 export class BulkApproveEvidenceDto {
   @ApiProperty({
@@ -30,11 +30,11 @@ export class BulkApproveEvidenceDto {
 
   @ApiProperty({
     description: 'Tipo de evidencia a aprobar en bloque',
-    enum: ['folder', 'class', 'honor'],
+    enum: ['class', 'honor'],
     example: 'class',
   })
-  @IsEnum(['folder', 'class', 'honor'], {
-    message: 'type debe ser uno de: folder, class, honor',
+  @IsEnum(['class', 'honor'], {
+    message: 'type debe ser uno de: class, honor',
   })
   declare type: EvidenceType;
 

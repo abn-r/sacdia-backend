@@ -467,5 +467,18 @@
   "WEIGHTS_CONFLICT": "A weight configuration already exists for this club type and ecclesiastical year combination.",
   "DEFAULT_WEIGHTS_NOT_DELETABLE": "The global default weight row cannot be deleted.",
   "WEIGHTS_NOT_FOUND": "Ranking weight configuration not found.",
-  "RECALCULATION_DISABLED": "Ranking recalculation is currently disabled in system settings."
+  "RECALCULATION_DISABLED": "Ranking recalculation is currently disabled in system settings.",
+  "VALIDATION": {
+    "field_required": "This field is required",
+    "field_max_length": "This field cannot exceed {max} characters",
+    "password_min_length": "Password must be at least {min} characters long",
+    "password_required": "Password is required",
+    "password_format": "Password must include: uppercase, lowercase, number and special character (@$!%*?&)",
+    "reject_reason_required": "Rejection reason is required",
+    "reject_reason_max_length": "Rejection reason cannot exceed {max} characters",
+    "support_title_max_length": "Title cannot exceed {max} characters",
+    "support_description_max_length": "Description cannot exceed {max} characters"
+  },
+  "RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE": "The global default weight configuration cannot be deleted",
+  "MEMBER_RANKINGS_CLUB_ID_INVALID": "The club_id parameter must be a positive integer"
 }
