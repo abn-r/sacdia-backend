@@ -234,6 +234,7 @@ export class AuthController {
   }
 
   @Post('update-password')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update authenticated user password' })
