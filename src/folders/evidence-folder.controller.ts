@@ -21,6 +21,7 @@ import {
   ApiConsumes,
   ApiOperation,
   ApiParam,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import {
@@ -51,6 +52,13 @@ export class EvidenceFolderController {
     description: 'Club section ID',
     example: 1,
   })
+  @ApiResponse({ status: 200, description: 'Evidence folder with sections and files' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (evidence_folders:read required)',
+  })
+  @ApiResponse({ status: 404, description: 'Club section not found' })
   async getFolder(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @CurrentUser() user: CurrentUserPayload,
@@ -75,6 +83,13 @@ export class EvidenceFolderController {
     description: 'Evidence folder section ID',
     example: 10,
   })
+  @ApiResponse({ status: 201, description: 'Section submitted successfully' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (evidence_folders:update required)',
+  })
+  @ApiResponse({ status: 404, description: 'Club section or evidence folder section not found' })
   async submitSection(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('efSectionId', ParseIntPipe) efSectionId: number,
@@ -114,6 +129,14 @@ export class EvidenceFolderController {
       },
     },
   })
+  @ApiResponse({ status: 201, description: 'File uploaded successfully' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (evidence_folders:update required)',
+  })
+  @ApiResponse({ status: 404, description: 'Club section or evidence folder section not found' })
+  @ApiResponse({ status: 422, description: 'Invalid file type or size' })
   async uploadFile(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('efSectionId', ParseIntPipe) efSectionId: number,
@@ -152,6 +175,13 @@ export class EvidenceFolderController {
     description: 'Evidence file ID',
     example: 100,
   })
+  @ApiResponse({ status: 200, description: 'File deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (evidence_folders:update required)',
+  })
+  @ApiResponse({ status: 404, description: 'Evidence file not found' })
   async deleteFile(
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Param('efSectionId', ParseIntPipe) efSectionId: number,
