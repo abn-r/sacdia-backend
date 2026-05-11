@@ -43,14 +43,15 @@ model activities {
 }
 
 model activity_types {
-  activity_type_id Int          @id @default(autoincrement())
-  code             String       @unique @db.VarChar(50)
-  name             String       @unique @db.VarChar(100)
+  activity_type_id Int                          @id @default(autoincrement())
+  code             String                       @unique @db.VarChar(50)
+  name             String                       @unique @db.VarChar(100)
   description      String?
-  active           Boolean      @default(true)
-  created_at       DateTime?    @default(now()) @db.Timestamptz(6)
-  modified_at      DateTime?    @default(now()) @db.Timestamptz(6)
+  active           Boolean                      @default(true)
+  created_at       DateTime?                    @default(now()) @db.Timestamptz(6)
+  modified_at      DateTime?                    @default(now()) @db.Timestamptz(6)
   activities       activities[]
+  translations     activity_types_translations[]
 }
 
 model activity_instances {
@@ -314,15 +315,16 @@ model classes_translations {
 }
 
 model club_ideals {
-  club_ideal_id Int        @id @default(autoincrement())
-  name          String     @db.VarChar(50)
+  club_ideal_id Int                        @id @default(autoincrement())
+  name          String                     @db.VarChar(50)
   ideal_order   Int
   club_type_id  Int
-  active        Boolean    @default(false)
-  created_at    DateTime?  @default(now()) @db.Timestamptz(6)
-  modified_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  active        Boolean                    @default(false)
+  created_at    DateTime?                  @default(now()) @db.Timestamptz(6)
+  modified_at   DateTime?                  @default(now()) @db.Timestamptz(6)
   ideal         String?
-  club_types    club_types @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  club_types    club_types                 @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  translations  club_ideals_translations[]
 }
 
 model club_inventory {
@@ -361,26 +363,27 @@ model inventory_history {
 }
 
 model club_types {
-  name                   String                  @unique @db.VarChar(50)
-  active                 Boolean                 @default(false)
-  created_at             DateTime?               @default(now()) @db.Timestamptz(6)
-  modified_at            DateTime?               @default(now()) @db.Timestamptz(6)
-  club_type_id           Int                     @id @default(autoincrement())
-  activities             activities[]
-  classes                classes[]
-  club_ideals            club_ideals[]
-  club_sections          club_sections[]
-  finances               finances[]
-  folders                folders[]
-  honors                 honors[]
-  units                  units[]
-  folder_templates       folder_templates[]
-  resources              resources[]
-  award_categories       award_categories[]
-  club_annual_rankings   club_annual_rankings[]
-  achievements           achievements[]
-  ranking_weight_configs ranking_weight_configs?
+  name                       String                    @unique @db.VarChar(50)
+  active                     Boolean                   @default(false)
+  created_at                 DateTime?                 @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime?                 @default(now()) @db.Timestamptz(6)
+  club_type_id               Int                       @id @default(autoincrement())
+  activities                 activities[]
+  classes                    classes[]
+  club_ideals                club_ideals[]
+  club_sections              club_sections[]
+  finances                   finances[]
+  folders                    folders[]
+  honors                     honors[]
+  units                      units[]
+  folder_templates           folder_templates[]
+  resources                  resources[]
+  award_categories           award_categories[]
+  club_annual_rankings       club_annual_rankings[]
+  achievements               achievements[]
+  ranking_weight_configs     ranking_weight_configs?
   enrollment_ranking_weights EnrollmentRankingWeight[]
+  translations               club_types_translations[]
 }
 
 model clubs {
@@ -1670,23 +1673,25 @@ model investiture_config {
 }
 
 model diseases {
-  disease_id     Int              @id @default(autoincrement())
-  name           String           @unique
+  disease_id     Int                    @id @default(autoincrement())
+  name           String                 @unique
   description    String?
-  created_at     DateTime         @default(now()) @db.Timestamptz(6)
-  modified_at    DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
-  active         Boolean          @default(true)
+  created_at     DateTime               @default(now()) @db.Timestamptz(6)
+  modified_at    DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+  active         Boolean                @default(true)
   users_diseases users_diseases[]
+  translations   diseases_translations[]
 }
 
 model allergies {
-  allergy_id      Int               @id @default(autoincrement())
-  name            String            @unique
+  allergy_id      Int                      @id @default(autoincrement())
+  name            String                   @unique
   description     String?
-  created_at      DateTime          @default(now()) @db.Timestamptz(6)
-  modified_at     DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
-  active          Boolean           @default(true)
+  created_at      DateTime                 @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  active          Boolean                  @default(true)
   users_allergies users_allergies[]
+  translations    allergies_translations[]
 }
 
 model emergency_contacts {
@@ -1895,24 +1900,26 @@ model users_roles {
 }
 
 model medicines {
-  medicine_id     Int               @id @default(autoincrement())
-  name            String            @db.VarChar
-  description     String?           @db.VarChar
-  active          Boolean           @default(true)
-  created_at      DateTime          @default(now()) @db.Timestamptz(6)
-  modified_at     DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+  medicine_id     Int                      @id @default(autoincrement())
+  name            String                   @db.VarChar
+  description     String?                  @db.VarChar
+  active          Boolean                  @default(true)
+  created_at      DateTime                 @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
   users_medicines users_medicines[]
+  translations    medicines_translations[]
 }
 
 model relationship_types {
-  relationship_type_id  String                  @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
-  name                  String                  @unique @db.VarChar(50)
+  relationship_type_id  String                               @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  name                  String                               @unique @db.VarChar(50)
   description           String?
-  active                Boolean                 @default(true)
-  created_at            DateTime                @default(now()) @db.Timestamptz(6)
-  modified_at           DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+  active                Boolean                              @default(true)
+  created_at            DateTime                             @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime                             @default(now()) @updatedAt @db.Timestamptz(6)
   emergency_contacts    emergency_contacts[]
   legal_representatives legal_representatives[]
+  translations          relationship_types_translations[]
 
   @@index([name], map: "idx_relationship_types_name")
 }
@@ -2843,4 +2850,112 @@ model EnrollmentRankingWeight {
 
   @@unique([club_type_id, ecclesiastical_year_id], map: "uq_enrollment_weights_type_year")
   @@map("enrollment_ranking_weights")
+}
+
+// ========================================
+// REFERENCE CATALOG TRANSLATION TABLES (PR-3 — Approach X i18n)
+// ========================================
+
+model relationship_types_translations {
+  id                   BigInt             @id @default(autoincrement())
+  relationship_type_id String             @db.Uuid
+  locale               String             @db.VarChar(10)
+  name                 String?            @db.Text
+  description          String?            @db.Text
+  created_at           DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?          @default(now()) @db.Timestamptz(6)
+  relationship_types   relationship_types @relation(fields: [relationship_type_id], references: [relationship_type_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([relationship_type_id, locale], map: "relationship_types_translations_unique_locale")
+  @@index([locale], map: "relationship_types_translations_locale_idx")
+  @@index([relationship_type_id], map: "relationship_types_translations_relationship_type_id_idx")
+}
+
+model allergies_translations {
+  id          BigInt     @id @default(autoincrement())
+  allergy_id  Int
+  locale      String     @db.VarChar(10)
+  name        String?    @db.Text
+  description String?    @db.Text
+  created_at  DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime?  @default(now()) @db.Timestamptz(6)
+  allergies   allergies  @relation(fields: [allergy_id], references: [allergy_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([allergy_id, locale], map: "allergies_translations_unique_locale")
+  @@index([locale], map: "allergies_translations_locale_idx")
+  @@index([allergy_id], map: "allergies_translations_allergy_id_idx")
+}
+
+model diseases_translations {
+  id          BigInt    @id @default(autoincrement())
+  disease_id  Int
+  locale      String    @db.VarChar(10)
+  name        String?   @db.Text
+  description String?   @db.Text
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  diseases    diseases  @relation(fields: [disease_id], references: [disease_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([disease_id, locale], map: "diseases_translations_unique_locale")
+  @@index([locale], map: "diseases_translations_locale_idx")
+  @@index([disease_id], map: "diseases_translations_disease_id_idx")
+}
+
+model medicines_translations {
+  id          BigInt    @id @default(autoincrement())
+  medicine_id Int
+  locale      String    @db.VarChar(10)
+  name        String?   @db.Text
+  description String?   @db.Text
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  medicines   medicines @relation(fields: [medicine_id], references: [medicine_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([medicine_id, locale], map: "medicines_translations_unique_locale")
+  @@index([locale], map: "medicines_translations_locale_idx")
+  @@index([medicine_id], map: "medicines_translations_medicine_id_idx")
+}
+
+model club_types_translations {
+  id           BigInt     @id @default(autoincrement())
+  club_type_id Int
+  locale       String     @db.VarChar(10)
+  name         String?    @db.Text
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  club_types   club_types @relation(fields: [club_type_id], references: [club_type_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([club_type_id, locale], map: "club_types_translations_unique_locale")
+  @@index([locale], map: "club_types_translations_locale_idx")
+  @@index([club_type_id], map: "club_types_translations_club_type_id_idx")
+}
+
+model club_ideals_translations {
+  id            BigInt      @id @default(autoincrement())
+  club_ideal_id Int
+  locale        String      @db.VarChar(10)
+  name          String?     @db.Text
+  ideal         String?     @db.Text
+  created_at    DateTime?   @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?   @default(now()) @db.Timestamptz(6)
+  club_ideals   club_ideals @relation(fields: [club_ideal_id], references: [club_ideal_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([club_ideal_id, locale], map: "club_ideals_translations_unique_locale")
+  @@index([locale], map: "club_ideals_translations_locale_idx")
+  @@index([club_ideal_id], map: "club_ideals_translations_club_ideal_id_idx")
+}
+
+model activity_types_translations {
+  id               BigInt         @id @default(autoincrement())
+  activity_type_id Int
+  locale           String         @db.VarChar(10)
+  name             String?        @db.Text
+  description      String?        @db.Text
+  created_at       DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?      @default(now()) @db.Timestamptz(6)
+  activity_types   activity_types @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([activity_type_id, locale], map: "activity_types_translations_unique_locale")
+  @@index([locale], map: "activity_types_translations_locale_idx")
+  @@index([activity_type_id], map: "activity_types_translations_activity_type_id_idx")
 }

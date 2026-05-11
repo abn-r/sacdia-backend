@@ -81,6 +81,7 @@ export class TranslationService {
       locale: string;
       name?: string;
       description?: string;
+      ideal?: string;
     }>,
   ): void {
     if (!translations) return;
