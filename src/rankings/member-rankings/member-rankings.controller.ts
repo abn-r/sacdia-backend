@@ -58,6 +58,7 @@ export class MemberRankingsController {
   })
   @ApiQuery({ name: 'year_id', required: true, type: Number })
   @ApiResponse({ status: 200, type: MemberMyRankingDto })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description: 'MEMBER_RANKING_HIDDEN — visibility mode is hidden',
@@ -113,6 +114,11 @@ export class MemberRankingsController {
         mode: 'full',
       },
     },
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions (member_ranking_weights:write required)',
   })
   @ApiResponse({
     status: 400,
@@ -174,6 +180,7 @@ export class MemberRankingsController {
   })
   @ApiQuery({ name: 'year_id', required: true, type: Number })
   @ApiResponse({ status: 200, type: MemberBreakdownDto })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description:
@@ -225,6 +232,11 @@ export class MemberRankingsController {
         limit: 20,
       },
     },
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — none of the required member_rankings:read_* permissions granted',
   })
   async list(
     @Req() req: any,
