@@ -94,6 +94,10 @@ export class MfaController {
     status: 401,
     description: 'Contraseña inválida o JWT expirado',
   })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — token requires aal2 (complete MFA verification first)',
+  })
   async enrollMfa(@Req() req: Request, @Body() dto: EnrollMfaDto) {
     const userId = (req.user as any).userId as string;
     return this.mfaService.enrollMfa(userId, dto.password);
@@ -171,7 +175,11 @@ export class MfaController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Contraseña inválida o JWT expirado',
+    description: 'Contraseña inválida, JWT expirado, o 2FA no enrolado',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — token requires aal2 (MFA already completed) to disable MFA',
   })
   async disableMfa(@Req() req: Request, @Body() dto: DisableMfaDto) {
     const userId = (req.user as any).userId as string;
@@ -194,6 +202,7 @@ export class MfaController {
   })
   @ApiResponse({
     status: 200,
+    description: 'Estado MFA del usuario',
     schema: {
       properties: {
         enabled: {
@@ -203,6 +212,7 @@ export class MfaController {
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async getMfaStatus(@Req() req: Request) {
     const userId = (req.user as any).userId as string;
     return this.mfaService.getMfaStatus(userId);

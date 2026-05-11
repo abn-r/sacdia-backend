@@ -35,6 +35,11 @@ export class SystemConfigController {
     status: 200,
     description: 'Lista de configuraciones del sistema',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires admin or super-admin global role',
+  })
   async findAll() {
     return this.systemConfigService.findAll();
   }
@@ -57,6 +62,11 @@ export class SystemConfigController {
       'Clave de configuracion (e.g. investiture.min_approval_percentage)',
   })
   @ApiResponse({ status: 200, description: 'Configuracion encontrada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires admin or super-admin global role',
+  })
   @ApiResponse({ status: 404, description: 'Configuracion no encontrada' })
   async findByKey(@Param('key') key: string) {
     return this.systemConfigService.findByKey(key);
@@ -80,6 +90,11 @@ export class SystemConfigController {
   })
   @ApiResponse({ status: 200, description: 'Configuracion actualizada' })
   @ApiResponse({ status: 400, description: 'Clave o valor invalido' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires admin or super-admin global role',
+  })
   @ApiResponse({ status: 404, description: 'Configuracion no encontrada' })
   async updateByKey(
     @Param('key') key: string,
