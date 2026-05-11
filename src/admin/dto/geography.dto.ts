@@ -7,7 +7,11 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
+  ArrayMaxSize,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
 export class CreateCountryDto {
   @ApiProperty({ example: 'México' })
@@ -26,6 +30,13 @@ export class CreateCountryDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateCountryDto {
@@ -47,6 +58,13 @@ export class UpdateCountryDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateUnionDto {
@@ -71,6 +89,13 @@ export class CreateUnionDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateUnionDto {
@@ -98,6 +123,13 @@ export class UpdateUnionDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateLocalFieldDto {
@@ -122,6 +154,13 @@ export class CreateLocalFieldDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateLocalFieldDto {
@@ -149,6 +188,13 @@ export class UpdateLocalFieldDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateDistrictDto {
@@ -167,6 +213,13 @@ export class CreateDistrictDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateDistrictDto {
@@ -187,6 +240,13 @@ export class UpdateDistrictDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class CreateChurchDto {
@@ -205,6 +265,13 @@ export class CreateChurchDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
 
 export class UpdateChurchDto {
@@ -225,4 +292,11 @@ export class UpdateChurchDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
 }
