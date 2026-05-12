@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { AppBadRequestException } from '../../common/errors/app.exception';
 import { award_tier_enum } from '@prisma/client';
 import { AwardCategoriesService } from '../award-categories.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -128,10 +128,10 @@ describe('AwardCategoriesService', () => {
       );
     });
 
-    it('should throw BadRequestException when min_composite_pct >= max_composite_pct', async () => {
+    it('should throw AppBadRequestException when min_composite_pct >= max_composite_pct', async () => {
       const dto = { ...baseDto, min_composite_pct: 80, max_composite_pct: 70 };
 
-      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
+      await expect(service.create(dto)).rejects.toThrow(AppBadRequestException);
       expect(mockPrismaService.award_categories.create).not.toHaveBeenCalled();
     });
 
@@ -428,7 +428,7 @@ describe('AwardCategoriesService', () => {
       expect(mockPrismaService.club_types.findUnique).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when min_composite_pct >= max_composite_pct on update', async () => {
+    it('should throw AppBadRequestException when min_composite_pct >= max_composite_pct on update', async () => {
       mockPrismaService.award_categories.findUnique.mockResolvedValue(
         existingCategory,
       );
@@ -438,7 +438,7 @@ describe('AwardCategoriesService', () => {
           min_composite_pct: 50,
           max_composite_pct: 40,
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(AppBadRequestException);
 
       expect(mockPrismaService.award_categories.update).not.toHaveBeenCalled();
     });
