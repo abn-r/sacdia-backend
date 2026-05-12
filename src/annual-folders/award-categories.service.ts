@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppBadRequestException,
@@ -35,9 +35,7 @@ export class AwardCategoriesService {
 
     if (dto.min_composite_pct != null && dto.max_composite_pct != null) {
       if (dto.min_composite_pct >= dto.max_composite_pct) {
-        throw new BadRequestException(
-          'min_composite_pct must be less than max_composite_pct',
-        );
+        throw new AppBadRequestException(ErrorCode.AWARD_CATEGORY_PCT_INVALID);
       }
     }
 
@@ -158,9 +156,7 @@ export class AwardCategoriesService {
 
     if (dto.min_composite_pct != null && dto.max_composite_pct != null) {
       if (dto.min_composite_pct >= dto.max_composite_pct) {
-        throw new BadRequestException(
-          'min_composite_pct must be less than max_composite_pct',
-        );
+        throw new AppBadRequestException(ErrorCode.AWARD_CATEGORY_PCT_INVALID);
       }
     }
 

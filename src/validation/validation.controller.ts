@@ -54,6 +54,8 @@ export class ValidationController {
     status: 400,
     description: 'Estado invalido o entidad no pertenece al usuario',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires validation:submit' })
   @ApiResponse({ status: 404, description: 'Entidad no encontrada' })
   async submitForReview(
     @Body() dto: SubmitForReviewDto,
@@ -93,6 +95,8 @@ export class ValidationController {
     status: 400,
     description: 'Estado invalido o falta comentario en rechazo',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires validation:review' })
   @ApiResponse({ status: 404, description: 'Entidad no encontrada' })
   async review(
     @Param('entityType') entityType: 'class' | 'honor',
@@ -116,6 +120,8 @@ export class ValidationController {
   @Get('pending')
   @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('validation:read')
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires validation:read' })
   @ApiOperation({
     summary: 'Listar items pendientes de revision',
     description:
@@ -152,6 +158,8 @@ export class ValidationController {
   @Get(':entityType/:entityId/history')
   @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('validation:read')
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires validation:read' })
   @ApiOperation({
     summary: 'Historial de validacion',
     description:
@@ -183,6 +191,8 @@ export class ValidationController {
   @Get('eligibility/:userId')
   @RequirePermissions('validation:read')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires validation:read' })
   @ApiOperation({
     summary: 'Verificar elegibilidad para investidura',
     description:
