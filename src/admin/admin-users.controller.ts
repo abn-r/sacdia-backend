@@ -17,6 +17,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import {
@@ -60,6 +61,9 @@ export class AdminUsersController {
     summary:
       'Listar usuarios administrativos con alcance por rol (ALL/UNION/LOCAL_FIELD)',
   })
+  @ApiResponse({ status: 200, description: 'Lista de usuarios' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'role', required: false, type: String })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
@@ -86,6 +90,9 @@ export class AdminUsersController {
   @ApiOperation({
     summary: 'Obtener detalle de usuario validando alcance por rol del actor',
   })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado o fuera del alcance del actor' })
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -136,6 +143,10 @@ export class AdminUsersController {
   @Patch('users/:userId/approval')
   @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Approve or reject a user' })
+  @ApiResponse({ status: 200, description: 'Approval status updated' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateUserApproval(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserApprovalDto,
@@ -147,6 +158,10 @@ export class AdminUsersController {
   @Patch('users/:userId')
   @RequirePermissions('users:update_admin')
   @ApiOperation({ summary: 'Update user administrative fields' })
+  @ApiResponse({ status: 200, description: 'User updated' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateUser(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateAdminUserDto,
