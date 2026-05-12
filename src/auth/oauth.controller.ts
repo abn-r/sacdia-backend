@@ -52,6 +52,7 @@ export class OAuthController {
   // ---------------------------------------------------------------------------
 
   @Post('google')
+  @ApiResponse({ status: 400, description: 'Redirect URL inválida o faltante' })
   @ApiOperation({
     summary: 'Iniciar autenticación con Google',
     description:
@@ -74,6 +75,7 @@ export class OAuthController {
   }
 
   @Post('apple')
+  @ApiResponse({ status: 400, description: 'Redirect URL inválida o faltante' })
   @ApiOperation({
     summary: 'Iniciar autenticación con Apple',
     description:
