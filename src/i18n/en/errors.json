@@ -48,6 +48,7 @@
   "AWARD_CATEGORY_CLUB_TYPE_NOT_FOUND": "Club type with ID {id} not found",
   "AWARD_CATEGORY_NOT_FOUND": "Award category with ID {id} not found",
   "AWARD_CATEGORY_SCOPE_INVALID": "Invalid scope value. Must be one of: club, section, member",
+  "AWARD_CATEGORY_PCT_INVALID": "min_composite_pct must be less than max_composite_pct",
   "CAMPOREE_NOT_FOUND": "Camporee with ID {id} not found",
   "CAMPOREE_NOT_ACTIVE": "Camporee is not active",
   "CAMPOREE_YEAR_NOT_ACTIVE": "No active ecclesiastical year found. Please activate an ecclesiastical year first",

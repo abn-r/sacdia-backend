@@ -118,6 +118,9 @@ export class NotificationsController {
   @RequirePermissions('notifications:send')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Send notification to specific user' })
+  @ApiResponse({ status: 201, description: 'Notification queued' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:send' })
   async sendToUser(@Body() dto: SendNotificationDto, @Request() req) {
     return this.notificationsService.sendToUser(
       dto,
@@ -130,6 +133,9 @@ export class NotificationsController {
   @RequirePermissions('notifications:broadcast')
   @AuthorizationResource({ type: 'global' })
   @ApiOperation({ summary: 'Send notification to all users' })
+  @ApiResponse({ status: 201, description: 'Broadcast queued' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:broadcast' })
   async broadcast(@Body() dto: BroadcastNotificationDto, @Request() req) {
     return this.notificationsService.broadcast(
       dto,
@@ -142,6 +148,9 @@ export class NotificationsController {
   @RequirePermissions('notifications:club')
   @AuthorizationResource({ type: 'active_assignment' }) // TODO(rbac): verify notifications:club is club-scoped in seed
   @ApiOperation({ summary: 'Send notification to club members' })
+  @ApiResponse({ status: 201, description: 'Club notification queued' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:club' })
   async sendToClub(
     @Param('instanceType', new ParseEnumPipe(ClubInstanceType))
     instanceType: ClubInstanceType,
@@ -159,6 +168,9 @@ export class NotificationsController {
 
   @RequirePermissions('notifications:send')
   @Get('history')
+  @ApiResponse({ status: 200, description: 'Paginated notification audit log' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:send' })
   @ApiOperation({
     summary: 'Get paginated notification history',
     description:
@@ -183,6 +195,7 @@ export class NotificationsController {
 
   @Get('unread-count')
   @UseGuards(JwtAuthGuard)
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
     summary: 'Get unread notification count for the current user',
     description:
@@ -199,6 +212,7 @@ export class NotificationsController {
 
   @Patch('read-all')
   @UseGuards(JwtAuthGuard)
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
     summary: 'Mark all unread notifications as read',
     description:
@@ -242,6 +256,8 @@ export class NotificationsController {
 
   @Get('preferences')
   @UseGuards(JwtAuthGuard)
+  @ApiResponse({ status: 200, description: 'User notification preferences' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
     summary: 'Get current user notification preferences',
     description:
@@ -256,6 +272,9 @@ export class NotificationsController {
 
   @Put('preferences/:category')
   @UseGuards(JwtAuthGuard)
+  @ApiResponse({ status: 200, description: 'Preference updated' })
+  @ApiResponse({ status: 400, description: 'Invalid notification category' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
     summary: 'Update notification preference for a category',
     description:
@@ -288,18 +307,25 @@ export class FcmTokensController {
 
   @Post()
   @ApiOperation({ summary: 'Register FCM token' })
+  @ApiResponse({ status: 201, description: 'FCM token registered' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async registerToken(@Body() dto: RegisterFcmTokenDto, @Request() req) {
     return this.fcmTokensService.registerToken(req.user.sub, dto);
   }
 
   @Delete('by-token')
   @ApiOperation({ summary: 'Unregister FCM token by token string' })
+  @ApiResponse({ status: 200, description: 'FCM token unregistered' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async unregisterByToken(@Body('token') token: string, @Request() req) {
     return this.fcmTokensService.unregisterToken(token, req.user.sub);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Unregister FCM token by record ID' })
+  @ApiResponse({ status: 200, description: 'FCM token unregistered' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 404, description: 'Token record not found' })
   async unregisterToken(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req,
@@ -309,6 +335,8 @@ export class FcmTokensController {
 
   @Get()
   @ApiOperation({ summary: 'Get current user FCM tokens' })
+  @ApiResponse({ status: 200, description: 'List of FCM tokens' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async getMyTokens(@Request() req) {
     return this.fcmTokensService.getUserTokens(req.user.sub);
   }
@@ -317,6 +345,9 @@ export class FcmTokensController {
   @Get('user/:userId')
   @UseGuards(OwnerOrAdminGuard)
   @ApiOperation({ summary: 'Get FCM tokens by user ID (owner/admin only)' })
+  @ApiResponse({ status: 200, description: 'List of FCM tokens for user' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden — must be owner or admin' })
   async getUserTokens(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.fcmTokensService.getUserTokens(userId);
   }
