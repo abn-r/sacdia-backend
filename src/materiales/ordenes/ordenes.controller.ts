@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Request,
@@ -25,6 +27,7 @@ import {
 import { OrdenesService } from './ordenes.service';
 import { CreateOrdenDto } from './dto/create-orden.dto';
 import { ListOrdenesQueryDto } from './dto/list-ordenes.query.dto';
+import { UpdateOrdenLineDto } from './dto/update-orden-line.dto';
 import { OrdenDto } from './dto/orden.dto';
 import { PaginatedOrdenesDto } from './dto/orden-summary.dto';
 
@@ -96,6 +99,31 @@ export class OrdenesController {
       id: req.user.sub,
       canApprove,
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // PATCH /api/v1/materiales/ordenes/:folio/lineas/:lineId
+  // REQ-ORD-006, REQ-ORD-009, R-arch-4, SC-15, SC-16
+  // ---------------------------------------------------------------------------
+
+  @Patch(':folio/lineas/:lineId')
+  @RequirePermissions(MATERIALES_APPROVE)
+  @ApiOperation({
+    summary: 'Update line availability (campo local only, en_revision orders only)',
+  })
+  @ApiParam({ name: 'folio', type: String })
+  @ApiParam({ name: 'lineId', type: String, description: 'Line UUID' })
+  @ApiResponse({ status: 200, type: OrdenDto })
+  @ApiResponse({ status: 400, description: 'qty_disponible_required or qty_disponible_out_of_range' })
+  @ApiResponse({ status: 404, description: 'Order or line not found' })
+  @ApiResponse({ status: 422, description: 'lines_frozen — order not in en_revision' })
+  patchLine(
+    @Param('folio') folio: string,
+    @Param('lineId', ParseUUIDPipe) lineId: string,
+    @Body() dto: UpdateOrdenLineDto,
+    @Request() req: any,
+  ): Promise<OrdenDto> {
+    return this.ordenesService.patchLine(folio, lineId, dto, { id: req.user.sub });
   }
 
   // ---------------------------------------------------------------------------

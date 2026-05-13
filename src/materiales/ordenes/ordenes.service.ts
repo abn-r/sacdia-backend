@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsPublisher } from '../shared/events.publisher';
@@ -11,6 +13,7 @@ import type { CreateOrdenDto } from './dto/create-orden.dto';
 import type { ListOrdenesQueryDto } from './dto/list-ordenes.query.dto';
 import type { OrdenDto } from './dto/orden.dto';
 import type { OrdenSummaryDto, PaginatedOrdenesDto } from './dto/orden-summary.dto';
+import type { UpdateOrdenLineDto } from './dto/update-orden-line.dto';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -33,6 +36,23 @@ export class OrdenesService {
     private readonly prisma: PrismaService,
     private readonly events: EventsPublisher,
   ) {}
+
+  // -------------------------------------------------------------------------
+  // Identifier resolution
+  // -------------------------------------------------------------------------
+  // en_revision orders have folio_referencia = NULL (allocated on approval).
+  // Admin UI must still address them — so we accept either folio_referencia
+  // (e.g. SOL20260001) or the order UUID in the :folio path segment.
+  // Order matters: try folio_referencia first (cheap UNIQUE), then UUID.
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  }
+
+  private orderIdentifierWhere(folioOrId: string) {
+    return this.isUuid(folioOrId)
+      ? { id: folioOrId }
+      : { folio_referencia: folioOrId };
+  }
 
   // -------------------------------------------------------------------------
   // T3a.4 — createOrder  (REQ-ORD-001, REQ-ORD-002, SC-01, SC-02)
@@ -161,6 +181,125 @@ export class OrdenesService {
   }
 
   // -------------------------------------------------------------------------
+  // T3b.3 — patchLine  (REQ-ORD-006, REQ-ORD-009, R-arch-4, SC-15, SC-16)
+  // PATCH /materiales/ordenes/:folio/lineas/:lineId
+  // -------------------------------------------------------------------------
+
+  async patchLine(
+    folio: string,
+    lineId: string,
+    dto: UpdateOrdenLineDto,
+    actor: { id: string },
+  ): Promise<OrdenDto> {
+    // R-arch-4 auto-set: resolve qty_disponible before touching the DB
+    // 'disponible' and 'agotado' are fully determined — qty_disponible from body is ignored.
+    // 'parcial' requires qty_disponible in range [1, line.qty].
+    // For 'parcial' we must know line.qty first, so validation happens after load.
+
+    // Load order by folio_referencia OR by UUID (en_revision orders have folio=NULL)
+    const order = await this.prisma.materialOrder.findFirst({
+      where: this.orderIdentifierWhere(folio),
+      include: {
+        lines: true,
+        _count: { select: { comprobantes: true } },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: 'order_not_found',
+        message: `Order '${folio}' not found`,
+      });
+    }
+
+    // REQ-ORD-009, SC-15: lines are frozen unless order is in en_revision
+    if (order.estado !== 'en_revision') {
+      throw new UnprocessableEntityException({
+        code: 'lines_frozen',
+        message: `Order lines are frozen — order must be in 'en_revision' to edit lines (current: '${order.estado}')`,
+      });
+    }
+
+    // Find the target line
+    const line = order.lines.find((l) => l.id === lineId);
+    if (!line) {
+      throw new NotFoundException({
+        code: 'line_not_found',
+        message: `Line '${lineId}' does not belong to order '${folio}'`,
+      });
+    }
+
+    // R-arch-4 auto-set semantics
+    let resolvedQtyDisponible: number;
+    if (dto.disponibilidad === 'disponible') {
+      resolvedQtyDisponible = line.qty; // auto-set to full qty
+    } else if (dto.disponibilidad === 'agotado') {
+      resolvedQtyDisponible = 0; // auto-set to 0
+    } else {
+      // 'parcial' — qty_disponible is required and must be in [1, line.qty]
+      if (dto.qty_disponible === undefined || dto.qty_disponible === null) {
+        throw new BadRequestException({
+          code: 'qty_disponible_required',
+          message: "qty_disponible is required when disponibilidad = 'parcial'",
+        });
+      }
+      if (dto.qty_disponible < 1 || dto.qty_disponible > line.qty) {
+        throw new BadRequestException({
+          code: 'qty_disponible_out_of_range',
+          message: `qty_disponible must be >= 1 and <= qty (${line.qty})`,
+        });
+      }
+      resolvedQtyDisponible = dto.qty_disponible;
+    }
+
+    const newLineTotal = computeLineTotal(line.price_centavos, resolvedQtyDisponible);
+
+    // Atomic transaction: update line, recompute and update order totals
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      // Update the target line
+      await tx.materialOrderLine.update({
+        where: { id: lineId },
+        data: {
+          disponibilidad: dto.disponibilidad,
+          qty_disponible: resolvedQtyDisponible,
+          line_total_centavos: newLineTotal,
+        },
+      });
+
+      // Read all lines (including the just-updated one) within the same tx — read-after-write
+      const freshLines = await tx.materialOrderLine.findMany({
+        where: { order_id: order.id },
+        select: { line_total_centavos: true },
+      });
+
+      const subtotal_centavos = computeSubtotal(freshLines);
+      const total_centavos = computeTotal(subtotal_centavos, order.envio_centavos);
+
+      // Update order totals
+      const updated = await tx.materialOrder.update({
+        where: { id: order.id },
+        data: { subtotal_centavos, total_centavos },
+        include: {
+          lines: true,
+          _count: { select: { comprobantes: true } },
+        },
+      });
+
+      return updated;
+    });
+
+    this.events.logEvent('order.line_patched', {
+      order_id: order.id,
+      line_id: lineId,
+      actor_id: actor.id,
+      disponibilidad: dto.disponibilidad,
+      qty_disponible: resolvedQtyDisponible,
+    });
+
+    return this.mapOrder(updatedOrder);
+  }
+
+  // -------------------------------------------------------------------------
   // T3a.5 — list  (REQ-ORD-003, REQ-ORD-004, SC-11)
   // -------------------------------------------------------------------------
 
@@ -270,8 +409,8 @@ export class OrdenesService {
    * 404 if not found.
    */
   async getByFolio(folio: string, actor: ActorContext): Promise<OrdenDto> {
-    const order = await this.prisma.materialOrder.findUnique({
-      where: { folio_referencia: folio },
+    const order = await this.prisma.materialOrder.findFirst({
+      where: this.orderIdentifierWhere(folio),
       include: {
         lines: true,
         _count: { select: { comprobantes: true } },
@@ -281,7 +420,7 @@ export class OrdenesService {
     if (!order) {
       throw new NotFoundException({
         code: 'order_not_found',
-        message: `Order with folio '${folio}' not found`,
+        message: `Order '${folio}' not found`,
       });
     }
 
