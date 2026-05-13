@@ -35,6 +35,19 @@ describe('ClubsService', () => {
     roles: {
       findFirst: jest.fn(),
     },
+    activities: {
+      findMany: jest.fn(),
+    },
+    role_assignment_requests: {
+      count: jest.fn(),
+    },
+    unit_members: {
+      count: jest.fn(),
+      findMany: jest.fn(),
+    },
+    weekly_records: {
+      findMany: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
@@ -200,6 +213,180 @@ describe('ClubsService', () => {
           club_types: { name: 'Conquistadores' },
         }),
       ]);
+    });
+  });
+
+  // ========================================
+  // getClubLeadership
+  // ========================================
+
+  describe('getClubLeadership', () => {
+    const makeAssignment = (
+      roleName: string,
+      sectionName: string | null = 'Conquistadores',
+    ) => ({
+      assignment_id: `assign-${roleName}`,
+      user_id: 'user-uuid',
+      start_date: new Date('2026-01-01'),
+      users: {
+        user_id: 'user-uuid',
+        name: 'Juan',
+        paternal_last_name: 'Perez',
+        maternal_last_name: 'Lopez',
+        user_image: null,
+        email: 'juan@test.com',
+      },
+      roles: { role_name: roleName, role_category: 'CLUB' },
+      club_sections: sectionName ? { name: sectionName } : null,
+    });
+
+    it('happy path — groups director, deputies, secretaries and others', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        makeAssignment('director'),
+        makeAssignment('deputy-director'),
+        makeAssignment('secretary'),
+        makeAssignment('treasurer'),
+      ]);
+
+      const result = await service.getClubLeadership(1);
+
+      expect(result.status).toBe('ok');
+      expect(result.data.director?.role_name).toBe('director');
+      expect(result.data.deputies).toHaveLength(1);
+      expect(result.data.secretaries).toHaveLength(1);
+      expect(result.data.others).toHaveLength(1);
+      expect(result.data.others[0].role_name).toBe('treasurer');
+    });
+
+    it('club with no sections — returns null director and empty arrays', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+      const result = await service.getClubLeadership(99);
+
+      expect(result.data.director).toBeNull();
+      expect(result.data.deputies).toHaveLength(0);
+      expect(result.data.secretaries).toHaveLength(0);
+      expect(result.data.others).toHaveLength(0);
+    });
+
+    it('resolves profile image URL for members with user_image', async () => {
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { ...makeAssignment('director'), users: { ...makeAssignment('director').users, user_image: 'path/to/img.jpg' } },
+      ]);
+      mockFileStorageService.getSignedDownloadUrl.mockResolvedValue('https://cdn.example.com/signed');
+
+      const result = await service.getClubLeadership(1);
+
+      expect(result.data.director?.user_image).toBe('https://cdn.example.com/signed');
+    });
+  });
+
+  // ========================================
+  // getClubOverview
+  // ========================================
+
+  describe('getClubOverview', () => {
+    const mockSections = [
+      { club_section_id: 1, active: true, souls_target: 20 },
+      { club_section_id: 2, active: false, souls_target: 15 },
+    ];
+
+    beforeEach(() => {
+      mockPrismaService.club_sections.findMany.mockResolvedValue(mockSections);
+      mockPrismaService.activities.findMany.mockResolvedValue([]);
+      mockPrismaService.role_assignment_requests.count.mockResolvedValue(0);
+      mockPrismaService.unit_members.count.mockResolvedValue(0);
+      mockPrismaService.unit_members.findMany.mockResolvedValue([]);
+      mockPrismaService.weekly_records.findMany.mockResolvedValue([]);
+    });
+
+    it('happy path — returns all overview fields with correct structure', async () => {
+      mockPrismaService.unit_members.count.mockResolvedValue(10);
+      mockPrismaService.role_assignment_requests.count.mockResolvedValue(3);
+      mockPrismaService.activities.findMany.mockResolvedValue([
+        {
+          activity_id: 1,
+          name: 'Campamento',
+          activity_date: new Date('2026-06-15'),
+          activity_types: { code: 'CAMP' },
+          club_sections: { name: 'Conquistadores' },
+        },
+      ]);
+
+      const result = await service.getClubOverview(1);
+
+      expect(result.status).toBe('ok');
+      expect(result.data).toHaveProperty('attendance');
+      expect(result.data).toHaveProperty('attendance_average');
+      expect(result.data).toHaveProperty('score');
+      expect(result.data.score).toHaveProperty('value');
+      expect(result.data.score).toHaveProperty('grade');
+      expect(result.data.score).toHaveProperty('breakdown');
+      expect(result.data.upcoming_events).toHaveLength(1);
+      expect(result.data.upcoming_events[0].activity_id).toBe(1);
+      expect(result.data.funnel.pending_requests).toBe(3);
+      expect(result.data.funnel.active_members).toBe(10);
+      expect(result.data.funnel.investidos_year).toBe(0);
+    });
+
+    it('club with no sections — returns null attendance, score based on 0 values, empty events', async () => {
+      mockPrismaService.club_sections.findMany.mockResolvedValue([]);
+
+      const result = await service.getClubOverview(99);
+
+      expect(result.data.attendance).toBeNull();
+      expect(result.data.attendance_average).toBeNull();
+      expect(result.data.upcoming_events).toHaveLength(0);
+      expect(result.data.funnel.pending_requests).toBe(0);
+      expect(result.data.funnel.active_members).toBe(0);
+      expect(result.data.score.value).toBe(0);
+    });
+
+    it('club with no activities — upcoming_events is empty array', async () => {
+      mockPrismaService.activities.findMany.mockResolvedValue([]);
+
+      const result = await service.getClubOverview(1);
+
+      expect(result.data.upcoming_events).toEqual([]);
+    });
+
+    it('computes score correctly with attendance data', async () => {
+      mockPrismaService.unit_members.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+      ]);
+      mockPrismaService.weekly_records.findMany.mockResolvedValue([
+        { year: 2026, week: 10, attendance: 80 },
+        { year: 2026, week: 11, attendance: 60 },
+      ]);
+      // 2 active sections out of 2 for this sub-test
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
+        { club_section_id: 1, active: true, souls_target: 10 },
+        { club_section_id: 2, active: true, souls_target: 10 },
+      ]);
+      mockPrismaService.unit_members.count.mockResolvedValue(5);
+
+      const result = await service.getClubOverview(1);
+
+      // attendance_avg = (80+60)/2 = 70, sections = 100%, capacity = 5/20 = 25%
+      // score = 70*0.5 + 100*0.3 + 25*0.2 = 35 + 30 + 5 = 70
+      expect(result.data.attendance_average).toBe(70);
+      expect(result.data.score.value).toBe(70);
+      expect(result.data.score.grade).toBe('B');
+    });
+
+    it('score without attendance uses adjusted weights (0.6 sections + 0.4 capacity)', async () => {
+      // No members → no weekly records
+      mockPrismaService.unit_members.findMany.mockResolvedValue([]);
+      mockPrismaService.unit_members.count.mockResolvedValue(10);
+      // sections: 1 active / 2 total = 50%
+      // capacity: 10 / (20+15) = ~28.57%
+      const result = await service.getClubOverview(1);
+
+      expect(result.data.attendance).toBeNull();
+      expect(result.data.score.breakdown).toHaveLength(2);
+      // score = 50*0.6 + 28.57*0.4 ≈ 30 + 11.43 ≈ 41.4
+      expect(result.data.score.value).toBeGreaterThan(40);
+      expect(result.data.score.value).toBeLessThan(50);
     });
   });
 

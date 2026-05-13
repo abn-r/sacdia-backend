@@ -394,6 +394,348 @@ export class ClubsService {
   }
 
   // ========================================
+  // AGGREGATIONS
+  // ========================================
+
+  /**
+   * GET /clubs/:clubId/leadership
+   *
+   * Returns active role assignments for all sections of a club, grouped by role.
+   * Filtering is by role_name (lowercase) since role_category only has GLOBAL|CLUB.
+   * Director roles: 'director'
+   * Deputy roles: 'deputy-director'
+   * Secretary roles: 'secretary', 'secretary-treasurer'
+   * Others: all remaining CLUB-category assignments
+   */
+  async getClubLeadership(clubId: number) {
+    const assignments = await this.prisma.club_role_assignments.findMany({
+      where: {
+        active: true,
+        club_sections: {
+          main_club_id: clubId,
+        },
+      },
+      include: {
+        users: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+            user_image: true,
+            email: true,
+          },
+        },
+        roles: {
+          select: {
+            role_name: true,
+            role_category: true,
+          },
+        },
+        club_sections: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: { start_date: 'asc' },
+    });
+
+    // Resolve profile image URLs in parallel
+    const resolved = await Promise.all(
+      assignments.map(async (a) => ({
+        assignment_id: a.assignment_id,
+        user_id: a.user_id,
+        name: a.users?.name ?? null,
+        paternal_last_name: a.users?.paternal_last_name ?? null,
+        maternal_last_name: a.users?.maternal_last_name ?? null,
+        user_image: await this.resolvePrivateProfileUrl(a.users?.user_image),
+        email: a.users?.email ?? null,
+        role_name: a.roles.role_name,
+        section_name: a.club_sections?.name ?? null,
+        start_date: a.start_date,
+      })),
+    );
+
+    const directors = resolved.filter(
+      (r) => r.role_name.toLowerCase() === 'director',
+    );
+    const deputies = resolved.filter(
+      (r) => r.role_name.toLowerCase() === 'deputy-director',
+    );
+    const secretaries = resolved.filter((r) =>
+      ['secretary', 'secretary-treasurer'].includes(r.role_name.toLowerCase()),
+    );
+    const others = resolved.filter(
+      (r) =>
+        !['director', 'deputy-director', 'secretary', 'secretary-treasurer'].includes(
+          r.role_name.toLowerCase(),
+        ),
+    );
+
+    return {
+      status: 'ok',
+      data: {
+        director: directors[0] ?? null,
+        deputies,
+        secretaries,
+        others,
+      },
+    };
+  }
+
+  /**
+   * GET /clubs/:clubId/overview
+   *
+   * Returns aggregated data for the club detail dashboard.
+   *
+   * --- Score formula (documented) ---
+   * Components:
+   *   A) attendance_avg   — avg(weekly_records.attendance) across all members,
+   *                         last 52 weeks. weekly_records.attendance is an integer
+   *                         (treat as 0-100 scale per weekly scoring system).
+   *                         Weight: 50% when attendance data available, else 0%.
+   *   B) active_sections  — (count active sections / total sections) * 100.
+   *                         Weight: 30% always (adjusted to 50% if no attendance).
+   *   C) capacity         — (active_members / souls_target_sum) * 100, capped at 100.
+   *                         Weight: 20% always (adjusted to 50% if no attendance).
+   *
+   * When attendance data is unavailable:
+   *   score = B*0.60 + C*0.40
+   *
+   * Grade thresholds: A>=90, B+>=80, B>=70, C+>=60, C>=50, D>=40, F<40
+   *
+   * --- Data sources ---
+   * - attendance:        weekly_records joined via unit_members → units → club_sections
+   * - upcoming_events:   activities.activity_date >= today, club_section.main_club_id = clubId
+   * - pending_requests:  role_assignment_requests.status='pending' on sections of the club
+   * - active_members:    unit_members.active=true via units → club_sections
+   */
+  async getClubOverview(clubId: number) {
+    const now = new Date();
+
+    // 1. Fetch all section IDs for this club (needed for multiple sub-queries)
+    const sections = await this.prisma.club_sections.findMany({
+      where: { main_club_id: clubId },
+      select: {
+        club_section_id: true,
+        active: true,
+        souls_target: true,
+      },
+    });
+
+    const sectionIds = sections.map((s) => s.club_section_id);
+
+    // 2. Parallel fetch: upcoming events, pending requests, active members, attendance
+    const [upcomingRaw, pendingCount, activeMembersCount, weeklyRaw] =
+      await Promise.all([
+        // Upcoming activities for any section of this club
+        sectionIds.length > 0
+          ? this.prisma.activities.findMany({
+              where: {
+                club_section_id: { in: sectionIds },
+                activity_date: { gte: now },
+                active: true,
+              },
+              include: {
+                club_sections: { select: { name: true } },
+                activity_types: { select: { code: true } },
+              },
+              orderBy: { activity_date: 'asc' },
+              take: 5,
+            })
+          : Promise.resolve([]),
+
+        // Pending role assignment requests across club sections
+        sectionIds.length > 0
+          ? this.prisma.role_assignment_requests.count({
+              where: {
+                club_section_id: { in: sectionIds },
+                status: 'pending',
+              },
+            })
+          : Promise.resolve(0),
+
+        // Active unit members across all units of club sections
+        sectionIds.length > 0
+          ? this.prisma.unit_members.count({
+              where: {
+                active: true,
+                units: {
+                  club_section_id: { in: sectionIds },
+                },
+              },
+            })
+          : Promise.resolve(0),
+
+        // Weekly attendance records for members in this club (last 52 weeks)
+        // Path: weekly_records → unit_members (user_id match) → units → club_sections
+        // Prisma does not allow a direct filter through this path, so use raw groupBy
+        // on user_ids that belong to the club.
+        sectionIds.length > 0
+          ? this.prisma.unit_members
+              .findMany({
+                where: {
+                  active: true,
+                  units: { club_section_id: { in: sectionIds } },
+                },
+                select: { user_id: true },
+                distinct: ['user_id'],
+              })
+              .then((members) => {
+                if (members.length === 0) return [];
+                const userIds = members.map((m) => m.user_id);
+                const oneYearAgo = new Date(now);
+                oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                const currentWeek = this.getISOWeek(now);
+                const currentYear = now.getFullYear();
+                // Determine start week/year (52 weeks back)
+                const startYear =
+                  currentWeek <= 52
+                    ? currentYear - 1
+                    : currentYear;
+                return this.prisma.weekly_records.findMany({
+                  where: {
+                    user_id: { in: userIds },
+                    active: true,
+                    OR: [
+                      { year: currentYear },
+                      { year: startYear },
+                    ],
+                  },
+                  select: {
+                    year: true,
+                    week: true,
+                    attendance: true,
+                  },
+                  orderBy: [{ year: 'asc' }, { week: 'asc' }],
+                });
+              })
+          : Promise.resolve([]),
+      ]);
+
+    // 3. Build attendance series (group by year+week, average across members)
+    let attendanceSeries: Array<{
+      year: number;
+      week: number;
+      avg_pct: number;
+    }> | null = null;
+    let attendanceAverage: number | null = null;
+
+    if (Array.isArray(weeklyRaw) && weeklyRaw.length > 0) {
+      const grouped = new Map<string, number[]>();
+      for (const r of weeklyRaw) {
+        const key = `${r.year}-${r.week}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(r.attendance);
+      }
+      attendanceSeries = Array.from(grouped.entries()).map(([key, vals]) => {
+        const [year, week] = key.split('-').map(Number);
+        const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+        return { year, week, avg_pct: Math.round(avg * 10) / 10 };
+      });
+      const allAvg =
+        attendanceSeries.reduce((s, r) => s + r.avg_pct, 0) /
+        attendanceSeries.length;
+      attendanceAverage = Math.round(allAvg * 10) / 10;
+    }
+
+    // 4. Compute score
+    const totalSections = sections.length;
+    const activeSections = sections.filter((s) => s.active).length;
+    const sectionsPct =
+      totalSections > 0 ? (activeSections / totalSections) * 100 : 0;
+
+    const soulsTargetSum = sections.reduce(
+      (sum, s) => sum + (s.souls_target ?? 0),
+      0,
+    );
+    const capacityPct =
+      soulsTargetSum > 0
+        ? Math.min((activeMembersCount / soulsTargetSum) * 100, 100)
+        : 0;
+
+    let scoreValue: number;
+    let breakdown: Array<{ label: string; value_pct: number; weight: number }>;
+
+    if (attendanceAverage !== null) {
+      scoreValue =
+        attendanceAverage * 0.5 + sectionsPct * 0.3 + capacityPct * 0.2;
+      breakdown = [
+        { label: 'Attendance average', value_pct: attendanceAverage, weight: 0.5 },
+        { label: 'Active sections', value_pct: sectionsPct, weight: 0.3 },
+        { label: 'Capacity filled', value_pct: capacityPct, weight: 0.2 },
+      ];
+    } else {
+      scoreValue = sectionsPct * 0.6 + capacityPct * 0.4;
+      breakdown = [
+        {
+          label: 'Active sections',
+          value_pct: sectionsPct,
+          weight: 0.6,
+        },
+        {
+          label: 'Capacity filled',
+          value_pct: capacityPct,
+          weight: 0.4,
+        },
+      ];
+    }
+
+    scoreValue = Math.round(scoreValue * 10) / 10;
+
+    const grade = this.computeGrade(scoreValue);
+
+    // 5. Map upcoming events
+    const upcoming_events = upcomingRaw.map((a) => ({
+      activity_id: a.activity_id,
+      name: a.name,
+      kind: a.activity_types?.code ?? null,
+      activity_date: a.activity_date?.toISOString().split('T')[0] ?? null,
+      section_name: a.club_sections?.name ?? null,
+    }));
+
+    return {
+      status: 'ok',
+      data: {
+        attendance: attendanceSeries,
+        attendance_average: attendanceAverage,
+        score: { value: scoreValue, grade, breakdown },
+        upcoming_events,
+        funnel: {
+          pending_requests: pendingCount,
+          active_members: activeMembersCount,
+          // TODO: implement when investiture tracking is available
+          investidos_year: 0,
+        },
+      },
+    };
+  }
+
+  private computeGrade(score: number): string {
+    if (score >= 90) return 'A';
+    if (score >= 80) return 'B+';
+    if (score >= 70) return 'B';
+    if (score >= 60) return 'C+';
+    if (score >= 50) return 'C';
+    if (score >= 40) return 'D';
+    return 'F';
+  }
+
+  /** Returns ISO week number (1-52/53) for a given date */
+  private getISOWeek(date: Date): number {
+    const d = new Date(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+    );
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil(
+      ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+    );
+  }
+
+  // ========================================
   // HELPERS
   // ========================================
 
