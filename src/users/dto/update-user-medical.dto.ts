@@ -1,45 +1,113 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayUnique, IsArray, IsInt, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+// ── Severity enum (mirrors Postgres severity_level ENUM) ─────────────────────
+
+export enum SeverityLevel {
+  leve = 'leve',
+  media = 'media',
+  alta = 'alta',
+}
+
+// ── Per-entry DTOs ────────────────────────────────────────────────────────────
+
+export class AllergyEntryDto {
+  @ApiProperty({ example: 1, description: 'ID de la alergia del catálogo' })
+  @IsInt()
+  id!: number;
+
+  @ApiProperty({
+    enum: SeverityLevel,
+    example: SeverityLevel.leve,
+    description: 'Nivel de severidad de la alergia',
+  })
+  @IsEnum(SeverityLevel)
+  severity!: SeverityLevel;
+}
+
+export class DiseaseEntryDto {
+  @ApiProperty({ example: 5, description: 'ID de la enfermedad del catálogo' })
+  @IsInt()
+  id!: number;
+
+  @ApiPropertyOptional({
+    example: 2018,
+    description: 'Año desde el cual el usuario padece la enfermedad (1900–2100)',
+    minimum: 1900,
+    maximum: 2100,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1900)
+  @Max(2100)
+  since_year?: number;
+}
+
+export class MedicineEntryDto {
+  @ApiProperty({
+    example: 7,
+    description: 'ID del medicamento del catálogo',
+  })
+  @IsInt()
+  id!: number;
+
+  @ApiPropertyOptional({
+    example: '5 mg cada 8 hs',
+    description: 'Dosis del medicamento (máximo 255 caracteres)',
+    maxLength: 255,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  dose?: string;
+}
+
+// ── Top-level request DTOs ────────────────────────────────────────────────────
 
 export class UpdateUserAllergiesDto {
   @ApiProperty({
-    example: [1, 2],
-    description: 'Lista de IDs de alergias activas para el usuario',
-    type: [Number],
+    type: [AllergyEntryDto],
+    description: 'Lista de alergias activas con su nivel de severidad',
   })
   @IsArray()
-  @ArrayUnique()
-  @Type(() => Number)
-  @IsInt({ each: true })
-  @Min(1, { each: true })
-  declare allergy_ids: number[];
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => AllergyEntryDto)
+  allergies!: AllergyEntryDto[];
 }
 
 export class UpdateUserDiseasesDto {
   @ApiProperty({
-    example: [10, 12],
-    description: 'Lista de IDs de enfermedades activas para el usuario',
-    type: [Number],
+    type: [DiseaseEntryDto],
+    description: 'Lista de enfermedades activas con año de inicio opcional',
   })
   @IsArray()
-  @ArrayUnique()
-  @Type(() => Number)
-  @IsInt({ each: true })
-  @Min(1, { each: true })
-  declare disease_ids: number[];
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => DiseaseEntryDto)
+  diseases!: DiseaseEntryDto[];
 }
 
 export class UpdateUserMedicinesDto {
   @ApiProperty({
-    example: [3, 7],
-    description: 'Lista de IDs de medicamentos activos para el usuario',
-    type: [Number],
+    type: [MedicineEntryDto],
+    description: 'Lista de medicamentos activos con dosis opcional',
   })
   @IsArray()
-  @ArrayUnique()
-  @Type(() => Number)
-  @IsInt({ each: true })
-  @Min(1, { each: true })
-  declare medicine_ids: number[];
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => MedicineEntryDto)
+  medicines!: MedicineEntryDto[];
 }

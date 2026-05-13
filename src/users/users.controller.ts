@@ -29,6 +29,7 @@ import {
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
+  SeverityLevel,
   UpdateUserAllergiesDto,
   UpdateUserDiseasesDto,
   UpdateUserMedicinesDto,
@@ -60,7 +61,19 @@ export class UsersController {
   @Get(':userId/allergies')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener alergias activas del usuario' })
-  @ApiResponse({ status: 200, description: 'Alergias obtenidas' })
+  @ApiResponse({
+    status: 200,
+    description: 'Alergias obtenidas',
+    schema: {
+      example: {
+        status: 'success',
+        data: [
+          { allergy_id: 1, name: 'Polen', severity: SeverityLevel.leve },
+          { allergy_id: 3, name: 'Penicilina', severity: SeverityLevel.alta },
+        ],
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async getAllergies(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.getAllergies(userId);
@@ -69,7 +82,19 @@ export class UsersController {
   @Get(':userId/diseases')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener enfermedades activas del usuario' })
-  @ApiResponse({ status: 200, description: 'Enfermedades obtenidas' })
+  @ApiResponse({
+    status: 200,
+    description: 'Enfermedades obtenidas',
+    schema: {
+      example: {
+        status: 'success',
+        data: [
+          { disease_id: 2, name: 'Asma', since_year: 2015 },
+          { disease_id: 5, name: 'Diabetes', since_year: null },
+        ],
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async getDiseases(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.getDiseases(userId);
@@ -78,7 +103,19 @@ export class UsersController {
   @Get(':userId/medicines')
   @SensitiveUserSubresource('health', 'read')
   @ApiOperation({ summary: 'Obtener medicamentos activos del usuario' })
-  @ApiResponse({ status: 200, description: 'Medicamentos obtenidos' })
+  @ApiResponse({
+    status: 200,
+    description: 'Medicamentos obtenidos',
+    schema: {
+      example: {
+        status: 'success',
+        data: [
+          { medicine_id: 3, name: 'Ibuprofeno', dose: '5 mg cada 8 hs' },
+          { medicine_id: 7, name: 'Paracetamol', dose: null },
+        ],
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async getMedicines(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.usersService.getMedicines(userId);
@@ -102,11 +139,23 @@ export class UsersController {
   @ApiOperation({
     summary: 'Guardar alergias del usuario',
     description:
-      'Reemplaza el conjunto de alergias activas del usuario en users_allergies',
+      'Reemplaza el conjunto de alergias activas del usuario en users_allergies. ' +
+      'El payload legacy { allergy_ids: [] } es rechazado con HTTP 400.',
   })
-  @ApiResponse({ status: 200, description: 'Alergias actualizadas' })
+  @ApiBody({ type: UpdateUserAllergiesDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Alergias actualizadas',
+    schema: {
+      example: {
+        status: 'success',
+        data: [{ allergy_id: 1, name: 'Polen', severity: SeverityLevel.alta }],
+        message: 'Alergias actualizadas exitosamente',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Payload inválido o alergia no existe' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  @ApiResponse({ status: 400, description: 'Alergia inválida' })
   async updateAllergies(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserAllergiesDto,
@@ -119,11 +168,23 @@ export class UsersController {
   @ApiOperation({
     summary: 'Guardar enfermedades del usuario',
     description:
-      'Reemplaza el conjunto de enfermedades activas del usuario en users_diseases',
+      'Reemplaza el conjunto de enfermedades activas del usuario en users_diseases. ' +
+      'El payload legacy { disease_ids: [] } es rechazado con HTTP 400.',
   })
-  @ApiResponse({ status: 200, description: 'Enfermedades actualizadas' })
+  @ApiBody({ type: UpdateUserDiseasesDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Enfermedades actualizadas',
+    schema: {
+      example: {
+        status: 'success',
+        data: [{ disease_id: 5, name: 'Asma', since_year: 2018 }],
+        message: 'Enfermedades actualizadas exitosamente',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Payload inválido o enfermedad no existe' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  @ApiResponse({ status: 400, description: 'Enfermedad inválida' })
   async updateDiseases(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserDiseasesDto,
@@ -136,11 +197,23 @@ export class UsersController {
   @ApiOperation({
     summary: 'Guardar medicamentos del usuario',
     description:
-      'Reemplaza el conjunto de medicamentos activos del usuario en users_medicines',
+      'Reemplaza el conjunto de medicamentos activos del usuario en users_medicines. ' +
+      'El payload legacy { medicine_ids: [] } es rechazado con HTTP 400.',
   })
-  @ApiResponse({ status: 200, description: 'Medicamentos actualizados' })
+  @ApiBody({ type: UpdateUserMedicinesDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Medicamentos actualizados',
+    schema: {
+      example: {
+        status: 'success',
+        data: [{ medicine_id: 7, name: 'Ibuprofeno', dose: '5 mg cada 8 hs' }],
+        message: 'Medicamentos actualizados exitosamente',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Payload inválido o medicamento no existe' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  @ApiResponse({ status: 400, description: 'Medicamento inválido' })
   async updateMedicines(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateUserMedicinesDto,

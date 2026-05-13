@@ -8,6 +8,9 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
+  AllergyEntryDto,
+  DiseaseEntryDto,
+  MedicineEntryDto,
   UpdateUserAllergiesDto,
   UpdateUserDiseasesDto,
   UpdateUserMedicinesDto,
@@ -159,6 +162,18 @@ export class UsersService {
     }
   }
 
+  private async validateAllergyEntriesExist(entries: AllergyEntryDto[]) {
+    await this.validateAllergiesExist(entries.map((e) => e.id));
+  }
+
+  private async validateDiseaseEntriesExist(entries: DiseaseEntryDto[]) {
+    await this.validateDiseasesExist(entries.map((e) => e.id));
+  }
+
+  private async validateMedicineEntriesExist(entries: MedicineEntryDto[]) {
+    await this.validateMedicinesExist(entries.map((e) => e.id));
+  }
+
   private async validateMedicinesExist(medicineIds: number[]) {
     if (!medicineIds.length) return;
 
@@ -270,6 +285,7 @@ export class UsersService {
       },
       select: {
         allergy_id: true,
+        severity: true,
         allergies: {
           select: {
             name: true,
@@ -284,6 +300,7 @@ export class UsersService {
       data: data.map((row) => ({
         allergy_id: row.allergy_id,
         name: row.allergies ? row.allergies.name : null,
+        severity: row.severity,
       })),
     };
   }
@@ -298,6 +315,7 @@ export class UsersService {
       },
       select: {
         disease_id: true,
+        since_year: true,
         diseases: {
           select: {
             name: true,
@@ -312,6 +330,7 @@ export class UsersService {
       data: data.map((row) => ({
         disease_id: row.disease_id,
         name: row.diseases.name,
+        since_year: row.since_year,
       })),
     };
   }
@@ -326,6 +345,7 @@ export class UsersService {
       },
       select: {
         medicine_id: true,
+        dose: true,
         medicines: {
           select: {
             name: true,
@@ -340,6 +360,7 @@ export class UsersService {
       data: data.map((row) => ({
         medicine_id: row.medicine_id,
         name: row.medicines.name,
+        dose: row.dose,
       })),
     };
   }
@@ -347,18 +368,23 @@ export class UsersService {
   async updateAllergies(userId: string, dto: UpdateUserAllergiesDto) {
     await this.ensureUserExists(userId);
 
-    const allergyIds = [...new Set(dto.allergy_ids)];
-    await this.validateAllergiesExist(allergyIds);
+    // Deduplicate by id, last entry wins for severity
+    const uniqueEntries = [
+      ...new Map(dto.allergies.map((e) => [e.id, e])).values(),
+    ];
+    await this.validateAllergyEntriesExist(uniqueEntries);
 
     const data = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
+      const incomingIds = uniqueEntries.map((e) => e.id);
 
+      // Soft-delete active rows not present in incoming list
       await tx.users_allergies.updateMany({
         where: {
           user_id: userId,
           active: true,
-          ...(allergyIds.length > 0
-            ? { allergy_id: { notIn: allergyIds } }
+          ...(incomingIds.length > 0
+            ? { allergy_id: { notIn: incomingIds } }
             : {}),
         },
         data: {
@@ -367,11 +393,12 @@ export class UsersService {
         },
       });
 
-      for (const allergyId of allergyIds) {
+      // Upsert each entry: reactivate + update severity if exists, else create
+      for (const entry of uniqueEntries) {
         const existing = await tx.users_allergies.findFirst({
           where: {
             user_id: userId,
-            allergy_id: allergyId,
+            allergy_id: entry.id,
           },
           select: { user_allergies_id: true },
         });
@@ -381,6 +408,7 @@ export class UsersService {
             where: { user_allergies_id: existing.user_allergies_id },
             data: {
               active: true,
+              severity: entry.severity,
               modified_at: now,
             },
           });
@@ -388,7 +416,8 @@ export class UsersService {
           await tx.users_allergies.create({
             data: {
               user_id: userId,
-              allergy_id: allergyId,
+              allergy_id: entry.id,
+              severity: entry.severity,
               active: true,
             },
           });
@@ -402,10 +431,10 @@ export class UsersService {
         },
         select: {
           allergy_id: true,
+          severity: true,
           allergies: {
             select: {
               name: true,
-              description: true,
             },
           },
         },
@@ -417,7 +446,11 @@ export class UsersService {
 
     return {
       status: 'success',
-      data,
+      data: data.map((row) => ({
+        allergy_id: row.allergy_id,
+        name: row.allergies ? row.allergies.name : null,
+        severity: row.severity,
+      })),
       message: 'Alergias actualizadas exitosamente',
     };
   }
@@ -425,18 +458,23 @@ export class UsersService {
   async updateDiseases(userId: string, dto: UpdateUserDiseasesDto) {
     await this.ensureUserExists(userId);
 
-    const diseaseIds = [...new Set(dto.disease_ids)];
-    await this.validateDiseasesExist(diseaseIds);
+    // Deduplicate by id, last entry wins
+    const uniqueEntries = [
+      ...new Map(dto.diseases.map((e) => [e.id, e])).values(),
+    ];
+    await this.validateDiseaseEntriesExist(uniqueEntries);
 
     const data = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
+      const incomingIds = uniqueEntries.map((e) => e.id);
 
+      // Soft-delete active rows not present in incoming list
       await tx.users_diseases.updateMany({
         where: {
           user_id: userId,
           active: true,
-          ...(diseaseIds.length > 0
-            ? { disease_id: { notIn: diseaseIds } }
+          ...(incomingIds.length > 0
+            ? { disease_id: { notIn: incomingIds } }
             : {}),
         },
         data: {
@@ -445,11 +483,12 @@ export class UsersService {
         },
       });
 
-      for (const diseaseId of diseaseIds) {
+      // Upsert each entry: reactivate + update since_year if exists, else create
+      for (const entry of uniqueEntries) {
         const existing = await tx.users_diseases.findFirst({
           where: {
             user_id: userId,
-            disease_id: diseaseId,
+            disease_id: entry.id,
           },
           select: { user_disease_id: true },
         });
@@ -459,6 +498,7 @@ export class UsersService {
             where: { user_disease_id: existing.user_disease_id },
             data: {
               active: true,
+              since_year: entry.since_year ?? null,
               modified_at: now,
             },
           });
@@ -466,7 +506,8 @@ export class UsersService {
           await tx.users_diseases.create({
             data: {
               user_id: userId,
-              disease_id: diseaseId,
+              disease_id: entry.id,
+              since_year: entry.since_year ?? null,
               active: true,
             },
           });
@@ -480,10 +521,10 @@ export class UsersService {
         },
         select: {
           disease_id: true,
+          since_year: true,
           diseases: {
             select: {
               name: true,
-              description: true,
             },
           },
         },
@@ -495,7 +536,11 @@ export class UsersService {
 
     return {
       status: 'success',
-      data,
+      data: data.map((row) => ({
+        disease_id: row.disease_id,
+        name: row.diseases.name,
+        since_year: row.since_year,
+      })),
       message: 'Enfermedades actualizadas exitosamente',
     };
   }
@@ -503,18 +548,23 @@ export class UsersService {
   async updateMedicines(userId: string, dto: UpdateUserMedicinesDto) {
     await this.ensureUserExists(userId);
 
-    const medicineIds = [...new Set(dto.medicine_ids)];
-    await this.validateMedicinesExist(medicineIds);
+    // Deduplicate by id, last entry wins
+    const uniqueEntries = [
+      ...new Map(dto.medicines.map((e) => [e.id, e])).values(),
+    ];
+    await this.validateMedicineEntriesExist(uniqueEntries);
 
     const data = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
+      const incomingIds = uniqueEntries.map((e) => e.id);
 
+      // Soft-delete active rows not present in incoming list
       await tx.users_medicines.updateMany({
         where: {
           user_id: userId,
           active: true,
-          ...(medicineIds.length > 0
-            ? { medicine_id: { notIn: medicineIds } }
+          ...(incomingIds.length > 0
+            ? { medicine_id: { notIn: incomingIds } }
             : {}),
         },
         data: {
@@ -523,11 +573,12 @@ export class UsersService {
         },
       });
 
-      for (const medicineId of medicineIds) {
+      // Upsert each entry: reactivate + update dose if exists, else create
+      for (const entry of uniqueEntries) {
         const existing = await tx.users_medicines.findFirst({
           where: {
             user_id: userId,
-            medicine_id: medicineId,
+            medicine_id: entry.id,
           },
           select: { user_medicine_id: true },
         });
@@ -537,6 +588,7 @@ export class UsersService {
             where: { user_medicine_id: existing.user_medicine_id },
             data: {
               active: true,
+              dose: entry.dose ?? null,
               modified_at: now,
             },
           });
@@ -544,7 +596,8 @@ export class UsersService {
           await tx.users_medicines.create({
             data: {
               user_id: userId,
-              medicine_id: medicineId,
+              medicine_id: entry.id,
+              dose: entry.dose ?? null,
               active: true,
             },
           });
@@ -558,10 +611,10 @@ export class UsersService {
         },
         select: {
           medicine_id: true,
+          dose: true,
           medicines: {
             select: {
               name: true,
-              description: true,
             },
           },
         },
@@ -573,7 +626,11 @@ export class UsersService {
 
     return {
       status: 'success',
-      data,
+      data: data.map((row) => ({
+        medicine_id: row.medicine_id,
+        name: row.medicines.name,
+        dose: row.dose,
+      })),
       message: 'Medicamentos actualizados exitosamente',
     };
   }
