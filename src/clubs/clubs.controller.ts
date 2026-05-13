@@ -224,6 +224,49 @@ export class ClubsController {
   }
 
   // ========================================
+  // AGGREGATIONS
+  // ========================================
+
+  @Get(':clubId/leadership')
+  @RequirePermissions('clubs:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Liderazgo del club',
+    description:
+      'Devuelve los roles de liderazgo activos (director, deputy-directors, secretaries y otros) ' +
+      'agregados a través de todas las secciones del club. ' +
+      'Filtra club_role_assignments donde club_sections.main_club_id = clubId y active = true.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Liderazgo agrupado por categoría de rol',
+  })
+  async getLeadership(@Param('clubId', ParseIntPipe) clubId: number) {
+    return this.clubsService.getClubLeadership(clubId);
+  }
+
+  @Get(':clubId/overview')
+  @RequirePermissions('clubs:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Resumen agregado del club',
+    description:
+      'Devuelve métricas de resumen para el panel de detalle del club: ' +
+      'serie de asistencia semanal (últimas 52 semanas), promedio de asistencia, ' +
+      'score compuesto con fórmula documentada, próximas 5 actividades, ' +
+      'y funnel de membresía (solicitudes pendientes, miembros activos).',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Resumen del club con métricas agregadas',
+  })
+  async getOverview(@Param('clubId', ParseIntPipe) clubId: number) {
+    return this.clubsService.getClubOverview(clubId);
+  }
+
+  // ========================================
   // MEMBERS & ROLES
   // ========================================
 
