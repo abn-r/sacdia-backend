@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ErrorCode } from '../common/errors/error-codes';
 
 describe('ClubsService', () => {
@@ -48,12 +49,23 @@ describe('ClubsService', () => {
     weekly_records: {
       findMany: jest.fn(),
     },
+    ecclesiastical_years: {
+      findFirst: jest.fn(),
+    },
+    enrollments: {
+      count: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
     getSignedDownloadUrl: jest.fn(
       async (_bucket: unknown, value: string) => value,
     ),
+  };
+
+  const mockAuditLogsService = {
+    recordEvent: jest.fn().mockResolvedValue(undefined),
+    listByClub: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -69,6 +81,10 @@ describe('ClubsService', () => {
         {
           provide: NotificationsService,
           useValue: { sendSilentToSection: jest.fn() },
+        },
+        {
+          provide: AuditLogsService,
+          useValue: mockAuditLogsService,
         },
       ],
     }).compile();
@@ -298,6 +314,9 @@ describe('ClubsService', () => {
       mockPrismaService.unit_members.count.mockResolvedValue(0);
       mockPrismaService.unit_members.findMany.mockResolvedValue([]);
       mockPrismaService.weekly_records.findMany.mockResolvedValue([]);
+      // Default: no active ecclesiastical year → investidos_year stays 0
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
+      mockPrismaService.enrollments.count.mockResolvedValue(0);
     });
 
     it('happy path — returns all overview fields with correct structure', async () => {
@@ -420,6 +439,176 @@ describe('ClubsService', () => {
           }),
         }),
       );
+    });
+  });
+
+  // ========================================
+  // Audit hook tests
+  // ========================================
+
+  describe('audit hooks', () => {
+    it('create — calls recordEvent with CREATED action', async () => {
+      const newClub = { club_id: 5, name: 'Club Nuevo' };
+      mockPrismaService.clubs.create.mockResolvedValue(newClub);
+
+      await service.create({
+        name: 'Club Nuevo',
+        local_field_id: 1,
+        districlub_type_id: 1,
+        church_id: 1,
+      });
+
+      // fire-and-forget: give the microtask queue a tick
+      await Promise.resolve();
+
+      expect(mockAuditLogsService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_type: 'club',
+          entity_id: '5',
+          action: 'CREATED',
+          summary: 'Club creado: Club Nuevo',
+        }),
+      );
+    });
+
+    it('remove — calls recordEvent with DELETED action', async () => {
+      const existingClub = { club_id: 3, name: 'Club a eliminar', active: true };
+      mockPrismaService.clubs.findUnique.mockResolvedValue(existingClub);
+      mockPrismaService.clubs.update.mockResolvedValue({
+        ...existingClub,
+        active: false,
+      });
+
+      await service.remove(3);
+      await Promise.resolve();
+
+      expect(mockAuditLogsService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_type: 'club',
+          entity_id: '3',
+          action: 'DELETED',
+          summary: 'Club desactivado',
+        }),
+      );
+    });
+
+    it('update — calls recordEvent with UPDATED action and changes diff', async () => {
+      const existingClub = {
+        club_id: 2,
+        name: 'Club Original',
+        active: true,
+        description: null,
+        local_field_id: 1,
+        districlub_type_id: 1,
+        church_id: 1,
+        address: null,
+        coordinates: {},
+      };
+      mockPrismaService.clubs.findUnique.mockResolvedValue(existingClub);
+      mockPrismaService.clubs.update.mockResolvedValue({
+        ...existingClub,
+        name: 'Club Renombrado',
+      });
+
+      await service.update(2, { name: 'Club Renombrado' });
+      await Promise.resolve();
+
+      expect(mockAuditLogsService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_type: 'club',
+          action: 'UPDATED',
+          changes: expect.objectContaining({
+            name: { from: 'Club Original', to: 'Club Renombrado' },
+          }),
+        }),
+      );
+    });
+
+    it('update — skips recordEvent when no fields changed', async () => {
+      const existingClub = {
+        club_id: 2,
+        name: 'Same Name',
+        active: true,
+      };
+      mockPrismaService.clubs.findUnique.mockResolvedValue(existingClub);
+      mockPrismaService.clubs.update.mockResolvedValue(existingClub);
+
+      await service.update(2, { name: 'Same Name' });
+      await Promise.resolve();
+
+      expect(mockAuditLogsService.recordEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========================================
+  // investidos_year real count
+  // ========================================
+
+  describe('getClubOverview — investidos_year', () => {
+    it('returns real count when active year and members exist', async () => {
+      const sections = [{ club_section_id: 1, active: true, souls_target: 20 }];
+      mockPrismaService.club_sections.findMany.mockResolvedValue(sections);
+      mockPrismaService.activities.findMany.mockResolvedValue([]);
+      mockPrismaService.role_assignment_requests.count.mockResolvedValue(0);
+      mockPrismaService.unit_members.count.mockResolvedValue(5);
+      mockPrismaService.unit_members.findMany.mockResolvedValue([
+        { user_id: 'u1' },
+        { user_id: 'u2' },
+      ]);
+      mockPrismaService.weekly_records.findMany.mockResolvedValue([]);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 10,
+      });
+      mockPrismaService.enrollments.count.mockResolvedValue(3);
+
+      const result = await service.getClubOverview(1);
+
+      expect(result.data.funnel.investidos_year).toBe(3);
+      expect(mockPrismaService.enrollments.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ecclesiastical_year_id: 10,
+            investiture_status: 'APPROVED',
+            active: true,
+          }),
+        }),
+      );
+    });
+
+    it('returns 0 when no active ecclesiastical year', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
+
+      const result = await service.getClubOverview(1);
+
+      expect(result.data.funnel.investidos_year).toBe(0);
+    });
+  });
+
+  // ========================================
+  // getClubHistory
+  // ========================================
+
+  describe('getClubHistory', () => {
+    it('delegates to AuditLogsService.listByClub with parsed cursor', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1, name: 'Club' });
+      const mockResult = { items: [], next_cursor: null };
+      mockAuditLogsService.listByClub.mockResolvedValue(mockResult);
+
+      const result = await service.getClubHistory(1, { limit: 10, cursor: '50' });
+
+      expect(mockAuditLogsService.listByClub).toHaveBeenCalledWith(1, {
+        limit: 10,
+        cursor: 50n,
+      });
+      expect(result).toEqual(mockResult);
+    });
+
+    it('throws NotFoundException when club does not exist', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue(null);
+
+      await expect(service.getClubHistory(999, {})).rejects.toMatchObject({
+        code: ErrorCode.CLUB_NOT_FOUND,
+      });
     });
   });
 });
