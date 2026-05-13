@@ -12,8 +12,11 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   FileStorageService,
+  SignedUploadResult,
+  SignedUploadUrlOptions,
   SignedUrlOptions,
   StorageBucketAlias,
+  StoredObjectInfo,
   UploadFileOptions,
   UploadedFileResult,
 } from './file-storage.service';
@@ -192,6 +195,68 @@ export class R2FileStorageService implements FileStorageService {
         error instanceof Error ? error.stack : String(error),
       );
       throw new AppInternalServerErrorException(ErrorCode.R2_SIGNED_URL_FAILED);
+    }
+  }
+
+  async getSignedUploadUrl(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+    options: SignedUploadUrlOptions,
+  ): Promise<SignedUploadResult> {
+    const config = this.getBucketConfig(bucketAlias);
+    const normalizedKey = this.normalizeKey(key);
+    const objectKey = this.toObjectKey(config.keyPrefix, normalizedKey);
+    const expiresIn = this.resolveSignedUrlExpiration(options.expiresInSeconds);
+
+    try {
+      const url = await getSignedUrl(
+        this.getClient(),
+        new PutObjectCommand({
+          Bucket: config.bucket,
+          Key: objectKey,
+          ContentType: options.contentType,
+          ...(options.contentLength != null && {
+            ContentLength: options.contentLength,
+          }),
+        }),
+        { expiresIn },
+      );
+
+      return { url, key: objectKey, expiresInSeconds: expiresIn };
+    } catch (error) {
+      this.logger.error(
+        `Error generating signed PUT URL for R2 bucket=${config.bucket} key=${objectKey}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_SIGNED_URL_FAILED);
+    }
+  }
+
+  async getObjectInfo(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+  ): Promise<StoredObjectInfo | null> {
+    const config = this.getBucketConfig(bucketAlias);
+    const normalizedKey = this.normalizeKey(key);
+    const objectKey = this.hasKeyPrefix(config.keyPrefix, normalizedKey)
+      ? normalizedKey
+      : this.toObjectKey(config.keyPrefix, normalizedKey);
+
+    try {
+      const response = await this.getClient().send(
+        new HeadObjectCommand({ Bucket: config.bucket, Key: objectKey }),
+      );
+      return {
+        size: response.ContentLength ?? 0,
+        contentType: response.ContentType ?? null,
+      };
+    } catch (error) {
+      if (this.isNotFoundError(error)) return null;
+      this.logger.error(
+        `Error HEAD-checking R2 bucket=${config.bucket} key=${objectKey}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
     }
   }
 

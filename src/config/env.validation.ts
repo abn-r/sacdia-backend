@@ -92,6 +92,13 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_DATA_EXPORTS: Joi.string().uri().required(),
   R2_KEY_PREFIX_DATA_EXPORTS: Joi.string().allow('').optional(),
 
+  // Cloudflare R2 — resources bucket (private, presigned PUT for uploads,
+  // signed GET for downloads). Usually mapped to the shared "secure-documents"
+  // bucket with key prefix "resources" to mirror the rest of the private modules.
+  R2_BUCKET_RESOURCES_FILES: Joi.string().required(),
+  R2_PUBLIC_URL_RESOURCES_FILES: Joi.string().uri().required(),
+  R2_KEY_PREFIX_RESOURCES_FILES: Joi.string().allow('').optional(),
+
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().allow('').optional(),
