@@ -56,6 +56,7 @@ import { QrModule } from './qr/qr.module';
 import { SupportModule } from './support/support.module';
 import { BackgroundJobsModule } from './background-jobs/background-jobs.module';
 import { RankingWeightsModule } from './ranking-weights/ranking-weights.module';
+import { MaterialesModule } from './materiales/materiales.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 import { buildThrottlerOptions } from './config/throttler.config';
@@ -222,6 +223,7 @@ import { buildThrottlerOptions } from './config/throttler.config';
     SupportModule,
     BackgroundJobsModule,
     RankingWeightsModule,
+    MaterialesModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
