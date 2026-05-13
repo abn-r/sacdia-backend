@@ -1529,7 +1529,14 @@ WHERE r.role_name = 'assistant-lf'
     -- director-dia via the JOIN-based copy blocks below.
     'validation:submit',
     'validation:review',
-    'validation:read'
+    'validation:read',
+
+    -- ===== User creation (field-level: manual admin-initiated registration) =====
+    -- Inherited by director-lf, assistant-union, director-union, assistant-dia,
+    -- director-dia via the JOIN-based copy blocks below.
+    -- admin and super-admin pick this up automatically via wildcard grants.
+    'users:create',
+    'users:bulk_create'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 

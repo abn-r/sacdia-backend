@@ -1,10 +1,18 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
+  AppBadRequestException,
+  AppConflictException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { randomBytes } from 'crypto';
 import { Prisma, role_category, user_approval_status } from '@prisma/client';
+// NOTE: xlsx 0.18.x is the last Apache-2.0 licensed release available on npm.
+// Newer versions are CDN-only. The package has known prototype-pollution advisories
+// (SNYK-JS-XLSX-*) — accepted project convention given no viable npm alternative.
+import * as XLSX from 'xlsx';
+import { BetterAuthService } from '../better-auth/better-auth.service';
 import {
   createPaginatedResult,
   PaginationDto,
@@ -25,6 +33,8 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AdminListUsersQueryDto,
+  CreateAdminUserDto,
+  CreateAdminUserResponseDto,
   UpdateAdminUserDto,
   UpdateUserApprovalDto,
 } from './dto';
@@ -34,6 +44,25 @@ import {
   type TrajectoryClassDto,
 } from './mappers/formative-read-model.mapper';
 
+// ── Bulk upload types ────────────────────────────────────────────────────────
+export type BulkUserRowResult = {
+  row: number;
+  email: string | null;
+  status: 'success' | 'error';
+  user_id?: string;
+  invite_email_sent?: boolean;
+  error_code?: string;
+  error_message?: string;
+};
+
+export type BulkUsersResult = {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BulkUserRowResult[];
+};
+
+// ── Scope types ───────────────────────────────────────────────────────────────
 type ScopeType = 'ALL' | 'UNION' | 'LOCAL_FIELD';
 
 interface ActorScope {
@@ -396,6 +425,7 @@ export class AdminUsersService {
     private readonly authorizationContext: AuthorizationContextService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly betterAuthService: BetterAuthService,
   ) {}
 
   async listUsers(
@@ -559,6 +589,271 @@ export class AdminUsersService {
       where: { user_id: userId },
       data,
     });
+  }
+
+  /**
+   * Ordered list of global role hierarchies for scope-check purposes.
+   * Each entry is the set of roles an actor at that tier can create.
+   * Roles are ordered from highest (super-admin) to lowest (user).
+   */
+  // Hierarchy rule (Adventist club authority chain):
+  //   - super-admin → can create any role, including admin
+  //   - admin → can create everything BELOW admin (NOT admin itself; only super-admin
+  //     assigns admin); admin assigns director-dia
+  //   - director-dia / assistant-dia → assigns UNION roles + below (NOT DIA roles)
+  //   - director-union / assistant-union → assigns LF roles + below (NOT UNION roles)
+  //   - director-lf / assistant-lf → assigns base roles only (NOT LF roles).
+  //     Reason: LF directors are appointed by the union; the LF tier cannot
+  //     self-assign or grow its own tier.
+  // T5 (base) = user, coordinator, zone-coordinator, general-coordinator, pastor
+  private static readonly BASE_T5_ROLES: ReadonlyArray<string> = [
+    'user',
+    'coordinator',
+    'zone-coordinator',
+    'general-coordinator',
+    'pastor',
+  ];
+  private static readonly LF_ROLES: ReadonlyArray<string> = [
+    'assistant-lf',
+    'director-lf',
+  ];
+  private static readonly UNION_ROLES: ReadonlyArray<string> = [
+    'assistant-union',
+    'director-union',
+  ];
+  private static readonly DIA_ROLES: ReadonlyArray<string> = [
+    'assistant-dia',
+    'director-dia',
+  ];
+
+  private static readonly ROLE_HIERARCHY: ReadonlyArray<{
+    actorRoles: ReadonlyArray<string>;
+    allowedTargetRoles: ReadonlyArray<string>;
+  }> = [
+    {
+      // super-admin can create any role (DTO already blocks super-admin creation)
+      actorRoles: ['super-admin'],
+      allowedTargetRoles: [
+        ...AdminUsersService.BASE_T5_ROLES,
+        ...AdminUsersService.LF_ROLES,
+        ...AdminUsersService.UNION_ROLES,
+        ...AdminUsersService.DIA_ROLES,
+        'admin',
+      ],
+    },
+    {
+      // admin assigns down to director-dia, but NOT admin itself
+      actorRoles: ['admin'],
+      allowedTargetRoles: [
+        ...AdminUsersService.BASE_T5_ROLES,
+        ...AdminUsersService.LF_ROLES,
+        ...AdminUsersService.UNION_ROLES,
+        ...AdminUsersService.DIA_ROLES,
+      ],
+    },
+    {
+      // DIA assigns down to UNION, NOT DIA peers
+      actorRoles: ['director-dia', 'assistant-dia'],
+      allowedTargetRoles: [
+        ...AdminUsersService.BASE_T5_ROLES,
+        ...AdminUsersService.LF_ROLES,
+        ...AdminUsersService.UNION_ROLES,
+      ],
+    },
+    {
+      // UNION assigns down to LF, NOT UNION peers
+      actorRoles: ['director-union', 'assistant-union'],
+      allowedTargetRoles: [
+        ...AdminUsersService.BASE_T5_ROLES,
+        ...AdminUsersService.LF_ROLES,
+      ],
+    },
+    {
+      // LF assigns only T5 base roles. Cannot grow its own tier.
+      actorRoles: ['director-lf', 'assistant-lf'],
+      allowedTargetRoles: [...AdminUsersService.BASE_T5_ROLES],
+    },
+  ];
+
+  /**
+   * Resolves whether the actor is allowed to create a user with the given target role.
+   * Returns true if allowed, false if forbidden.
+   *
+   * Hierarchy (highest to lowest):
+   *   super-admin > admin > director-dia/assistant-dia > director-union/assistant-union > director-lf/assistant-lf
+   */
+  private actorCanCreateRole(actorRoles: string[], targetRole: string): boolean {
+    return this.resolveAllowedTargetRoles(actorRoles).includes(targetRole);
+  }
+
+  /**
+   * Resolves the full list of target roles an actor (by their roles) may
+   * create. Picks the HIGHEST tier the actor belongs to so a director-dia
+   * who also has user/coordinator roles still benefits from the dia scope.
+   */
+  private resolveAllowedTargetRoles(actorRoles: string[]): string[] {
+    for (const tier of AdminUsersService.ROLE_HIERARCHY) {
+      if (tier.actorRoles.some((r) => actorRoles.includes(r))) {
+        return [...tier.allowedTargetRoles];
+      }
+    }
+    return [];
+  }
+
+  /**
+   * Public helper: resolve the list of target roles the given actor may
+   * assign at creation time. Returns [] if the actor is not in any
+   * recognized admin tier.
+   */
+  async getAllowedTargetRolesForActor(actorId: string): Promise<string[]> {
+    const actorRecord = await this.prisma.users.findUnique({
+      where: { user_id: actorId },
+      select: {
+        users_roles: {
+          where: {
+            active: true,
+            roles: { active: true, role_category: role_category.GLOBAL },
+          },
+          select: { roles: { select: { role_name: true } } },
+        },
+      },
+    });
+    const actorRoles = this.extractRoleNames(actorRecord?.users_roles ?? []);
+    return this.resolveAllowedTargetRoles(actorRoles);
+  }
+
+  /**
+   * Admin-initiated single user creation with invite email.
+   *
+   * Steps:
+   *  1. Pre-flight email uniqueness check (before hitting BetterAuthService)
+   *  2. Validate target role exists in DB as GLOBAL + active
+   *  3. Scope check — actor cannot create a user with a higher role than allowed
+   *  4. Generate cryptographically random temp password (memory only, never logged)
+   *  5. Create user via BetterAuthService.createUser — discard session/accessToken
+   *  6. Update users profile fields (country, union, local_field, access flags)
+   *  7. Assign global role via users_roles
+   *  8. Trigger password-reset email so the new user can set their own password
+   *  9. Return { user_id, email, invite_email_sent }
+   */
+  async createAdminUser(
+    actorId: string,
+    dto: CreateAdminUserDto,
+  ): Promise<CreateAdminUserResponseDto> {
+    // 1. Pre-flight email uniqueness check
+    const existing = await this.prisma.users.findUnique({
+      where: { email: dto.email },
+      select: { user_id: true },
+    });
+    if (existing) {
+      throw new AppConflictException(ErrorCode.AUTH_EMAIL_ALREADY_IN_USE);
+    }
+
+    // 2. Validate target role exists in DB
+    const matchedRole = await this.prisma.roles.findFirst({
+      where: {
+        role_name: dto.role,
+        role_category: role_category.GLOBAL,
+        active: true,
+      },
+      select: { role_id: true, role_name: true },
+    });
+    if (!matchedRole) {
+      throw new AppBadRequestException(ErrorCode.RBAC_ROLE_NOT_FOUND, {
+        role: dto.role,
+      });
+    }
+
+    // 3. Scope check — resolve actor's global roles and enforce hierarchy
+    const actorRecord = await this.prisma.users.findUnique({
+      where: { user_id: actorId },
+      select: {
+        users_roles: {
+          where: { active: true, roles: { active: true, role_category: role_category.GLOBAL } },
+          select: { roles: { select: { role_name: true } } },
+        },
+      },
+    });
+    const actorRoles = this.extractRoleNames(actorRecord?.users_roles ?? []);
+
+    if (!this.actorCanCreateRole(actorRoles, dto.role)) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    // 4. Generate temp password — never logged, exists in memory only
+    // 18 random bytes → 24 base64url chars + fixed suffix satisfies most policies
+    const tempPassword = `${randomBytes(18).toString('base64url')}Aa1!`;
+
+    const fullName = [dto.name, dto.paternal_last_name, dto.maternal_last_name]
+      .filter(Boolean)
+      .join(' ');
+
+    // 5. Create user via BetterAuthService — discard session and accessToken
+    const { user: baUser } = await this.betterAuthService.createUser(
+      dto.email,
+      tempPassword,
+      fullName,
+    );
+    const newUserId = baUser.id;
+
+    // 6. Update profile fields. Only fields that exist on the `users` model are set.
+    // NOTE: `users` model has no `phone` or `created_by` columns — omitted intentionally.
+    const profileData: Prisma.usersUpdateInput = {
+      name: dto.name,
+      paternal_last_name: dto.paternal_last_name,
+      maternal_last_name: dto.maternal_last_name ?? null,
+      active: true,
+      access_app: true,
+      access_panel: true,
+    };
+    if (dto.country_id !== undefined) {
+      profileData.countries = { connect: { country_id: dto.country_id } };
+    }
+    if (dto.union_id !== undefined) {
+      profileData.unions = { connect: { union_id: dto.union_id } };
+    }
+    if (dto.local_field_id !== undefined) {
+      profileData.local_fields = { connect: { local_field_id: dto.local_field_id } };
+    }
+
+    // 7. Assign global role — run profile update and role assignment atomically
+    await this.prisma.$transaction([
+      this.prisma.users.update({
+        where: { user_id: newUserId },
+        data: profileData,
+      }),
+      this.prisma.users_roles.create({
+        data: {
+          user_id: newUserId,
+          role_id: matchedRole.role_id,
+          active: true,
+        },
+      }),
+    ]);
+
+    // 8. Send reset-password email so the user can set their own password
+    // If email is disabled, catch gracefully — user is already created
+    let invite_email_sent = true;
+    try {
+      await this.betterAuthService.resetPasswordForEmail(dto.email);
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) {
+        invite_email_sent = false;
+        this.logger.warn(
+          `Admin user created but invite email not sent (EMAIL_ENABLED=false): user_id=${newUserId}`,
+        );
+      } else {
+        // Re-throw unexpected errors
+        throw err;
+      }
+    }
+
+    // 9. Audit log — no PII, no password
+    this.logger.log(
+      `Admin user created: user_id=${newUserId} role=${dto.role} actor=${actorId}`,
+    );
+
+    return { user_id: newUserId, email: dto.email, invite_email_sent };
   }
 
   private async resolveActiveEcclesiasticalYearId(): Promise<number | null> {
@@ -908,6 +1203,342 @@ export class AdminUsersService {
       );
       return value;
     }
+  }
+
+  // ── Bulk user upload ────────────────────────────────────────────────────────
+
+  /**
+   * Parse and process a bulk user creation file (.xlsx or .csv).
+   *
+   * Contract:
+   *  - HTTP 200 always (per-row results carry status).
+   *  - Per-row errors do NOT abort the batch — processing continues.
+   *  - Each row delegates to the existing createAdminUser() for full
+   *    scope/hierarchy checks and invite email behaviour.
+   */
+  async bulkCreateAdminUsers(
+    actorId: string,
+    fileBuffer: Buffer,
+    mimeType: string,
+  ): Promise<BulkUsersResult> {
+    const EXPECTED_HEADERS = [
+      'email',
+      'name',
+      'paternal_last_name',
+      'maternal_last_name',
+      'role',
+      'country_id',
+      'union_id',
+      'local_field_id',
+    ] as const;
+
+    const VALID_ROLES = new Set([
+      'user',
+      'coordinator',
+      'zone-coordinator',
+      'general-coordinator',
+      'pastor',
+      'assistant-lf',
+      'director-lf',
+      'assistant-union',
+      'director-union',
+      'assistant-dia',
+      'director-dia',
+      'admin',
+    ]);
+
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    // 1. Parse the workbook
+    const wb = XLSX.read(fileBuffer, {
+      type: 'buffer',
+      cellDates: false,
+      raw: true,
+    });
+
+    const sheetName = wb.SheetNames[0];
+    if (!sheetName) {
+      throw new AppBadRequestException(ErrorCode.ADMIN_BULK_EMPTY_FILE);
+    }
+
+    const sheet = wb.Sheets[sheetName];
+    // header:1 → array of arrays; defval:'' → missing cells become ''
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      defval: '',
+      header: 1,
+    });
+
+    if (rows.length < 2) {
+      throw new AppBadRequestException(ErrorCode.ADMIN_BULK_EMPTY_FILE);
+    }
+
+    // 2. Validate headers (case-insensitive)
+    const headerRow = (rows[0] as unknown[]).map((h) =>
+      String(h ?? '').trim().toLowerCase(),
+    );
+    const normalizedExpected = EXPECTED_HEADERS.map((h) => h.toLowerCase());
+    const invalidHeaders = normalizedExpected.filter(
+      (h) => !headerRow.includes(h),
+    );
+    if (invalidHeaders.length > 0) {
+      throw new AppBadRequestException(ErrorCode.ADMIN_BULK_INVALID_HEADERS, {
+        expected: EXPECTED_HEADERS.join(', '),
+        missing: invalidHeaders.join(', '),
+      });
+    }
+
+    // Build column-index map from actual header row
+    const colIndex = (name: string): number =>
+      headerRow.indexOf(name.toLowerCase());
+
+    const dataRows = rows.slice(1);
+
+    // 3. Cap at 500 rows
+    if (dataRows.length > 500) {
+      throw new AppBadRequestException(ErrorCode.ADMIN_BULK_TOO_MANY_ROWS, {
+        max: 500,
+        received: dataRows.length,
+      });
+    }
+
+    // 4. Process rows
+    const results: BulkUserRowResult[] = [];
+    const seenEmails = new Set<string>();
+    let succeeded = 0;
+    let failed = 0;
+
+    const getCell = (row: unknown[], colName: string): string => {
+      const idx = colIndex(colName);
+      if (idx < 0) return '';
+      return String((row as unknown[])[idx] ?? '').trim();
+    };
+
+    const parseOptionalInt = (value: string): number | undefined => {
+      if (!value) return undefined;
+      const n = parseInt(value, 10);
+      return isNaN(n) ? undefined : n;
+    };
+
+    for (let i = 0; i < dataRows.length; i++) {
+      const rowNumber = i + 2; // 1-indexed, row 1 is headers
+      const row = dataRows[i] as unknown[];
+
+      const rawEmail = getCell(row, 'email').toLowerCase();
+      const name = getCell(row, 'name');
+      const paternalLastName = getCell(row, 'paternal_last_name');
+      const maternalLastName = getCell(row, 'maternal_last_name') || undefined;
+      const role = getCell(row, 'role');
+      const countryIdRaw = getCell(row, 'country_id');
+      const unionIdRaw = getCell(row, 'union_id');
+      const localFieldIdRaw = getCell(row, 'local_field_id');
+
+      const countryId = parseOptionalInt(countryIdRaw);
+      const unionId = parseOptionalInt(unionIdRaw);
+      const localFieldId = parseOptionalInt(localFieldIdRaw);
+
+      // Validate required fields
+      if (!rawEmail || !name || !paternalLastName || !role) {
+        results.push({
+          row: rowNumber,
+          email: rawEmail || null,
+          status: 'error',
+          error_code: 'VALIDATION_FAILED',
+          error_message: 'Campos requeridos faltantes: email, name, paternal_last_name, role',
+        });
+        failed++;
+        continue;
+      }
+
+      // Validate email format
+      if (!EMAIL_REGEX.test(rawEmail)) {
+        results.push({
+          row: rowNumber,
+          email: rawEmail,
+          status: 'error',
+          error_code: 'VALIDATION_FAILED',
+          error_message: `Formato de email inválido: ${rawEmail}`,
+        });
+        failed++;
+        continue;
+      }
+
+      // Validate role
+      if (!VALID_ROLES.has(role)) {
+        results.push({
+          row: rowNumber,
+          email: rawEmail,
+          status: 'error',
+          error_code: 'INVALID_ROLE',
+          error_message: `Rol inválido: ${role}. Roles válidos: ${[...VALID_ROLES].join(', ')}`,
+        });
+        failed++;
+        continue;
+      }
+
+      // Detect duplicate within this file
+      if (seenEmails.has(rawEmail)) {
+        results.push({
+          row: rowNumber,
+          email: rawEmail,
+          status: 'error',
+          error_code: 'DUPLICATE_IN_FILE',
+          error_message: `Email duplicado en el archivo: ${rawEmail}`,
+        });
+        failed++;
+        continue;
+      }
+
+      // Attempt creation
+      try {
+        const dto: CreateAdminUserDto = {
+          email: rawEmail,
+          name,
+          paternal_last_name: paternalLastName,
+          maternal_last_name: maternalLastName,
+          role,
+          country_id: countryId,
+          union_id: unionId,
+          local_field_id: localFieldId,
+        };
+
+        const created = await this.createAdminUser(actorId, dto);
+
+        seenEmails.add(rawEmail);
+        results.push({
+          row: rowNumber,
+          email: rawEmail,
+          status: 'success',
+          user_id: created.user_id,
+          invite_email_sent: created.invite_email_sent,
+        });
+        succeeded++;
+      } catch (err: unknown) {
+        seenEmails.add(rawEmail); // prevent duplicate processing
+
+        if (
+          err instanceof AppConflictException &&
+          err.code === ErrorCode.AUTH_EMAIL_ALREADY_IN_USE
+        ) {
+          results.push({
+            row: rowNumber,
+            email: rawEmail,
+            status: 'error',
+            error_code: 'EMAIL_ALREADY_IN_USE',
+            error_message: 'El email ya está registrado en el sistema',
+          });
+        } else if (err instanceof AppForbiddenException) {
+          results.push({
+            row: rowNumber,
+            email: rawEmail,
+            status: 'error',
+            error_code: 'FORBIDDEN_ROLE_FOR_ACTOR',
+            error_message: 'El actor no tiene permiso para crear usuarios con ese rol',
+          });
+        } else {
+          const message =
+            err instanceof Error
+              ? err.message.substring(0, 200)
+              : 'Error interno desconocido';
+          results.push({
+            row: rowNumber,
+            email: rawEmail,
+            status: 'error',
+            error_code: 'INTERNAL_ERROR',
+            error_message: message,
+          });
+        }
+        failed++;
+      }
+    }
+
+    return {
+      total: dataRows.length,
+      succeeded,
+      failed,
+      results,
+    };
+  }
+
+  /**
+   * Build an in-memory .xlsx template buffer for bulk user upload.
+   * Sheet "Usuarios": row 1 headers, row 2 example values.
+   * Sheet "Roles permitidos": ONLY the role slugs the calling actor is
+   * authorized to assign (filtered by `ROLE_HIERARCHY`). This prevents
+   * confusion where a Local-Field assistant sees admin/director-dia in the
+   * reference sheet but cannot actually create them.
+   */
+  async getBulkTemplateBuffer(actorId: string): Promise<Buffer> {
+    const allowedRoles = await this.getAllowedTargetRolesForActor(actorId);
+    return this.buildBulkTemplateBuffer(allowedRoles);
+  }
+
+  /**
+   * Static label map for global role slugs. Keep in sync with frontend
+   * `role-labels.ts` and DB seeds.
+   */
+  private static readonly ROLE_LABELS_ES: Record<string, string> = {
+    user: 'Usuario',
+    coordinator: 'Coordinador',
+    'zone-coordinator': 'Coordinador de Zona',
+    'general-coordinator': 'Coordinador General',
+    pastor: 'Pastor',
+    'assistant-lf': 'Secretario de Campo Local',
+    'director-lf': 'Director de Campo Local',
+    'assistant-union': 'Secretario de Unión',
+    'director-union': 'Director de Unión',
+    'assistant-dia': 'Secretario de División',
+    'director-dia': 'Director de División',
+    admin: 'Administrador',
+  };
+
+  /**
+   * Pure builder used by both the public actor-scoped entrypoint and tests.
+   */
+  private buildBulkTemplateBuffer(allowedRoles: string[]): Buffer {
+    const wb = XLSX.utils.book_new();
+
+    // Pick an example role the actor can actually use. Default to 'user'
+    // since every authorized tier can create T5 base roles.
+    const exampleRole = allowedRoles.includes('user')
+      ? 'user'
+      : (allowedRoles[0] ?? 'user');
+
+    const usersData = [
+      [
+        'email',
+        'name',
+        'paternal_last_name',
+        'maternal_last_name',
+        'role',
+        'country_id',
+        'union_id',
+        'local_field_id',
+      ],
+      [
+        'juan@ejemplo.com',
+        'Juan',
+        'Pérez',
+        'López',
+        exampleRole,
+        1,
+        12,
+        34,
+      ],
+    ];
+
+    const usersSheet = XLSX.utils.aoa_to_sheet(usersData);
+    XLSX.utils.book_append_sheet(wb, usersSheet, 'Usuarios');
+
+    const rolesData: Array<[string, string]> = [['slug', 'etiqueta']];
+    for (const slug of allowedRoles) {
+      const label = AdminUsersService.ROLE_LABELS_ES[slug] ?? slug;
+      rolesData.push([slug, label]);
+    }
+
+    const rolesSheet = XLSX.utils.aoa_to_sheet(rolesData);
+    XLSX.utils.book_append_sheet(wb, rolesSheet, 'Roles permitidos');
+
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
   private resolveClubAssignment(

@@ -3,13 +3,16 @@ import { user_approval_status } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEmail,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
@@ -198,6 +201,91 @@ export class UpdateUserApprovalDto {
   @IsString()
   @MaxLength(500)
   rejection_reason?: string;
+}
+
+/**
+ * The full list of allowed global role slugs for admin-initiated user creation.
+ * `super-admin` is intentionally excluded — defense in depth.
+ */
+export const ALLOWED_CREATION_ROLES = [
+  'user',
+  'coordinator',
+  'zone-coordinator',
+  'general-coordinator',
+  'pastor',
+  'assistant-lf',
+  'director-lf',
+  'assistant-union',
+  'director-union',
+  'assistant-dia',
+  'director-dia',
+  'admin',
+] as const;
+
+export class CreateAdminUserDto {
+  @ApiProperty({ example: 'Juan', description: 'Nombre del usuario (1-50 caracteres)' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  name!: string;
+
+  @ApiProperty({ example: 'Pérez', description: 'Apellido paterno (1-50 caracteres)' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  paternal_last_name!: string;
+
+  @ApiPropertyOptional({ example: 'García', description: 'Apellido materno (opcional, máx 50 caracteres)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  maternal_last_name?: string;
+
+  @ApiProperty({ example: 'juan.perez@example.com', description: 'Email único del usuario (máx 120 caracteres)' })
+  @IsEmail()
+  @MaxLength(120)
+  email!: string;
+
+  @ApiProperty({
+    example: 'director-lf',
+    description: 'Rol global a asignar. super-admin no está permitido por este endpoint.',
+    enum: ALLOWED_CREATION_ROLES,
+  })
+  @IsString()
+  @IsIn([...ALLOWED_CREATION_ROLES])
+  role!: string;
+
+  @ApiPropertyOptional({ example: 1, description: 'ID de país (opcional)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  country_id?: number;
+
+  @ApiPropertyOptional({ example: 2, description: 'ID de unión (opcional)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  union_id?: number;
+
+  @ApiPropertyOptional({ example: 10, description: 'ID de campo local (opcional)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  local_field_id?: number;
+}
+
+export class CreateAdminUserResponseDto {
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'UUID del usuario creado' })
+  user_id!: string;
+
+  @ApiProperty({ example: 'juan.perez@example.com', description: 'Email del usuario creado' })
+  email!: string;
+
+  @ApiProperty({ example: true, description: 'true si el email de invitación fue encolado exitosamente' })
+  invite_email_sent!: boolean;
 }
 
 export class UpdateAdminUserDto {
