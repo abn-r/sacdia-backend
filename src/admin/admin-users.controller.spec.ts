@@ -8,7 +8,7 @@ import {
   GlobalRolesGuard,
   PermissionsGuard,
 } from '../common/guards';
-import { AdminListUsersQueryDto } from './dto';
+import { AdminListUsersQueryDto, CreateAdminUserDto } from './dto';
 
 describe('AdminUsersController', () => {
   let controller: AdminUsersController;
@@ -18,6 +18,7 @@ describe('AdminUsersController', () => {
     getUserById: jest.fn(),
     updateUserApproval: jest.fn(),
     updateUser: jest.fn(),
+    createAdminUser: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -165,6 +166,38 @@ describe('AdminUsersController', () => {
         dto,
       );
       expect(result).toEqual({ status: 'success', data: expected });
+    });
+  });
+
+  describe('createUser', () => {
+    it('should delegate to createAdminUser with actor id from JWT and return wrapped response', async () => {
+      const req = { user: { sub: 'actor-admin-uuid' } } as Request & {
+        user: { sub: string };
+      };
+      const dto: CreateAdminUserDto = {
+        name: 'Juan',
+        paternal_last_name: 'Pérez',
+        maternal_last_name: 'García',
+        email: 'juan.perez@example.com',
+        role: 'director-lf',
+        country_id: 1,
+        union_id: 2,
+        local_field_id: 10,
+      };
+      const serviceResult = {
+        user_id: 'new-user-uuid',
+        email: 'juan.perez@example.com',
+        invite_email_sent: true,
+      };
+      mockAdminUsersService.createAdminUser.mockResolvedValue(serviceResult);
+
+      const result = await controller.createUser(req, dto);
+
+      expect(mockAdminUsersService.createAdminUser).toHaveBeenCalledWith(
+        'actor-admin-uuid',
+        dto,
+      );
+      expect(result).toEqual({ status: 'success', data: serviceResult });
     });
   });
 });

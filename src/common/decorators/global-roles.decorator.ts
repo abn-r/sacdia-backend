@@ -8,7 +8,13 @@ export type GlobalRoleType =
   | 'assistant-admin'
   | 'coordinator'
   | 'pastor'
-  | 'user';
+  | 'user'
+  | 'director-lf'
+  | 'assistant-lf'
+  | 'director-union'
+  | 'assistant-union'
+  | 'director-dia'
+  | 'assistant-dia';
 
 /**
  * Decorator to require specific global roles for an endpoint.

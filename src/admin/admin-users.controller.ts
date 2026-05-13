@@ -1,15 +1,22 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Patch,
+  Post,
   Query,
   Request,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import type { Request as ExpressRequest } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request as ExpressRequest, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiExtraModels,
@@ -34,10 +41,22 @@ import {
   AdminCurrentOperationalEnrollmentDto,
   AdminListUsersQueryDto,
   AdminTrajectoryClassDto,
+  CreateAdminUserDto,
+  CreateAdminUserResponseDto,
   UpdateAdminUserDto,
   UpdateUserApprovalDto,
 } from './dto';
-import { AdminUsersService } from './admin-users.service';
+import { AdminUsersService, type BulkUsersResult } from './admin-users.service';
+
+const BULK_ALLOWED_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/csv',
+  'application/octet-stream',
+  'text/plain',
+]);
+
+const BULK_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 @ApiTags('admin-users')
 @ApiBearerAuth()
@@ -83,6 +102,37 @@ export class AdminUsersController {
       query,
     );
     return { status: 'success', data };
+  }
+
+  @Get('users/bulk-template')
+  @GlobalRoles(
+    'admin',
+    'super-admin',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
+  @RequirePermissions('users:bulk_create')
+  @Header(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
+  @Header('Content-Disposition', 'attachment; filename="plantilla-usuarios.xlsx"')
+  @ApiOperation({ summary: 'Descarga plantilla .xlsx para carga masiva de usuarios' })
+  @ApiResponse({ status: 200, description: 'Plantilla xlsx descargada' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden — rol no autorizado' })
+  async downloadBulkTemplate(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.adminUsersService.getBulkTemplateBuffer(
+      this.getActorId(req),
+    );
+    res.send(buffer);
   }
 
   @Get('users/:userId')
@@ -167,6 +217,95 @@ export class AdminUsersController {
     @Body() dto: UpdateAdminUserDto,
   ) {
     const data = await this.adminUsersService.updateUser(userId, dto);
+    return { status: 'success', data };
+  }
+
+  @Post('users')
+  @GlobalRoles(
+    'admin',
+    'super-admin',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
+  @RequirePermissions('users:create')
+  @ApiOperation({
+    summary: 'Crear usuario manualmente (admin-iniciado, con invite por email)',
+  })
+  @ApiResponse({ status: 201, description: 'Usuario creado y email de invite encolado' })
+  @ApiResponse({ status: 400, description: 'Validación falló' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — actor sin permiso o intentando crear rol superior',
+  })
+  @ApiResponse({ status: 409, description: 'Email ya registrado' })
+  async createUser(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Body() dto: CreateAdminUserDto,
+  ): Promise<{ status: 'success'; data: CreateAdminUserResponseDto }> {
+    const data = await this.adminUsersService.createAdminUser(
+      this.getActorId(req),
+      dto,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('users/bulk')
+  @GlobalRoles(
+    'admin',
+    'super-admin',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
+  @RequirePermissions('users:bulk_create')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'Carga masiva de usuarios desde archivo .xlsx o .csv',
+  })
+  @ApiResponse({ status: 200, description: 'Resultado por fila (batch partial-success)' })
+  @ApiResponse({ status: 400, description: 'Archivo ausente, tipo inválido, vacío o demasiadas filas' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({ status: 403, description: 'Forbidden — rol no autorizado' })
+  async bulkCreateUsers(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<{ status: 'success'; data: BulkUsersResult }> {
+    if (!file) {
+      throw new BadRequestException(
+        'Se requiere un archivo (campo multipart: file)',
+      );
+    }
+
+    if (!BULK_ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException(
+        `Tipo de archivo no permitido: ${file.mimetype}. Permitidos: xlsx, csv`,
+      );
+    }
+
+    if (file.size > BULK_MAX_BYTES) {
+      throw new BadRequestException(
+        'El archivo supera el límite de 5 MB',
+      );
+    }
+
+    if (!file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('El archivo está vacío');
+    }
+
+    const data = await this.adminUsersService.bulkCreateAdminUsers(
+      this.getActorId(req),
+      file.buffer,
+      file.mimetype,
+    );
+
     return { status: 'success', data };
   }
 }

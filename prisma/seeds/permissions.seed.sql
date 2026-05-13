@@ -56,7 +56,9 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('users:read_detail', 'Read detailed user information', true),
   ('users:update', 'Update user information', true),
   ('users:update_profile', 'Update own profile and picture', true),
-  ('users:update_admin', 'Admin user management operations', true)
+  ('users:update_admin', 'Admin user management operations', true),
+  ('users:create', 'Create new users (manual single creation with email invite)', true),
+  ('users:bulk_create', 'Bulk create users from uploaded Excel/CSV file', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
