@@ -14,7 +14,11 @@ export class ResourceCategoriesService {
 
   async create(dto: CreateResourceCategoryDto) {
     return this.prisma.resource_categories.create({
-      data: { name: dto.name, description: dto.description },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        ...(dto.active !== undefined ? { active: dto.active } : {}),
+      },
     });
   }
 

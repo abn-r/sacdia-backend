@@ -12,13 +12,24 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { validateResourceFile } from './pipes/resource-file-validation.pipe';
+import {
+  ALLOWED_RESOURCE_MIME_TYPES,
+  validateResourceFile,
+} from './pipes/resource-file-validation.pipe';
 import type { CreateResourceDto } from './dto/create-resource.dto';
 import type { UpdateResourceDto } from './dto/update-resource.dto';
 import type { ResourceQueryDto } from './dto/resource-query.dto';
+import { GenerateUploadUrlDto } from './dto/generate-upload-url.dto';
+import type { CreateResourceFromUploadedDto } from './dto/create-resource-from-uploaded.dto';
 
-/** TTL de URLs firmadas: 1 hora */
+/** TTL de URLs firmadas de descarga: 1 hora */
 const SIGNED_URL_TTL_SECONDS = 3600;
+
+/** TTL de URLs firmadas de subida: 15 minutos (suficiente para uploads grandes) */
+const SIGNED_UPLOAD_TTL_SECONDS = 15 * 60;
+
+/** Tolerancia entre tamaño anunciado y real en R2 antes de rechazar (1%). */
+const FILE_SIZE_TOLERANCE_RATIO = 0.01;
 
 @Injectable()
 export class ResourcesService {
@@ -145,6 +156,186 @@ export class ResourcesService {
         users: {
           select: { name: true, user_id: true },
         },
+      },
+    });
+
+    return resource;
+  }
+
+  // ---------------------------------------------------------------------------
+  // GENERATE UPLOAD URL (presigned PUT for direct-to-R2 client uploads)
+  // ---------------------------------------------------------------------------
+
+  async generateUploadUrl(dto: GenerateUploadUrlDto, userContext: any) {
+    // 1. Authorize scope before issuing the URL — otherwise an attacker could
+    // burn presigned URLs for scopes they cannot create resources in.
+    this.validateScopeAuthorization(dto.scope_level, dto.scope_id, userContext);
+
+    if (dto.scope_level === 'system' && dto.scope_id != null) {
+      throw new AppBadRequestException(
+        ErrorCode.RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID,
+      );
+    }
+    if (dto.scope_level !== 'system' && dto.scope_id == null) {
+      throw new AppBadRequestException(
+        ErrorCode.RESOURCE_SCOPE_NON_SYSTEM_MISSING_SCOPE_ID,
+        { scope_level: dto.scope_level },
+      );
+    }
+
+    // 2. MIME must match what the resource_type accepts. This is the only line
+    // of defense we have before the upload happens, so do it strictly.
+    const allowed = ALLOWED_RESOURCE_MIME_TYPES[dto.resource_type];
+    if (!allowed || !allowed.includes(dto.mime_type)) {
+      throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_TYPE_INVALID, {
+        resource_type: dto.resource_type,
+        allowed: (allowed ?? []).join(', '),
+      });
+    }
+
+    // 3. Build a deterministic key under the scope folder. Mirrors the layout
+    // used by create() so admin tooling does not have to deal with two schemes.
+    const scopeSegment =
+      dto.scope_id != null ? String(dto.scope_id) : 'system';
+    const uuid = randomUUID();
+    const rawExt = dto.file_name.includes('.')
+      ? dto.file_name.slice(dto.file_name.lastIndexOf('.'))
+      : '';
+    const safeExtension = rawExt.replace(/[^a-zA-Z0-9.]/g, '');
+    const relativeKey = `${dto.scope_level}/${scopeSegment}/${uuid}${safeExtension}`;
+
+    const signed = await this.fileStorage.getSignedUploadUrl(
+      StorageBucketAlias.RESOURCES_FILES,
+      relativeKey,
+      {
+        contentType: dto.mime_type,
+        contentLength: dto.file_size,
+        expiresInSeconds: SIGNED_UPLOAD_TTL_SECONDS,
+      },
+    );
+
+    return {
+      upload_url: signed.url,
+      file_key: signed.key,
+      expires_in: signed.expiresInSeconds,
+      required_headers: {
+        'Content-Type': dto.mime_type,
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // CREATE FROM UPLOADED KEY (companion to generateUploadUrl)
+  // ---------------------------------------------------------------------------
+
+  async createFromUploaded(
+    dto: CreateResourceFromUploadedDto,
+    uploadedBy: string,
+    userContext: any,
+  ) {
+    // 1. Same scope/auth gating as direct create().
+    this.validateScopeAuthorization(dto.scope_level, dto.scope_id, userContext);
+
+    if (dto.scope_level === 'system' && dto.scope_id != null) {
+      throw new AppBadRequestException(
+        ErrorCode.RESOURCE_SCOPE_SYSTEM_NO_SCOPE_ID,
+      );
+    }
+    if (dto.scope_level !== 'system' && dto.scope_id == null) {
+      throw new AppBadRequestException(
+        ErrorCode.RESOURCE_SCOPE_NON_SYSTEM_MISSING_SCOPE_ID,
+        { scope_level: dto.scope_level },
+      );
+    }
+
+    // 2. The file_key must live under the same scope path we would have issued
+    // in generateUploadUrl. Prevents replaying a key from a different scope.
+    const scopeSegment =
+      dto.scope_id != null ? String(dto.scope_id) : 'system';
+    const expectedPrefix = `${dto.scope_level}/${scopeSegment}/`;
+    const keyWithoutBucketPrefix = dto.file_key.includes('resources/')
+      ? dto.file_key.slice(dto.file_key.indexOf('resources/') + 'resources/'.length)
+      : dto.file_key;
+    if (!keyWithoutBucketPrefix.startsWith(expectedPrefix)) {
+      throw new AppForbiddenException(ErrorCode.RESOURCE_SCOPE_LEVEL_INVALID, {
+        scope_level: dto.scope_level,
+      });
+    }
+
+    // 3. MIME must match resource_type.
+    const allowed = ALLOWED_RESOURCE_MIME_TYPES[dto.resource_type];
+    if (!allowed || !allowed.includes(dto.file_mime_type)) {
+      throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_TYPE_INVALID, {
+        resource_type: dto.resource_type,
+        allowed: (allowed ?? []).join(', '),
+      });
+    }
+
+    // 4. Confirm the object actually exists in R2 — otherwise the client never
+    // completed the PUT and we would orphan a DB row.
+    const stored = await this.fileStorage.getObjectInfo(
+      StorageBucketAlias.RESOURCES_FILES,
+      dto.file_key,
+    );
+    if (!stored) {
+      throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_REQUIRED, {
+        resource_type: dto.resource_type,
+      });
+    }
+
+    // Size sanity check — guard against the client lying about file_size to
+    // bypass the DTO @Max validation.
+    const declared = dto.file_size;
+    const actual = stored.size;
+    const tolerance = Math.max(1024, declared * FILE_SIZE_TOLERANCE_RATIO);
+    if (Math.abs(actual - declared) > tolerance) {
+      throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_TOO_LARGE, {
+        max_mb: String(Math.ceil(actual / (1024 * 1024))),
+      });
+    }
+
+    // 5. Validate related FKs (mirror create()).
+    if (dto.resource_category_id != null) {
+      const category = await this.prisma.resource_categories.findUnique({
+        where: { resource_category_id: dto.resource_category_id },
+        select: { resource_category_id: true, active: true },
+      });
+      if (!category || !category.active) {
+        throw new AppNotFoundException(ErrorCode.RESOURCE_CATEGORY_NOT_FOUND);
+      }
+    }
+
+    if (dto.club_type_id != null) {
+      const clubType = await (this.prisma as any).club_types.findUnique({
+        where: { club_type_id: dto.club_type_id },
+        select: { club_type_id: true },
+      });
+      if (!clubType) {
+        throw new AppNotFoundException(ErrorCode.RESOURCE_CLUB_TYPE_NOT_FOUND);
+      }
+    }
+
+    // 6. Persist.
+    const resource = await this.prisma.resources.create({
+      data: {
+        title: dto.title,
+        description: dto.description ?? null,
+        resource_type: dto.resource_type,
+        resource_category_id: dto.resource_category_id ?? null,
+        club_type_id: dto.club_type_id ?? null,
+        scope_level: dto.scope_level,
+        scope_id: dto.scope_id ?? null,
+        file_key: dto.file_key,
+        file_name: dto.file_name,
+        file_size: actual,
+        file_mime_type: dto.file_mime_type,
+        uploaded_by: uploadedBy,
+        active: true,
+      },
+      include: {
+        resource_categories: true,
+        club_types: true,
+        users: { select: { name: true, user_id: true } },
       },
     });
 
@@ -406,9 +597,12 @@ export class ResourcesService {
     userContext: any,
   ): void {
     const globalScope = userContext?.authorization?.effective?.scope?.global;
+    const userCountryId = globalScope?.country?.id ?? null;
+    const userUnionId = globalScope?.union?.id ?? null;
+    const userLfId = globalScope?.local_field?.id ?? null;
 
     if (scopeLevel === 'system') {
-      if (!globalScope?.country?.id) {
+      if (!userCountryId) {
         throw new AppForbiddenException(
           ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM,
         );
@@ -417,35 +611,21 @@ export class ResourcesService {
     }
 
     if (scopeLevel === 'union') {
-      const userUnionId = globalScope?.union?.id;
-      const userCountryId = globalScope?.country?.id;
-      // Administrador de país puede gestionar cualquier unión
       if (userCountryId) return;
-      if (userUnionId !== scopeId) {
-        throw new AppForbiddenException(
-          ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_UNION,
-          { scope_id: String(scopeId) },
-        );
-      }
-      return;
+      if (userUnionId && userUnionId === scopeId) return;
+      throw new AppForbiddenException(
+        ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_UNION,
+        { scope_id: String(scopeId) },
+      );
     }
 
     if (scopeLevel === 'local_field') {
-      const userLfId = globalScope?.local_field?.id;
-      const userUnionId = globalScope?.union?.id;
-      const userCountryId = globalScope?.country?.id;
-      // Administrador de país
       if (userCountryId) return;
-      // Administrador de unión puede gestionar cualquier campo de su unión
-      // (el guard de scope ya restringe qué campos son visibles)
-      if (userUnionId) return;
-      if (userLfId !== scopeId) {
-        throw new AppForbiddenException(
-          ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD,
-          { scope_id: String(scopeId) },
-        );
-      }
-      return;
+      if (userLfId && userLfId === scopeId) return;
+      throw new AppForbiddenException(
+        ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD,
+        { scope_id: String(scopeId) },
+      );
     }
 
     throw new AppBadRequestException(ErrorCode.RESOURCE_SCOPE_LEVEL_INVALID, {

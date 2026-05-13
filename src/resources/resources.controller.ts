@@ -31,6 +31,8 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { CreateResourceDto } from './dto/create-resource.dto';
 import { UpdateResourceDto } from './dto/update-resource.dto';
 import { ResourceQueryDto } from './dto/resource-query.dto';
+import { GenerateUploadUrlDto } from './dto/generate-upload-url.dto';
+import { CreateResourceFromUploadedDto } from './dto/create-resource-from-uploaded.dto';
 import { ResourcesService } from './resources.service';
 
 @ApiTags('Resources')
@@ -98,6 +100,63 @@ export class ResourcesController {
     const data = await this.resourcesService.create(
       dto,
       file,
+      req.user.sub,
+      req.authorization,
+    );
+    return { status: 'success', data };
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /resources/upload-url — Generar URL firmada para subir directo a R2
+  // ---------------------------------------------------------------------------
+
+  @Post('upload-url')
+  @RequirePermissions('resources:create')
+  @ApiOperation({
+    summary: 'Generar URL firmada para subir un recurso directo a R2',
+    description:
+      'Devuelve una URL firmada (PUT) para que el cliente suba el archivo ' +
+      'directamente a R2, evitando el límite de Server Actions de Next.js y ' +
+      'el body limit de Multer. Después llamar a POST /resources/from-uploaded.',
+  })
+  @ApiResponse({ status: 201, description: 'URL firmada generada' })
+  @ApiResponse({ status: 400, description: 'Datos inválidos' })
+  @ApiResponse({ status: 403, description: 'Sin permiso para el scope indicado' })
+  async generateUploadUrl(
+    @Body() dto: GenerateUploadUrlDto,
+    @Request() req: any,
+  ) {
+    const data = await this.resourcesService.generateUploadUrl(
+      dto,
+      req.authorization,
+    );
+    return { status: 'success', data };
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /resources/from-uploaded — Registrar recurso ya subido vía presigned
+  // ---------------------------------------------------------------------------
+
+  @Post('from-uploaded')
+  @RequirePermissions('resources:create')
+  @ApiOperation({
+    summary: 'Crear recurso desde archivo ya subido a R2 (presigned flow)',
+    description:
+      'Companion a POST /resources/upload-url. El cliente debe haber hecho PUT ' +
+      'al `upload_url` antes de llamar este endpoint con el `file_key` devuelto.',
+  })
+  @ApiResponse({ status: 201, description: 'Recurso creado' })
+  @ApiResponse({
+    status: 400,
+    description: 'file_key no existe en R2 o tamaño no coincide',
+  })
+  @ApiResponse({ status: 403, description: 'Sin permiso para el scope indicado' })
+  async createFromUploaded(
+    @Body() dto: CreateResourceFromUploadedDto,
+    @Request() req: any,
+  ) {
+    const data = await this.resourcesService.createFromUploaded(
+      dto,
       req.user.sub,
       req.authorization,
     );

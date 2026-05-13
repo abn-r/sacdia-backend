@@ -35,6 +35,22 @@ export type SignedUrlOptions = {
   expiresInSeconds?: number;
 };
 
+export type SignedUploadUrlOptions = SignedUrlOptions & {
+  contentType: string;
+  contentLength?: number;
+};
+
+export type SignedUploadResult = {
+  url: string;
+  key: string;
+  expiresInSeconds: number;
+};
+
+export type StoredObjectInfo = {
+  size: number;
+  contentType: string | null;
+};
+
 export interface FileStorageService {
   upload(
     bucketAlias: StorageBucketAlias,
@@ -52,6 +68,23 @@ export interface FileStorageService {
     keyOrPublicUrl: string,
     options?: SignedUrlOptions,
   ): Promise<string>;
+  /**
+   * Generate a presigned PUT URL so the browser can upload directly to R2,
+   * bypassing the Next.js Server Action and NestJS multipart body limits.
+   */
+  getSignedUploadUrl(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+    options: SignedUploadUrlOptions,
+  ): Promise<SignedUploadResult>;
+  /**
+   * HEAD an object to confirm the client-side upload finished. Returns null
+   * when the key is missing (caller treats as "upload incomplete").
+   */
+  getObjectInfo(
+    bucketAlias: StorageBucketAlias,
+    key: string,
+  ): Promise<StoredObjectInfo | null>;
   /**
    * Resolve a stored key to its public CDN URL synchronously.
    * Only valid for public buckets (isPublic: true). Throws if the bucket is private.

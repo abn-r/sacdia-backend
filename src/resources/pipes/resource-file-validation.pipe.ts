@@ -7,7 +7,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
  * Allowed MIME types per resource type.
  * Extend this map when new resource types are introduced.
  */
-const ALLOWED_MIME_TYPES: Record<string, string[]> = {
+export const ALLOWED_RESOURCE_MIME_TYPES: Record<string, string[]> = {
   document: [
     'application/pdf',
     'application/msword',
@@ -173,7 +173,7 @@ export function validateResourceFile(
   }
 
   // MIME type check
-  const allowedTypes = ALLOWED_MIME_TYPES[resourceType];
+  const allowedTypes = ALLOWED_RESOURCE_MIME_TYPES[resourceType];
   if (!allowedTypes) {
     throw new AppBadRequestException(ErrorCode.RESOURCE_FILE_MIME_INVALID, {
       mime_type: resourceType,
