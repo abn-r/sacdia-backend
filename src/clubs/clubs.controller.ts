@@ -30,6 +30,7 @@ import {
   AssignRoleDto,
   UpdateRoleAssignmentDto,
 } from './dto';
+import { ClubHistoryResponseDto } from './dto/overview.dto';
 import {
   AuthorizationResource,
   ClubRoles,
@@ -255,7 +256,7 @@ export class ClubsController {
       'Devuelve métricas de resumen para el panel de detalle del club: ' +
       'serie de asistencia semanal (últimas 52 semanas), promedio de asistencia, ' +
       'score compuesto con fórmula documentada, próximas 5 actividades, ' +
-      'y funnel de membresía (solicitudes pendientes, miembros activos).',
+      'y funnel de membresía (solicitudes pendientes, miembros activos, investidos en el año).',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiResponse({
@@ -264,6 +265,43 @@ export class ClubsController {
   })
   async getOverview(@Param('clubId', ParseIntPipe) clubId: number) {
     return this.clubsService.getClubOverview(clubId);
+  }
+
+  @Get(':clubId/history')
+  @RequirePermissions('clubs:read')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Historial de auditoría del club',
+    description:
+      'Devuelve los eventos de auditoría del club (creación, actualización, eliminación de clubs, ' +
+      'secciones y asignaciones de roles de liderazgo). Paginación por cursor descendente (más reciente primero). ' +
+      'Pasa next_cursor como query param cursor= para obtener la siguiente página.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Max items per page (default 50, max 100)',
+  })
+  @ApiQuery({
+    name: 'cursor',
+    required: false,
+    type: String,
+    description: 'Cursor from previous page (next_cursor value)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Historial de auditoría paginado',
+    type: ClubHistoryResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Club no encontrado' })
+  async getHistory(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.clubsService.getClubHistory(clubId, { limit, cursor });
   }
 
   // ========================================

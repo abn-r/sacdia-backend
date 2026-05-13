@@ -4,9 +4,10 @@ import { ClubsService } from './clubs.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ClubRolesGuard } from '../common/guards';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule],
+  imports: [PrismaModule, NotificationsModule, AuditLogsModule],
   controllers: [ClubsController, ClubRolesController],
   providers: [ClubsService, ClubRolesGuard],
   exports: [ClubsService],

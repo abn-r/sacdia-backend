@@ -21,6 +21,8 @@ import {
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { ListByClubResult } from '../audit-logs/audit-logs.service';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -39,6 +41,7 @@ export class ClubsService {
     private readonly fileStorage: FileStorageService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly notificationsService: NotificationsService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   // ========================================
@@ -113,7 +116,7 @@ export class ClubsService {
   }
 
   async create(dto: CreateClubDto) {
-    return this.prisma.clubs.create({
+    const club = await this.prisma.clubs.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -125,27 +128,82 @@ export class ClubsService {
         active: true,
       },
     });
+
+    void this.auditLogs
+      .recordEvent({
+        entity_type: 'club',
+        entity_id: String(club.club_id),
+        action: 'CREATED',
+        club_id: club.club_id,
+        summary: `Club creado: ${club.name}`,
+      })
+      .catch((err: unknown) =>
+        this.logger.warn(`[AuditLogs] create hook error: ${String(err)}`),
+      );
+
+    return club;
   }
 
   async update(clubId: number, dto: UpdateClubDto) {
-    await this.findOne(clubId); // Verify exists
+    const current = await this.findOne(clubId);
 
-    return this.prisma.clubs.update({
+    const updated = await this.prisma.clubs.update({
       where: { club_id: clubId },
       data: {
         ...dto,
         modified_at: new Date(),
       },
     });
+
+    // Build diff of changed fields (skip active=false — that's covered by remove)
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    for (const key of Object.keys(dto) as (keyof UpdateClubDto)[]) {
+      if (key === 'active' && dto[key] === false) continue;
+      const prev = (current as Record<string, unknown>)[key];
+      const next = dto[key] as unknown;
+      if (prev !== next) {
+        changes[key] = { from: prev, to: next };
+      }
+    }
+
+    if (Object.keys(changes).length > 0) {
+      void this.auditLogs
+        .recordEvent({
+          entity_type: 'club',
+          entity_id: String(clubId),
+          action: 'UPDATED',
+          club_id: clubId,
+          changes,
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(`[AuditLogs] update hook error: ${String(err)}`),
+        );
+    }
+
+    return updated;
   }
 
   async remove(clubId: number) {
     await this.findOne(clubId);
 
-    return this.prisma.clubs.update({
+    const result = await this.prisma.clubs.update({
       where: { club_id: clubId },
       data: { active: false, modified_at: new Date() },
     });
+
+    void this.auditLogs
+      .recordEvent({
+        entity_type: 'club',
+        entity_id: String(clubId),
+        action: 'DELETED',
+        club_id: clubId,
+        summary: 'Club desactivado',
+      })
+      .catch((err: unknown) =>
+        this.logger.warn(`[AuditLogs] remove hook error: ${String(err)}`),
+      );
+
+    return result;
   }
 
   // ========================================
@@ -188,7 +246,7 @@ export class ClubsService {
     if (!clubType || !clubType.active) {
       throw new AppBadRequestException(ErrorCode.CLUB_TYPE_NOT_FOUND);
     }
-    return this.prisma.club_sections.create({
+    const section = await this.prisma.club_sections.create({
       data: {
         main_club_id: clubId,
         club_type_id: dto.club_type_id,
@@ -200,6 +258,20 @@ export class ClubsService {
       },
       include: { club_types: { select: { name: true } } },
     });
+
+    void this.auditLogs
+      .recordEvent({
+        entity_type: 'club_section',
+        entity_id: String(section.club_section_id),
+        action: 'CREATED',
+        club_id: clubId,
+        summary: `Sección creada: ${section.club_types?.name ?? String(dto.club_type_id)}`,
+      })
+      .catch((err: unknown) =>
+        this.logger.warn(`[AuditLogs] createSection hook error: ${String(err)}`),
+      );
+
+    return section;
   }
 
   async updateSection(sectionId: number, dto: UpdateClubSectionDto) {
@@ -309,6 +381,36 @@ export class ClubsService {
       'CREATED',
       dto.user_id,
     );
+
+    // Audit: only track leadership role assignments
+    const roleName = created.roles.role_name.toLowerCase();
+    if (['director', 'deputy-director', 'secretary'].includes(roleName)) {
+      const fullName = [
+        created.users?.name,
+        created.users?.paternal_last_name,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      // Resolve club_id from the section
+      const section = await this.prisma.club_sections.findUnique({
+        where: { club_section_id: dto.club_section_id },
+        select: { main_club_id: true },
+      });
+
+      void this.auditLogs
+        .recordEvent({
+          entity_type: 'role_assignment',
+          entity_id: created.assignment_id,
+          action: 'CREATED',
+          club_id: section?.main_club_id ?? undefined,
+          actor_user_id: dto.user_id,
+          summary: `Asignado ${roleName}: ${fullName || dto.user_id}`,
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(`[AuditLogs] assignRole hook error: ${String(err)}`),
+        );
+    }
 
     return created;
   }
@@ -695,6 +797,41 @@ export class ClubsService {
       section_name: a.club_sections?.name ?? null,
     }));
 
+    // 6. Count members with investiture_status=APPROVED in the active
+    //    ecclesiastical year, scoped to this club via:
+    //    unit_members → units.club_section_id → club_sections.main_club_id
+    let investidos_year = 0;
+    if (sectionIds.length > 0) {
+      const activeYear = await this.prisma.ecclesiastical_years.findFirst({
+        where: { active: true },
+        select: { year_id: true },
+      });
+
+      if (activeYear) {
+        // Collect user_ids that are active unit members of this club
+        const clubMemberIds = await this.prisma.unit_members.findMany({
+          where: {
+            active: true,
+            units: { club_section_id: { in: sectionIds } },
+          },
+          select: { user_id: true },
+          distinct: ['user_id'],
+        });
+
+        if (clubMemberIds.length > 0) {
+          const userIds = clubMemberIds.map((m) => m.user_id);
+          investidos_year = await this.prisma.enrollments.count({
+            where: {
+              user_id: { in: userIds },
+              ecclesiastical_year_id: activeYear.year_id,
+              investiture_status: 'APPROVED',
+              active: true,
+            },
+          });
+        }
+      }
+    }
+
     return {
       status: 'ok',
       data: {
@@ -705,11 +842,29 @@ export class ClubsService {
         funnel: {
           pending_requests: pendingCount,
           active_members: activeMembersCount,
-          // TODO: implement when investiture tracking is available
-          investidos_year: 0,
+          investidos_year,
         },
       },
     };
+  }
+
+  /**
+   * GET /clubs/:clubId/history
+   *
+   * Returns paginated audit log entries for the club.
+   * Supports cursor-based pagination descending by audit_log_id.
+   */
+  async getClubHistory(
+    clubId: number,
+    opts: { limit?: number; cursor?: string },
+  ): Promise<ListByClubResult> {
+    await this.findOne(clubId);
+    const cursorBigInt =
+      opts.cursor !== undefined ? BigInt(opts.cursor) : undefined;
+    return this.auditLogs.listByClub(clubId, {
+      limit: opts.limit,
+      cursor: cursorBigInt,
+    });
   }
 
   private computeGrade(score: number): string {
