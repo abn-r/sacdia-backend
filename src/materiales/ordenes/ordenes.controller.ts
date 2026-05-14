@@ -23,9 +23,11 @@ import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import {
   MATERIALES_APPROVE,
   MATERIALES_CREATE,
+  MATERIALES_DELIVER,
   MATERIALES_READ,
 } from '../shared/permissions';
 import { OrdenesService } from './ordenes.service';
+import { CancelOrdenDto } from './dto/cancel-orden.dto';
 import { CreateOrdenDto } from './dto/create-orden.dto';
 import { ListOrdenesQueryDto } from './dto/list-ordenes.query.dto';
 import { UpdateOrdenLineDto } from './dto/update-orden-line.dto';
@@ -149,6 +151,55 @@ export class OrdenesController {
     @Request() req: any,
   ): Promise<OrdenDto> {
     return this.ordenesService.approve(folio, { id: req.user.sub });
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /api/v1/materiales/ordenes/:folio/cancelar
+  // REQ-ORD-010, REQ-INV-005, SC-08, SC-09
+  // MUST be declared BEFORE GET :folio
+  // ---------------------------------------------------------------------------
+
+  @Post(':folio/cancelar')
+  @RequirePermissions(MATERIALES_READ)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Cancel order — allowed from en_revision (own or campo), aprobada, pagada (campo only)',
+  })
+  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiResponse({ status: 200, type: OrdenDto })
+  @ApiResponse({ status: 403, description: 'cancel_forbidden — insufficient permission or not owner' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 422, description: 'state_machine_violation — order in terminal state' })
+  cancel(
+    @Param('folio') folio: string,
+    @Body() dto: CancelOrdenDto,
+    @Request() req: any,
+  ): Promise<OrdenDto> {
+    const effectivePermissions: string[] =
+      req.authorization?.effective?.permissions ?? [];
+    const canApprove = effectivePermissions.includes(MATERIALES_APPROVE);
+    return this.ordenesService.cancel(folio, dto, { id: req.user.sub, canApprove });
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /api/v1/materiales/ordenes/:folio/entregar
+  // REQ-ORD-011 — terminal transition pagada → entregada
+  // MUST be declared BEFORE GET :folio
+  // ---------------------------------------------------------------------------
+
+  @Post(':folio/entregar')
+  @RequirePermissions(MATERIALES_DELIVER)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Mark order as delivered — terminal transition (pagada → entregada)' })
+  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiResponse({ status: 200, type: OrdenDto })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 422, description: 'state_machine_violation — order not in pagada' })
+  deliver(
+    @Param('folio') folio: string,
+    @Request() req: any,
+  ): Promise<OrdenDto> {
+    return this.ordenesService.deliver(folio, { id: req.user.sub });
   }
 
   // ---------------------------------------------------------------------------

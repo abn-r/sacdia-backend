@@ -12,6 +12,7 @@ import { computeLineTotal, computeSubtotal, computeTotal } from './totals.calcul
 import { assertTransition, MaterialOrderEstado } from './state-machine';
 import { FolioService } from './folio.service';
 import { StockService } from './stock.service';
+import type { CancelOrdenDto } from './dto/cancel-orden.dto';
 import type { CreateOrdenDto } from './dto/create-orden.dto';
 import type { ListOrdenesQueryDto } from './dto/list-ordenes.query.dto';
 import type { OrdenDto } from './dto/orden.dto';
@@ -581,6 +582,144 @@ export class OrdenesService {
       folio_referencia: updatedOrder.folio_referencia,
       approved_by: actor.id,
     });
+
+    return this.mapOrder(updatedOrder);
+  }
+
+  // -------------------------------------------------------------------------
+  // T3b.5 — cancel  (REQ-ORD-010, REQ-INV-005, SC-08, SC-09)
+  // POST /materiales/ordenes/:folio/cancelar
+  // -------------------------------------------------------------------------
+
+  async cancel(
+    folioOrId: string,
+    dto: CancelOrdenDto,
+    actor: ActorContext,
+  ): Promise<OrdenDto> {
+    // Load order + lines (stock restore needs lines)
+    const order = await this.prisma.materialOrder.findFirst({
+      where: this.orderIdentifierWhere(folioOrId),
+      include: {
+        lines: true,
+        _count: { select: { comprobantes: true } },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: 'order_not_found',
+        message: `Order '${folioOrId}' not found`,
+      });
+    }
+
+    const currentEstado = order.estado as MaterialOrderEstado;
+
+    // REQ-ORD-012: assert valid transition (throws 422 state_machine_violation for terminal states)
+    assertTransition(currentEstado, 'cancelada');
+
+    // Permission rules (spec §3 state machine table):
+    //   en_revision  → director (own) OR campo
+    //   aprobada     → campo only
+    //   pagada       → campo only
+    if (currentEstado === 'en_revision') {
+      // Director can cancel own en_revision order; campo (canApprove) can cancel any
+      if (!actor.canApprove && order.created_by !== actor.id) {
+        throw new ForbiddenException({
+          code: 'cancel_forbidden',
+          message: 'You are not authorized to cancel this order',
+        });
+      }
+    } else {
+      // aprobada or pagada — campo only
+      if (!actor.canApprove) {
+        throw new ForbiddenException({
+          code: 'cancel_forbidden',
+          message: 'Only campo local (materiales:approve) can cancel an approved or paid order',
+        });
+      }
+    }
+
+    const now = new Date();
+    const needsStockRestore = currentEstado === 'aprobada' || currentEstado === 'pagada';
+    const refund_pending = currentEstado === 'pagada';
+
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      // REQ-INV-005: restore stock if order had been approved (stock was decremented)
+      if (needsStockRestore) {
+        await this.stockService.restoreForCancel(tx, order.lines);
+      }
+
+      const updated = await tx.materialOrder.update({
+        where: { id: order.id },
+        data: {
+          estado: 'cancelada',
+          cancelled_at: now,
+          cancelled_by: actor.id,
+          cancel_reason: dto.cancel_reason,
+          ...(refund_pending ? { refund_pending: true } : {}),
+        },
+        include: {
+          lines: true,
+          _count: { select: { comprobantes: true } },
+        },
+      });
+
+      return updated;
+    });
+
+    this.events.logEvent('order.cancelled', {
+      order_id: order.id,
+      previous_state: currentEstado,
+      cancel_reason: dto.cancel_reason,
+    });
+
+    return this.mapOrder(updatedOrder);
+  }
+
+  // -------------------------------------------------------------------------
+  // T3b.6 — deliver  (REQ-ORD-011, SC — terminal transition)
+  // POST /materiales/ordenes/:folio/entregar
+  // -------------------------------------------------------------------------
+
+  async deliver(
+    folioOrId: string,
+    actor: { id: string },
+  ): Promise<OrdenDto> {
+    // Load order (no lines needed — terminal transition, no concurrent dependency)
+    const order = await this.prisma.materialOrder.findFirst({
+      where: this.orderIdentifierWhere(folioOrId),
+      include: {
+        lines: true,
+        _count: { select: { comprobantes: true } },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: 'order_not_found',
+        message: `Order '${folioOrId}' not found`,
+      });
+    }
+
+    // REQ-ORD-012: assert pagada → entregada (throws 422 for any other current state)
+    assertTransition(order.estado as MaterialOrderEstado, 'entregada');
+
+    const now = new Date();
+
+    const updatedOrder = await this.prisma.materialOrder.update({
+      where: { id: order.id },
+      data: {
+        estado: 'entregada',
+        delivered_at: now,
+        delivered_by: actor.id,
+      },
+      include: {
+        lines: true,
+        _count: { select: { comprobantes: true } },
+      },
+    });
+
+    this.events.logEvent('order.delivered', { order_id: order.id });
 
     return this.mapOrder(updatedOrder);
   }
