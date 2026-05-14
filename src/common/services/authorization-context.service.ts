@@ -91,6 +91,7 @@ export type ResolvedAuthorizationProfile = {
     birthday: Date | null;
     baptism: boolean;
     baptism_date: Date | null;
+    blood: string | null;
     user_image: string | null;
     country_id: number | null;
     union_id: number | null;
@@ -262,6 +263,7 @@ export class AuthorizationContextService {
         birthday: true,
         baptism: true,
         baptism_date: true,
+        blood: true,
         user_image: true,
         country_id: true,
         union_id: true,
@@ -409,6 +411,7 @@ export class AuthorizationContextService {
         birthday: user.birthday,
         baptism: user.baptism,
         baptism_date: user.baptism_date,
+        blood: user.blood,
         user_image: user.user_image,
         country_id: user.country_id,
         union_id: user.union_id,
