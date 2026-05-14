@@ -3,57 +3,57 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 // Re-exported from catalogo DTOs and extended with _count.variants for admin list view.
 
 export class InventarioCategoryRefDto {
-  @ApiProperty() id: string;
-  @ApiProperty() slug: string;
-  @ApiProperty() label: string;
+  @ApiProperty() declare id: string;
+  @ApiProperty() declare slug: string;
+  @ApiProperty() declare label: string;
 }
 
 export class InventarioProgramaRefDto {
-  @ApiProperty() id: number;
-  @ApiProperty() label: string;
+  @ApiProperty() declare id: number;
+  @ApiProperty() declare label: string;
 }
 
 export class InventarioVariantOptionDto {
-  @ApiProperty() id: string;
-  @ApiProperty() label: string;
-  @ApiProperty() stock: number;
+  @ApiProperty() declare id: string;
+  @ApiProperty() declare label: string;
+  @ApiProperty() declare stock: number;
 }
 
 export class InventarioVariantDto {
-  @ApiProperty() type: string;
+  @ApiProperty() declare type: string;
   @ApiProperty({ type: [InventarioVariantOptionDto] })
-  options: InventarioVariantOptionDto[];
+  declare options: InventarioVariantOptionDto[];
 }
 
 export class InventarioProductDto {
-  @ApiProperty() id: string;
-  @ApiProperty() sku: string;
-  @ApiProperty() title: string;
+  @ApiProperty() declare id: string;
+  @ApiProperty() declare sku: string;
+  @ApiProperty() declare title: string;
   @ApiPropertyOptional() description?: string | null;
   @ApiProperty({ type: InventarioCategoryRefDto })
-  cat: InventarioCategoryRefDto;
+  declare cat: InventarioCategoryRefDto;
   @ApiProperty({ type: InventarioProgramaRefDto })
-  programa: InventarioProgramaRefDto;
-  @ApiProperty() price_centavos: number;
-  @ApiProperty() stock: number;
-  @ApiProperty() active: boolean;
+  declare programa: InventarioProgramaRefDto;
+  @ApiProperty() declare price_centavos: number;
+  @ApiProperty() declare stock: number;
+  @ApiProperty() declare active: boolean;
   @ApiProperty({
     description: 'Total number of variant records for this product',
   })
-  variant_count: number;
+  declare variant_count: number;
   @ApiPropertyOptional({ type: InventarioVariantDto })
   variants?: InventarioVariantDto | null;
 }
 
 export class PaginatedInventarioProductDto {
-  @ApiProperty({ type: [InventarioProductDto] }) data: InventarioProductDto[];
-  @ApiProperty() total: number;
-  @ApiProperty() page: number;
-  @ApiProperty() pageSize: number;
+  @ApiProperty({ type: [InventarioProductDto] }) declare data: InventarioProductDto[];
+  @ApiProperty() declare total: number;
+  @ApiProperty() declare page: number;
+  @ApiProperty() declare pageSize: number;
 }
 
 export class VariantStockUpdateResponseDto {
   @ApiProperty({ type: InventarioVariantOptionDto })
-  option: InventarioVariantOptionDto;
-  @ApiProperty({ type: InventarioProductDto }) product: InventarioProductDto;
+  declare option: InventarioVariantOptionDto;
+  @ApiProperty({ type: InventarioProductDto }) declare product: InventarioProductDto;
 }

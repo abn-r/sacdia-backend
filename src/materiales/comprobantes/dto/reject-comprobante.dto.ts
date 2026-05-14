@@ -11,7 +11,7 @@ export class RejectComprobanteDto {
     example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
   })
   @IsUUID()
-  comprobante_id: string;
+  declare comprobante_id: string;
 
   /**
    * Human-readable reason for rejection.
@@ -26,5 +26,5 @@ export class RejectComprobanteDto {
   @IsString()
   @MinLength(1)
   @MaxLength(500)
-  reject_reason: string;
+  declare reject_reason: string;
 }

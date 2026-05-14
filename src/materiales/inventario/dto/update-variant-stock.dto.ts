@@ -7,5 +7,5 @@ export class UpdateVariantStockDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  stock: number;
+  declare stock: number;
 }

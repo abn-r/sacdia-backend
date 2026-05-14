@@ -2,47 +2,47 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class DirectorSummaryDto {
   @ApiProperty()
-  nombre: string;
+  declare nombre: string;
 
   @ApiProperty()
-  club: string;
+  declare club: string;
 }
 
 export class OrdenSummaryDto {
   @ApiProperty()
-  id: string;
+  declare id: string;
 
   @ApiProperty({ nullable: true })
-  folio_referencia: string | null;
+  declare folio_referencia: string | null;
 
   @ApiProperty({
     enum: ['en_revision', 'aprobada', 'pagada', 'entregada', 'cancelada'],
   })
-  estado: string;
+  declare estado: string;
 
   @ApiProperty()
-  created_at: Date;
+  declare created_at: Date;
 
   @ApiProperty({ type: DirectorSummaryDto })
-  director: DirectorSummaryDto;
+  declare director: DirectorSummaryDto;
 
   @ApiProperty()
-  subtotal_centavos: number;
+  declare subtotal_centavos: number;
 
   @ApiProperty()
-  total_centavos: number;
+  declare total_centavos: number;
 }
 
 export class PaginatedOrdenesDto {
   @ApiProperty({ type: [OrdenSummaryDto] })
-  data: OrdenSummaryDto[];
+  declare data: OrdenSummaryDto[];
 
   @ApiProperty()
-  total: number;
+  declare total: number;
 
   @ApiProperty()
-  page: number;
+  declare page: number;
 
   @ApiProperty()
-  pageSize: number;
+  declare pageSize: number;
 }

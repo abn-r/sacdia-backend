@@ -14,7 +14,7 @@ export class UpdateOrdenLineDto {
       "'parcial' → qty_disponible must be provided and be >= 1.",
   })
   @IsIn(['disponible', 'parcial', 'agotado'])
-  disponibilidad: 'disponible' | 'parcial' | 'agotado';
+  declare disponibilidad: 'disponible' | 'parcial' | 'agotado';
 
   @ApiPropertyOptional({
     type: Number,

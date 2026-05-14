@@ -20,7 +20,7 @@ export class UploadComprobanteDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  monto_centavos: number;
+  declare monto_centavos: number;
 
   /**
    * Bank reference number / transaction ID declared by the director.
@@ -30,7 +30,7 @@ export class UploadComprobanteDto {
     example: 'TXN-2026-001234',
   })
   @IsString()
-  ref_bancaria_declarada: string;
+  declare ref_bancaria_declarada: string;
 
   /**
    * Date the payment was made (ISO date string, e.g. 2026-05-14).
@@ -40,7 +40,7 @@ export class UploadComprobanteDto {
     example: '2026-05-14',
   })
   @IsDateString()
-  fecha_pago: string;
+  declare fecha_pago: string;
 
   /**
    * Optional file name override — ignored by service (extension derived from MIME).

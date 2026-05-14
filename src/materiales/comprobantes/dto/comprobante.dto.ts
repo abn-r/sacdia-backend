@@ -8,61 +8,61 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class ComprobanteDto {
   @ApiProperty()
-  id: string;
+  declare id: string;
 
   @ApiProperty({
     enum: ['pendiente', 'aprobado', 'rechazado'],
     description: 'Comprobante validation status',
   })
-  status: string;
+  declare status: string;
 
   @ApiProperty()
-  file_name: string;
+  declare file_name: string;
 
   @ApiProperty()
-  mime_type: string;
+  declare mime_type: string;
 
   @ApiProperty()
-  size_bytes: number;
+  declare size_bytes: number;
 
   @ApiProperty({ description: 'Payment amount in centavos' })
-  monto_centavos: number;
+  declare monto_centavos: number;
 
   @ApiProperty({ nullable: true })
-  ref_bancaria_declarada: string | null;
+  declare ref_bancaria_declarada: string | null;
 
   @ApiProperty({ nullable: true })
-  fecha_pago: Date | null;
+  declare fecha_pago: Date | null;
 
   @ApiProperty({
     nullable: true,
     description: 'Signed read URL — 15 min TTL (null on upload response)',
   })
-  signed_url: string | null;
+  declare signed_url: string | null;
 
   @ApiProperty({ description: 'User ID who uploaded this comprobante' })
-  uploaded_by: string;
+  declare uploaded_by: string;
 
   @ApiProperty({
     nullable: true,
     description: 'User ID who validated (approved/rejected) this comprobante',
   })
-  validated_by: string | null;
+  declare validated_by: string | null;
 
   @ApiProperty({
     nullable: true,
     description: 'Reject reason (only when status=rechazado)',
   })
-  reject_reason: string | null;
+  declare reject_reason: string | null;
 
   @ApiProperty()
-  created_at: Date;
+  declare created_at: Date;
 
   @ApiProperty({ nullable: true })
-  validated_at: Date | null;
+  declare validated_at: Date | null;
 
   @ApiProperty({ description: 'Order ID this comprobante belongs to' })
-  order_id: string;
+  declare order_id: string;
 }
 
 /**
@@ -70,7 +70,7 @@ export class ComprobanteDto {
  */
 export class ListComprobantesDto {
   @ApiProperty({ type: [ComprobanteDto] })
-  data: ComprobanteDto[];
+  declare data: ComprobanteDto[];
 }
 
 /**
@@ -80,10 +80,10 @@ export class ListComprobantesDto {
  */
 export class ApproveComprobanteResponseDto {
   @ApiProperty({ type: ComprobanteDto })
-  comprobante: ComprobanteDto;
+  declare comprobante: ComprobanteDto;
 
   // Typed as `object` (not Record<string,unknown>) to be structurally compatible
   // with OrdenDto which has specific typed properties rather than an index signature.
   @ApiProperty()
-  order: object;
+  declare order: object;
 }

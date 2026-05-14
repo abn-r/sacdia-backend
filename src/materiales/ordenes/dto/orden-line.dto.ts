@@ -2,30 +2,30 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class OrdenLineDto {
   @ApiProperty()
-  id: string;
+  declare id: string;
 
   @ApiProperty()
-  product_id: string;
+  declare product_id: string;
 
   @ApiProperty({ nullable: true })
-  variant_option_id: string | null;
+  declare variant_option_id: string | null;
 
   @ApiProperty()
-  qty: number;
+  declare qty: number;
 
   @ApiProperty({
     description: 'Snapshotted price at order creation time (centavos)',
   })
-  price_centavos: number;
+  declare price_centavos: number;
 
   @ApiProperty({
     enum: ['pendiente', 'disponible', 'parcial', 'agotado'],
   })
-  disponibilidad: string;
+  declare disponibilidad: string;
 
   @ApiProperty({ nullable: true })
-  qty_disponible: number | null;
+  declare qty_disponible: number | null;
 
   @ApiProperty({ description: 'Computed line total (centavos)' })
-  line_total_centavos: number;
+  declare line_total_centavos: number;
 }

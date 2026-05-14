@@ -1,57 +1,57 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CategoryRefDto {
-  @ApiProperty() id: string;
-  @ApiProperty() slug: string;
-  @ApiProperty() label: string;
+  @ApiProperty() declare id: string;
+  @ApiProperty() declare slug: string;
+  @ApiProperty() declare label: string;
 }
 
 export class ProgramaRefDto {
-  @ApiProperty() id: number;
-  @ApiProperty() label: string;
+  @ApiProperty() declare id: number;
+  @ApiProperty() declare label: string;
 }
 
 export class VariantOptionDto {
-  @ApiProperty() id: string;
-  @ApiProperty() label: string;
-  @ApiProperty() stock: number;
+  @ApiProperty() declare id: string;
+  @ApiProperty() declare label: string;
+  @ApiProperty() declare stock: number;
 }
 
 export class VariantDto {
-  @ApiProperty() type: string;
-  @ApiProperty({ type: [VariantOptionDto] }) options: VariantOptionDto[];
+  @ApiProperty() declare type: string;
+  @ApiProperty({ type: [VariantOptionDto] }) declare options: VariantOptionDto[];
 }
 
 export class MaterialProductDto {
-  @ApiProperty() id: string;
-  @ApiProperty() sku: string;
-  @ApiProperty() title: string;
+  @ApiProperty() declare id: string;
+  @ApiProperty() declare sku: string;
+  @ApiProperty() declare title: string;
   @ApiPropertyOptional() description?: string | null;
-  @ApiProperty({ type: CategoryRefDto }) cat: CategoryRefDto;
-  @ApiProperty({ type: ProgramaRefDto }) programa: ProgramaRefDto;
-  @ApiProperty() price_centavos: number;
-  @ApiProperty() stock: number;
-  @ApiProperty() active: boolean;
+  @ApiProperty({ type: CategoryRefDto }) declare cat: CategoryRefDto;
+  @ApiProperty({ type: ProgramaRefDto }) declare programa: ProgramaRefDto;
+  @ApiProperty() declare price_centavos: number;
+  @ApiProperty() declare stock: number;
+  @ApiProperty() declare active: boolean;
   @ApiPropertyOptional({ type: VariantDto }) variants?: VariantDto | null;
 }
 
 export class PaginatedMaterialProductDto {
-  @ApiProperty({ type: [MaterialProductDto] }) data: MaterialProductDto[];
-  @ApiProperty() total: number;
-  @ApiProperty() page: number;
-  @ApiProperty() pageSize: number;
+  @ApiProperty({ type: [MaterialProductDto] }) declare data: MaterialProductDto[];
+  @ApiProperty() declare total: number;
+  @ApiProperty() declare page: number;
+  @ApiProperty() declare pageSize: number;
 }
 
 export class MaterialCategoryWithCountDto {
-  @ApiProperty() id: string;
-  @ApiProperty() slug: string;
-  @ApiProperty() label: string;
+  @ApiProperty() declare id: string;
+  @ApiProperty() declare slug: string;
+  @ApiProperty() declare label: string;
   @ApiPropertyOptional() icon?: string | null;
-  @ApiProperty() sort_order: number;
-  @ApiProperty() count: number;
+  @ApiProperty() declare sort_order: number;
+  @ApiProperty() declare count: number;
 }
 
 export class ProgramaDto {
-  @ApiProperty() id: number;
-  @ApiProperty() label: string;
+  @ApiProperty() declare id: number;
+  @ApiProperty() declare label: string;
 }

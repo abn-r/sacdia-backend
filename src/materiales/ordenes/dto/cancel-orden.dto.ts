@@ -14,5 +14,5 @@ export class CancelOrdenDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(500)
-  cancel_reason!: string;
+  declare cancel_reason: string;
 }

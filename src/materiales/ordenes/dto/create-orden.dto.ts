@@ -15,7 +15,7 @@ import { Type } from 'class-transformer';
 export class CreateOrdenLineDto {
   @ApiProperty({ description: 'UUID of the material product' })
   @IsUUID()
-  product_id: string;
+  declare product_id: string;
 
   @ApiProperty({
     required: false,
@@ -28,24 +28,24 @@ export class CreateOrdenLineDto {
   @ApiProperty({ minimum: 1 })
   @IsInt()
   @Min(1)
-  qty: number;
+  declare qty: number;
 }
 
 export class CreateOrdenDto {
   @ApiProperty({ description: 'Club section ID for this order' })
   @IsInt()
-  club_section_id: number;
+  declare club_section_id: number;
 
   @ApiProperty({ type: [CreateOrdenLineDto], minItems: 1 })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CreateOrdenLineDto)
-  lines: CreateOrdenLineDto[];
+  declare lines: CreateOrdenLineDto[];
 
   @ApiProperty({ enum: ['recoger', 'envio'] })
   @IsEnum(['recoger', 'envio'])
-  entrega: 'recoger' | 'envio';
+  declare entrega: 'recoger' | 'envio';
 
   @ApiProperty({ required: false })
   @IsOptional()
