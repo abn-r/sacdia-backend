@@ -198,7 +198,7 @@ describe('UserNotificationPreferencesController', () => {
       mockFcmTokensService.registerToken.mockResolvedValue(tokenRecord);
 
       const result = await controller.registerFcmToken(
-        { token: 'fcm-token-abc', device_type: 'ios' } as any,
+        { token: 'fcm-token-abc', device_type: 'ios' },
         mockRequest,
       );
 

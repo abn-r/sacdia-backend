@@ -59,7 +59,8 @@ export class AnnualFolderBySectionController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Caller lacks the evidence_folders:read permission for this section',
+    description:
+      'Caller lacks the evidence_folders:read permission for this section',
   })
   async getFolderBySection(
     @Param('sectionId', ParseIntPipe) sectionId: number,

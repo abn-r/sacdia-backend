@@ -8,7 +8,10 @@ import { BetterAuthService } from '../better-auth/better-auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListUsersQueryDto, CreateAdminUserDto } from './dto';
 import { AdminUsersService } from './admin-users.service';
-import { AppConflictException, AppForbiddenException } from '../common/errors/app.exception';
+import {
+  AppConflictException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
 
 describe('AdminUsersService', () => {
   let service: AdminUsersService;
@@ -858,7 +861,9 @@ describe('AdminUsersService', () => {
   });
 
   describe('createAdminUser', () => {
-    const buildCreateDto = (overrides: Partial<CreateAdminUserDto> = {}): CreateAdminUserDto => ({
+    const buildCreateDto = (
+      overrides: Partial<CreateAdminUserDto> = {},
+    ): CreateAdminUserDto => ({
       name: 'Juan',
       paternal_last_name: 'Pérez',
       maternal_last_name: 'García',
@@ -939,7 +944,10 @@ describe('AdminUsersService', () => {
       mockPrismaService.roles.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.createAdminUser('actor-admin-uuid', buildCreateDto({ role: 'nonexistent-role' })),
+        service.createAdminUser(
+          'actor-admin-uuid',
+          buildCreateDto({ role: 'nonexistent-role' }),
+        ),
       ).rejects.toThrow();
 
       expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
@@ -950,10 +958,15 @@ describe('AdminUsersService', () => {
       mockPrismaService.users.findUnique.mockReset();
       mockPrismaService.users.findUnique
         .mockResolvedValueOnce(null) // email not found
-        .mockResolvedValueOnce({ users_roles: [{ roles: { role_name: 'assistant-lf' } }] });
+        .mockResolvedValueOnce({
+          users_roles: [{ roles: { role_name: 'assistant-lf' } }],
+        });
 
       await expect(
-        service.createAdminUser('actor-lf-uuid', buildCreateDto({ role: 'admin' })),
+        service.createAdminUser(
+          'actor-lf-uuid',
+          buildCreateDto({ role: 'admin' }),
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
 
       expect(mockBetterAuthService.createUser).not.toHaveBeenCalled();
@@ -964,7 +977,10 @@ describe('AdminUsersService', () => {
         new ServiceUnavailableException('email disabled'),
       );
 
-      const result = await service.createAdminUser('actor-admin-uuid', buildCreateDto());
+      const result = await service.createAdminUser(
+        'actor-admin-uuid',
+        buildCreateDto(),
+      );
 
       expect(result.user_id).toBe('new-user-uuid');
       expect(result.invite_email_sent).toBe(false);
@@ -995,7 +1011,7 @@ describe('AdminUsersService', () => {
       dataRows: (string | number | null)[][],
     ): Buffer => {
       // Dynamic import not possible in Jest without async, so use require.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+
       const XLSX = require('xlsx') as typeof import('xlsx');
       const wb = XLSX.utils.book_new();
       const wsData = [
@@ -1054,20 +1070,38 @@ describe('AdminUsersService', () => {
 
       // Row 1
       mockPrismaService.users.findUnique.mockResolvedValueOnce(null); // email not found
-      mockPrismaService.users.findUnique.mockResolvedValueOnce({ users_roles: adminActorRolesForBulk }); // actor
-      mockBetterAuthService.createUser.mockResolvedValueOnce({ user: { id: 'uid-1', email: 'a@x.com' }, session: {} });
+      mockPrismaService.users.findUnique.mockResolvedValueOnce({
+        users_roles: adminActorRolesForBulk,
+      }); // actor
+      mockBetterAuthService.createUser.mockResolvedValueOnce({
+        user: { id: 'uid-1', email: 'a@x.com' },
+        session: {},
+      });
 
       // Row 2
       mockPrismaService.users.findUnique.mockResolvedValueOnce(null);
-      mockPrismaService.users.findUnique.mockResolvedValueOnce({ users_roles: adminActorRolesForBulk });
-      mockBetterAuthService.createUser.mockResolvedValueOnce({ user: { id: 'uid-2', email: 'b@x.com' }, session: {} });
+      mockPrismaService.users.findUnique.mockResolvedValueOnce({
+        users_roles: adminActorRolesForBulk,
+      });
+      mockBetterAuthService.createUser.mockResolvedValueOnce({
+        user: { id: 'uid-2', email: 'b@x.com' },
+        session: {},
+      });
 
       // Row 3
       mockPrismaService.users.findUnique.mockResolvedValueOnce(null);
-      mockPrismaService.users.findUnique.mockResolvedValueOnce({ users_roles: adminActorRolesForBulk });
-      mockBetterAuthService.createUser.mockResolvedValueOnce({ user: { id: 'uid-3', email: 'c@x.com' }, session: {} });
+      mockPrismaService.users.findUnique.mockResolvedValueOnce({
+        users_roles: adminActorRolesForBulk,
+      });
+      mockBetterAuthService.createUser.mockResolvedValueOnce({
+        user: { id: 'uid-3', email: 'c@x.com' },
+        session: {},
+      });
 
-      mockPrismaService.roles.findFirst.mockResolvedValue({ role_id: 'r1', role_name: 'user' });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'r1',
+        role_name: 'user',
+      });
 
       const buffer = buildXlsxBuffer([
         ['a@x.com', 'Ana', 'Lopez', '', 'user', 1, 12, 34],
@@ -1093,17 +1127,30 @@ describe('AdminUsersService', () => {
 
       // Row 1 (duplicate@x.com — succeeds)
       mockPrismaService.users.findUnique.mockResolvedValueOnce(null);
-      mockPrismaService.users.findUnique.mockResolvedValueOnce({ users_roles: adminActorRolesForBulk });
-      mockBetterAuthService.createUser.mockResolvedValueOnce({ user: { id: 'uid-1', email: 'duplicate@x.com' }, session: {} });
+      mockPrismaService.users.findUnique.mockResolvedValueOnce({
+        users_roles: adminActorRolesForBulk,
+      });
+      mockBetterAuthService.createUser.mockResolvedValueOnce({
+        user: { id: 'uid-1', email: 'duplicate@x.com' },
+        session: {},
+      });
 
       // Row 2 (unique@x.com — succeeds)
       mockPrismaService.users.findUnique.mockResolvedValueOnce(null);
-      mockPrismaService.users.findUnique.mockResolvedValueOnce({ users_roles: adminActorRolesForBulk });
-      mockBetterAuthService.createUser.mockResolvedValueOnce({ user: { id: 'uid-2', email: 'unique@x.com' }, session: {} });
+      mockPrismaService.users.findUnique.mockResolvedValueOnce({
+        users_roles: adminActorRolesForBulk,
+      });
+      mockBetterAuthService.createUser.mockResolvedValueOnce({
+        user: { id: 'uid-2', email: 'unique@x.com' },
+        session: {},
+      });
 
       // Row 3 (duplicate@x.com again — should be caught before createAdminUser)
 
-      mockPrismaService.roles.findFirst.mockResolvedValue({ role_id: 'r1', role_name: 'user' });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'r1',
+        role_name: 'user',
+      });
 
       const buffer = buildXlsxBuffer([
         ['duplicate@x.com', 'Ana', 'Lopez', '', 'user', '', '', ''],
@@ -1131,10 +1178,14 @@ describe('AdminUsersService', () => {
       mockBetterAuthService.createUser.mockReset();
 
       // Simulate createAdminUser throwing conflict
-      mockPrismaService.users.findUnique
-        .mockResolvedValueOnce({ user_id: 'existing' }); // email already exists
+      mockPrismaService.users.findUnique.mockResolvedValueOnce({
+        user_id: 'existing',
+      }); // email already exists
 
-      mockPrismaService.roles.findFirst.mockResolvedValue({ role_id: 'r1', role_name: 'user' });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: 'r1',
+        role_name: 'user',
+      });
 
       const buffer = buildXlsxBuffer([
         ['existing@x.com', 'Ana', 'Lopez', '', 'user', '', '', ''],

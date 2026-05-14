@@ -82,7 +82,10 @@ export class AdminUsersController {
   })
   @ApiResponse({ status: 200, description: 'Lista de usuarios' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires admin or super-admin role',
+  })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'role', required: false, type: String })
   @ApiQuery({ name: 'active', required: false, type: Boolean })
@@ -120,8 +123,13 @@ export class AdminUsersController {
     'Content-Type',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   )
-  @Header('Content-Disposition', 'attachment; filename="plantilla-usuarios.xlsx"')
-  @ApiOperation({ summary: 'Descarga plantilla .xlsx para carga masiva de usuarios' })
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="plantilla-usuarios.xlsx"',
+  )
+  @ApiOperation({
+    summary: 'Descarga plantilla .xlsx para carga masiva de usuarios',
+  })
   @ApiResponse({ status: 200, description: 'Plantilla xlsx descargada' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({ status: 403, description: 'Forbidden — rol no autorizado' })
@@ -141,8 +149,14 @@ export class AdminUsersController {
     summary: 'Obtener detalle de usuario validando alcance por rol del actor',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
-  @ApiResponse({ status: 404, description: 'Usuario no encontrado o fuera del alcance del actor' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires admin or super-admin role',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Usuario no encontrado o fuera del alcance del actor',
+  })
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -195,7 +209,10 @@ export class AdminUsersController {
   @ApiOperation({ summary: 'Approve or reject a user' })
   @ApiResponse({ status: 200, description: 'Approval status updated' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires admin or super-admin role',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateUserApproval(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -210,7 +227,10 @@ export class AdminUsersController {
   @ApiOperation({ summary: 'Update user administrative fields' })
   @ApiResponse({ status: 200, description: 'User updated' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — requires admin or super-admin role' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — requires admin or super-admin role',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateUser(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -235,12 +255,16 @@ export class AdminUsersController {
   @ApiOperation({
     summary: 'Crear usuario manualmente (admin-iniciado, con invite por email)',
   })
-  @ApiResponse({ status: 201, description: 'Usuario creado y email de invite encolado' })
+  @ApiResponse({
+    status: 201,
+    description: 'Usuario creado y email de invite encolado',
+  })
   @ApiResponse({ status: 400, description: 'Validación falló' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — actor sin permiso o intentando crear rol superior',
+    description:
+      'Forbidden — actor sin permiso o intentando crear rol superior',
   })
   @ApiResponse({ status: 409, description: 'Email ya registrado' })
   async createUser(
@@ -270,8 +294,14 @@ export class AdminUsersController {
   @ApiOperation({
     summary: 'Carga masiva de usuarios desde archivo .xlsx o .csv',
   })
-  @ApiResponse({ status: 200, description: 'Resultado por fila (batch partial-success)' })
-  @ApiResponse({ status: 400, description: 'Archivo ausente, tipo inválido, vacío o demasiadas filas' })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado por fila (batch partial-success)',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Archivo ausente, tipo inválido, vacío o demasiadas filas',
+  })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({ status: 403, description: 'Forbidden — rol no autorizado' })
   async bulkCreateUsers(
@@ -291,9 +321,7 @@ export class AdminUsersController {
     }
 
     if (file.size > BULK_MAX_BYTES) {
-      throw new BadRequestException(
-        'El archivo supera el límite de 5 MB',
-      );
+      throw new BadRequestException('El archivo supera el límite de 5 MB');
     }
 
     if (!file.buffer || file.buffer.length === 0) {

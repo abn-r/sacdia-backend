@@ -241,7 +241,10 @@ describe('RbacService', () => {
           superAdminRole.role_id,
           ACTOR_SUPER_ADMIN_ID,
         ),
-      ).resolves.toEqual({ success: true, message: 'Rol removido del usuario' });
+      ).resolves.toEqual({
+        success: true,
+        message: 'Rol removido del usuario',
+      });
     });
   });
 
@@ -862,7 +865,7 @@ describe('RbacService', () => {
       };
 
       await expect(
-        service.updateRole(ROLE_ID, bodyWithName as UpdateRoleDto),
+        service.updateRole(ROLE_ID, bodyWithName),
       ).rejects.toMatchObject({ code: ErrorCode.RBAC_ROLE_NAME_IMMUTABLE });
     });
 

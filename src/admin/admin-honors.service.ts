@@ -107,7 +107,7 @@ export class AdminHonorsService {
       orderBy: { requirement_number: 'asc' },
     });
 
-    return this.buildTree(rows as RawRequirement[]);
+    return this.buildTree(rows);
   }
 
   /**

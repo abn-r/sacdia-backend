@@ -790,7 +790,7 @@ describe('InvestitureService', () => {
         undefined,
         undefined,
         undefined,
-        'CLUB_APPROVED' as any,
+        'CLUB_APPROVED',
       );
 
       const findManyCall =

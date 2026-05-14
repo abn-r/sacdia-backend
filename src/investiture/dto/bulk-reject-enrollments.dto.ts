@@ -32,7 +32,14 @@ export class BulkRejectEnrollmentsDto {
     example: 'Documentación incompleta revisada en sesión de coordinación.',
   })
   @IsString()
-  @IsNotEmpty({ message: i18nValidationMessage('errors.VALIDATION.reject_reason_required') })
-  @MaxLength(1000, { message: i18nValidationMessage('errors.VALIDATION.reject_reason_max_length', { max: 1000 }) })
+  @IsNotEmpty({
+    message: i18nValidationMessage('errors.VALIDATION.reject_reason_required'),
+  })
+  @MaxLength(1000, {
+    message: i18nValidationMessage(
+      'errors.VALIDATION.reject_reason_max_length',
+      { max: 1000 },
+    ),
+  })
   declare comments: string;
 }

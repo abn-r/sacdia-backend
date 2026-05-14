@@ -623,7 +623,7 @@ describe('EvaluationService', () => {
       const result = await service.confirmUnion(
         folderId,
         sectionId,
-        { decision: 'APPROVED' as any },
+        { decision: 'APPROVED' },
         unionActorId,
       );
 
@@ -653,13 +653,13 @@ describe('EvaluationService', () => {
     it('REJECTED_OVERRIDE → status REJECTED, union_* set, lf_* preserved', async () => {
       setupHappyPathMocks(undefined, undefined, {
         status: 'REJECTED',
-        union_decision: 'REJECTED_OVERRIDE' as any,
+        union_decision: 'REJECTED_OVERRIDE',
       });
 
       await service.confirmUnion(
         folderId,
         sectionId,
-        { decision: 'REJECTED_OVERRIDE' as any },
+        { decision: 'REJECTED_OVERRIDE' },
         unionActorId,
       );
 
@@ -696,7 +696,7 @@ describe('EvaluationService', () => {
         service.confirmUnion(
           folderId,
           sectionId,
-          { decision: 'APPROVED' as any },
+          { decision: 'APPROVED' },
           unionActorId,
         ),
       ).rejects.toMatchObject({
@@ -722,7 +722,7 @@ describe('EvaluationService', () => {
           service.confirmUnion(
             folderId,
             sectionId,
-            { decision: 'APPROVED' as any },
+            { decision: 'APPROVED' },
             unionActorId,
           ),
         ).rejects.toMatchObject({
@@ -742,13 +742,13 @@ describe('EvaluationService', () => {
     it('union override preserves original lf_approved_by (LF actor stays on row)', async () => {
       setupHappyPathMocks(undefined, undefined, {
         status: 'REJECTED',
-        union_decision: 'REJECTED_OVERRIDE' as any,
+        union_decision: 'REJECTED_OVERRIDE',
       });
 
       await service.confirmUnion(
         folderId,
         sectionId,
-        { decision: 'REJECTED_OVERRIDE' as any },
+        { decision: 'REJECTED_OVERRIDE' },
         unionActorId,
       );
 
@@ -765,7 +765,7 @@ describe('EvaluationService', () => {
       await service.confirmUnion(
         folderId,
         sectionId,
-        { decision: 'APPROVED' as any }, // no notes field
+        { decision: 'APPROVED' }, // no notes field
         unionActorId,
       );
 
@@ -780,7 +780,7 @@ describe('EvaluationService', () => {
       await service.confirmUnion(
         folderId,
         sectionId,
-        { decision: 'APPROVED' as any, notes: 'Union override note' },
+        { decision: 'APPROVED', notes: 'Union override note' },
         unionActorId,
       );
 
@@ -799,7 +799,7 @@ describe('EvaluationService', () => {
         service.confirmUnion(
           'non-existent',
           sectionId,
-          { decision: 'APPROVED' as any },
+          { decision: 'APPROVED' },
           unionActorId,
         ),
       ).rejects.toMatchObject({ code: ErrorCode.ANNUAL_FOLDER_NOT_FOUND });
@@ -818,7 +818,7 @@ describe('EvaluationService', () => {
         service.confirmUnion(
           folderId,
           sectionId,
-          { decision: 'APPROVED' as any },
+          { decision: 'APPROVED' },
           unionActorId,
         ),
       ).rejects.toMatchObject({
@@ -864,7 +864,7 @@ describe('EvaluationService', () => {
       const result = await service.confirmUnion(
         folderId,
         sectionId,
-        { decision: 'APPROVED' as any },
+        { decision: 'APPROVED' },
         unionActorId,
       );
 
@@ -885,7 +885,7 @@ describe('EvaluationService', () => {
       await service.confirmUnion(
         folderId,
         sectionId,
-        { decision: 'APPROVED' as any },
+        { decision: 'APPROVED' },
         unionActorId,
       );
 
@@ -906,7 +906,7 @@ describe('EvaluationService', () => {
           service.confirmUnion(
             folderId,
             sectionId,
-            { decision: 'APPROVED' as any },
+            { decision: 'APPROVED' },
             'lf-actor-id',
           ),
         ).rejects.toMatchObject({
@@ -923,7 +923,7 @@ describe('EvaluationService', () => {
           service.confirmUnion(
             folderId,
             sectionId,
-            { decision: 'APPROVED' as any },
+            { decision: 'APPROVED' },
             'lf-actor-id',
           ),
         ).rejects.toMatchObject({
@@ -938,7 +938,7 @@ describe('EvaluationService', () => {
           service.confirmUnion(
             folderId,
             sectionId,
-            { decision: 'APPROVED' as any },
+            { decision: 'APPROVED' },
             'no-role-actor',
           ),
         ).rejects.toMatchObject({
@@ -954,7 +954,7 @@ describe('EvaluationService', () => {
         const result = await service.confirmUnion(
           folderId,
           sectionId,
-          { decision: 'APPROVED' as any },
+          { decision: 'APPROVED' },
           unionActorId,
         );
 
@@ -970,7 +970,7 @@ describe('EvaluationService', () => {
         const result = await service.confirmUnion(
           folderId,
           sectionId,
-          { decision: 'APPROVED' as any },
+          { decision: 'APPROVED' },
           unionActorId,
         );
 
@@ -986,7 +986,7 @@ describe('EvaluationService', () => {
           service.confirmUnion(
             folderId,
             sectionId,
-            { decision: 'APPROVED' as any },
+            { decision: 'APPROVED' },
             'lf-actor-id',
           ),
         ).rejects.toMatchObject({

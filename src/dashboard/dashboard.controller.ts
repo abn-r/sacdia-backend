@@ -48,8 +48,14 @@ export class DashboardController {
       },
     },
   })
-  @ApiResponse({ status: 401, description: 'No autorizado — JWT ausente o inválido' })
-  @ApiResponse({ status: 403, description: 'Token válido pero sin acceso al recurso' })
+  @ApiResponse({
+    status: 401,
+    description: 'No autorizado — JWT ausente o inválido',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Token válido pero sin acceso al recurso',
+  })
   async getSummary(@Request() req) {
     return this.dashboardService.getSummary(req.user.sub);
   }

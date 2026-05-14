@@ -188,8 +188,14 @@ describe('AdminReferenceService', () => {
       club_types_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
       club_ideals_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
       activity_types_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
-      relationship_types_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
-      honors_categories_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
+      relationship_types_translations: {
+        upsert: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+      honors_categories_translations: {
+        upsert: jest.fn(),
+        deleteMany: jest.fn(),
+      },
     };
 
     prismaMock.$transaction.mockImplementation(
@@ -294,12 +300,16 @@ describe('AdminReferenceService', () => {
         _count: { honors: 4 },
       };
 
-      prismaMock.honors_categories.findUniqueOrThrow.mockResolvedValue(category);
+      prismaMock.honors_categories.findUniqueOrThrow.mockResolvedValue(
+        category,
+      );
 
       const result = await service.getHonorCategory(3);
 
       expect(result).toEqual(category);
-      expect(prismaMock.honors_categories.findUniqueOrThrow).toHaveBeenCalledWith({
+      expect(
+        prismaMock.honors_categories.findUniqueOrThrow,
+      ).toHaveBeenCalledWith({
         where: { honor_category_id: 3 },
         include: {
           _count: {
@@ -482,8 +492,20 @@ describe('AdminReferenceService', () => {
   describe('listClubIdeals', () => {
     it('should return all club ideals ordered by club type and ideal order (with translations)', async () => {
       const ideals = [
-        { club_ideal_id: 2, name: 'Amor', ideal_order: 1, club_type_id: 1, translations: [] },
-        { club_ideal_id: 4, name: 'Servicio', ideal_order: 2, club_type_id: 1, translations: [] },
+        {
+          club_ideal_id: 2,
+          name: 'Amor',
+          ideal_order: 1,
+          club_type_id: 1,
+          translations: [],
+        },
+        {
+          club_ideal_id: 4,
+          name: 'Servicio',
+          ideal_order: 2,
+          club_type_id: 1,
+          translations: [],
+        },
       ];
 
       prismaMock.club_ideals.findMany.mockResolvedValue(ideals);
@@ -511,14 +533,24 @@ describe('AdminReferenceService', () => {
       const dto = {
         name: 'Polen',
         translations: [
-          { locale: 'pt-BR' as const, name: 'Pólen', description: 'Alergia ao pólen' },
-          { locale: 'en' as const, name: 'Pollen', description: 'Pollen allergy' },
+          {
+            locale: 'pt-BR' as const,
+            name: 'Pólen',
+            description: 'Alergia ao pólen',
+          },
+          {
+            locale: 'en' as const,
+            name: 'Pollen',
+            description: 'Pollen allergy',
+          },
         ],
       };
 
       const result = await service.createAllergy(dto, ACTOR_ID);
 
-      expect(translationMock.validateTranslations).toHaveBeenCalledWith(dto.translations);
+      expect(translationMock.validateTranslations).toHaveBeenCalledWith(
+        dto.translations,
+      );
       expect(prismaMock.allergies.create).toHaveBeenCalledWith({
         data: { name: 'Polen', description: undefined, active: true },
       });
@@ -531,7 +563,9 @@ describe('AdminReferenceService', () => {
         dto.translations,
         ['name', 'description'],
       );
-      expect(cacheMock.invalidate).toHaveBeenCalledWith(CATALOG_CACHE_KEYS.ALLERGIES);
+      expect(cacheMock.invalidate).toHaveBeenCalledWith(
+        CATALOG_CACHE_KEYS.ALLERGIES,
+      );
       expect(result).toEqual(baseAllergy);
     });
 
@@ -623,7 +657,13 @@ describe('AdminReferenceService', () => {
         club_type_id: 1,
         ideal_order: 1,
         ideal: 'El conquistador es leal a Dios.',
-        translations: [{ locale: 'en' as const, name: 'Loyal', ideal: 'The pathfinder is loyal to God.' }],
+        translations: [
+          {
+            locale: 'en' as const,
+            name: 'Loyal',
+            ideal: 'The pathfinder is loyal to God.',
+          },
+        ],
       };
 
       await service.createClubIdeal(dto, ACTOR_ID);
@@ -643,7 +683,13 @@ describe('AdminReferenceService', () => {
       prismaMock.club_types.findUnique.mockResolvedValue(baseClubType);
       prismaMock.club_ideals.create.mockResolvedValue(baseClubIdeal);
 
-      const translations = [{ locale: 'pt-BR' as const, name: 'Leal', ideal: 'O desbravador é leal.' }];
+      const translations = [
+        {
+          locale: 'pt-BR' as const,
+          name: 'Leal',
+          ideal: 'O desbravador é leal.',
+        },
+      ];
       await service.createClubIdeal(
         { name: 'Leal', club_type_id: 1, ideal_order: 1, translations },
         ACTOR_ID,
@@ -727,7 +773,11 @@ describe('AdminReferenceService', () => {
       const dto = {
         name: 'Conquistadores',
         translations: [
-          { locale: 'en' as const, name: 'Pathfinders', description: 'should be ignored by helper' },
+          {
+            locale: 'en' as const,
+            name: 'Pathfinders',
+            description: 'should be ignored by helper',
+          },
         ],
       };
 
@@ -752,7 +802,13 @@ describe('AdminReferenceService', () => {
       const dto = {
         code: 'CULTO',
         name: 'Culto',
-        translations: [{ locale: 'en' as const, name: 'Worship', description: 'Weekly worship service' }],
+        translations: [
+          {
+            locale: 'en' as const,
+            name: 'Worship',
+            description: 'Weekly worship service',
+          },
+        ],
       };
 
       await service.createActivityType(dto, ACTOR_ID);
@@ -779,11 +835,19 @@ describe('AdminReferenceService', () => {
   describe('createRelationshipType', () => {
     it('TC13 - creates relationship type with UUID PK → recordId passed as string (no Int coercion)', async () => {
       prismaMock.relationship_types.findFirst.mockResolvedValue(null);
-      prismaMock.relationship_types.create.mockResolvedValue(baseRelationshipType);
+      prismaMock.relationship_types.create.mockResolvedValue(
+        baseRelationshipType,
+      );
 
       const dto = {
         name: 'Padre',
-        translations: [{ locale: 'en' as const, name: 'Father', description: 'Parent-child relation' }],
+        translations: [
+          {
+            locale: 'en' as const,
+            name: 'Father',
+            description: 'Parent-child relation',
+          },
+        ],
       };
 
       await service.createRelationshipType(dto, ACTOR_ID);
@@ -796,12 +860,18 @@ describe('AdminReferenceService', () => {
 
     it('TC14 - creates relationship type with translations → upsertTranslations called with correct unique name', async () => {
       prismaMock.relationship_types.findFirst.mockResolvedValue(null);
-      prismaMock.relationship_types.create.mockResolvedValue(baseRelationshipType);
+      prismaMock.relationship_types.create.mockResolvedValue(
+        baseRelationshipType,
+      );
 
       const dto = {
         name: 'Padre',
         translations: [
-          { locale: 'pt-BR' as const, name: 'Pai', description: 'Relação pai-filho' },
+          {
+            locale: 'pt-BR' as const,
+            name: 'Pai',
+            description: 'Relação pai-filho',
+          },
         ],
       };
 
@@ -825,13 +895,21 @@ describe('AdminReferenceService', () => {
 
   describe('updateRelationshipType', () => {
     beforeEach(() => {
-      prismaMock.relationship_types.findUnique.mockResolvedValue(baseRelationshipType);
+      prismaMock.relationship_types.findUnique.mockResolvedValue(
+        baseRelationshipType,
+      );
       prismaMock.relationship_types.findFirst.mockResolvedValue(null);
-      prismaMock.relationship_types.update.mockResolvedValue(baseRelationshipType);
+      prismaMock.relationship_types.update.mockResolvedValue(
+        baseRelationshipType,
+      );
     });
 
     it('TC15 - update with translations: [] → upsertTranslations called with empty array (delete-all)', async () => {
-      await service.updateRelationshipType('uuid-rel-type-1', { translations: [] }, ACTOR_ID);
+      await service.updateRelationshipType(
+        'uuid-rel-type-1',
+        { translations: [] },
+        ACTOR_ID,
+      );
 
       expect(translationMock.upsertTranslations).toHaveBeenCalledWith(
         txMock,
@@ -845,7 +923,11 @@ describe('AdminReferenceService', () => {
     });
 
     it('TC16 - update without translations field → upsertTranslations called with undefined (no-op)', async () => {
-      await service.updateRelationshipType('uuid-rel-type-1', { name: 'Madre' }, ACTOR_ID);
+      await service.updateRelationshipType(
+        'uuid-rel-type-1',
+        { name: 'Madre' },
+        ACTOR_ID,
+      );
 
       expect(translationMock.upsertTranslations).toHaveBeenCalledWith(
         txMock,

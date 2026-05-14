@@ -39,7 +39,8 @@ export class LegalRepresentativesController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Access denied: caller is not the user or does not have admin role',
+    description:
+      'Access denied: caller is not the user or does not have admin role',
   })
   @ApiResponse({
     status: 400,
@@ -63,7 +64,8 @@ export class LegalRepresentativesController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Access denied: caller is not the user or does not have admin role',
+    description:
+      'Access denied: caller is not the user or does not have admin role',
   })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async findOne(@Param('userId', ParseUUIDPipe) userId: string) {
@@ -77,7 +79,8 @@ export class LegalRepresentativesController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Access denied: caller is not the user or does not have admin role',
+    description:
+      'Access denied: caller is not the user or does not have admin role',
   })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })
   async update(
@@ -94,7 +97,8 @@ export class LegalRepresentativesController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Access denied: caller is not the user or does not have admin role',
+    description:
+      'Access denied: caller is not the user or does not have admin role',
   })
   @ApiResponse({ status: 404, description: 'Representante no encontrado' })
   async remove(@Param('userId', ParseUUIDPipe) userId: string) {

@@ -62,10 +62,9 @@ export type BackgroundJobPayloadMap = {
 // data-export is NOT a cron job, so it has no cron key.
 // ---------------------------------------------------------------------------
 
-export const MAP_JOB_TO_CRON_KEY: Partial<Record<BackgroundJobName, string>> =
-  {
-    [BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE]:
-      'monthly-reports-auto-generate',
-    [BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH]: 'finance-period-closing',
-    [BackgroundJobName.RANKINGS_RECALCULATE]: 'rankings-recalculate',
-  };
+export const MAP_JOB_TO_CRON_KEY: Partial<Record<BackgroundJobName, string>> = {
+  [BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE]:
+    'monthly-reports-auto-generate',
+  [BackgroundJobName.FINANCE_PERIOD_CLOSE_MONTH]: 'finance-period-closing',
+  [BackgroundJobName.RANKINGS_RECALCULATE]: 'rankings-recalculate',
+};

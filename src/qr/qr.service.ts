@@ -415,7 +415,7 @@ export class QrService {
     await this.prisma.activities.update({
       where: { activity_id: activityId },
       data: {
-        attendees: next as Prisma.InputJsonValue,
+        attendees: next,
         modified_at: new Date(),
       },
     });
@@ -711,7 +711,12 @@ export class QrService {
   ): 'AV' | 'CQ' | 'GM' {
     const source = `${clubName ?? ''} ${sectionName ?? ''}`.toLowerCase();
     if (source.includes('avent')) return 'AV';
-    if (source.includes('guia') || source.includes('guía') || source.includes('mayor')) return 'GM';
+    if (
+      source.includes('guia') ||
+      source.includes('guía') ||
+      source.includes('mayor')
+    )
+      return 'GM';
     if (source.includes('conq')) return 'CQ';
     return 'CQ'; // default — most common section in SACDIA
   }
@@ -766,7 +771,9 @@ export class QrService {
     doc.rect(0, 0, pageW, headerH).fill(palette.primaryDark);
 
     // Accent strip on the right edge
-    doc.rect(pageW - accentStripW, 0, accentStripW, headerH).fill(palette.accent);
+    doc
+      .rect(pageW - accentStripW, 0, accentStripW, headerH)
+      .fill(palette.accent);
 
     // 4pt accent bottom border
     doc.rect(0, headerH - 4, pageW - accentStripW, 4).fill(palette.accent);
@@ -813,7 +820,9 @@ export class QrService {
       // Clip to circle, draw image, restore
       doc.save();
       doc.circle(avatarCx, avatarCy, avatarRadius).clip();
-      doc.image(avatarBuffer, marginH, cursor, { fit: [avatarSize, avatarSize] });
+      doc.image(avatarBuffer, marginH, cursor, {
+        fit: [avatarSize, avatarSize],
+      });
       doc.restore();
     } else {
       // Filled circle in section primary colour
@@ -866,9 +875,14 @@ export class QrService {
         .fillColor('#374151')
         .font('Helvetica')
         .fontSize(12)
-        .text(card.member.current_class, textX, headerH + 16 + avatarSize - doc.currentLineHeight(true) - 2, {
-          width: textW,
-        });
+        .text(
+          card.member.current_class,
+          textX,
+          headerH + 16 + avatarSize - doc.currentLineHeight(true) - 2,
+          {
+            width: textW,
+          },
+        );
     }
 
     // Thin rule below identity block
@@ -895,7 +909,10 @@ export class QrService {
     });
 
     const qrX = marginH + (contentW - qrSize) / 2;
-    doc.image(qrBuffer, qrX, cursor, { fit: [qrSize, qrSize], align: 'center' });
+    doc.image(qrBuffer, qrX, cursor, {
+      fit: [qrSize, qrSize],
+      align: 'center',
+    });
     cursor += qrSize + 10;
 
     // Folio label below QR
@@ -911,7 +928,10 @@ export class QrService {
     const labelColor = '#6B7280';
     const valueColor = '#111827';
 
-    interface GridItem { label: string; value: string }
+    interface GridItem {
+      label: string;
+      value: string;
+    }
     const gridItems: GridItem[] = [
       { label: 'CLUB', value: card.member.club_name ?? 'N/A' },
       { label: 'SECCIÓN', value: card.member.section_name ?? 'N/A' },

@@ -85,10 +85,10 @@ describe('QrController', () => {
     const req = { user: { user_id: 'validator-1' } } as unknown as Request;
 
     await expect(
-      controller.validate(req, { token: 'token-1' } as never),
+      controller.validate(req, { token: 'token-1' }),
     ).resolves.toEqual({ valid: true });
-    await expect(
-      controller.scan(req, { token: 'token-1' } as never),
-    ).resolves.toEqual({ member: { user_id: 'u' } });
+    await expect(controller.scan(req, { token: 'token-1' })).resolves.toEqual({
+      member: { user_id: 'u' },
+    });
   });
 });

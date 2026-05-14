@@ -15,7 +15,7 @@ describe('CatalogCacheService', () => {
       get: jest.fn(),
       set: jest.fn(),
       del: jest.fn(),
-    } as unknown as jest.Mocked<Cache>;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

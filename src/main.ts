@@ -202,10 +202,7 @@ async function bootstrap() {
   const envOrigins = process.env.ALLOWED_ORIGINS?.split(',')
     .map((o) => o.trim())
     .filter(Boolean);
-  const defaultOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-  ];
+  const defaultOrigins = ['http://localhost:5173', 'http://localhost:3000'];
   // In non-production, always allow common local admin dev ports so worktree
   // setups (3001 main, 3002 worktree) work without touching .env.
   const localDevOrigins =
@@ -256,7 +253,9 @@ async function bootstrap() {
   // does NOT require injected services — it reads I18nContext from the CLS store
   // populated by nestjs-i18n middleware. Catches I18nValidationException thrown by
   // I18nValidationPipe and returns translated field-level messages.
-  app.useGlobalFilters(new I18nValidationExceptionFilter({ detailedErrors: true }));
+  app.useGlobalFilters(
+    new I18nValidationExceptionFilter({ detailedErrors: true }),
+  );
 
   // ==========================================
   // SEGURIDAD - Global Filters (Exception Handling)

@@ -72,12 +72,20 @@ describe('BackgroundJobsProcessor — dispatch', () => {
           mockCronLogger.track.mockImplementation(
             async (_key: string, fn: () => Promise<unknown>) => fn(),
           );
-          mockMonthlyReportsService.runAutoGeneration.mockResolvedValue({ itemsProcessed: 1 });
+          mockMonthlyReportsService.runAutoGeneration.mockResolvedValue({
+            itemsProcessed: 1,
+          });
         },
         verify: () => {
-          expect(mockMonthlyReportsService.runAutoGeneration).toHaveBeenCalledTimes(1);
-          expect(mockFinancePeriodService.runMonthlyClosing).not.toHaveBeenCalled();
-          expect(mockRankingsService.recalculateRankings).not.toHaveBeenCalled();
+          expect(
+            mockMonthlyReportsService.runAutoGeneration,
+          ).toHaveBeenCalledTimes(1);
+          expect(
+            mockFinancePeriodService.runMonthlyClosing,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockRankingsService.recalculateRankings,
+          ).not.toHaveBeenCalled();
           expect(mockDataExportService.runExport).not.toHaveBeenCalled();
         },
       },
@@ -86,12 +94,20 @@ describe('BackgroundJobsProcessor — dispatch', () => {
         data: { triggeredAt: new Date().toISOString(), year: 2026, month: 4 },
         expectService: 'finance-period',
         setup: () => {
-          mockFinancePeriodService.runMonthlyClosing.mockResolvedValue({ itemsProcessed: 8 });
+          mockFinancePeriodService.runMonthlyClosing.mockResolvedValue({
+            itemsProcessed: 8,
+          });
         },
         verify: () => {
-          expect(mockFinancePeriodService.runMonthlyClosing).toHaveBeenCalledWith(2026, 4);
-          expect(mockMonthlyReportsService.runAutoGeneration).not.toHaveBeenCalled();
-          expect(mockRankingsService.recalculateRankings).not.toHaveBeenCalled();
+          expect(
+            mockFinancePeriodService.runMonthlyClosing,
+          ).toHaveBeenCalledWith(2026, 4);
+          expect(
+            mockMonthlyReportsService.runAutoGeneration,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockRankingsService.recalculateRankings,
+          ).not.toHaveBeenCalled();
           expect(mockDataExportService.runExport).not.toHaveBeenCalled();
         },
       },
@@ -103,12 +119,20 @@ describe('BackgroundJobsProcessor — dispatch', () => {
           mockCronLogger.track.mockImplementation(
             async (_key: string, fn: () => Promise<unknown>) => fn(),
           );
-          mockRankingsService.recalculateRankings.mockResolvedValue({ updated: 10 });
+          mockRankingsService.recalculateRankings.mockResolvedValue({
+            updated: 10,
+          });
         },
         verify: () => {
-          expect(mockRankingsService.recalculateRankings).toHaveBeenCalledTimes(1);
-          expect(mockMonthlyReportsService.runAutoGeneration).not.toHaveBeenCalled();
-          expect(mockFinancePeriodService.runMonthlyClosing).not.toHaveBeenCalled();
+          expect(mockRankingsService.recalculateRankings).toHaveBeenCalledTimes(
+            1,
+          );
+          expect(
+            mockMonthlyReportsService.runAutoGeneration,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockFinancePeriodService.runMonthlyClosing,
+          ).not.toHaveBeenCalled();
           expect(mockDataExportService.runExport).not.toHaveBeenCalled();
         },
       },
@@ -117,13 +141,24 @@ describe('BackgroundJobsProcessor — dispatch', () => {
         data: { exportId: 'exp-1', userId: 'user-1' },
         expectService: 'data-export',
         setup: () => {
-          mockDataExportService.runExport.mockResolvedValue({ exportId: 'exp-1' });
+          mockDataExportService.runExport.mockResolvedValue({
+            exportId: 'exp-1',
+          });
         },
         verify: () => {
-          expect(mockDataExportService.runExport).toHaveBeenCalledWith('exp-1', 'user-1');
-          expect(mockMonthlyReportsService.runAutoGeneration).not.toHaveBeenCalled();
-          expect(mockFinancePeriodService.runMonthlyClosing).not.toHaveBeenCalled();
-          expect(mockRankingsService.recalculateRankings).not.toHaveBeenCalled();
+          expect(mockDataExportService.runExport).toHaveBeenCalledWith(
+            'exp-1',
+            'user-1',
+          );
+          expect(
+            mockMonthlyReportsService.runAutoGeneration,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockFinancePeriodService.runMonthlyClosing,
+          ).not.toHaveBeenCalled();
+          expect(
+            mockRankingsService.recalculateRankings,
+          ).not.toHaveBeenCalled();
         },
       },
     ];
@@ -164,7 +199,9 @@ describe('BackgroundJobsProcessor — dispatch', () => {
       failedReason: 'some error',
     } as unknown as Job<unknown>;
 
-    expect(() => processor.onFailed(unknownJob, new Error('Failure'))).not.toThrow();
+    expect(() =>
+      processor.onFailed(unknownJob, new Error('Failure')),
+    ).not.toThrow();
     expect(mockCronLogger.trackSkipped).not.toHaveBeenCalled();
   });
 

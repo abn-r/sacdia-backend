@@ -42,7 +42,7 @@ function maskSecretAchievement<
     name: '???',
     description: '???',
     badge_image_key: null,
-  } as T;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +87,8 @@ export class AchievementsController {
   @Get('categories')
   @ApiOperation({
     summary: 'List active achievement categories',
-    description: 'Returns all active achievement categories ordered by display_order.',
+    description:
+      'Returns all active achievement categories ordered by display_order.',
   })
   @ApiResponse({ status: 200, description: 'List of active categories' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })

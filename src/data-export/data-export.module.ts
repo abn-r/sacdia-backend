@@ -11,11 +11,7 @@ import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-qu
  * BackgroundJobsQueueModule and processed by BackgroundJobsProcessor.
  */
 @Module({
-  imports: [
-    PrismaModule,
-    CommonModule,
-    BackgroundJobsQueueModule,
-  ],
+  imports: [PrismaModule, CommonModule, BackgroundJobsQueueModule],
   controllers: [DataExportController],
   providers: [DataExportService],
   exports: [DataExportService],

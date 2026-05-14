@@ -138,7 +138,12 @@ export class TranslationService {
     uniqueIndexName: string,
     recordId: number | string,
     translations:
-      | Array<{ locale: string; name?: string; description?: string; ideal?: string }>
+      | Array<{
+          locale: string;
+          name?: string;
+          description?: string;
+          ideal?: string;
+        }>
       | undefined,
     fields: ('name' | 'description' | 'ideal')[] = ['name', 'description'],
   ): Promise<void> {
@@ -205,7 +210,7 @@ export class TranslationService {
       const { [translationsKey]: _dropped, ...rest } = translated as T &
         Record<TKey, unknown>;
 
-      return rest as Omit<T, TKey>;
+      return rest;
     });
   }
 }

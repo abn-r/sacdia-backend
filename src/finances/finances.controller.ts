@@ -63,7 +63,10 @@ export class FinancesController {
   })
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires finances:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires finances:read',
+  })
   async getCategories(
     @Query('type', new ParseIntPipe({ optional: true })) type?: number,
   ) {
@@ -165,7 +168,10 @@ export class FinancesController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Lista paginada de movimientos' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires finances:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires finances:read',
+  })
   async findByClub(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
@@ -207,7 +213,10 @@ export class FinancesController {
   @ApiQuery({ name: 'month', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Resumen financiero' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires finances:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires finances:read',
+  })
   async getSummary(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
@@ -253,7 +262,10 @@ export class FinancesController {
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento encontrado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires finances:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires finances:read',
+  })
   @ApiResponse({ status: 404, description: 'Movimiento no encontrado' })
   async findOne(@Param('financeId', ParseIntPipe) financeId: number) {
     return this.financesService.findOne(financeId);
@@ -266,7 +278,10 @@ export class FinancesController {
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 200, description: 'Movimiento actualizado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires finances:update' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires finances:update',
+  })
   @ApiResponse({ status: 404, description: 'Movimiento no encontrado' })
   async update(
     @Param('financeId', ParseIntPipe) financeId: number,
@@ -282,7 +297,10 @@ export class FinancesController {
   @ApiOperation({ summary: 'Desactivar movimiento' })
   @ApiParam({ name: 'financeId', type: Number })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires finances:delete' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires finances:delete',
+  })
   @ApiResponse({ status: 404, description: 'Movimiento no encontrado' })
   @ApiQuery({
     name: 'reason',

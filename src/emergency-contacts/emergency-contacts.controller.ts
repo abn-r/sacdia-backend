@@ -37,7 +37,10 @@ export class EmergencyContactsController {
   @ApiResponse({ status: 201, description: 'Contacto creado' })
   @ApiResponse({ status: 400, description: 'Máximo de contactos alcanzado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner or admin access only' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner or admin access only',
+  })
   async create(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() createDto: CreateEmergencyContactDto,
@@ -50,7 +53,10 @@ export class EmergencyContactsController {
   @ApiOperation({ summary: 'Listar contactos de emergencia del usuario' })
   @ApiResponse({ status: 200, description: 'Lista de contactos' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner or admin access only' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner or admin access only',
+  })
   async findAll(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.emergencyContactsService.findAll(userId);
   }
@@ -60,7 +66,10 @@ export class EmergencyContactsController {
   @ApiOperation({ summary: 'Obtener un contacto específico' })
   @ApiResponse({ status: 200, description: 'Contacto encontrado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner or admin access only' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner or admin access only',
+  })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
   async findOne(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -74,7 +83,10 @@ export class EmergencyContactsController {
   @ApiOperation({ summary: 'Actualizar contacto de emergencia' })
   @ApiResponse({ status: 200, description: 'Contacto actualizado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner or admin access only' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner or admin access only',
+  })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
   async update(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -89,7 +101,10 @@ export class EmergencyContactsController {
   @ApiOperation({ summary: 'Eliminar contacto de emergencia (soft delete)' })
   @ApiResponse({ status: 200, description: 'Contacto eliminado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner or admin access only' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner or admin access only',
+  })
   @ApiResponse({ status: 404, description: 'Contacto no encontrado' })
   async remove(
     @Param('userId', ParseUUIDPipe) userId: string,

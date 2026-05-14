@@ -79,7 +79,7 @@ describe('MemberRankingWeightsService', () => {
       camporee_pct: 33.34,
     };
 
-    await expect(service.create(dto as any, USER_ID)).resolves.toBeDefined();
+    await expect(service.create(dto, USER_ID)).resolves.toBeDefined();
     expect(prisma.enrollmentRankingWeight.create).toHaveBeenCalledTimes(1);
   });
 
@@ -113,7 +113,7 @@ describe('MemberRankingWeightsService', () => {
       camporee_pct: 33.33,
     };
 
-    await expect(service.create(dto as any, USER_ID)).rejects.toThrow(
+    await expect(service.create(dto, USER_ID)).rejects.toThrow(
       AppBadRequestException,
     );
     expect(prisma.enrollmentRankingWeight.create).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe('MemberRankingWeightsService', () => {
 
     const result = await service.update(
       ID,
-      { class_pct: 40, investiture_pct: 40 } as any,
+      { class_pct: 40, investiture_pct: 40 },
       USER_ID,
     );
 

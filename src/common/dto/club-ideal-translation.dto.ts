@@ -27,7 +27,8 @@ export class ClubIdealTranslationDto {
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Translated ideal text (long-form). Replaces description for club ideals.',
+    description:
+      'Translated ideal text (long-form). Replaces description for club ideals.',
     example: 'The pathfinder is loyal to God, his leaders and his country.',
   })
   @IsOptional()

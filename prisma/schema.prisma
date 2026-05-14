@@ -401,6 +401,7 @@ model club_types {
   ranking_weight_configs     ranking_weight_configs?
   enrollment_ranking_weights EnrollmentRankingWeight[]
   translations               club_types_translations[]
+  material_products          MaterialProduct[]
 }
 
 model clubs {
@@ -467,6 +468,7 @@ model club_sections {
   member_of_month          member_of_month[]
   enrollment_rankings      EnrollmentRanking[]
   section_rankings         SectionRanking[]
+  material_orders          MaterialOrder[]
 
   @@unique([main_club_id, club_type_id])
 }
@@ -1380,6 +1382,15 @@ model users {
   data_export_requests              data_export_requests[]
   support_reports                   support_reports[]
   enrollment_rankings               EnrollmentRanking[]
+  // materiales relations
+  material_orders_created           MaterialOrder[]             @relation("material_order_creator")
+  material_orders_approved          MaterialOrder[]             @relation("material_order_approver")
+  material_orders_validated         MaterialOrder[]             @relation("material_order_validator")
+  material_orders_delivered         MaterialOrder[]             @relation("material_order_deliverer")
+  material_orders_cancelled         MaterialOrder[]             @relation("material_order_canceller")
+  material_comprobantes_uploaded    MaterialComprobante[]       @relation("material_comprobante_uploader")
+  material_comprobantes_validated   MaterialComprobante[]       @relation("material_comprobante_validator")
+  material_config_updated           MaterialConfig[]            @relation("material_config_updater")
 }
 
 model notification_preferences {
@@ -2985,4 +2996,215 @@ model activity_types_translations {
   @@unique([activity_type_id, locale], map: "activity_types_translations_unique_locale")
   @@index([locale], map: "activity_types_translations_locale_idx")
   @@index([activity_type_id], map: "activity_types_translations_activity_type_id_idx")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MATERIALES MODULE — T1.1 Enums + T1.2 Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MaterialOrderEstado {
+  en_revision
+  aprobada
+  pagada
+  entregada
+  cancelada
+}
+
+enum MaterialDisponibilidad {
+  pendiente
+  disponible
+  parcial
+  agotado
+}
+
+enum MaterialComprobanteStatus {
+  pendiente
+  aprobado
+  rechazado
+}
+
+enum MaterialVariantType {
+  talla
+  color
+}
+
+enum MaterialEntrega {
+  recoger
+  envio
+}
+
+model MaterialCategory {
+  id         String   @id @default(uuid()) @db.Uuid
+  slug       String   @unique @db.VarChar(100)
+  label      String   @db.VarChar(200)
+  icon       String?  @db.VarChar(100)
+  sort_order Int      @default(0)
+  active     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  products MaterialProduct[]
+
+  @@map("material_categories")
+}
+
+model MaterialProduct {
+  id                   String   @id @default(uuid()) @db.Uuid
+  sku                  String   @unique @db.VarChar(100)
+  title                String   @db.VarChar(200)
+  description          String?
+  material_category_id String   @db.Uuid
+  club_type_id         Int
+  price_centavos       Int
+  stock                Int      @default(0)
+  active               Boolean  @default(true)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  category    MaterialCategory    @relation(fields: [material_category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  club_type   club_types          @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
+  variants    MaterialVariant[]
+  order_lines MaterialOrderLine[]
+
+  @@index([active, club_type_id, material_category_id], map: "idx_material_products_active_type_cat")
+  @@index([title], map: "idx_material_products_title")
+  @@map("material_products")
+}
+
+model MaterialVariant {
+  id         String              @id @default(uuid()) @db.Uuid
+  product_id String              @db.Uuid
+  type       MaterialVariantType
+
+  product MaterialProduct         @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  options MaterialVariantOption[]
+
+  @@unique([product_id], map: "uq_material_variant_per_product")
+  @@map("material_variants")
+}
+
+model MaterialVariantOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  variant_id String   @db.Uuid
+  label      String   @db.VarChar(100)
+  stock      Int      @default(0)
+
+  variant     MaterialVariant     @relation(fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order_lines MaterialOrderLine[]
+
+  @@unique([variant_id, label], map: "uq_material_variant_option_label")
+  @@map("material_variant_options")
+}
+
+model MaterialOrder {
+  id                 String              @id @default(uuid()) @db.Uuid
+  folio_referencia   String?             @unique @db.VarChar(12)
+  estado             MaterialOrderEstado @default(en_revision)
+  club_section_id    Int
+  created_by         String              @db.Uuid
+  approved_by        String?             @db.Uuid
+  validated_by       String?             @db.Uuid
+  delivered_by       String?             @db.Uuid
+  cancelled_by       String?             @db.Uuid
+  subtotal_centavos  Int                 @default(0)
+  envio_centavos     Int                 @default(0)
+  total_centavos     Int                 @default(0)
+  entrega            MaterialEntrega
+  notas              String?
+  cancel_reason      String?
+  refund_pending     Boolean             @default(false)
+  // bank config snapshot (denormalized at approval)
+  bank_name          String?
+  bank_account_clabe String?             @db.VarChar(18)
+  account_holder     String?
+  pickup_address     String?
+  created_at         DateTime            @default(now()) @db.Timestamptz(6)
+  approved_at        DateTime?           @db.Timestamptz(6)
+  paid_at            DateTime?           @db.Timestamptz(6)
+  delivered_at       DateTime?           @db.Timestamptz(6)
+  cancelled_at       DateTime?           @db.Timestamptz(6)
+  updated_at         DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  club_section club_sections         @relation(fields: [club_section_id], references: [club_section_id], onDelete: Restrict, onUpdate: NoAction)
+  creator      users                 @relation("material_order_creator", fields: [created_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  approver     users?                @relation("material_order_approver", fields: [approved_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  validator    users?                @relation("material_order_validator", fields: [validated_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  deliverer    users?                @relation("material_order_deliverer", fields: [delivered_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  canceller    users?                @relation("material_order_canceller", fields: [cancelled_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  lines        MaterialOrderLine[]
+  comprobantes MaterialComprobante[]
+
+  @@index([estado, created_at(sort: Desc)], map: "idx_material_orders_estado_created")
+  @@index([club_section_id, estado], map: "idx_material_orders_section_estado")
+  @@index([created_by, created_at(sort: Desc)], map: "idx_material_orders_created_by")
+  @@map("material_orders")
+}
+
+model MaterialOrderLine {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  order_id            String                 @db.Uuid
+  product_id          String                 @db.Uuid
+  variant_option_id   String?                @db.Uuid
+  qty                 Int
+  price_centavos      Int
+  disponibilidad      MaterialDisponibilidad @default(pendiente)
+  qty_disponible      Int?
+  line_total_centavos Int                    @default(0)
+
+  order          MaterialOrder          @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product        MaterialProduct        @relation(fields: [product_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  variant_option MaterialVariantOption? @relation(fields: [variant_option_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([order_id, product_id, variant_option_id], map: "uq_material_order_line")
+  @@index([order_id], map: "idx_material_order_lines_order")
+  @@map("material_order_lines")
+}
+
+model MaterialComprobante {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  order_id               String                    @db.Uuid
+  r2_key                 String
+  file_name              String
+  mime_type              String                    @db.VarChar(100)
+  size_bytes             Int
+  monto_centavos         Int
+  ref_bancaria_declarada String?
+  fecha_pago             DateTime?                 @db.Date
+  status                 MaterialComprobanteStatus @default(pendiente)
+  uploaded_by            String                    @db.Uuid
+  validated_by           String?                   @db.Uuid
+  reject_reason          String?
+  created_at             DateTime                  @default(now()) @db.Timestamptz(6)
+  validated_at           DateTime?                 @db.Timestamptz(6)
+
+  order     MaterialOrder @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  uploader  users         @relation("material_comprobante_uploader", fields: [uploaded_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  validator users?        @relation("material_comprobante_validator", fields: [validated_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([order_id, created_at], map: "idx_material_comprobantes_order_created")
+  @@map("material_comprobantes")
+}
+
+model MaterialFolioCounter {
+  year       Int      @id
+  last_folio Int      @default(0)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@map("material_folio_counters")
+}
+
+model MaterialConfig {
+  id                     Int      @id @default(1)
+  bank_name              String?
+  bank_account_clabe     String?  @db.VarChar(18)
+  account_holder         String?
+  envio_centavos_default Int      @default(0)
+  pickup_address         String?
+  delivery_options       Json     @default("[]")
+  updated_by             String?  @db.Uuid
+  updated_at             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  updater users? @relation("material_config_updater", fields: [updated_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@map("material_config")
 }

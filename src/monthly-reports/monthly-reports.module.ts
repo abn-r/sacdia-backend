@@ -7,10 +7,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 
 @Module({
-  imports: [
-    PrismaModule,
-    BackgroundJobsQueueModule,
-  ],
+  imports: [PrismaModule, BackgroundJobsQueueModule],
   controllers: [MonthlyReportsController],
   providers: [
     MonthlyReportsService,

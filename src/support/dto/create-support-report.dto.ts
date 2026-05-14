@@ -52,7 +52,12 @@ export class CreateSupportReportDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120, { message: i18nValidationMessage('errors.VALIDATION.support_title_max_length', { max: 120 }) })
+  @MaxLength(120, {
+    message: i18nValidationMessage(
+      'errors.VALIDATION.support_title_max_length',
+      { max: 120 },
+    ),
+  })
   title!: string;
 
   @ApiProperty({
@@ -63,7 +68,12 @@ export class CreateSupportReportDto {
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(2000, { message: i18nValidationMessage('errors.VALIDATION.support_description_max_length', { max: 2000 }) })
+  @MaxLength(2000, {
+    message: i18nValidationMessage(
+      'errors.VALIDATION.support_description_max_length',
+      { max: 2000 },
+    ),
+  })
   description!: string;
 
   @ApiProperty({

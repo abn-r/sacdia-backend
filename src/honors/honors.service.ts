@@ -733,9 +733,7 @@ export class HonorsService {
             modified_at: new Date(),
             ...(certificateFile ? { certificate: nextCertificateUrl } : {}),
             ...(documentFile ? { document: nextDocumentUrl } : {}),
-            ...(uploadedImageUrls.length > 0
-              ? { images: finalImages as Prisma.InputJsonValue }
-              : {}),
+            ...(uploadedImageUrls.length > 0 ? { images: finalImages } : {}),
           },
           create: {
             user_id: userId,
@@ -745,7 +743,7 @@ export class HonorsService {
             certificate: certificateFile
               ? nextCertificateUrl
               : previousCertificateUrl,
-            images: finalImages as Prisma.InputJsonValue,
+            images: finalImages,
             document: documentFile
               ? nextDocumentUrl
               : (existingUserHonor?.document ?? null),
@@ -949,8 +947,7 @@ export class HonorsService {
     if (dto.date !== undefined) data.date = new Date(dto.date);
     if (dto.validate !== undefined) data.validate = dto.validate;
     if (dto.certificate !== undefined) data.certificate = dto.certificate || '';
-    if (dto.images !== undefined)
-      data.images = (dto.images || []) as Prisma.InputJsonValue;
+    if (dto.images !== undefined) data.images = dto.images || [];
     if (dto.document !== undefined) data.document = dto.document || null;
 
     return data;

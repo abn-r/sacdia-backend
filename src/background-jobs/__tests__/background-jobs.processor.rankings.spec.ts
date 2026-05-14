@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Job } from 'bullmq';
 import { BackgroundJobsProcessor } from '../background-jobs.processor';
-import { BackgroundJobName, RankingsRecalculatePayload } from '../background-jobs.types';
+import {
+  BackgroundJobName,
+  RankingsRecalculatePayload,
+} from '../background-jobs.types';
 import { MonthlyReportsService } from '../../monthly-reports/monthly-reports.service';
 import { FinancePeriodService } from '../../finances/finance-period.service';
 import { RankingsService } from '../../annual-folders/rankings.service';
@@ -22,7 +25,11 @@ describe('BackgroundJobsProcessor — rankings', () => {
 
   function makeJob(
     data: RankingsRecalculatePayload,
-    overrides: Partial<{ id: string; attemptsMade: number; opts: { attempts: number } }> = {},
+    overrides: Partial<{
+      id: string;
+      attemptsMade: number;
+      opts: { attempts: number };
+    }> = {},
   ): Job<unknown> {
     return {
       id: 'test-job-rk',
@@ -64,8 +71,12 @@ describe('BackgroundJobsProcessor — rankings', () => {
 
   describe('process() — RANKINGS_RECALCULATE', () => {
     it('delegates to cronLogger.track() which calls recalculateRankings()', async () => {
-      mockCronLogger.track.mockImplementation(async (_name: string, fn: () => Promise<unknown>) => fn());
-      mockRankingsService.recalculateRankings.mockResolvedValue({ updated: 42 });
+      mockCronLogger.track.mockImplementation(
+        async (_name: string, fn: () => Promise<unknown>) => fn(),
+      );
+      mockRankingsService.recalculateRankings.mockResolvedValue({
+        updated: 42,
+      });
 
       const job = makeJob({ triggeredAt: new Date().toISOString() });
       await processor.process(job);
@@ -79,11 +90,17 @@ describe('BackgroundJobsProcessor — rankings', () => {
     });
 
     it('propagates errors so BullMQ can retry', async () => {
-      mockCronLogger.track.mockImplementation(async (_name: string, fn: () => Promise<unknown>) => fn());
-      mockRankingsService.recalculateRankings.mockRejectedValue(new Error('Transaction deadlock'));
+      mockCronLogger.track.mockImplementation(
+        async (_name: string, fn: () => Promise<unknown>) => fn(),
+      );
+      mockRankingsService.recalculateRankings.mockRejectedValue(
+        new Error('Transaction deadlock'),
+      );
 
       const job = makeJob({ triggeredAt: new Date().toISOString() });
-      await expect(processor.process(job)).rejects.toThrow('Transaction deadlock');
+      await expect(processor.process(job)).rejects.toThrow(
+        'Transaction deadlock',
+      );
     });
   });
 
@@ -96,7 +113,9 @@ describe('BackgroundJobsProcessor — rankings', () => {
         { attemptsMade: 5, opts: { attempts: 5 } },
       );
 
-      expect(() => processor.onFailed(job, new Error('Max attempts reached'))).not.toThrow();
+      expect(() =>
+        processor.onFailed(job, new Error('Max attempts reached')),
+      ).not.toThrow();
       expect(mockCronLogger.trackSkipped).toHaveBeenCalledWith(
         'rankings-recalculate',
         expect.stringContaining('exhausted 5 attempts'),
@@ -116,7 +135,9 @@ describe('BackgroundJobsProcessor — rankings', () => {
     });
 
     it('handles undefined job gracefully', () => {
-      expect(() => processor.onFailed(undefined, new Error('Unknown'))).not.toThrow();
+      expect(() =>
+        processor.onFailed(undefined, new Error('Unknown')),
+      ).not.toThrow();
     });
   });
 });

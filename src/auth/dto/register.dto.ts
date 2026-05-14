@@ -37,7 +37,11 @@ export class RegisterDto {
       'Contraseña segura (mínimo 8 caracteres, debe incluir mayúscula, minúscula, número y carácter especial)',
   })
   @IsString()
-  @MinLength(8, { message: i18nValidationMessage('errors.VALIDATION.password_min_length', { min: 8 }) })
+  @MinLength(8, {
+    message: i18nValidationMessage('errors.VALIDATION.password_min_length', {
+      min: 8,
+    }),
+  })
   @MaxLength(128)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
     message: i18nValidationMessage('errors.VALIDATION.password_format'),

@@ -241,7 +241,7 @@ describe('AuthController', () => {
       const expected = { status: 'success' };
       mockAuthService.setActiveClubContext.mockResolvedValue(expected);
 
-      const result = await controller.setActiveContext(currentUser, dto as any);
+      const result = await controller.setActiveContext(currentUser, dto);
 
       expect(mockAuthService.setActiveClubContext).toHaveBeenCalledWith(
         'user-123',

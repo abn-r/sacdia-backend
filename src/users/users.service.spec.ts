@@ -448,10 +448,7 @@ describe('UsersService', () => {
           },
         ]
       >;
-      const removeAllergyCall = removeAllergyCalls[0]?.[0] as {
-        where: { user_id: string; allergy_id: number; active: boolean };
-        data: { active: boolean; modified_at: Date };
-      };
+      const removeAllergyCall = removeAllergyCalls[0]?.[0];
 
       expect(removeAllergyCall.where).toEqual({
         user_id: 'u1',
@@ -500,10 +497,7 @@ describe('UsersService', () => {
           },
         ]
       >;
-      const removeDiseaseCall = removeDiseaseCalls[0]?.[0] as {
-        where: { user_id: string; disease_id: number; active: boolean };
-        data: { active: boolean; modified_at: Date };
-      };
+      const removeDiseaseCall = removeDiseaseCalls[0]?.[0];
 
       expect(removeDiseaseCall.where).toEqual({
         user_id: 'u1',
@@ -548,10 +542,7 @@ describe('UsersService', () => {
           },
         ]
       >;
-      const updateCall = updateCalls[0]?.[0] as {
-        where: { user_id: string };
-        data: { user_image: string };
-      };
+      const updateCall = updateCalls[0]?.[0];
 
       expect(mockFileStorageService.upload).toHaveBeenCalledWith(
         StorageBucketAlias.USER_PROFILES,

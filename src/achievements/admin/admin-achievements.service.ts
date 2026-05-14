@@ -34,10 +34,7 @@ import { ErrorCode } from '../../common/errors/error-codes';
 
 type ImageMimeType = 'image/png' | 'image/webp';
 
-const ALLOWED_IMAGE_MIME_TYPES: ImageMimeType[] = [
-  'image/png',
-  'image/webp',
-];
+const ALLOWED_IMAGE_MIME_TYPES: ImageMimeType[] = ['image/png', 'image/webp'];
 
 const MIME_TO_EXT: Record<ImageMimeType, string> = {
   'image/png': 'png',
@@ -253,7 +250,7 @@ export class AdminAchievementsService {
         }),
         ...(dto.active !== undefined && { active: dto.active }),
         modified_at: new Date(),
-      } as Prisma.achievementsUncheckedUpdateInput,
+      },
       include: { category: true },
     });
 

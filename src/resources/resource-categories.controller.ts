@@ -38,7 +38,11 @@ export class ResourceCategoriesController {
   @ApiOperation({ summary: 'Crear categoría de recurso' })
   @ApiResponse({ status: 201, description: 'Categoría creada' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires resource_categories:create' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Insufficient permissions — requires resource_categories:create',
+  })
   async create(@Body() dto: CreateResourceCategoryDto) {
     const data = await this.service.create(dto);
     return { status: 'success', data };
@@ -49,7 +53,10 @@ export class ResourceCategoriesController {
   @ApiOperation({ summary: 'Listar categorías de recursos activas' })
   @ApiResponse({ status: 200, description: 'Lista de categorías' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires resource_categories:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires resource_categories:read',
+  })
   async findAll() {
     const data = await this.service.findAll();
     return { status: 'success', data };
@@ -61,7 +68,10 @@ export class ResourceCategoriesController {
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría encontrada' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires resource_categories:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires resource_categories:read',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const data = await this.service.findOne(id);
@@ -74,7 +84,11 @@ export class ResourceCategoriesController {
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Categoría actualizada' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires resource_categories:update' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Insufficient permissions — requires resource_categories:update',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -91,7 +105,11 @@ export class ResourceCategoriesController {
   @ApiResponse({ status: 200, description: 'Categoría desactivada' })
   @ApiResponse({ status: 400, description: 'Categoría tiene recursos activos' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires resource_categories:delete' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Insufficient permissions — requires resource_categories:delete',
+  })
   @ApiResponse({ status: 404, description: 'Categoría no encontrada' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     const data = await this.service.remove(id);

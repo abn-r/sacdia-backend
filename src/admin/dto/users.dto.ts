@@ -223,32 +223,45 @@ export const ALLOWED_CREATION_ROLES = [
 ] as const;
 
 export class CreateAdminUserDto {
-  @ApiProperty({ example: 'Juan', description: 'Nombre del usuario (1-50 caracteres)' })
+  @ApiProperty({
+    example: 'Juan',
+    description: 'Nombre del usuario (1-50 caracteres)',
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(50)
   name!: string;
 
-  @ApiProperty({ example: 'Pérez', description: 'Apellido paterno (1-50 caracteres)' })
+  @ApiProperty({
+    example: 'Pérez',
+    description: 'Apellido paterno (1-50 caracteres)',
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(50)
   paternal_last_name!: string;
 
-  @ApiPropertyOptional({ example: 'García', description: 'Apellido materno (opcional, máx 50 caracteres)' })
+  @ApiPropertyOptional({
+    example: 'García',
+    description: 'Apellido materno (opcional, máx 50 caracteres)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(50)
   maternal_last_name?: string;
 
-  @ApiProperty({ example: 'juan.perez@example.com', description: 'Email único del usuario (máx 120 caracteres)' })
+  @ApiProperty({
+    example: 'juan.perez@example.com',
+    description: 'Email único del usuario (máx 120 caracteres)',
+  })
   @IsEmail()
   @MaxLength(120)
   email!: string;
 
   @ApiProperty({
     example: 'director-lf',
-    description: 'Rol global a asignar. super-admin no está permitido por este endpoint.',
+    description:
+      'Rol global a asignar. super-admin no está permitido por este endpoint.',
     enum: ALLOWED_CREATION_ROLES,
   })
   @IsString()
@@ -269,7 +282,10 @@ export class CreateAdminUserDto {
   @Min(1)
   union_id?: number;
 
-  @ApiPropertyOptional({ example: 10, description: 'ID de campo local (opcional)' })
+  @ApiPropertyOptional({
+    example: 10,
+    description: 'ID de campo local (opcional)',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -278,13 +294,22 @@ export class CreateAdminUserDto {
 }
 
 export class CreateAdminUserResponseDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'UUID del usuario creado' })
+  @ApiProperty({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'UUID del usuario creado',
+  })
   user_id!: string;
 
-  @ApiProperty({ example: 'juan.perez@example.com', description: 'Email del usuario creado' })
+  @ApiProperty({
+    example: 'juan.perez@example.com',
+    description: 'Email del usuario creado',
+  })
   email!: string;
 
-  @ApiProperty({ example: true, description: 'true si el email de invitación fue encolado exitosamente' })
+  @ApiProperty({
+    example: true,
+    description: 'true si el email de invitación fue encolado exitosamente',
+  })
   invite_email_sent!: boolean;
 }
 

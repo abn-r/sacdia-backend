@@ -22,7 +22,10 @@ const makeRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const overrideRow = makeRow({ ranking_weight_config_id: 'uuid-2', club_type_id: 1 });
+const overrideRow = makeRow({
+  ranking_weight_config_id: 'uuid-2',
+  club_type_id: 1,
+});
 
 // ── mock ───────────────────────────────────────────────────────────────────────
 
@@ -73,13 +76,17 @@ describe('RankingWeightsService', () => {
 
   describe('getById()', () => {
     it('returns row when found', async () => {
-      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(overrideRow);
+      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(
+        overrideRow,
+      );
       await expect(service.getById('uuid-2')).resolves.toBe(overrideRow);
     });
 
     it('throws AppNotFoundException when row is missing', async () => {
       prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(null);
-      await expect(service.getById('missing-uuid')).rejects.toBeInstanceOf(AppNotFoundException);
+      await expect(service.getById('missing-uuid')).rejects.toBeInstanceOf(
+        AppNotFoundException,
+      );
     });
   });
 
@@ -109,9 +116,13 @@ describe('RankingWeightsService', () => {
     });
 
     it('rejects with AppConflictException when override already exists', async () => {
-      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(overrideRow);
+      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(
+        overrideRow,
+      );
 
-      await expect(service.create(validDto)).rejects.toBeInstanceOf(AppConflictException);
+      await expect(service.create(validDto)).rejects.toBeInstanceOf(
+        AppConflictException,
+      );
       expect(prismaMock.ranking_weight_configs.create).not.toHaveBeenCalled();
     });
 
@@ -139,7 +150,9 @@ describe('RankingWeightsService', () => {
 
   describe('update()', () => {
     it('rejects when merged weights do not sum to 100', async () => {
-      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(overrideRow);
+      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(
+        overrideRow,
+      );
       // overrideRow has 25/25/25/25; patching folder_weight=10 => sum=85
       await expect(
         service.update('uuid-2', { folder_weight: 10 }),
@@ -148,10 +161,16 @@ describe('RankingWeightsService', () => {
     });
 
     it('succeeds when merged weights sum to 100', async () => {
-      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(overrideRow);
+      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(
+        overrideRow,
+      );
       // overrideRow 25/25/25/25; patch folder=40 => need to also patch one other to keep sum=100
       // folder:40, finance:25, camporee:25, evidence:10 = 100
-      const updated = { ...overrideRow, folder_weight: 40, evidence_weight: 10 };
+      const updated = {
+        ...overrideRow,
+        folder_weight: 40,
+        evidence_weight: 10,
+      };
       prismaMock.ranking_weight_configs.update.mockResolvedValue(updated);
 
       const result = await service.update(
@@ -179,12 +198,16 @@ describe('RankingWeightsService', () => {
   describe('delete()', () => {
     it('rejects when row is the default global (club_type_id = null)', async () => {
       prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(makeRow()); // club_type_id: null
-      await expect(service.delete('uuid-1')).rejects.toBeInstanceOf(AppBadRequestException);
+      await expect(service.delete('uuid-1')).rejects.toBeInstanceOf(
+        AppBadRequestException,
+      );
       expect(prismaMock.ranking_weight_configs.delete).not.toHaveBeenCalled();
     });
 
     it('deletes when row is an override (club_type_id != null)', async () => {
-      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(overrideRow);
+      prismaMock.ranking_weight_configs.findUnique.mockResolvedValue(
+        overrideRow,
+      );
       prismaMock.ranking_weight_configs.delete.mockResolvedValue(overrideRow);
 
       const result = await service.delete('uuid-2');

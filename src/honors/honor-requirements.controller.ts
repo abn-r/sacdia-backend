@@ -193,7 +193,10 @@ export class UserHonorRequirementsController {
   @ApiParam({ name: 'requirementId', type: Number })
   @ApiResponse({ status: 201, description: 'Evidencia subida' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires user_honors:create' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires user_honors:create',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async uploadEvidence(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -229,7 +232,10 @@ export class UserHonorRequirementsController {
   @ApiParam({ name: 'requirementId', type: Number })
   @ApiResponse({ status: 201, description: 'Enlace de evidencia agregado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires user_honors:create' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires user_honors:create',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async addEvidenceLink(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -253,9 +259,15 @@ export class UserHonorRequirementsController {
   @ApiParam({ name: 'userId', type: String })
   @ApiParam({ name: 'honorId', type: Number })
   @ApiParam({ name: 'requirementId', type: Number })
-  @ApiResponse({ status: 200, description: 'Lista de evidencias del requisito' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de evidencias del requisito',
+  })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires user_honors:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires user_honors:read',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no inscrito en el honor' })
   async getEvidences(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -280,7 +292,10 @@ export class UserHonorRequirementsController {
   @ApiParam({ name: 'evidenceId', type: Number })
   @ApiResponse({ status: 200, description: 'Evidencia eliminada' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires user_honors:delete' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires user_honors:delete',
+  })
   @ApiResponse({ status: 404, description: 'Evidencia no encontrada' })
   async deleteEvidence(
     @Param('userId', ParseUUIDPipe) userId: string,

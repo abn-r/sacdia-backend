@@ -43,7 +43,9 @@ import { PrismaClient } from '@prisma/client';
 // FIDELITY: Consumers only access `ba.api` (already typed as `any` at the call
 // site in better-auth.service.ts) and the `handler` property — both present on
 // Auth<BetterAuthOptions>. The cast does not regress runtime behaviour.
-export function createBetterAuth(prisma: PrismaClient): ReturnType<typeof betterAuth> {
+export function createBetterAuth(
+  prisma: PrismaClient,
+): ReturnType<typeof betterAuth> {
   return betterAuth({
     database: prismaAdapter(prisma, {
       provider: 'postgresql',

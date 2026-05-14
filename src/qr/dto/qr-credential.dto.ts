@@ -28,10 +28,16 @@ export class QrMemberViewDto {
   @ApiPropertyOptional({ nullable: true })
   section_name!: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Most recent active class enrollment name' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Most recent active class enrollment name',
+  })
   current_class?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Blood type string (e.g. "O+", "A-")' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Blood type string (e.g. "O+", "A-")',
+  })
   blood_type?: string | null;
 
   @ApiPropertyOptional({ nullable: true, type: QrEmergencyContactDto })

@@ -557,11 +557,7 @@ export class RbacService {
     });
   }
 
-  async assignRoleToUser(
-    userId: string,
-    roleId: string,
-    actorUserId: string,
-  ) {
+  async assignRoleToUser(userId: string, roleId: string, actorUserId: string) {
     const [user, role] = await Promise.all([
       this.prisma.users.findUnique({
         where: { user_id: userId },
