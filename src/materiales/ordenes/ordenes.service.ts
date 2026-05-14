@@ -9,6 +9,9 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsPublisher } from '../shared/events.publisher';
 import { computeLineTotal, computeSubtotal, computeTotal } from './totals.calculator';
+import { assertTransition, MaterialOrderEstado } from './state-machine';
+import { FolioService } from './folio.service';
+import { StockService } from './stock.service';
 import type { CreateOrdenDto } from './dto/create-orden.dto';
 import type { ListOrdenesQueryDto } from './dto/list-ordenes.query.dto';
 import type { OrdenDto } from './dto/orden.dto';
@@ -35,6 +38,8 @@ export class OrdenesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsPublisher,
+    private readonly folioService: FolioService,
+    private readonly stockService: StockService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -475,6 +480,109 @@ export class OrdenesService {
   ): Promise<PaginatedOrdenesDto> {
     // Force created_by = userId regardless of any permission the caller may have
     return this.list(query, { id: userId, canApprove: false });
+  }
+
+  // -------------------------------------------------------------------------
+  // T3b.4 — approve  (REQ-ORD-007, REQ-ORD-008, REQ-INV-004, REQ-CFG-003,
+  //                    SC-03, SC-04, SC-07, SC-18)
+  // POST /materiales/ordenes/:folio/aprobar
+  // -------------------------------------------------------------------------
+
+  async approve(
+    folioOrId: string,
+    actor: { id: string },
+  ): Promise<OrdenDto> {
+    // Load order + lines
+    const order = await this.prisma.materialOrder.findFirst({
+      where: this.orderIdentifierWhere(folioOrId),
+      include: {
+        lines: true,
+        _count: { select: { comprobantes: true } },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: 'order_not_found',
+        message: `Order '${folioOrId}' not found`,
+      });
+    }
+
+    // REQ-ORD-012: assert valid state transition en_revision → aprobada
+    assertTransition(order.estado as MaterialOrderEstado, 'aprobada');
+
+    // REQ-ORD-007, SC-04: all lines must have a resolved disponibilidad (not 'pendiente')
+    const unresolvedLines = order.lines.filter(
+      (l) => l.disponibilidad === 'pendiente',
+    );
+    if (unresolvedLines.length > 0) {
+      throw new UnprocessableEntityException({
+        code: 'unresolved_lines',
+        message: 'All lines must be resolved before approval',
+        line_ids: unresolvedLines.map((l) => l.id),
+      });
+    }
+
+    // Fetch config snapshot at approval time (REQ-CFG-003)
+    const config = await this.prisma.materialConfig.findUnique({
+      where: { id: 1 },
+      select: {
+        envio_centavos_default: true,
+        bank_name: true,
+        bank_account_clabe: true,
+        account_holder: true,
+        pickup_address: true,
+      },
+    });
+    const envio_centavos = config?.envio_centavos_default ?? 0;
+
+    const now = new Date();
+
+    // Atomic transaction: lock products + allocate folio + decrement stock + update order
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      // REQ-INV-004: decrement stock (throws 409 insufficient_stock on failure)
+      await this.stockService.decrementForApproval(tx, order.lines);
+
+      // REQ-ORD-008: allocate folio with FOR UPDATE row lock on the counter
+      const { folio_referencia } = await this.folioService.allocate(tx, now);
+
+      // Recompute totals using the line_total_centavos already on record
+      const subtotal_centavos = computeSubtotal(order.lines);
+      const total_centavos = computeTotal(subtotal_centavos, envio_centavos);
+
+      // Persist state transition + folio + bank snapshot + totals
+      const updated = await tx.materialOrder.update({
+        where: { id: order.id },
+        data: {
+          estado: 'aprobada',
+          folio_referencia,
+          approved_at: now,
+          approved_by: actor.id,
+          envio_centavos,
+          subtotal_centavos,
+          total_centavos,
+          // Bank config snapshot (REQ-CFG-003, ADR-4)
+          bank_name: config?.bank_name ?? null,
+          bank_account_clabe: config?.bank_account_clabe ?? null,
+          account_holder: config?.account_holder ?? null,
+          pickup_address: config?.pickup_address ?? null,
+        },
+        include: {
+          lines: true,
+          _count: { select: { comprobantes: true } },
+        },
+      });
+
+      return updated;
+    });
+
+    this.events.logEvent('order.approved', {
+      order_id: order.id,
+      folio_referencia: updatedOrder.folio_referencia,
+      approved_by: actor.id,
+    });
+
+    return this.mapOrder(updatedOrder);
   }
 
   // -------------------------------------------------------------------------

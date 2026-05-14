@@ -5,6 +5,8 @@ import { ConfiguracionController } from './configuracion/configuracion.controlle
 import { ConfiguracionService } from './configuracion/configuracion.service';
 import { OrdenesController } from './ordenes/ordenes.controller';
 import { OrdenesService } from './ordenes/ordenes.service';
+import { FolioService } from './ordenes/folio.service';
+import { StockService } from './ordenes/stock.service';
 import { EventsPublisher } from './shared/events.publisher';
 
 /**
@@ -17,8 +19,13 @@ import { EventsPublisher } from './shared/events.publisher';
  * Sub-modules (PR3a):
  *   - ordenes/       → order create + list + detail (POST, GET, GET /historial, GET /:folio)
  *
+ * Sub-modules (PR3b-β — this slice):
+ *   - ordenes/folio.service.ts   → FolioService (allocate folio with FOR UPDATE counter)
+ *   - ordenes/stock.service.ts   → StockService (decrement/restore stock in tx)
+ *   - ordenes/       → approve() + POST :folio/aprobar route
+ *
  * Sub-modules (future PRs):
- *   - ordenes/       → state transitions (PR3b: patchLine, approve, cancel, deliver)
+ *   - ordenes/       → cancel + deliver (PR3b-γ)
  *   - comprobantes/  → payment receipt uploads (PR4)
  *   - inventario/    → product CRUD (PR5)
  *
@@ -28,7 +35,14 @@ import { EventsPublisher } from './shared/events.publisher';
  */
 @Module({
   controllers: [CatalogoController, ConfiguracionController, OrdenesController],
-  providers: [CatalogoService, ConfiguracionService, OrdenesService, EventsPublisher],
+  providers: [
+    CatalogoService,
+    ConfiguracionService,
+    OrdenesService,
+    FolioService,
+    StockService,
+    EventsPublisher,
+  ],
   exports: [EventsPublisher],
 })
 export class MaterialesModule {}

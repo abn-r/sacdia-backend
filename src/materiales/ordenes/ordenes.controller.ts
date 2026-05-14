@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -124,6 +125,30 @@ export class OrdenesController {
     @Request() req: any,
   ): Promise<OrdenDto> {
     return this.ordenesService.patchLine(folio, lineId, dto, { id: req.user.sub });
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /api/v1/materiales/ordenes/:folio/aprobar
+  // REQ-ORD-007, REQ-ORD-008, REQ-INV-004, SC-03, SC-04, SC-07, SC-18
+  // MUST be declared BEFORE GET :folio (static segment :folio/aprobar takes priority)
+  // ---------------------------------------------------------------------------
+
+  @Post(':folio/aprobar')
+  @RequirePermissions(MATERIALES_APPROVE)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Approve order — allocate folio, decrement stock, snapshot config',
+  })
+  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiResponse({ status: 200, type: OrdenDto })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 409, description: 'Insufficient stock' })
+  @ApiResponse({ status: 422, description: 'state_machine_violation or unresolved_lines' })
+  approve(
+    @Param('folio') folio: string,
+    @Request() req: any,
+  ): Promise<OrdenDto> {
+    return this.ordenesService.approve(folio, { id: req.user.sub });
   }
 
   // ---------------------------------------------------------------------------
