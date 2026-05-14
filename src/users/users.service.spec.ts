@@ -6,6 +6,7 @@ import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import { SeverityLevel } from './dto/update-user-medical.dto';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -123,45 +124,37 @@ describe('UsersService', () => {
   });
 
   describe('getAllergies', () => {
-    it('should return active allergies as a flat list', async () => {
+    it('should return active allergies with severity as a flat list', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       mockPrismaService.users_allergies.findMany.mockResolvedValue([
         {
           allergy_id: 2,
-          allergies: {
-            name: 'Polen',
-          },
+          severity: SeverityLevel.leve,
+          allergies: { name: 'Polen' },
         },
         {
           allergy_id: 9,
-          allergies: {
-            name: 'Lactosa',
-          },
+          severity: SeverityLevel.alta,
+          allergies: { name: 'Lactosa' },
         },
       ]);
 
       const result = await service.getAllergies('u1');
 
       expect(mockPrismaService.users_allergies.findMany).toHaveBeenCalledWith({
-        where: {
-          user_id: 'u1',
-          active: true,
-        },
+        where: { user_id: 'u1', active: true },
         select: {
           allergy_id: true,
-          allergies: {
-            select: {
-              name: true,
-            },
-          },
+          severity: true,
+          allergies: { select: { name: true } },
         },
         orderBy: { allergy_id: 'asc' },
       });
       expect(result).toEqual({
         status: 'success',
         data: [
-          { allergy_id: 2, name: 'Polen' },
-          { allergy_id: 9, name: 'Lactosa' },
+          { allergy_id: 2, name: 'Polen', severity: SeverityLevel.leve },
+          { allergy_id: 9, name: 'Lactosa', severity: SeverityLevel.alta },
         ],
       });
     });
@@ -186,45 +179,29 @@ describe('UsersService', () => {
   });
 
   describe('getDiseases', () => {
-    it('should return active diseases as a flat list', async () => {
+    it('should return active diseases with since_year as a flat list', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       mockPrismaService.users_diseases.findMany.mockResolvedValue([
-        {
-          disease_id: 4,
-          diseases: {
-            name: 'Asma',
-          },
-        },
-        {
-          disease_id: 8,
-          diseases: {
-            name: 'Diabetes',
-          },
-        },
+        { disease_id: 4, since_year: 2015, diseases: { name: 'Asma' } },
+        { disease_id: 8, since_year: null, diseases: { name: 'Diabetes' } },
       ]);
 
       const result = await service.getDiseases('u1');
 
       expect(mockPrismaService.users_diseases.findMany).toHaveBeenCalledWith({
-        where: {
-          user_id: 'u1',
-          active: true,
-        },
+        where: { user_id: 'u1', active: true },
         select: {
           disease_id: true,
-          diseases: {
-            select: {
-              name: true,
-            },
-          },
+          since_year: true,
+          diseases: { select: { name: true } },
         },
         orderBy: { disease_id: 'asc' },
       });
       expect(result).toEqual({
         status: 'success',
         data: [
-          { disease_id: 4, name: 'Asma' },
-          { disease_id: 8, name: 'Diabetes' },
+          { disease_id: 4, name: 'Asma', since_year: 2015 },
+          { disease_id: 8, name: 'Diabetes', since_year: null },
         ],
       });
     });
@@ -249,30 +226,29 @@ describe('UsersService', () => {
   });
 
   describe('getMedicines', () => {
-    it('should return active medicines as a flat list', async () => {
+    it('should return active medicines with dose as a flat list', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       mockPrismaService.users_medicines.findMany.mockResolvedValue([
-        {
-          medicine_id: 3,
-          medicines: {
-            name: 'Ibuprofeno',
-          },
-        },
-        {
-          medicine_id: 9,
-          medicines: {
-            name: 'Paracetamol',
-          },
-        },
+        { medicine_id: 3, dose: '5 mg cada 8 hs', medicines: { name: 'Ibuprofeno' } },
+        { medicine_id: 9, dose: null, medicines: { name: 'Paracetamol' } },
       ]);
 
       const result = await service.getMedicines('u1');
 
+      expect(mockPrismaService.users_medicines.findMany).toHaveBeenCalledWith({
+        where: { user_id: 'u1', active: true },
+        select: {
+          medicine_id: true,
+          dose: true,
+          medicines: { select: { name: true } },
+        },
+        orderBy: { medicine_id: 'asc' },
+      });
       expect(result).toEqual({
         status: 'success',
         data: [
-          { medicine_id: 3, name: 'Ibuprofeno' },
-          { medicine_id: 9, name: 'Paracetamol' },
+          { medicine_id: 3, name: 'Ibuprofeno', dose: '5 mg cada 8 hs' },
+          { medicine_id: 9, name: 'Paracetamol', dose: null },
         ],
       });
     });
@@ -289,64 +265,148 @@ describe('UsersService', () => {
   });
 
   describe('updateMedicines', () => {
-    it('should replace the active medicines set for a user', async () => {
+    it('should replace the active medicines set for a user with dose', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       mockPrismaService.medicines.findMany.mockResolvedValue([
         { medicine_id: 3 },
         { medicine_id: 7 },
       ]);
       transactionMock.users_medicines.findMany.mockResolvedValue([
-        {
-          medicine_id: 3,
-          medicines: {
-            name: 'Ibuprofeno',
-            description: 'Analgésico',
-          },
-        },
-        {
-          medicine_id: 7,
-          medicines: {
-            name: 'Paracetamol',
-            description: 'Antipirético',
-          },
-        },
+        { medicine_id: 3, dose: '5 mg cada 8 hs', medicines: { name: 'Ibuprofeno' } },
+        { medicine_id: 7, dose: null, medicines: { name: 'Paracetamol' } },
       ]);
 
       const result = await service.updateMedicines('u1', {
-        medicine_ids: [3, 7],
+        medicines: [
+          { id: 3, dose: '5 mg cada 8 hs' },
+          { id: 7 },
+        ],
       });
 
       expect(result).toEqual({
         status: 'success',
         data: [
-          {
-            medicine_id: 3,
-            medicines: {
-              name: 'Ibuprofeno',
-              description: 'Analgésico',
-            },
-          },
-          {
-            medicine_id: 7,
-            medicines: {
-              name: 'Paracetamol',
-              description: 'Antipirético',
-            },
-          },
+          { medicine_id: 3, name: 'Ibuprofeno', dose: '5 mg cada 8 hs' },
+          { medicine_id: 7, name: 'Paracetamol', dose: null },
         ],
         message: 'Medicamentos actualizados exitosamente',
       });
     });
 
-    it('should reject invalid or inactive medicines', async () => {
+    it('should store NULL dose when dose is omitted', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
-      mockPrismaService.medicines.findMany.mockResolvedValue([
-        { medicine_id: 3 },
+      mockPrismaService.medicines.findMany.mockResolvedValue([{ medicine_id: 3 }]);
+      transactionMock.users_medicines.findFirst.mockResolvedValue(null);
+      transactionMock.users_medicines.findMany.mockResolvedValue([
+        { medicine_id: 3, dose: null, medicines: { name: 'Ibuprofeno' } },
       ]);
 
+      await service.updateMedicines('u1', { medicines: [{ id: 3 }] });
+
+      expect(transactionMock.users_medicines.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ dose: null }),
+        }),
+      );
+    });
+
+    it('should reject invalid or inactive medicines', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.medicines.findMany.mockResolvedValue([{ medicine_id: 3 }]);
+
       await expect(
-        service.updateMedicines('u1', { medicine_ids: [3, 99] }),
+        service.updateMedicines('u1', {
+          medicines: [{ id: 3, dose: '5 mg' }, { id: 99 }],
+        }),
       ).rejects.toMatchObject({ code: ErrorCode.USER_MEDICINE_INVALID });
+    });
+  });
+
+  describe('updateAllergies', () => {
+    it('should replace the active allergies set with severity per entry', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.allergies.findMany.mockResolvedValue([
+        { allergy_id: 1 },
+        { allergy_id: 3 },
+      ]);
+      transactionMock.users_allergies.findFirst.mockResolvedValue(null);
+      transactionMock.users_allergies.findMany.mockResolvedValue([
+        { allergy_id: 1, severity: SeverityLevel.alta, allergies: { name: 'Polen' } },
+        { allergy_id: 3, severity: SeverityLevel.media, allergies: { name: 'Penicilina' } },
+      ]);
+
+      const result = await service.updateAllergies('u1', {
+        allergies: [
+          { id: 1, severity: SeverityLevel.alta },
+          { id: 3, severity: SeverityLevel.media },
+        ],
+      });
+
+      expect(result).toEqual({
+        status: 'success',
+        data: [
+          { allergy_id: 1, name: 'Polen', severity: SeverityLevel.alta },
+          { allergy_id: 3, name: 'Penicilina', severity: SeverityLevel.media },
+        ],
+        message: 'Alergias actualizadas exitosamente',
+      });
+    });
+
+    it('should persist severity on newly created allergy row', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.allergies.findMany.mockResolvedValue([{ allergy_id: 5 }]);
+      transactionMock.users_allergies.findFirst.mockResolvedValue(null);
+      transactionMock.users_allergies.findMany.mockResolvedValue([
+        { allergy_id: 5, severity: SeverityLevel.alta, allergies: { name: 'Latex' } },
+      ]);
+
+      await service.updateAllergies('u1', {
+        allergies: [{ id: 5, severity: SeverityLevel.alta }],
+      });
+
+      expect(transactionMock.users_allergies.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ severity: SeverityLevel.alta }),
+        }),
+      );
+    });
+  });
+
+  describe('updateDiseases', () => {
+    it('should replace the active diseases set with since_year per entry', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.diseases.findMany.mockResolvedValue([{ disease_id: 4 }]);
+      transactionMock.users_diseases.findFirst.mockResolvedValue(null);
+      transactionMock.users_diseases.findMany.mockResolvedValue([
+        { disease_id: 4, since_year: 2018, diseases: { name: 'Asma' } },
+      ]);
+
+      const result = await service.updateDiseases('u1', {
+        diseases: [{ id: 4, since_year: 2018 }],
+      });
+
+      expect(result).toEqual({
+        status: 'success',
+        data: [{ disease_id: 4, name: 'Asma', since_year: 2018 }],
+        message: 'Enfermedades actualizadas exitosamente',
+      });
+    });
+
+    it('should store NULL since_year when since_year is omitted', async () => {
+      mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
+      mockPrismaService.diseases.findMany.mockResolvedValue([{ disease_id: 4 }]);
+      transactionMock.users_diseases.findFirst.mockResolvedValue(null);
+      transactionMock.users_diseases.findMany.mockResolvedValue([
+        { disease_id: 4, since_year: null, diseases: { name: 'Asma' } },
+      ]);
+
+      await service.updateDiseases('u1', { diseases: [{ id: 4 }] });
+
+      expect(transactionMock.users_diseases.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ since_year: null }),
+        }),
+      );
     });
   });
 
@@ -917,16 +977,21 @@ describe('UsersService', () => {
       transactionMock.users_allergies.findMany.mockResolvedValue([
         {
           allergy_id: 1,
-          allergies: { name: 'Polen', description: 'Alergia a polen' },
+          severity: SeverityLevel.leve,
+          allergies: { name: 'Polen' },
         },
         {
           allergy_id: 2,
-          allergies: { name: 'Lactosa', description: null },
+          severity: SeverityLevel.media,
+          allergies: { name: 'Lactosa' },
         },
       ]);
 
       const result = await service.updateAllergies('u1', {
-        allergy_ids: [1, 2],
+        allergies: [
+          { id: 1, severity: SeverityLevel.leve },
+          { id: 2, severity: SeverityLevel.media },
+        ],
       });
 
       expect(result.status).toBe('success');
@@ -938,7 +1003,7 @@ describe('UsersService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       transactionMock.users_allergies.findMany.mockResolvedValue([]);
 
-      const result = await service.updateAllergies('u1', { allergy_ids: [] });
+      const result = await service.updateAllergies('u1', { allergies: [] });
 
       expect(result.status).toBe('success');
       expect(result.data).toHaveLength(0);
@@ -951,7 +1016,12 @@ describe('UsersService', () => {
       ]);
 
       await expect(
-        service.updateAllergies('u1', { allergy_ids: [1, 99] }),
+        service.updateAllergies('u1', {
+          allergies: [
+            { id: 1, severity: SeverityLevel.leve },
+            { id: 99, severity: SeverityLevel.alta },
+          ],
+        }),
       ).rejects.toMatchObject({ code: ErrorCode.USER_ALLERGY_INVALID });
     });
 
@@ -959,11 +1029,13 @@ describe('UsersService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.updateAllergies('missing', { allergy_ids: [1] }),
+        service.updateAllergies('missing', {
+          allergies: [{ id: 1, severity: SeverityLevel.leve }],
+        }),
       ).rejects.toMatchObject({ code: ErrorCode.USER_NOT_FOUND });
     });
 
-    it('TC-UA05 - deduplicates duplicate ids before validation', async () => {
+    it('TC-UA05 - deduplicates duplicate ids before validation (last entry wins)', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       mockPrismaService.allergies.findMany.mockResolvedValue([
         { allergy_id: 3 },
@@ -971,13 +1043,17 @@ describe('UsersService', () => {
       transactionMock.users_allergies.findMany.mockResolvedValue([
         {
           allergy_id: 3,
-          allergies: { name: 'Polen', description: null },
+          severity: SeverityLevel.alta,
+          allergies: { name: 'Polen' },
         },
       ]);
 
-      // [3, 3] should be deduplicated → validateAllergiesExist([3]) → valid
+      // duplicate id 3 — second entry (alta) wins
       const result = await service.updateAllergies('u1', {
-        allergy_ids: [3, 3],
+        allergies: [
+          { id: 3, severity: SeverityLevel.leve },
+          { id: 3, severity: SeverityLevel.alta },
+        ],
       });
 
       expect(result.status).toBe('success');
@@ -999,16 +1075,18 @@ describe('UsersService', () => {
       transactionMock.users_diseases.findMany.mockResolvedValue([
         {
           disease_id: 4,
-          diseases: { name: 'Asma', description: null },
+          since_year: 2018,
+          diseases: { name: 'Asma' },
         },
         {
           disease_id: 8,
-          diseases: { name: 'Diabetes', description: null },
+          since_year: null,
+          diseases: { name: 'Diabetes' },
         },
       ]);
 
       const result = await service.updateDiseases('u1', {
-        disease_ids: [4, 8],
+        diseases: [{ id: 4, since_year: 2018 }, { id: 8 }],
       });
 
       expect(result.status).toBe('success');
@@ -1020,7 +1098,7 @@ describe('UsersService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       transactionMock.users_diseases.findMany.mockResolvedValue([]);
 
-      const result = await service.updateDiseases('u1', { disease_ids: [] });
+      const result = await service.updateDiseases('u1', { diseases: [] });
 
       expect(result.status).toBe('success');
       expect(result.data).toHaveLength(0);
@@ -1033,7 +1111,9 @@ describe('UsersService', () => {
       ]);
 
       await expect(
-        service.updateDiseases('u1', { disease_ids: [4, 77] }),
+        service.updateDiseases('u1', {
+          diseases: [{ id: 4 }, { id: 77 }],
+        }),
       ).rejects.toMatchObject({ code: ErrorCode.USER_DISEASE_INVALID });
     });
 
@@ -1041,7 +1121,7 @@ describe('UsersService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.updateDiseases('missing', { disease_ids: [4] }),
+        service.updateDiseases('missing', { diseases: [{ id: 4 }] }),
       ).rejects.toMatchObject({ code: ErrorCode.USER_NOT_FOUND });
     });
   });

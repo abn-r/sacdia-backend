@@ -1820,14 +1820,15 @@ model member_of_month {
 }
 
 model users_allergies {
-  user_allergies_id Int        @id(map: "user_allergies_pkey") @default(autoincrement())
-  user_id           String     @db.Uuid
+  user_allergies_id Int            @id(map: "user_allergies_pkey") @default(autoincrement())
+  user_id           String         @db.Uuid
   allergy_id        Int?
-  created_at        DateTime   @default(now()) @db.Timestamptz(6)
-  modified_at       DateTime   @default(now()) @db.Timestamptz(6)
-  active            Boolean    @default(true)
-  allergies         allergies? @relation(fields: [allergy_id], references: [allergy_id], map: "user_allergies_allergy_id_fkey")
-  users             users      @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_allergies_user_id_fkey")
+  severity          severity_level @default(leve)
+  created_at        DateTime       @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime       @default(now()) @db.Timestamptz(6)
+  active            Boolean        @default(true)
+  allergies         allergies?     @relation(fields: [allergy_id], references: [allergy_id], map: "user_allergies_allergy_id_fkey")
+  users             users          @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "user_allergies_user_id_fkey")
 
   @@unique([user_id, allergy_id], map: "user_allergies_user_id_allergy_id_key")
 }
@@ -1836,6 +1837,7 @@ model users_diseases {
   user_disease_id Int      @id(map: "user_diseases_pkey") @default(autoincrement())
   user_id         String   @db.Uuid
   disease_id      Int
+  since_year      Int?
   created_at      DateTime @default(now()) @db.Timestamptz(6)
   modified_at     DateTime @default(now()) @db.Timestamptz(6)
   active          Boolean  @default(true)
@@ -1849,6 +1851,7 @@ model users_medicines {
   user_medicine_id Int       @id(map: "user_medicines_pkey") @default(autoincrement())
   user_id          String    @db.Uuid
   medicine_id      Int
+  dose             String?   @db.VarChar(255)
   created_at       DateTime  @default(now()) @db.Timestamptz(6)
   modified_at      DateTime  @default(now()) @db.Timestamptz(6)
   active           Boolean   @default(true)
@@ -1970,6 +1973,12 @@ enum blood_type {
   AB_NEGATIVE @map("AB-")
   O_POSITIVE  @map("O+")
   O_NEGATIVE  @map("O-")
+}
+
+enum severity_level {
+  leve
+  media
+  alta
 }
 
 enum gender {
