@@ -19,6 +19,14 @@ export enum StorageBucketAlias {
    * Env vars: R2_BUCKET_DATA_EXPORTS, R2_PUBLIC_URL_DATA_EXPORTS (required).
    */
   DATA_EXPORTS = 'DATA_EXPORTS',
+  /**
+   * Private bucket for materiales payment receipt files (comprobantes).
+   * Objects are served via signed download URLs (TTL 15 min) — never public.
+   * Key format: materiales/comprobantes/{folio}/{uuid}.{ext}
+   * Env vars: R2_BUCKET_MATERIALES_COMPROBANTES, R2_PUBLIC_URL_MATERIALES_COMPROBANTES (required).
+   * Optional: R2_KEY_PREFIX_MATERIALES_COMPROBANTES (default: 'materiales/comprobantes').
+   */
+  MATERIALES_COMPROBANTES = 'MATERIALES_COMPROBANTES',
 }
 
 export type UploadFileOptions = {

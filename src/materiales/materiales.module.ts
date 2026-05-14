@@ -7,6 +7,8 @@ import { OrdenesController } from './ordenes/ordenes.controller';
 import { OrdenesService } from './ordenes/ordenes.service';
 import { FolioService } from './ordenes/folio.service';
 import { StockService } from './ordenes/stock.service';
+import { ComprobantesController } from './comprobantes/comprobantes.controller';
+import { ComprobantesService } from './comprobantes/comprobantes.service';
 import { EventsPublisher } from './shared/events.publisher';
 
 /**
@@ -24,9 +26,10 @@ import { EventsPublisher } from './shared/events.publisher';
  *   - ordenes/stock.service.ts   → StockService (decrement/restore stock in tx)
  *   - ordenes/       → approve() + POST :folio/aprobar route
  *
+ * Sub-modules (PR4):
+ *   - comprobantes/  → payment receipt upload + approve + reject (POST, GET, POST /aprobar, POST /rechazar)
+ *
  * Sub-modules (future PRs):
- *   - ordenes/       → cancel + deliver (PR3b-γ)
- *   - comprobantes/  → payment receipt uploads (PR4)
  *   - inventario/    → product CRUD (PR5)
  *
  * Infrastructure dependencies:
@@ -34,13 +37,14 @@ import { EventsPublisher } from './shared/events.publisher';
  *   - CommonModule   — provided globally (@Global); supplies FILE_STORAGE_SERVICE for PR4
  */
 @Module({
-  controllers: [CatalogoController, ConfiguracionController, OrdenesController],
+  controllers: [CatalogoController, ConfiguracionController, OrdenesController, ComprobantesController],
   providers: [
     CatalogoService,
     ConfiguracionService,
     OrdenesService,
     FolioService,
     StockService,
+    ComprobantesService,
     EventsPublisher,
   ],
   exports: [EventsPublisher],
