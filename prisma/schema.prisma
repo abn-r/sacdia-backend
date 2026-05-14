@@ -1088,6 +1088,10 @@ model local_fields {
   union_camporee_local_fields union_camporee_local_fields[]
   users                       users[]
   translations                local_fields_translations[]
+  material_products           MaterialProduct[]
+  material_orders             MaterialOrder[]
+  material_folio_counters     MaterialFolioCounter[]
+  material_config             MaterialConfig?
 }
 
 model local_fields_translations {
@@ -3050,7 +3054,8 @@ model MaterialCategory {
 
 model MaterialProduct {
   id                   String   @id @default(uuid()) @db.Uuid
-  sku                  String   @unique @db.VarChar(100)
+  local_field_id       Int
+  sku                  String   @db.VarChar(100)
   title                String   @db.VarChar(200)
   description          String?
   material_category_id String   @db.Uuid
@@ -3061,12 +3066,15 @@ model MaterialProduct {
   created_at           DateTime @default(now()) @db.Timestamptz(6)
   updated_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  local_field local_fields        @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
   category    MaterialCategory    @relation(fields: [material_category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   club_type   club_types          @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
   variants    MaterialVariant[]
   order_lines MaterialOrderLine[]
 
-  @@index([active, club_type_id, material_category_id], map: "idx_material_products_active_type_cat")
+  @@unique([local_field_id, sku], map: "uq_material_products_local_field_sku")
+  @@index([local_field_id, active, club_type_id, material_category_id], map: "idx_material_products_lf_active_type_cat")
+  @@index([local_field_id], map: "idx_material_products_local_field_id")
   @@index([title], map: "idx_material_products_title")
   @@map("material_products")
 }
@@ -3098,7 +3106,8 @@ model MaterialVariantOption {
 
 model MaterialOrder {
   id                 String              @id @default(uuid()) @db.Uuid
-  folio_referencia   String?             @unique @db.VarChar(12)
+  local_field_id     Int
+  folio_referencia   String?             @db.VarChar(12)
   estado             MaterialOrderEstado @default(en_revision)
   club_section_id    Int
   created_by         String              @db.Uuid
@@ -3125,6 +3134,7 @@ model MaterialOrder {
   cancelled_at       DateTime?           @db.Timestamptz(6)
   updated_at         DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
 
+  local_field  local_fields          @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
   club_section club_sections         @relation(fields: [club_section_id], references: [club_section_id], onDelete: Restrict, onUpdate: NoAction)
   creator      users                 @relation("material_order_creator", fields: [created_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
   approver     users?                @relation("material_order_approver", fields: [approved_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
@@ -3134,6 +3144,8 @@ model MaterialOrder {
   lines        MaterialOrderLine[]
   comprobantes MaterialComprobante[]
 
+  @@unique([local_field_id, folio_referencia], map: "uq_material_orders_lf_folio_ref")
+  @@index([local_field_id], map: "idx_material_orders_local_field_id")
   @@index([estado, created_at(sort: Desc)], map: "idx_material_orders_estado_created")
   @@index([club_section_id, estado], map: "idx_material_orders_section_estado")
   @@index([created_by, created_at(sort: Desc)], map: "idx_material_orders_created_by")
@@ -3186,15 +3198,19 @@ model MaterialComprobante {
 }
 
 model MaterialFolioCounter {
-  year       Int      @id
-  last_folio Int      @default(0)
-  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  local_field_id Int
+  year           Int
+  last_folio     Int      @default(0)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  local_field local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([local_field_id, year])
   @@map("material_folio_counters")
 }
 
 model MaterialConfig {
-  id                     Int      @id @default(1)
+  local_field_id         Int      @id
   bank_name              String?
   bank_account_clabe     String?  @db.VarChar(18)
   account_holder         String?
@@ -3204,7 +3220,8 @@ model MaterialConfig {
   updated_by             String?  @db.Uuid
   updated_at             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  updater users? @relation("material_config_updater", fields: [updated_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  local_field local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+  updater     users?       @relation("material_config_updater", fields: [updated_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@map("material_config")
 }
