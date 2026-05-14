@@ -29,7 +29,7 @@ import {
 @ApiTags('Materiales — Catálogo')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@AuthorizationResource({ type: 'global' })
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('materiales/catalogo')
 export class CatalogoController {
   constructor(private readonly cataloService: CatalogoService) {}

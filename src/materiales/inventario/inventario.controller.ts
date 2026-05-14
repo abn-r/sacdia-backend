@@ -39,7 +39,7 @@ import {
 @ApiTags('Materiales — Inventario')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@AuthorizationResource({ type: 'global' })
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('materiales/inventario')
 export class InventarioController {
   constructor(private readonly inventarioService: InventarioService) {}

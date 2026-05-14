@@ -45,7 +45,7 @@ import { ComprobanteFileValidationPipe } from './comprobante-file-validation.pip
 @ApiTags('Materiales — Comprobantes')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@AuthorizationResource({ type: 'global' })
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('materiales/comprobantes')
 export class ComprobantesController {
   constructor(private readonly comprobantesService: ComprobantesService) {}

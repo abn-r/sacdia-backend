@@ -40,7 +40,7 @@ import { PaginatedOrdenesDto } from './dto/orden-summary.dto';
 @ApiTags('Materiales — Órdenes')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@AuthorizationResource({ type: 'global' })
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('materiales/ordenes')
 export class OrdenesController {
   constructor(private readonly ordenesService: OrdenesService) {}

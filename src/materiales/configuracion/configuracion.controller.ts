@@ -25,7 +25,7 @@ import { ConfigDto } from './dto/config.dto';
 @ApiTags('Materiales — Configuración')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@AuthorizationResource({ type: 'global' })
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('materiales/configuracion')
 export class ConfiguracionController {
   constructor(private readonly configuracionService: ConfiguracionService) {}
