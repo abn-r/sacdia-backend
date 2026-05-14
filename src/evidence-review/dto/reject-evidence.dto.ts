@@ -10,7 +10,14 @@ export class RejectEvidenceDto {
     example: 'La imagen no es legible. Por favor sube una foto más clara.',
   })
   @IsString()
-  @MinLength(1, { message: i18nValidationMessage('errors.VALIDATION.reject_reason_required') })
-  @MaxLength(1000, { message: i18nValidationMessage('errors.VALIDATION.reject_reason_max_length', { max: 1000 }) })
+  @MinLength(1, {
+    message: i18nValidationMessage('errors.VALIDATION.reject_reason_required'),
+  })
+  @MaxLength(1000, {
+    message: i18nValidationMessage(
+      'errors.VALIDATION.reject_reason_max_length',
+      { max: 1000 },
+    ),
+  })
   declare reason: string;
 }

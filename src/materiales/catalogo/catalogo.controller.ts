@@ -13,7 +13,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions } from '../../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import { MATERIALES_READ } from '../shared/permissions';
 import { CatalogoService } from './catalogo.service';

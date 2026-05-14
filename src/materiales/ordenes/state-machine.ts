@@ -15,12 +15,15 @@ export type MaterialOrderEstado =
  * Allowed state transitions.
  * Key = current state. Value = array of reachable next states.
  */
-export const ALLOWED_TRANSITIONS: Record<MaterialOrderEstado, MaterialOrderEstado[]> = {
+export const ALLOWED_TRANSITIONS: Record<
+  MaterialOrderEstado,
+  MaterialOrderEstado[]
+> = {
   en_revision: ['aprobada', 'cancelada'],
   aprobada: ['pagada', 'cancelada'],
   pagada: ['entregada', 'cancelada'],
-  entregada: [],    // terminal
-  cancelada: [],    // terminal
+  entregada: [], // terminal
+  cancelada: [], // terminal
 };
 
 /**

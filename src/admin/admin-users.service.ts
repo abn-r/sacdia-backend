@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -682,7 +687,10 @@ export class AdminUsersService {
    * Hierarchy (highest to lowest):
    *   super-admin > admin > director-dia/assistant-dia > director-union/assistant-union > director-lf/assistant-lf
    */
-  private actorCanCreateRole(actorRoles: string[], targetRole: string): boolean {
+  private actorCanCreateRole(
+    actorRoles: string[],
+    targetRole: string,
+  ): boolean {
     return this.resolveAllowedTargetRoles(actorRoles).includes(targetRole);
   }
 
@@ -769,7 +777,10 @@ export class AdminUsersService {
       where: { user_id: actorId },
       select: {
         users_roles: {
-          where: { active: true, roles: { active: true, role_category: role_category.GLOBAL } },
+          where: {
+            active: true,
+            roles: { active: true, role_category: role_category.GLOBAL },
+          },
           select: { roles: { select: { role_name: true } } },
         },
       },
@@ -813,7 +824,9 @@ export class AdminUsersService {
       profileData.unions = { connect: { union_id: dto.union_id } };
     }
     if (dto.local_field_id !== undefined) {
-      profileData.local_fields = { connect: { local_field_id: dto.local_field_id } };
+      profileData.local_fields = {
+        connect: { local_field_id: dto.local_field_id },
+      };
     }
 
     // 7. Assign global role — run profile update and role assignment atomically
@@ -1273,8 +1286,10 @@ export class AdminUsersService {
     }
 
     // 2. Validate headers (case-insensitive)
-    const headerRow = (rows[0] as unknown[]).map((h) =>
-      String(h ?? '').trim().toLowerCase(),
+    const headerRow = rows[0].map((h) =>
+      String(h ?? '')
+        .trim()
+        .toLowerCase(),
     );
     const normalizedExpected = EXPECTED_HEADERS.map((h) => h.toLowerCase());
     const invalidHeaders = normalizedExpected.filter(
@@ -1310,7 +1325,7 @@ export class AdminUsersService {
     const getCell = (row: unknown[], colName: string): string => {
       const idx = colIndex(colName);
       if (idx < 0) return '';
-      return String((row as unknown[])[idx] ?? '').trim();
+      return String(row[idx] ?? '').trim();
     };
 
     const parseOptionalInt = (value: string): number | undefined => {
@@ -1321,7 +1336,7 @@ export class AdminUsersService {
 
     for (let i = 0; i < dataRows.length; i++) {
       const rowNumber = i + 2; // 1-indexed, row 1 is headers
-      const row = dataRows[i] as unknown[];
+      const row = dataRows[i];
 
       const rawEmail = getCell(row, 'email').toLowerCase();
       const name = getCell(row, 'name');
@@ -1343,7 +1358,8 @@ export class AdminUsersService {
           email: rawEmail || null,
           status: 'error',
           error_code: 'VALIDATION_FAILED',
-          error_message: 'Campos requeridos faltantes: email, name, paternal_last_name, role',
+          error_message:
+            'Campos requeridos faltantes: email, name, paternal_last_name, role',
         });
         failed++;
         continue;
@@ -1432,7 +1448,8 @@ export class AdminUsersService {
             email: rawEmail,
             status: 'error',
             error_code: 'FORBIDDEN_ROLE_FOR_ACTOR',
-            error_message: 'El actor no tiene permiso para crear usuarios con ese rol',
+            error_message:
+              'El actor no tiene permiso para crear usuarios con ese rol',
           });
         } else {
           const message =
@@ -1514,16 +1531,7 @@ export class AdminUsersService {
         'union_id',
         'local_field_id',
       ],
-      [
-        'juan@ejemplo.com',
-        'Juan',
-        'Pérez',
-        'López',
-        exampleRole,
-        1,
-        12,
-        34,
-      ],
+      ['juan@ejemplo.com', 'Juan', 'Pérez', 'López', exampleRole, 1, 12, 34],
     ];
 
     const usersSheet = XLSX.utils.aoa_to_sheet(usersData);

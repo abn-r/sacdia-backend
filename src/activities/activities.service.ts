@@ -773,7 +773,7 @@ export class ActivitiesService {
     const updated = await this.prisma.activities.update({
       where: { activity_id: activityId },
       data: {
-        attendees: attendees as Prisma.InputJsonValue,
+        attendees: attendees,
         modified_at: new Date(),
       },
     });

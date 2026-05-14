@@ -287,13 +287,23 @@ describe('ClubsService', () => {
 
     it('resolves profile image URL for members with user_image', async () => {
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
-        { ...makeAssignment('director'), users: { ...makeAssignment('director').users, user_image: 'path/to/img.jpg' } },
+        {
+          ...makeAssignment('director'),
+          users: {
+            ...makeAssignment('director').users,
+            user_image: 'path/to/img.jpg',
+          },
+        },
       ]);
-      mockFileStorageService.getSignedDownloadUrl.mockResolvedValue('https://cdn.example.com/signed');
+      mockFileStorageService.getSignedDownloadUrl.mockResolvedValue(
+        'https://cdn.example.com/signed',
+      );
 
       const result = await service.getClubLeadership(1);
 
-      expect(result.data.director?.user_image).toBe('https://cdn.example.com/signed');
+      expect(result.data.director?.user_image).toBe(
+        'https://cdn.example.com/signed',
+      );
     });
   });
 
@@ -472,7 +482,11 @@ describe('ClubsService', () => {
     });
 
     it('remove — calls recordEvent with DELETED action', async () => {
-      const existingClub = { club_id: 3, name: 'Club a eliminar', active: true };
+      const existingClub = {
+        club_id: 3,
+        name: 'Club a eliminar',
+        active: true,
+      };
       mockPrismaService.clubs.findUnique.mockResolvedValue(existingClub);
       mockPrismaService.clubs.update.mockResolvedValue({
         ...existingClub,
@@ -590,11 +604,17 @@ describe('ClubsService', () => {
 
   describe('getClubHistory', () => {
     it('delegates to AuditLogsService.listByClub with parsed cursor', async () => {
-      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1, name: 'Club' });
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_id: 1,
+        name: 'Club',
+      });
       const mockResult = { items: [], next_cursor: null };
       mockAuditLogsService.listByClub.mockResolvedValue(mockResult);
 
-      const result = await service.getClubHistory(1, { limit: 10, cursor: '50' });
+      const result = await service.getClubHistory(1, {
+        limit: 10,
+        cursor: '50',
+      });
 
       expect(mockAuditLogsService.listByClub).toHaveBeenCalledWith(1, {
         limit: 10,

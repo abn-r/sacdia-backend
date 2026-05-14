@@ -227,7 +227,7 @@ export class CatalogsService {
     };
 
     if (category && (category === 'GLOBAL' || category === 'CLUB')) {
-      whereClause.role_category = category as role_category;
+      whereClause.role_category = category;
     }
 
     return this.catalogCache.getOrSet(

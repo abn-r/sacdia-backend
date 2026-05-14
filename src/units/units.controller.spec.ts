@@ -90,7 +90,7 @@ describe('UnitsController', () => {
       const mockUnit = { unit_id: 1, ...dto };
       mockUnitsService.create.mockResolvedValue(mockUnit);
 
-      const result = await controller.create(1, dto as any);
+      const result = await controller.create(1, dto);
 
       expect(mockUnitsService.create).toHaveBeenCalledWith(1, dto);
       expect(result).toEqual(mockUnit);
@@ -143,7 +143,7 @@ describe('UnitsController', () => {
       };
       mockUnitsService.addMember.mockResolvedValue(mockMember);
 
-      const result = await controller.addMember(1, 5, dto as any);
+      const result = await controller.addMember(1, 5, dto);
 
       expect(mockUnitsService.addMember).toHaveBeenCalledWith(5, dto);
       expect(result).toEqual(mockMember);

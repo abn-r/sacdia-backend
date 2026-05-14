@@ -13,7 +13,9 @@ export class OrdenLineDto {
   @ApiProperty()
   qty: number;
 
-  @ApiProperty({ description: 'Snapshotted price at order creation time (centavos)' })
+  @ApiProperty({
+    description: 'Snapshotted price at order creation time (centavos)',
+  })
   price_centavos: number;
 
   @ApiProperty({

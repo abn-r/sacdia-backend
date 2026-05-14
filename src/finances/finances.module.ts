@@ -7,16 +7,9 @@ import { ClubRolesGuard } from '../common/guards';
 import { BackgroundJobsQueueModule } from '../background-jobs/background-jobs-queue.module';
 
 @Module({
-  imports: [
-    PrismaModule,
-    BackgroundJobsQueueModule,
-  ],
+  imports: [PrismaModule, BackgroundJobsQueueModule],
   controllers: [FinancesController],
-  providers: [
-    FinancesService,
-    FinancePeriodService,
-    ClubRolesGuard,
-  ],
+  providers: [FinancesService, FinancePeriodService, ClubRolesGuard],
   exports: [FinancesService, FinancePeriodService],
 })
 export class FinancesModule {}

@@ -219,7 +219,10 @@ describe('AdminGeographyService', () => {
       prismaMock.countries.findFirst.mockResolvedValue(null);
       prismaMock.countries.create.mockResolvedValue(baseCountry);
 
-      await service.createCountry({ name: 'Argentina', abbreviation: 'AR' }, ACTOR_ID);
+      await service.createCountry(
+        { name: 'Argentina', abbreviation: 'AR' },
+        ACTOR_ID,
+      );
 
       expect(translationMock.upsertTranslations).toHaveBeenCalledWith(
         txMock,
@@ -240,7 +243,11 @@ describe('AdminGeographyService', () => {
 
       await expect(
         service.createCountry(
-          { name: 'Argentina', abbreviation: 'AR', translations: [{ locale: 'es' as any, name: 'X' }] },
+          {
+            name: 'Argentina',
+            abbreviation: 'AR',
+            translations: [{ locale: 'es' as any, name: 'X' }],
+          },
           ACTOR_ID,
         ),
       ).rejects.toThrow(AppBadRequestException);

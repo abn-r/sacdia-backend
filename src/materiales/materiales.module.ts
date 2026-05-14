@@ -39,7 +39,13 @@ import { EventsPublisher } from './shared/events.publisher';
  *   - CommonModule   — provided globally (@Global); supplies FILE_STORAGE_SERVICE for PR4
  */
 @Module({
-  controllers: [CatalogoController, ConfiguracionController, OrdenesController, ComprobantesController, InventarioController],
+  controllers: [
+    CatalogoController,
+    ConfiguracionController,
+    OrdenesController,
+    ComprobantesController,
+    InventarioController,
+  ],
   providers: [
     CatalogoService,
     ConfiguracionService,

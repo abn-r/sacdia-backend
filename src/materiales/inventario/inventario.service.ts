@@ -33,7 +33,9 @@ export class InventarioService {
   // Paginated, includes inactive products. Filters: cat, q (title or sku).
   // ---------------------------------------------------------------------------
 
-  async list(query: ListInventarioQueryDto): Promise<PaginatedInventarioProductDto> {
+  async list(
+    query: ListInventarioQueryDto,
+  ): Promise<PaginatedInventarioProductDto> {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const skip = (page - 1) * pageSize;
@@ -145,8 +147,13 @@ export class InventarioService {
   // Price change does NOT retroactively modify existing order line snapshots.
   // ---------------------------------------------------------------------------
 
-  async update(id: string, dto: UpdateProductDto): Promise<InventarioProductDto> {
-    const product = await this.prisma.materialProduct.findUnique({ where: { id } });
+  async update(
+    id: string,
+    dto: UpdateProductDto,
+  ): Promise<InventarioProductDto> {
+    const product = await this.prisma.materialProduct.findUnique({
+      where: { id },
+    });
     if (!product) {
       throw new NotFoundException('Product not found');
     }
@@ -157,7 +164,6 @@ export class InventarioService {
         where: {
           product_id: id,
           order: {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             estado: { in: OPEN_ORDER_ESTADOS as any },
           },
         },
@@ -172,7 +178,9 @@ export class InventarioService {
       data: {
         ...(dto.title !== undefined && { title: dto.title }),
         ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.price_centavos !== undefined && { price_centavos: dto.price_centavos }),
+        ...(dto.price_centavos !== undefined && {
+          price_centavos: dto.price_centavos,
+        }),
         ...(dto.stock !== undefined && { stock: dto.stock }),
         ...(dto.active !== undefined && { active: dto.active }),
       },
@@ -243,46 +251,48 @@ export class InventarioService {
     }
 
     // Atomic transaction: update option stock + recompute product.stock
-    const [updatedOption, updatedProduct] = await this.prisma.$transaction(async (tx) => {
-      // 1. Update the variant option's stock
-      const newOption = await tx.materialVariantOption.update({
-        where: { id: variantOptionId },
-        data: { stock: dto.stock },
-        select: { id: true, label: true, stock: true },
-      });
+    const [updatedOption, updatedProduct] = await this.prisma.$transaction(
+      async (tx) => {
+        // 1. Update the variant option's stock
+        const newOption = await tx.materialVariantOption.update({
+          where: { id: variantOptionId },
+          data: { stock: dto.stock },
+          select: { id: true, label: true, stock: true },
+        });
 
-      // 2. Recompute product.stock = SUM of all options across all variants for this product
-      const aggregate = await tx.materialVariantOption.aggregate({
-        where: {
-          variant: { product_id: productId },
-        },
-        _sum: { stock: true },
-      });
-
-      const newProductStock = aggregate._sum.stock ?? 0;
-
-      // 3. Update product row with new aggregate stock
-      const newProduct = await tx.materialProduct.update({
-        where: { id: productId },
-        data: { stock: newProductStock },
-        include: {
-          category: { select: { id: true, slug: true, label: true } },
-          club_type: { select: { club_type_id: true, name: true } },
-          variants: {
-            include: {
-              options: { select: { id: true, label: true, stock: true } },
-            },
+        // 2. Recompute product.stock = SUM of all options across all variants for this product
+        const aggregate = await tx.materialVariantOption.aggregate({
+          where: {
+            variant: { product_id: productId },
           },
-          _count: { select: { variants: true } },
-        },
-      });
+          _sum: { stock: true },
+        });
 
-      return [newOption, newProduct] as const;
-    });
+        const newProductStock = aggregate._sum.stock ?? 0;
+
+        // 3. Update product row with new aggregate stock
+        const newProduct = await tx.materialProduct.update({
+          where: { id: productId },
+          data: { stock: newProductStock },
+          include: {
+            category: { select: { id: true, slug: true, label: true } },
+            club_type: { select: { club_type_id: true, name: true } },
+            variants: {
+              include: {
+                options: { select: { id: true, label: true, stock: true } },
+              },
+            },
+            _count: { select: { variants: true } },
+          },
+        });
+
+        return [newOption, newProduct] as const;
+      },
+    );
 
     this.logger.log(
       `Updated variant option id=${updatedOption.id} stock=${updatedOption.stock}; ` +
-      `product id=${productId} aggregate stock=${updatedProduct.stock}`,
+        `product id=${productId} aggregate stock=${updatedProduct.stock}`,
     );
 
     return {
@@ -299,24 +309,22 @@ export class InventarioService {
   // PRIVATE MAPPER
   // ---------------------------------------------------------------------------
 
-  private mapProduct(
-    product: {
-      id: string;
-      sku: string;
-      title: string;
-      description: string | null;
-      price_centavos: number;
-      stock: number;
-      active: boolean;
-      category: { id: string; slug: string; label: string };
-      club_type: { club_type_id: number; name: string | null };
-      variants: Array<{
-        type: string;
-        options: Array<{ id: string; label: string; stock: number }>;
-      }>;
-      _count: { variants: number };
-    },
-  ): InventarioProductDto {
+  private mapProduct(product: {
+    id: string;
+    sku: string;
+    title: string;
+    description: string | null;
+    price_centavos: number;
+    stock: number;
+    active: boolean;
+    category: { id: string; slug: string; label: string };
+    club_type: { club_type_id: number; name: string | null };
+    variants: Array<{
+      type: string;
+      options: Array<{ id: string; label: string; stock: number }>;
+    }>;
+    _count: { variants: number };
+  }): InventarioProductDto {
     const variant = product.variants[0] ?? null;
 
     return {

@@ -8,15 +8,22 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsPublisher } from '../shared/events.publisher';
-import { computeLineTotal, computeSubtotal, computeTotal } from './totals.calculator';
-import { assertTransition, MaterialOrderEstado } from './state-machine';
+import {
+  computeLineTotal,
+  computeSubtotal,
+  computeTotal,
+} from './totals.calculator';
+import { assertTransition } from './state-machine';
 import { FolioService } from './folio.service';
 import { StockService } from './stock.service';
 import type { CancelOrdenDto } from './dto/cancel-orden.dto';
 import type { CreateOrdenDto } from './dto/create-orden.dto';
 import type { ListOrdenesQueryDto } from './dto/list-ordenes.query.dto';
 import type { OrdenDto } from './dto/orden.dto';
-import type { OrdenSummaryDto, PaginatedOrdenesDto } from './dto/orden-summary.dto';
+import type {
+  OrdenSummaryDto,
+  PaginatedOrdenesDto,
+} from './dto/orden-summary.dto';
 import type { UpdateOrdenLineDto } from './dto/update-orden-line.dto';
 
 // ---------------------------------------------------------------------------
@@ -51,7 +58,9 @@ export class OrdenesService {
   // (e.g. SOL20260001) or the order UUID in the :folio path segment.
   // Order matters: try folio_referencia first (cheap UNIQUE), then UUID.
   private isUuid(value: string): boolean {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    );
   }
 
   private orderIdentifierWhere(folioOrId: string) {
@@ -91,16 +100,17 @@ export class OrdenesService {
     });
 
     // Fetch variant options (price precedence over product price)
-    const variantOptions = variantOptionIds.length > 0
-      ? await this.prisma.materialVariantOption.findMany({
-          where: { id: { in: variantOptionIds } },
-          select: {
-            id: true,
-            // Variant options don't have their own price; they share the parent product price.
-            // Price lives on the product row. This fetch is just for existence validation.
-          },
-        })
-      : [];
+    const variantOptions =
+      variantOptionIds.length > 0
+        ? await this.prisma.materialVariantOption.findMany({
+            where: { id: { in: variantOptionIds } },
+            select: {
+              id: true,
+              // Variant options don't have their own price; they share the parent product price.
+              // Price lives on the product row. This fetch is just for existence validation.
+            },
+          })
+        : [];
 
     // Build lookup maps
     const productMap = new Map(products.map((p) => [p.id, p]));
@@ -113,7 +123,10 @@ export class OrdenesService {
       if (!product || !product.active) {
         missingIds.push(line.product_id);
       }
-      if (line.variant_option_id && !variantOptionSet.has(line.variant_option_id)) {
+      if (
+        line.variant_option_id &&
+        !variantOptionSet.has(line.variant_option_id)
+      ) {
         missingIds.push(line.variant_option_id);
       }
     }
@@ -181,7 +194,10 @@ export class OrdenesService {
       return created;
     });
 
-    this.events.logEvent('order.created', { order_id: order.id, created_by: userId });
+    this.events.logEvent('order.created', {
+      order_id: order.id,
+      created_by: userId,
+    });
 
     return this.mapOrder(order);
   }
@@ -258,7 +274,10 @@ export class OrdenesService {
       resolvedQtyDisponible = dto.qty_disponible;
     }
 
-    const newLineTotal = computeLineTotal(line.price_centavos, resolvedQtyDisponible);
+    const newLineTotal = computeLineTotal(
+      line.price_centavos,
+      resolvedQtyDisponible,
+    );
 
     // Atomic transaction: update line, recompute and update order totals
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
@@ -279,7 +298,10 @@ export class OrdenesService {
       });
 
       const subtotal_centavos = computeSubtotal(freshLines);
-      const total_centavos = computeTotal(subtotal_centavos, order.envio_centavos);
+      const total_centavos = computeTotal(
+        subtotal_centavos,
+        order.envio_centavos,
+      );
 
       // Update order totals
       const updated = await tx.materialOrder.update({
@@ -395,7 +417,9 @@ export class OrdenesService {
       estado: r.estado,
       created_at: r.created_at,
       director: {
-        nombre: [r.creator.name, r.creator.paternal_last_name].filter(Boolean).join(' '),
+        nombre: [r.creator.name, r.creator.paternal_last_name]
+          .filter(Boolean)
+          .join(' '),
         club: r.club_section.name ?? '',
       },
       subtotal_centavos: r.subtotal_centavos,
@@ -489,10 +513,7 @@ export class OrdenesService {
   // POST /materiales/ordenes/:folio/aprobar
   // -------------------------------------------------------------------------
 
-  async approve(
-    folioOrId: string,
-    actor: { id: string },
-  ): Promise<OrdenDto> {
+  async approve(folioOrId: string, actor: { id: string }): Promise<OrdenDto> {
     // Load order + lines
     const order = await this.prisma.materialOrder.findFirst({
       where: this.orderIdentifierWhere(folioOrId),
@@ -510,7 +531,7 @@ export class OrdenesService {
     }
 
     // REQ-ORD-012: assert valid state transition en_revision → aprobada
-    assertTransition(order.estado as MaterialOrderEstado, 'aprobada');
+    assertTransition(order.estado, 'aprobada');
 
     // REQ-ORD-007, SC-04: all lines must have a resolved disponibilidad (not 'pendiente')
     const unresolvedLines = order.lines.filter(
@@ -612,7 +633,7 @@ export class OrdenesService {
       });
     }
 
-    const currentEstado = order.estado as MaterialOrderEstado;
+    const currentEstado = order.estado;
 
     // REQ-ORD-012: assert valid transition (throws 422 state_machine_violation for terminal states)
     assertTransition(currentEstado, 'cancelada');
@@ -634,13 +655,15 @@ export class OrdenesService {
       if (!actor.canApprove) {
         throw new ForbiddenException({
           code: 'cancel_forbidden',
-          message: 'Only campo local (materiales:approve) can cancel an approved or paid order',
+          message:
+            'Only campo local (materiales:approve) can cancel an approved or paid order',
         });
       }
     }
 
     const now = new Date();
-    const needsStockRestore = currentEstado === 'aprobada' || currentEstado === 'pagada';
+    const needsStockRestore =
+      currentEstado === 'aprobada' || currentEstado === 'pagada';
     const refund_pending = currentEstado === 'pagada';
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
@@ -681,10 +704,7 @@ export class OrdenesService {
   // POST /materiales/ordenes/:folio/entregar
   // -------------------------------------------------------------------------
 
-  async deliver(
-    folioOrId: string,
-    actor: { id: string },
-  ): Promise<OrdenDto> {
+  async deliver(folioOrId: string, actor: { id: string }): Promise<OrdenDto> {
     // Load order (no lines needed — terminal transition, no concurrent dependency)
     const order = await this.prisma.materialOrder.findFirst({
       where: this.orderIdentifierWhere(folioOrId),
@@ -702,7 +722,7 @@ export class OrdenesService {
     }
 
     // REQ-ORD-012: assert pagada → entregada (throws 422 for any other current state)
-    assertTransition(order.estado as MaterialOrderEstado, 'entregada');
+    assertTransition(order.estado, 'entregada');
 
     const now = new Date();
 
@@ -728,46 +748,44 @@ export class OrdenesService {
   // Private mapper
   // -------------------------------------------------------------------------
 
-  private mapOrder(
-    order: {
+  private mapOrder(order: {
+    id: string;
+    folio_referencia: string | null;
+    estado: string;
+    club_section_id: number;
+    created_by: string;
+    approved_by: string | null;
+    validated_by: string | null;
+    delivered_by: string | null;
+    cancelled_by: string | null;
+    subtotal_centavos: number;
+    envio_centavos: number;
+    total_centavos: number;
+    entrega: string;
+    notas: string | null;
+    cancel_reason: string | null;
+    refund_pending: boolean;
+    bank_name: string | null;
+    bank_account_clabe: string | null;
+    account_holder: string | null;
+    pickup_address: string | null;
+    created_at: Date;
+    approved_at: Date | null;
+    paid_at: Date | null;
+    delivered_at: Date | null;
+    cancelled_at: Date | null;
+    lines: Array<{
       id: string;
-      folio_referencia: string | null;
-      estado: string;
-      club_section_id: number;
-      created_by: string;
-      approved_by: string | null;
-      validated_by: string | null;
-      delivered_by: string | null;
-      cancelled_by: string | null;
-      subtotal_centavos: number;
-      envio_centavos: number;
-      total_centavos: number;
-      entrega: string;
-      notas: string | null;
-      cancel_reason: string | null;
-      refund_pending: boolean;
-      bank_name: string | null;
-      bank_account_clabe: string | null;
-      account_holder: string | null;
-      pickup_address: string | null;
-      created_at: Date;
-      approved_at: Date | null;
-      paid_at: Date | null;
-      delivered_at: Date | null;
-      cancelled_at: Date | null;
-      lines: Array<{
-        id: string;
-        product_id: string;
-        variant_option_id: string | null;
-        qty: number;
-        price_centavos: number;
-        disponibilidad: string;
-        qty_disponible: number | null;
-        line_total_centavos: number;
-      }>;
-      _count: { comprobantes: number };
-    },
-  ): OrdenDto {
+      product_id: string;
+      variant_option_id: string | null;
+      qty: number;
+      price_centavos: number;
+      disponibilidad: string;
+      qty_disponible: number | null;
+      line_total_centavos: number;
+    }>;
+    _count: { comprobantes: number };
+  }): OrdenDto {
     return {
       id: order.id,
       folio_referencia: order.folio_referencia,

@@ -77,8 +77,14 @@ export class RankingWeightsController {
       'All four weights must be provided and sum to 100.',
   })
   @ApiResponse({ status: 201, description: 'Override created' })
-  @ApiResponse({ status: 400, description: 'Validation error (missing club_type_id or sum ≠ 100)' })
-  @ApiResponse({ status: 409, description: 'Override already exists for this club_type_id' })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error (missing club_type_id or sum ≠ 100)',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Override already exists for this club_type_id',
+  })
   create(@Body() dto: CreateRankingWeightsDto, @Req() req: any) {
     return this.svc.create(dto, req?.user?.userId);
   }
@@ -114,7 +120,8 @@ export class RankingWeightsController {
   @RequirePermissions('ranking_weights:write')
   @ApiOperation({
     summary: 'Delete a ranking weight override',
-    description: 'The default global config (club_type_id = null) cannot be deleted.',
+    description:
+      'The default global config (club_type_id = null) cannot be deleted.',
   })
   @ApiParam({ name: 'id', description: 'ranking_weight_config_id UUID' })
   @ApiResponse({ status: 200, description: 'Deleted' })

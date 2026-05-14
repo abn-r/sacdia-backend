@@ -83,7 +83,9 @@ function makeProfile(
 const MEMBER_USER_ID = 'member-e2e-uuid-1';
 const YEAR_ID = 5;
 
-const memberProfile = makeProfile(MEMBER_USER_ID, ['member_rankings:read_self']);
+const memberProfile = makeProfile(MEMBER_USER_ID, [
+  'member_rankings:read_self',
+]);
 const directorProfile = makeProfile(
   'director-e2e-uuid-1',
   ['member_rankings:read_club'],
@@ -209,117 +211,94 @@ describe('Member Rankings E2E (/api/v1/member-rankings)', () => {
   // Correct behavior: 403 MEMBER_RANKING_HIDDEN (static route matches first).
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET /me — visibility=hidden returns 403 MEMBER_RANKING_HIDDEN (NOT 400 ParseIntPipe)',
-    async () => {
-      currentProfile = memberProfile;
+  it('GET /me — visibility=hidden returns 403 MEMBER_RANKING_HIDDEN (NOT 400 ParseIntPipe)', async () => {
+    currentProfile = memberProfile;
 
-      jest
-        .spyOn(systemConfig, 'get')
-        .mockResolvedValue('hidden');
+    jest.spyOn(systemConfig, 'get').mockResolvedValue('hidden');
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/member-rankings/me')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(403);
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/member-rankings/me')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(403);
 
-      expect(response.body).toHaveProperty('code', 'MEMBER_RANKING_HIDDEN');
-      // Explicit guard: must not be a ValidationPipe/ParseIntPipe 400
-      expect(response.status).not.toBe(400);
-    },
-  );
+    expect(response.body).toHaveProperty('code', 'MEMBER_RANKING_HIDDEN');
+    // Explicit guard: must not be a ValidationPipe/ParseIntPipe 400
+    expect(response.status).not.toBe(400);
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 3. /me — visibility=self_only returns 200 with own ranking shape
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET /me — visibility=self_only returns 200 with member ranking shape',
-    async () => {
-      currentProfile = memberProfile;
+  it('GET /me — visibility=self_only returns 200 with member ranking shape', async () => {
+    currentProfile = memberProfile;
 
-      jest
-        .spyOn(systemConfig, 'get')
-        .mockResolvedValue('self_only');
+    jest.spyOn(systemConfig, 'get').mockResolvedValue('self_only');
 
-      jest
-        .spyOn(prisma.enrollmentRanking, 'findFirst')
-        .mockResolvedValue(mockEnrollmentRankingRow as any);
+    jest
+      .spyOn(prisma.enrollmentRanking, 'findFirst')
+      .mockResolvedValue(mockEnrollmentRankingRow as any);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/member-rankings/me')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(200);
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/member-rankings/me')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(200);
 
-      expect(response.body).toHaveProperty('member');
-      expect(response.body).toHaveProperty('visibility_mode', 'self_only');
-      expect(response.body.member).toHaveProperty('enrollment_id', 123);
-    },
-  );
+    expect(response.body).toHaveProperty('member');
+    expect(response.body).toHaveProperty('visibility_mode', 'self_only');
+    expect(response.body.member).toHaveProperty('enrollment_id', 123);
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 4. /:enrollmentId/breakdown — integer enrollmentId works (200 or 404)
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET /123/breakdown — integer enrollmentId returns 404 MEMBER_RANKING_NOT_FOUND when not found',
-    async () => {
-      currentProfile = memberProfile;
+  it('GET /123/breakdown — integer enrollmentId returns 404 MEMBER_RANKING_NOT_FOUND when not found', async () => {
+    currentProfile = memberProfile;
 
-      jest
-        .spyOn(prisma.enrollmentRanking, 'findFirst')
-        .mockResolvedValue(null);
+    jest.spyOn(prisma.enrollmentRanking, 'findFirst').mockResolvedValue(null);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/member-rankings/123/breakdown')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(404);
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/member-rankings/123/breakdown')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(404);
 
-      expect(response.body).toHaveProperty('code', 'MEMBER_RANKING_NOT_FOUND');
-    },
-  );
+    expect(response.body).toHaveProperty('code', 'MEMBER_RANKING_NOT_FOUND');
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 5. /:enrollmentId/breakdown — non-integer rejected by ParseIntPipe (400)
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET /abc/breakdown — non-integer enrollmentId is rejected with 400 (ParseIntPipe)',
-    async () => {
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/member-rankings/abc/breakdown')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(400);
+  it('GET /abc/breakdown — non-integer enrollmentId is rejected with 400 (ParseIntPipe)', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/member-rankings/abc/breakdown')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(400);
 
-      // NestJS ValidationPipe/ParseIntPipe returns 400 with "message" array
-      expect(response.body).toBeDefined();
-    },
-  );
+    // NestJS ValidationPipe/ParseIntPipe returns 400 with "message" array
+    expect(response.body).toBeDefined();
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 6. POST /recalculate — kill-switch off returns 400 RECALCULATION_DISABLED
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'POST /recalculate — kill-switch returns 400 RECALCULATION_DISABLED',
-    async () => {
-      currentProfile = directorProfile;
+  it('POST /recalculate — kill-switch returns 400 RECALCULATION_DISABLED', async () => {
+    currentProfile = directorProfile;
 
-      jest
-        .spyOn(systemConfig, 'get')
-        .mockResolvedValue('false');
+    jest.spyOn(systemConfig, 'get').mockResolvedValue('false');
 
-      const response = await request(app.getHttpServer())
-        .post('/api/v1/member-rankings/recalculate')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(400);
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/member-rankings/recalculate')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(400);
 
-      expect(response.body).toHaveProperty('code', 'RECALCULATION_DISABLED');
-    },
-  );
+    expect(response.body).toHaveProperty('code', 'RECALCULATION_DISABLED');
+  });
 });

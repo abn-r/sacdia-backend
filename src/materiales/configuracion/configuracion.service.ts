@@ -49,11 +49,16 @@ export class ConfiguracionService {
     };
 
     if (dto.bank_name !== undefined) data.bank_name = dto.bank_name;
-    if (dto.bank_account_clabe !== undefined) data.bank_account_clabe = dto.bank_account_clabe;
-    if (dto.account_holder !== undefined) data.account_holder = dto.account_holder;
-    if (dto.envio_centavos_default !== undefined) data.envio_centavos_default = dto.envio_centavos_default;
-    if (dto.pickup_address !== undefined) data.pickup_address = dto.pickup_address;
-    if (dto.delivery_options !== undefined) data.delivery_options = dto.delivery_options as Prisma.InputJsonValue;
+    if (dto.bank_account_clabe !== undefined)
+      data.bank_account_clabe = dto.bank_account_clabe;
+    if (dto.account_holder !== undefined)
+      data.account_holder = dto.account_holder;
+    if (dto.envio_centavos_default !== undefined)
+      data.envio_centavos_default = dto.envio_centavos_default;
+    if (dto.pickup_address !== undefined)
+      data.pickup_address = dto.pickup_address;
+    if (dto.delivery_options !== undefined)
+      data.delivery_options = dto.delivery_options as Prisma.InputJsonValue;
 
     const updated = await this.prisma.materialConfig.update({
       where: { id: CONFIG_ID },

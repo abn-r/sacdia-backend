@@ -98,7 +98,10 @@ describe('HttpExceptionFilter — request body sanitization', () => {
       refreshToken: 'v1.very.secret.token',
       session_token: 'ba_session_super_secret',
     });
-    const exception = new HttpException('Unauthorized', HttpStatus.UNAUTHORIZED);
+    const exception = new HttpException(
+      'Unauthorized',
+      HttpStatus.UNAUTHORIZED,
+    );
 
     const originalEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
@@ -142,7 +145,10 @@ describe('HttpExceptionFilter — request body sanitization', () => {
       email: 'user@example.com',
       password: 'SuperSecret123!',
     });
-    const exception = new HttpException('Unauthorized', HttpStatus.UNAUTHORIZED);
+    const exception = new HttpException(
+      'Unauthorized',
+      HttpStatus.UNAUTHORIZED,
+    );
 
     const originalEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';

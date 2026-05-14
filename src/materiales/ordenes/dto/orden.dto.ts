@@ -87,6 +87,8 @@ export class OrdenDto {
    * Comprobantes count placeholder — will carry a signed-URL array in PR4.
    * For PR3a, always 0.
    */
-  @ApiProperty({ description: 'Number of comprobantes attached (PR4 fills the array)' })
+  @ApiProperty({
+    description: 'Number of comprobantes attached (PR4 fills the array)',
+  })
   comprobantes_count: number;
 }

@@ -18,7 +18,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions } from '../../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import {
   MATERIALES_APPROVE,
@@ -112,21 +115,30 @@ export class OrdenesController {
   @Patch(':folio/lineas/:lineId')
   @RequirePermissions(MATERIALES_APPROVE)
   @ApiOperation({
-    summary: 'Update line availability (campo local only, en_revision orders only)',
+    summary:
+      'Update line availability (campo local only, en_revision orders only)',
   })
   @ApiParam({ name: 'folio', type: String })
   @ApiParam({ name: 'lineId', type: String, description: 'Line UUID' })
   @ApiResponse({ status: 200, type: OrdenDto })
-  @ApiResponse({ status: 400, description: 'qty_disponible_required or qty_disponible_out_of_range' })
+  @ApiResponse({
+    status: 400,
+    description: 'qty_disponible_required or qty_disponible_out_of_range',
+  })
   @ApiResponse({ status: 404, description: 'Order or line not found' })
-  @ApiResponse({ status: 422, description: 'lines_frozen — order not in en_revision' })
+  @ApiResponse({
+    status: 422,
+    description: 'lines_frozen — order not in en_revision',
+  })
   patchLine(
     @Param('folio') folio: string,
     @Param('lineId', ParseUUIDPipe) lineId: string,
     @Body() dto: UpdateOrdenLineDto,
     @Request() req: any,
   ): Promise<OrdenDto> {
-    return this.ordenesService.patchLine(folio, lineId, dto, { id: req.user.sub });
+    return this.ordenesService.patchLine(folio, lineId, dto, {
+      id: req.user.sub,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -141,11 +153,18 @@ export class OrdenesController {
   @ApiOperation({
     summary: 'Approve order — allocate folio, decrement stock, snapshot config',
   })
-  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiParam({
+    name: 'folio',
+    type: String,
+    description: 'Order folio_referencia or UUID',
+  })
   @ApiResponse({ status: 200, type: OrdenDto })
   @ApiResponse({ status: 404, description: 'Order not found' })
   @ApiResponse({ status: 409, description: 'Insufficient stock' })
-  @ApiResponse({ status: 422, description: 'state_machine_violation or unresolved_lines' })
+  @ApiResponse({
+    status: 422,
+    description: 'state_machine_violation or unresolved_lines',
+  })
   approve(
     @Param('folio') folio: string,
     @Request() req: any,
@@ -163,13 +182,24 @@ export class OrdenesController {
   @RequirePermissions(MATERIALES_READ)
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Cancel order — allowed from en_revision (own or campo), aprobada, pagada (campo only)',
+    summary:
+      'Cancel order — allowed from en_revision (own or campo), aprobada, pagada (campo only)',
   })
-  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiParam({
+    name: 'folio',
+    type: String,
+    description: 'Order folio_referencia or UUID',
+  })
   @ApiResponse({ status: 200, type: OrdenDto })
-  @ApiResponse({ status: 403, description: 'cancel_forbidden — insufficient permission or not owner' })
+  @ApiResponse({
+    status: 403,
+    description: 'cancel_forbidden — insufficient permission or not owner',
+  })
   @ApiResponse({ status: 404, description: 'Order not found' })
-  @ApiResponse({ status: 422, description: 'state_machine_violation — order in terminal state' })
+  @ApiResponse({
+    status: 422,
+    description: 'state_machine_violation — order in terminal state',
+  })
   cancel(
     @Param('folio') folio: string,
     @Body() dto: CancelOrdenDto,
@@ -178,7 +208,10 @@ export class OrdenesController {
     const effectivePermissions: string[] =
       req.authorization?.effective?.permissions ?? [];
     const canApprove = effectivePermissions.includes(MATERIALES_APPROVE);
-    return this.ordenesService.cancel(folio, dto, { id: req.user.sub, canApprove });
+    return this.ordenesService.cancel(folio, dto, {
+      id: req.user.sub,
+      canApprove,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -190,11 +223,21 @@ export class OrdenesController {
   @Post(':folio/entregar')
   @RequirePermissions(MATERIALES_DELIVER)
   @HttpCode(200)
-  @ApiOperation({ summary: 'Mark order as delivered — terminal transition (pagada → entregada)' })
-  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiOperation({
+    summary:
+      'Mark order as delivered — terminal transition (pagada → entregada)',
+  })
+  @ApiParam({
+    name: 'folio',
+    type: String,
+    description: 'Order folio_referencia or UUID',
+  })
   @ApiResponse({ status: 200, type: OrdenDto })
   @ApiResponse({ status: 404, description: 'Order not found' })
-  @ApiResponse({ status: 422, description: 'state_machine_violation — order not in pagada' })
+  @ApiResponse({
+    status: 422,
+    description: 'state_machine_violation — order not in pagada',
+  })
   deliver(
     @Param('folio') folio: string,
     @Request() req: any,
@@ -213,7 +256,10 @@ export class OrdenesController {
   @ApiOperation({ summary: 'Get full order detail by folio' })
   @ApiParam({ name: 'folio', type: String })
   @ApiResponse({ status: 200, type: OrdenDto })
-  @ApiResponse({ status: 403, description: 'Access denied (not owner and no approve perm)' })
+  @ApiResponse({
+    status: 403,
+    description: 'Access denied (not owner and no approve perm)',
+  })
   @ApiResponse({ status: 404, description: 'Order not found' })
   getByFolio(
     @Param('folio') folio: string,

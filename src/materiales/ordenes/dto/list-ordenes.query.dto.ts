@@ -1,12 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListOrdenesQueryDto {
@@ -24,7 +17,10 @@ export class ListOrdenesQueryDto {
   @IsInt()
   club_section_id?: number;
 
-  @ApiProperty({ required: false, description: 'Free text: folio or director name' })
+  @ApiProperty({
+    required: false,
+    description: 'Free text: folio or director name',
+  })
   @IsOptional()
   @IsString()
   q?: string;

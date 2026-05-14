@@ -276,11 +276,7 @@ export class RbacController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: AssignRoleDto,
   ) {
-    return this.rbacService.assignRoleToUser(
-      userId,
-      dto.role_id,
-      actor.userId,
-    );
+    return this.rbacService.assignRoleToUser(userId, dto.role_id, actor.userId);
   }
 
   @Delete('users/:userId/roles/:roleId')

@@ -73,7 +73,11 @@ export class AdminSetPasswordDto {
     maxLength: 128,
   })
   @IsString()
-  @MinLength(8, { message: i18nValidationMessage('errors.VALIDATION.password_min_length', { min: 8 }) })
+  @MinLength(8, {
+    message: i18nValidationMessage('errors.VALIDATION.password_min_length', {
+      min: 8,
+    }),
+  })
   @MaxLength(128)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
     message: i18nValidationMessage('errors.VALIDATION.password_format'),

@@ -25,7 +25,10 @@ export const COMPROBANTE_ALLOWED_MIMES = [
 
 export type ComprobanteMime = (typeof COMPROBANTE_ALLOWED_MIMES)[number];
 
-const MAGIC_BYTES: Record<ComprobanteMime, { offset: number; bytes: number[] }> = {
+const MAGIC_BYTES: Record<
+  ComprobanteMime,
+  { offset: number; bytes: number[] }
+> = {
   'application/pdf': { offset: 0, bytes: [0x25, 0x50, 0x44, 0x46] }, // %PDF
   'image/jpeg': { offset: 0, bytes: [0xff, 0xd8, 0xff] },
   'image/png': { offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47] },

@@ -69,7 +69,8 @@ export class FoldersController {
   })
   @ApiResponse({ status: 200, description: 'Lista de templates de carpetas' })
   async findAll(
-    @Query('club_type', new ParseIntPipe({ optional: true })) clubTypeId?: number,
+    @Query('club_type', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
     @Query() paginationDto?: PaginationDto,
   ) {
     const result = await this.foldersService.findAll(clubTypeId, paginationDto);

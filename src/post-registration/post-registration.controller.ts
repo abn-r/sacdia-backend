@@ -57,7 +57,10 @@ export class PostRegistrationController {
   })
   @ApiResponse({ status: 200, description: 'Estado de la foto de perfil' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner or admin access only' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner or admin access only',
+  })
   async getPhotoStatus(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.postRegistrationService.getPhotoStatus(userId);
   }
@@ -67,7 +70,10 @@ export class PostRegistrationController {
   @ApiOperation({ summary: 'Obtener estado del post-registro' })
   @ApiResponse({ status: 200, description: 'Estado actual' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner or admin access only' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner or admin access only',
+  })
   async getStatus(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Req() request: AuthenticatedRequest,
@@ -92,7 +98,10 @@ export class PostRegistrationController {
     description: 'Usuario no tiene foto de perfil',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires registration:complete' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires registration:complete',
+  })
   async completeStep1(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Req() request: AuthenticatedRequest,
@@ -118,7 +127,10 @@ export class PostRegistrationController {
     description: 'Faltan datos requeridos',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires registration:complete' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires registration:complete',
+  })
   async completeStep2(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Req() request: AuthenticatedRequest,
@@ -147,7 +159,10 @@ export class PostRegistrationController {
     description: 'Club no encontrado o datos inválidos',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires registration:complete' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires registration:complete',
+  })
   async completeStep3(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: CompleteClubSelectionDto,

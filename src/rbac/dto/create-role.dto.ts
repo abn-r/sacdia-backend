@@ -27,7 +27,8 @@ export class CreateRoleDto {
   @MinLength(3)
   @MaxLength(64)
   @Matches(/^[a-z][a-z-]*[a-z]$/, {
-    message: 'role_name debe contener solo letras minúsculas y guiones (no puede empezar ni terminar con guión)',
+    message:
+      'role_name debe contener solo letras minúsculas y guiones (no puede empezar ni terminar con guión)',
   })
   declare role_name: string;
 

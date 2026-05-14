@@ -115,7 +115,7 @@ describe('MemberRankingWeightsController', () => {
       };
       mockService.create.mockResolvedValueOnce(overrideRow);
 
-      const result = await controller.create(mockReq as any, dto as any);
+      const result = await controller.create(mockReq as any, dto);
 
       expect(mockService.create).toHaveBeenCalledWith(dto, TEST_USER_ID);
       expect(result).toEqual(overrideRow);

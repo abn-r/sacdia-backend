@@ -374,7 +374,7 @@ describe('QrService', () => {
     // Minimal 1x1 PNG (67 bytes — valid PNG header so pdfkit accepts it)
     const minimalPng = Buffer.from(
       '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489' +
-      '0000000a49444154789c6260000000020001e221bc330000000049454e44ae426082',
+        '0000000a49444154789c6260000000020001e221bc330000000049454e44ae426082',
       'hex',
     );
 
@@ -389,7 +389,7 @@ describe('QrService', () => {
         },
       },
       arrayBuffer: async () => minimalPng.buffer,
-    } as unknown as Response);
+    });
 
     const buffer = await service.generateMyCardPdf('user-1');
 

@@ -41,14 +41,20 @@ export class CreateProductDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Initial stock (when product has no variants)', default: 0 })
+  @ApiPropertyOptional({
+    description: 'Initial stock (when product has no variants)',
+    default: 0,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   stock?: number;
 
-  @ApiPropertyOptional({ description: 'Whether product is active', default: true })
+  @ApiPropertyOptional({
+    description: 'Whether product is active',
+    default: true,
+  })
   @IsOptional()
   @IsBoolean()
   active?: boolean = true;

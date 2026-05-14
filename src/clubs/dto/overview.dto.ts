@@ -81,7 +81,10 @@ export class ClubHistoryItemDto {
   @ApiProperty({ description: 'audit_log_id serialized as string (BigInt)' })
   declare audit_log_id: string;
 
-  @ApiProperty({ description: 'Type of entity affected (club, club_section, role_assignment)' })
+  @ApiProperty({
+    description:
+      'Type of entity affected (club, club_section, role_assignment)',
+  })
   declare entity_type: string;
 
   @ApiProperty({ description: 'ID of the affected entity' })
@@ -116,7 +119,8 @@ export class ClubOverviewResponseDto {
   @ApiProperty({
     nullable: true,
     type: [AttendanceDataPointDto],
-    description: 'Attendance series last 12 months (week-level averages), null if no data',
+    description:
+      'Attendance series last 12 months (week-level averages), null if no data',
   })
   declare attendance: AttendanceDataPointDto[] | null;
 

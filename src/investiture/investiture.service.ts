@@ -202,7 +202,7 @@ export class InvestitureService {
     // Step 7: Return result
     return {
       enrollment_id: updatedEnrollment.enrollment_id,
-      investiture_status: updatedEnrollment.investiture_status as string,
+      investiture_status: updatedEnrollment.investiture_status,
       submitted_at: updatedEnrollment.submitted_at as Date,
       is_late,
     };
@@ -381,7 +381,7 @@ export class InvestitureService {
 
     return {
       enrollment_id: updatedEnrollment.enrollment_id,
-      investiture_status: updatedEnrollment.investiture_status as string,
+      investiture_status: updatedEnrollment.investiture_status,
       rejection_reason: dto.reason,
       rejected_by: actorId,
       rejected_at: now,
@@ -519,7 +519,7 @@ export class InvestitureService {
     // Step 6: Return result
     return {
       enrollment_id: updated.enrollment_id,
-      investiture_status: updated.investiture_status as string,
+      investiture_status: updated.investiture_status,
       investiture_date: updated.investiture_date,
     };
   }
@@ -711,7 +711,7 @@ export class InvestitureService {
       enrollment_id: enrollmentId,
       history: history.map((entry) => ({
         history_id: entry.history_id,
-        action: entry.action as string,
+        action: entry.action,
         performed_by: {
           name: entry.users.name,
           paternal_last_name: entry.users.paternal_last_name,
@@ -849,7 +849,7 @@ export class InvestitureService {
     // 5. Return
     return {
       enrollment_id: updatedEnrollment.enrollment_id,
-      investiture_status: updatedEnrollment.investiture_status as string,
+      investiture_status: updatedEnrollment.investiture_status,
       validated_by: updatedEnrollment.validated_by,
       validated_at: updatedEnrollment.validated_at,
       rejection_reason: updatedEnrollment.rejection_reason,
@@ -1632,7 +1632,7 @@ export class InvestitureService {
 
     return {
       enrollment_id: updatedEnrollment.enrollment_id,
-      investiture_status: updatedEnrollment.investiture_status as string,
+      investiture_status: updatedEnrollment.investiture_status,
       approved_by: actorId,
       approved_at: now,
     };

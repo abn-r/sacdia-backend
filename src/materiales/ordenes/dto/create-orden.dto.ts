@@ -17,7 +17,10 @@ export class CreateOrdenLineDto {
   @IsUUID()
   product_id: string;
 
-  @ApiProperty({ required: false, description: 'UUID of the variant option, if applicable' })
+  @ApiProperty({
+    required: false,
+    description: 'UUID of the variant option, if applicable',
+  })
   @IsOptional()
   @IsUUID()
   variant_option_id?: string;

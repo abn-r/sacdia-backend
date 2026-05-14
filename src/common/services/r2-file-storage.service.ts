@@ -541,7 +541,9 @@ export class R2FileStorageService implements FileStorageService {
       case StorageBucketAlias.MATERIALES_COMPROBANTES:
         return {
           bucket: this.getRequiredEnv('R2_BUCKET_MATERIALES_COMPROBANTES'),
-          publicBaseUrl: this.getRequiredEnv('R2_PUBLIC_URL_MATERIALES_COMPROBANTES'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_MATERIALES_COMPROBANTES',
+          ),
           keyPrefix: this.getOptionalEnv(
             'R2_KEY_PREFIX_MATERIALES_COMPROBANTES',
             'materiales/comprobantes',

@@ -122,9 +122,7 @@ describe('Post-registration step 3 E2E', () => {
 
     jest
       .spyOn(prisma, '$transaction')
-      .mockImplementationOnce((callback) =>
-        callback(tx as unknown as Prisma.TransactionClient),
-      );
+      .mockImplementationOnce((callback) => callback(tx));
 
     await request(getHttpServer())
       .post('/api/v1/users/owner-user-1/post-registration/step-3/complete')
@@ -184,9 +182,7 @@ describe('Post-registration step 3 E2E', () => {
 
     jest
       .spyOn(prisma, '$transaction')
-      .mockImplementationOnce((callback) =>
-        callback(tx as unknown as Prisma.TransactionClient),
-      );
+      .mockImplementationOnce((callback) => callback(tx));
 
     await request(getHttpServer())
       .post('/api/v1/users/owner-user-1/post-registration/step-3/complete')

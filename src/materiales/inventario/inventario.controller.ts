@@ -19,7 +19,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions } from '../../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import { MATERIALES_MANAGE_INVENTORY } from '../shared/permissions';
 import { InventarioService } from './inventario.service';
@@ -48,9 +51,13 @@ export class InventarioController {
 
   @Get()
   @RequirePermissions(MATERIALES_MANAGE_INVENTORY)
-  @ApiOperation({ summary: 'List all products (including inactive) for inventory management' })
+  @ApiOperation({
+    summary: 'List all products (including inactive) for inventory management',
+  })
   @ApiResponse({ status: 200, type: PaginatedInventarioProductDto })
-  list(@Query() query: ListInventarioQueryDto): Promise<PaginatedInventarioProductDto> {
+  list(
+    @Query() query: ListInventarioQueryDto,
+  ): Promise<PaginatedInventarioProductDto> {
     return this.inventarioService.list(query);
   }
 
@@ -81,7 +88,10 @@ export class InventarioController {
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, type: InventarioProductDto })
   @ApiResponse({ status: 404, description: 'Product not found' })
-  @ApiResponse({ status: 409, description: 'Product has open orders (when deactivating)' })
+  @ApiResponse({
+    status: 409,
+    description: 'Product has open orders (when deactivating)',
+  })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,
@@ -98,7 +108,15 @@ export class InventarioController {
   @RequirePermissions(MATERIALES_MANAGE_INVENTORY)
   @ApiOperation({ summary: 'Soft-delete a product (sets active=false)' })
   @ApiParam({ name: 'id', type: String })
-  @ApiResponse({ status: 200, schema: { properties: { id: { type: 'string' }, active: { type: 'boolean', example: false } } } })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        id: { type: 'string' },
+        active: { type: 'boolean', example: false },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 409, description: 'Product has open order lines' })
   softDelete(
@@ -115,12 +133,22 @@ export class InventarioController {
 
   @Patch(':id/variantes/:variantId')
   @RequirePermissions(MATERIALES_MANAGE_INVENTORY)
-  @ApiOperation({ summary: 'Update stock for a specific variant option; recomputes product total stock' })
+  @ApiOperation({
+    summary:
+      'Update stock for a specific variant option; recomputes product total stock',
+  })
   @ApiParam({ name: 'id', description: 'Product UUID', type: String })
-  @ApiParam({ name: 'variantId', description: 'MaterialVariantOption UUID (leaf ID)', type: String })
+  @ApiParam({
+    name: 'variantId',
+    description: 'MaterialVariantOption UUID (leaf ID)',
+    type: String,
+  })
   @ApiResponse({ status: 200, type: VariantStockUpdateResponseDto })
   @ApiResponse({ status: 400, description: 'stock < 0' })
-  @ApiResponse({ status: 404, description: 'Product or variant option not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Product or variant option not found',
+  })
   updateVariantStock(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('variantId', ParseUUIDPipe) variantId: string,

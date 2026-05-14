@@ -32,7 +32,10 @@ export class CreateRelationshipTypeDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -58,7 +61,10 @@ export class UpdateRelationshipTypeDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -83,7 +89,10 @@ export class CreateAllergyDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -109,7 +118,10 @@ export class UpdateAllergyDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -134,7 +146,10 @@ export class CreateDiseaseDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -160,7 +175,10 @@ export class UpdateDiseaseDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -185,7 +203,10 @@ export class CreateMedicineDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -211,7 +232,10 @@ export class UpdateMedicineDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr).' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -242,7 +266,11 @@ export class CreateActivityTypeDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Note: code is NOT translated.' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description:
+      'Non-es translations (pt-BR, en, fr). Note: code is NOT translated.',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -275,7 +303,11 @@ export class UpdateActivityTypeDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Note: code is NOT translated.' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description:
+      'Non-es translations (pt-BR, en, fr). Note: code is NOT translated.',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -329,7 +361,11 @@ export class CreateClubTypeDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Only name is translated for club types.' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description:
+      'Non-es translations (pt-BR, en, fr). Only name is translated for club types.',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -350,7 +386,11 @@ export class UpdateClubTypeDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [CatalogTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Only name is translated for club types.' })
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description:
+      'Non-es translations (pt-BR, en, fr). Only name is translated for club types.',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CatalogTranslationDto)
@@ -389,7 +429,10 @@ export class CreateClubIdealDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [ClubIdealTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Fields: name and ideal.' })
+  @ApiPropertyOptional({
+    type: [ClubIdealTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr). Fields: name and ideal.',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => ClubIdealTranslationDto)
@@ -423,7 +466,10 @@ export class UpdateClubIdealDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ type: [ClubIdealTranslationDto], description: 'Non-es translations (pt-BR, en, fr). Fields: name and ideal.' })
+  @ApiPropertyOptional({
+    type: [ClubIdealTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr). Fields: name and ideal.',
+  })
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => ClubIdealTranslationDto)

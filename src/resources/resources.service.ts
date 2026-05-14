@@ -195,8 +195,7 @@ export class ResourcesService {
 
     // 3. Build a deterministic key under the scope folder. Mirrors the layout
     // used by create() so admin tooling does not have to deal with two schemes.
-    const scopeSegment =
-      dto.scope_id != null ? String(dto.scope_id) : 'system';
+    const scopeSegment = dto.scope_id != null ? String(dto.scope_id) : 'system';
     const uuid = randomUUID();
     const rawExt = dto.file_name.includes('.')
       ? dto.file_name.slice(dto.file_name.lastIndexOf('.'))
@@ -250,11 +249,12 @@ export class ResourcesService {
 
     // 2. The file_key must live under the same scope path we would have issued
     // in generateUploadUrl. Prevents replaying a key from a different scope.
-    const scopeSegment =
-      dto.scope_id != null ? String(dto.scope_id) : 'system';
+    const scopeSegment = dto.scope_id != null ? String(dto.scope_id) : 'system';
     const expectedPrefix = `${dto.scope_level}/${scopeSegment}/`;
     const keyWithoutBucketPrefix = dto.file_key.includes('resources/')
-      ? dto.file_key.slice(dto.file_key.indexOf('resources/') + 'resources/'.length)
+      ? dto.file_key.slice(
+          dto.file_key.indexOf('resources/') + 'resources/'.length,
+        )
       : dto.file_key;
     if (!keyWithoutBucketPrefix.startsWith(expectedPrefix)) {
       throw new AppForbiddenException(ErrorCode.RESOURCE_SCOPE_LEVEL_INVALID, {

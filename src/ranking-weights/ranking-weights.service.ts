@@ -23,17 +23,25 @@ export class RankingWeightsService {
     const row = await this.prisma.ranking_weight_configs.findUnique({
       where: { ranking_weight_config_id: id },
     });
-    if (!row) throw new AppNotFoundException(ErrorCode.RANKING_WEIGHTS_NOT_FOUND, { id });
+    if (!row)
+      throw new AppNotFoundException(ErrorCode.RANKING_WEIGHTS_NOT_FOUND, {
+        id,
+      });
     return row;
   }
 
   async create(dto: CreateRankingWeightsDto, userId?: string) {
     if (dto.club_type_id == null) {
-      throw new AppBadRequestException(ErrorCode.RANKING_WEIGHTS_GLOBAL_RESERVED);
+      throw new AppBadRequestException(
+        ErrorCode.RANKING_WEIGHTS_GLOBAL_RESERVED,
+      );
     }
 
     const sum =
-      dto.folder_weight + dto.finance_weight + dto.camporee_weight + dto.evidence_weight;
+      dto.folder_weight +
+      dto.finance_weight +
+      dto.camporee_weight +
+      dto.evidence_weight;
     if (sum !== 100) {
       throw new AppBadRequestException(ErrorCode.RANKING_WEIGHTS_SUM_INVALID, {
         sum: String(sum),
@@ -44,9 +52,12 @@ export class RankingWeightsService {
       where: { club_type_id: dto.club_type_id },
     });
     if (existing) {
-      throw new AppConflictException(ErrorCode.RANKING_WEIGHTS_CLUB_TYPE_CONFLICT, {
-        clubTypeId: String(dto.club_type_id),
-      });
+      throw new AppConflictException(
+        ErrorCode.RANKING_WEIGHTS_CLUB_TYPE_CONFLICT,
+        {
+          clubTypeId: String(dto.club_type_id),
+        },
+      );
     }
 
     return this.prisma.ranking_weight_configs.create({
@@ -95,7 +106,9 @@ export class RankingWeightsService {
   async delete(id: string) {
     const row = await this.getById(id);
     if (row.club_type_id == null) {
-      throw new AppBadRequestException(ErrorCode.RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE);
+      throw new AppBadRequestException(
+        ErrorCode.RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE,
+      );
     }
     return this.prisma.ranking_weight_configs.delete({
       where: { ranking_weight_config_id: id },

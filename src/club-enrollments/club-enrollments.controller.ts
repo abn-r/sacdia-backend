@@ -50,7 +50,8 @@ export class ClubEnrollmentsController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requires club_instances:create permission for this club',
+    description:
+      'Forbidden — requires club_instances:create permission for this club',
   })
   @ApiResponse({
     status: 409,
@@ -90,7 +91,8 @@ export class ClubEnrollmentsController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requires club_instances:read permission for this club',
+    description:
+      'Forbidden — requires club_instances:read permission for this club',
   })
   async findAll(
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -117,7 +119,8 @@ export class ClubEnrollmentsController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requires club_instances:read permission for this club',
+    description:
+      'Forbidden — requires club_instances:read permission for this club',
   })
   async findCurrent(@Param('sectionId', ParseIntPipe) sectionId: number) {
     const data =
@@ -139,7 +142,8 @@ export class ClubEnrollmentsController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — requires club_instances:update permission for this club',
+    description:
+      'Forbidden — requires club_instances:update permission for this club',
   })
   @ApiResponse({ status: 404, description: 'Inscripción no encontrada' })
   async update(

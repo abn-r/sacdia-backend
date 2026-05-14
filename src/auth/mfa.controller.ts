@@ -96,7 +96,8 @@ export class MfaController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — token requires aal2 (complete MFA verification first)',
+    description:
+      'Forbidden — token requires aal2 (complete MFA verification first)',
   })
   async enrollMfa(@Req() req: Request, @Body() dto: EnrollMfaDto) {
     const userId = (req.user as any).userId as string;
@@ -179,7 +180,8 @@ export class MfaController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — token requires aal2 (MFA already completed) to disable MFA',
+    description:
+      'Forbidden — token requires aal2 (MFA already completed) to disable MFA',
   })
   async disableMfa(@Req() req: Request, @Body() dto: DisableMfaDto) {
     const userId = (req.user as any).userId as string;

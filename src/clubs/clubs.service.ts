@@ -268,7 +268,9 @@ export class ClubsService {
         summary: `Sección creada: ${section.club_types?.name ?? String(dto.club_type_id)}`,
       })
       .catch((err: unknown) =>
-        this.logger.warn(`[AuditLogs] createSection hook error: ${String(err)}`),
+        this.logger.warn(
+          `[AuditLogs] createSection hook error: ${String(err)}`,
+        ),
       );
 
     return section;
@@ -385,10 +387,7 @@ export class ClubsService {
     // Audit: only track leadership role assignments
     const roleName = created.roles.role_name.toLowerCase();
     if (['director', 'deputy-director', 'secretary'].includes(roleName)) {
-      const fullName = [
-        created.users?.name,
-        created.users?.paternal_last_name,
-      ]
+      const fullName = [created.users?.name, created.users?.paternal_last_name]
         .filter(Boolean)
         .join(' ');
 
@@ -570,9 +569,12 @@ export class ClubsService {
     );
     const others = resolved.filter(
       (r) =>
-        !['director', 'deputy-director', 'secretary', 'secretary-treasurer'].includes(
-          r.role_name.toLowerCase(),
-        ),
+        ![
+          'director',
+          'deputy-director',
+          'secretary',
+          'secretary-treasurer',
+        ].includes(r.role_name.toLowerCase()),
     );
 
     return {
@@ -693,17 +695,12 @@ export class ClubsService {
                 const currentYear = now.getFullYear();
                 // Determine start week/year (52 weeks back)
                 const startYear =
-                  currentWeek <= 52
-                    ? currentYear - 1
-                    : currentYear;
+                  currentWeek <= 52 ? currentYear - 1 : currentYear;
                 return this.prisma.weekly_records.findMany({
                   where: {
                     user_id: { in: userIds },
                     active: true,
-                    OR: [
-                      { year: currentYear },
-                      { year: startYear },
-                    ],
+                    OR: [{ year: currentYear }, { year: startYear }],
                   },
                   select: {
                     year: true,
@@ -764,7 +761,11 @@ export class ClubsService {
       scoreValue =
         attendanceAverage * 0.5 + sectionsPct * 0.3 + capacityPct * 0.2;
       breakdown = [
-        { label: 'Attendance average', value_pct: attendanceAverage, weight: 0.5 },
+        {
+          label: 'Attendance average',
+          value_pct: attendanceAverage,
+          weight: 0.5,
+        },
         { label: 'Active sections', value_pct: sectionsPct, weight: 0.3 },
         { label: 'Capacity filled', value_pct: capacityPct, weight: 0.2 },
       ];
@@ -885,9 +886,7 @@ export class ClubsService {
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil(
-      ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
-    );
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   }
 
   // ========================================

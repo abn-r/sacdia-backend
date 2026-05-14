@@ -34,16 +34,25 @@ export class ComprobanteDto {
   @ApiProperty({ nullable: true })
   fecha_pago: Date | null;
 
-  @ApiProperty({ nullable: true, description: 'Signed read URL — 15 min TTL (null on upload response)' })
+  @ApiProperty({
+    nullable: true,
+    description: 'Signed read URL — 15 min TTL (null on upload response)',
+  })
   signed_url: string | null;
 
   @ApiProperty({ description: 'User ID who uploaded this comprobante' })
   uploaded_by: string;
 
-  @ApiProperty({ nullable: true, description: 'User ID who validated (approved/rejected) this comprobante' })
+  @ApiProperty({
+    nullable: true,
+    description: 'User ID who validated (approved/rejected) this comprobante',
+  })
   validated_by: string | null;
 
-  @ApiProperty({ nullable: true, description: 'Reject reason (only when status=rechazado)' })
+  @ApiProperty({
+    nullable: true,
+    description: 'Reject reason (only when status=rechazado)',
+  })
   reject_reason: string | null;
 
   @ApiProperty()

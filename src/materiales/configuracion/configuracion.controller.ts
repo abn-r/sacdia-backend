@@ -12,12 +12,12 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions } from '../../common/decorators';
-import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import {
-  MATERIALES_CONFIGURE,
-  MATERIALES_READ,
-} from '../shared/permissions';
+  AuthorizationResource,
+  RequirePermissions,
+} from '../../common/decorators';
+import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
+import { MATERIALES_CONFIGURE, MATERIALES_READ } from '../shared/permissions';
 import { ConfiguracionService } from './configuracion.service';
 import { UpdateConfigDto } from './dto/update-config.dto';
 import { ConfigDto } from './dto/config.dto';

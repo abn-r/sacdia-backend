@@ -45,7 +45,10 @@ export class AnnualReportsController {
   @RequirePermissions('reports:read')
   @ApiOperation({ summary: 'Listar informes anuales (admin)' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:read',
+  })
   @ApiQuery({ name: 'clubId', required: false, type: Number })
   @ApiQuery({ name: 'ecclesiasticalYearId', required: false, type: Number })
   @ApiQuery({
@@ -87,7 +90,10 @@ export class AnnualReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe anual' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:read',
+  })
   @ApiResponse({ status: 404, description: 'No encontrado' })
   async getAdmin(@Param('id', ParseIntPipe) id: number) {
     const data = await this.annualReportsService.getReport(id);
@@ -106,7 +112,10 @@ export class AnnualReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Datos actualizados' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:update' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:update',
+  })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async updateManualData(
     @Param('id', ParseIntPipe) id: number,
@@ -128,7 +137,10 @@ export class AnnualReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe regenerado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:update' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:update',
+  })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async regenerate(@Param('id', ParseIntPipe) id: number) {
     const data = await this.annualReportsService.regenerate(id);
@@ -145,7 +157,10 @@ export class AnnualReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe finalizado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:update' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:update',
+  })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async finalize(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     const data = await this.annualReportsService.finalize(id, req.user.sub);
@@ -163,7 +178,10 @@ export class AnnualReportsController {
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe anual' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:download' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:download',
+  })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async downloadPdfAdmin(
     @Param('id', ParseIntPipe) id: number,
@@ -191,7 +209,10 @@ export class AnnualReportsController {
     description: 'Lista de informes anuales del club',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:read',
+  })
   async listForClub(@Param('clubId', ParseIntPipe) clubId: number) {
     const data = await this.annualReportsService.listForClub(clubId);
     return { status: 'success', data };
@@ -208,7 +229,10 @@ export class AnnualReportsController {
   @ApiParam({ name: 'id', type: 'integer' })
   @ApiResponse({ status: 200, description: 'Informe anual' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:read',
+  })
   @ApiResponse({ status: 404, description: 'No encontrado' })
   async getForClub(@Param('id', ParseIntPipe) id: number) {
     const data = await this.annualReportsService.getReport(id);
@@ -227,7 +251,10 @@ export class AnnualReportsController {
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF del informe anual' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires reports:download' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires reports:download',
+  })
   @ApiResponse({ status: 404, description: 'Informe no encontrado' })
   async downloadPdfUser(
     @Param('id', ParseIntPipe) id: number,

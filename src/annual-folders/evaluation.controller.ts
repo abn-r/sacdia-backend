@@ -206,7 +206,8 @@ export class EvaluationController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Requires annual_folders:evaluate or evidence_folders:read permission',
+    description:
+      'Requires annual_folders:evaluate or evidence_folders:read permission',
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async getFolderEvaluations(

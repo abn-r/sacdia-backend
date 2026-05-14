@@ -7,10 +7,7 @@
  * Multiply unit price by quantity. Both values must be integers.
  * Returns an integer.
  */
-export function computeLineTotal(
-  price_centavos: number,
-  qty: number,
-): number {
+export function computeLineTotal(price_centavos: number, qty: number): number {
   return price_centavos * qty;
 }
 

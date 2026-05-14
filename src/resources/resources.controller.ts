@@ -121,7 +121,10 @@ export class ResourcesController {
   })
   @ApiResponse({ status: 201, description: 'URL firmada generada' })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
-  @ApiResponse({ status: 403, description: 'Sin permiso para el scope indicado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Sin permiso para el scope indicado',
+  })
   async generateUploadUrl(
     @Body() dto: GenerateUploadUrlDto,
     @Request() req: any,
@@ -150,7 +153,10 @@ export class ResourcesController {
     status: 400,
     description: 'file_key no existe en R2 o tamaño no coincide',
   })
-  @ApiResponse({ status: 403, description: 'Sin permiso para el scope indicado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Sin permiso para el scope indicado',
+  })
   async createFromUploaded(
     @Body() dto: CreateResourceFromUploadedDto,
     @Request() req: any,

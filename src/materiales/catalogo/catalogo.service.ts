@@ -77,7 +77,10 @@ export class CatalogoService {
   // GET BY ID — REQ-CAT-002
   // ---------------------------------------------------------------------------
 
-  async getById(id: string, includeInactive: boolean): Promise<MaterialProductDto> {
+  async getById(
+    id: string,
+    includeInactive: boolean,
+  ): Promise<MaterialProductDto> {
     const product = await this.prisma.materialProduct.findUnique({
       where: { id },
       include: {
@@ -154,23 +157,21 @@ export class CatalogoService {
   // PRIVATE MAPPER
   // ---------------------------------------------------------------------------
 
-  private mapProduct(
-    product: {
-      id: string;
-      sku: string;
-      title: string;
-      description: string | null;
-      price_centavos: number;
-      stock: number;
-      active: boolean;
-      category: { id: string; slug: string; label: string };
-      club_type: { club_type_id: number; name: string | null };
-      variants: Array<{
-        type: string;
-        options: Array<{ id: string; label: string; stock: number }>;
-      }>;
-    },
-  ): MaterialProductDto {
+  private mapProduct(product: {
+    id: string;
+    sku: string;
+    title: string;
+    description: string | null;
+    price_centavos: number;
+    stock: number;
+    active: boolean;
+    category: { id: string; slug: string; label: string };
+    club_type: { club_type_id: number; name: string | null };
+    variants: Array<{
+      type: string;
+      options: Array<{ id: string; label: string; stock: number }>;
+    }>;
+  }): MaterialProductDto {
     const variant = product.variants[0] ?? null;
 
     return {

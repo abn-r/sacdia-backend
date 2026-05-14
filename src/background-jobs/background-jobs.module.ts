@@ -32,8 +32,6 @@ const redisAvailable = isRedisConfigured();
     AnnualFoldersModule,
     DataExportModule,
   ],
-  providers: [
-    ...(redisAvailable ? [BackgroundJobsProcessor] : []),
-  ],
+  providers: [...(redisAvailable ? [BackgroundJobsProcessor] : [])],
 })
 export class BackgroundJobsModule {}

@@ -21,7 +21,8 @@ export class InventarioVariantOptionDto {
 
 export class InventarioVariantDto {
   @ApiProperty() type: string;
-  @ApiProperty({ type: [InventarioVariantOptionDto] }) options: InventarioVariantOptionDto[];
+  @ApiProperty({ type: [InventarioVariantOptionDto] })
+  options: InventarioVariantOptionDto[];
 }
 
 export class InventarioProductDto {
@@ -29,13 +30,19 @@ export class InventarioProductDto {
   @ApiProperty() sku: string;
   @ApiProperty() title: string;
   @ApiPropertyOptional() description?: string | null;
-  @ApiProperty({ type: InventarioCategoryRefDto }) cat: InventarioCategoryRefDto;
-  @ApiProperty({ type: InventarioProgramaRefDto }) programa: InventarioProgramaRefDto;
+  @ApiProperty({ type: InventarioCategoryRefDto })
+  cat: InventarioCategoryRefDto;
+  @ApiProperty({ type: InventarioProgramaRefDto })
+  programa: InventarioProgramaRefDto;
   @ApiProperty() price_centavos: number;
   @ApiProperty() stock: number;
   @ApiProperty() active: boolean;
-  @ApiProperty({ description: 'Total number of variant records for this product' }) variant_count: number;
-  @ApiPropertyOptional({ type: InventarioVariantDto }) variants?: InventarioVariantDto | null;
+  @ApiProperty({
+    description: 'Total number of variant records for this product',
+  })
+  variant_count: number;
+  @ApiPropertyOptional({ type: InventarioVariantDto })
+  variants?: InventarioVariantDto | null;
 }
 
 export class PaginatedInventarioProductDto {
@@ -46,6 +53,7 @@ export class PaginatedInventarioProductDto {
 }
 
 export class VariantStockUpdateResponseDto {
-  @ApiProperty({ type: InventarioVariantOptionDto }) option: InventarioVariantOptionDto;
+  @ApiProperty({ type: InventarioVariantOptionDto })
+  option: InventarioVariantOptionDto;
   @ApiProperty({ type: InventarioProductDto }) product: InventarioProductDto;
 }

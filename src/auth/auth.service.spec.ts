@@ -470,7 +470,7 @@ describe('AuthService', () => {
     };
 
     it('should throw BadRequestException when refresh token is missing', async () => {
-      await expect(service.refreshSession({} as any)).rejects.toMatchObject({
+      await expect(service.refreshSession({})).rejects.toMatchObject({
         code: ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED,
       });
     });
@@ -901,7 +901,7 @@ describe('AuthService', () => {
       await expect(
         service.setActiveClubContext('user-123', {
           assignment_id: 'missing-assignment',
-        } as any),
+        }),
       ).rejects.toMatchObject({ code: ErrorCode.AUTH_ASSIGNMENT_NOT_FOUND });
     });
 
@@ -1014,7 +1014,7 @@ describe('AuthService', () => {
 
       const result = await service.setActiveClubContext('user-123', {
         assignment_id: 'assignment-1',
-      } as any);
+      });
 
       expect(mockPrismaService.users_pr.upsert).toHaveBeenCalledWith({
         where: { user_id: 'user-123' },

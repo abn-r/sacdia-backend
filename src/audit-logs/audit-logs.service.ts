@@ -51,9 +51,10 @@ export class AuditLogsService {
           club_id: dto.club_id ?? null,
           actor_user_id: dto.actor_user_id ?? null,
           summary: dto.summary ?? null,
-          changes: dto.changes !== undefined
-            ? (dto.changes as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
+          changes:
+            dto.changes !== undefined
+              ? (dto.changes as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
         },
       });
     } catch (err) {

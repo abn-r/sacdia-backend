@@ -67,7 +67,10 @@ export class InsuranceController {
   @ApiParam({ name: 'sectionId', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de seguros por miembro' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires insurance:read' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires insurance:read',
+  })
   async listMembersInsurance(
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
@@ -129,8 +132,14 @@ export class InsuranceController {
   @ApiParam({ name: 'memberId', type: String })
   @ApiResponse({ status: 200, description: 'Seguro del miembro' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires insurance:read' })
-  @ApiResponse({ status: 404, description: 'Seguro no encontrado para el miembro' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires insurance:read',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Seguro no encontrado para el miembro',
+  })
   async getMemberInsurance(@Param('memberId', ParseUUIDPipe) memberId: string) {
     const data = await this.service.getMemberInsurance(memberId);
     return { status: 'success', data };
@@ -145,7 +154,10 @@ export class InsuranceController {
   @ApiParam({ name: 'memberId', type: String })
   @ApiResponse({ status: 201, description: 'Seguro creado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires insurance:create' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires insurance:create',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -191,7 +203,10 @@ export class InsuranceController {
   @ApiParam({ name: 'insuranceId', type: Number })
   @ApiResponse({ status: 200, description: 'Seguro actualizado' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires insurance:update' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires insurance:update',
+  })
   @ApiResponse({ status: 404, description: 'Registro de seguro no encontrado' })
   @ApiBody({
     schema: {

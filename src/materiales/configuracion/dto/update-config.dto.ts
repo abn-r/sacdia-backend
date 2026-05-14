@@ -1,5 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
+import {
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Min,
+} from 'class-validator';
 
 /**
  * Partial update DTO for MaterialConfig.
@@ -27,7 +34,10 @@ export class UpdateConfigDto {
   @IsString()
   account_holder?: string;
 
-  @ApiPropertyOptional({ description: 'Default shipping cost in centavos', minimum: 0 })
+  @ApiPropertyOptional({
+    description: 'Default shipping cost in centavos',
+    minimum: 0,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)

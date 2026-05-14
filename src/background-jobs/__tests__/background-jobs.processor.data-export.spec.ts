@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Job } from 'bullmq';
 import { BackgroundJobsProcessor } from '../background-jobs.processor';
-import { BackgroundJobName, DataExportGeneratePayload } from '../background-jobs.types';
+import {
+  BackgroundJobName,
+  DataExportGeneratePayload,
+} from '../background-jobs.types';
 import { MonthlyReportsService } from '../../monthly-reports/monthly-reports.service';
 import { FinancePeriodService } from '../../finances/finance-period.service';
 import { RankingsService } from '../../annual-folders/rankings.service';
@@ -27,7 +30,11 @@ describe('BackgroundJobsProcessor — data-export', () => {
 
   function makeJob(
     data: DataExportGeneratePayload,
-    overrides: Partial<{ id: string; attemptsMade: number; opts: { attempts: number } }> = {},
+    overrides: Partial<{
+      id: string;
+      attemptsMade: number;
+      opts: { attempts: number };
+    }> = {},
   ): Job<unknown> {
     return {
       id: 'test-job-de',
@@ -85,7 +92,9 @@ describe('BackgroundJobsProcessor — data-export', () => {
     });
 
     it('propagates rejection from DataExportService.runExport()', async () => {
-      mockDataExportService.runExport.mockRejectedValue(new Error('R2 failure'));
+      mockDataExportService.runExport.mockRejectedValue(
+        new Error('R2 failure'),
+      );
 
       const job = makeJob(basePayload);
       await expect(processor.process(job)).rejects.toThrow('R2 failure');
@@ -96,7 +105,10 @@ describe('BackgroundJobsProcessor — data-export', () => {
     it('does NOT call trackSkipped even at max attempts (data-export has no cron key)', () => {
       mockCronLogger.trackSkipped.mockResolvedValue(undefined);
 
-      const job = makeJob(basePayload, { attemptsMade: 1, opts: { attempts: 1 } });
+      const job = makeJob(basePayload, {
+        attemptsMade: 1,
+        opts: { attempts: 1 },
+      });
       processor.onFailed(job, new Error('Export failed'));
 
       // data-export is not in MAP_JOB_TO_CRON_KEY — trackSkipped must NOT be called

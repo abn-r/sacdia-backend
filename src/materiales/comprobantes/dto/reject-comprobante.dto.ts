@@ -18,7 +18,8 @@ export class RejectComprobanteDto {
    * Required for audit purposes — reject_reason is kept permanently on the row.
    */
   @ApiProperty({
-    description: 'Reason for rejection (required, stored permanently for audit)',
+    description:
+      'Reason for rejection (required, stored permanently for audit)',
     example: 'Amount does not match the order total',
     maxLength: 500,
   })

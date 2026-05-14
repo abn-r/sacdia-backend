@@ -118,7 +118,8 @@ export class MemberRankingsController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Insufficient permissions (member_ranking_weights:write required)',
+    description:
+      'Insufficient permissions (member_ranking_weights:write required)',
   })
   @ApiResponse({
     status: 400,
@@ -138,7 +139,9 @@ export class MemberRankingsController {
     if (clubIdRaw !== undefined) {
       const parsed = Number(clubIdRaw);
       if (!Number.isFinite(parsed) || parsed <= 0) {
-        throw new AppBadRequestException(ErrorCode.MEMBER_RANKINGS_CLUB_ID_INVALID);
+        throw new AppBadRequestException(
+          ErrorCode.MEMBER_RANKINGS_CLUB_ID_INVALID,
+        );
       }
       clubId = parsed;
     }
@@ -236,7 +239,8 @@ export class MemberRankingsController {
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Insufficient permissions — none of the required member_rankings:read_* permissions granted',
+    description:
+      'Insufficient permissions — none of the required member_rankings:read_* permissions granted',
   })
   async list(
     @Req() req: any,

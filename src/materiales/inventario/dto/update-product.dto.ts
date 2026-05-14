@@ -1,6 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class UpdateProductDto {
   @ApiPropertyOptional({ description: 'Product title', maxLength: 200 })
@@ -21,7 +28,10 @@ export class UpdateProductDto {
   @Min(0)
   price_centavos?: number;
 
-  @ApiPropertyOptional({ description: 'Direct product-level stock (only for products without variants)' })
+  @ApiPropertyOptional({
+    description:
+      'Direct product-level stock (only for products without variants)',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

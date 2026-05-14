@@ -285,7 +285,7 @@ describe('ActivitiesService', () => {
       mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.create(1, createDto as any, 'user-123'),
+        service.create(1, createDto, 'user-123'),
       ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_SECTION_ID_REQUIRED });
     });
 
@@ -308,7 +308,7 @@ describe('ActivitiesService', () => {
       });
 
       await expect(
-        service.create(1, createDto as any, 'user-123'),
+        service.create(1, createDto, 'user-123'),
       ).rejects.toMatchObject({ code: ErrorCode.ACTIVITY_SECTION_WRONG_CLUB });
     });
   });

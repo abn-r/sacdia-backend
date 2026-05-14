@@ -17,7 +17,9 @@ export class LoginDto {
   declare email: string;
 
   @ApiProperty({ example: 'Password123!', description: 'Contraseña' })
-  @IsNotEmpty({ message: i18nValidationMessage('errors.VALIDATION.password_required') })
+  @IsNotEmpty({
+    message: i18nValidationMessage('errors.VALIDATION.password_required'),
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(128)

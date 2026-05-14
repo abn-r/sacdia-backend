@@ -376,12 +376,7 @@ export class AdminGeographyService {
       return created;
     });
 
-    this.logMutation(
-      'create',
-      'local_fields',
-      result.local_field_id,
-      actorId,
-    );
+    this.logMutation('create', 'local_fields', result.local_field_id, actorId);
 
     await this.catalogCache.invalidateMany([
       CATALOG_CACHE_KEYS.LOCAL_FIELDS(),
@@ -537,12 +532,7 @@ export class AdminGeographyService {
       return created;
     });
 
-    this.logMutation(
-      'create',
-      'districts',
-      result.districlub_type_id,
-      actorId,
-    );
+    this.logMutation('create', 'districts', result.districlub_type_id, actorId);
 
     await this.catalogCache.invalidateMany([
       CATALOG_CACHE_KEYS.DISTRICTS(),

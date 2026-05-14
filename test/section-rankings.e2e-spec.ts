@@ -84,7 +84,7 @@ const SECTION_ID = 1;
 const directorProfile = makeProfile(
   DIRECTOR_USER_ID,
   ['section_rankings:read_club'],
-  [1],       // club_id: 1
+  [1], // club_id: 1
   [SECTION_ID],
 );
 
@@ -187,98 +187,78 @@ describe('Section Rankings E2E (/api/v1/section-rankings)', () => {
   // 2. GET / — director-club returns 200 with paginated envelope
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET / — director with read_club returns 200 paginated envelope',
-    async () => {
-      currentProfile = directorProfile;
+  it('GET / — director with read_club returns 200 paginated envelope', async () => {
+    currentProfile = directorProfile;
 
-      jest
-        .spyOn(prisma.sectionRanking, 'findMany')
-        .mockResolvedValue([]);
-      jest
-        .spyOn(prisma.sectionRanking, 'count')
-        .mockResolvedValue(0);
+    jest.spyOn(prisma.sectionRanking, 'findMany').mockResolvedValue([]);
+    jest.spyOn(prisma.sectionRanking, 'count').mockResolvedValue(0);
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/section-rankings')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${directorToken}`)
-        .expect(200);
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/section-rankings')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${directorToken}`)
+      .expect(200);
 
-      expect(response.body).toHaveProperty('data');
-      expect(response.body).toHaveProperty('total');
-      expect(response.body).toHaveProperty('page');
-      expect(response.body).toHaveProperty('limit');
-      expect(Array.isArray(response.body.data)).toBe(true);
-    },
-  );
+    expect(response.body).toHaveProperty('data');
+    expect(response.body).toHaveProperty('total');
+    expect(response.body).toHaveProperty('page');
+    expect(response.body).toHaveProperty('limit');
+    expect(Array.isArray(response.body.data)).toBe(true);
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 3. GET /:sectionId/members — integer sectionId works (200)
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET /1/members — integer sectionId is accepted (200)',
-    async () => {
-      currentProfile = directorProfile;
+  it('GET /1/members — integer sectionId is accepted (200)', async () => {
+    currentProfile = directorProfile;
 
-      jest
-        .spyOn(prisma.club_sections, 'findUnique')
-        .mockResolvedValue({
-          club_section_id: SECTION_ID,
-          name: 'Section A',
-          club_id: 1,
-          clubs: { club_id: 1, local_field_id: null },
-        } as any);
+    jest.spyOn(prisma.club_sections, 'findUnique').mockResolvedValue({
+      club_section_id: SECTION_ID,
+      name: 'Section A',
+      club_id: 1,
+      clubs: { club_id: 1, local_field_id: null },
+    } as any);
 
-      jest
-        .spyOn(prisma.enrollmentRanking, 'findMany')
-        .mockResolvedValue([]);
+    jest.spyOn(prisma.enrollmentRanking, 'findMany').mockResolvedValue([]);
 
-      const response = await request(app.getHttpServer())
-        .get(`/api/v1/section-rankings/${SECTION_ID}/members`)
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${directorToken}`)
-        .expect(200);
+    const response = await request(app.getHttpServer())
+      .get(`/api/v1/section-rankings/${SECTION_ID}/members`)
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${directorToken}`)
+      .expect(200);
 
-      expect(Array.isArray(response.body)).toBe(true);
-    },
-  );
+    expect(Array.isArray(response.body)).toBe(true);
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 4. GET /:sectionId/members — non-integer rejected by ParseIntPipe (400)
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET /abc/members — non-integer sectionId is rejected with 400 (ParseIntPipe)',
-    async () => {
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/section-rankings/abc/members')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${directorToken}`)
-        .expect(400);
+  it('GET /abc/members — non-integer sectionId is rejected with 400 (ParseIntPipe)', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/section-rankings/abc/members')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${directorToken}`)
+      .expect(400);
 
-      expect(response.body).toBeDefined();
-    },
-  );
+    expect(response.body).toBeDefined();
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 5. GET / — member without section_rankings permission returns 403
   // ─────────────────────────────────────────────────────────────────────────
 
-  it(
-    'GET / — member with only member_rankings:read_self returns 403 MEMBER_RANKING_SCOPE_DENIED',
-    async () => {
-      // Member has no section_rankings:* permission — service throws
-      currentProfile = memberProfile;
+  it('GET / — member with only member_rankings:read_self returns 403 MEMBER_RANKING_SCOPE_DENIED', async () => {
+    // Member has no section_rankings:* permission — service throws
+    currentProfile = memberProfile;
 
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/section-rankings')
-        .query({ year_id: YEAR_ID })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(403);
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/section-rankings')
+      .query({ year_id: YEAR_ID })
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(403);
 
-      expect(response.body).toHaveProperty('code', 'MEMBER_RANKING_SCOPE_DENIED');
-    },
-  );
+    expect(response.body).toHaveProperty('code', 'MEMBER_RANKING_SCOPE_DENIED');
+  });
 });

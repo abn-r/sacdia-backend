@@ -21,7 +21,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions } from '../../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import {
   MATERIALES_READ,
@@ -58,12 +61,23 @@ export class ComprobantesController {
   @RequirePermissions(MATERIALES_UPLOAD_RECEIPT)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload payment receipt (comprobante) for an approved order' })
-  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiOperation({
+    summary: 'Upload payment receipt (comprobante) for an approved order',
+  })
+  @ApiParam({
+    name: 'folio',
+    type: String,
+    description: 'Order folio_referencia or UUID',
+  })
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['file', 'monto_centavos', 'ref_bancaria_declarada', 'fecha_pago'],
+      required: [
+        'file',
+        'monto_centavos',
+        'ref_bancaria_declarada',
+        'fecha_pago',
+      ],
       properties: {
         file: { type: 'string', format: 'binary' },
         monto_centavos: { type: 'integer', example: 150000 },
@@ -73,17 +87,26 @@ export class ComprobantesController {
     },
   })
   @ApiResponse({ status: 201, type: ComprobanteDto })
-  @ApiResponse({ status: 400, description: 'invalid_file — size_exceeded or unsupported_mime' })
-  @ApiResponse({ status: 403, description: 'Order belongs to another director' })
+  @ApiResponse({
+    status: 400,
+    description: 'invalid_file — size_exceeded or unsupported_mime',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Order belongs to another director',
+  })
   @ApiResponse({ status: 404, description: 'Order not found' })
   @ApiResponse({ status: 422, description: 'Order not in aprobada state' })
   upload(
     @Param('folio') folio: string,
-    @UploadedFile(new ComprobanteFileValidationPipe()) file: Express.Multer.File,
+    @UploadedFile(new ComprobanteFileValidationPipe())
+    file: Express.Multer.File,
     @Body() dto: UploadComprobanteDto,
     @Request() req: any,
   ): Promise<ComprobanteDto> {
-    return this.comprobantesService.upload(folio, file, dto, { id: req.user.sub });
+    return this.comprobantesService.upload(folio, file, dto, {
+      id: req.user.sub,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -95,12 +118,26 @@ export class ComprobantesController {
   @Post(':folio/aprobar')
   @RequirePermissions(MATERIALES_VALIDATE_RECEIPT)
   @HttpCode(200)
-  @ApiOperation({ summary: 'Approve a pending comprobante — transitions order to pagada' })
-  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiOperation({
+    summary: 'Approve a pending comprobante — transitions order to pagada',
+  })
+  @ApiParam({
+    name: 'folio',
+    type: String,
+    description: 'Order folio_referencia or UUID',
+  })
   @ApiResponse({ status: 200, type: ApproveComprobanteResponseDto })
   @ApiResponse({ status: 404, description: 'Order or comprobante not found' })
-  @ApiResponse({ status: 409, description: 'already_approved_comprobante — another comprobante is already approved' })
-  @ApiResponse({ status: 422, description: 'Comprobante not in pendiente status or order not in aprobada state' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'already_approved_comprobante — another comprobante is already approved',
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Comprobante not in pendiente status or order not in aprobada state',
+  })
   approve(
     @Param('folio') folio: string,
     @Body() dto: ApproveComprobanteDto,
@@ -118,11 +155,20 @@ export class ComprobantesController {
   @Post(':folio/rechazar')
   @RequirePermissions(MATERIALES_VALIDATE_RECEIPT)
   @HttpCode(200)
-  @ApiOperation({ summary: 'Reject a pending comprobante — order remains in aprobada' })
-  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiOperation({
+    summary: 'Reject a pending comprobante — order remains in aprobada',
+  })
+  @ApiParam({
+    name: 'folio',
+    type: String,
+    description: 'Order folio_referencia or UUID',
+  })
   @ApiResponse({ status: 200, type: ComprobanteDto })
   @ApiResponse({ status: 404, description: 'Order or comprobante not found' })
-  @ApiResponse({ status: 422, description: 'Comprobante not in pendiente status' })
+  @ApiResponse({
+    status: 422,
+    description: 'Comprobante not in pendiente status',
+  })
   reject(
     @Param('folio') folio: string,
     @Body() dto: RejectComprobanteDto,
@@ -139,10 +185,19 @@ export class ComprobantesController {
 
   @Get(':folio')
   @RequirePermissions(MATERIALES_READ)
-  @ApiOperation({ summary: 'List all comprobantes for an order (with signed read URLs)' })
-  @ApiParam({ name: 'folio', type: String, description: 'Order folio_referencia or UUID' })
+  @ApiOperation({
+    summary: 'List all comprobantes for an order (with signed read URLs)',
+  })
+  @ApiParam({
+    name: 'folio',
+    type: String,
+    description: 'Order folio_referencia or UUID',
+  })
   @ApiResponse({ status: 200, type: ListComprobantesDto })
-  @ApiResponse({ status: 403, description: 'Director trying to access another director\'s order' })
+  @ApiResponse({
+    status: 403,
+    description: "Director trying to access another director's order",
+  })
   @ApiResponse({ status: 404, description: 'Order not found' })
   list(
     @Param('folio') folio: string,
@@ -150,7 +205,9 @@ export class ComprobantesController {
   ): Promise<ListComprobantesDto> {
     const effectivePermissions: string[] =
       req.authorization?.effective?.permissions ?? [];
-    const canValidate = effectivePermissions.includes(MATERIALES_VALIDATE_RECEIPT);
+    const canValidate = effectivePermissions.includes(
+      MATERIALES_VALIDATE_RECEIPT,
+    );
 
     return this.comprobantesService.list(folio, {
       id: req.user.sub,

@@ -114,7 +114,7 @@ export class EmailProcessor
 
     const rendered = await this.renderTemplate(job.name, job.data);
 
-    const payload = job.data as { to: string };
+    const payload = job.data;
     await this.provider.send({
       to: payload.to,
       from: this.fromEmail,
@@ -140,7 +140,9 @@ export class EmailProcessor
       case EMAIL_JOB_DATA_EXPORT_READY: {
         const d = data as DataExportReadyJobPayload;
         const lang = resolveLang(d.lang);
-        const subject = this.i18n.translate('emails.data_export_subject', { lang });
+        const subject = this.i18n.translate('emails.data_export_subject', {
+          lang,
+        });
         const element = React.createElement(DataExportReadyEmail, {
           deepLink: d.deepLink,
           expiresAt: new Date(d.expiresAt),
@@ -156,7 +158,10 @@ export class EmailProcessor
       case EMAIL_JOB_EMAIL_VERIFICATION: {
         const d = data as EmailVerificationJobPayload;
         const lang = resolveLang(d.lang);
-        const subject = this.i18n.translate('emails.email_verification_subject', { lang });
+        const subject = this.i18n.translate(
+          'emails.email_verification_subject',
+          { lang },
+        );
         const element = React.createElement(EmailVerificationEmail, {
           verificationUrl: d.verificationUrl,
           userName: d.userName,
@@ -172,7 +177,9 @@ export class EmailProcessor
       case EMAIL_JOB_PASSWORD_RESET: {
         const d = data as PasswordResetJobPayload;
         const lang = resolveLang(d.lang);
-        const subject = this.i18n.translate('emails.password_reset_subject', { lang });
+        const subject = this.i18n.translate('emails.password_reset_subject', {
+          lang,
+        });
         const element = React.createElement(PasswordResetEmail, {
           resetUrl: d.resetUrl,
           lang,
@@ -187,8 +194,12 @@ export class EmailProcessor
       case EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED: {
         const d = data as AccountDeletionConfirmedJobPayload;
         const lang = resolveLang(d.lang);
-        const subject = this.i18n.translate('emails.account_deletion_subject', { lang });
-        const element = React.createElement(AccountDeletionConfirmedEmail, { lang });
+        const subject = this.i18n.translate('emails.account_deletion_subject', {
+          lang,
+        });
+        const element = React.createElement(AccountDeletionConfirmedEmail, {
+          lang,
+        });
         return {
           subject,
           html: await render(element),

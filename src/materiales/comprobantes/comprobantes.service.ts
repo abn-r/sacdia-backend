@@ -10,14 +10,24 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsPublisher } from '../shared/events.publisher';
-import { assertTransition, MaterialOrderEstado } from '../ordenes/state-machine';
+import { assertTransition } from '../ordenes/state-machine';
 import type { FileStorageService } from '../../common/services/file-storage.service';
-import { FILE_STORAGE_SERVICE, StorageBucketAlias } from '../../common/services/file-storage.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../../common/services/file-storage.service';
 import type { ApproveComprobanteDto } from './dto/approve-comprobante.dto';
 import type { RejectComprobanteDto } from './dto/reject-comprobante.dto';
 import type { UploadComprobanteDto } from './dto/upload-comprobante.dto';
-import type { ComprobanteDto, ApproveComprobanteResponseDto, ListComprobantesDto } from './dto/comprobante.dto';
-import { extensionFromMime, type ComprobanteMime } from './comprobante-file-validation.pipe';
+import type {
+  ComprobanteDto,
+  ApproveComprobanteResponseDto,
+  ListComprobantesDto,
+} from './dto/comprobante.dto';
+import {
+  extensionFromMime,
+  type ComprobanteMime,
+} from './comprobante-file-validation.pipe';
 import type { OrdenDto } from '../ordenes/dto/orden.dto';
 
 // ---------------------------------------------------------------------------
@@ -29,11 +39,15 @@ const COMPROBANTES_BUCKET = StorageBucketAlias.MATERIALES_COMPROBANTES;
 // Internal: identifier resolution (mirrors ordenes.service.ts)
 // ---------------------------------------------------------------------------
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 function orderIdentifierWhere(folioOrId: string) {
-  return isUuid(folioOrId) ? { id: folioOrId } : { folio_referencia: folioOrId };
+  return isUuid(folioOrId)
+    ? { id: folioOrId }
+    : { folio_referencia: folioOrId };
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +103,8 @@ export class ComprobantesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsPublisher,
-    @Inject(FILE_STORAGE_SERVICE) private readonly fileStorage: FileStorageService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -148,27 +163,20 @@ export class ComprobantesService {
     const r2Key = `${pathSegment}/${objectUuid}.${ext}`;
 
     // Step 1: Upload to R2 (failure → 502 via service, no DB write)
-    let uploadResult: { key: string; url: string };
-    try {
-      uploadResult = await this.fileStorage.upload(
-        COMPROBANTES_BUCKET,
-        r2Key,
-        file.buffer,
-        { contentType: mime, overwrite: false },
-      );
-    } catch (err) {
-      // R2 unavailable — re-throw (AppInternalServerErrorException already formatted)
-      throw err;
-    }
+    const uploadResult = await this.fileStorage.upload(
+      COMPROBANTES_BUCKET,
+      r2Key,
+      file.buffer,
+      { contentType: mime, overwrite: false },
+    );
 
     // Persist the original file name from multipart upload (not trusted for extension derivation)
     const originalFileName = file.originalname ?? `${objectUuid}.${ext}`;
 
     // Step 2: Insert comprobante row
     // If this fails, the R2 object is orphaned — log for manual cleanup (v1 design decision §6)
-    let comprobante: Awaited<ReturnType<typeof this.prisma.materialComprobante.create>>;
-    try {
-      comprobante = await this.prisma.materialComprobante.create({
+    const comprobante = await this.prisma.materialComprobante
+      .create({
         data: {
           order_id: order.id,
           r2_key: uploadResult.key,
@@ -181,17 +189,17 @@ export class ComprobantesService {
           status: 'pendiente',
           uploaded_by: actor.id,
         },
+      })
+      .catch((err: unknown) => {
+        // DB insert failed AFTER successful R2 upload → orphaned object
+        this.logger.error({
+          event: 'r2_orphan',
+          r2_key: uploadResult.key,
+          folio: folioOrId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
       });
-    } catch (err) {
-      // DB insert failed AFTER successful R2 upload → orphaned object
-      this.logger.error({
-        event: 'r2_orphan',
-        r2_key: uploadResult.key,
-        folio: folioOrId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
 
     this.events.logEvent('comprobante.uploaded', {
       comprobante_id: comprobante.id,
@@ -321,7 +329,7 @@ export class ComprobantesService {
     }
 
     // REQ-CMP-006: assert order state transition aprobada → pagada
-    assertTransition(order.estado as MaterialOrderEstado, 'pagada');
+    assertTransition(order.estado, 'pagada');
 
     const now = new Date();
 
@@ -382,7 +390,7 @@ export class ComprobantesService {
 
     return {
       comprobante: mapComprobante(updatedComprobante, signedUrl),
-      order: this.mapOrderForResponse(updatedOrder) as object,
+      order: this.mapOrderForResponse(updatedOrder),
     };
   }
 

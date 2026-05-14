@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Job } from 'bullmq';
 import { BackgroundJobsProcessor } from '../background-jobs.processor';
-import { BackgroundJobName, MonthlyReportsAutoGeneratePayload } from '../background-jobs.types';
+import {
+  BackgroundJobName,
+  MonthlyReportsAutoGeneratePayload,
+} from '../background-jobs.types';
 import { MonthlyReportsService } from '../../monthly-reports/monthly-reports.service';
 import { FinancePeriodService } from '../../finances/finance-period.service';
 import { RankingsService } from '../../annual-folders/rankings.service';
@@ -31,7 +34,11 @@ describe('BackgroundJobsProcessor — monthly-reports', () => {
   function makeJob(
     name: BackgroundJobName,
     data: MonthlyReportsAutoGeneratePayload,
-    overrides: Partial<{ id: string; attemptsMade: number; opts: { attempts: number } }> = {},
+    overrides: Partial<{
+      id: string;
+      attemptsMade: number;
+      opts: { attempts: number };
+    }> = {},
   ): Job<unknown> {
     return {
       id: 'test-job-mr',
@@ -77,13 +84,16 @@ describe('BackgroundJobsProcessor — monthly-reports', () => {
 
   describe('process() — MONTHLY_REPORTS_AUTO_GENERATE', () => {
     it('delegates to cronLogger.track() which calls runAutoGeneration()', async () => {
-      mockCronLogger.track.mockImplementation(async (_name: string, fn: () => Promise<unknown>) => fn());
-      mockMonthlyReportsService.runAutoGeneration.mockResolvedValue({ itemsProcessed: 5 });
-
-      const job = makeJob(
-        BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE,
-        { triggeredAt: new Date().toISOString() },
+      mockCronLogger.track.mockImplementation(
+        async (_name: string, fn: () => Promise<unknown>) => fn(),
       );
+      mockMonthlyReportsService.runAutoGeneration.mockResolvedValue({
+        itemsProcessed: 5,
+      });
+
+      const job = makeJob(BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE, {
+        triggeredAt: new Date().toISOString(),
+      });
       await processor.process(job);
 
       expect(mockCronLogger.track).toHaveBeenCalledWith(
@@ -91,18 +101,25 @@ describe('BackgroundJobsProcessor — monthly-reports', () => {
         expect.any(Function),
         expect.objectContaining({ bull_job_id: 'test-job-mr' }),
       );
-      expect(mockMonthlyReportsService.runAutoGeneration).toHaveBeenCalledTimes(1);
+      expect(mockMonthlyReportsService.runAutoGeneration).toHaveBeenCalledTimes(
+        1,
+      );
     });
 
     it('propagates errors so BullMQ can retry', async () => {
-      mockCronLogger.track.mockImplementation(async (_name: string, fn: () => Promise<unknown>) => fn());
-      mockMonthlyReportsService.runAutoGeneration.mockRejectedValue(new Error('DB connection lost'));
-
-      const job = makeJob(
-        BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE,
-        { triggeredAt: new Date().toISOString() },
+      mockCronLogger.track.mockImplementation(
+        async (_name: string, fn: () => Promise<unknown>) => fn(),
       );
-      await expect(processor.process(job)).rejects.toThrow('DB connection lost');
+      mockMonthlyReportsService.runAutoGeneration.mockRejectedValue(
+        new Error('DB connection lost'),
+      );
+
+      const job = makeJob(BackgroundJobName.MONTHLY_REPORTS_AUTO_GENERATE, {
+        triggeredAt: new Date().toISOString(),
+      });
+      await expect(processor.process(job)).rejects.toThrow(
+        'DB connection lost',
+      );
     });
   });
 
@@ -116,7 +133,9 @@ describe('BackgroundJobsProcessor — monthly-reports', () => {
         { attemptsMade: 5, opts: { attempts: 5 } },
       );
 
-      expect(() => processor.onFailed(job, new Error('Final failure'))).not.toThrow();
+      expect(() =>
+        processor.onFailed(job, new Error('Final failure')),
+      ).not.toThrow();
       expect(mockCronLogger.trackSkipped).toHaveBeenCalledWith(
         'monthly-reports-auto-generate',
         expect.stringContaining('exhausted 5 attempts'),
@@ -137,7 +156,9 @@ describe('BackgroundJobsProcessor — monthly-reports', () => {
     });
 
     it('handles undefined job gracefully', () => {
-      expect(() => processor.onFailed(undefined, new Error('Unknown error'))).not.toThrow();
+      expect(() =>
+        processor.onFailed(undefined, new Error('Unknown error')),
+      ).not.toThrow();
     });
   });
 });

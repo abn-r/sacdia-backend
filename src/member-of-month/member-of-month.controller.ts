@@ -48,7 +48,10 @@ export class MemberOfMonthController {
   @ApiQuery({ name: 'notified', required: false, type: Boolean })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Paginated list of member-of-month records' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of member-of-month records',
+  })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,

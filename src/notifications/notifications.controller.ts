@@ -120,7 +120,10 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Send notification to specific user' })
   @ApiResponse({ status: 201, description: 'Notification queued' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:send' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires notifications:send',
+  })
   async sendToUser(@Body() dto: SendNotificationDto, @Request() req) {
     return this.notificationsService.sendToUser(
       dto,
@@ -135,7 +138,10 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Send notification to all users' })
   @ApiResponse({ status: 201, description: 'Broadcast queued' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:broadcast' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires notifications:broadcast',
+  })
   async broadcast(@Body() dto: BroadcastNotificationDto, @Request() req) {
     return this.notificationsService.broadcast(
       dto,
@@ -150,7 +156,10 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Send notification to club members' })
   @ApiResponse({ status: 201, description: 'Club notification queued' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:club' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires notifications:club',
+  })
   async sendToClub(
     @Param('instanceType', new ParseEnumPipe(ClubInstanceType))
     instanceType: ClubInstanceType,
@@ -170,7 +179,10 @@ export class NotificationsController {
   @Get('history')
   @ApiResponse({ status: 200, description: 'Paginated notification audit log' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Insufficient permissions — requires notifications:send' })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions — requires notifications:send',
+  })
   @ApiOperation({
     summary: 'Get paginated notification history',
     description:
@@ -347,7 +359,10 @@ export class FcmTokensController {
   @ApiOperation({ summary: 'Get FCM tokens by user ID (owner/admin only)' })
   @ApiResponse({ status: 200, description: 'List of FCM tokens for user' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
-  @ApiResponse({ status: 403, description: 'Forbidden — must be owner or admin' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — must be owner or admin',
+  })
   async getUserTokens(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.fcmTokensService.getUserTokens(userId);
   }
