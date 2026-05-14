@@ -9,6 +9,8 @@ import { FolioService } from './ordenes/folio.service';
 import { StockService } from './ordenes/stock.service';
 import { ComprobantesController } from './comprobantes/comprobantes.controller';
 import { ComprobantesService } from './comprobantes/comprobantes.service';
+import { InventarioController } from './inventario/inventario.controller';
+import { InventarioService } from './inventario/inventario.service';
 import { EventsPublisher } from './shared/events.publisher';
 
 /**
@@ -29,15 +31,15 @@ import { EventsPublisher } from './shared/events.publisher';
  * Sub-modules (PR4):
  *   - comprobantes/  → payment receipt upload + approve + reject (POST, GET, POST /aprobar, POST /rechazar)
  *
- * Sub-modules (future PRs):
- *   - inventario/    → product CRUD (PR5)
+ * Sub-modules (PR5):
+ *   - inventario/    → product CRUD (GET, POST, PATCH, DELETE, PATCH /:id/variantes/:variantId)
  *
  * Infrastructure dependencies:
  *   - PrismaService  — provided globally by PrismaModule (@Global)
  *   - CommonModule   — provided globally (@Global); supplies FILE_STORAGE_SERVICE for PR4
  */
 @Module({
-  controllers: [CatalogoController, ConfiguracionController, OrdenesController, ComprobantesController],
+  controllers: [CatalogoController, ConfiguracionController, OrdenesController, ComprobantesController, InventarioController],
   providers: [
     CatalogoService,
     ConfiguracionService,
@@ -45,6 +47,7 @@ import { EventsPublisher } from './shared/events.publisher';
     FolioService,
     StockService,
     ComprobantesService,
+    InventarioService,
     EventsPublisher,
   ],
   exports: [EventsPublisher],
