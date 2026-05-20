@@ -46,6 +46,7 @@ export const CATALOG_CACHE_KEYS = {
   ALLERGIES: 'cache:catalogs:allergies',
   DISEASES: 'cache:catalogs:diseases',
   MEDICINES: 'cache:catalogs:medicines',
+  CAMPOREE_EVENT_TYPES: 'cache:catalogs:camporee_event_types',
 } as const;
 
 /**
@@ -216,6 +217,7 @@ export class CatalogCacheService {
       CATALOG_CACHE_KEYS.ALLERGIES,
       CATALOG_CACHE_KEYS.DISEASES,
       CATALOG_CACHE_KEYS.MEDICINES,
+      CATALOG_CACHE_KEYS.CAMPOREE_EVENT_TYPES,
     ];
 
     await Promise.allSettled(staticKeys.map((k) => this.invalidate(k)));

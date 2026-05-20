@@ -1,4 +1,5 @@
 export * from './admin-auth.dto';
+export * from './camporee-event-types.dto';
 export * from './geography.dto';
 export * from './honor-categories.dto';
 export * from './notification-stats-query.dto';

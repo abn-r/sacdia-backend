@@ -185,7 +185,7 @@ model churches_translations {
   updated_at DateTime? @default(now()) @db.Timestamptz(6)
   churches   churches @relation(fields: [church_id], references: [church_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([church_id, locale])
+  @@unique([church_id, locale], name: "churches_translations_unique_locale", map: "churches_translations_unique_locale")
   @@index([locale])
   @@index([church_id])
 }
@@ -619,7 +619,7 @@ model countries_translations {
   updated_at DateTime? @default(now()) @db.Timestamptz(6)
   countries  countries @relation(fields: [country_id], references: [country_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([country_id, locale])
+  @@unique([country_id, locale], name: "countries_translations_unique_locale", map: "countries_translations_unique_locale")
   @@index([locale])
   @@index([country_id])
 }
@@ -646,7 +646,7 @@ model districts_translations {
   updated_at         DateTime? @default(now()) @db.Timestamptz(6)
   districts          districts @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([districlub_type_id, locale])
+  @@unique([districlub_type_id, locale], name: "districts_translations_unique_locale", map: "districts_translations_unique_locale")
   @@index([locale])
   @@index([districlub_type_id])
 }
@@ -1161,6 +1161,7 @@ model local_camporees {
   attending_clubs_camporees    camporee_clubs[]
   attending_members_camporees  camporee_members[]
   annual_folders               annual_folders[]
+  camporee_events              camporee_events[]
   ecclesiastical_year_relation ecclesiastical_years @relation("local_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields                 local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -1185,10 +1186,11 @@ model local_fields {
   union_camporee_local_fields union_camporee_local_fields[]
   users                       users[]
   translations                local_fields_translations[]
-  material_products           MaterialProduct[]
-  material_orders             MaterialOrder[]
-  material_folio_counters     MaterialFolioCounter[]
-  material_config             MaterialConfig?
+  material_products            MaterialProduct[]
+  material_orders              MaterialOrder[]
+  material_folio_counters      MaterialFolioCounter[]
+  material_config              MaterialConfig?
+  camporee_event_templates     camporee_event_templates[]
 }
 
 model local_fields_translations {
@@ -1200,7 +1202,7 @@ model local_fields_translations {
   updated_at     DateTime?    @default(now()) @db.Timestamptz(6)
   local_fields   local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([local_field_id, locale])
+  @@unique([local_field_id, locale], name: "local_fields_translations_unique_locale", map: "local_fields_translations_unique_locale")
   @@index([locale])
   @@index([local_field_id])
 }
@@ -1309,6 +1311,7 @@ model union_camporees {
   attending_clubs_camporees    camporee_clubs[]
   attending_members_camporees  camporee_members[]
   annual_folders               annual_folders[]
+  camporee_events              camporee_events[]
   ecclesiastical_year_relation ecclesiastical_years          @relation("union_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   unions                       unions                        @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -1321,12 +1324,13 @@ model unions {
   country_id       Int
   created_at       DateTime?              @default(now()) @db.Timestamptz(6)
   modified_at      DateTime?              @default(now()) @db.Timestamptz(6)
-  local_fields     local_fields[]
-  union_camporees  union_camporees[]
-  folder_templates folder_templates[]
-  countries        countries              @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
-  users            users[]
-  translations     unions_translations[]
+  local_fields              local_fields[]
+  union_camporees           union_camporees[]
+  folder_templates          folder_templates[]
+  camporee_event_templates  camporee_event_templates[]
+  countries                 countries              @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
+  users                     users[]
+  translations              unions_translations[]
 }
 
 model unions_translations {
@@ -1338,7 +1342,7 @@ model unions_translations {
   updated_at DateTime? @default(now()) @db.Timestamptz(6)
   unions     unions   @relation(fields: [union_id], references: [union_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([union_id, locale])
+  @@unique([union_id, locale], name: "unions_translations_unique_locale", map: "unions_translations_unique_locale")
   @@index([locale])
   @@index([union_id])
 }
@@ -1495,7 +1499,12 @@ model users {
   material_orders_cancelled         MaterialOrder[]             @relation("material_order_canceller")
   material_comprobantes_uploaded    MaterialComprobante[]       @relation("material_comprobante_uploader")
   material_comprobantes_validated   MaterialComprobante[]       @relation("material_comprobante_validator")
-  material_config_updated           MaterialConfig[]            @relation("material_config_updater")
+  material_config_updated                 MaterialConfig[]              @relation("material_config_updater")
+  // camporee events relations
+  camporee_event_templates_created        camporee_event_templates[]    @relation("camporee_event_template_creator")
+  camporee_event_templates_modified       camporee_event_templates[]    @relation("camporee_event_template_modifier")
+  camporee_events_created                 camporee_events[]             @relation("camporee_event_creator")
+  camporee_events_modified                camporee_events[]             @relation("camporee_event_modifier")
 }
 
 model notification_preferences {
@@ -3038,7 +3047,7 @@ model relationship_types_translations {
   updated_at           DateTime?          @default(now()) @db.Timestamptz(6)
   relationship_types   relationship_types @relation(fields: [relationship_type_id], references: [relationship_type_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([relationship_type_id, locale], map: "relationship_types_translations_unique_locale")
+  @@unique([relationship_type_id, locale], name: "relationship_types_translations_unique_locale", map: "relationship_types_translations_unique_locale")
   @@index([locale], map: "relationship_types_translations_locale_idx")
   @@index([relationship_type_id], map: "relationship_types_translations_relationship_type_id_idx")
 }
@@ -3053,7 +3062,7 @@ model allergies_translations {
   updated_at  DateTime?  @default(now()) @db.Timestamptz(6)
   allergies   allergies  @relation(fields: [allergy_id], references: [allergy_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([allergy_id, locale], map: "allergies_translations_unique_locale")
+  @@unique([allergy_id, locale], name: "allergies_translations_unique_locale", map: "allergies_translations_unique_locale")
   @@index([locale], map: "allergies_translations_locale_idx")
   @@index([allergy_id], map: "allergies_translations_allergy_id_idx")
 }
@@ -3068,7 +3077,7 @@ model diseases_translations {
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
   diseases    diseases  @relation(fields: [disease_id], references: [disease_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([disease_id, locale], map: "diseases_translations_unique_locale")
+  @@unique([disease_id, locale], name: "diseases_translations_unique_locale", map: "diseases_translations_unique_locale")
   @@index([locale], map: "diseases_translations_locale_idx")
   @@index([disease_id], map: "diseases_translations_disease_id_idx")
 }
@@ -3083,7 +3092,7 @@ model medicines_translations {
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
   medicines   medicines @relation(fields: [medicine_id], references: [medicine_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([medicine_id, locale], map: "medicines_translations_unique_locale")
+  @@unique([medicine_id, locale], name: "medicines_translations_unique_locale", map: "medicines_translations_unique_locale")
   @@index([locale], map: "medicines_translations_locale_idx")
   @@index([medicine_id], map: "medicines_translations_medicine_id_idx")
 }
@@ -3097,7 +3106,7 @@ model club_types_translations {
   updated_at   DateTime?  @default(now()) @db.Timestamptz(6)
   club_types   club_types @relation(fields: [club_type_id], references: [club_type_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([club_type_id, locale], map: "club_types_translations_unique_locale")
+  @@unique([club_type_id, locale], name: "club_types_translations_unique_locale", map: "club_types_translations_unique_locale")
   @@index([locale], map: "club_types_translations_locale_idx")
   @@index([club_type_id], map: "club_types_translations_club_type_id_idx")
 }
@@ -3112,7 +3121,7 @@ model club_ideals_translations {
   updated_at    DateTime?   @default(now()) @db.Timestamptz(6)
   club_ideals   club_ideals @relation(fields: [club_ideal_id], references: [club_ideal_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([club_ideal_id, locale], map: "club_ideals_translations_unique_locale")
+  @@unique([club_ideal_id, locale], name: "club_ideals_translations_unique_locale", map: "club_ideals_translations_unique_locale")
   @@index([locale], map: "club_ideals_translations_locale_idx")
   @@index([club_ideal_id], map: "club_ideals_translations_club_ideal_id_idx")
 }
@@ -3127,9 +3136,122 @@ model activity_types_translations {
   updated_at       DateTime?      @default(now()) @db.Timestamptz(6)
   activity_types   activity_types @relation(fields: [activity_type_id], references: [activity_type_id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([activity_type_id, locale], map: "activity_types_translations_unique_locale")
+  @@unique([activity_type_id, locale], name: "activity_types_translations_unique_locale", map: "activity_types_translations_unique_locale")
   @@index([locale], map: "activity_types_translations_locale_idx")
   @@index([activity_type_id], map: "activity_types_translations_activity_type_id_idx")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMPOREE EVENTS MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model camporee_event_types {
+  event_type_id  Int                                  @id @default(autoincrement())
+  code           String                               @unique @db.VarChar(40)
+  name           String                               @db.VarChar(100)
+  description    String?
+  display_order  Int?
+  active         Boolean                              @default(true)
+  created_at     DateTime                             @default(now()) @db.Timestamptz(6)
+  modified_at    DateTime                             @default(now()) @db.Timestamptz(6)
+  translations   camporee_event_types_translations[]
+  templates      camporee_event_templates[]
+  events         camporee_events[]
+
+  @@index([active], map: "idx_camporee_event_types_active")
+}
+
+model camporee_event_types_translations {
+  id            BigInt               @id @default(autoincrement())
+  event_type_id Int
+  locale        String               @db.VarChar(10)
+  name          String?              @db.Text
+  description   String?              @db.Text
+  created_at    DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?            @default(now()) @db.Timestamptz(6)
+  event_type    camporee_event_types @relation(fields: [event_type_id], references: [event_type_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([event_type_id, locale], name: "camporee_event_types_translations_unique_locale", map: "camporee_event_types_translations_unique_locale")
+  @@index([locale], map: "camporee_event_types_translations_locale_idx")
+  @@index([event_type_id], map: "camporee_event_types_translations_event_type_id_idx")
+}
+
+model camporee_event_templates {
+  event_template_id     Int                   @id @default(autoincrement())
+  scope                 String                @db.VarChar(20)
+  union_id              Int?
+  local_field_id        Int?
+  event_type_id         Int
+  title                 String                @db.VarChar(150)
+  description           String?
+  requirements          String?
+  development           String?
+  prerequisites         String?
+  materials             String?
+  auxiliaries           String?
+  max_points            Int
+  min_points            Int                   @default(0)
+  penalties             Json                  @default("[]")
+  participants_mode     String                @db.VarChar(20)
+  participants_count    Int?
+  participants_by_class Json?
+  duration_seconds      Int?
+  active                Boolean               @default(true)
+  created_at            DateTime              @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime              @default(now()) @db.Timestamptz(6)
+  created_by            String?               @db.Uuid
+  modified_by           String?               @db.Uuid
+  event_type            camporee_event_types  @relation(fields: [event_type_id], references: [event_type_id], onDelete: Restrict, onUpdate: NoAction)
+  union                 unions?               @relation(fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_field           local_fields?         @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  creator               users?                @relation("camporee_event_template_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier              users?                @relation("camporee_event_template_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  events                camporee_events[]
+
+  @@index([scope, union_id], map: "idx_camporee_event_templates_scope_union")
+  @@index([scope, local_field_id], map: "idx_camporee_event_templates_scope_lf")
+  @@index([event_type_id], map: "idx_camporee_event_templates_event_type")
+  @@index([active], map: "idx_camporee_event_templates_active")
+}
+
+model camporee_events {
+  camporee_event_id     Int                       @id @default(autoincrement())
+  local_camporee_id     Int?
+  union_camporee_id     Int?
+  event_template_id     Int?
+  event_type_id         Int
+  title                 String                    @db.VarChar(150)
+  description           String?
+  requirements          String?
+  development           String?
+  prerequisites         String?
+  materials             String?
+  auxiliaries           String?
+  max_points            Int
+  min_points            Int                       @default(0)
+  penalties             Json                      @default("[]")
+  participants_mode     String                    @db.VarChar(20)
+  participants_count    Int?
+  participants_by_class Json?
+  duration_seconds      Int?
+  display_order         Int                       @default(0)
+  active                Boolean                   @default(true)
+  created_at            DateTime                  @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime                  @default(now()) @db.Timestamptz(6)
+  created_by            String?                   @db.Uuid
+  modified_by           String?                   @db.Uuid
+  event_type            camporee_event_types      @relation(fields: [event_type_id], references: [event_type_id], onDelete: Restrict, onUpdate: NoAction)
+  event_template        camporee_event_templates? @relation(fields: [event_template_id], references: [event_template_id], onDelete: SetNull, onUpdate: NoAction)
+  local_camporee        local_camporees?          @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  union_camporee        union_camporees?          @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  creator               users?                    @relation("camporee_event_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier              users?                    @relation("camporee_event_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([local_camporee_id], map: "idx_camporee_events_local_camporee")
+  @@index([union_camporee_id], map: "idx_camporee_events_union_camporee")
+  @@index([event_template_id], map: "idx_camporee_events_template")
+  @@index([active], map: "idx_camporee_events_active")
+  @@index([local_camporee_id, display_order], map: "idx_camporee_events_display_order")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

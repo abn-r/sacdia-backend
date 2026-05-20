@@ -411,7 +411,7 @@ export class AuthorizationContextService {
         birthday: user.birthday,
         baptism: user.baptism,
         baptism_date: user.baptism_date,
-        blood: user.blood,
+        blood: this.formatBloodType(user.blood),
         user_image: user.user_image,
         country_id: user.country_id,
         union_id: user.union_id,
@@ -666,6 +666,29 @@ export class AuthorizationContextService {
     return Array.from(new Set(values)).sort((left, right) =>
       left.localeCompare(right),
     );
+  }
+
+  /**
+   * Maps the Prisma `blood_type` enum to its human display value.
+   *
+   * Prisma's `@map("A+")` only affects the underlying Postgres value;
+   * the TypeScript client still returns the enum identifier
+   * (`A_POSITIVE`, `O_NEGATIVE`, …). The mobile app expects the
+   * display form (`"A+"`, `"O-"`).
+   */
+  private formatBloodType(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const map: Record<string, string> = {
+      A_POSITIVE: 'A+',
+      A_NEGATIVE: 'A-',
+      B_POSITIVE: 'B+',
+      B_NEGATIVE: 'B-',
+      AB_POSITIVE: 'AB+',
+      AB_NEGATIVE: 'AB-',
+      O_POSITIVE: 'O+',
+      O_NEGATIVE: 'O-',
+    };
+    return map[value] ?? value;
   }
 
   private toLegacyAssignmentContext(
