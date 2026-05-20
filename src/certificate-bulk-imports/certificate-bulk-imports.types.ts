@@ -1,0 +1,33 @@
+export enum CertificateBulkImportItemType {
+  HONOR = 'HONOR',
+  CLASS = 'CLASS',
+}
+
+export enum CertificateBulkImportBatchStatus {
+  DRAFT = 'DRAFT',
+  READY_TO_SUBMIT = 'READY_TO_SUBMIT',
+  SUBMITTED = 'SUBMITTED',
+  PARTIALLY_APPROVED = 'PARTIALLY_APPROVED',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  NEEDS_CORRECTION = 'NEEDS_CORRECTION',
+}
+
+export enum CertificateBulkImportItemStatus {
+  NEEDS_REVIEW = 'NEEDS_REVIEW',
+  READY = 'READY',
+  SUBMITTED = 'SUBMITTED',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  RESUBMITTED = 'RESUBMITTED',
+}
+
+export enum CertificateBulkImportAppliedEntityType {
+  USER_HONOR = 'USER_HONOR',
+  ENROLLMENT = 'ENROLLMENT',
+}
+
+export const CERTIFICATE_IMPORT_MAX_FILES = 10;
+export const CERTIFICATE_IMPORT_MAX_ITEMS = 100;
+export const CERTIFICATE_IMPORT_REJECTION_REASON_MAX_LENGTH = 1000;
+export const CERTIFICATE_IMPORT_COMMENT_MAX_LENGTH = 1000;
