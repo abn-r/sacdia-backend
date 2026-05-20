@@ -10,7 +10,7 @@ import {
 
 @Injectable()
 export class NoopCertificateOcrProvider implements CertificateOcrProvider {
-  constructor(private readonly parser = new CertificateOcrParser()) {}
+  private readonly parser = new CertificateOcrParser();
 
   async extract(
     files: CertificateOcrFileInput[],
