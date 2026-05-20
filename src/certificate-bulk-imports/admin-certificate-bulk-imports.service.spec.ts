@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AdminCertificateBulkImportsService } from './admin-certificate-bulk-imports.service';
 
 describe('AdminCertificateBulkImportsService', () => {
@@ -12,23 +12,28 @@ describe('AdminCertificateBulkImportsService', () => {
     },
     certificate_bulk_import_items: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
     },
     certificate_bulk_import_item_events: { create: jest.fn() },
-    $transaction: jest.fn(async (callback: (client: typeof prisma) => unknown) =>
-      callback(prisma),
+    $transaction: jest.fn(
+      async (callback: (client: typeof prisma) => unknown) => callback(prisma),
     ),
   };
 
   const application = {
     approveItem: jest.fn(),
+    approveItemInTransaction: jest.fn(),
   };
 
   let service: AdminCertificateBulkImportsService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    prisma.$transaction.mockImplementation(
+      async (callback: (client: typeof prisma) => unknown) => callback(prisma),
+    );
     service = new AdminCertificateBulkImportsService(
       prisma as any,
       application as any,
@@ -45,7 +50,9 @@ describe('AdminCertificateBulkImportsService', () => {
 
     await service.listPending('reviewer-1', { page: 1, limit: 20 });
 
-    expect(prisma.certificate_bulk_import_batches.findMany).toHaveBeenCalledWith(
+    expect(
+      prisma.certificate_bulk_import_batches.findMany,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ local_field_id: 7 }),
       }),
@@ -62,9 +69,9 @@ describe('AdminCertificateBulkImportsService', () => {
       local_field_id: 9,
     });
 
-    await expect(service.getDetail('reviewer-1', 'batch-1')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      service.getDetail('reviewer-1', 'batch-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('approves every submitted item in a batch and marks the batch approved', async () => {
@@ -81,6 +88,9 @@ describe('AdminCertificateBulkImportsService', () => {
       { item_id: 'item-2' },
     ]);
     application.approveItem.mockResolvedValue({ status: 'APPROVED' });
+    application.approveItemInTransaction.mockResolvedValue({
+      status: 'APPROVED',
+    });
     prisma.certificate_bulk_import_batches.update.mockResolvedValue({
       batch_id: 'batch-1',
       status: 'APPROVED',
@@ -90,7 +100,15 @@ describe('AdminCertificateBulkImportsService', () => {
       service.approveBatch('reviewer-1', 'batch-1', { comment: 'ok' }),
     ).resolves.toMatchObject({ status: 'APPROVED' });
 
-    expect(application.approveItem).toHaveBeenCalledTimes(2);
+    expect(application.approveItem).not.toHaveBeenCalled();
+    expect(application.approveItemInTransaction).toHaveBeenCalledTimes(2);
+    expect(application.approveItemInTransaction).toHaveBeenCalledWith(
+      prisma,
+      'reviewer-1',
+      'batch-1',
+      'item-1',
+      { comment: 'ok' },
+    );
     expect(prisma.certificate_bulk_import_batches.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'APPROVED' }),
@@ -107,6 +125,11 @@ describe('AdminCertificateBulkImportsService', () => {
       batch_id: 'batch-1',
       local_field_id: 7,
     });
+    prisma.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      batch_id: 'batch-1',
+      status: 'SUBMITTED',
+    });
     prisma.certificate_bulk_import_items.update.mockResolvedValue({
       item_id: 'item-1',
       status: 'REJECTED',
@@ -121,6 +144,35 @@ describe('AdminCertificateBulkImportsService', () => {
     expect(prisma.certificate_bulk_import_batches.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'NEEDS_CORRECTION' }),
+      }),
+    );
+  });
+
+  it('does not reject an item that does not belong to the selected batch', async () => {
+    prisma.users.findUnique.mockResolvedValue({
+      local_field_id: 7,
+      users_roles: [{ roles: { role_name: 'assistant-lf' } }],
+    });
+    prisma.certificate_bulk_import_batches.findFirst.mockResolvedValue({
+      batch_id: 'batch-1',
+      local_field_id: 7,
+    });
+    prisma.certificate_bulk_import_items.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.rejectItem('reviewer-1', 'batch-1', 'item-from-other-batch', {
+        reason: 'No corresponde',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.certificate_bulk_import_items.update).not.toHaveBeenCalled();
+    expect(prisma.certificate_bulk_import_items.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          item_id: 'item-from-other-batch',
+          batch_id: 'batch-1',
+          status: { in: ['SUBMITTED', 'RESUBMITTED'] },
+        }),
       }),
     );
   });

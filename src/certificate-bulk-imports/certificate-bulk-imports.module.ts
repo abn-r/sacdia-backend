@@ -10,7 +10,10 @@ import { NoopCertificateOcrProvider } from './ocr/noop-certificate-ocr.provider'
 
 @Module({
   imports: [PrismaModule],
-  controllers: [CertificateBulkImportsController, AdminCertificateBulkImportsController],
+  controllers: [
+    CertificateBulkImportsController,
+    AdminCertificateBulkImportsController,
+  ],
   providers: [
     CertificateBulkImportsService,
     CertificateBulkImportApplicationService,
@@ -20,6 +23,9 @@ import { NoopCertificateOcrProvider } from './ocr/noop-certificate-ocr.provider'
       useClass: NoopCertificateOcrProvider,
     },
   ],
-  exports: [CertificateBulkImportsService, CertificateBulkImportApplicationService],
+  exports: [
+    CertificateBulkImportsService,
+    CertificateBulkImportApplicationService,
+  ],
 })
 export class CertificateBulkImportsModule {}

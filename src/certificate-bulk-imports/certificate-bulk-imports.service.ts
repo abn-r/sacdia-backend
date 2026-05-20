@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import {
   CreateCertificateBulkImportDto,
   UpdateCertificateImportItemDto,
@@ -15,13 +16,6 @@ import {
 import type { CertificateOcrProvider } from './ocr/certificate-ocr.provider';
 import { CERTIFICATE_OCR_PROVIDER } from './ocr/certificate-ocr.provider';
 import { Inject } from '@nestjs/common';
-
-type CertificateImportTransaction = Pick<
-  PrismaService,
-  | 'certificate_bulk_import_batches'
-  | 'certificate_bulk_import_items'
-  | 'certificate_bulk_import_item_events'
->;
 
 @Injectable()
 export class CertificateBulkImportsService {
@@ -46,7 +40,7 @@ export class CertificateBulkImportsService {
         data: {
           user_id: userId,
           local_field_id: user.local_field_id,
-          raw_ocr_payload: dto.raw_ocr_payload,
+          raw_ocr_payload: this.toInputJson(dto.raw_ocr_payload),
           files: {
             create: dto.files.map((file) => ({
               file_url: file.file_url,
@@ -76,9 +70,7 @@ export class CertificateBulkImportsService {
 
   async processOcr(userId: string, batchId: string) {
     return this.prisma.$transaction(async (tx) => {
-      const batch = await this.findOwnedBatch(tx, userId, batchId, {
-        files: true,
-      });
+      const batch = await this.findOwnedBatchWithFiles(tx, userId, batchId);
 
       this.assertDraftLike(batch.status, 'process OCR');
 
@@ -100,7 +92,7 @@ export class CertificateBulkImportsService {
             detected_date: this.toDate(item.completedAt),
             completed_at: this.toDate(item.completedAt),
             ocr_confidence: item.confidence,
-            field_confidence: item.fieldConfidence,
+            field_confidence: this.toInputJson(item.fieldConfidence),
             status: CertificateBulkImportItemStatus.NEEDS_REVIEW,
           })),
         });
@@ -113,10 +105,10 @@ export class CertificateBulkImportsService {
       return tx.certificate_bulk_import_batches.update({
         where: { batch_id: batchId },
         data: {
-          raw_ocr_payload: {
+          raw_ocr_payload: this.toInputJson({
             rawText: ocrResult.rawText,
             items: ocrResult.items,
-          },
+          }),
         },
         include: this.batchInclude(),
       });
@@ -124,7 +116,12 @@ export class CertificateBulkImportsService {
   }
 
   async getBatch(userId: string, batchId: string) {
-    return this.findOwnedBatch(this.prisma, userId, batchId, this.batchInclude());
+    return this.findOwnedBatch(
+      this.prisma,
+      userId,
+      batchId,
+      this.batchInclude(),
+    );
   }
 
   async updateItem(
@@ -248,10 +245,13 @@ export class CertificateBulkImportsService {
   }
 
   private async findOwnedBatch(
-    tx: Pick<PrismaService, 'certificate_bulk_import_batches'>,
+    tx: Pick<
+      PrismaService | Prisma.TransactionClient,
+      'certificate_bulk_import_batches'
+    >,
     userId: string,
     batchId: string,
-    include?: Record<string, unknown>,
+    include?: Prisma.certificate_bulk_import_batchesInclude,
   ) {
     const batch = await tx.certificate_bulk_import_batches.findFirst({
       where: { batch_id: batchId, user_id: userId, active: true },
@@ -265,8 +265,28 @@ export class CertificateBulkImportsService {
     return batch;
   }
 
+  private async findOwnedBatchWithFiles(
+    tx: Pick<Prisma.TransactionClient, 'certificate_bulk_import_batches'>,
+    userId: string,
+    batchId: string,
+  ) {
+    const batch = await tx.certificate_bulk_import_batches.findFirst({
+      where: { batch_id: batchId, user_id: userId, active: true },
+      include: { files: true },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('CERTIFICATE_IMPORT_BATCH_NOT_FOUND');
+    }
+
+    return batch;
+  }
+
   private async findOwnedItem(
-    tx: Pick<PrismaService, 'certificate_bulk_import_items'>,
+    tx: Pick<
+      PrismaService | Prisma.TransactionClient,
+      'certificate_bulk_import_items'
+    >,
     batchId: string,
     itemId: string,
   ) {
@@ -289,33 +309,74 @@ export class CertificateBulkImportsService {
     }
   }
 
-  private toItemCreateData(batchId: string, item: UpdateCertificateImportItemDto) {
+  private toItemCreateData(
+    batchId: string,
+    item: UpdateCertificateImportItemDto,
+  ): Prisma.certificate_bulk_import_itemsCreateManyInput {
+    if (!item.item_type) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_TYPE_REQUIRED');
+    }
+
     return {
       batch_id: batchId,
-      ...this.toItemUpdateData(item),
+      item_type: item.item_type,
+      honor_id:
+        item.item_type === CertificateBulkImportItemType.HONOR
+          ? (item.honor_id ?? null)
+          : null,
+      class_id:
+        item.item_type === CertificateBulkImportItemType.CLASS
+          ? (item.class_id ?? null)
+          : null,
+      detected_name: item.detected_name,
+      detected_date: this.toDate(item.detected_date),
+      completed_at: this.toDate(item.completed_at),
+      ocr_confidence: item.ocr_confidence,
+      field_confidence: this.toInputJson(item.field_confidence),
       status: this.isReady(item)
         ? CertificateBulkImportItemStatus.READY
         : CertificateBulkImportItemStatus.NEEDS_REVIEW,
     };
   }
 
-  private toItemUpdateData(dto: UpdateCertificateImportItemDto) {
-    return {
-      item_type: dto.item_type,
-      honor_id:
+  private toItemUpdateData(
+    dto: UpdateCertificateImportItemDto,
+  ): Prisma.certificate_bulk_import_itemsUncheckedUpdateInput {
+    const data: Prisma.certificate_bulk_import_itemsUncheckedUpdateInput = {};
+
+    if (dto.item_type !== undefined) {
+      data.item_type = dto.item_type;
+      data.honor_id =
         dto.item_type === CertificateBulkImportItemType.HONOR
-          ? dto.honor_id
-          : null,
-      class_id:
+          ? (dto.honor_id ?? null)
+          : null;
+      data.class_id =
         dto.item_type === CertificateBulkImportItemType.CLASS
-          ? dto.class_id
-          : null,
-      detected_name: dto.detected_name,
-      detected_date: this.toDate(dto.detected_date),
-      completed_at: this.toDate(dto.completed_at),
-      ocr_confidence: dto.ocr_confidence,
-      field_confidence: dto.field_confidence,
-    };
+          ? (dto.class_id ?? null)
+          : null;
+    }
+
+    if (dto.detected_name !== undefined) {
+      data.detected_name = dto.detected_name;
+    }
+
+    if (dto.detected_date !== undefined) {
+      data.detected_date = this.toDate(dto.detected_date);
+    }
+
+    if (dto.completed_at !== undefined) {
+      data.completed_at = this.toDate(dto.completed_at);
+    }
+
+    if (dto.ocr_confidence !== undefined) {
+      data.ocr_confidence = dto.ocr_confidence;
+    }
+
+    if (dto.field_confidence !== undefined) {
+      data.field_confidence = this.toInputJson(dto.field_confidence);
+    }
+
+    return data;
   }
 
   private isReady(dto: UpdateCertificateImportItemDto): boolean {
@@ -336,6 +397,14 @@ export class CertificateBulkImportsService {
 
   private toDate(value?: string): Date | undefined {
     return value ? new Date(`${value}T00:00:00.000Z`) : undefined;
+  }
+
+  private toInputJson(value: unknown): Prisma.InputJsonValue | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 
   private batchInclude() {
@@ -365,7 +434,7 @@ export class CertificateBulkImportsService {
         item_id: itemId,
         action,
         performed_by_id: performedById,
-        payload,
+        payload: this.toInputJson(payload),
       },
     });
   }

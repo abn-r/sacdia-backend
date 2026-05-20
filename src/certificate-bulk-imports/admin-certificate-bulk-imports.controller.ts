@@ -20,10 +20,7 @@ import {
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles } from '../common/decorators';
 import { AdminCertificateBulkImportsService } from './admin-certificate-bulk-imports.service';
-import {
-  ApproveCertificateImportDto,
-  RejectCertificateImportDto,
-} from './dto';
+import { ApproveCertificateImportDto, RejectCertificateImportDto } from './dto';
 
 interface AuthenticatedRequest {
   user: { sub: string };
@@ -33,7 +30,13 @@ interface AuthenticatedRequest {
 @ApiBearerAuth()
 @Controller('admin/certificate-bulk-imports')
 @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-@GlobalRoles('super-admin', 'admin', 'assistant-admin', 'director-lf', 'assistant-lf')
+@GlobalRoles(
+  'super-admin',
+  'admin',
+  'assistant-admin',
+  'director-lf',
+  'assistant-lf',
+)
 export class AdminCertificateBulkImportsController {
   constructor(private readonly service: AdminCertificateBulkImportsService) {}
 

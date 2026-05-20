@@ -25,8 +25,7 @@ describe('CertificateBulkImportsService', () => {
     users: { findUnique: jest.fn() },
     certificate_bulk_import_batches: tx.certificate_bulk_import_batches,
     certificate_bulk_import_items: tx.certificate_bulk_import_items,
-    certificate_bulk_import_item_events:
-      tx.certificate_bulk_import_item_events,
+    certificate_bulk_import_item_events: tx.certificate_bulk_import_item_events,
     $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) =>
       callback(tx),
     ),
@@ -40,7 +39,7 @@ describe('CertificateBulkImportsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CertificateBulkImportsService(prisma as any, ocrProvider as any);
+    service = new CertificateBulkImportsService(prisma as any, ocrProvider);
     prisma.users.findUnique.mockResolvedValue({ local_field_id: 7 });
   });
 
@@ -220,8 +219,8 @@ describe('CertificateBulkImportsService', () => {
   it('throws not found when member does not own the batch', async () => {
     tx.certificate_bulk_import_batches.findFirst.mockResolvedValue(null);
 
-    await expect(service.getBatch('user-1', 'batch-404')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.getBatch('user-1', 'batch-404'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

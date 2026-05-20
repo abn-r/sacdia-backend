@@ -77,12 +77,16 @@ export class CertificateOcrParser {
   }
 
   private extractDate(text: string): string | undefined {
-    const isoLike = text.match(/\b(19\d{2}|20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/);
+    const isoLike = text.match(
+      /\b(19\d{2}|20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/,
+    );
     if (isoLike) {
       return this.toIsoDate(isoLike[1], isoLike[2], isoLike[3]);
     }
 
-    const dayFirst = text.match(/\b(\d{1,2})[-/](\d{1,2})[-/](19\d{2}|20\d{2})\b/);
+    const dayFirst = text.match(
+      /\b(\d{1,2})[-/](\d{1,2})[-/](19\d{2}|20\d{2})\b/,
+    );
     if (dayFirst) {
       return this.toIsoDate(dayFirst[3], dayFirst[2], dayFirst[1]);
     }

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { ApproveCertificateImportDto } from './dto';
 import {
   CertificateBulkImportAppliedEntityType,
@@ -12,7 +13,7 @@ import {
 } from './certificate-bulk-imports.types';
 
 type CertificateImportApplicationTransaction = Pick<
-  PrismaService,
+  Prisma.TransactionClient,
   | 'certificate_bulk_import_items'
   | 'certificate_bulk_import_batches'
   | 'users_honors'
@@ -22,6 +23,11 @@ type CertificateImportApplicationTransaction = Pick<
   | 'investiture_validation_history'
   | 'certificate_bulk_import_item_events'
 >;
+
+const REVIEWABLE_ITEM_STATUSES = [
+  CertificateBulkImportItemStatus.SUBMITTED,
+  CertificateBulkImportItemStatus.RESUBMITTED,
+];
 
 type CertificateImportItemWithBatch = {
   item_id: string;
@@ -54,27 +60,37 @@ export class CertificateBulkImportApplicationService {
     itemId: string,
     dto: ApproveCertificateImportDto,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const item = await this.findSubmittedItem(tx, batchId, itemId);
+    return this.prisma.$transaction((tx) =>
+      this.approveItemInTransaction(tx, reviewerId, batchId, itemId, dto),
+    );
+  }
 
-      if (item.applied_entity_id) {
-        return item;
-      }
+  async approveItemInTransaction(
+    tx: CertificateImportApplicationTransaction,
+    reviewerId: string,
+    batchId: string,
+    itemId: string,
+    dto: ApproveCertificateImportDto,
+  ) {
+    const item = await this.findSubmittedItem(tx, batchId, itemId);
 
-      if (!item.completed_at) {
-        throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_DATE');
-      }
+    if (item.applied_entity_id) {
+      return item;
+    }
 
-      if (item.item_type === CertificateBulkImportItemType.HONOR) {
-        return this.approveHonorItem(tx, item, reviewerId, dto.comment);
-      }
+    if (!item.completed_at) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_MISSING_DATE');
+    }
 
-      if (item.item_type === CertificateBulkImportItemType.CLASS) {
-        return this.approveClassItem(tx, item, reviewerId, dto.comment);
-      }
+    if (item.item_type === CertificateBulkImportItemType.HONOR) {
+      return this.approveHonorItem(tx, item, reviewerId, dto.comment);
+    }
 
-      throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_TYPE_INVALID');
-    });
+    if (item.item_type === CertificateBulkImportItemType.CLASS) {
+      return this.approveClassItem(tx, item, reviewerId, dto.comment);
+    }
+
+    throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_TYPE_INVALID');
   }
 
   private async approveHonorItem(
@@ -156,7 +172,10 @@ export class CertificateBulkImportApplicationService {
       'ITEM_APPROVED',
       reviewerId,
       comment,
-      { applied_entity_type: 'USER_HONOR', applied_entity_id: userHonor.user_honor_id },
+      {
+        applied_entity_type: 'USER_HONOR',
+        applied_entity_id: userHonor.user_honor_id,
+      },
     );
 
     return updatedItem;
@@ -251,14 +270,17 @@ export class CertificateBulkImportApplicationService {
       'ITEM_APPROVED',
       reviewerId,
       comment,
-      { applied_entity_type: 'ENROLLMENT', applied_entity_id: enrollment.enrollment_id },
+      {
+        applied_entity_type: 'ENROLLMENT',
+        applied_entity_id: enrollment.enrollment_id,
+      },
     );
 
     return updatedItem;
   }
 
   private async findSubmittedItem(
-    tx: Pick<PrismaService, 'certificate_bulk_import_items'>,
+    tx: Pick<Prisma.TransactionClient, 'certificate_bulk_import_items'>,
     batchId: string,
     itemId: string,
   ): Promise<CertificateImportItemWithBatch> {
@@ -267,6 +289,13 @@ export class CertificateBulkImportApplicationService {
         item_id: itemId,
         batch_id: batchId,
         active: true,
+        OR: [
+          { status: { in: REVIEWABLE_ITEM_STATUSES } },
+          {
+            status: CertificateBulkImportItemStatus.APPROVED,
+            applied_entity_id: { not: null },
+          },
+        ],
       },
       include: {
         batch: {
@@ -281,7 +310,16 @@ export class CertificateBulkImportApplicationService {
       throw new NotFoundException('CERTIFICATE_IMPORT_ITEM_NOT_FOUND');
     }
 
-    return item as CertificateImportItemWithBatch;
+    if (
+      !item.applied_entity_id &&
+      !REVIEWABLE_ITEM_STATUSES.includes(
+        item.status as CertificateBulkImportItemStatus,
+      )
+    ) {
+      throw new BadRequestException('CERTIFICATE_IMPORT_ITEM_NOT_REVIEWABLE');
+    }
+
+    return item;
   }
 
   private primaryFile(item: CertificateImportItemWithBatch) {
@@ -336,8 +374,16 @@ export class CertificateBulkImportApplicationService {
         action,
         performed_by_id: performedById,
         comment,
-        payload,
+        payload: this.toInputJson(payload),
       },
     });
+  }
+
+  private toInputJson(value: unknown): Prisma.InputJsonValue | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }

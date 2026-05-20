@@ -1,4 +1,5 @@
 import { CertificateBulkImportApplicationService } from './certificate-bulk-imports-application.service';
+import { BadRequestException } from '@nestjs/common';
 
 describe('CertificateBulkImportApplicationService', () => {
   const batchFiles = [
@@ -52,7 +53,10 @@ describe('CertificateBulkImportApplicationService', () => {
   let service: CertificateBulkImportApplicationService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    prisma.$transaction.mockImplementation(
+      async (callback: (client: typeof tx) => unknown) => callback(tx),
+    );
     service = new CertificateBulkImportApplicationService(prisma as any);
     tx.certificate_bulk_import_batches.update.mockResolvedValue({});
   });
@@ -60,6 +64,7 @@ describe('CertificateBulkImportApplicationService', () => {
   it('approves an HONOR item into users_honors and evidence_files', async () => {
     tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
       item_id: 'item-1',
+      status: 'SUBMITTED',
       item_type: 'HONOR',
       honor_id: 10,
       completed_at: new Date('2026-04-12T00:00:00.000Z'),
@@ -118,6 +123,7 @@ describe('CertificateBulkImportApplicationService', () => {
   it('reuses an existing active HONOR row without duplicating it', async () => {
     tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
       item_id: 'item-1',
+      status: 'SUBMITTED',
       item_type: 'HONOR',
       honor_id: 10,
       completed_at: new Date('2026-04-12T00:00:00.000Z'),
@@ -145,6 +151,7 @@ describe('CertificateBulkImportApplicationService', () => {
   it('approves a CLASS item into enrollments and investiture history', async () => {
     tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
       item_id: 'item-2',
+      status: 'SUBMITTED',
       item_type: 'CLASS',
       class_id: 4,
       completed_at: new Date('2026-04-12T00:00:00.000Z'),
@@ -199,6 +206,37 @@ describe('CertificateBulkImportApplicationService', () => {
     await expect(
       service.approveItem('reviewer-1', 'batch-1', 'item-1', {}),
     ).resolves.toMatchObject({ applied_entity_id: 50 });
+
+    expect(tx.users_honors.create).not.toHaveBeenCalled();
+    expect(tx.enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('does not approve an item that was not submitted for review', async () => {
+    tx.certificate_bulk_import_items.findFirst.mockResolvedValue({
+      item_id: 'item-1',
+      status: 'READY',
+      item_type: 'HONOR',
+      honor_id: 10,
+      completed_at: new Date('2026-04-12T00:00:00.000Z'),
+      applied_entity_id: null,
+      batch: { batch_id: 'batch-1', user_id: 'member-1', files: batchFiles },
+    });
+
+    await expect(
+      service.approveItem('reviewer-1', 'batch-1', 'item-1', {}),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tx.certificate_bulk_import_items.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          item_id: 'item-1',
+          batch_id: 'batch-1',
+          OR: expect.arrayContaining([
+            { status: { in: ['SUBMITTED', 'RESUBMITTED'] } },
+          ]),
+        }),
+      }),
+    );
 
     expect(tx.users_honors.create).not.toHaveBeenCalled();
     expect(tx.enrollments.create).not.toHaveBeenCalled();

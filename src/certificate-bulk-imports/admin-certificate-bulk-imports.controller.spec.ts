@@ -20,7 +20,9 @@ describe('AdminCertificateBulkImportsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AdminCertificateBulkImportsController],
-      providers: [{ provide: AdminCertificateBulkImportsService, useValue: service }],
+      providers: [
+        { provide: AdminCertificateBulkImportsService, useValue: service },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
@@ -56,7 +58,9 @@ describe('AdminCertificateBulkImportsController', () => {
   it('rejects an item with reason', async () => {
     service.rejectItem.mockResolvedValue({ status: 'REJECTED' });
 
-    await controller.rejectItem(req, 'batch-1', 'item-1', { reason: 'ilegible' });
+    await controller.rejectItem(req, 'batch-1', 'item-1', {
+      reason: 'ilegible',
+    });
 
     expect(service.rejectItem).toHaveBeenCalledWith(
       'reviewer-1',

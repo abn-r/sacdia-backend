@@ -5,12 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { CertificateBulkImportApplicationService } from './certificate-bulk-imports-application.service';
+import { ApproveCertificateImportDto, RejectCertificateImportDto } from './dto';
 import {
-  ApproveCertificateImportDto,
-  RejectCertificateImportDto,
-} from './dto';
-import { CertificateBulkImportItemStatus } from './certificate-bulk-imports.types';
+  CertificateBulkImportBatchStatus,
+  CertificateBulkImportItemStatus,
+} from './certificate-bulk-imports.types';
 
 type ReviewerAccess = {
   global: boolean;
@@ -20,6 +21,11 @@ type ReviewerAccess = {
 const REVIEWABLE_ITEM_STATUSES = [
   CertificateBulkImportItemStatus.SUBMITTED,
   CertificateBulkImportItemStatus.RESUBMITTED,
+];
+
+const REVIEWABLE_BATCH_STATUSES = [
+  CertificateBulkImportBatchStatus.SUBMITTED,
+  CertificateBulkImportBatchStatus.PARTIALLY_APPROVED,
 ];
 
 @Injectable()
@@ -36,9 +42,9 @@ export class AdminCertificateBulkImportsService {
     const access = await this.resolveReviewerAccess(reviewerId);
     const page = Math.max(query.page ?? 1, 1);
     const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
-    const where = {
+    const where: Prisma.certificate_bulk_import_batchesWhereInput = {
       active: true,
-      status: { in: ['SUBMITTED', 'PARTIALLY_APPROVED'] },
+      status: { in: REVIEWABLE_BATCH_STATUSES },
       ...(access.global ? {} : { local_field_id: access.localFieldId }),
     };
 
@@ -70,7 +76,7 @@ export class AdminCertificateBulkImportsService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const access = await this.resolveReviewerAccess(reviewerId);
-      const batch = await this.findBatch(batchId);
+      const batch = await this.findBatch(batchId, tx);
       this.assertCanAccessBatch(access, batch.local_field_id);
 
       const items = await tx.certificate_bulk_import_items.findMany({
@@ -87,7 +93,8 @@ export class AdminCertificateBulkImportsService {
       }
 
       for (const item of items) {
-        await this.applicationService.approveItem(
+        await this.applicationService.approveItemInTransaction(
+          tx,
           reviewerId,
           batchId,
           item.item_id,
@@ -95,7 +102,14 @@ export class AdminCertificateBulkImportsService {
         );
       }
 
-      await this.recordEvent(tx, batchId, null, 'BATCH_APPROVED', reviewerId, dto.comment);
+      await this.recordEvent(
+        tx,
+        batchId,
+        null,
+        'BATCH_APPROVED',
+        reviewerId,
+        dto.comment,
+      );
 
       return tx.certificate_bulk_import_batches.update({
         where: { batch_id: batchId },
@@ -112,7 +126,7 @@ export class AdminCertificateBulkImportsService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const access = await this.resolveReviewerAccess(reviewerId);
-      const batch = await this.findBatch(batchId);
+      const batch = await this.findBatch(batchId, tx);
       this.assertCanAccessBatch(access, batch.local_field_id);
 
       await tx.certificate_bulk_import_items.updateMany({
@@ -129,7 +143,14 @@ export class AdminCertificateBulkImportsService {
         },
       });
 
-      await this.recordEvent(tx, batchId, null, 'BATCH_REJECTED', reviewerId, dto.reason);
+      await this.recordEvent(
+        tx,
+        batchId,
+        null,
+        'BATCH_REJECTED',
+        reviewerId,
+        dto.reason,
+      );
 
       return tx.certificate_bulk_import_batches.update({
         where: { batch_id: batchId },
@@ -163,11 +184,25 @@ export class AdminCertificateBulkImportsService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const access = await this.resolveReviewerAccess(reviewerId);
-      const batch = await this.findBatch(batchId);
+      const batch = await this.findBatch(batchId, tx);
       this.assertCanAccessBatch(access, batch.local_field_id);
 
+      const existingItem = await tx.certificate_bulk_import_items.findFirst({
+        where: {
+          item_id: itemId,
+          batch_id: batchId,
+          active: true,
+          status: { in: REVIEWABLE_ITEM_STATUSES },
+        },
+        select: { item_id: true },
+      });
+
+      if (!existingItem) {
+        throw new NotFoundException('CERTIFICATE_IMPORT_ITEM_NOT_FOUND');
+      }
+
       const item = await tx.certificate_bulk_import_items.update({
-        where: { item_id: itemId },
+        where: { item_id: existingItem.item_id },
         data: {
           status: CertificateBulkImportItemStatus.REJECTED,
           rejection_reason: dto.reason,
@@ -181,14 +216,27 @@ export class AdminCertificateBulkImportsService {
         data: { status: 'NEEDS_CORRECTION', reviewed_at: new Date() },
       });
 
-      await this.recordEvent(tx, batchId, itemId, 'ITEM_REJECTED', reviewerId, dto.reason);
+      await this.recordEvent(
+        tx,
+        batchId,
+        itemId,
+        'ITEM_REJECTED',
+        reviewerId,
+        dto.reason,
+      );
 
       return item;
     });
   }
 
-  private async findBatch(batchId: string) {
-    const batch = await this.prisma.certificate_bulk_import_batches.findFirst({
+  private async findBatch(
+    batchId: string,
+    tx: Pick<
+      PrismaService | Prisma.TransactionClient,
+      'certificate_bulk_import_batches'
+    > = this.prisma,
+  ) {
+    const batch = await tx.certificate_bulk_import_batches.findFirst({
       where: { batch_id: batchId, active: true },
       include: this.batchInclude(),
     });

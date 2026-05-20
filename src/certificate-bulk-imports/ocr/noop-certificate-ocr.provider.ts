@@ -12,7 +12,9 @@ import {
 export class NoopCertificateOcrProvider implements CertificateOcrProvider {
   constructor(private readonly parser = new CertificateOcrParser()) {}
 
-  async extract(files: CertificateOcrFileInput[]): Promise<CertificateOcrParseResult> {
+  async extract(
+    files: CertificateOcrFileInput[],
+  ): Promise<CertificateOcrParseResult> {
     const rawText = files
       .map((file) => file.rawText)
       .filter((text): text is string => Boolean(text?.trim()))

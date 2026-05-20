@@ -29,7 +29,11 @@ describe('CertificateBulkImportsController', () => {
   });
 
   it('creates a member-owned draft batch', async () => {
-    const dto = { files: [{ file_url: 'url', file_name: 'cert.jpg', file_type: 'image/jpeg' }] } as any;
+    const dto = {
+      files: [
+        { file_url: 'url', file_name: 'cert.jpg', file_type: 'image/jpeg' },
+      ],
+    } as any;
     mockService.createDraft.mockResolvedValue({ batch_id: 'batch-1' });
 
     await expect(controller.create(req, dto)).resolves.toEqual({
@@ -56,7 +60,11 @@ describe('CertificateBulkImportsController', () => {
   });
 
   it('updates an item for the authenticated owner', async () => {
-    const dto = { item_type: 'HONOR', honor_id: 1, completed_at: '2026-04-12' } as any;
+    const dto = {
+      item_type: 'HONOR',
+      honor_id: 1,
+      completed_at: '2026-04-12',
+    } as any;
     mockService.updateItem.mockResolvedValue({ item_id: 'item-1' });
 
     await controller.updateItem(req, 'batch-1', 'item-1', dto);
@@ -78,7 +86,11 @@ describe('CertificateBulkImportsController', () => {
   });
 
   it('resubmits a rejected item after correction', async () => {
-    const dto = { item_type: 'CLASS', class_id: 2, completed_at: '2026-04-12' } as any;
+    const dto = {
+      item_type: 'CLASS',
+      class_id: 2,
+      completed_at: '2026-04-12',
+    } as any;
     mockService.resubmitItem.mockResolvedValue({ status: 'RESUBMITTED' });
 
     await controller.resubmitItem(req, 'batch-1', 'item-1', dto);
