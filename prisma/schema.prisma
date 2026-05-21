@@ -1249,6 +1249,7 @@ model local_fields {
   material_folio_counters      MaterialFolioCounter[]
   material_config              MaterialConfig?
   camporee_event_templates     camporee_event_templates[]
+  camporee_venues              camporee_venues[]
 }
 
 model local_fields_translations {
@@ -1387,6 +1388,7 @@ model unions {
   union_camporees           union_camporees[]
   folder_templates          folder_templates[]
   camporee_event_templates  camporee_event_templates[]
+  camporee_venues           camporee_venues[]
   countries                 countries              @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
   divisions                 divisions              @relation(fields: [division_id], references: [division_id], onDelete: NoAction, onUpdate: NoAction)
   union_division_history    union_division_history[] @relation("union_division_history_union")
@@ -1708,6 +1710,7 @@ model users {
   camporee_event_templates_modified       camporee_event_templates[]    @relation("camporee_event_template_modifier")
   camporee_events_created                 camporee_events[]             @relation("camporee_event_creator")
   camporee_events_modified                camporee_events[]             @relation("camporee_event_modifier")
+  camporee_events_led                     camporee_events[]             @relation("camporee_event_leader")
 }
 
 model notification_preferences {
@@ -3459,18 +3462,77 @@ model camporee_events {
   modified_at           DateTime                  @default(now()) @db.Timestamptz(6)
   created_by            String?                   @db.Uuid
   modified_by           String?                   @db.Uuid
+
+  // Agenda fields (camporee-agenda-events)
+  day_number              Int                  @default(1)
+  starts_at               String?              @db.VarChar(5)
+  ends_at                 String?              @db.VarChar(5)
+  venue_id                Int?
+  leader_user_id          String?              @db.Uuid
+  leader_name_override    String?              @db.VarChar(100)
+  leader_role             String?              @db.VarChar(100)
+  sections                String[]             @default([])
+  display_category        String               @default("logistico") @db.VarChar(40)
+  status                  CamporeeEventStatus  @default(programado)
+  capacity                Int?
+  registered_count        Int                  @default(0)
+
   event_type            camporee_event_types      @relation(fields: [event_type_id], references: [event_type_id], onDelete: Restrict, onUpdate: NoAction)
   event_template        camporee_event_templates? @relation(fields: [event_template_id], references: [event_template_id], onDelete: SetNull, onUpdate: NoAction)
   local_camporee        local_camporees?          @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   union_camporee        union_camporees?          @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   creator               users?                    @relation("camporee_event_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
   modifier              users?                    @relation("camporee_event_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  venue                 camporee_venues?          @relation(fields: [venue_id], references: [camporee_venue_id], onDelete: SetNull, onUpdate: NoAction)
+  leader                users?                    @relation("camporee_event_leader", fields: [leader_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([local_camporee_id], map: "idx_camporee_events_local_camporee")
   @@index([union_camporee_id], map: "idx_camporee_events_union_camporee")
   @@index([event_template_id], map: "idx_camporee_events_template")
   @@index([active], map: "idx_camporee_events_active")
   @@index([local_camporee_id, display_order], map: "idx_camporee_events_display_order")
+  @@index([day_number, active], map: "camporee_events_day_idx")
+  @@index([status, active], map: "camporee_events_status_idx")
+  @@index([display_category, active], map: "camporee_events_category_idx")
+  @@index([venue_id], map: "camporee_events_venue_idx")
+  @@index([leader_user_id], map: "camporee_events_leader_idx")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMPOREE AGENDA EVENTS — enums + venues + schema extensions
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CamporeeEventStatus {
+  programado
+  publicado
+  en_curso
+  realizado
+  cancelado
+
+  @@map("camporee_event_status")
+}
+
+model camporee_venues {
+  camporee_venue_id Int      @id @default(autoincrement())
+  scope             String   @db.VarChar(20)
+  union_id          Int?
+  local_field_id    Int?
+  name              String   @db.VarChar(150)
+  description       String?  @db.VarChar(500)
+  capacity          Int?
+  active            Boolean  @default(true)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by        String?  @db.Uuid
+  modified_by       String?  @db.Uuid
+
+  union       unions?       @relation(fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_field local_fields? @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  events      camporee_events[]
+
+  @@index([union_id, active], map: "camporee_venues_union_idx")
+  @@index([local_field_id, active], map: "camporee_venues_local_field_idx")
+  @@index([scope, active], map: "camporee_venues_scope_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
