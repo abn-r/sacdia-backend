@@ -22,6 +22,7 @@ import {
 import { CamporeesController } from '../../camporees/camporees.controller';
 import { FinancesController } from '../../finances/finances.controller';
 import { InventoryController } from '../../inventory/inventory.controller';
+import { InvestitureController } from '../../investiture/investiture.controller';
 import { EmergencyContactsController } from '../../emergency-contacts/emergency-contacts.controller';
 import { LegalRepresentativesController } from '../../legal-representatives/legal-representatives.controller';
 import { NotificationsController } from '../../notifications/notifications.controller';
@@ -56,6 +57,21 @@ class SensitiveUserSubresourceMetadataFixture {
 }
 
 describe('Permissions metadata', () => {
+  it('marks admin overdue expiration as a global permission resource', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        InvestitureController.prototype.expireOverdueEnrollments,
+      ),
+    ).toEqual({ permissions: ['catalogs:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        InvestitureController.prototype.expireOverdueEnrollments,
+      ),
+    ).toEqual({ type: 'global' });
+  });
+
   it('marks admin users listing with users:read', () => {
     expect(
       Reflect.getMetadata(

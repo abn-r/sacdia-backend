@@ -65,6 +65,11 @@ const REJECTABLE_STATUSES: investiture_status_enum[] = [
   investiture_status_enum.FIELD_APPROVED,
 ];
 
+const EXPIRABLE_STATUSES: investiture_status_enum[] = [
+  investiture_status_enum.IN_PROGRESS,
+  investiture_status_enum.REJECTED,
+];
+
 type ApprovalResult = {
   enrollment_id: number;
   investiture_status: string;
@@ -113,6 +118,15 @@ export class InvestitureService {
         investiture_status: true,
         locked_for_validation: true,
         active: true,
+        ecclesiastical_year: {
+          select: { start_date: true },
+        },
+        classes: {
+          select: {
+            min_duration_years: true,
+            max_duration_years: true,
+          },
+        },
         users: {
           select: { local_field_id: true },
         },
@@ -137,6 +151,12 @@ export class InvestitureService {
         { status: enrollment.investiture_status },
       );
     }
+
+    await this.ensureDurationAllowsSubmission(
+      enrollment,
+      enrollmentId,
+      actorId,
+    );
 
     // Step 4: Resolve investiture_config (throws NotFoundException if not found)
     const config = await this.resolveInvestitureConfig(enrollment);
@@ -1316,6 +1336,133 @@ export class InvestitureService {
     return { succeeded, failed };
   }
 
+  async expireOverdueEnrollments(
+    actorId: string,
+    params: { ecclesiastical_year_id?: number; dry_run?: boolean },
+  ): Promise<{
+    ecclesiastical_year_id: number;
+    dry_run: boolean;
+    scanned_count: number;
+    expired_count: number;
+    enrollment_ids: number[];
+  }> {
+    const targetYear = params.ecclesiastical_year_id
+      ? await this.prisma.ecclesiastical_years.findFirst({
+          where: { year_id: params.ecclesiastical_year_id },
+          select: { year_id: true, start_date: true },
+        })
+      : await this.findCurrentEcclesiasticalYear();
+
+    if (!targetYear) {
+      throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
+    }
+
+    const candidates = await this.prisma.enrollments.findMany({
+      where: {
+        active: true,
+        investiture_status: { in: EXPIRABLE_STATUSES },
+      },
+      select: {
+        enrollment_id: true,
+        investiture_status: true,
+        ecclesiastical_year: { select: { start_date: true } },
+        classes: { select: { max_duration_years: true } },
+      },
+    });
+
+    const overdueIds: number[] = [];
+    for (const candidate of candidates) {
+      const elapsedYears = await this.countElapsedEcclesiasticalYears(
+        candidate.ecclesiastical_year.start_date,
+        targetYear.start_date,
+      );
+
+      if (elapsedYears > candidate.classes.max_duration_years) {
+        overdueIds.push(candidate.enrollment_id);
+      }
+    }
+
+    const dryRun = params.dry_run ?? false;
+    let expiredEnrollmentIds = overdueIds;
+
+    if (!dryRun && overdueIds.length > 0) {
+      const now = new Date();
+      const expiredIds = await this.prisma.$transaction(async (tx) => {
+        const stillExpirable = await tx.enrollments.findMany({
+          where: {
+            enrollment_id: { in: overdueIds },
+            active: true,
+            investiture_status: { in: EXPIRABLE_STATUSES },
+          },
+          select: { enrollment_id: true },
+        });
+        const revalidatedIds = stillExpirable.map(
+          (enrollment) => enrollment.enrollment_id,
+        );
+
+        if (revalidatedIds.length === 0) {
+          return [];
+        }
+
+        const updateResult = await tx.enrollments.updateMany({
+          where: {
+            enrollment_id: { in: revalidatedIds },
+            active: true,
+            investiture_status: { in: EXPIRABLE_STATUSES },
+          },
+          data: {
+            investiture_status: investiture_status_enum.EXPIRED,
+            validated_by: actorId,
+            validated_at: now,
+            locked_for_validation: false,
+            submitted_for_validation: false,
+            rejection_reason: null,
+          },
+        });
+
+        let auditIds = revalidatedIds;
+        if (updateResult.count !== revalidatedIds.length) {
+          const actuallyExpired = await tx.enrollments.findMany({
+            where: {
+              enrollment_id: { in: revalidatedIds },
+              investiture_status: investiture_status_enum.EXPIRED,
+              validated_by: actorId,
+              validated_at: now,
+            },
+            select: { enrollment_id: true },
+          });
+          auditIds = actuallyExpired.map(
+            (enrollment) => enrollment.enrollment_id,
+          );
+        }
+
+        if (auditIds.length === 0) {
+          return [];
+        }
+
+        await tx.investiture_validation_history.createMany({
+          data: auditIds.map((enrollmentId) => ({
+            enrollment_id: enrollmentId,
+            action: investiture_action_enum.EXPIRED,
+            performed_by: actorId,
+            comments: 'Vencimiento manual de enrollment atrasado',
+          })),
+        });
+
+        return auditIds;
+      });
+      expiredEnrollmentIds = expiredIds;
+    }
+
+    return {
+      ecclesiastical_year_id: targetYear.year_id,
+      dry_run: dryRun,
+      scanned_count: candidates.length,
+      expired_count: expiredEnrollmentIds.length,
+      enrollment_ids: expiredEnrollmentIds,
+    };
+  }
+
   // ========================================
   // INVESTITURE CONFIG CRUD
   // ========================================
@@ -1432,6 +1579,133 @@ export class InvestitureService {
   // ========================================
   // PRIVATE HELPERS
   // ========================================
+
+  private async findCurrentEcclesiasticalYear(): Promise<{
+    year_id: number;
+    start_date: Date;
+  }> {
+    const now = new Date();
+    const yearByCurrentDate = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: now },
+        end_date: { gte: now },
+      },
+      select: {
+        year_id: true,
+        start_date: true,
+      },
+      orderBy: { start_date: 'desc' },
+    });
+    const year =
+      yearByCurrentDate ??
+      (await this.prisma.ecclesiastical_years.findFirst({
+        where: { active: true },
+        select: {
+          year_id: true,
+          start_date: true,
+        },
+        orderBy: { start_date: 'desc' },
+      }));
+
+    if (!year) {
+      throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
+    }
+
+    return year;
+  }
+
+  private async countElapsedEcclesiasticalYears(
+    fromStartDate: Date,
+    toStartDate: Date,
+  ): Promise<number> {
+    return this.prisma.ecclesiastical_years.count({
+      where: {
+        start_date: {
+          gte: fromStartDate,
+          lte: toStartDate,
+        },
+      },
+    });
+  }
+
+  private async ensureDurationAllowsSubmission(
+    enrollment: {
+      classes?: {
+        min_duration_years: number;
+        max_duration_years: number;
+      } | null;
+      ecclesiastical_year?: { start_date: Date } | null;
+    },
+    enrollmentId: number,
+    actorId: string,
+  ): Promise<void> {
+    if (!enrollment.classes || !enrollment.ecclesiastical_year) {
+      return;
+    }
+
+    const currentYear = await this.findCurrentEcclesiasticalYear();
+    const elapsedYears = await this.countElapsedEcclesiasticalYears(
+      enrollment.ecclesiastical_year.start_date,
+      currentYear.start_date,
+    );
+
+    if (elapsedYears < enrollment.classes.min_duration_years) {
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_DURATION_MIN_NOT_MET,
+        {
+          elapsedYears,
+          minDurationYears: enrollment.classes.min_duration_years,
+        },
+      );
+    }
+
+    if (elapsedYears > enrollment.classes.max_duration_years) {
+      await this.expireEnrollment(enrollmentId, actorId);
+      throw new AppBadRequestException(ErrorCode.INVESTITURE_DURATION_EXPIRED, {
+        elapsedYears,
+        maxDurationYears: enrollment.classes.max_duration_years,
+      });
+    }
+  }
+
+  private async expireEnrollment(
+    enrollmentId: number,
+    actorId: string,
+  ): Promise<void> {
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.enrollments.updateMany({
+        where: {
+          enrollment_id: enrollmentId,
+          active: true,
+          investiture_status: { in: EXPIRABLE_STATUSES },
+        },
+        data: {
+          investiture_status: investiture_status_enum.EXPIRED,
+          validated_by: actorId,
+          validated_at: now,
+          locked_for_validation: false,
+          submitted_for_validation: false,
+          rejection_reason: null,
+        },
+      });
+
+      if (updateResult.count !== 1) {
+        throw new AppConflictException(
+          ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        );
+      }
+
+      await tx.investiture_validation_history.create({
+        data: {
+          enrollment_id: enrollmentId,
+          action: investiture_action_enum.EXPIRED,
+          performed_by: actorId,
+          comments: 'Enrollment vencido por duración máxima de clase',
+        },
+      });
+    });
+  }
 
   private async canActorManageInvestitureEnrollment(
     actorId: string,
