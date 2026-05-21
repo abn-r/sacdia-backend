@@ -6,7 +6,7 @@ import { AchievementsService } from '../achievements/achievements.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { CamporeeMembersPaginationDto } from './dto/camporee-members-pagination.dto';
+import { CamporeeMembersListQueryDto } from './dto/camporee-members-list-query.dto';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
@@ -705,7 +705,7 @@ describe('CamporeesService', () => {
       mockPrismaService.camporee_members.findMany.mockResolvedValue([]);
       mockPrismaService.camporee_members.count.mockResolvedValue(30);
 
-      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersListQueryDto(), {
         page: 3,
         limit: 50,
       });
@@ -739,7 +739,7 @@ describe('CamporeesService', () => {
       );
       mockPrismaService.camporee_members.count.mockResolvedValue(120);
 
-      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersListQueryDto(), {
         page: 1,
         limit: 50,
       });
@@ -758,7 +758,7 @@ describe('CamporeesService', () => {
 
       const getMembers = jest.spyOn(service, 'getMembers');
 
-      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersListQueryDto(), {
         page: 2,
         limit: 10,
       });
