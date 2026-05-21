@@ -61,8 +61,10 @@ export class CamporeeVenuesController {
 
   @Post('camporee-venues')
   @RequirePermissions('camporee_events:create')
-  @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Create a venue (explicit scope + union/local_field)' })
+  @AuthorizationResource({ type: 'camporee_venue' })
+  @ApiOperation({
+    summary: 'Create a venue (explicit scope + union/local_field)',
+  })
   async createVenue(@Body() dto: CreateCamporeeVenueDto, @Request() req: any) {
     const data = await this.service.createVenue(dto, req.user.sub);
     return { status: 'success', data };
@@ -70,7 +72,7 @@ export class CamporeeVenuesController {
 
   @Patch('camporee-venues/:venueId')
   @RequirePermissions('camporee_events:update')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee_venue', idParam: 'venueId' })
   @ApiOperation({ summary: 'Update a venue' })
   @ApiParam({ name: 'venueId', type: Number })
   async updateVenue(
@@ -84,7 +86,7 @@ export class CamporeeVenuesController {
 
   @Delete('camporee-venues/:venueId')
   @RequirePermissions('camporee_events:delete')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee_venue', idParam: 'venueId' })
   @ApiOperation({ summary: 'Soft-delete a venue (sets active = false)' })
   @ApiParam({ name: 'venueId', type: Number })
   async deleteVenue(
@@ -115,12 +117,13 @@ export class CamporeeVenuesController {
   @RequirePermissions('camporee_events:create')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
-    summary: 'Create a venue scoped to the local camporee\'s local_field',
+    summary: "Create a venue scoped to the local camporee's local_field",
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   async createLocalCamporeeVenue(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Body() dto: Omit<CreateCamporeeVenueDto, 'scope' | 'union_id' | 'local_field_id'>,
+    @Body()
+    dto: Omit<CreateCamporeeVenueDto, 'scope' | 'union_id' | 'local_field_id'>,
     @Request() req: any,
   ) {
     const data = await this.service.createVenueForLocalCamporee(
@@ -147,12 +150,13 @@ export class CamporeeVenuesController {
   @RequirePermissions('camporee_events:create')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
-    summary: 'Create a venue scoped to the union camporee\'s union',
+    summary: "Create a venue scoped to the union camporee's union",
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   async createUnionCamporeeVenue(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Body() dto: Omit<CreateCamporeeVenueDto, 'scope' | 'union_id' | 'local_field_id'>,
+    @Body()
+    dto: Omit<CreateCamporeeVenueDto, 'scope' | 'union_id' | 'local_field_id'>,
     @Request() req: any,
   ) {
     const data = await this.service.createVenueForUnionCamporee(
