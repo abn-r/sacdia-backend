@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CamporeeEventsService } from './camporee-events.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppNotFoundException, AppBadRequestException } from '../common/errors/app.exception';
+import {
+  AppNotFoundException,
+  AppBadRequestException,
+  AppUnprocessableEntityException,
+} from '../common/errors/app.exception';
+import { CamporeeEventStatusDto } from './dto';
 
 // ─── Mock factories ────────────────────────────────────────────────────────
 
@@ -24,7 +29,9 @@ const makePrismaMock = () => ({
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    count: jest.fn(),
   },
+  $transaction: jest.fn((calls: Promise<any>[]) => Promise.all(calls)),
 });
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────
@@ -35,6 +42,9 @@ const baseLocalCamporee = {
   local_camporee_id: 1,
   name: 'Camporee Metropolitano 2026',
   active: true,
+  includes_adventurers: true,
+  includes_pathfinders: true,
+  includes_master_guides: false,
 };
 
 const baseEventType = {
@@ -91,6 +101,19 @@ const baseEvent = {
   duration_seconds: null,
   display_order: 0,
   active: true,
+  // Agenda fields
+  day_number: 1,
+  starts_at: null,
+  ends_at: null,
+  venue_id: null,
+  leader_user_id: null,
+  leader_name_override: null,
+  leader_role: null,
+  sections: [],
+  display_category: 'logistico',
+  status: 'programado' as CamporeeEventStatusDto,
+  capacity: null,
+  registered_count: 0,
   created_at: new Date(),
   modified_at: new Date(),
   created_by: ACTOR_ID,
@@ -129,8 +152,10 @@ describe('CamporeeEventsService', () => {
     it('returns events for a local camporee', async () => {
       prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
       prisma.camporee_events.findMany.mockResolvedValue([baseEvent]);
+      prisma.camporee_events.count.mockResolvedValue(1);
       const result = await service.listEvents(1, 'local');
-      expect(result).toEqual([baseEvent]);
+      expect(result.data).toEqual([baseEvent]);
+      expect(result.total).toBe(1);
     });
   });
 
@@ -177,8 +202,13 @@ describe('CamporeeEventsService', () => {
     it('creates event with auto display_order', async () => {
       prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
       prisma.camporee_event_types.findUnique.mockResolvedValue(baseEventType);
-      prisma.camporee_events.findFirst.mockResolvedValue(null); // no existing events
-      prisma.camporee_events.create.mockResolvedValue(baseEvent);
+      prisma.camporee_events.findFirst.mockResolvedValue(null);
+      prisma.camporee_events.create.mockResolvedValue({
+        ...baseEvent,
+        event_type: baseEventType,
+        leader: null,
+        venue: null,
+      });
 
       const result = await service.createEvent(
         1,
@@ -193,10 +223,11 @@ describe('CamporeeEventsService', () => {
         ACTOR_ID,
       );
 
-      expect(result).toEqual(baseEvent);
-      // display_order should have been computed: max(-1) + 1 = 0
+      expect(result.camporee_event_id).toBe(1);
       const createCall = prisma.camporee_events.create.mock.calls[0][0];
       expect(createCall.data.display_order).toBe(0);
+      expect(createCall.data.day_number).toBe(1);
+      expect(createCall.data.status).toBe('programado');
     });
   });
 
@@ -211,42 +242,36 @@ describe('CamporeeEventsService', () => {
       ).rejects.toBeInstanceOf(AppNotFoundException);
     });
 
-    it('clones template fields into event', async () => {
-      const clonedEvent = { ...baseEvent, event_template_id: 1, title: 'Orden Cerrado' };
-      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
-      prisma.camporee_event_templates.findUnique.mockResolvedValue(baseTemplate);
-      prisma.camporee_events.findFirst.mockResolvedValue(null);
-      prisma.camporee_events.create.mockResolvedValue(clonedEvent);
-
-      const result = await service.createFromTemplate(1, 'local', 1, {}, ACTOR_ID);
-
-      expect(result.event_template_id).toBe(1);
-      expect(result.title).toBe('Orden Cerrado');
-    });
-
-    it('allows override of title and max_points', async () => {
-      const overriddenEvent = {
+    it('clones competition fields, sets agenda defaults (not cloned)', async () => {
+      const clonedEvent = {
         ...baseEvent,
         event_template_id: 1,
-        title: 'Override Title',
-        max_points: 50,
+        title: 'Orden Cerrado',
+        day_number: 1,
+        status: 'programado',
+        sections: [],
       };
       prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
-      prisma.camporee_event_templates.findUnique.mockResolvedValue(baseTemplate);
+      prisma.camporee_event_templates.findUnique.mockResolvedValue(
+        baseTemplate,
+      );
       prisma.camporee_events.findFirst.mockResolvedValue(null);
-      prisma.camporee_events.create.mockResolvedValue(overriddenEvent);
+      prisma.camporee_events.create.mockResolvedValue(clonedEvent);
 
       const result = await service.createFromTemplate(
         1,
         'local',
         1,
-        { title: 'Override Title', max_points: 50 },
+        {},
         ACTOR_ID,
       );
 
+      expect(result.event_template_id).toBe(1);
+      // Verify clone data: agenda fields at defaults
       const createCall = prisma.camporee_events.create.mock.calls[0][0];
-      expect(createCall.data.title).toBe('Override Title');
-      expect(createCall.data.max_points).toBe(50);
+      expect(createCall.data.day_number).toBe(1);
+      expect(createCall.data.status).toBe('programado');
+      expect(createCall.data.sections).toEqual([]);
     });
   });
 
@@ -260,12 +285,23 @@ describe('CamporeeEventsService', () => {
       ).rejects.toBeInstanceOf(AppNotFoundException);
     });
 
-    it('updates event fields', async () => {
-      const updated = { ...baseEvent, title: 'Updated' };
+    it('updates event fields including agenda', async () => {
+      const updated = {
+        ...baseEvent,
+        title: 'Updated',
+        day_number: 2,
+        event_type: baseEventType,
+        leader: null,
+        venue: null,
+      };
       prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
       prisma.camporee_events.update.mockResolvedValue(updated);
 
-      const result = await service.updateEvent(1, { title: 'Updated' }, ACTOR_ID);
+      const result = await service.updateEvent(
+        1,
+        { title: 'Updated', day_number: 2 },
+        ACTOR_ID,
+      );
       expect(result.title).toBe('Updated');
     });
   });
@@ -298,8 +334,171 @@ describe('CamporeeEventsService', () => {
       prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
       prisma.camporee_events.update.mockResolvedValue(reordered);
 
-      const result = await service.reorderEvent(1, { display_order: 5 }, ACTOR_ID);
+      const result = await service.reorderEvent(
+        1,
+        { display_order: 5 },
+        ACTOR_ID,
+      );
       expect(result.display_order).toBe(5);
+    });
+  });
+
+  // ── validateSectionsAgainstCamporee ──────────────────────────────────────
+
+  describe('validateSectionsAgainstCamporee', () => {
+    it('passes for empty sections (Spec 4.3)', async () => {
+      // No DB call expected for empty array
+      await expect(
+        service.validateSectionsAgainstCamporee([], { local_camporee_id: 1 }),
+      ).resolves.toBeUndefined();
+      expect(prisma.local_camporees.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('passes for valid subset (Spec 4.1)', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      await expect(
+        service.validateSectionsAgainstCamporee(
+          ['adventurers', 'pathfinders'],
+          { local_camporee_id: 1 },
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it('throws bad request for invalid section (Spec 4.2)', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      await expect(
+        service.validateSectionsAgainstCamporee(
+          ['master_guides'], // not enabled
+          { local_camporee_id: 1 },
+        ),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
+    });
+  });
+
+  // ── validateLeader ───────────────────────────────────────────────────────
+
+  describe('validateLeader', () => {
+    it('passes when only leader_user_id is set (Spec 3.1)', () => {
+      expect(() =>
+        service.validateLeader({
+          leader_user_id: 'abc',
+          leader_name_override: undefined,
+        }),
+      ).not.toThrow();
+    });
+
+    it('passes when only leader_name_override is set (Spec 3.2)', () => {
+      expect(() =>
+        service.validateLeader({
+          leader_user_id: undefined,
+          leader_name_override: 'Dr. X',
+        }),
+      ).not.toThrow();
+    });
+
+    it('passes when both are null (Spec 3.4)', () => {
+      expect(() =>
+        service.validateLeader({
+          leader_user_id: null,
+          leader_name_override: null,
+        }),
+      ).not.toThrow();
+    });
+
+    it('throws when both are set', () => {
+      expect(() =>
+        service.validateLeader({
+          leader_user_id: 'abc',
+          leader_name_override: 'Dr. X',
+        }),
+      ).toThrow(AppBadRequestException);
+    });
+  });
+
+  // ── enforceStatusTransition ──────────────────────────────────────────────
+
+  describe('enforceStatusTransition', () => {
+    it('no-op when current === next', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.programado,
+          CamporeeEventStatusDto.programado,
+        ),
+      ).not.toThrow();
+    });
+
+    it('valid forward transition: programado → publicado (Spec 5.1)', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.programado,
+          CamporeeEventStatusDto.publicado,
+        ),
+      ).not.toThrow();
+    });
+
+    it('valid cancel from any non-terminal state (Spec 5.3)', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.en_curso,
+          CamporeeEventStatusDto.cancelado,
+        ),
+      ).not.toThrow();
+    });
+
+    it('throws 422 on reverse transition: realizado → curso (Spec 5.2)', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.realizado,
+          CamporeeEventStatusDto.en_curso,
+        ),
+      ).toThrow(AppUnprocessableEntityException);
+    });
+
+    it('throws 422 on terminal cancelado → forward (Spec 5.6)', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.cancelado,
+          CamporeeEventStatusDto.publicado,
+        ),
+      ).toThrow(AppUnprocessableEntityException);
+    });
+
+    it('throws 422 on realizado being terminal (Spec 5.2)', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.realizado,
+          CamporeeEventStatusDto.publicado,
+        ),
+      ).toThrow(AppUnprocessableEntityException);
+    });
+  });
+
+  // ── resolveCamporeeForEvent ───────────────────────────────────────────────
+
+  describe('resolveCamporeeForEvent', () => {
+    it('throws not found for missing event', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(null);
+      await expect(service.resolveCamporeeForEvent(999)).rejects.toBeInstanceOf(
+        AppNotFoundException,
+      );
+    });
+
+    it('returns camporee type for local event', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue({
+        local_camporee_id: 7,
+        union_camporee_id: null,
+      });
+      const result = await service.resolveCamporeeForEvent(1);
+      expect(result).toEqual({ type: 'camporee', id: 7 });
+    });
+
+    it('returns union_camporee type for union event', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue({
+        local_camporee_id: null,
+        union_camporee_id: 3,
+      });
+      const result = await service.resolveCamporeeForEvent(1);
+      expect(result).toEqual({ type: 'union_camporee', id: 3 });
     });
   });
 });

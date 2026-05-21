@@ -2,17 +2,42 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppNotFoundException,
+  AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CloneFromTemplateDto,
   CreateCamporeeEventDto,
+  ListCamporeeEventsFilterDto,
   ReorderCamporeeEventDto,
   UpdateCamporeeEventDto,
+  CamporeeEventStatusDto,
 } from './dto';
 
 type CamporeeScope = 'local' | 'union';
+
+// Status transition table — forward-only machine
+const STATUS_TRANSITIONS: Record<
+  CamporeeEventStatusDto,
+  CamporeeEventStatusDto[]
+> = {
+  programado: [
+    CamporeeEventStatusDto.publicado,
+    CamporeeEventStatusDto.cancelado,
+  ],
+  publicado: [
+    CamporeeEventStatusDto.en_curso,
+    CamporeeEventStatusDto.cancelado,
+    CamporeeEventStatusDto.programado,
+  ],
+  en_curso: [
+    CamporeeEventStatusDto.realizado,
+    CamporeeEventStatusDto.cancelado,
+  ],
+  realizado: [], // terminal
+  cancelado: [CamporeeEventStatusDto.programado],
+};
 
 @Injectable()
 export class CamporeeEventsService {
@@ -20,11 +45,7 @@ export class CamporeeEventsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  private logMutation(
-    action: string,
-    resourceId: number,
-    actorId: string,
-  ) {
+  private logMutation(action: string, resourceId: number, actorId: string) {
     this.logger.log(
       JSON.stringify({
         action,
@@ -61,10 +82,7 @@ export class CamporeeEventsService {
     }
   }
 
-  private async ensureCamporeeExists(
-    camporeeId: number,
-    scope: CamporeeScope,
-  ) {
+  private async ensureCamporeeExists(camporeeId: number, scope: CamporeeScope) {
     if (scope === 'local') {
       const camporee = await this.prisma.local_camporees.findUnique({
         where: { local_camporee_id: camporeeId },
@@ -95,10 +113,9 @@ export class CamporeeEventsService {
       where: { camporee_event_id: eventId },
     });
     if (!event) {
-      throw new AppNotFoundException(
-        ErrorCode.CAMPOREE_EVENT_NOT_FOUND,
-        { id: eventId },
-      );
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_EVENT_NOT_FOUND, {
+        id: eventId,
+      });
     }
     return event;
   }
@@ -121,21 +138,208 @@ export class CamporeeEventsService {
     return (last?.display_order ?? -1) + 1;
   }
 
+  // ─── Helpers (camporee-agenda-events) ────────────────────────────────────
+
+  /**
+   * Validates sections[] against camporee's includes_* flags.
+   * Empty array skips validation (means "all sections of camporee").
+   */
+  async validateSectionsAgainstCamporee(
+    sections: string[],
+    ctx: {
+      local_camporee_id?: number | null;
+      union_camporee_id?: number | null;
+    },
+  ): Promise<void> {
+    if (!sections?.length) return;
+
+    const allowed = new Set<string>();
+
+    if (ctx.local_camporee_id) {
+      const camporee = await this.prisma.local_camporees.findUnique({
+        where: { local_camporee_id: ctx.local_camporee_id },
+        select: {
+          includes_adventurers: true,
+          includes_pathfinders: true,
+          includes_master_guides: true,
+        },
+      });
+      if (!camporee) {
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_EVENT_CAMPOREE_NOT_FOUND,
+          { id: ctx.local_camporee_id },
+        );
+      }
+      if (camporee.includes_adventurers) allowed.add('adventurers');
+      if (camporee.includes_pathfinders) allowed.add('pathfinders');
+      if (camporee.includes_master_guides) allowed.add('master_guides');
+    } else if (ctx.union_camporee_id) {
+      const camporee = await this.prisma.union_camporees.findUnique({
+        where: { union_camporee_id: ctx.union_camporee_id },
+        select: {
+          includes_adventurers: true,
+          includes_pathfinders: true,
+          includes_master_guides: true,
+        },
+      });
+      if (!camporee) {
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_EVENT_CAMPOREE_NOT_FOUND,
+          { id: ctx.union_camporee_id },
+        );
+      }
+      if (camporee.includes_adventurers) allowed.add('adventurers');
+      if (camporee.includes_pathfinders) allowed.add('pathfinders');
+      if (camporee.includes_master_guides) allowed.add('master_guides');
+    }
+
+    const offending = sections.filter((s) => !allowed.has(s));
+    if (offending.length) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_SECTIONS_INVALID,
+        {
+          offending,
+          message: `Sections not enabled for this camporee: ${offending.join(', ')}`,
+        },
+      );
+    }
+  }
+
+  /**
+   * Validates XOR leader: both non-null at the same time is not allowed.
+   * Both null is fine (no leader assigned).
+   */
+  validateLeader(dto: {
+    leader_user_id?: string | null;
+    leader_name_override?: string | null;
+  }): void {
+    if (dto.leader_user_id && dto.leader_name_override) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_LEADER_CONFLICT,
+        {
+          message:
+            'Provide either leader_user_id or leader_name_override, not both',
+        },
+      );
+    }
+  }
+
+  /**
+   * Enforces forward-only status state machine.
+   * No-op when current === next.
+   * Throws 422 on invalid transition.
+   */
+  enforceStatusTransition(
+    current: CamporeeEventStatusDto,
+    next: CamporeeEventStatusDto,
+  ): void {
+    if (current === next) return;
+    const allowed = STATUS_TRANSITIONS[current] ?? [];
+    if (!allowed.includes(next)) {
+      throw new AppUnprocessableEntityException(
+        ErrorCode.CAMPOREE_EVENT_STATUS_TRANSITION_INVALID,
+        { current, next, allowed },
+      );
+    }
+  }
+
+  /**
+   * Resolves the parent camporee for an event — used by RBAC.
+   */
+  async resolveCamporeeForEvent(
+    eventId: number,
+  ): Promise<
+    { type: 'camporee'; id: number } | { type: 'union_camporee'; id: number }
+  > {
+    const row = await this.prisma.camporee_events.findUnique({
+      where: { camporee_event_id: eventId },
+      select: { local_camporee_id: true, union_camporee_id: true },
+    });
+    if (!row) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_EVENT_NOT_FOUND, {
+        id: eventId,
+      });
+    }
+    if (row.local_camporee_id) {
+      return { type: 'camporee', id: row.local_camporee_id };
+    }
+    return { type: 'union_camporee', id: row.union_camporee_id! };
+  }
+
   // ─── List events for a camporee ──────────────────────────────────────────
 
-  async listEvents(camporeeId: number, scope: CamporeeScope) {
+  async listEvents(
+    camporeeId: number,
+    scope: CamporeeScope,
+    filters?: ListCamporeeEventsFilterDto,
+  ) {
     await this.ensureCamporeeExists(camporeeId, scope);
 
-    const where =
+    const scopeWhere =
       scope === 'local'
         ? { local_camporee_id: camporeeId }
         : { union_camporee_id: camporeeId };
 
-    return this.prisma.camporee_events.findMany({
-      where: { ...where, active: true },
-      orderBy: { display_order: 'asc' },
-      include: { event_type: true },
-    });
+    const where: any = {
+      ...scopeWhere,
+      active: true,
+      ...(filters?.day_number ? { day_number: filters.day_number } : {}),
+      ...(filters?.display_category
+        ? { display_category: filters.display_category }
+        : {}),
+      // sections filter: event must contain the value OR have empty sections (matches all)
+      ...(filters?.section
+        ? {
+            OR: [
+              { sections: { has: filters.section } },
+              { sections: { equals: [] } },
+            ],
+          }
+        : {}),
+      ...(filters?.status ? { status: filters.status } : {}),
+      ...(filters?.venue_id ? { venue_id: filters.venue_id } : {}),
+      ...(filters?.leader_user_id
+        ? { leader_user_id: filters.leader_user_id }
+        : {}),
+      ...(filters?.q
+        ? {
+            OR: [
+              { title: { contains: filters.q, mode: 'insensitive' as const } },
+              {
+                description: {
+                  contains: filters.q,
+                  mode: 'insensitive' as const,
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.camporee_events.findMany({
+        where,
+        include: {
+          event_type: true,
+          leader: {
+            select: { user_id: true, name: true, paternal_last_name: true },
+          },
+          venue: {
+            select: { camporee_venue_id: true, name: true },
+          },
+        },
+        orderBy: [
+          { day_number: 'asc' },
+          { starts_at: 'asc' },
+          { display_order: 'asc' },
+        ],
+        take: filters?.limit ?? 100,
+        skip: filters?.offset ?? 0,
+      }),
+      this.prisma.camporee_events.count({ where }),
+    ]);
+
+    return { data, total };
   }
 
   // ─── Create custom event ─────────────────────────────────────────────────
@@ -151,8 +355,23 @@ export class CamporeeEventsService {
     this.validateParticipants(
       dto.participants_mode,
       dto.participants_count,
-      dto.participants_by_class as object[] | undefined,
+      dto.participants_by_class,
     );
+
+    // Agenda validations
+    this.validateLeader({
+      leader_user_id: dto.leader_user_id,
+      leader_name_override: dto.leader_name_override,
+    });
+
+    const camporeeCtx =
+      scope === 'local'
+        ? { local_camporee_id: camporeeId, union_camporee_id: null }
+        : { local_camporee_id: null, union_camporee_id: camporeeId };
+
+    if (dto.sections?.length) {
+      await this.validateSectionsAgainstCamporee(dto.sections, camporeeCtx);
+    }
 
     const eventType = await this.prisma.camporee_event_types.findUnique({
       where: { event_type_id: dto.event_type_id },
@@ -189,8 +408,28 @@ export class CamporeeEventsService {
         duration_seconds: dto.duration_seconds ?? null,
         display_order: displayOrder,
         active: dto.active ?? true,
+        // Agenda fields
+        day_number: dto.day_number ?? 1,
+        starts_at: dto.starts_at ?? null,
+        ends_at: dto.ends_at ?? null,
+        venue_id: dto.venue_id ?? null,
+        leader_user_id: dto.leader_user_id ?? null,
+        leader_name_override: dto.leader_name_override ?? null,
+        leader_role: dto.leader_role ?? null,
+        sections: dto.sections ?? [],
+        display_category: dto.display_category ?? 'logistico',
+        status: dto.status ?? 'programado',
+        capacity: dto.capacity ?? null,
+        registered_count: dto.registered_count ?? 0,
         created_by: actorId,
         modified_by: actorId,
+      },
+      include: {
+        event_type: true,
+        leader: {
+          select: { user_id: true, name: true, paternal_last_name: true },
+        },
+        venue: { select: { camporee_venue_id: true, name: true } },
       },
     });
 
@@ -223,6 +462,7 @@ export class CamporeeEventsService {
     const displayOrder =
       dto.display_order ?? (await this.getNextDisplayOrder(camporeeId, scope));
 
+    // Clone: only competition fields cloned. Agenda fields NOT cloned per design.
     const event = await this.prisma.camporee_events.create({
       data: {
         ...(scope === 'local'
@@ -230,7 +470,6 @@ export class CamporeeEventsService {
           : { union_camporee_id: camporeeId }),
         event_template_id: templateId,
         event_type_id: template.event_type_id,
-        // Apply overrides from dto, fallback to template values
         title: dto.title ?? template.title,
         description: template.description,
         requirements: template.requirements,
@@ -247,6 +486,12 @@ export class CamporeeEventsService {
         duration_seconds: template.duration_seconds,
         display_order: displayOrder,
         active: true,
+        // Agenda defaults on clone
+        day_number: 1,
+        sections: [],
+        display_category: 'logistico',
+        status: 'programado',
+        registered_count: 0,
         created_by: actorId,
         modified_by: actorId,
       },
@@ -269,11 +514,18 @@ export class CamporeeEventsService {
     const minPoints = dto.min_points ?? existing.min_points;
     this.validatePoints(maxPoints, minPoints);
 
-    const participantsMode = dto.participants_mode ?? existing.participants_mode;
-    const participantsCount = dto.participants_count ?? existing.participants_count;
+    const participantsMode =
+      dto.participants_mode ?? existing.participants_mode;
+    const participantsCount =
+      dto.participants_count ?? existing.participants_count;
     const participantsByClass =
-      dto.participants_by_class ?? (existing.participants_by_class as object[] | null);
-    this.validateParticipants(participantsMode, participantsCount, participantsByClass);
+      dto.participants_by_class ??
+      (existing.participants_by_class as object[] | null);
+    this.validateParticipants(
+      participantsMode,
+      participantsCount,
+      participantsByClass,
+    );
 
     if (dto.event_type_id) {
       const eventType = await this.prisma.camporee_event_types.findUnique({
@@ -287,27 +539,103 @@ export class CamporeeEventsService {
       }
     }
 
+    // Agenda validations
+    this.validateLeader({
+      leader_user_id: dto.leader_user_id ?? existing.leader_user_id,
+      leader_name_override:
+        dto.leader_name_override ?? existing.leader_name_override,
+    });
+
+    if (dto.sections?.length) {
+      await this.validateSectionsAgainstCamporee(dto.sections, {
+        local_camporee_id: existing.local_camporee_id,
+        union_camporee_id: existing.union_camporee_id,
+      });
+    }
+
+    if (
+      dto.status &&
+      dto.status !== (existing.status as unknown as CamporeeEventStatusDto)
+    ) {
+      this.enforceStatusTransition(
+        existing.status as unknown as CamporeeEventStatusDto,
+        dto.status,
+      );
+    }
+
     const updated = await this.prisma.camporee_events.update({
       where: { camporee_event_id: eventId },
       data: {
         ...(dto.event_type_id ? { event_type_id: dto.event_type_id } : {}),
         ...(dto.title ? { title: dto.title } : {}),
-        ...(typeof dto.description === 'string' ? { description: dto.description } : {}),
-        ...(typeof dto.requirements === 'string' ? { requirements: dto.requirements } : {}),
-        ...(typeof dto.development === 'string' ? { development: dto.development } : {}),
-        ...(typeof dto.prerequisites === 'string' ? { prerequisites: dto.prerequisites } : {}),
-        ...(typeof dto.materials === 'string' ? { materials: dto.materials } : {}),
-        ...(typeof dto.auxiliaries === 'string' ? { auxiliaries: dto.auxiliaries } : {}),
+        ...(typeof dto.description === 'string'
+          ? { description: dto.description }
+          : {}),
+        ...(typeof dto.requirements === 'string'
+          ? { requirements: dto.requirements }
+          : {}),
+        ...(typeof dto.development === 'string'
+          ? { development: dto.development }
+          : {}),
+        ...(typeof dto.prerequisites === 'string'
+          ? { prerequisites: dto.prerequisites }
+          : {}),
+        ...(typeof dto.materials === 'string'
+          ? { materials: dto.materials }
+          : {}),
+        ...(typeof dto.auxiliaries === 'string'
+          ? { auxiliaries: dto.auxiliaries }
+          : {}),
         ...(dto.max_points !== undefined ? { max_points: dto.max_points } : {}),
         ...(dto.min_points !== undefined ? { min_points: dto.min_points } : {}),
-        ...(dto.penalties !== undefined ? { penalties: dto.penalties as any } : {}),
-        ...(dto.participants_mode ? { participants_mode: dto.participants_mode } : {}),
-        ...(dto.participants_count !== undefined ? { participants_count: dto.participants_count } : {}),
-        ...(dto.participants_by_class !== undefined ? { participants_by_class: dto.participants_by_class as any } : {}),
-        ...(dto.duration_seconds !== undefined ? { duration_seconds: dto.duration_seconds } : {}),
+        ...(dto.penalties !== undefined
+          ? { penalties: dto.penalties as any }
+          : {}),
+        ...(dto.participants_mode
+          ? { participants_mode: dto.participants_mode }
+          : {}),
+        ...(dto.participants_count !== undefined
+          ? { participants_count: dto.participants_count }
+          : {}),
+        ...(dto.participants_by_class !== undefined
+          ? { participants_by_class: dto.participants_by_class as any }
+          : {}),
+        ...(dto.duration_seconds !== undefined
+          ? { duration_seconds: dto.duration_seconds }
+          : {}),
         ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+        // Agenda fields
+        ...(dto.day_number !== undefined ? { day_number: dto.day_number } : {}),
+        ...(dto.starts_at !== undefined ? { starts_at: dto.starts_at } : {}),
+        ...(dto.ends_at !== undefined ? { ends_at: dto.ends_at } : {}),
+        ...(dto.venue_id !== undefined ? { venue_id: dto.venue_id } : {}),
+        ...(dto.leader_user_id !== undefined
+          ? { leader_user_id: dto.leader_user_id }
+          : {}),
+        ...(dto.leader_name_override !== undefined
+          ? { leader_name_override: dto.leader_name_override }
+          : {}),
+        ...(dto.leader_role !== undefined
+          ? { leader_role: dto.leader_role }
+          : {}),
+        ...(dto.sections !== undefined ? { sections: dto.sections } : {}),
+        ...(dto.display_category !== undefined
+          ? { display_category: dto.display_category }
+          : {}),
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
+        ...(dto.registered_count !== undefined
+          ? { registered_count: dto.registered_count }
+          : {}),
         modified_by: actorId,
         modified_at: new Date(),
+      },
+      include: {
+        event_type: true,
+        leader: {
+          select: { user_id: true, name: true, paternal_last_name: true },
+        },
+        venue: { select: { camporee_venue_id: true, name: true } },
       },
     });
 

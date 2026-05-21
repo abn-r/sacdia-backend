@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -17,11 +18,15 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { CamporeeEventsService } from './camporee-events.service';
 import {
   CloneFromTemplateDto,
   CreateCamporeeEventDto,
+  ListCamporeeEventsFilterDto,
   ReorderCamporeeEventDto,
   UpdateCamporeeEventDto,
 } from './dto';
@@ -44,9 +49,10 @@ export class CamporeeEventsController {
   @ApiParam({ name: 'camporeeId', type: Number })
   async listLocalEvents(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Query() filters: ListCamporeeEventsFilterDto,
   ) {
-    const data = await this.service.listEvents(camporeeId, 'local');
-    return { status: 'success', data };
+    const result = await this.service.listEvents(camporeeId, 'local', filters);
+    return { status: 'success', ...result };
   }
 
   @Post('local-camporees/:camporeeId/events')
@@ -71,7 +77,9 @@ export class CamporeeEventsController {
   @Post('local-camporees/:camporeeId/events/from-template/:templateId')
   @RequirePermissions('camporee_events:create')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
-  @ApiOperation({ summary: 'Clone a template as an event for a local camporee' })
+  @ApiOperation({
+    summary: 'Clone a template as an event for a local camporee',
+  })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'templateId', type: Number })
   async cloneLocalFromTemplate(
@@ -101,9 +109,10 @@ export class CamporeeEventsController {
   @ApiParam({ name: 'camporeeId', type: Number })
   async listUnionEvents(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Query() filters: ListCamporeeEventsFilterDto,
   ) {
-    const data = await this.service.listEvents(camporeeId, 'union');
-    return { status: 'success', data };
+    const result = await this.service.listEvents(camporeeId, 'union', filters);
+    return { status: 'success', ...result };
   }
 
   @Post('union-camporees/:camporeeId/events')
@@ -128,7 +137,9 @@ export class CamporeeEventsController {
   @Post('union-camporees/:camporeeId/events/from-template/:templateId')
   @RequirePermissions('camporee_events:create')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
-  @ApiOperation({ summary: 'Clone a template as an event for a union camporee' })
+  @ApiOperation({
+    summary: 'Clone a template as an event for a union camporee',
+  })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiParam({ name: 'templateId', type: Number })
   async cloneUnionFromTemplate(
@@ -181,7 +192,9 @@ export class CamporeeEventsController {
   @Patch('camporee-events/:eventId/reorder')
   @RequirePermissions('camporee_events:update')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'Update display_order of a camporee event instance' })
+  @ApiOperation({
+    summary: 'Update display_order of a camporee event instance',
+  })
   @ApiParam({ name: 'eventId', type: Number })
   async reorderEvent(
     @Param('eventId', ParseIntPipe) eventId: number,
