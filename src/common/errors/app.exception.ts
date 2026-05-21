@@ -95,3 +95,9 @@ export class AppInternalServerErrorException extends AppException {
     super(code, HttpStatus.INTERNAL_SERVER_ERROR, namedArgs, details);
   }
 }
+
+export class AppUnprocessableEntityException extends AppException {
+  constructor(code: ErrorCode, namedArgs?: Record<string, unknown>) {
+    super(code, HttpStatus.UNPROCESSABLE_ENTITY, namedArgs);
+  }
+}
