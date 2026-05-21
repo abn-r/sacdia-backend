@@ -553,6 +553,8 @@ export class R2FileStorageService implements FileStorageService {
       default:
         throw new AppInternalServerErrorException(
           ErrorCode.R2_VALIDATION_FAILED,
+          undefined,
+          { reason: 'unknown_bucket_alias', bucketAlias },
         );
     }
   }
@@ -563,7 +565,11 @@ export class R2FileStorageService implements FileStorageService {
       this.logger.error(
         `R2 config error: required env var "${name}" is missing or empty`,
       );
-      throw new AppInternalServerErrorException(ErrorCode.R2_VALIDATION_FAILED);
+      throw new AppInternalServerErrorException(
+        ErrorCode.R2_VALIDATION_FAILED,
+        undefined,
+        { reason: 'missing_env', envVar: name },
+      );
     }
     return value;
   }
