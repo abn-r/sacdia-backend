@@ -27,6 +27,14 @@ export enum StorageBucketAlias {
    * Optional: R2_KEY_PREFIX_MATERIALES_COMPROBANTES (default: 'materiales/comprobantes').
    */
   MATERIALES_COMPROBANTES = 'MATERIALES_COMPROBANTES',
+  /**
+   * Private bucket for camporee payment voucher files (image/PDF).
+   * Objects are served via signed download URLs (TTL 15 min) — never public.
+   * Key format: camporee-payments/{camporeeId}/{paymentId}/{uuid}.{ext}
+   * Env vars: R2_BUCKET_CAMPOREE_PAYMENT_VOUCHERS, R2_PUBLIC_URL_CAMPOREE_PAYMENT_VOUCHERS (required).
+   * Optional: R2_KEY_PREFIX_CAMPOREE_PAYMENT_VOUCHERS (default: 'camporee-payments').
+   */
+  CAMPOREE_PAYMENT_VOUCHERS = 'CAMPOREE_PAYMENT_VOUCHERS',
 }
 
 export type UploadFileOptions = {

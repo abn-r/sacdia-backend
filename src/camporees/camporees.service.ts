@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -1322,6 +1323,247 @@ export class CamporeesService {
     return this.prisma.camporee_payments.update({
       where: { camporee_payment_id: paymentId },
       data: updateData,
+      include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            user_id: true,
+            users: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
+  }
+
+  // ========================================
+  // PAYMENT VOUCHERS (R2-backed receipt files)
+  // ========================================
+
+  private static readonly VOUCHER_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+  private static readonly VOUCHER_ALLOWED_MIMES = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+  ];
+
+  /**
+   * Resolve the safe file extension from a multer file's mimetype.
+   * Never trust originalname for extension derivation (security).
+   */
+  private extensionFromVoucherMime(mime: string): string {
+    switch (mime) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'application/pdf':
+        return 'pdf';
+      default:
+        // Should be unreachable — caller validates the mimetype first.
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_PAYMENT_VOUCHER_MIME_INVALID,
+        );
+    }
+  }
+
+  /**
+   * Load a payment scoped to the given camporee. Throws 404 if payment is
+   * missing, 400 if the payment does not belong to the camporee. Resolves the
+   * payment for both local and union camporees by walking through the member
+   * (camporee_members.camporee_id or .union_camporee_id).
+   */
+  private async loadPaymentInCamporee(
+    camporeeId: number,
+    paymentId: string,
+    opts: { kind: 'local' | 'union' },
+  ) {
+    const payment = await this.prisma.camporee_payments.findUnique({
+      where: { camporee_payment_id: paymentId },
+      include: { camporee_member: true },
+    });
+
+    if (!payment) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_PAYMENT_NOT_FOUND, {
+        id: paymentId,
+      });
+    }
+
+    const member = payment.camporee_member;
+    const matches =
+      opts.kind === 'local'
+        ? member.camporee_id === camporeeId
+        : member.union_camporee_id === camporeeId;
+
+    if (!matches) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_PAYMENT_SCOPE_MISMATCH,
+        { paymentId, camporeeId },
+      );
+    }
+
+    return payment;
+  }
+
+  /**
+   * Attach a voucher file (image or PDF) to an existing camporee payment.
+   * Replaces any previously stored voucher: the old object is best-effort
+   * deleted from R2 after the DB row is updated.
+   *
+   * @param camporeeId The local_camporee_id this payment must belong to.
+   * @param paymentId The camporee_payment_id (UUID).
+   * @param file Multer-parsed file (memory storage; buffer required).
+   */
+  async uploadPaymentVoucher(
+    camporeeId: number,
+    paymentId: string,
+    file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_PAYMENT_VOUCHER_REQUIRED,
+      );
+    }
+
+    if (file.size > CamporeesService.VOUCHER_MAX_BYTES) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_PAYMENT_VOUCHER_TOO_LARGE,
+      );
+    }
+
+    if (!CamporeesService.VOUCHER_ALLOWED_MIMES.includes(file.mimetype)) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_PAYMENT_VOUCHER_MIME_INVALID,
+      );
+    }
+
+    const payment = await this.loadPaymentInCamporee(camporeeId, paymentId, {
+      kind: 'local',
+    });
+
+    // Build key: camporee-payments/{camporeeId}/{paymentId}/{ts}-{uuid}.{ext}
+    // The bucket keyPrefix ('camporee-payments') is prepended by R2 service.
+    const ext = this.extensionFromVoucherMime(file.mimetype);
+    const objectKey = `${camporeeId}/${paymentId}/${Date.now()}-${randomUUID()}.${ext}`;
+
+    const uploadResult = await this.fileStorage.upload(
+      StorageBucketAlias.CAMPOREE_PAYMENT_VOUCHERS,
+      objectKey,
+      file.buffer,
+      { contentType: file.mimetype, overwrite: false },
+    );
+
+    const previousVoucherUrl = payment.voucher_url;
+
+    const updated = await this.prisma.camporee_payments.update({
+      where: { camporee_payment_id: paymentId },
+      data: {
+        voucher_url: uploadResult.url,
+        voucher_uploaded_at: new Date(),
+      },
+      include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            user_id: true,
+            users: {
+              select: {
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        },
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
+
+    // Best-effort delete of the prior voucher (no failure propagation).
+    if (previousVoucherUrl && previousVoucherUrl !== uploadResult.url) {
+      try {
+        const prevKey = this.fileStorage.extractKeyFromPublicUrl(
+          StorageBucketAlias.CAMPOREE_PAYMENT_VOUCHERS,
+          previousVoucherUrl,
+        );
+        if (prevKey) {
+          await this.fileStorage.deleteMany(
+            StorageBucketAlias.CAMPOREE_PAYMENT_VOUCHERS,
+            [prevKey],
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to delete previous voucher for payment=${paymentId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * Detach a voucher file from an existing camporee payment.
+   * The R2 object is best-effort deleted; failures are logged but do not
+   * block the DB update.
+   */
+  async removePaymentVoucher(camporeeId: number, paymentId: string) {
+    const payment = await this.loadPaymentInCamporee(camporeeId, paymentId, {
+      kind: 'local',
+    });
+
+    if (payment.voucher_url) {
+      try {
+        const key = this.fileStorage.extractKeyFromPublicUrl(
+          StorageBucketAlias.CAMPOREE_PAYMENT_VOUCHERS,
+          payment.voucher_url,
+        );
+        if (key) {
+          await this.fileStorage.deleteMany(
+            StorageBucketAlias.CAMPOREE_PAYMENT_VOUCHERS,
+            [key],
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to delete voucher for payment=${paymentId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    return this.prisma.camporee_payments.update({
+      where: { camporee_payment_id: paymentId },
+      data: {
+        voucher_url: null,
+        voucher_uploaded_at: null,
+      },
       include: {
         camporee_member: {
           select: {
