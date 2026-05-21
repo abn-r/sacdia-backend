@@ -164,7 +164,7 @@ export class CamporeeEventsController {
 
   @Patch('camporee-events/:eventId')
   @RequirePermissions('camporee_events:update')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
   @ApiOperation({ summary: 'Update a camporee event instance (overrides)' })
   @ApiParam({ name: 'eventId', type: Number })
   async updateEvent(
@@ -178,7 +178,7 @@ export class CamporeeEventsController {
 
   @Delete('camporee-events/:eventId')
   @RequirePermissions('camporee_events:delete')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
   @ApiOperation({ summary: 'Soft delete a camporee event instance' })
   @ApiParam({ name: 'eventId', type: Number })
   async deleteEvent(
@@ -191,7 +191,7 @@ export class CamporeeEventsController {
 
   @Patch('camporee-events/:eventId/reorder')
   @RequirePermissions('camporee_events:update')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
   @ApiOperation({
     summary: 'Update display_order of a camporee event instance',
   })

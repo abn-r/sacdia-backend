@@ -138,6 +138,17 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveUnionCamporeeScope(request, resource),
         );
+      case 'camporee_event': {
+        const eventScope = await this.resolveCamporeeEventScope(
+          request,
+          resource,
+        );
+        if (eventScope.type === 'local') {
+          return this.validateTerritoryScope(resolved, eventScope.scope);
+        } else {
+          return this.validateUnionCamporeeScope(resolved, eventScope.scope);
+        }
+      }
       case 'activity': {
         const activityScopeResult = await this.resolveActivityScope(
           request,
@@ -588,6 +599,81 @@ export class PermissionsGuard implements CanActivate {
       unionId: camporee.local_fields?.union_id ?? null,
       countryId: camporee.local_fields?.unions?.country_id ?? null,
     };
+  }
+
+  private async resolveCamporeeEventScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<
+    | { type: 'local'; scope: ResolvedTerritoryScope }
+    | { type: 'union'; scope: ResolvedUnionCamporeeScope }
+  > {
+    const eventId = this.getRequiredNumericValue(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'eventId'),
+      'Event ID not found in request',
+    );
+
+    const event = await this.prisma.camporee_events.findUnique({
+      where: { camporee_event_id: eventId },
+      select: {
+        local_camporee_id: true,
+        union_camporee_id: true,
+      },
+    });
+
+    if (!event) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_EVENT_NOT_FOUND);
+    }
+
+    if (event.local_camporee_id) {
+      const camporee = await this.prisma.local_camporees.findUnique({
+        where: { local_camporee_id: event.local_camporee_id },
+        select: {
+          local_field_id: true,
+          local_fields: {
+            select: {
+              union_id: true,
+              unions: { select: { country_id: true } },
+            },
+          },
+        },
+      });
+
+      if (!camporee) {
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND);
+      }
+
+      return {
+        type: 'local',
+        scope: {
+          localFieldId: camporee.local_field_id,
+          unionId: camporee.local_fields?.union_id ?? null,
+          countryId: camporee.local_fields?.unions?.country_id ?? null,
+        },
+      };
+    } else {
+      const camporee = await this.prisma.union_camporees.findUnique({
+        where: { union_camporee_id: event.union_camporee_id! },
+        select: {
+          union_id: true,
+          unions: { select: { country_id: true } },
+        },
+      });
+
+      if (!camporee) {
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+        );
+      }
+
+      return {
+        type: 'union',
+        scope: {
+          unionId: camporee.union_id,
+          countryId: camporee.unions?.country_id ?? null,
+        },
+      };
+    }
   }
 
   private async resolveUnionCamporeeScope(
