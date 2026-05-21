@@ -12,8 +12,8 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../common/dto/pagination.dto';
-import { UnionMembersPaginationDto } from './dto/union-members-pagination.dto';
-import { CamporeeMembersPaginationDto } from './dto/camporee-members-pagination.dto';
+import { UnionMembersListQueryDto } from './dto/union-members-list-query.dto';
+import { CamporeeMembersListQueryDto } from './dto/camporee-members-list-query.dto';
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { CreateUnionCamporeeDto } from './dto/create-union-camporee.dto';
@@ -809,7 +809,7 @@ export class CamporeesService {
   async getMembers(
     camporeeId: number,
     status?: string,
-    pagination?: CamporeeMembersPaginationDto,
+    pagination?: CamporeeMembersListQueryDto,
   ): Promise<PaginatedResult<any>> {
     // Validate camporee exists
     await this.findOne(camporeeId);
@@ -865,7 +865,7 @@ export class CamporeesService {
       ),
     );
 
-    const paginationDto = Object.assign(new CamporeeMembersPaginationDto(), {
+    const paginationDto = Object.assign(new CamporeeMembersListQueryDto(), {
       page,
       limit,
     });
@@ -1806,7 +1806,7 @@ export class CamporeesService {
   async getUnionMembers(
     unionCamporeeId: number,
     status?: string,
-    pagination?: UnionMembersPaginationDto,
+    pagination?: UnionMembersListQueryDto,
   ): Promise<PaginatedResult<any>> {
     // Validate union camporee exists
     await this.findOneUnion(unionCamporeeId);
@@ -1862,7 +1862,7 @@ export class CamporeesService {
       ),
     );
 
-    const paginationDto = Object.assign(new UnionMembersPaginationDto(), {
+    const paginationDto = Object.assign(new UnionMembersListQueryDto(), {
       page,
       limit,
     });
@@ -2060,7 +2060,7 @@ export class CamporeesService {
    */
   async getParticipants(
     camporeeId: number,
-    pagination?: CamporeeMembersPaginationDto,
+    pagination?: CamporeeMembersListQueryDto,
   ): Promise<PaginatedResult<any>> {
     return this.getMembers(camporeeId, undefined, pagination);
   }

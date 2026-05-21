@@ -39,8 +39,8 @@ import {
   UpdatePaymentDto,
   RejectEnrollmentDto,
   CamporeeStatusQueryDto,
-  UnionMembersPaginationDto,
-  CamporeeMembersPaginationDto,
+  UnionMembersListQueryDto,
+  CamporeeMembersListQueryDto,
 } from './dto';
 
 @ApiTags('camporees')
@@ -339,13 +339,12 @@ export class CamporeesController {
   @ApiResponse({ status: 404, description: 'Camporee de unión no encontrado' })
   async getUnionMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Query() query: CamporeeStatusQueryDto,
-    @Query() pagination: UnionMembersPaginationDto,
+    @Query() query: UnionMembersListQueryDto,
   ) {
     return this.camporeesService.getUnionMembers(
       camporeeId,
       query.status,
-      pagination,
+      query,
     );
   }
 
@@ -799,14 +798,9 @@ export class CamporeesController {
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Query() query: CamporeeStatusQueryDto,
-    @Query() pagination: CamporeeMembersPaginationDto,
+    @Query() query: CamporeeMembersListQueryDto,
   ) {
-    return this.camporeesService.getMembers(
-      camporeeId,
-      query.status,
-      pagination,
-    );
+    return this.camporeesService.getMembers(camporeeId, query.status, query);
   }
 
   @Delete(':camporeeId/members/:userId')
