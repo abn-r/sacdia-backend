@@ -405,13 +405,13 @@ describe('CamporeeEventsService', () => {
       ).not.toThrow();
     });
 
-    it('throws when both are set', () => {
+    it('accepts both fields together — FK precedence (Spec C3)', () => {
       expect(() =>
         service.validateLeader({
           leader_user_id: 'abc',
           leader_name_override: 'Dr. X',
         }),
-      ).toThrow(AppBadRequestException);
+      ).not.toThrow();
     });
   });
 
@@ -454,11 +454,29 @@ describe('CamporeeEventsService', () => {
       ).toThrow(AppUnprocessableEntityException);
     });
 
-    it('throws 422 on terminal cancelado → forward (Spec 5.6)', () => {
+    it('throws 422 on terminal cancelado → programado (Spec 5.6)', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.cancelado,
+          CamporeeEventStatusDto.programado,
+        ),
+      ).toThrow(AppUnprocessableEntityException);
+    });
+
+    it('throws 422 on terminal cancelado → publicado (Spec 5.6 — cancelado is fully terminal)', () => {
       expect(() =>
         service.enforceStatusTransition(
           CamporeeEventStatusDto.cancelado,
           CamporeeEventStatusDto.publicado,
+        ),
+      ).toThrow(AppUnprocessableEntityException);
+    });
+
+    it('throws 422 on reverse publicado → programado (Spec C5 — forward-only)', () => {
+      expect(() =>
+        service.enforceStatusTransition(
+          CamporeeEventStatusDto.publicado,
+          CamporeeEventStatusDto.programado,
         ),
       ).toThrow(AppUnprocessableEntityException);
     });

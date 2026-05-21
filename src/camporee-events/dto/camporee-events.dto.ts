@@ -25,10 +25,15 @@ export enum CamporeeEventStatusDto {
 }
 
 export class CreateCamporeeEventDto {
-  @ApiProperty({ example: 1, description: 'FK to camporee_event_types' })
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'FK to camporee_event_types. When omitted, the service resolves the "general" event type for agenda events.',
+  })
+  @IsOptional()
   @IsInt()
   @Min(1)
-  declare event_type_id: number;
+  declare event_type_id?: number;
 
   @ApiProperty({ example: 'Orden Cerrado' })
   @IsString()
