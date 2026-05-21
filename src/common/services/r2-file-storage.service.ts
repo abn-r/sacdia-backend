@@ -550,6 +550,18 @@ export class R2FileStorageService implements FileStorageService {
           ),
           isPublic: false,
         };
+      case StorageBucketAlias.CAMPOREE_PAYMENT_VOUCHERS:
+        return {
+          bucket: this.getRequiredEnv('R2_BUCKET_CAMPOREE_PAYMENT_VOUCHERS'),
+          publicBaseUrl: this.getRequiredEnv(
+            'R2_PUBLIC_URL_CAMPOREE_PAYMENT_VOUCHERS',
+          ),
+          keyPrefix: this.getOptionalEnv(
+            'R2_KEY_PREFIX_CAMPOREE_PAYMENT_VOUCHERS',
+            'camporee-payments',
+          ),
+          isPublic: false,
+        };
       default:
         throw new AppInternalServerErrorException(
           ErrorCode.R2_VALIDATION_FAILED,
