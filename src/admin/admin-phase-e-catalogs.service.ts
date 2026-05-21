@@ -8,7 +8,7 @@
  * Unique index name format: Prisma auto-generates <col1>_<col2> for
  * @@unique([col1, col2]) when no explicit `map:` name is provided.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppConflictException,
@@ -94,6 +94,9 @@ export class AdminPhaseECatalogsService {
     await this.ensureClassUnique(name);
 
     const { translations, ...mainData } = dto;
+    const minDurationYears = mainData.min_duration_years ?? 1;
+    const maxDurationYears = mainData.max_duration_years ?? 1;
+    this.validateClassDurationRange(minDurationYears, maxDurationYears);
 
     const record = await this.prisma.$transaction(async (tx) => {
       const cls = await tx.classes.create({
@@ -105,6 +108,10 @@ export class AdminPhaseECatalogsService {
           minimum_age: mainData.minimum_age ?? 0,
           requires_invested_gm: mainData.requires_invested_gm ?? false,
           display_order: mainData.display_order ?? 0,
+          available_from_year_id: mainData.available_from_year_id ?? null,
+          available_until_year_id: mainData.available_until_year_id ?? null,
+          min_duration_years: minDurationYears,
+          max_duration_years: maxDurationYears,
         },
       });
 
@@ -127,7 +134,7 @@ export class AdminPhaseECatalogsService {
 
   async updateClass(id: number, dto: UpdateClassDto, actorId: string) {
     this.translationService.validateTranslations(dto.translations);
-    await this.ensureClassExists(id);
+    const existing = await this.ensureClassExists(id);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
     if (name) {
@@ -135,6 +142,11 @@ export class AdminPhaseECatalogsService {
     }
 
     const { translations, ...mainDto } = dto;
+    const minDurationYears =
+      mainDto.min_duration_years ?? existing.min_duration_years ?? 1;
+    const maxDurationYears =
+      mainDto.max_duration_years ?? existing.max_duration_years ?? 1;
+    this.validateClassDurationRange(minDurationYears, maxDurationYears);
 
     const record = await this.prisma.$transaction(async (tx) => {
       const cls = await tx.classes.update({
@@ -158,6 +170,18 @@ export class AdminPhaseECatalogsService {
             : {}),
           ...(mainDto.display_order !== undefined
             ? { display_order: mainDto.display_order }
+            : {}),
+          ...(mainDto.available_from_year_id !== undefined
+            ? { available_from_year_id: mainDto.available_from_year_id }
+            : {}),
+          ...(mainDto.available_until_year_id !== undefined
+            ? { available_until_year_id: mainDto.available_until_year_id }
+            : {}),
+          ...(mainDto.min_duration_years !== undefined
+            ? { min_duration_years: mainDto.min_duration_years }
+            : {}),
+          ...(mainDto.max_duration_years !== undefined
+            ? { max_duration_years: mainDto.max_duration_years }
             : {}),
           modified_at: new Date(),
         },
@@ -200,6 +224,17 @@ export class AdminPhaseECatalogsService {
       throw new AppNotFoundException(ErrorCode.ADMIN_CLASS_NOT_FOUND, { id });
     }
     return entity;
+  }
+
+  private validateClassDurationRange(
+    minDurationYears: number,
+    maxDurationYears: number,
+  ) {
+    if (maxDurationYears < minDurationYears) {
+      throw new BadRequestException(
+        'max_duration_years must be greater than or equal to min_duration_years',
+      );
+    }
   }
 
   private async ensureClassUnique(name: string, excludeId?: number) {
