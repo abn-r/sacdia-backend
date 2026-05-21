@@ -17,7 +17,8 @@ import {
 
 type CamporeeScope = 'local' | 'union';
 
-// Status transition table — forward-only machine
+// Status transition table — forward-only machine (Spec C5).
+// `realizado` and `cancelado` are TERMINAL states: no further transitions.
 const STATUS_TRANSITIONS: Record<
   CamporeeEventStatusDto,
   CamporeeEventStatusDto[]
@@ -29,14 +30,13 @@ const STATUS_TRANSITIONS: Record<
   publicado: [
     CamporeeEventStatusDto.en_curso,
     CamporeeEventStatusDto.cancelado,
-    CamporeeEventStatusDto.programado,
   ],
   en_curso: [
     CamporeeEventStatusDto.realizado,
     CamporeeEventStatusDto.cancelado,
   ],
   realizado: [], // terminal
-  cancelado: [CamporeeEventStatusDto.programado],
+  cancelado: [], // terminal — Spec C5 / Scenario 5.6
 };
 
 @Injectable()
@@ -206,22 +206,22 @@ export class CamporeeEventsService {
   }
 
   /**
-   * Validates XOR leader: both non-null at the same time is not allowed.
-   * Both null is fine (no leader assigned).
+   * Validates leader assignment (Spec C3 — precedence, not XOR).
+   *
+   * Spec §C3: "if both are provided in a mutation, leader_user_id takes
+   * precedence and leader_name_override MUST be persisted as sent (it is
+   * stored for record, not discarded)." Both null is fine (no leader).
+   *
+   * This validator is intentionally a no-op for shape — persistence is
+   * handled in create/update, and display resolution prefers FK at read time.
+   * It is kept as a hook for future business rules (e.g. role required when
+   * a leader is set).
    */
-  validateLeader(dto: {
+  validateLeader(_dto: {
     leader_user_id?: string | null;
     leader_name_override?: string | null;
   }): void {
-    if (dto.leader_user_id && dto.leader_name_override) {
-      throw new AppBadRequestException(
-        ErrorCode.CAMPOREE_EVENT_LEADER_CONFLICT,
-        {
-          message:
-            'Provide either leader_user_id or leader_name_override, not both',
-        },
-      );
-    }
+    // No-op: both fields may coexist per Spec C3.
   }
 
   /**
@@ -241,6 +241,18 @@ export class CamporeeEventsService {
         { current, next, allowed },
       );
     }
+  }
+
+  /**
+   * Resolves the default `general` camporee_event_type used by agenda
+   * events when callers omit `event_type_id`. The row is seeded by migration
+   * `20260521120000_camporee_event_type_general` (idempotent via ON CONFLICT
+   * on `code`).
+   */
+  async resolveDefaultAgendaEventType() {
+    return this.prisma.camporee_event_types.findFirst({
+      where: { code: 'general', active: true },
+    });
   }
 
   /**
@@ -373,15 +385,18 @@ export class CamporeeEventsService {
       await this.validateSectionsAgainstCamporee(dto.sections, camporeeCtx);
     }
 
-    const eventType = await this.prisma.camporee_event_types.findUnique({
-      where: { event_type_id: dto.event_type_id },
-    });
+    const eventType = dto.event_type_id
+      ? await this.prisma.camporee_event_types.findUnique({
+          where: { event_type_id: dto.event_type_id },
+        })
+      : await this.resolveDefaultAgendaEventType();
     if (!eventType || !eventType.active) {
       throw new AppNotFoundException(
         ErrorCode.ADMIN_CAMPOREE_EVENT_TYPE_NOT_FOUND,
-        { id: dto.event_type_id },
+        { id: dto.event_type_id ?? null, code: 'general' },
       );
     }
+    const resolvedEventTypeId = eventType.event_type_id;
 
     const displayOrder =
       dto.display_order ?? (await this.getNextDisplayOrder(camporeeId, scope));
@@ -391,7 +406,7 @@ export class CamporeeEventsService {
         ...(scope === 'local'
           ? { local_camporee_id: camporeeId }
           : { union_camporee_id: camporeeId }),
-        event_type_id: dto.event_type_id,
+        event_type_id: resolvedEventTypeId,
         title: dto.title,
         description: dto.description ?? null,
         requirements: dto.requirements ?? null,
