@@ -151,6 +151,17 @@ export class PermissionsGuard implements CanActivate {
           return this.validateUnionCamporeeScope(resolved, eventScope.scope);
         }
       }
+      case 'camporee_venue': {
+        const venueScope = await this.resolveCamporeeVenueScope(
+          request,
+          resource,
+        );
+        if (venueScope.type === 'local_field') {
+          return this.validateTerritoryScope(resolved, venueScope.scope);
+        } else {
+          return this.validateUnionCamporeeScope(resolved, venueScope.scope);
+        }
+      }
       case 'activity': {
         const activityScopeResult = await this.resolveActivityScope(
           request,
@@ -652,6 +663,120 @@ export class PermissionsGuard implements CanActivate {
         },
       };
     }
+  }
+
+  /**
+   * Resolves territory/union scope for a camporee venue.
+   *
+   * - PATCH/DELETE /camporee-venues/:venueId → looks up the venue row by id
+   *   and returns its `union_id` (union scope) xor `local_field_id`
+   *   (local_field scope).
+   * - POST /camporee-venues (generic create) → no `idParam` and no row exists
+   *   yet, so the scope is read from the request body (`scope` +
+   *   `union_id` | `local_field_id`).
+   *
+   * Note: the camporee-scoped POST endpoints (POST
+   * /local-camporees/:id/venues and POST /union-camporees/:id/venues) are
+   * still authorized via `camporee` / `union_camporee` resource types —
+   * those derive the scope from the parent camporee row.
+   */
+  private async resolveCamporeeVenueScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<
+    | { type: 'local_field'; scope: ResolvedTerritoryScope }
+    | { type: 'union'; scope: ResolvedUnionCamporeeScope }
+  > {
+    // Case 1: mutation by id (PATCH/DELETE).
+    const rawId = this.getRequestValue(
+      request,
+      'param',
+      resource.idParam ?? 'venueId',
+    );
+
+    if (rawId !== undefined && rawId !== null && rawId !== '') {
+      const venueId = this.getRequiredNumericValue(
+        rawId,
+        'Venue ID not found in request',
+      );
+
+      const venue = await this.prisma.camporee_venues.findUnique({
+        where: { camporee_venue_id: venueId },
+        select: {
+          scope: true,
+          union_id: true,
+          local_field_id: true,
+        },
+      });
+
+      if (!venue) {
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_VENUE_NOT_FOUND);
+      }
+
+      return this.buildCamporeeVenueScopeFromRow(venue);
+    }
+
+    // Case 2: create via generic POST — read from body.
+    const body = request.body ?? {};
+    return this.buildCamporeeVenueScopeFromRow({
+      scope: body.scope,
+      union_id: body.union_id ?? null,
+      local_field_id: body.local_field_id ?? null,
+    });
+  }
+
+  private async buildCamporeeVenueScopeFromRow(venue: {
+    scope: string | null | undefined;
+    union_id: number | null | undefined;
+    local_field_id: number | null | undefined;
+  }): Promise<
+    | { type: 'local_field'; scope: ResolvedTerritoryScope }
+    | { type: 'union'; scope: ResolvedUnionCamporeeScope }
+  > {
+    if (venue.scope === 'union') {
+      if (typeof venue.union_id !== 'number') {
+        throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+      }
+
+      const union = await this.prisma.unions.findUnique({
+        where: { union_id: venue.union_id },
+        select: { country_id: true },
+      });
+
+      return {
+        type: 'union',
+        scope: {
+          unionId: venue.union_id,
+          countryId: union?.country_id ?? null,
+        },
+      };
+    }
+
+    if (venue.scope === 'local_field') {
+      if (typeof venue.local_field_id !== 'number') {
+        throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+      }
+
+      const localField = await this.prisma.local_fields.findUnique({
+        where: { local_field_id: venue.local_field_id },
+        select: {
+          union_id: true,
+          unions: { select: { country_id: true } },
+        },
+      });
+
+      return {
+        type: 'local_field',
+        scope: {
+          localFieldId: venue.local_field_id,
+          unionId: localField?.union_id ?? null,
+          countryId: localField?.unions?.country_id ?? null,
+        },
+      };
+    }
+
+    // Unknown / missing scope on the row or in the body → reject.
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   private async resolveUnionCamporeeScope(
