@@ -147,12 +147,10 @@ export class ClassesService {
     start_date: Date;
   }> {
     const now = new Date();
-    const activeYear = await this.prisma.ecclesiastical_years.findFirst({
+    const yearByCurrentDate = await this.prisma.ecclesiastical_years.findFirst({
       where: {
-        OR: [
-          { active: true },
-          { start_date: { lte: now }, end_date: { gte: now } },
-        ],
+        start_date: { lte: now },
+        end_date: { gte: now },
       },
       select: {
         year_id: true,
@@ -160,6 +158,17 @@ export class ClassesService {
       },
       orderBy: { start_date: 'desc' },
     });
+
+    const activeYear =
+      yearByCurrentDate ??
+      (await this.prisma.ecclesiastical_years.findFirst({
+        where: { active: true },
+        select: {
+          year_id: true,
+          start_date: true,
+        },
+        orderBy: { start_date: 'desc' },
+      }));
 
     if (!activeYear) {
       throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
@@ -361,6 +370,9 @@ export class ClassesService {
         },
       });
       if (!targetClass) {
+        throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
+      }
+      if (targetClass.active === false) {
         throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
       }
 

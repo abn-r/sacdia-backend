@@ -1383,13 +1383,30 @@ export class InvestitureService {
     }
 
     const dryRun = params.dry_run ?? false;
+    let expiredEnrollmentIds = overdueIds;
 
     if (!dryRun && overdueIds.length > 0) {
       const now = new Date();
-      await this.prisma.$transaction(async (tx) => {
-        await tx.enrollments.updateMany({
+      const expiredIds = await this.prisma.$transaction(async (tx) => {
+        const stillExpirable = await tx.enrollments.findMany({
           where: {
             enrollment_id: { in: overdueIds },
+            active: true,
+            investiture_status: { in: EXPIRABLE_STATUSES },
+          },
+          select: { enrollment_id: true },
+        });
+        const revalidatedIds = stillExpirable.map(
+          (enrollment) => enrollment.enrollment_id,
+        );
+
+        if (revalidatedIds.length === 0) {
+          return [];
+        }
+
+        const updateResult = await tx.enrollments.updateMany({
+          where: {
+            enrollment_id: { in: revalidatedIds },
             active: true,
             investiture_status: { in: EXPIRABLE_STATUSES },
           },
@@ -1403,23 +1420,46 @@ export class InvestitureService {
           },
         });
 
+        let auditIds = revalidatedIds;
+        if (updateResult.count !== revalidatedIds.length) {
+          const actuallyExpired = await tx.enrollments.findMany({
+            where: {
+              enrollment_id: { in: revalidatedIds },
+              investiture_status: investiture_status_enum.EXPIRED,
+              validated_by: actorId,
+              validated_at: now,
+            },
+            select: { enrollment_id: true },
+          });
+          auditIds = actuallyExpired.map(
+            (enrollment) => enrollment.enrollment_id,
+          );
+        }
+
+        if (auditIds.length === 0) {
+          return [];
+        }
+
         await tx.investiture_validation_history.createMany({
-          data: overdueIds.map((enrollmentId) => ({
+          data: auditIds.map((enrollmentId) => ({
             enrollment_id: enrollmentId,
             action: investiture_action_enum.EXPIRED,
             performed_by: actorId,
             comments: 'Vencimiento manual de enrollment atrasado',
           })),
         });
+
+        return auditIds;
       });
+      expiredEnrollmentIds = expiredIds;
     }
 
     return {
       ecclesiastical_year_id: targetYear.year_id,
       dry_run: dryRun,
       scanned_count: candidates.length,
-      expired_count: overdueIds.length,
-      enrollment_ids: overdueIds,
+      expired_count: expiredEnrollmentIds.length,
+      enrollment_ids: expiredEnrollmentIds,
     };
   }
 
@@ -1545,12 +1585,10 @@ export class InvestitureService {
     start_date: Date;
   }> {
     const now = new Date();
-    const year = await this.prisma.ecclesiastical_years.findFirst({
+    const yearByCurrentDate = await this.prisma.ecclesiastical_years.findFirst({
       where: {
-        OR: [
-          { active: true },
-          { start_date: { lte: now }, end_date: { gte: now } },
-        ],
+        start_date: { lte: now },
+        end_date: { gte: now },
       },
       select: {
         year_id: true,
@@ -1558,6 +1596,16 @@ export class InvestitureService {
       },
       orderBy: { start_date: 'desc' },
     });
+    const year =
+      yearByCurrentDate ??
+      (await this.prisma.ecclesiastical_years.findFirst({
+        where: { active: true },
+        select: {
+          year_id: true,
+          start_date: true,
+        },
+        orderBy: { start_date: 'desc' },
+      }));
 
     if (!year) {
       throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
@@ -1626,8 +1674,12 @@ export class InvestitureService {
   ): Promise<void> {
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await tx.enrollments.update({
-        where: { enrollment_id: enrollmentId },
+      const updateResult = await tx.enrollments.updateMany({
+        where: {
+          enrollment_id: enrollmentId,
+          active: true,
+          investiture_status: { in: EXPIRABLE_STATUSES },
+        },
         data: {
           investiture_status: investiture_status_enum.EXPIRED,
           validated_by: actorId,
@@ -1637,6 +1689,12 @@ export class InvestitureService {
           rejection_reason: null,
         },
       });
+
+      if (updateResult.count !== 1) {
+        throw new AppConflictException(
+          ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
+        );
+      }
 
       await tx.investiture_validation_history.create({
         data: {

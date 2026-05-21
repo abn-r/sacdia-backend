@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AppForbiddenException } from '../common/errors/app.exception';
+import {
+  AppConflictException,
+  AppForbiddenException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { AchievementsService } from '../achievements/achievements.service';
 import { InvestitureService } from './investiture.service';
@@ -25,6 +28,7 @@ describe('InvestitureService', () => {
       update: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     investiture_validation_history: {
       create: jest.fn(),
@@ -190,10 +194,7 @@ describe('InvestitureService', () => {
         start_date: new Date('2026-01-01'),
       });
       mockPrismaService.ecclesiastical_years.count.mockResolvedValue(2);
-      txMock.enrollments.update.mockResolvedValue({
-        enrollment_id: 1,
-        investiture_status: 'EXPIRED',
-      });
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
 
       await expect(
         service.submitForValidation(1, 'admin-abc', dto),
@@ -201,9 +202,13 @@ describe('InvestitureService', () => {
         code: ErrorCode.INVESTITURE_DURATION_EXPIRED,
       });
 
-      expect(txMock.enrollments.update).toHaveBeenCalledWith(
+      expect(txMock.enrollments.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { enrollment_id: 1 },
+          where: {
+            enrollment_id: 1,
+            active: true,
+            investiture_status: { in: ['IN_PROGRESS', 'REJECTED'] },
+          },
           data: expect.objectContaining({
             investiture_status: 'EXPIRED',
             locked_for_validation: false,
@@ -220,6 +225,29 @@ describe('InvestitureService', () => {
           }),
         }),
       );
+    });
+
+    it('does not write expiration history when concurrent state change prevents submit-time expiration', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+        classes: { min_duration_years: 1, max_duration_years: 1 },
+        ecclesiastical_year: { start_date: new Date('2025-01-01') },
+      });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+      });
+      mockPrismaService.ecclesiastical_years.count.mockResolvedValue(2);
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.submitForValidation(1, 'admin-abc', dto),
+      ).rejects.toBeInstanceOf(AppConflictException);
+
+      expect(
+        txMock.investiture_validation_history.create,
+      ).not.toHaveBeenCalled();
     });
 
     it('TC01 - happy path: IN_PROGRESS -> SUBMITTED_FOR_VALIDATION', async () => {
@@ -1021,6 +1049,7 @@ describe('InvestitureService', () => {
           classes: { max_duration_years: 2 },
         },
       ]);
+      txMock.enrollments.findMany.mockResolvedValue([{ enrollment_id: 11 }]);
       txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
       txMock.investiture_validation_history.createMany.mockResolvedValue({
         count: 1,
@@ -1047,6 +1076,64 @@ describe('InvestitureService', () => {
               enrollment_id: 11,
               action: 'EXPIRED',
               performed_by: 'admin-1',
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('revalidates overdue enrollments inside the transaction before writing audit rows', async () => {
+      mockPrismaService.ecclesiastical_years.count.mockReset();
+      mockPrismaService.enrollments.findMany.mockReset();
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+        start_date: new Date('2026-01-01'),
+      });
+      mockPrismaService.ecclesiastical_years.count.mockResolvedValue(3);
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 11,
+          investiture_status: 'REJECTED',
+          ecclesiastical_year: { start_date: new Date('2024-01-01') },
+          classes: { max_duration_years: 2 },
+        },
+        {
+          enrollment_id: 12,
+          investiture_status: 'IN_PROGRESS',
+          ecclesiastical_year: { start_date: new Date('2024-01-01') },
+          classes: { max_duration_years: 0 },
+        },
+      ]);
+      txMock.enrollments.findMany.mockResolvedValue([{ enrollment_id: 11 }]);
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.expireOverdueEnrollments('admin-1', {
+        ecclesiastical_year_id: 2026,
+        dry_run: false,
+      });
+
+      expect(txMock.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            enrollment_id: { in: [11, 12] },
+            active: true,
+            investiture_status: { in: ['IN_PROGRESS', 'REJECTED'] },
+          }),
+          select: { enrollment_id: true },
+        }),
+      );
+      expect(result).toMatchObject({
+        expired_count: 1,
+        enrollment_ids: [11],
+      });
+      expect(
+        txMock.investiture_validation_history.createMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            expect.objectContaining({
+              enrollment_id: 11,
+              action: 'EXPIRED',
             }),
           ],
         }),

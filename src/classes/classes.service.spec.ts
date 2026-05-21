@@ -137,6 +137,30 @@ describe('ClassesService', () => {
   });
 
   describe('class availability windows', () => {
+    it('resolves the current ecclesiastical year by date range before falling back to active flag', async () => {
+      const currentYearStart = new Date('2026-01-01T00:00:00.000Z');
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValueOnce({
+        year_id: 2026,
+        start_date: currentYearStart,
+      });
+      mockPrismaService.classes.findMany.mockResolvedValue([]);
+      mockPrismaService.classes.count.mockResolvedValue(0);
+
+      await service.findAll(undefined, new PaginationDto());
+
+      expect(
+        mockPrismaService.ecclesiastical_years.findFirst,
+      ).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: {
+            start_date: { lte: expect.any(Date) },
+            end_date: { gte: expect.any(Date) },
+          },
+        }),
+      );
+    });
+
     it('lists only classes startable in the current active ecclesiastical year', async () => {
       const activeYearStart = new Date('2026-01-01T00:00:00.000Z');
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
@@ -722,6 +746,23 @@ describe('ClassesService', () => {
     it('should throw NotFoundException when target class does not exist', async () => {
       setupTransactionMock({
         targetClass: null,
+      });
+
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_NOT_FOUND });
+    });
+
+    it('should throw NotFoundException when target class is inactive', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          active: false,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+          club_types: { name: 'Aventureros' },
+        },
       });
 
       await expect(

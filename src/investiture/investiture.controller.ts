@@ -432,6 +432,7 @@ export class InvestitureController {
   @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
   @GlobalRoles('admin')
   @RequirePermissions('catalogs:update')
+  @AuthorizationResource({ type: 'global' })
   @ApiOperation({
     summary: 'Vencer manualmente enrollments atrasados por duración de clase',
   })
