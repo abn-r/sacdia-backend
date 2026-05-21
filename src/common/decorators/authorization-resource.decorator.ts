@@ -9,6 +9,7 @@ export type AuthorizationResourceType =
   | 'club_section'
   | 'camporee'
   | 'union_camporee'
+  | 'camporee_event'
   | 'activity'
   | 'finance'
   | 'inventory_instance'
