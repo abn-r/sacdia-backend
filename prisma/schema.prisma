@@ -305,6 +305,10 @@ model classes {
   requires_invested_gm   Boolean                  @default(false)
   display_order          Int                      @default(0)
   asset_code             String?                  @db.VarChar(10)
+  available_from_year_id  Int?
+  available_until_year_id Int?
+  min_duration_years     Int                      @default(1)
+  max_duration_years     Int                      @default(1)
   created_at             DateTime                 @default(now()) @db.Timestamptz(6)
   modified_at            DateTime                 @default(now()) @db.Timestamptz(6)
   material_url           String?                  @db.VarChar
@@ -313,8 +317,13 @@ model classes {
   class_section_progress class_section_progress[]
   certificate_bulk_import_items certificate_bulk_import_items[]
   club_types             club_types               @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  available_from_year    ecclesiastical_years?    @relation("classes_available_from_year", fields: [available_from_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  available_until_year   ecclesiastical_years?    @relation("classes_available_until_year", fields: [available_until_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   enrollments            enrollments[]
   translations           classes_translations[]
+
+  @@index([available_from_year_id], map: "idx_classes_available_from_year")
+  @@index([available_until_year_id], map: "idx_classes_available_until_year")
 }
 
 model certificate_bulk_import_batches {
@@ -659,6 +668,8 @@ model ecclesiastical_years {
   created_at               DateTime?               @default(now()) @db.Timestamptz(6)
   modified_at              DateTime?               @default(now()) @db.Timestamptz(6)
   club_role_assignments    club_role_assignments[]
+  classes_available_from   classes[]                @relation("classes_available_from_year")
+  classes_available_until  classes[]                @relation("classes_available_until_year")
   enrollments_relation     enrollments[]
   folders                  folders[]
   investiture_configs      investiture_config[]
@@ -2131,6 +2142,7 @@ enum investiture_status_enum {
   APPROVED
   REJECTED
   INVESTIDO
+  EXPIRED
 }
 
 enum investiture_action_enum {
@@ -2142,6 +2154,7 @@ enum investiture_action_enum {
   REJECTED
   REINVESTITURE_REQUESTED
   INVESTIDO
+  EXPIRED
 }
 
 enum insurance_type_enum {

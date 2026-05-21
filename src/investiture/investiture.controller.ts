@@ -33,6 +33,7 @@ import {
   UpdateInvestitureConfigDto,
   BulkApproveEnrollmentsDto,
   BulkRejectEnrollmentsDto,
+  ExpireOverdueEnrollmentsDto,
 } from './dto';
 import {
   JwtAuthGuard,
@@ -420,6 +421,30 @@ export class InvestitureController {
   async bulkReject(@Body() dto: BulkRejectEnrollmentsDto, @Request() req) {
     const actorId: string = req.user.sub;
     const data = await this.investitureService.bulkRejectEnrollments(
+      actorId,
+      dto,
+    );
+    return { status: 'success', data };
+  }
+
+  @Post('admin/classes/enrollments/expire-overdue')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
+  @GlobalRoles('admin')
+  @RequirePermissions('catalogs:update')
+  @ApiOperation({
+    summary: 'Vencer manualmente enrollments atrasados por duración de clase',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado del vencimiento manual o dry-run',
+  })
+  async expireOverdueEnrollments(
+    @Body() dto: ExpireOverdueEnrollmentsDto,
+    @Request() req,
+  ) {
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.expireOverdueEnrollments(
       actorId,
       dto,
     );
