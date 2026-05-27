@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   annual_folder_section_status_enum,
   union_evaluation_decision_enum,
@@ -11,12 +11,17 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 
 @Injectable()
 export class EvaluationService {
   private readonly logger = new Logger(EvaluationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly hierarchy?: InstitutionalHierarchyService,
+  ) {}
 
   // ========================================
   // EVALUATE SECTION
@@ -45,7 +50,21 @@ export class EvaluationService {
         select: {
           annual_folder_id: true,
           status: true,
+          hierarchy_context_id: true,
           requires_union_confirmation: true,
+          club_enrollment: {
+            select: {
+              club_section: {
+                select: {
+                  clubs: {
+                    select: {
+                      club_id: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           folder_template: {
             select: {
               sections: {
@@ -219,12 +238,26 @@ export class EvaluationService {
         evaluatedAt = new Date();
       }
 
+      const hierarchyContextId =
+        newFolderStatus === 'evaluated'
+          ? await this.resolveSnapshotContextIdForFolder({
+              clubId:
+                folder.club_enrollment?.club_section?.clubs?.club_id ?? null,
+              existingHierarchyContextId: folder.hierarchy_context_id ?? null,
+              asOf: evaluatedAt ?? new Date(),
+              actorUserId: evaluatorUserId,
+            })
+          : undefined;
+
       // Update folder status if it changed
       const updatedFolder = await tx.annual_folders.update({
         where: { annual_folder_id: folderId },
         data: {
           status: newFolderStatus,
           ...(evaluatedAt !== undefined && { evaluated_at: evaluatedAt }),
+          ...(hierarchyContextId !== undefined && {
+            hierarchy_context_id: hierarchyContextId,
+          }),
         },
         select: {
           annual_folder_id: true,
@@ -291,7 +324,21 @@ export class EvaluationService {
         select: {
           annual_folder_id: true,
           status: true,
+          hierarchy_context_id: true,
           requires_union_confirmation: true,
+          club_enrollment: {
+            select: {
+              club_section: {
+                select: {
+                  clubs: {
+                    select: {
+                      club_id: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           folder_template: {
             select: {
               sections: {
@@ -419,11 +466,25 @@ export class EvaluationService {
         evaluatedAt = new Date();
       }
 
+      const hierarchyContextId =
+        newFolderStatus === 'evaluated'
+          ? await this.resolveSnapshotContextIdForFolder({
+              clubId:
+                folder.club_enrollment?.club_section?.clubs?.club_id ?? null,
+              existingHierarchyContextId: folder.hierarchy_context_id ?? null,
+              asOf: evaluatedAt ?? new Date(),
+              actorUserId: actorUserId,
+            })
+          : undefined;
+
       const updatedFolder = await tx.annual_folders.update({
         where: { annual_folder_id: folderId },
         data: {
           status: newFolderStatus,
           ...(evaluatedAt !== undefined && { evaluated_at: evaluatedAt }),
+          ...(hierarchyContextId !== undefined && {
+            hierarchy_context_id: hierarchyContextId,
+          }),
         },
         select: {
           annual_folder_id: true,
@@ -544,6 +605,9 @@ export class EvaluationService {
         data: {
           status: newStatus,
           ...(folder.status === 'evaluated' && { evaluated_at: null }),
+          ...(folder.hierarchy_context_id !== null && {
+            hierarchy_context_id: null,
+          }),
         },
         select: {
           annual_folder_id: true,
@@ -670,6 +734,33 @@ export class EvaluationService {
   // ========================================
   // PRIVATE HELPERS
   // ========================================
+
+  private async resolveSnapshotContextIdForFolder(input: {
+    clubId: number | null;
+    existingHierarchyContextId: string | null;
+    asOf: Date;
+    actorUserId: string;
+  }): Promise<string | undefined> {
+    if (input.existingHierarchyContextId) {
+      return input.existingHierarchyContextId;
+    }
+
+    if (!this.hierarchy || input.clubId == null) {
+      return undefined;
+    }
+
+    const snapshot = await this.hierarchy
+      .snapshotForClub(input.clubId, input.asOf, input.actorUserId)
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Unable to persist hierarchy snapshot for annual folder club=${input.clubId}: ${message}`,
+        );
+        return null;
+      });
+
+    return snapshot?.hierarchy_context_id ?? undefined;
+  }
 
   private formatEvaluation(evaluation: any) {
     return {

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppBadRequestException,
@@ -6,6 +6,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { MonthlyReportsService } from '../monthly-reports/monthly-reports.service';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 
 export interface YearClosureSummary {
   yearId: number;
@@ -37,6 +38,8 @@ export class YearEndService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly monthlyReportsService: MonthlyReportsService,
+    @Optional()
+    private readonly hierarchy?: InstitutionalHierarchyService,
   ) {}
 
   // ========================================
@@ -75,6 +78,64 @@ export class YearEndService {
     });
 
     const enrollmentIds = enrollments.map((e) => e.club_enrollment_id);
+    const closedAt = new Date();
+    const foldersToClose =
+      enrollmentIds.length > 0
+        ? await this.prisma.annual_folders.findMany({
+            where: {
+              club_enrollment_id: { in: enrollmentIds },
+              status: { not: 'closed' },
+            },
+            select: {
+              annual_folder_id: true,
+              hierarchy_context_id: true,
+              club_enrollment: {
+                select: {
+                  club_section: {
+                    select: {
+                      clubs: {
+                        select: {
+                          club_id: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : [];
+    const folderContextById = new Map<string, string | null>();
+    for (const folder of foldersToClose) {
+      if (folder.hierarchy_context_id) {
+        folderContextById.set(
+          folder.annual_folder_id,
+          folder.hierarchy_context_id,
+        );
+        continue;
+      }
+
+      const clubId =
+        folder.club_enrollment?.club_section?.clubs?.club_id ?? null;
+      if (!this.hierarchy || clubId == null) {
+        folderContextById.set(folder.annual_folder_id, null);
+        continue;
+      }
+
+      const snapshot = await this.hierarchy
+        .snapshotForClub(clubId, closedAt)
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            `Unable to persist hierarchy snapshot for annual folder ${folder.annual_folder_id}: ${message}`,
+          );
+          return null;
+        });
+      folderContextById.set(
+        folder.annual_folder_id,
+        snapshot?.hierarchy_context_id ?? null,
+      );
+    }
 
     // Find draft reports that need to be auto-generated
     const draftReports =
@@ -132,18 +193,34 @@ export class YearEndService {
 
       // 3. Close all annual_folders linked to those enrollments
       let foldersClosed = 0;
-      if (enrollmentIds.length > 0) {
-        const foldersResult = await tx.annual_folders.updateMany({
-          where: {
-            club_enrollment_id: { in: enrollmentIds },
-            status: { not: 'closed' },
-          },
-          data: {
-            status: 'closed',
-            closed_at: new Date(),
-          },
-        });
-        foldersClosed = foldersResult.count;
+      if (foldersToClose.length > 0) {
+        for (const folder of foldersToClose) {
+          const folderResult = await tx.annual_folders.updateMany({
+            where: {
+              annual_folder_id: folder.annual_folder_id,
+              status: { not: 'closed' },
+            },
+            data: {
+              status: 'closed',
+              closed_at: closedAt,
+            },
+          });
+          const hierarchyContextId = folderContextById.get(
+            folder.annual_folder_id,
+          );
+          if (hierarchyContextId) {
+            await tx.annual_folders.updateMany({
+              where: {
+                annual_folder_id: folder.annual_folder_id,
+                hierarchy_context_id: null,
+              },
+              data: {
+                hierarchy_context_id: hierarchyContextId,
+              },
+            });
+          }
+          foldersClosed += folderResult.count;
+        }
       }
 
       return {

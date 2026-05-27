@@ -222,6 +222,7 @@ export class RankingsService {
   private async _runRecalculation(year: {
     year_id: number;
     start_date?: Date | null;
+    end_date?: Date | null;
   }): Promise<RecalculateResult> {
     // Derive calendar year for FinanceScoreService.
     // TODO: if the ecclesiastical year spans 2 calendar years (e.g. Sep 2025–Aug 2026),
@@ -252,6 +253,7 @@ export class RankingsService {
         evaluated_at: true,
         closed_at: true,
         created_at: true,
+        hierarchy_context_id: true,
         folder_template: {
           select: {
             club_type_id: true,
@@ -307,6 +309,10 @@ export class RankingsService {
         string,
         Promise<{ localFieldId: number | null; unionId: number | null }>
       >();
+      const contextCache = new Map<
+        string,
+        Promise<{ localFieldId: number | null; unionId: number | null } | null>
+      >();
 
       // Process each folder: compute scores, upsert general ranking + category-specific rankings
       for (const folder of folders) {
@@ -342,6 +348,7 @@ export class RankingsService {
               total_max_points: max,
               progress_percentage: pct,
               calculated_at: new Date(),
+              hierarchy_context_id: folder.hierarchy_context_id ?? null,
             },
             create: {
               club_enrollment_id: enrollmentId,
@@ -352,6 +359,7 @@ export class RankingsService {
               total_max_points: max,
               progress_percentage: pct,
               calculated_at: new Date(),
+              hierarchy_context_id: folder.hierarchy_context_id ?? null,
             },
           });
           upserted++;
@@ -359,19 +367,26 @@ export class RankingsService {
         }
 
         const clubId = club.club_id;
-        const hierarchyAsOf = await this.resolveRankingHierarchyAsOf(
-          {
-            clubId,
-            closedAt: folder.closed_at,
-            evaluatedAt: folder.evaluated_at,
-            submittedAt: folder.submitted_at,
-            createdAt: folder.created_at,
-          },
-          year,
-          hierarchyCache,
-        );
-        const localFieldId = hierarchyAsOf.localFieldId;
-        const unionId = hierarchyAsOf.unionId;
+        const closedOutputContext =
+          await this.resolveClosedOutputHierarchyContext(
+            {
+              annualFolderId: folder.annual_folder_id,
+              clubId,
+              existingHierarchyContextId: folder.hierarchy_context_id ?? null,
+              closedAt: folder.closed_at,
+              evaluatedAt: folder.evaluated_at,
+              submittedAt: folder.submitted_at,
+              createdAt: folder.created_at,
+            },
+            year,
+            tx,
+            hierarchyCache,
+            contextCache,
+          );
+        const localFieldId = closedOutputContext.localFieldId;
+        const unionId = closedOutputContext.unionId;
+        const rankingHierarchyContextId =
+          closedOutputContext.hierarchyContextId;
 
         if (localFieldId == null) {
           this.logger.warn(
@@ -432,6 +447,7 @@ export class RankingsService {
             total_max_points: max,
             progress_percentage: pct,
             calculated_at: new Date(),
+            hierarchy_context_id: rankingHierarchyContextId,
             ...scorePayload,
           },
           create: {
@@ -443,6 +459,7 @@ export class RankingsService {
             total_max_points: max,
             progress_percentage: pct,
             calculated_at: new Date(),
+            hierarchy_context_id: rankingHierarchyContextId,
             ...scorePayload,
           },
         });
@@ -507,6 +524,7 @@ export class RankingsService {
                 total_max_points: max,
                 progress_percentage: pct,
                 calculated_at: new Date(),
+                hierarchy_context_id: rankingHierarchyContextId,
                 ...scorePayload,
               },
               create: {
@@ -518,6 +536,7 @@ export class RankingsService {
                 total_max_points: max,
                 progress_percentage: pct,
                 calculated_at: new Date(),
+                hierarchy_context_id: rankingHierarchyContextId,
                 ...scorePayload,
               },
             });
@@ -662,6 +681,7 @@ export class RankingsService {
       where: { active: true },
       select: { club_id: true },
     });
+    const snapshotContextCache = new Map<string, Promise<string | null>>();
 
     let totalEnrollments = 0;
     let totalSkipped = 0;
@@ -729,6 +749,12 @@ export class RankingsService {
             const clubSectionId = clubTypeId
               ? (sectionByClubType.get(clubTypeId) ?? null)
               : null;
+            const snapshotContextId =
+              await this.resolveSnapshotContextIdForClubYear(
+                c.club_id,
+                year,
+                snapshotContextCache,
+              );
 
             await this.prisma.enrollmentRanking.upsert({
               where: {
@@ -747,6 +773,7 @@ export class RankingsService {
                 investiture_score_pct: result.investiture_score_pct,
                 camporee_score_pct: result.camporee_score_pct,
                 composite_score_pct: result.composite_score_pct,
+                hierarchy_context_id: snapshotContextId,
                 composite_calculated_at: new Date(),
               },
               update: {
@@ -754,6 +781,7 @@ export class RankingsService {
                 investiture_score_pct: result.investiture_score_pct,
                 camporee_score_pct: result.camporee_score_pct,
                 composite_score_pct: result.composite_score_pct,
+                hierarchy_context_id: snapshotContextId,
                 composite_calculated_at: new Date(),
                 modified_at: new Date(),
               },
@@ -803,6 +831,7 @@ export class RankingsService {
       where: { active: true },
       select: { club_section_id: true, main_club_id: true },
     });
+    const snapshotContextCache = new Map<string, Promise<string | null>>();
 
     let totalSections = 0;
     let totalEmpty = 0;
@@ -817,6 +846,12 @@ export class RankingsService {
           s.club_section_id,
           yearId,
         );
+        const snapshotContextId =
+          await this.resolveSnapshotContextIdForClubYear(
+            s.main_club_id,
+            year,
+            snapshotContextCache,
+          );
         if (agg.composite_score_pct === null) totalEmpty++;
 
         await this.prisma.sectionRanking.upsert({
@@ -832,11 +867,13 @@ export class RankingsService {
             ecclesiastical_year_id: yearId,
             composite_score_pct: agg.composite_score_pct,
             active_enrollment_count: agg.active_enrollment_count,
+            hierarchy_context_id: snapshotContextId,
             composite_calculated_at: new Date(),
           },
           update: {
             composite_score_pct: agg.composite_score_pct,
             active_enrollment_count: agg.active_enrollment_count,
+            hierarchy_context_id: snapshotContextId,
             composite_calculated_at: new Date(),
             modified_at: new Date(),
           },
@@ -1043,16 +1080,33 @@ export class RankingsService {
       where: { year_id: ecclesiasticalYearId },
       select: { start_date: true, end_date: true },
     });
+    const generalRanking = await this.prisma.club_annual_rankings.findFirst({
+      where: {
+        club_enrollment_id: enrollmentId,
+        ecclesiastical_year_id: ecclesiasticalYearId,
+        award_category_id: GENERAL_CATEGORY_ID,
+      },
+      select: {
+        hierarchy_context: {
+          select: {
+            local_field_id: true,
+            union_id: true,
+          },
+        },
+      },
+    });
     const hierarchyAsOfDate =
       year?.end_date ??
       year?.start_date ??
       new Date(`${ecclesiasticalYearId}-12-31T23:59:59.999Z`);
-    const hierarchyAsOf = await this.hierarchy.resolveAsOf(
-      { type: 'club', id: clubId },
-      hierarchyAsOfDate,
-    );
-    const localFieldId = hierarchyAsOf.local_field_id;
-    const unionId: number | null = hierarchyAsOf.union_id ?? null;
+    const hierarchyContext =
+      generalRanking?.hierarchy_context ??
+      (await this.hierarchy.resolveAsOf(
+        { type: 'club', id: clubId },
+        hierarchyAsOfDate,
+      ));
+    const localFieldId = hierarchyContext.local_field_id;
+    const unionId: number | null = hierarchyContext.union_id ?? null;
 
     if (localFieldId == null) {
       throw new AppNotFoundException(
@@ -1282,6 +1336,154 @@ export class RankingsService {
               localFieldId: null,
               unionId: null,
             };
+          }),
+      );
+    }
+
+    return cache.get(cacheKey)!;
+  }
+
+  private async resolveClosedOutputHierarchyContext(
+    input: {
+      annualFolderId: string;
+      clubId: number;
+      existingHierarchyContextId?: string | null;
+      closedAt?: Date | null;
+      evaluatedAt?: Date | null;
+      submittedAt?: Date | null;
+      createdAt?: Date | null;
+    },
+    year: { start_date?: Date | null; end_date?: Date | null },
+    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    hierarchyCache: Map<
+      string,
+      Promise<{ localFieldId: number | null; unionId: number | null }>
+    >,
+    contextCache: Map<
+      string,
+      Promise<{ localFieldId: number | null; unionId: number | null } | null>
+    >,
+  ): Promise<{
+    hierarchyContextId: string | null;
+    localFieldId: number | null;
+    unionId: number | null;
+  }> {
+    const asOf =
+      input.closedAt ??
+      input.evaluatedAt ??
+      input.submittedAt ??
+      input.createdAt ??
+      year.end_date ??
+      year.start_date ??
+      new Date();
+
+    if (input.existingHierarchyContextId) {
+      const existingId = input.existingHierarchyContextId;
+      if (!contextCache.has(existingId)) {
+        contextCache.set(
+          existingId,
+          tx.hierarchy_contexts
+            .findUnique({
+              where: { hierarchy_context_id: existingId },
+              select: { local_field_id: true, union_id: true },
+            })
+            .then((row) =>
+              row
+                ? {
+                    localFieldId: row.local_field_id ?? null,
+                    unionId: row.union_id ?? null,
+                  }
+                : null,
+            ),
+        );
+      }
+
+      const existingContext = await contextCache.get(existingId);
+      if (existingContext?.localFieldId != null) {
+        return {
+          hierarchyContextId: existingId,
+          localFieldId: existingContext.localFieldId,
+          unionId: existingContext.unionId,
+        };
+      }
+    }
+
+    const fallbackContext = await this.resolveRankingHierarchyAsOf(
+      {
+        clubId: input.clubId,
+        closedAt: input.closedAt,
+        evaluatedAt: input.evaluatedAt,
+        submittedAt: input.submittedAt,
+        createdAt: input.createdAt,
+      },
+      year,
+      hierarchyCache,
+    );
+
+    if (fallbackContext.localFieldId == null) {
+      return {
+        hierarchyContextId: input.existingHierarchyContextId ?? null,
+        localFieldId: null,
+        unionId: null,
+      };
+    }
+
+    if (input.existingHierarchyContextId) {
+      return {
+        hierarchyContextId: input.existingHierarchyContextId,
+        localFieldId: fallbackContext.localFieldId,
+        unionId: fallbackContext.unionId,
+      };
+    }
+
+    const snapshot = await this.hierarchy
+      .snapshotForClub(input.clubId, asOf)
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Unable to persist hierarchy snapshot for folder ${input.annualFolderId}: ${message}`,
+        );
+        return null;
+      });
+    const snapshotContextId = snapshot?.hierarchy_context_id ?? null;
+
+    if (snapshotContextId) {
+      await tx.annual_folders.update({
+        where: { annual_folder_id: input.annualFolderId },
+        data: { hierarchy_context_id: snapshotContextId },
+      });
+    }
+
+    return {
+      hierarchyContextId: snapshotContextId,
+      localFieldId: fallbackContext.localFieldId,
+      unionId: fallbackContext.unionId,
+    };
+  }
+
+  private async resolveSnapshotContextIdForClubYear(
+    clubId: number,
+    year: { year_id: number; start_date?: Date | null; end_date?: Date | null },
+    cache: Map<string, Promise<string | null>>,
+  ): Promise<string | null> {
+    const asOf =
+      year.end_date ??
+      year.start_date ??
+      new Date(`${year.year_id}-12-31T23:59:59.999Z`);
+    const cacheKey = `${clubId}:${asOf.toISOString()}`;
+
+    if (!cache.has(cacheKey)) {
+      cache.set(
+        cacheKey,
+        this.hierarchy
+          .snapshotForClub(clubId, asOf)
+          .then((snapshot) => snapshot.hierarchy_context_id ?? null)
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            this.logger.warn(
+              `Unable to persist hierarchy snapshot for club ${clubId} year ${year.year_id}: ${message}`,
+            );
+            return null;
           }),
       );
     }

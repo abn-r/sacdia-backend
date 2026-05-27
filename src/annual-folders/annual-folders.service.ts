@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import 'multer';
 import pLimit from 'p-limit';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,6 +24,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 
 // Cap concurrent presign calls for EVIDENCE_FILES bucket. A folder can contain
 // many sections × many files each — without the cap, a single getFolder request
@@ -38,6 +39,8 @@ export class AnnualFoldersService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    @Optional()
+    private readonly hierarchy?: InstitutionalHierarchyService,
   ) {}
 
   // ========================================
@@ -1424,13 +1427,42 @@ export class AnnualFoldersService {
       // the folder simply does not exist (as opposed to a state conflict).
       const folder = await tx.annual_folders.findUnique({
         where: { annual_folder_id: folderId },
-        select: { annual_folder_id: true },
+        select: {
+          annual_folder_id: true,
+          hierarchy_context_id: true,
+          club_enrollment: {
+            select: {
+              club_section: {
+                select: {
+                  clubs: {
+                    select: {
+                      club_id: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!folder) {
         throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
           id: folderId,
         });
+      }
+
+      const closedAt = new Date();
+      const clubId =
+        folder.club_enrollment?.club_section?.clubs?.club_id ?? null;
+      let hierarchyContextId: string | undefined =
+        folder.hierarchy_context_id ?? undefined;
+
+      if (!hierarchyContextId && this.hierarchy && clubId != null) {
+        const snapshot = await this.hierarchy
+          .snapshotForClub(clubId, closedAt, userId)
+          .catch(() => null);
+        hierarchyContextId = snapshot?.hierarchy_context_id ?? undefined;
       }
 
       // Atomic transition: only succeeds when status is still 'submitted' or
@@ -1443,12 +1475,24 @@ export class AnnualFoldersService {
         },
         data: {
           status: 'closed',
-          closed_at: new Date(),
+          closed_at: closedAt,
         },
       });
 
       if (result.count === 0) {
         throw new AppConflictException(ErrorCode.ANNUAL_FOLDER_STATUS_CONFLICT);
+      }
+
+      if (hierarchyContextId) {
+        await tx.annual_folders.updateMany({
+          where: {
+            annual_folder_id: folderId,
+            hierarchy_context_id: null,
+          },
+          data: {
+            hierarchy_context_id: hierarchyContextId,
+          },
+        });
       }
 
       return tx.annual_folders.findUnique({
