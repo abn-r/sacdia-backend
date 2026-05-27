@@ -13,6 +13,7 @@ import { BetterAuthModule } from '../better-auth/better-auth.module';
 import { DistributedLockService } from './services/distributed-lock.service';
 import { CronRunLogger } from './services/cron-run-logger.service';
 import { TranslationService } from './services/translation.service';
+import { InstitutionalHierarchyService } from './services/institutional-hierarchy.service';
 import { CronAlertService } from './services/cron-alert.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
@@ -88,6 +89,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     SessionManagementService,
     MfaService,
     AuthorizationContextService,
+    InstitutionalHierarchyService,
     PermissionsGuard,
     R2FileStorageService,
     {
@@ -136,6 +138,7 @@ function isPlaceholderRedisUrl(value: string): boolean {
     SessionManagementService,
     MfaService,
     AuthorizationContextService,
+    InstitutionalHierarchyService,
     PermissionsGuard,
     FILE_STORAGE_SERVICE,
     DistributedLockService,
