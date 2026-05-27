@@ -74,7 +74,7 @@ export class ResourcesController {
         club_type_id: { type: 'integer' },
         scope_level: {
           type: 'string',
-          enum: ['system', 'union', 'local_field'],
+          enum: ['system', 'division', 'union', 'local_field'],
         },
         scope_id: { type: 'integer' },
         external_url: { type: 'string', maxLength: 1000 },

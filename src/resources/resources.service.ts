@@ -11,6 +11,14 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import {
+  InstitutionalHierarchyService,
+  type ResolveCurrentInput,
+} from '../common/services/institutional-hierarchy.service';
+import type {
+  AuthorizationSnapshot,
+  AuthorizationTerritoryScope,
+} from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ALLOWED_RESOURCE_MIME_TYPES,
@@ -31,12 +39,22 @@ const SIGNED_UPLOAD_TTL_SECONDS = 15 * 60;
 /** Tolerancia entre tamaño anunciado y real en R2 antes de rechazar (1%). */
 const FILE_SIZE_TOLERANCE_RATIO = 0.01;
 
+type ResourceScopeLevel = 'system' | 'division' | 'union' | 'local_field';
+
+type ResourceScopeSets = {
+  divisionIds: Set<number>;
+  unionIds: Set<number>;
+  localFieldIds: Set<number>;
+  countryIds: Set<number>;
+};
+
 @Injectable()
 export class ResourcesService {
   private readonly logger = new Logger(ResourcesService.name);
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly hierarchy: InstitutionalHierarchyService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -55,7 +73,11 @@ export class ResourcesService {
     validateResourceFile(file, dto.resource_type);
 
     // 2. Validar autorización de scope
-    this.validateScopeAuthorization(dto.scope_level, dto.scope_id, userContext);
+    await this.validateScopeAuthorization(
+      dto.scope_level,
+      dto.scope_id,
+      userContext,
+    );
 
     // 3. Validar coherencia scope_level / scope_id
     if (dto.scope_level === 'system' && dto.scope_id != null) {
@@ -169,7 +191,11 @@ export class ResourcesService {
   async generateUploadUrl(dto: GenerateUploadUrlDto, userContext: any) {
     // 1. Authorize scope before issuing the URL — otherwise an attacker could
     // burn presigned URLs for scopes they cannot create resources in.
-    this.validateScopeAuthorization(dto.scope_level, dto.scope_id, userContext);
+    await this.validateScopeAuthorization(
+      dto.scope_level,
+      dto.scope_id,
+      userContext,
+    );
 
     if (dto.scope_level === 'system' && dto.scope_id != null) {
       throw new AppBadRequestException(
@@ -233,7 +259,11 @@ export class ResourcesService {
     userContext: any,
   ) {
     // 1. Same scope/auth gating as direct create().
-    this.validateScopeAuthorization(dto.scope_level, dto.scope_id, userContext);
+    await this.validateScopeAuthorization(
+      dto.scope_level,
+      dto.scope_id,
+      userContext,
+    );
 
     if (dto.scope_level === 'system' && dto.scope_id != null) {
       throw new AppBadRequestException(
@@ -428,40 +458,9 @@ export class ResourcesService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
-    const globalScope = userContext?.authorization?.effective?.scope?.global;
-    const userUnionId: number | null = globalScope?.union?.id ?? null;
-    const userLocalFieldId: number | null =
-      globalScope?.local_field?.id ?? null;
-
-    // club_type_id del usuario se obtiene de su asignación de club activa
-    const userClubTypeId: number | null =
-      userContext?.authorization?.effective?.club_type_id ?? null;
-
     const where: Record<string, any> = {
       active: true,
-      AND: [
-        // Visibilidad por scope
-        {
-          OR: [
-            { scope_level: 'system' },
-            ...(userUnionId != null
-              ? [{ scope_level: 'union', scope_id: userUnionId }]
-              : []),
-            ...(userLocalFieldId != null
-              ? [{ scope_level: 'local_field', scope_id: userLocalFieldId }]
-              : []),
-          ],
-        },
-        // Visibilidad por tipo de club
-        {
-          OR: [
-            { club_type_id: null },
-            ...(userClubTypeId != null
-              ? [{ club_type_id: userClubTypeId }]
-              : []),
-          ],
-        },
-      ],
+      AND: this.buildVisibleResourceConditions(userContext),
       // Filtros adicionales del query
       ...(query.resource_type && { resource_type: query.resource_type }),
       ...(query.resource_category_id && {
@@ -493,6 +492,57 @@ export class ResourcesService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  async findOneVisible(id: string, userContext: any) {
+    const resource = await this.prisma.resources.findFirst({
+      where: {
+        resource_id: id,
+        active: true,
+        AND: this.buildVisibleResourceConditions(userContext),
+      },
+      include: {
+        resource_categories: true,
+        club_types: true,
+        users: {
+          select: { name: true, user_id: true },
+        },
+      },
+    });
+
+    if (!resource) {
+      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
+    }
+
+    let signedUrl: string | null = null;
+    if (resource.file_key) {
+      signedUrl = await this.resolveSignedUrl(resource.file_key);
+    }
+
+    return { ...resource, signed_url: signedUrl };
+  }
+
+  async getVisibleSignedUrl(id: string, userContext: any) {
+    const resource = await this.prisma.resources.findFirst({
+      where: {
+        resource_id: id,
+        active: true,
+        AND: this.buildVisibleResourceConditions(userContext),
+      },
+      select: { resource_id: true, file_key: true },
+    });
+
+    if (!resource) {
+      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
+    }
+
+    if (!resource.file_key) {
+      throw new AppBadRequestException(ErrorCode.RESOURCE_NO_FILE);
+    }
+
+    const url = await this.resolveSignedUrl(resource.file_key);
+
+    return { url, expires_in: SIGNED_URL_TTL_SECONDS };
   }
 
   // ---------------------------------------------------------------------------
@@ -643,34 +693,34 @@ export class ResourcesService {
    * Valida que el usuario que crea/modifica el recurso tenga permiso
    * sobre el scope_level/scope_id indicado.
    */
-  private validateScopeAuthorization(
+  private async validateScopeAuthorization(
     scopeLevel: string,
     scopeId: number | null | undefined,
     userContext: any,
-  ): void {
-    const authorization = userContext?.authorization?.effective
-      ? userContext.authorization
-      : userContext?.effective
-        ? userContext
-        : null;
-    const globalScope = authorization?.effective?.scope?.global;
-    if (!globalScope) {
-      throw new AppForbiddenException(
-        ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM,
-      );
+  ): Promise<void> {
+    const level = scopeLevel as ResourceScopeLevel;
+    const authorization = this.extractAuthorizationSnapshot(userContext);
+    const scopes = this.collectResourceScopes(authorization);
+    const effectiveScope =
+      userContext?.authorization?.effective?.scope ??
+      userContext?.effective?.scope;
+    if (!authorization && effectiveScope?.global) {
+      this.addTerritoryScope(scopes, effectiveScope.global);
     }
-
-    const userCountryId = globalScope?.country?.id ?? null;
-    const userUnionId = globalScope?.union?.id ?? null;
-    const userLfId = globalScope?.local_field?.id ?? null;
-    const isUnscopedGlobalAdmin = !userCountryId && !userUnionId && !userLfId;
+    const effectiveGlobalScope = effectiveScope?.global;
+    const isUnscopedGlobalAdmin =
+      effectiveGlobalScope &&
+      !effectiveGlobalScope.division &&
+      !effectiveGlobalScope.country &&
+      !effectiveGlobalScope.union &&
+      !effectiveGlobalScope.local_field;
 
     if (isUnscopedGlobalAdmin) {
       return;
     }
 
-    if (scopeLevel === 'system') {
-      if (!userCountryId) {
+    if (level === 'system') {
+      if (scopes.divisionIds.size === 0 && scopes.countryIds.size === 0) {
         throw new AppForbiddenException(
           ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM,
         );
@@ -678,18 +728,43 @@ export class ResourcesService {
       return;
     }
 
-    if (scopeLevel === 'union') {
-      if (userCountryId) return;
-      if (userUnionId && userUnionId === scopeId) return;
+    if (level === 'division') {
+      if (
+        typeof scopeId === 'number' &&
+        this.scopeContains(scopes.divisionIds, scopeId)
+      ) {
+        return;
+      }
+      throw new AppForbiddenException(
+        ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_DIVISION,
+        { scope_id: String(scopeId) },
+      );
+    }
+
+    if (level === 'union') {
+      if (typeof scopeId === 'number') {
+        if (this.scopeContains(scopes.unionIds, scopeId)) return;
+        if (await this.isWithinDivisionScope(scopes, { unionId: scopeId })) {
+          return;
+        }
+      }
+      if (scopes.divisionIds.size === 0 && scopes.countryIds.size > 0) return;
       throw new AppForbiddenException(
         ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_UNION,
         { scope_id: String(scopeId) },
       );
     }
 
-    if (scopeLevel === 'local_field') {
-      if (userCountryId) return;
-      if (userLfId && userLfId === scopeId) return;
+    if (level === 'local_field') {
+      if (typeof scopeId === 'number') {
+        if (this.scopeContains(scopes.localFieldIds, scopeId)) return;
+        if (
+          await this.isWithinDivisionScope(scopes, { localFieldId: scopeId })
+        ) {
+          return;
+        }
+      }
+      if (scopes.divisionIds.size === 0 && scopes.countryIds.size > 0) return;
       throw new AppForbiddenException(
         ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD,
         { scope_id: String(scopeId) },
@@ -699,6 +774,130 @@ export class ResourcesService {
     throw new AppBadRequestException(ErrorCode.RESOURCE_SCOPE_LEVEL_INVALID, {
       scope_level: scopeLevel,
     });
+  }
+
+  private extractAuthorizationSnapshot(
+    userContext: any,
+  ): AuthorizationSnapshot | null {
+    if (userContext?.effective && userContext?.grants) {
+      return userContext as AuthorizationSnapshot;
+    }
+
+    if (
+      userContext?.authorization?.effective &&
+      userContext?.authorization?.grants
+    ) {
+      return userContext.authorization as AuthorizationSnapshot;
+    }
+
+    return null;
+  }
+
+  private collectResourceScopes(
+    authorization: AuthorizationSnapshot | null,
+  ): ResourceScopeSets {
+    const scopes: ResourceScopeSets = {
+      divisionIds: new Set<number>(),
+      unionIds: new Set<number>(),
+      localFieldIds: new Set<number>(),
+      countryIds: new Set<number>(),
+    };
+
+    if (!authorization) {
+      return scopes;
+    }
+
+    this.addTerritoryScope(scopes, authorization.effective.scope.global);
+
+    for (const grant of authorization.grants.global_roles ?? []) {
+      this.addTerritoryScope(scopes, grant.scope);
+    }
+
+    for (const grant of authorization.grants.club_assignments ?? []) {
+      this.addTerritoryScope(scopes, grant.scope);
+    }
+
+    return scopes;
+  }
+
+  private addTerritoryScope(
+    target: ResourceScopeSets,
+    scope: AuthorizationTerritoryScope | undefined,
+  ): void {
+    this.addNumericScopeId(target.divisionIds, scope?.division?.id);
+    this.addNumericScopeId(target.unionIds, scope?.union?.id);
+    this.addNumericScopeId(target.localFieldIds, scope?.local_field?.id);
+    this.addNumericScopeId(target.countryIds, scope?.country?.id);
+  }
+
+  private addNumericScopeId(target: Set<number>, value: unknown): void {
+    const id = typeof value === 'string' ? Number(value) : value;
+    if (typeof id === 'number' && Number.isInteger(id)) {
+      target.add(id);
+    }
+  }
+
+  private buildVisibleResourceConditions(
+    userContext: any,
+  ): Record<string, any>[] {
+    const authorization = this.extractAuthorizationSnapshot(userContext);
+    const visibleScopes = this.collectResourceScopes(authorization);
+
+    const userClubTypeId: number | null =
+      (
+        userContext as {
+          authorization?: { effective?: { club_type_id?: number } };
+        }
+      )?.authorization?.effective?.club_type_id ??
+      (userContext as { effective?: { club_type_id?: number } })?.effective
+        ?.club_type_id ??
+      null;
+
+    return [
+      {
+        OR: [
+          { scope_level: 'system' },
+          ...[...visibleScopes.divisionIds].map((divisionId) => ({
+            scope_level: 'division',
+            scope_id: divisionId,
+          })),
+          ...[...visibleScopes.unionIds].map((unionId) => ({
+            scope_level: 'union',
+            scope_id: unionId,
+          })),
+          ...[...visibleScopes.localFieldIds].map((localFieldId) => ({
+            scope_level: 'local_field',
+            scope_id: localFieldId,
+          })),
+        ],
+      },
+      {
+        OR: [
+          { club_type_id: null },
+          ...(userClubTypeId != null ? [{ club_type_id: userClubTypeId }] : []),
+        ],
+      },
+    ];
+  }
+
+  private scopeContains(scopeIds: Set<number>, requestedId: number): boolean {
+    return scopeIds.has(requestedId);
+  }
+
+  private async isWithinDivisionScope(
+    scopes: ResourceScopeSets,
+    input: ResolveCurrentInput,
+  ): Promise<boolean> {
+    if (scopes.divisionIds.size === 0) {
+      return false;
+    }
+
+    try {
+      const hierarchy = await this.hierarchy.resolveCurrent(input);
+      return scopes.divisionIds.has(hierarchy.division_id);
+    } catch {
+      return false;
+    }
   }
 
   /** Genera una URL firmada para un file_key en R2. */

@@ -29,15 +29,15 @@ export class GenerateUploadUrlDto {
 
   @ApiProperty({
     description: 'Nivel de alcance del recurso',
-    enum: ['system', 'union', 'local_field'],
+    enum: ['system', 'division', 'union', 'local_field'],
   })
   @IsString()
-  @IsIn(['system', 'union', 'local_field'])
-  declare scope_level: 'system' | 'union' | 'local_field';
+  @IsIn(['system', 'division', 'union', 'local_field'])
+  declare scope_level: 'system' | 'division' | 'union' | 'local_field';
 
   @ApiPropertyOptional({
     description:
-      'ID del ámbito (union_id o local_field_id). Requerido para scope_level !== system.',
+      'ID del ámbito (division_id, union_id o local_field_id). Requerido para scope_level !== system.',
   })
   @IsOptional()
   @Type(() => Number)

@@ -190,6 +190,7 @@
   "RESOURCE_NOT_FOUND": "Resource not found",
   "RESOURCE_NO_FILE": "No file was provided",
   "RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM": "Only system administrators can manage system-scope resources",
+  "RESOURCE_SCOPE_ACCESS_DENIED_DIVISION": "You are not authorized to manage resources for division {scope_id}",
   "RESOURCE_SCOPE_ACCESS_DENIED_UNION": "You are not authorized to manage resources for union {scope_id}",
   "RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD": "You are not authorized to manage resources for local field {scope_id}",
   "RESOURCE_SCOPE_LEVEL_INVALID": "Invalid scope level: {scope_level}",

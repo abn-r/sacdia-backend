@@ -189,6 +189,7 @@
   "RESOURCE_NOT_FOUND": "Ressource introuvable",
   "RESOURCE_NO_FILE": "Aucun fichier n'a été fourni",
   "RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM": "Seuls les administrateurs système peuvent gérer les ressources de portée système",
+  "RESOURCE_SCOPE_ACCESS_DENIED_DIVISION": "Vous n'êtes pas autorisé à gérer les ressources de la division {scope_id}",
   "RESOURCE_SCOPE_ACCESS_DENIED_UNION": "Vous n'êtes pas autorisé à gérer les ressources de l'union {scope_id}",
   "RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD": "Vous n'êtes pas autorisé à gérer les ressources du champ local {scope_id}",
   "RESOURCE_SCOPE_LEVEL_INVALID": "Niveau de portée invalide : {scope_level}",

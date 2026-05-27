@@ -190,6 +190,7 @@
   "RESOURCE_NOT_FOUND": "Recurso no encontrado",
   "RESOURCE_NO_FILE": "No se proporcionó ningún archivo",
   "RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM": "Solo los administradores del sistema pueden gestionar recursos de alcance sistema",
+  "RESOURCE_SCOPE_ACCESS_DENIED_DIVISION": "No tenés autorización para gestionar recursos de la división {scope_id}",
   "RESOURCE_SCOPE_ACCESS_DENIED_UNION": "No tiene autorización para gestionar recursos de la unión {scope_id}",
   "RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD": "No tiene autorización para gestionar recursos del campo local {scope_id}",
   "RESOURCE_SCOPE_LEVEL_INVALID": "Nivel de alcance no válido: {scope_level}",
