@@ -24,7 +24,10 @@ import type { Response } from 'express';
 import { AnnualReportsService } from './annual-reports.service';
 import { AnnualReportsPdfService } from './annual-reports-pdf.service';
 import { UpdateAnnualManualDataDto } from './dto';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('annual-reports')
@@ -43,12 +46,16 @@ export class AnnualReportsController {
 
   @Get('admin/annual-reports')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Listar informes anuales (admin)' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
     description: 'Insufficient permissions — requires reports:read',
   })
+  @ApiQuery({ name: 'divisionId', required: false, type: Number })
+  @ApiQuery({ name: 'unionId', required: false, type: Number })
+  @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'clubId', required: false, type: Number })
   @ApiQuery({ name: 'ecclesiasticalYearId', required: false, type: Number })
   @ApiQuery({
@@ -63,6 +70,12 @@ export class AnnualReportsController {
     description: 'Lista paginada de informes anuales',
   })
   async listAdmin(
+    @Req() req: any,
+    @Query('divisionId', new ParseIntPipe({ optional: true }))
+    divisionId?: number,
+    @Query('unionId', new ParseIntPipe({ optional: true })) unionId?: number,
+    @Query('localFieldId', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
     @Query('clubId', new ParseIntPipe({ optional: true })) clubId?: number,
     @Query('ecclesiasticalYearId', new ParseIntPipe({ optional: true }))
     ecclesiasticalYearId?: number,
@@ -70,7 +83,10 @@ export class AnnualReportsController {
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    const data = await this.annualReportsService.listForAdmin({
+    const data = await this.annualReportsService.listForAdmin(req.user.sub, {
+      divisionId,
+      unionId,
+      localFieldId,
       clubId,
       ecclesiasticalYearId,
       status,

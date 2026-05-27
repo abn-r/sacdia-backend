@@ -17,10 +17,16 @@ describe('MonthlyReportsService admin list authorization', () => {
 
   const resolvedAuth = ({
     roles,
+    unionId,
     localFieldId,
+    activeAssignmentRole,
+    activeClubSectionId = 44,
   }: {
     roles: string[];
+    unionId?: number;
     localFieldId?: number;
+    activeAssignmentRole?: string;
+    activeClubSectionId?: number;
   }) => ({
     authorization: {
       grants: {
@@ -29,13 +35,30 @@ describe('MonthlyReportsService admin list authorization', () => {
           permissions: ['reports:read'],
           scope: {},
         })),
+        club_assignments: activeAssignmentRole
+          ? [
+              {
+                assignment_id: 'active-assignment',
+                role_name: activeAssignmentRole,
+                permissions: ['reports:read'],
+                section: { club_section_id: activeClubSectionId },
+              },
+            ]
+          : [],
+      },
+      active_assignment: {
+        assignment_id: activeAssignmentRole ? 'active-assignment' : null,
       },
       effective: {
         scope: {
-          global:
-            localFieldId === undefined
+          global: {
+            ...(unionId === undefined
               ? {}
-              : { local_field: { id: localFieldId, name: 'Campo Local' } },
+              : { union: { id: unionId, name: 'Unión' } }),
+            ...(localFieldId === undefined
+              ? {}
+              : { local_field: { id: localFieldId, name: 'Campo Local' } }),
+          },
         },
       },
     },
@@ -51,7 +74,7 @@ describe('MonthlyReportsService admin list authorization', () => {
     mockPrisma.monthly_reports.findMany.mockResolvedValue([]);
   });
 
-  it('rejects actors without an allowed global admin role instead of listing all reports', async () => {
+  it('rejects actors without global or active-assignment report scope instead of listing all reports', async () => {
     mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
       resolvedAuth({ roles: [] }),
     );
@@ -62,6 +85,52 @@ describe('MonthlyReportsService admin list authorization', () => {
 
     expect(mockPrisma.monthly_reports.count).not.toHaveBeenCalled();
     expect(mockPrisma.monthly_reports.findMany).not.toHaveBeenCalled();
+  });
+
+  it('forces union leadership scope to the actor union and allows narrower local-field filters', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({ roles: ['director-union'], unionId: 20 }),
+    );
+
+    await service.listForAdmin('director-union-user', {
+      unionId: 99,
+      localFieldId: 7,
+    });
+
+    expect(mockPrisma.monthly_reports.count).toHaveBeenCalledWith({
+      where: {
+        club_enrollment: {
+          club_section: {
+            clubs: {
+              local_field_id: 7,
+              local_fields: { union_id: 20 },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('scopes active club-assignment report readers to their own section', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolvedAuth({
+        roles: [],
+        activeAssignmentRole: 'secretary',
+        activeClubSectionId: 44,
+      }),
+    );
+
+    await service.listForAdmin('section-secretary', { localFieldId: 99 });
+
+    expect(mockPrisma.monthly_reports.count).toHaveBeenCalledWith({
+      where: {
+        club_enrollment: {
+          club_section: {
+            club_section_id: 44,
+          },
+        },
+      },
+    });
   });
 
   it('rejects coordinator without a real local field scope', async () => {

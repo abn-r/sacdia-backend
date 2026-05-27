@@ -6,6 +6,11 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { UpdateAnnualManualDataDto } from './dto';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import {
+  buildReportClubWhere,
+  resolveReportVisibilityScope,
+} from '../reports/report-visibility-scope';
 
 // ============================================================
 // Shape of the computed_data JSON column
@@ -41,7 +46,10 @@ export interface AnnualComputedData {
 export class AnnualReportsService {
   private readonly logger = new Logger(AnnualReportsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -320,7 +328,7 @@ export class AnnualReportsService {
   // GENERATE (freeze computed_data)
   // ========================================
 
-  async generate(reportId: number, triggeredBy: string) {
+  async generate(reportId: number, _triggeredBy: string) {
     const report = await this.prisma.annual_reports.findUnique({
       where: { annual_report_id: reportId },
     });
@@ -433,13 +441,28 @@ export class AnnualReportsService {
   // LIST FOR ADMIN
   // ========================================
 
-  async listForAdmin(filters: {
-    clubId?: number;
-    ecclesiasticalYearId?: number;
-    status?: string;
-    page?: number;
-    limit?: number;
-  }) {
+  async listForAdmin(
+    userId: string,
+    filters: {
+      divisionId?: number;
+      unionId?: number;
+      localFieldId?: number;
+      clubId?: number;
+      ecclesiasticalYearId?: number;
+      status?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    const reportScope = resolveReportVisibilityScope(resolved, {
+      divisionId: filters.divisionId,
+      unionId: filters.unionId,
+      localFieldId: filters.localFieldId,
+    });
+    const clubWhere = buildReportClubWhere(reportScope);
+
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? 25, 100);
     const skip = (page - 1) * limit;
@@ -450,6 +473,7 @@ export class AnnualReportsService {
         ecclesiastical_year_id: filters.ecclesiasticalYearId,
       }),
       ...(filters.status && { status: filters.status }),
+      ...(Object.keys(clubWhere).length > 0 && { club: clubWhere }),
     };
 
     const [total, items] = await Promise.all([

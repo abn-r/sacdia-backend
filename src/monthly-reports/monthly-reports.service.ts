@@ -5,10 +5,13 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { UpdateManualDataDto } from './dto';
 import {
   AppBadRequestException,
-  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import {
+  buildReportClubSectionWhere,
+  resolveReportVisibilityScope,
+} from '../reports/report-visibility-scope';
 
 @Injectable()
 export class MonthlyReportsService {
@@ -172,7 +175,7 @@ export class MonthlyReportsService {
   /**
    * Freezes the auto-calculated data into snapshot_data and sets status to 'generated'.
    */
-  async generate(reportId: string, userId: string) {
+  async generate(reportId: string, _userId: string) {
     const report = await this.prisma.monthly_reports.findUnique({
       where: { monthly_report_id: reportId },
     });
@@ -308,8 +311,10 @@ export class MonthlyReportsService {
 
   /**
    * Paginated list of monthly reports across clubs.
-   * - super-admin / admin: can filter by any local_field_id supplied in filters.
-   * - coordinator: scope is forced to their own local_field_id (filters.localFieldId ignored).
+   * - super-admin / admin / DIA: can filter by division, union and local field.
+   * - union roles: scope is forced to their own union, optionally narrowed by local field.
+   * - local-field roles: scope is forced to their own local field.
+   * - club roles: scope is forced to the active club section.
    * Roles and territory scope are derived from the resolved authorization profile
    * so that this method never trusts unverified JWT claims directly.
    */
@@ -317,6 +322,8 @@ export class MonthlyReportsService {
     userId: string,
     filters: {
       clubTypeId?: number;
+      divisionId?: number;
+      unionId?: number;
       localFieldId?: number;
       year?: number;
       month?: number;
@@ -328,32 +335,11 @@ export class MonthlyReportsService {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
 
-    const globalRoleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-
-    const isAdmin =
-      globalRoleNames.has('admin') || globalRoleNames.has('super-admin');
-    const isScopedAdmin =
-      globalRoleNames.has('coordinator') ||
-      globalRoleNames.has('assistant-admin');
-
-    if (!isAdmin && !isScopedAdmin) {
-      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
-    }
-
-    const userLocalFieldId = resolved.authorization.effective.scope.global
-      .local_field?.id as number | undefined;
-
-    const scopedLocalFieldId: number | undefined = isAdmin
-      ? filters.localFieldId
-      : userLocalFieldId;
-
-    if (!isAdmin && scopedLocalFieldId === undefined) {
-      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
-    }
+    const reportScope = resolveReportVisibilityScope(resolved, {
+      divisionId: filters.divisionId,
+      unionId: filters.unionId,
+      localFieldId: filters.localFieldId,
+    });
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? 25, 100);
@@ -364,14 +350,11 @@ export class MonthlyReportsService {
       ...(filters.month !== undefined && { month: filters.month }),
       ...(filters.status && { status: filters.status }),
       club_enrollment: {
-        club_section: {
+        club_section: buildReportClubSectionWhere(reportScope, {
           ...(filters.clubTypeId !== undefined && {
             club_type_id: filters.clubTypeId,
           }),
-          ...(scopedLocalFieldId !== undefined && {
-            clubs: { local_field_id: scopedLocalFieldId },
-          }),
-        },
+        }),
       },
     };
 
