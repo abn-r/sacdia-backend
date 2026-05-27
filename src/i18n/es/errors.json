@@ -411,6 +411,7 @@
   "SYSTEM_CONFIG_NOT_FOUND": "Configuración no encontrada",
   "NOTIF_SEND_FORBIDDEN": "Necesitás una asignación de club activa para esta instancia",
   "NOTIF_NOT_FOUND": "Notificación no encontrada",
+  "NOTIF_TARGET_TYPE_MISMATCH": "El tipo de instancia no coincide con la sección de club seleccionada",
   "EXPORT_NOT_FOUND": "Exportación no encontrada",
   "EXPORT_ALREADY_PROCESSING": "Ya existe una exportación en proceso",
   "MFA_CODE_INVALID": "TOTP no está habilitado para este usuario. Llamá a POST /auth/mfa/enroll primero",

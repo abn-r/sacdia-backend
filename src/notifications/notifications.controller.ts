@@ -152,7 +152,7 @@ export class NotificationsController {
 
   @Post('club/:instanceType/:instanceId')
   @RequirePermissions('notifications:club')
-  @AuthorizationResource({ type: 'active_assignment' }) // TODO(rbac): verify notifications:club is club-scoped in seed
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Send notification to club members' })
   @ApiResponse({ status: 201, description: 'Club notification queued' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
@@ -172,21 +172,37 @@ export class NotificationsController {
       dto,
       req.user.sub,
       'admin:club_send',
+      instanceType,
     );
   }
 
-  @RequirePermissions('notifications:send')
-  @Get('history')
-  @ApiResponse({ status: 200, description: 'Paginated notification audit log' })
+  @Get('targets/club')
+  @RequirePermissions('notifications:club')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({
+    summary: 'Get authorized club notification targets for current actor',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns only club targets authorized by active assignment scope for notifications:club',
+  })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({
     status: 403,
-    description: 'Insufficient permissions — requires notifications:send',
+    description: 'Insufficient permissions — requires notifications:club',
   })
+  async getAuthorizedClubTargets(@Request() req) {
+    return this.notificationsService.getAuthorizedClubTargets(req.user.sub);
+  }
+
+  @Get('history')
+  @ApiResponse({ status: 200, description: 'Paginated notification audit log' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiOperation({
     summary: 'Get paginated notification history',
     description:
-      'Admins see notification audit logs scoped to their territory/scope; super-admin receives the unfiltered audit trail. Regular users see only their own notifications (target_type=user).',
+      'Authenticated users see their own inbox. Admins see notification audit logs scoped to their territory/scope; super-admin receives the unfiltered audit trail.',
   })
   async getHistory(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,

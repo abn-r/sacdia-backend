@@ -554,6 +554,7 @@ export enum ErrorCode {
   // ── Notifications ──────────────────────────────────────────────────────────
   NOTIF_SEND_FORBIDDEN = 'NOTIF_SEND_FORBIDDEN',
   NOTIF_NOT_FOUND = 'NOTIF_NOT_FOUND',
+  NOTIF_TARGET_TYPE_MISMATCH = 'NOTIF_TARGET_TYPE_MISMATCH',
 
   // ── Data Export ────────────────────────────────────────────────────────────
   EXPORT_NOT_FOUND = 'EXPORT_NOT_FOUND',

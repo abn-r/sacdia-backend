@@ -40,16 +40,26 @@ describe('notification-source-map', () => {
         'investiture:rejected',
         // approvals — validation
         'validation:class_submitted',
+        'validation:class_approved',
+        'validation:class_rejected',
         'validation:honor_submitted',
+        'validation:honor_approved',
+        'validation:honor_rejected',
         // approvals — requests
         'requests:transfer_created',
+        'requests:transfer_approved',
+        'requests:transfer_rejected',
         'requests:assignment_created',
+        'requests:assignment_approved',
+        'requests:assignment_rejected',
         // approvals — units
         'units:member_of_month',
         'units:member_of_month_director',
         // reminders — camporees
         'camporees:late_enrollment',
         'camporees:late_payment',
+        // system alerts
+        'system_alert:cron_failure',
       ];
 
       for (const source of knownSources) {
@@ -71,13 +81,22 @@ describe('notification-source-map', () => {
       ['investiture:invested', 'approvals'],
       ['investiture:rejected', 'approvals'],
       ['validation:class_submitted', 'approvals'],
+      ['validation:class_approved', 'approvals'],
+      ['validation:class_rejected', 'approvals'],
       ['validation:honor_submitted', 'approvals'],
+      ['validation:honor_approved', 'approvals'],
+      ['validation:honor_rejected', 'approvals'],
       ['requests:transfer_created', 'approvals'],
+      ['requests:transfer_approved', 'approvals'],
+      ['requests:transfer_rejected', 'approvals'],
       ['requests:assignment_created', 'approvals'],
+      ['requests:assignment_approved', 'approvals'],
+      ['requests:assignment_rejected', 'approvals'],
       ['units:member_of_month', 'approvals'],
       ['units:member_of_month_director', 'approvals'],
       ['camporees:late_enrollment', 'reminders'],
       ['camporees:late_payment', 'reminders'],
+      ['system_alert:cron_failure', 'reminders'],
     ])('"%s" → "%s"', (source, expectedCategory) => {
       expect(getCategoryForSource(source)).toBe(expectedCategory);
     });
