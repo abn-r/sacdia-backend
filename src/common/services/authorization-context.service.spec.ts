@@ -3,6 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthorizationContextService } from './authorization-context.service';
 import { ErrorCode } from '../errors/error-codes';
+import { InstitutionalHierarchyService } from './institutional-hierarchy.service';
 
 describe('AuthorizationContextService', () => {
   let service: AuthorizationContextService;
@@ -13,11 +14,29 @@ describe('AuthorizationContextService', () => {
     },
   };
 
+  const mockHierarchyService = {
+    resolveCurrent: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockHierarchyService.resolveCurrent.mockResolvedValue({
+      division_id: 1,
+      division_name: 'División Interamericana',
+      union_id: 2,
+      local_field_id: 3,
+      as_of: new Date('2026-01-01'),
+      source: 'current',
+      precision: 'exact',
+    });
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthorizationContextService,
         { provide: PrismaService, useValue: mockPrismaService },
+        {
+          provide: InstitutionalHierarchyService,
+          useValue: mockHierarchyService,
+        },
         {
           provide: CACHE_MANAGER,
           useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() },
@@ -154,6 +173,7 @@ describe('AuthorizationContextService', () => {
         role_name: 'assistant-admin',
         permissions: ['clubs:read', 'reports:read'],
         scope: {
+          division: { id: 1, name: 'División Interamericana' },
           country: { id: 1, name: 'México' },
           union: { id: 2, name: 'Unión Norte' },
           local_field: { id: 3, name: 'Campo Centro' },
@@ -236,6 +256,58 @@ describe('AuthorizationContextService', () => {
 
       await expect(service.isSuperAdmin('user-sa')).resolves.toBe(false);
     });
+  });
+
+  it('denies historical read when a union-level actor reads a different historical union in the same division', async () => {
+    mockHierarchyService.resolveCurrent.mockResolvedValue({
+      division_id: 1,
+      division_name: 'División Interamericana',
+      union_id: 20,
+      union_name: 'Unión Norte',
+      as_of: new Date('2026-01-01'),
+      source: 'current',
+      precision: 'exact',
+    });
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'user-union',
+      email: 'union@test.com',
+      name: 'Union',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: null,
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      user_image: null,
+      country_id: 1,
+      union_id: 20,
+      local_field_id: null,
+      created_at: new Date('2026-01-01'),
+      countries: { country_id: 1, name: 'México' },
+      unions: { union_id: 20, name: 'Unión Norte' },
+      local_fields: null,
+      users_pr: { complete: true, active_club_assignment_id: null },
+      users_roles: [
+        {
+          roles: {
+            role_name: 'director-union',
+            role_permissions: [],
+          },
+        },
+      ],
+      club_role_assignments: [],
+    });
+
+    await expect(
+      service.canReadHistoricalScope('user-union', {
+        division_id: 1,
+        union_id: 99,
+        local_field_id: null,
+        as_of: new Date('2025-01-01'),
+        source: 'as_of',
+        precision: 'exact',
+      }),
+    ).resolves.toBe(false);
   });
 
   it('should fall back to the first available assignment when persisted context is stale', async () => {

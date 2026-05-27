@@ -3,6 +3,7 @@ import { ScoringCategoriesService } from './scoring-categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { TranslationService } from '../common/services/translation.service';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 
 describe('ScoringCategoriesService', () => {
   const mockTx = {
@@ -40,10 +41,15 @@ describe('ScoringCategoriesService', () => {
     upsertTranslations: jest.fn(),
   };
 
+  const mockHierarchy = {
+    resolveCurrent: jest.fn(),
+  };
+
   const service = new ScoringCategoriesService(
     mockPrisma as unknown as PrismaService,
     mockAuthContext as unknown as AuthorizationContextService,
     mockTranslationService as unknown as TranslationService,
+    mockHierarchy as unknown as InstitutionalHierarchyService,
   );
 
   beforeEach(() => {
@@ -51,6 +57,23 @@ describe('ScoringCategoriesService', () => {
     // Default: not a super-admin so existing territory checks run normally.
     mockAuthContext.isSuperAdmin.mockResolvedValue(false);
     mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
+    mockHierarchy.resolveCurrent.mockImplementation(
+      ({
+        unionId,
+        localFieldId,
+      }: {
+        unionId?: number;
+        localFieldId?: number;
+      }) =>
+        Promise.resolve({
+          division_id: 1,
+          union_id: unionId ?? 7,
+          local_field_id: localFieldId ?? null,
+          as_of: new Date('2026-01-01'),
+          source: 'current',
+          precision: 'exact',
+        }),
+    );
   });
 
   describe('division categories', () => {
@@ -187,6 +210,9 @@ describe('ScoringCategoriesService', () => {
           },
         }),
       );
+      expect(mockHierarchy.resolveCurrent).toHaveBeenCalledWith({
+        unionId: 20,
+      });
     });
   });
 
@@ -269,6 +295,9 @@ describe('ScoringCategoriesService', () => {
           },
         }),
       );
+      expect(mockHierarchy.resolveCurrent).toHaveBeenCalledWith({
+        localFieldId: 99,
+      });
     });
   });
 

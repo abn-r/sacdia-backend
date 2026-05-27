@@ -11,6 +11,7 @@ import {
   AuthorizationContextService,
   type ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
+import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
 import {
   AUTHORIZATION_RESOURCE_KEY,
   type AuthorizationResourceMetadata,
@@ -41,11 +42,13 @@ type ResolvedJointActivityScope = {
 type ResolvedTerritoryScope = {
   localFieldId: number;
   unionId?: number | null;
+  divisionId?: number | null;
   countryId?: number | null;
 };
 
 type ResolvedUnionCamporeeScope = {
   unionId: number;
+  divisionId?: number | null;
   countryId: number | null;
 };
 
@@ -55,6 +58,7 @@ export class PermissionsGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly prisma: PrismaService,
+    private readonly hierarchy: InstitutionalHierarchyService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -81,8 +85,6 @@ export class PermissionsGuard implements CanActivate {
       );
 
     if (!resource) {
-      const className = context.getClass().name;
-      const handlerName = context.getHandler().name;
       throw new AppInternalServerErrorException(
         ErrorCode.GUARD_RBAC_MISCONFIGURATION,
       );
@@ -445,46 +447,17 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedTerritoryScope,
   ): boolean {
-    const globalRoleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-
-    if (globalRoleNames.has('super-admin')) {
-      return true;
-    }
-
-    const globalScope = resolved.authorization.effective.scope.global;
-    const globalLocalFieldId = globalScope.local_field?.id;
-    const globalUnionId = globalScope.union?.id;
-    const globalCountryId = globalScope.country?.id;
-
     if (
-      typeof globalLocalFieldId === 'number' &&
-      globalLocalFieldId === resourceScope.localFieldId &&
-      (globalRoleNames.has('admin') ||
-        globalRoleNames.has('assistant-admin') ||
-        globalRoleNames.has('coordinator'))
+      this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        this.toHierarchyScope(resourceScope),
+        'current-write',
+      )
     ) {
       return true;
     }
 
-    if (
-      typeof resourceScope.unionId === 'number' &&
-      typeof globalUnionId === 'number' &&
-      globalUnionId === resourceScope.unionId &&
-      (globalRoleNames.has('admin') || globalRoleNames.has('assistant-admin'))
-    ) {
-      return true;
-    }
-
-    if (
-      typeof resourceScope.countryId === 'number' &&
-      typeof globalCountryId === 'number' &&
-      globalCountryId === resourceScope.countryId &&
-      globalRoleNames.has('admin')
-    ) {
+    if (this.canUseLegacyCountryFallback(resolved, resourceScope)) {
       return true;
     }
 
@@ -605,9 +578,14 @@ export class PermissionsGuard implements CanActivate {
       throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND);
     }
 
+    const hierarchy = await this.hierarchy.resolveCurrent({
+      localFieldId: camporee.local_field_id,
+    });
+
     return {
       localFieldId: camporee.local_field_id,
-      unionId: camporee.local_fields?.union_id ?? null,
+      unionId: hierarchy.union_id ?? camporee.local_fields?.union_id ?? null,
+      divisionId: hierarchy.division_id,
       countryId: camporee.local_fields?.unions?.country_id ?? null,
     };
   }
@@ -654,11 +632,17 @@ export class PermissionsGuard implements CanActivate {
         throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND);
       }
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        localFieldId: camporee.local_field_id,
+      });
+
       return {
         type: 'local',
         scope: {
           localFieldId: camporee.local_field_id,
-          unionId: camporee.local_fields?.union_id ?? null,
+          unionId:
+            hierarchy.union_id ?? camporee.local_fields?.union_id ?? null,
+          divisionId: hierarchy.division_id,
           countryId: camporee.local_fields?.unions?.country_id ?? null,
         },
       };
@@ -677,10 +661,15 @@ export class PermissionsGuard implements CanActivate {
         );
       }
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        unionId: camporee.union_id,
+      });
+
       return {
         type: 'union',
         scope: {
           unionId: camporee.union_id,
+          divisionId: hierarchy.division_id,
           countryId: camporee.unions?.country_id ?? null,
         },
       };
@@ -765,10 +754,15 @@ export class PermissionsGuard implements CanActivate {
         select: { country_id: true },
       });
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        unionId: venue.union_id,
+      });
+
       return {
         type: 'union',
         scope: {
           unionId: venue.union_id,
+          divisionId: hierarchy.division_id,
           countryId: union?.country_id ?? null,
         },
       };
@@ -787,11 +781,16 @@ export class PermissionsGuard implements CanActivate {
         },
       });
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        localFieldId: venue.local_field_id,
+      });
+
       return {
         type: 'local_field',
         scope: {
           localFieldId: venue.local_field_id,
-          unionId: localField?.union_id ?? null,
+          unionId: hierarchy.union_id ?? localField?.union_id ?? null,
+          divisionId: hierarchy.division_id,
           countryId: localField?.unions?.country_id ?? null,
         },
       };
@@ -828,8 +827,13 @@ export class PermissionsGuard implements CanActivate {
       );
     }
 
+    const hierarchy = await this.hierarchy.resolveCurrent({
+      unionId: camporee.union_id,
+    });
+
     return {
       unionId: camporee.union_id,
+      divisionId: hierarchy.division_id,
       countryId: camporee.unions?.country_id ?? null,
     };
   }
@@ -838,34 +842,17 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedUnionCamporeeScope,
   ): boolean {
-    const globalRoleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-
-    if (globalRoleNames.has('super-admin')) {
-      return true;
-    }
-
-    const globalScope = resolved.authorization.effective.scope.global;
-    const globalUnionId = globalScope.union?.id;
-    const globalCountryId = globalScope.country?.id;
-
     if (
-      typeof globalUnionId === 'number' &&
-      globalUnionId === resourceScope.unionId &&
-      (globalRoleNames.has('admin') || globalRoleNames.has('assistant-admin'))
+      this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        this.toHierarchyScope(resourceScope),
+        'current-write',
+      )
     ) {
       return true;
     }
 
-    if (
-      typeof resourceScope.countryId === 'number' &&
-      typeof globalCountryId === 'number' &&
-      globalCountryId === resourceScope.countryId &&
-      globalRoleNames.has('admin')
-    ) {
+    if (this.canUseLegacyCountryFallback(resolved, resourceScope)) {
       return true;
     }
 
@@ -873,15 +860,16 @@ export class PermissionsGuard implements CanActivate {
     // and club-assignment actors with a local field are permitted through —
     // the service layer enforces that the local field participates in this
     // union camporee via union_camporee_local_fields.
+    const globalScope = resolved.authorization.effective.scope.global;
     const globalLocalFieldId = globalScope.local_field?.id;
 
     if (
       typeof globalLocalFieldId === 'number' &&
-      (globalRoleNames.has('admin') ||
-        globalRoleNames.has('assistant-admin') ||
-        globalRoleNames.has('coordinator') ||
-        globalRoleNames.has('director-lf') ||
-        globalRoleNames.has('assistant-lf'))
+      (this.hasGlobalRole(resolved, 'admin') ||
+        this.hasGlobalRole(resolved, 'assistant-admin') ||
+        this.hasGlobalRole(resolved, 'coordinator') ||
+        this.hasGlobalRole(resolved, 'director-lf') ||
+        this.hasGlobalRole(resolved, 'assistant-lf'))
     ) {
       return true;
     }
@@ -898,6 +886,50 @@ export class PermissionsGuard implements CanActivate {
     }
 
     throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+  }
+
+  private toHierarchyScope(
+    scope: ResolvedTerritoryScope | ResolvedUnionCamporeeScope,
+  ): {
+    division_id: number | null;
+    union_id: number | null;
+    local_field_id: number | null;
+  } {
+    return {
+      division_id: scope.divisionId ?? null,
+      union_id: scope.unionId ?? null,
+      local_field_id: 'localFieldId' in scope ? scope.localFieldId : null,
+    };
+  }
+
+  private canUseLegacyCountryFallback(
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: Pick<ResolvedTerritoryScope, 'divisionId' | 'countryId'>,
+  ): boolean {
+    // Country is geography now, not authority. Keep this fallback only for
+    // legacy resource resolvers that cannot provide a division yet.
+    if (typeof resourceScope.divisionId === 'number') {
+      return false;
+    }
+
+    const globalCountryId =
+      resolved.authorization.effective.scope.global.country?.id;
+
+    return (
+      typeof resourceScope.countryId === 'number' &&
+      typeof globalCountryId === 'number' &&
+      globalCountryId === resourceScope.countryId &&
+      this.hasGlobalRole(resolved, 'admin')
+    );
+  }
+
+  private hasGlobalRole(
+    resolved: ResolvedAuthorizationProfile,
+    roleName: string,
+  ): boolean {
+    return resolved.authorization.grants.global_roles.some(
+      (grant) => grant.role_name.toLowerCase() === roleName,
+    );
   }
 
   private async resolveFinanceScope(

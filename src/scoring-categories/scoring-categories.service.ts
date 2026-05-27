@@ -12,6 +12,7 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { TranslationService } from '../common/services/translation.service';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 
 export interface CategoryWithReadonly {
   scoring_category_id: number;
@@ -44,6 +45,7 @@ export class ScoringCategoriesService {
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly translationService: TranslationService,
+    private readonly hierarchy: InstitutionalHierarchyService,
   ) {}
 
   // ============================================================
@@ -67,39 +69,31 @@ export class ScoringCategoriesService {
   }
 
   private async getDivisionIdForUnion(unionId: number): Promise<number> {
-    const rows = await this.prisma.$queryRaw<DivisionIdRow[]>`
-      SELECT division_id
-      FROM unions
-      WHERE union_id = ${unionId}
-      LIMIT 1
-    `;
-
-    if (rows.length === 0) {
+    try {
+      const context = await this.hierarchy.resolveCurrent({ unionId });
+      return context.division_id;
+    } catch {
       throw new AppNotFoundException(ErrorCode.SCORING_UNION_NOT_FOUND);
     }
-
-    return Number(rows[0].division_id);
   }
 
   private async getLocalFieldHierarchy(
     fieldId: number,
   ): Promise<LocalFieldHierarchyRow> {
-    const rows = await this.prisma.$queryRaw<LocalFieldHierarchyRow[]>`
-      SELECT lf.union_id, u.division_id
-      FROM local_fields lf
-      JOIN unions u ON u.union_id = lf.union_id
-      WHERE lf.local_field_id = ${fieldId}
-      LIMIT 1
-    `;
-
-    if (rows.length === 0) {
+    try {
+      const context = await this.hierarchy.resolveCurrent({
+        localFieldId: fieldId,
+      });
+      if (typeof context.union_id !== 'number') {
+        throw new Error('Local field hierarchy missing union');
+      }
+      return {
+        union_id: context.union_id,
+        division_id: context.division_id,
+      };
+    } catch {
       throw new AppNotFoundException(ErrorCode.SCORING_LOCAL_FIELD_NOT_FOUND);
     }
-
-    return {
-      union_id: Number(rows[0].union_id),
-      division_id: Number(rows[0].division_id),
-    };
   }
 
   async findDivisionCategories(): Promise<CategoryWithReadonly[]> {

@@ -12,6 +12,8 @@ import { ErrorCode } from '../common/errors/error-codes';
 // ─── Mock factories ────────────────────────────────────────────────────────
 
 const makePrismaMock = () => ({
+  $queryRaw: jest.fn(),
+  $executeRaw: jest.fn(),
   countries: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -85,6 +87,17 @@ const baseUnion = {
   abbreviation: 'UA',
   active: true,
   country_id: 1,
+  division_id: 1,
+  created_at: new Date(),
+  modified_at: new Date(),
+};
+
+const baseDivision = {
+  division_id: 1,
+  code: 'DIA',
+  name: 'División Interamericana',
+  abbreviation: 'DIA',
+  active: true,
   created_at: new Date(),
   modified_at: new Date(),
 };
@@ -144,6 +157,9 @@ describe('AdminGeographyService', () => {
       local_fields: prismaMock.local_fields,
       districts: prismaMock.districts,
       churches: prismaMock.churches,
+      $queryRaw: prismaMock.$queryRaw,
+      $executeRaw: prismaMock.$executeRaw,
+      divisions_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
       countries_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
       unions_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
       local_fields_translations: { upsert: jest.fn(), deleteMany: jest.fn() },
@@ -175,6 +191,53 @@ describe('AdminGeographyService', () => {
     cacheMock.invalidate.mockResolvedValue(undefined);
     cacheMock.invalidateMany.mockResolvedValue(undefined);
     translationMock.upsertTranslations.mockResolvedValue(undefined);
+    prismaMock.$queryRaw.mockResolvedValue([baseUnion]);
+    prismaMock.$executeRaw.mockResolvedValue(1);
+  });
+
+  describe('divisions', () => {
+    it('creates division with translations and invalidates division catalog cache', async () => {
+      prismaMock.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([baseDivision]);
+
+      await expect(
+        service.createDivision(
+          {
+            code: ' dia ',
+            name: 'División Interamericana',
+            abbreviation: 'dia',
+            translations: [enTranslation],
+          },
+          ACTOR_ID,
+        ),
+      ).resolves.toEqual(baseDivision);
+
+      expect(translationMock.upsertTranslations).toHaveBeenCalledWith(
+        txMock,
+        'divisions_translations',
+        'division_id',
+        'divisions_translations_unique_locale',
+        baseDivision.division_id,
+        [enTranslation],
+        ['name'],
+      );
+      expect(cacheMock.invalidate).toHaveBeenCalledWith(
+        CATALOG_CACHE_KEYS.DIVISIONS,
+      );
+    });
+
+    it('rejects deactivating a division that still has active unions', async () => {
+      prismaMock.$queryRaw
+        .mockResolvedValueOnce([baseDivision])
+        .mockResolvedValueOnce([{ count: 1 }]);
+
+      await expect(service.deleteDivision(1, ACTOR_ID)).rejects.toMatchObject({
+        code: ErrorCode.ADMIN_DIVISION_HAS_ACTIVE_UNIONS,
+      });
+    });
   });
 
   // =========================================================
@@ -320,12 +383,15 @@ describe('AdminGeographyService', () => {
     it('TC07 - creates union with translations → upsertTranslations called with correct args', async () => {
       prismaMock.countries.findUnique.mockResolvedValue(baseCountry);
       prismaMock.unions.findFirst.mockResolvedValue(null);
-      prismaMock.unions.create.mockResolvedValue(baseUnion);
+      prismaMock.$queryRaw
+        .mockResolvedValueOnce([baseDivision])
+        .mockResolvedValueOnce([baseUnion]);
 
       const dto = {
         name: 'Unión Argentina',
         abbreviation: 'UA',
         country_id: 1,
+        division_id: 1,
         translations: [ptBrTranslation],
       };
 
@@ -340,12 +406,14 @@ describe('AdminGeographyService', () => {
         dto.translations,
         ['name'],
       );
+      expect(prismaMock.$executeRaw).toHaveBeenCalled();
     });
 
     it('TC08 - update union with [] → upsertTranslations called with empty array', async () => {
-      prismaMock.unions.findUnique.mockResolvedValue(baseUnion);
       prismaMock.unions.findFirst.mockResolvedValue(null);
-      prismaMock.unions.update.mockResolvedValue(baseUnion);
+      prismaMock.$queryRaw
+        .mockResolvedValueOnce([baseUnion])
+        .mockResolvedValueOnce([baseUnion]);
 
       await service.updateUnion(1, { translations: [] }, ACTOR_ID);
 
@@ -358,6 +426,17 @@ describe('AdminGeographyService', () => {
         [],
         ['name'],
       );
+    });
+
+    it('rejects legacy country-only union listing when the country maps to multiple divisions', async () => {
+      prismaMock.$queryRaw.mockResolvedValueOnce([
+        { division_id: 1 },
+        { division_id: 2 },
+      ]);
+
+      await expect(service.listUnions({ countryId: 1 })).rejects.toMatchObject({
+        code: ErrorCode.HIERARCHY_COUNTRY_DIVISION_AMBIGUOUS,
+      });
     });
   });
 

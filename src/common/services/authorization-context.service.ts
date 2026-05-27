@@ -4,6 +4,10 @@ import { ErrorCode } from '../errors/error-codes';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  InstitutionalHierarchyService,
+  type HierarchyContext,
+} from './institutional-hierarchy.service';
 
 export type AuthorizationScopeNode = {
   id: number | string;
@@ -11,6 +15,7 @@ export type AuthorizationScopeNode = {
 };
 
 export type AuthorizationTerritoryScope = {
+  division?: AuthorizationScopeNode;
   country?: AuthorizationScopeNode;
   union?: AuthorizationScopeNode;
   local_field?: AuthorizationScopeNode;
@@ -199,6 +204,7 @@ export class AuthorizationContextService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly hierarchy: InstitutionalHierarchyService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
@@ -359,7 +365,7 @@ export class AuthorizationContextService {
       throw new AppUnauthorizedException(ErrorCode.AUTH_CONTEXT_USER_NOT_FOUND);
     }
 
-    const globalScope = this.buildUserScope(user);
+    const globalScope = await this.buildUserScope(user);
     const globalGrants = user.users_roles.map((record) => ({
       role_name: record.roles.role_name,
       permissions: this.collectPermissionNames(record.roles.role_permissions),
@@ -510,62 +516,117 @@ export class AuthorizationContextService {
   }
 
   async canManageClub(userId: string, clubId: number): Promise<boolean> {
-    const [resolved, club] = await Promise.all([
-      this.resolveUserAuthorization(userId),
-      this.prisma.clubs.findUnique({
-        where: { club_id: clubId },
-        select: {
-          local_field_id: true,
-          local_fields: {
-            select: {
-              union_id: true,
-            },
-          },
-        },
-      }),
-    ]);
-
-    if (!club) {
+    const resolved = await this.resolveUserAuthorization(userId);
+    let clubScope: HierarchyContext;
+    try {
+      clubScope = await this.hierarchy.resolveCurrent({ clubId });
+    } catch {
       return false;
     }
 
-    const roleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-    const scope = resolved.authorization.effective.scope.global;
-    const localFieldId = scope.local_field?.id;
-    const unionId = scope.union?.id;
+    return this.canAccessHierarchyScope(resolved, clubScope, 'current-write');
+  }
 
-    if (await this.isSuperAdmin(userId)) {
+  canAccessHierarchyScope(
+    resolved: ResolvedAuthorizationProfile,
+    scope: {
+      division_id?: number | null;
+      union_id?: number | null;
+      local_field_id?: number | null;
+    },
+    policy: 'current-write' | 'historical-read',
+  ): boolean {
+    const roleNames = this.getGlobalRoleNameSet(resolved);
+
+    if (roleNames.has('super-admin')) {
       return true;
     }
 
-    const managesByLocalField =
-      typeof localFieldId === 'number' &&
-      localFieldId === club.local_field_id &&
+    const globalScope = resolved.authorization.effective.scope.global;
+    const globalLocalFieldId = globalScope.local_field?.id;
+    const globalUnionId = globalScope.union?.id;
+    const globalDivisionId = globalScope.division?.id;
+
+    const localFieldAllowedRoles =
+      policy === 'historical-read'
+        ? [
+            'admin',
+            'assistant-admin',
+            'coordinator',
+            'director-lf',
+            'assistant-lf',
+          ]
+        : [
+            'admin',
+            'assistant-admin',
+            'coordinator',
+            'director-lf',
+            'assistant-lf',
+          ];
+
+    if (
+      typeof scope.local_field_id === 'number' &&
+      typeof globalLocalFieldId === 'number' &&
+      globalLocalFieldId === scope.local_field_id &&
+      localFieldAllowedRoles.some((role) => roleNames.has(role))
+    ) {
+      return true;
+    }
+
+    if (
+      typeof scope.union_id === 'number' &&
+      typeof globalUnionId === 'number' &&
+      globalUnionId === scope.union_id &&
       (roleNames.has('admin') ||
         roleNames.has('assistant-admin') ||
-        roleNames.has('coordinator'));
-
-    if (managesByLocalField) {
+        roleNames.has('director-union') ||
+        roleNames.has('assistant-union'))
+    ) {
       return true;
     }
 
     return (
-      typeof unionId === 'number' &&
-      unionId === club.local_fields?.union_id &&
-      (roleNames.has('admin') || roleNames.has('assistant-admin'))
+      typeof scope.division_id === 'number' &&
+      typeof globalDivisionId === 'number' &&
+      globalDivisionId === scope.division_id &&
+      (roleNames.has('admin') ||
+        roleNames.has('assistant-admin') ||
+        roleNames.has('director-dia') ||
+        roleNames.has('assistant-dia'))
     );
   }
 
-  private buildUserScope(user: {
+  async canReadHistoricalScope(
+    userId: string,
+    scope: HierarchyContext,
+  ): Promise<boolean> {
+    const resolved = await this.resolveUserAuthorization(userId);
+    return this.canAccessHierarchyScope(resolved, scope, 'historical-read');
+  }
+
+  private getGlobalRoleNameSet(
+    resolved: ResolvedAuthorizationProfile,
+  ): Set<string> {
+    return new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+  }
+
+  private async buildUserScope(user: {
+    union_id?: number | null;
+    local_field_id?: number | null;
     countries?: { country_id: number; name: string | null } | null;
     unions?: { union_id: number; name: string | null } | null;
     local_fields?: { local_field_id: number; name: string | null } | null;
-  }): AuthorizationTerritoryScope {
+  }): Promise<AuthorizationTerritoryScope> {
     const scope: AuthorizationTerritoryScope = {};
+
+    const division = await this.resolveUserDivisionScope(user);
+    if (division) {
+      scope.division = division;
+    }
 
     if (user.countries?.country_id) {
       scope.country = {
@@ -589,6 +650,35 @@ export class AuthorizationContextService {
     }
 
     return scope;
+  }
+
+  private async resolveUserDivisionScope(user: {
+    union_id?: number | null;
+    local_field_id?: number | null;
+  }): Promise<AuthorizationScopeNode | null> {
+    try {
+      const hierarchy = user.local_field_id
+        ? await this.hierarchy.resolveCurrent({
+            localFieldId: user.local_field_id,
+          })
+        : user.union_id
+          ? await this.hierarchy.resolveCurrent({ unionId: user.union_id })
+          : null;
+
+      if (!hierarchy?.division_id) {
+        return null;
+      }
+
+      return {
+        id: hierarchy.division_id,
+        name: hierarchy.division_name ?? null,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo resolver division institucional del usuario: ${this.extractMessage(err)}`,
+      );
+      return null;
+    }
   }
 
   private buildClubGrant(
