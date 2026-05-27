@@ -499,10 +499,16 @@ export class ResourcesService {
   // UPDATE
   // ---------------------------------------------------------------------------
 
-  async update(id: string, dto: UpdateResourceDto) {
+  async update(id: string, dto: UpdateResourceDto, file?: Express.Multer.File) {
     const existing = await this.prisma.resources.findUnique({
       where: { resource_id: id },
-      select: { resource_id: true },
+      select: {
+        resource_id: true,
+        resource_type: true,
+        scope_level: true,
+        scope_id: true,
+        file_key: true,
+      },
     });
 
     if (!existing) {
@@ -525,7 +531,32 @@ export class ResourcesService {
     if (dto.content !== undefined) updateData.content = dto.content ?? null;
     if (dto.active !== undefined) updateData.active = dto.active;
 
-    return this.prisma.resources.update({
+    if (file?.buffer) {
+      validateResourceFile(file, existing.resource_type);
+
+      const scopeSegment =
+        existing.scope_id != null ? String(existing.scope_id) : 'system';
+      const uuid = randomUUID();
+      const rawExt = file.originalname.includes('.')
+        ? file.originalname.slice(file.originalname.lastIndexOf('.'))
+        : '';
+      const safeExtension = rawExt.replace(/[^a-zA-Z0-9.]/g, '');
+      const fileKey = `${existing.scope_level}/${scopeSegment}/${uuid}${safeExtension}`;
+
+      const uploaded = await this.fileStorage.upload(
+        StorageBucketAlias.RESOURCES_FILES,
+        fileKey,
+        file.buffer,
+        { contentType: file.mimetype },
+      );
+
+      updateData.file_key = uploaded.key;
+      updateData.file_name = file.originalname;
+      updateData.file_size = file.size;
+      updateData.file_mime_type = file.mimetype;
+    }
+
+    const updated = await this.prisma.resources.update({
       where: { resource_id: id },
       data: updateData,
       include: {
@@ -536,6 +567,23 @@ export class ResourcesService {
         },
       },
     });
+
+    if (
+      file?.buffer &&
+      existing.file_key &&
+      existing.file_key !== updated.file_key
+    ) {
+      this.fileStorage
+        .deleteMany(StorageBucketAlias.RESOURCES_FILES, [existing.file_key])
+        .catch((error) => {
+          this.logger.warn(
+            `No se pudo borrar el archivo anterior del recurso ${id}: ${existing.file_key}`,
+            error,
+          );
+        });
+    }
+
+    return updated;
   }
 
   // ---------------------------------------------------------------------------
@@ -574,6 +622,10 @@ export class ResourcesService {
       throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
+    if (!resource.active) {
+      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
+    }
+
     if (!resource.file_key) {
       throw new AppBadRequestException(ErrorCode.RESOURCE_NO_FILE);
     }
@@ -596,10 +648,26 @@ export class ResourcesService {
     scopeId: number | null | undefined,
     userContext: any,
   ): void {
-    const globalScope = userContext?.authorization?.effective?.scope?.global;
+    const authorization = userContext?.authorization?.effective
+      ? userContext.authorization
+      : userContext?.effective
+        ? userContext
+        : null;
+    const globalScope = authorization?.effective?.scope?.global;
+    if (!globalScope) {
+      throw new AppForbiddenException(
+        ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_SYSTEM,
+      );
+    }
+
     const userCountryId = globalScope?.country?.id ?? null;
     const userUnionId = globalScope?.union?.id ?? null;
     const userLfId = globalScope?.local_field?.id ?? null;
+    const isUnscopedGlobalAdmin = !userCountryId && !userUnionId && !userLfId;
+
+    if (isUnscopedGlobalAdmin) {
+      return;
+    }
 
     if (scopeLevel === 'system') {
       if (!userCountryId) {

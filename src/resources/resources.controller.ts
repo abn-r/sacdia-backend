@@ -233,10 +233,14 @@ export class ResourcesController {
 
   @Patch(':id')
   @RequirePermissions('resources:update')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data', 'application/json')
   @ApiOperation({
     summary: 'Actualizar recurso',
     description:
-      'Actualiza los metadatos del recurso (sin reemplazar el archivo).',
+      'Actualiza los metadatos del recurso. Si se envía `file` en multipart/form-data, reemplaza el archivo asociado.',
   })
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso actualizado' })
@@ -244,8 +248,9 @@ export class ResourcesController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateResourceDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
   ) {
-    const data = await this.resourcesService.update(id, dto);
+    const data = await this.resourcesService.update(id, dto, file);
     return { status: 'success', data };
   }
 
