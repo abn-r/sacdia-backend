@@ -14,6 +14,7 @@ import { CamporeeScoreService } from '../score-calculators/camporee-score';
 import { EvidenceScoreService } from '../score-calculators/evidence-score';
 import { WeightsResolverService } from '../score-calculators/weights-resolver';
 import { CompositeScoreService } from '../score-calculators/composite-score';
+import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
 
 describe('RankingsService', () => {
   let service: RankingsService;
@@ -44,6 +45,9 @@ describe('RankingsService', () => {
   let mockMemberCompositeScore: { calculate: jest.Mock };
   let mockSectionAggregation: { aggregate: jest.Mock };
   let mockSystemConfig: { get: jest.Mock };
+  const mockHierarchyService: { resolveAsOf: jest.Mock } = {
+    resolveAsOf: jest.fn(),
+  };
 
   // $transaction passes the same mock as the transaction client so all
   // individual table mocks are accessible inside the callback.
@@ -145,6 +149,10 @@ describe('RankingsService', () => {
       active_enrollment_count: 0,
     });
     mockSystemConfig.get.mockResolvedValue(null);
+    mockHierarchyService.resolveAsOf.mockResolvedValue({
+      local_field_id: 1,
+      union_id: 5,
+    });
     mockPrismaService.$executeRaw.mockResolvedValue(0);
 
     // Re-establish default return values for score calculator mocks
@@ -198,6 +206,10 @@ describe('RankingsService', () => {
         {
           provide: SystemConfigService,
           useValue: mockSystemConfig,
+        },
+        {
+          provide: InstitutionalHierarchyService,
+          useValue: mockHierarchyService,
         },
         { provide: FolderScoreService, useValue: folderScore },
         { provide: FinanceScoreService, useValue: financeScore },
@@ -338,6 +350,49 @@ describe('RankingsService', () => {
         }),
       );
       expect(result.updated).toBe(1);
+    });
+
+    it('uses historical hierarchy context for camporee scoring scope', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+      mockHierarchyService.resolveAsOf.mockResolvedValue({
+        local_field_id: 88,
+        union_id: 99,
+      });
+
+      await service.recalculateRankings();
+
+      expect(camporeeScore.calc).toHaveBeenCalledWith(10, 88, 99, 2026);
+      expect(mockHierarchyService.resolveAsOf).toHaveBeenCalledWith(
+        { type: 'club', id: 10 },
+        expect.any(Date),
+      );
+    });
+
+    it('skips composite scoring without aborting when historical hierarchy is unavailable', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+      mockHierarchyService.resolveAsOf.mockRejectedValue(
+        new Error('history unavailable'),
+      );
+
+      const result = await service.recalculateRankings();
+
+      expect(result.updated).toBe(0);
+      expect(camporeeScore.calc).not.toHaveBeenCalled();
     });
 
     it('should create category-specific rankings when composite qualifies (non-legacy)', async () => {

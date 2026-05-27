@@ -25,6 +25,7 @@ import { RankingBreakdownDto } from './dto/ranking-breakdown.dto';
 import { MemberCompositeScoreService } from '../rankings/member-rankings/services/member-composite-score.service';
 import { SectionAggregationService } from '../rankings/section-rankings/services/section-aggregation.service';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 
 /**
  * Sentinel UUID used as the award_category_id for "general" (no specific
@@ -112,6 +113,7 @@ export class RankingsService {
     private readonly memberCompositeScore: MemberCompositeScoreService,
     private readonly sectionAggregation: SectionAggregationService,
     private readonly systemConfig: SystemConfigService,
+    private readonly hierarchy: InstitutionalHierarchyService,
   ) {}
 
   // ========================================
@@ -246,6 +248,10 @@ export class RankingsService {
         total_earned_points: true,
         total_max_points: true,
         progress_percentage: true,
+        submitted_at: true,
+        evaluated_at: true,
+        closed_at: true,
+        created_at: true,
         folder_template: {
           select: {
             club_type_id: true,
@@ -262,13 +268,6 @@ export class RankingsService {
                 clubs: {
                   select: {
                     club_id: true,
-                    local_field_id: true,
-                    local_fields: {
-                      select: {
-                        local_field_id: true,
-                        union_id: true,
-                      },
-                    },
                   },
                 },
               },
@@ -304,6 +303,10 @@ export class RankingsService {
     //      so a partial failure never leaves rankings in an inconsistent state.
     const totalUpserted = await this.prisma.$transaction(async (tx) => {
       let upserted = 0;
+      const hierarchyCache = new Map<
+        string,
+        Promise<{ localFieldId: number | null; unionId: number | null }>
+      >();
 
       // Process each folder: compute scores, upsert general ranking + category-specific rankings
       for (const folder of folders) {
@@ -317,13 +320,12 @@ export class RankingsService {
         const enrollmentId = folder.club_enrollment_id;
         const clubSection = folder.club_enrollment?.club_section;
         const club = clubSection?.clubs;
-        const localField = club?.local_fields;
 
-        // Guard: if club hierarchy is incomplete, skip score computation
+        // Guard: if club relation is incomplete, skip score computation
         // and fall back to zeroed score columns for this folder.
-        if (!club || !localField) {
+        if (!club) {
           this.logger.warn(
-            `Skipping composite score for enrollment ${enrollmentId}: missing club/local_field data`,
+            `Skipping composite score for enrollment ${enrollmentId}: missing club data`,
           );
 
           await tx.club_annual_rankings.upsert({
@@ -357,9 +359,26 @@ export class RankingsService {
         }
 
         const clubId = club.club_id;
-        const localFieldId = club.local_field_id;
-        // local_fields.union_id is non-nullable in schema (Int, not Int?)
-        const unionId = localField.union_id;
+        const hierarchyAsOf = await this.resolveRankingHierarchyAsOf(
+          {
+            clubId,
+            closedAt: folder.closed_at,
+            evaluatedAt: folder.evaluated_at,
+            submittedAt: folder.submitted_at,
+            createdAt: folder.created_at,
+          },
+          year,
+          hierarchyCache,
+        );
+        const localFieldId = hierarchyAsOf.localFieldId;
+        const unionId = hierarchyAsOf.unionId;
+
+        if (localFieldId == null) {
+          this.logger.warn(
+            `Skipping composite score for enrollment ${enrollmentId}: missing historical local_field context`,
+          );
+          continue;
+        }
 
         // Compute 4 component percentages + resolve weights in parallel
         const [folderPct, financePct, camporeePct, evidencePct, weights] =
@@ -998,8 +1017,8 @@ export class RankingsService {
         club_section: {
           include: {
             clubs: {
-              include: {
-                local_fields: true,
+              select: {
+                club_id: true,
               },
             },
           },
@@ -1009,9 +1028,8 @@ export class RankingsService {
 
     const clubSection = enrollment.club_section;
     const club = clubSection.clubs;
-    const localField = club?.local_fields;
 
-    if (!club || !localField) {
+    if (!club) {
       throw new AppNotFoundException(
         ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND,
         { id: enrollmentId },
@@ -1019,13 +1037,30 @@ export class RankingsService {
     }
 
     const clubId = club.club_id;
-    const localFieldId = club.local_field_id;
-    const unionId: number | null = localField.union_id ?? null;
 
     // 2. Resolve calendar year from ecclesiastical year start_date
     const year = await this.prisma.ecclesiastical_years.findUnique({
       where: { year_id: ecclesiasticalYearId },
+      select: { start_date: true, end_date: true },
     });
+    const hierarchyAsOfDate =
+      year?.end_date ??
+      year?.start_date ??
+      new Date(`${ecclesiasticalYearId}-12-31T23:59:59.999Z`);
+    const hierarchyAsOf = await this.hierarchy.resolveAsOf(
+      { type: 'club', id: clubId },
+      hierarchyAsOfDate,
+    );
+    const localFieldId = hierarchyAsOf.local_field_id;
+    const unionId: number | null = hierarchyAsOf.union_id ?? null;
+
+    if (localFieldId == null) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_FOR_RANKING_NOT_FOUND,
+        { id: enrollmentId },
+      );
+    }
+
     const calendarYear =
       year?.start_date != null
         ? new Date(year.start_date).getUTCFullYear()
@@ -1203,6 +1238,55 @@ export class RankingsService {
         },
       },
     };
+  }
+
+  private async resolveRankingHierarchyAsOf(
+    input: {
+      clubId: number;
+      closedAt?: Date | null;
+      evaluatedAt?: Date | null;
+      submittedAt?: Date | null;
+      createdAt?: Date | null;
+    },
+    year: { start_date?: Date | null; end_date?: Date | null },
+    cache: Map<
+      string,
+      Promise<{ localFieldId: number | null; unionId: number | null }>
+    >,
+  ): Promise<{ localFieldId: number | null; unionId: number | null }> {
+    const asOf =
+      input.closedAt ??
+      input.evaluatedAt ??
+      input.submittedAt ??
+      input.createdAt ??
+      year.end_date ??
+      year.start_date ??
+      new Date();
+    const cacheKey = `${input.clubId}:${asOf.toISOString()}`;
+
+    if (!cache.has(cacheKey)) {
+      cache.set(
+        cacheKey,
+        this.hierarchy
+          .resolveAsOf({ type: 'club', id: input.clubId }, asOf)
+          .then((context) => ({
+            localFieldId: context.local_field_id ?? null,
+            unionId: context.union_id ?? null,
+          }))
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            this.logger.warn(
+              `Unable to resolve historical hierarchy for club ${input.clubId} as of ${asOf.toISOString()}: ${message}`,
+            );
+            return {
+              localFieldId: null,
+              unionId: null,
+            };
+          }),
+      );
+    }
+
+    return cache.get(cacheKey)!;
   }
 
   // ========================================
