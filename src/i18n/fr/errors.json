@@ -309,6 +309,8 @@
   "SCORING_CATEGORY_WRONG_LEVEL": "Impossible de modifier ou supprimer une catégorie qui n'appartient pas à ce niveau",
   "SCORING_CATEGORY_UNION_FORBIDDEN": "Vous n'avez pas la permission de gérer les catégories de cette union",
   "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "Vous n'avez pas la permission de gérer les catégories de ce champ local",
+  "SCORING_DIVISION_NOT_FOUND": "Division institutionnelle introuvable",
+  "SCORING_UNION_NOT_FOUND": "Union introuvable",
   "SCORING_LOCAL_FIELD_NOT_FOUND": "Champ local introuvable",
   "MONTHLY_REPORT_ENROLLMENT_NOT_FOUND": "Inscription au club introuvable",
   "MONTHLY_REPORT_NOT_FOUND": "Rapport mensuel introuvable",
