@@ -309,6 +309,8 @@
   "SCORING_CATEGORY_WRONG_LEVEL": "No puede modificar o eliminar una categoría que no pertenece a este nivel",
   "SCORING_CATEGORY_UNION_FORBIDDEN": "No tiene permisos para gestionar categorías de esta unión",
   "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "No tiene permisos para gestionar categorías de este campo local",
+  "SCORING_DIVISION_NOT_FOUND": "División institucional no encontrada",
+  "SCORING_UNION_NOT_FOUND": "Unión no encontrada",
   "SCORING_LOCAL_FIELD_NOT_FOUND": "Campo local no encontrado",
   "MONTHLY_REPORT_ENROLLMENT_NOT_FOUND": "Inscripción de club no encontrada",
   "MONTHLY_REPORT_NOT_FOUND": "Informe mensual no encontrado",

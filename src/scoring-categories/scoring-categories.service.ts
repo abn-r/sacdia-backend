@@ -26,9 +26,19 @@ export interface CategoryWithReadonly {
   origin_badge?: string;
 }
 
+interface DivisionIdRow {
+  division_id: number;
+}
+
+interface LocalFieldHierarchyRow {
+  union_id: number;
+  division_id: number;
+}
+
 @Injectable()
 export class ScoringCategoriesService {
   private readonly logger = new Logger(ScoringCategoriesService.name);
+  private static readonly DEFAULT_DIVISION_CODE = 'DIA';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -37,13 +47,66 @@ export class ScoringCategoriesService {
   ) {}
 
   // ============================================================
-  // DIVISION level (origin_id = 0 represents global division)
+  // DIVISION level (origin_id points to the real divisions.division_id)
   // ============================================================
 
+  private async getDefaultDivisionId(): Promise<number> {
+    const rows = await this.prisma.$queryRaw<DivisionIdRow[]>`
+      SELECT division_id
+      FROM divisions
+      WHERE code = ${ScoringCategoriesService.DEFAULT_DIVISION_CODE}
+        AND active = TRUE
+      LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      throw new AppNotFoundException(ErrorCode.SCORING_DIVISION_NOT_FOUND);
+    }
+
+    return Number(rows[0].division_id);
+  }
+
+  private async getDivisionIdForUnion(unionId: number): Promise<number> {
+    const rows = await this.prisma.$queryRaw<DivisionIdRow[]>`
+      SELECT division_id
+      FROM unions
+      WHERE union_id = ${unionId}
+      LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      throw new AppNotFoundException(ErrorCode.SCORING_UNION_NOT_FOUND);
+    }
+
+    return Number(rows[0].division_id);
+  }
+
+  private async getLocalFieldHierarchy(
+    fieldId: number,
+  ): Promise<LocalFieldHierarchyRow> {
+    const rows = await this.prisma.$queryRaw<LocalFieldHierarchyRow[]>`
+      SELECT lf.union_id, u.division_id
+      FROM local_fields lf
+      JOIN unions u ON u.union_id = lf.union_id
+      WHERE lf.local_field_id = ${fieldId}
+      LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      throw new AppNotFoundException(ErrorCode.SCORING_LOCAL_FIELD_NOT_FOUND);
+    }
+
+    return {
+      union_id: Number(rows[0].union_id),
+      division_id: Number(rows[0].division_id),
+    };
+  }
+
   async findDivisionCategories(): Promise<CategoryWithReadonly[]> {
+    const divisionId = await this.getDefaultDivisionId();
     const locale = this.translationService.getCurrentLocale();
     const categories = await this.prisma.scoring_categories.findMany({
-      where: { origin_level: 'DIVISION' },
+      where: { origin_level: 'DIVISION', origin_id: divisionId },
       include: {
         translations: {
           where: { locale },
@@ -69,6 +132,7 @@ export class ScoringCategoriesService {
 
   async createDivisionCategory(dto: CreateScoringCategoryDto, userId?: string) {
     this.translationService.validateTranslations(dto.translations);
+    const divisionId = await this.getDefaultDivisionId();
     const { translations, ...mainData } = dto;
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -77,7 +141,7 @@ export class ScoringCategoriesService {
           name: mainData.name,
           max_points: mainData.max_points,
           origin_level: 'DIVISION',
-          origin_id: 0, // 0 = global division (no divisions table in schema)
+          origin_id: divisionId,
           active: true,
         },
       });
@@ -96,7 +160,7 @@ export class ScoringCategoriesService {
     });
 
     this.logger.log(
-      `Category created: "${dto.name}" at DIVISION level (origin_id: 0) by user ${userId ?? 'system'}`,
+      `Category created: "${dto.name}" at DIVISION level (division_id: ${divisionId}) by user ${userId ?? 'system'}`,
     );
     return result;
   }
@@ -271,12 +335,13 @@ export class ScoringCategoriesService {
     userId: string,
   ): Promise<CategoryWithReadonly[]> {
     await this.assertUserBelongsToUnion(userId, unionId);
+    const divisionId = await this.getDivisionIdForUnion(unionId);
     const locale = this.translationService.getCurrentLocale();
 
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
         OR: [
-          { origin_level: 'DIVISION' },
+          { origin_level: 'DIVISION', origin_id: divisionId },
           { origin_level: 'UNION', origin_id: unionId },
         ],
       },
@@ -437,24 +502,15 @@ export class ScoringCategoriesService {
     fieldId: number,
     userId: string,
   ): Promise<CategoryWithReadonly[]> {
-    // Resolve the parent union (and via it, division) for this local field
-    const localField = await this.prisma.local_fields.findUnique({
-      where: { local_field_id: fieldId },
-      select: { union_id: true },
-    });
-
-    if (!localField) {
-      throw new AppNotFoundException(ErrorCode.SCORING_LOCAL_FIELD_NOT_FOUND);
-    }
-
-    const unionId = localField.union_id;
+    const { union_id: unionId, division_id: divisionId } =
+      await this.getLocalFieldHierarchy(fieldId);
     await this.assertUserBelongsToLocalField(userId, fieldId);
     const locale = this.translationService.getCurrentLocale();
 
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
         OR: [
-          { origin_level: 'DIVISION' },
+          { origin_level: 'DIVISION', origin_id: divisionId },
           { origin_level: 'UNION', origin_id: unionId },
           { origin_level: 'LOCAL_FIELD', origin_id: fieldId },
         ],
@@ -640,19 +696,25 @@ export class ScoringCategoriesService {
    * Only active categories are returned (intentional — used for validation, not admin display).
    */
   async getActiveCategoriesForLocalField(fieldId: number) {
-    const localField = await this.prisma.local_fields.findUnique({
-      where: { local_field_id: fieldId },
-      select: { union_id: true },
-    });
-
-    if (!localField) return [];
+    let hierarchy: LocalFieldHierarchyRow;
+    try {
+      hierarchy = await this.getLocalFieldHierarchy(fieldId);
+    } catch (error) {
+      if (
+        error instanceof AppNotFoundException &&
+        error.code === ErrorCode.SCORING_LOCAL_FIELD_NOT_FOUND
+      ) {
+        return [];
+      }
+      throw error;
+    }
 
     return this.prisma.scoring_categories.findMany({
       where: {
         active: true,
         OR: [
-          { origin_level: 'DIVISION' },
-          { origin_level: 'UNION', origin_id: localField.union_id },
+          { origin_level: 'DIVISION', origin_id: hierarchy.division_id },
+          { origin_level: 'UNION', origin_id: hierarchy.union_id },
           { origin_level: 'LOCAL_FIELD', origin_id: fieldId },
         ],
       },

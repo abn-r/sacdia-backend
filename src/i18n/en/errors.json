@@ -309,6 +309,8 @@
   "SCORING_CATEGORY_WRONG_LEVEL": "Cannot modify or delete a category that does not belong to this level",
   "SCORING_CATEGORY_UNION_FORBIDDEN": "You do not have permission to manage categories for this union",
   "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "You do not have permission to manage categories for this local field",
+  "SCORING_DIVISION_NOT_FOUND": "Institutional division not found",
+  "SCORING_UNION_NOT_FOUND": "Union not found",
   "SCORING_LOCAL_FIELD_NOT_FOUND": "Local field not found",
   "MONTHLY_REPORT_ENROLLMENT_NOT_FOUND": "Club enrollment not found",
   "MONTHLY_REPORT_NOT_FOUND": "Monthly report not found",
