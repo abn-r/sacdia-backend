@@ -633,11 +633,17 @@ export class PermissionsGuard implements CanActivate {
         throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND);
       }
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        localFieldId: camporee.local_field_id,
+      });
+
       return {
         type: 'local',
         scope: {
           localFieldId: camporee.local_field_id,
-          unionId: camporee.local_fields?.union_id ?? null,
+          unionId:
+            hierarchy.union_id ?? camporee.local_fields?.union_id ?? null,
+          divisionId: hierarchy.division_id,
           countryId: camporee.local_fields?.unions?.country_id ?? null,
         },
       };
@@ -656,10 +662,15 @@ export class PermissionsGuard implements CanActivate {
         );
       }
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        unionId: camporee.union_id,
+      });
+
       return {
         type: 'union',
         scope: {
           unionId: camporee.union_id,
+          divisionId: hierarchy.division_id,
           countryId: camporee.unions?.country_id ?? null,
         },
       };
@@ -744,10 +755,15 @@ export class PermissionsGuard implements CanActivate {
         select: { country_id: true },
       });
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        unionId: venue.union_id,
+      });
+
       return {
         type: 'union',
         scope: {
           unionId: venue.union_id,
+          divisionId: hierarchy.division_id,
           countryId: union?.country_id ?? null,
         },
       };
@@ -766,11 +782,16 @@ export class PermissionsGuard implements CanActivate {
         },
       });
 
+      const hierarchy = await this.hierarchy.resolveCurrent({
+        localFieldId: venue.local_field_id,
+      });
+
       return {
         type: 'local_field',
         scope: {
           localFieldId: venue.local_field_id,
-          unionId: localField?.union_id ?? null,
+          unionId: hierarchy.union_id ?? localField?.union_id ?? null,
+          divisionId: hierarchy.division_id,
           countryId: localField?.unions?.country_id ?? null,
         },
       };
