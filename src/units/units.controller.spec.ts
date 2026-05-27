@@ -63,13 +63,13 @@ describe('UnitsController', () => {
   // ========================================
 
   describe('findOne', () => {
-    it('should call service.findOne with unitId', async () => {
+    it('should call service.findOne with clubId and unitId', async () => {
       const mockUnit = { unit_id: 5, name: 'Falange Sur' };
       mockUnitsService.findOne.mockResolvedValue(mockUnit);
 
       const result = await controller.findOne(1, 5);
 
-      expect(mockUnitsService.findOne).toHaveBeenCalledWith(5);
+      expect(mockUnitsService.findOne).toHaveBeenCalledWith(5, 1);
       expect(result).toEqual(mockUnit);
     });
   });
@@ -102,14 +102,14 @@ describe('UnitsController', () => {
   // ========================================
 
   describe('update', () => {
-    it('should call service.update with unitId and dto', async () => {
+    it('should call service.update with clubId, unitId and dto', async () => {
       const dto = { name: 'Falange Oeste' };
       const mockUnit = { unit_id: 5, name: 'Falange Oeste' };
       mockUnitsService.update.mockResolvedValue(mockUnit);
 
       const result = await controller.update(1, 5, dto);
 
-      expect(mockUnitsService.update).toHaveBeenCalledWith(5, dto);
+      expect(mockUnitsService.update).toHaveBeenCalledWith(5, dto, 1);
       expect(result).toEqual(mockUnit);
     });
   });
@@ -119,12 +119,12 @@ describe('UnitsController', () => {
   // ========================================
 
   describe('remove', () => {
-    it('should call service.remove with unitId', async () => {
+    it('should call service.remove with clubId and unitId', async () => {
       mockUnitsService.remove.mockResolvedValue({ unit_id: 5, active: false });
 
       const result = await controller.remove(1, 5);
 
-      expect(mockUnitsService.remove).toHaveBeenCalledWith(5);
+      expect(mockUnitsService.remove).toHaveBeenCalledWith(5, 1);
       expect(result).toEqual(expect.objectContaining({ active: false }));
     });
   });
@@ -134,7 +134,7 @@ describe('UnitsController', () => {
   // ========================================
 
   describe('addMember', () => {
-    it('should call service.addMember with unitId and dto', async () => {
+    it('should call service.addMember with clubId, unitId and dto', async () => {
       const dto = { user_id: 'uuid-user-1' };
       const mockMember = {
         unit_member_id: 1,
@@ -145,7 +145,7 @@ describe('UnitsController', () => {
 
       const result = await controller.addMember(1, 5, dto);
 
-      expect(mockUnitsService.addMember).toHaveBeenCalledWith(5, dto);
+      expect(mockUnitsService.addMember).toHaveBeenCalledWith(5, dto, 1);
       expect(result).toEqual(mockMember);
     });
   });
@@ -155,7 +155,7 @@ describe('UnitsController', () => {
   // ========================================
 
   describe('removeMember', () => {
-    it('should call service.removeMember with unitId and memberId', async () => {
+    it('should call service.removeMember with clubId, unitId and memberId', async () => {
       mockUnitsService.removeMember.mockResolvedValue({
         unit_member_id: 10,
         active: false,
@@ -163,7 +163,7 @@ describe('UnitsController', () => {
 
       const result = await controller.removeMember(1, 5, 10);
 
-      expect(mockUnitsService.removeMember).toHaveBeenCalledWith(5, 10);
+      expect(mockUnitsService.removeMember).toHaveBeenCalledWith(5, 10, 1);
       expect(result).toEqual(expect.objectContaining({ active: false }));
     });
   });
@@ -173,13 +173,13 @@ describe('UnitsController', () => {
   // ========================================
 
   describe('findWeeklyRecords', () => {
-    it('should call service.findWeeklyRecords with unitId', async () => {
+    it('should call service.findWeeklyRecords with clubId and unitId', async () => {
       const mockRecords = [{ record_id: 1, week: 5, points: 15 }];
       mockUnitsService.findWeeklyRecords.mockResolvedValue(mockRecords);
 
       const result = await controller.findWeeklyRecords(1, 5);
 
-      expect(mockUnitsService.findWeeklyRecords).toHaveBeenCalledWith(5);
+      expect(mockUnitsService.findWeeklyRecords).toHaveBeenCalledWith(5, 1);
       expect(result).toEqual(mockRecords);
     });
   });
@@ -212,6 +212,7 @@ describe('UnitsController', () => {
         5,
         dto,
         'uuid-user-1',
+        1,
       );
       expect(result).toEqual(mockRecord);
     });
@@ -233,6 +234,7 @@ describe('UnitsController', () => {
         5,
         10,
         dto,
+        1,
       );
       expect(result).toEqual(mockRecord);
     });

@@ -354,6 +354,29 @@ export class CamporeeEventsService {
     return { data, total };
   }
 
+  async getEvent(eventId: number) {
+    const event = await this.prisma.camporee_events.findFirst({
+      where: { camporee_event_id: eventId, active: true },
+      include: {
+        event_type: true,
+        leader: {
+          select: { user_id: true, name: true, paternal_last_name: true },
+        },
+        venue: {
+          select: { camporee_venue_id: true, name: true },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_EVENT_NOT_FOUND, {
+        id: eventId,
+      });
+    }
+
+    return event;
+  }
+
   // ─── Create custom event ─────────────────────────────────────────────────
 
   async createEvent(

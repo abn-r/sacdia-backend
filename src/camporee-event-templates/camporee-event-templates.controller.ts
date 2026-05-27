@@ -19,7 +19,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { CamporeeEventTemplatesService } from './camporee-event-templates.service';
 import {
   CreateCamporeeEventTemplateDto,
@@ -37,7 +40,9 @@ export class CamporeeEventTemplatesController {
   @Get()
   @RequirePermissions('camporee_events:read')
   @AuthorizationResource({ type: 'active_assignment' })
-  @ApiOperation({ summary: 'List camporee event templates (filtered by role scope)' })
+  @ApiOperation({
+    summary: 'List camporee event templates (filtered by role scope)',
+  })
   @ApiQuery({ name: 'scope', required: false, enum: ['union', 'local_field'] })
   @ApiQuery({ name: 'union_id', required: false, type: Number })
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
@@ -47,8 +52,10 @@ export class CamporeeEventTemplatesController {
     @Request() req: any,
     @Query('scope') scope?: string,
     @Query('union_id', new ParseIntPipe({ optional: true })) unionId?: number,
-    @Query('local_field_id', new ParseIntPipe({ optional: true })) localFieldId?: number,
-    @Query('event_type_id', new ParseIntPipe({ optional: true })) eventTypeId?: number,
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
+    @Query('event_type_id', new ParseIntPipe({ optional: true }))
+    eventTypeId?: number,
     @Query('active') activeStr?: string,
   ) {
     const filters: ListCamporeeEventTemplatesDto = {

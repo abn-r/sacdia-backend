@@ -99,6 +99,11 @@ export const envValidationSchema = Joi.object({
   R2_PUBLIC_URL_RESOURCES_FILES: Joi.string().uri().required(),
   R2_KEY_PREFIX_RESOURCES_FILES: Joi.string().allow('').optional(),
 
+  // Cloudflare R2 — camporee payment vouchers bucket (private, presigned URLs)
+  R2_BUCKET_CAMPOREE_PAYMENT_VOUCHERS: Joi.string().optional(),
+  R2_PUBLIC_URL_CAMPOREE_PAYMENT_VOUCHERS: Joi.string().uri().optional(),
+  R2_KEY_PREFIX_CAMPOREE_PAYMENT_VOUCHERS: Joi.string().allow('').optional(),
+
   // Firebase
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow('').optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().allow('').optional(),

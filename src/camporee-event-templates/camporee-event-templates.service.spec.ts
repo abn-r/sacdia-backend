@@ -2,7 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import { CamporeeEventTemplatesService } from './camporee-event-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppNotFoundException, AppBadRequestException } from '../common/errors/app.exception';
+import {
+  AppNotFoundException,
+  AppBadRequestException,
+} from '../common/errors/app.exception';
 import { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 
 // ─── Mock factories ────────────────────────────────────────────────────────
@@ -26,13 +29,20 @@ const makePrismaMock = () => ({
 
 const makeSuperAdminAuth = (): AuthorizationSnapshot => ({
   grants: {
-    global_roles: [{ role_name: 'super-admin', union_id: null, local_field_id: null } as any],
+    global_roles: [
+      { role_name: 'super-admin', union_id: null, local_field_id: null } as any,
+    ],
     club_assignments: [],
   },
   active_assignment: { assignment_id: null },
   effective: {
-    permissions: ['camporee_events:read', 'camporee_events:create', 'camporee_events:update', 'camporee_events:delete'],
-    scope: { global: {} as any, club: null },
+    permissions: [
+      'camporee_events:read',
+      'camporee_events:create',
+      'camporee_events:update',
+      'camporee_events:delete',
+    ],
+    scope: { global: {}, club: null },
   },
 });
 
@@ -44,7 +54,7 @@ const makeUnionAdminAuth = (unionId: number): AuthorizationSnapshot => ({
   active_assignment: { assignment_id: null },
   effective: {
     permissions: ['camporee_events:read', 'camporee_events:create'],
-    scope: { global: {} as any, club: null },
+    scope: { global: {}, club: null },
   },
 });
 
@@ -56,7 +66,7 @@ const makeLfAdminAuth = (lfId: number): AuthorizationSnapshot => ({
   active_assignment: { assignment_id: null },
   effective: {
     permissions: ['camporee_events:read', 'camporee_events:create'],
-    scope: { global: {} as any, club: null },
+    scope: { global: {}, club: null },
   },
 });
 
@@ -123,13 +133,17 @@ describe('CamporeeEventTemplatesService', () => {
 
   describe('listTemplates', () => {
     it('super-admin sees all templates', async () => {
-      prisma.camporee_event_templates.findMany.mockResolvedValue([baseTemplate]);
+      prisma.camporee_event_templates.findMany.mockResolvedValue([
+        baseTemplate,
+      ]);
       const result = await service.listTemplates(makeSuperAdminAuth(), {});
       expect(result).toEqual([baseTemplate]);
     });
 
     it('union admin sees templates scoped to their union', async () => {
-      prisma.camporee_event_templates.findMany.mockResolvedValue([baseTemplate]);
+      prisma.camporee_event_templates.findMany.mockResolvedValue([
+        baseTemplate,
+      ]);
       const result = await service.listTemplates(makeUnionAdminAuth(10), {});
       const call = prisma.camporee_event_templates.findMany.mock.calls[0][0];
       expect(call.where).toHaveProperty('OR');
@@ -148,7 +162,9 @@ describe('CamporeeEventTemplatesService', () => {
     });
 
     it('returns template for super-admin', async () => {
-      prisma.camporee_event_templates.findUnique.mockResolvedValue(baseTemplate);
+      prisma.camporee_event_templates.findUnique.mockResolvedValue(
+        baseTemplate,
+      );
       const result = await service.getTemplate(1, makeSuperAdminAuth());
       expect(result).toEqual(baseTemplate);
     });
@@ -245,7 +261,9 @@ describe('CamporeeEventTemplatesService', () => {
     });
 
     it('throws forbidden when lf admin tries to delete union template', async () => {
-      prisma.camporee_event_templates.findUnique.mockResolvedValue(baseTemplate); // union scope, union_id=10
+      prisma.camporee_event_templates.findUnique.mockResolvedValue(
+        baseTemplate,
+      ); // union scope, union_id=10
       await expect(
         service.deleteTemplate(1, makeLfAdminAuth(5), ACTOR_ID),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -253,10 +271,16 @@ describe('CamporeeEventTemplatesService', () => {
 
     it('soft deletes template for super-admin', async () => {
       const deleted = { ...baseTemplate, active: false };
-      prisma.camporee_event_templates.findUnique.mockResolvedValue(baseTemplate);
+      prisma.camporee_event_templates.findUnique.mockResolvedValue(
+        baseTemplate,
+      );
       prisma.camporee_event_templates.update.mockResolvedValue(deleted);
 
-      const result = await service.deleteTemplate(1, makeSuperAdminAuth(), ACTOR_ID);
+      const result = await service.deleteTemplate(
+        1,
+        makeSuperAdminAuth(),
+        ACTOR_ID,
+      );
       expect(result.active).toBe(false);
     });
   });

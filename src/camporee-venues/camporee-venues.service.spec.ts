@@ -84,10 +84,7 @@ describe('CamporeeVenuesService', () => {
   describe('scope XOR validation (createVenue)', () => {
     it('throws bad request when scope=union without union_id', async () => {
       await expect(
-        service.createVenue(
-          { scope: 'union', name: 'Test' },
-          ACTOR_ID,
-        ),
+        service.createVenue({ scope: 'union', name: 'Test' }, ACTOR_ID),
       ).rejects.toBeInstanceOf(AppBadRequestException);
     });
 
@@ -102,17 +99,19 @@ describe('CamporeeVenuesService', () => {
 
     it('throws bad request when scope=local_field without local_field_id', async () => {
       await expect(
-        service.createVenue(
-          { scope: 'local_field', name: 'Test' },
-          ACTOR_ID,
-        ),
+        service.createVenue({ scope: 'local_field', name: 'Test' }, ACTOR_ID),
       ).rejects.toBeInstanceOf(AppBadRequestException);
     });
 
     it('throws bad request when scope=local_field with union_id set', async () => {
       await expect(
         service.createVenue(
-          { scope: 'local_field', local_field_id: 3, union_id: 5, name: 'Test' },
+          {
+            scope: 'local_field',
+            local_field_id: 3,
+            union_id: 5,
+            name: 'Test',
+          },
           ACTOR_ID,
         ),
       ).rejects.toBeInstanceOf(AppBadRequestException);
