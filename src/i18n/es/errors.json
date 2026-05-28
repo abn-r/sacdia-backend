@@ -509,5 +509,7 @@
   "MEMBER_RANKINGS_CLUB_ID_INVALID": "El parámetro club_id debe ser un número entero positivo",
   "ANNUAL_RANKING_CONFIG_NOT_FOUND": "No existe una configuración anual de ranking para el campo local {localFieldId}, año {ecclesiasticalYearId} y tipo de club {clubTypeId}",
   "ANNUAL_RANKING_CONFIG_CONFLICT": "Ya existe una configuración anual de ranking para el campo local {localFieldId}, año {ecclesiasticalYearId} y tipo de club {clubTypeId}",
-  "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "La suma de componentes ({componentSum}) debe ser igual al máximo anual ({maxPoints})"
+  "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "La suma de componentes ({componentSum}) debe ser igual al máximo anual ({maxPoints})",
+  "ANNUAL_RANKING_SECTION_NOT_FOUND": "No se encontró la sección {sectionId} para calcular el progreso anual",
+  "ANNUAL_RANKING_SECTION_NO_CLUB": "La sección {sectionId} no está vinculada a un club principal"
 }
