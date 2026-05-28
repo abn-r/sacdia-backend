@@ -191,7 +191,7 @@ export class UnitsService {
     if (dto.club_section_id !== undefined || dto.club_type_id !== undefined) {
       const targetClubId = clubId ?? existing.club_sections?.main_club_id;
       const targetSectionId = dto.club_section_id ?? existing.club_section_id;
-      if (targetClubId === undefined) {
+      if (targetClubId == null) {
         throw new AppBadRequestException(ErrorCode.UNIT_SECTION_WRONG_CLUB);
       }
       if (targetSectionId === undefined || targetSectionId === null) {
