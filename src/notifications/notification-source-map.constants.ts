@@ -81,6 +81,7 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   // ---------------------------------------------------------------------------
   'camporees:late_enrollment': 'reminders',
   'camporees:late_payment': 'reminders',
+  'monthly_reports:reminder': 'reminders',
   'system_alert:cron_failure': 'reminders',
 
   // ---------------------------------------------------------------------------

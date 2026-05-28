@@ -321,6 +321,30 @@ describe('PermissionsGuard', () => {
     ).resolves.toBe(true);
   });
 
+  it('attaches both the authorization snapshot and full resolved profile to the request', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['section_rankings:read_club'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'active_assignment' };
+      }
+      return undefined;
+    });
+    const resolved = createResolved({
+      activeClubPermissions: ['section_rankings:read_club'],
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolved,
+    );
+    const request = { user: { sub: 'club-user-1' } };
+
+    await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
+
+    expect((request as any).authorization).toBe(resolved.authorization);
+    expect((request as any).authorizationProfile).toBe(resolved);
+  });
+
   it('rejects a global resource when the permission only exists on the active club assignment', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {

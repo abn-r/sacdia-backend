@@ -187,6 +187,24 @@ describe('SectionRankingsController', () => {
     expect(controller).toBeDefined();
   });
 
+  it('delegates with the full authorization profile resolved by PermissionsGuard', async () => {
+    mockService.getMembers.mockResolvedValueOnce([mockMemberRow]);
+
+    const req = {
+      user: { user_id: directorProfile.profile.user_id },
+      authorization: directorProfile.authorization,
+      authorizationProfile: directorProfile,
+    };
+
+    await controller.getMembers(SECTION_ID, YEAR_ID, req);
+
+    expect(mockService.getMembers).toHaveBeenCalledWith(
+      SECTION_ID,
+      YEAR_ID,
+      directorProfile,
+    );
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // 1. GET / director-club → 200 filtered by club
   // ─────────────────────────────────────────────────────────────────────────

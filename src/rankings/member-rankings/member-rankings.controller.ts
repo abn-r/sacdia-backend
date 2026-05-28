@@ -33,7 +33,7 @@ import { MemberMyRankingDto } from './dto/member-my-ranking.dto';
 @ApiTags('Member Rankings')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@AuthorizationResource({ type: 'global' })
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('member-rankings')
 export class MemberRankingsController {
   private readonly logger = new Logger(MemberRankingsController.name);
@@ -198,7 +198,11 @@ export class MemberRankingsController {
     this.logger.log(
       `getBreakdown: enrollmentId=${enrollmentId} yearId=${yearId}`,
     );
-    return this.service.getBreakdown(enrollmentId, yearId, req.authorization);
+    return this.service.getBreakdown(
+      enrollmentId,
+      yearId,
+      req.authorizationProfile ?? req.authorization,
+    );
   }
 
   @Get()
@@ -254,7 +258,7 @@ export class MemberRankingsController {
       `list: yearId=${yearId} clubId=${clubIdRaw} sectionId=${sectionIdRaw}`,
     );
     return this.service.list({
-      profile: req.authorization,
+      profile: req.authorizationProfile ?? req.authorization,
       clubId: clubIdRaw !== undefined ? Number(clubIdRaw) : undefined,
       sectionId: sectionIdRaw !== undefined ? Number(sectionIdRaw) : undefined,
       yearId,

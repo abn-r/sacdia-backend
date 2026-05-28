@@ -182,3 +182,171 @@ describe('MonthlyReportsService admin list authorization', () => {
     });
   });
 });
+
+describe('MonthlyReportsService auto-calculated finances', () => {
+  const mockPrisma = {
+    finances: {
+      findMany: jest.fn(),
+    },
+  };
+
+  let service: MonthlyReportsService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new MonthlyReportsService(mockPrisma as any, {} as any);
+  });
+
+  it('includes both monthly movement balance and accumulated club total balance', async () => {
+    mockPrisma.finances.findMany
+      .mockResolvedValueOnce([
+        { amount: 1000, finances_categories: { type: 0 } },
+        { amount: 250, finances_categories: { type: 1 } },
+      ])
+      .mockResolvedValueOnce([
+        { amount: 5000, finances_categories: { type: 0 } },
+        { amount: 1200, finances_categories: { type: 1 } },
+        { amount: 300, finances_categories: { type: 1 } },
+      ]);
+
+    const result = await (service as any).getFinancesData(2, 4, 2026);
+
+    expect(mockPrisma.finances.findMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        club_section_id: 2,
+        month: 4,
+        year: 2026,
+        active: true,
+      },
+      include: {
+        finances_categories: {
+          select: { name: true, type: true },
+        },
+      },
+    });
+    expect(mockPrisma.finances.findMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        club_section_id: 2,
+        active: true,
+        OR: [{ year: { lt: 2026 } }, { year: 2026, month: { lte: 4 } }],
+      },
+      include: {
+        finances_categories: {
+          select: { type: true },
+        },
+      },
+    });
+    expect(result).toEqual({
+      income: 1000,
+      expenses: 250,
+      balance: 750,
+      total_balance: 3500,
+      transactions: 2,
+    });
+  });
+});
+
+describe('MonthlyReportsService scheduled reminders', () => {
+  const mockPrisma = {
+    system_config: {
+      findUnique: jest.fn(),
+    },
+    club_enrollments: {
+      findMany: jest.fn(),
+    },
+    monthly_reports: {
+      findUnique: jest.fn(),
+    },
+  };
+
+  const mockNotifications = {
+    sendToSectionRole: jest.fn(),
+  };
+
+  let service: MonthlyReportsService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new MonthlyReportsService(
+      mockPrisma as any,
+      {} as any,
+      mockNotifications as any,
+    );
+    mockPrisma.system_config.findUnique.mockResolvedValue(null);
+    mockPrisma.club_enrollments.findMany.mockResolvedValue([
+      {
+        club_enrollment_id: 'enrollment-1',
+        club_section: {
+          club_section_id: 44,
+          clubs: { name: 'ACV' },
+          club_types: { name: 'Conquistadores' },
+        },
+      },
+    ]);
+    mockPrisma.monthly_reports.findUnique.mockResolvedValue({
+      status: 'generated',
+    });
+  });
+
+  it('notifies director, secretary and secretary-treasurer on the 27th monthly data reminder', async () => {
+    const result = await service.runReminderNotifications(
+      new Date('2026-05-27T15:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ itemsProcessed: 1 });
+    expect(mockNotifications.sendToSectionRole).toHaveBeenCalledWith(
+      44,
+      ['director', 'secretary', 'secretary-treasurer'],
+      expect.stringContaining('mayo'),
+      expect.any(String),
+      expect.objectContaining({
+        action: 'capture_reminder',
+        reportMonth: '5',
+        reportYear: '2026',
+        route: '/home/reports',
+      }),
+      'monthly_reports:reminder',
+    );
+  });
+
+  it('notifies about the previous month on day 1/4/5/6 close cycle', async () => {
+    await service.runReminderNotifications(
+      new Date('2026-06-06T15:00:00.000Z'),
+    );
+
+    expect(mockNotifications.sendToSectionRole).toHaveBeenCalledWith(
+      44,
+      ['director', 'secretary', 'secretary-treasurer'],
+      expect.stringContaining('mayo'),
+      expect.any(String),
+      expect.objectContaining({
+        action: 'generated',
+        reportMonth: '5',
+        reportYear: '2026',
+      }),
+      'monthly_reports:reminder',
+    );
+  });
+
+  it('does not send the day 6 generated notification when the report is not generated yet', async () => {
+    mockPrisma.monthly_reports.findUnique.mockResolvedValueOnce({
+      status: 'draft',
+    });
+
+    const result = await service.runReminderNotifications(
+      new Date('2026-06-06T15:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ itemsProcessed: 0 });
+    expect(mockNotifications.sendToSectionRole).not.toHaveBeenCalled();
+  });
+
+  it('does not notify on non-scheduled days', async () => {
+    const result = await service.runReminderNotifications(
+      new Date('2026-05-28T15:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ itemsProcessed: 0 });
+    expect(mockNotifications.sendToSectionRole).not.toHaveBeenCalled();
+  });
+});

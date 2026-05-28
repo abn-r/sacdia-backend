@@ -837,21 +837,68 @@ export class ResourcesService {
     }
   }
 
+  private toIntegerOrNull(value: unknown): number | null {
+    const id = typeof value === 'string' ? Number(value) : value;
+    return typeof id === 'number' && Number.isInteger(id) ? id : null;
+  }
+
+  private extractActiveClubTypeId(
+    userContext: any,
+    authorization: AuthorizationSnapshot | null,
+  ): number | null {
+    const direct =
+      (
+        userContext as {
+          authorization?: { effective?: { club_type_id?: number | string } };
+        }
+      )?.authorization?.effective?.club_type_id ??
+      (userContext as { effective?: { club_type_id?: number | string } })
+        ?.effective?.club_type_id;
+    const directId = this.toIntegerOrNull(direct);
+    if (directId !== null) {
+      return directId;
+    }
+
+    const scoped =
+      (
+        userContext as {
+          authorization?: {
+            effective?: {
+              scope?: {
+                club?: { section?: { club_type_id?: number | string } };
+              };
+            };
+          };
+        }
+      )?.authorization?.effective?.scope?.club?.section?.club_type_id ??
+      (
+        userContext as {
+          effective?: {
+            scope?: { club?: { section?: { club_type_id?: number | string } } };
+          };
+        }
+      )?.effective?.scope?.club?.section?.club_type_id;
+    const scopedId = this.toIntegerOrNull(scoped);
+    if (scopedId !== null) {
+      return scopedId;
+    }
+
+    const activeAssignmentId = authorization?.active_assignment.assignment_id;
+    const activeGrant = authorization?.grants.club_assignments.find(
+      (grant) => grant.assignment_id === activeAssignmentId,
+    );
+    return this.toIntegerOrNull(activeGrant?.section?.club_type_id);
+  }
+
   private buildVisibleResourceConditions(
     userContext: any,
   ): Record<string, any>[] {
     const authorization = this.extractAuthorizationSnapshot(userContext);
     const visibleScopes = this.collectResourceScopes(authorization);
-
-    const userClubTypeId: number | null =
-      (
-        userContext as {
-          authorization?: { effective?: { club_type_id?: number } };
-        }
-      )?.authorization?.effective?.club_type_id ??
-      (userContext as { effective?: { club_type_id?: number } })?.effective
-        ?.club_type_id ??
-      null;
+    const userClubTypeId = this.extractActiveClubTypeId(
+      userContext,
+      authorization,
+    );
 
     return [
       {

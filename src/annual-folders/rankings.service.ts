@@ -44,6 +44,9 @@ const KILL_SWITCH_VALUE_FALSE = 'false';
 
 export interface RankingEntry {
   rank_position: number | null;
+  club_enrollment_id: string;
+  ecclesiastical_year_id: number;
+  local_field_id: number | null;
   club_name: string;
   total_earned_points: number;
   total_max_points: number;
@@ -911,6 +914,7 @@ export class RankingsService {
     clubTypeId: number,
     yearId: number,
     categoryId?: string,
+    localFieldId?: number,
   ): Promise<RankingEntry[]> {
     // When no categoryId is provided, filter by the sentinel UUID which
     // represents "general" rankings (formerly NULL).
@@ -922,9 +926,15 @@ export class RankingsService {
         club_type_id: clubTypeId,
         ecclesiastical_year_id: yearId,
         award_category_id: resolvedCategoryId,
+        ...(localFieldId !== undefined
+          ? { hierarchy_context: { local_field_id: localFieldId } }
+          : {}),
       },
       orderBy: { rank_position: 'asc' },
       include: {
+        hierarchy_context: {
+          select: { local_field_id: true },
+        },
         award_category: {
           select: { name: true },
         },
@@ -942,6 +952,9 @@ export class RankingsService {
 
     return records.map((r) => ({
       rank_position: r.rank_position,
+      club_enrollment_id: r.club_enrollment_id,
+      ecclesiastical_year_id: r.ecclesiastical_year_id,
+      local_field_id: r.hierarchy_context?.local_field_id ?? null,
       club_name: r.club_enrollment.club_section.clubs?.name ?? 'Unknown',
       total_earned_points: r.total_earned_points,
       total_max_points: r.total_max_points,
@@ -1614,6 +1627,9 @@ export class RankingsService {
         club_type_id: true,
         award_category_id: true,
         composite_score_pct: true,
+        hierarchy_context: {
+          select: { local_field_id: true },
+        },
       },
       orderBy: { composite_score_pct: 'desc' },
     });
@@ -1623,7 +1639,9 @@ export class RankingsService {
     // Group by (club_type_id, award_category_id)
     const groups = new Map<string, typeof allRecords>();
     for (const record of allRecords) {
-      const key = `${record.club_type_id}::${record.award_category_id ?? 'null'}`;
+      const localFieldKey =
+        record.hierarchy_context?.local_field_id ?? 'unscoped';
+      const key = `${localFieldKey}::${record.club_type_id}::${record.award_category_id ?? 'null'}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(record);
     }

@@ -674,6 +674,62 @@ describe('RankingsService', () => {
       expect(r3?.rank_position).toBe(2); // dense: 2, not 3
     });
 
+    it('should assign dense rank positions independently per local field', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([
+        {
+          ranking_id: 'r-lf1-top',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          composite_score_pct: 90,
+          hierarchy_context: { local_field_id: 10 },
+        },
+        {
+          ranking_id: 'r-lf2-top',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          composite_score_pct: 80,
+          hierarchy_context: { local_field_id: 20 },
+        },
+        {
+          ranking_id: 'r-lf1-second',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          composite_score_pct: 70,
+          hierarchy_context: { local_field_id: 10 },
+        },
+      ]);
+      mockPrismaService.club_annual_rankings.update.mockResolvedValue({});
+
+      await service.recalculateRankings();
+
+      const updateCalls =
+        mockPrismaService.club_annual_rankings.update.mock.calls.map(
+          ([call]) => ({
+            ranking_id: call.where.ranking_id,
+            rank_position: call.data.rank_position,
+          }),
+        );
+
+      expect(
+        updateCalls.find((c) => c.ranking_id === 'r-lf1-top')?.rank_position,
+      ).toBe(1);
+      expect(
+        updateCalls.find((c) => c.ranking_id === 'r-lf1-second')?.rank_position,
+      ).toBe(2);
+      expect(
+        updateCalls.find((c) => c.ranking_id === 'r-lf2-top')?.rank_position,
+      ).toBe(1);
+    });
+
     it('should handle max_points boundary (points equal to max_points still qualify) for legacy categories', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
@@ -848,6 +904,7 @@ describe('RankingsService', () => {
       {
         ranking_id: 'r-1',
         rank_position: 1,
+        club_enrollment_id: 'enroll-1',
         club_type_id: 2,
         ecclesiastical_year_id: 2026,
         award_category_id: null,
@@ -860,6 +917,7 @@ describe('RankingsService', () => {
         evidence_score_pct: 95,
         composite_score_pct: 82,
         composite_calculated_at: new Date('2026-01-15T10:00:00Z'),
+        hierarchy_context: { local_field_id: 10 },
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -870,6 +928,7 @@ describe('RankingsService', () => {
       {
         ranking_id: 'r-2',
         rank_position: 2,
+        club_enrollment_id: 'enroll-2',
         club_type_id: 2,
         ecclesiastical_year_id: 2026,
         award_category_id: null,
@@ -882,6 +941,7 @@ describe('RankingsService', () => {
         evidence_score_pct: 70,
         composite_score_pct: 60,
         composite_calculated_at: null,
+        hierarchy_context: { local_field_id: 10 },
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -902,6 +962,22 @@ describe('RankingsService', () => {
       expect(result[0].rank_position).toBe(1);
       expect(result[0].club_name).toBe('Club Alfa');
       expect(result[1].rank_position).toBe(2);
+    });
+
+    it('should include identifiers required by ranking detail links', async () => {
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
+
+      const result = await service.getRankings(2, 2026);
+
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          club_enrollment_id: 'enroll-1',
+          ecclesiastical_year_id: 2026,
+          local_field_id: 10,
+        }),
+      );
     });
 
     it('should include component and composite score fields in each entry', async () => {
@@ -981,6 +1057,24 @@ describe('RankingsService', () => {
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ award_category_id: 'cat-gold' }),
+        }),
+      );
+    });
+
+    it('should filter by local_field_id when provided', async () => {
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
+
+      await service.getRankings(2, 2026, undefined, 10);
+
+      expect(
+        mockPrismaService.club_annual_rankings.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            hierarchy_context: { local_field_id: 10 },
+          }),
         }),
       );
     });

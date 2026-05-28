@@ -236,7 +236,7 @@ describe('ResourcesService institutional scope policy', () => {
           role_name: 'director',
           permissions: ['resources:read'],
           club: { club_id: 99, club_name: 'Club Centro' },
-          section: { club_section_id: 123 },
+          section: { club_section_id: 123, club_type_id: 2 },
           scope: {
             union: { id: 20, name: 'Unión Norte' },
             local_field: { id: 30, name: 'Campo Centro' },
@@ -256,7 +256,7 @@ describe('ResourcesService institutional scope policy', () => {
           assignment_id: 'assignment-1',
           role_name: 'director',
           club: { club_id: 99, club_name: 'Club Centro' },
-          section: { club_section_id: 123 },
+          section: { club_section_id: 123, club_type_id: 2 },
         },
       },
     },
@@ -378,6 +378,25 @@ describe('ResourcesService institutional scope policy', () => {
                 { scope_level: 'division', scope_id: 1 },
                 { scope_level: 'union', scope_id: 20 },
                 { scope_level: 'local_field', scope_id: 30 },
+              ]),
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('includes resources for the active club type in app visibility', async () => {
+    await service.getVisibleResources({}, authorization);
+
+    expect(mockPrisma.resources.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              OR: expect.arrayContaining([
+                { club_type_id: null },
+                { club_type_id: 2 },
               ]),
             },
           ]),

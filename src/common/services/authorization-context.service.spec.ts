@@ -60,17 +60,14 @@ describe('AuthorizationContextService', () => {
   });
 
   it('uses versioned cache keys so stale legacy snapshots are bypassed', () => {
-    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe(
-      'auth:context:v2:user-123',
-    );
+    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v3:user-123');
   });
 
   it('invalidates both current and legacy authorization cache keys', async () => {
     await service.invalidateUserAuthorizationCache('user-123');
 
-    expect(cacheManager.del).toHaveBeenCalledWith(
-      'auth:context:v2:user-123',
-    );
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v3:user-123');
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v2:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:user-123');
   });
 
@@ -131,6 +128,7 @@ describe('AuthorizationContextService', () => {
           },
           club_sections: {
             club_section_id: 11,
+            club_type_id: 1,
             club_types: { name: 'Aventureros' },
             clubs: {
               club_id: 10,
@@ -164,6 +162,7 @@ describe('AuthorizationContextService', () => {
           },
           club_sections: {
             club_section_id: 22,
+            club_type_id: 2,
             club_types: { name: 'Conquistadores' },
             clubs: {
               club_id: 10,
@@ -218,6 +217,7 @@ describe('AuthorizationContextService', () => {
       },
       section: {
         club_section_id: 22,
+        club_type_id: 2,
         club_type_name: 'Conquistadores',
       },
     });
@@ -225,6 +225,7 @@ describe('AuthorizationContextService', () => {
       assignment_id: 'assignment-2',
       role_name: 'treasurer',
       club_section_id: 22,
+      club_type_id: 2,
       club_id: 10,
       club_name: 'Club Amanecer',
       club_type: 'Conquistadores',
@@ -368,6 +369,7 @@ describe('AuthorizationContextService', () => {
           },
           club_sections: {
             club_section_id: 33,
+            club_type_id: 3,
             club_types: { name: 'Guías Mayores' },
             clubs: {
               club_id: 44,
@@ -393,6 +395,7 @@ describe('AuthorizationContextService', () => {
       },
       section: {
         club_section_id: 33,
+        club_type_id: 3,
         club_type_name: 'Guías Mayores',
       },
     });

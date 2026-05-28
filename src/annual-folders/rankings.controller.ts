@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -23,6 +24,13 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import {
+  AuthorizationContextService,
+  type ResolvedAuthorizationProfile,
+} from '../common/services/authorization-context.service';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { RankingBreakdownDto } from './dto/ranking-breakdown.dto';
 
 @ApiTags('Annual Folders - Rankings')
@@ -31,13 +39,18 @@ import { RankingBreakdownDto } from './dto/ranking-breakdown.dto';
 @AuthorizationResource({ type: 'global' })
 @Controller('annual-folders/rankings')
 export class RankingsController {
-  constructor(private readonly rankingsService: RankingsService) {}
+  constructor(
+    private readonly rankingsService: RankingsService,
+    private readonly authorizationContext: AuthorizationContextService,
+    private readonly hierarchy: InstitutionalHierarchyService,
+  ) {}
 
   // ========================================
   // GET RANKINGS FOR A YEAR / CLUB TYPE
   // ========================================
 
   @Get()
+  @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('rankings:read')
   @ApiOperation({
     summary: 'Get club rankings for a given year and club type',
@@ -65,6 +78,13 @@ export class RankingsController {
       'Award category UUID. Omit for general (uncategorised) rankings.',
     example: 'b1c2d3e4-...',
   })
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    description:
+      'Optional local field ID to scope club rankings to one association/field.',
+    example: 4,
+  })
   @ApiResponse({
     status: 200,
     description: 'Ranked list of clubs',
@@ -78,17 +98,124 @@ export class RankingsController {
     @Query('club_type_id') clubTypeIdRaw: string,
     @Query('year_id') yearIdRaw: string,
     @Query('category_id') categoryId?: string,
+    @Query('local_field_id') localFieldIdRaw?: string,
+    @Req()
+    request?: { authorizationProfile?: ResolvedAuthorizationProfile },
   ) {
     const clubTypeId = parseInt(clubTypeIdRaw, 10);
     const yearId = parseInt(yearIdRaw, 10);
+    const localFieldId =
+      localFieldIdRaw !== undefined ? parseInt(localFieldIdRaw, 10) : undefined;
+    const scopedLocalFieldId = await this.resolveReadableLocalFieldScope(
+      localFieldId,
+      request?.authorizationProfile,
+    );
 
     const data = await this.rankingsService.getRankings(
       clubTypeId,
       yearId,
       categoryId,
+      scopedLocalFieldId,
     );
 
     return { status: 'success', data };
+  }
+
+  private async resolveReadableLocalFieldScope(
+    requestedLocalFieldId: number | undefined,
+    authorizationProfile?: ResolvedAuthorizationProfile,
+  ): Promise<number | undefined> {
+    if (!authorizationProfile) {
+      return requestedLocalFieldId;
+    }
+
+    const activeAssignmentLocalFieldId =
+      this.getActiveAssignmentLocalFieldId(authorizationProfile);
+
+    if (requestedLocalFieldId !== undefined) {
+      if (requestedLocalFieldId === activeAssignmentLocalFieldId) {
+        return requestedLocalFieldId;
+      }
+
+      try {
+        const requestedScope = await this.hierarchy.resolveCurrent({
+          localFieldId: requestedLocalFieldId,
+        });
+
+        if (
+          this.authorizationContext.canAccessHierarchyScope(
+            authorizationProfile,
+            requestedScope,
+            'historical-read',
+          )
+        ) {
+          return requestedLocalFieldId;
+        }
+      } catch {
+        // Fall through to a generic 403 so callers cannot probe hierarchy IDs.
+      }
+
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    const defaultLocalFieldId =
+      activeAssignmentLocalFieldId ??
+      this.toNumericScopeId(
+        authorizationProfile.authorization.effective.scope.global.local_field
+          ?.id,
+      ) ??
+      authorizationProfile.profile.local_field_id;
+
+    if (typeof defaultLocalFieldId === 'number') {
+      return defaultLocalFieldId;
+    }
+
+    if (this.hasGlobalRole(authorizationProfile, 'super-admin')) {
+      return undefined;
+    }
+
+    throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+  }
+
+  private toNumericScopeId(value: number | string | undefined): number | null {
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = parseInt(value, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    return null;
+  }
+
+  private getActiveAssignmentLocalFieldId(
+    authorizationProfile: ResolvedAuthorizationProfile,
+  ): number | null {
+    const activeAssignmentId =
+      authorizationProfile.authorization.active_assignment.assignment_id;
+
+    if (!activeAssignmentId) {
+      return null;
+    }
+
+    const activeAssignment =
+      authorizationProfile.authorization.grants.club_assignments.find(
+        (assignment) => assignment.assignment_id === activeAssignmentId,
+      );
+
+    return this.toNumericScopeId(activeAssignment?.scope.local_field?.id);
+  }
+
+  private hasGlobalRole(
+    authorizationProfile: ResolvedAuthorizationProfile,
+    roleName: string,
+  ): boolean {
+    const normalizedRole = roleName.toLowerCase();
+    return authorizationProfile.authorization.grants.global_roles.some(
+      (grant) => grant.role_name.toLowerCase() === normalizedRole,
+    );
   }
 
   // ========================================

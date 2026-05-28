@@ -69,7 +69,8 @@
     "total_income": "Total income",
     "total_expenses": "Total expenses",
     "month_balance": "Month balance",
-    "transaction_count": "Total transactions"
+    "transaction_count": "Total transactions",
+    "club_total_balance": "Club total balance"
   },
   "missionary": {
     "soul_target": "Soul target",
