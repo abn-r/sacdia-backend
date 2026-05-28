@@ -3,7 +3,10 @@ import { AnnualRankingsController } from './annual-rankings.controller';
 import { AnnualRankingsService } from './annual-rankings.service';
 import { AnnualRankingProgressController } from './annual-ranking-progress.controller';
 import { AnnualRankingProgressService } from './annual-ranking-progress.service';
+import { AnnualRankingConfigController } from './annual-ranking-config.controller';
 import { AnnualRankingConfigService } from './annual-ranking-config.service';
+import { RankingTiersController } from './ranking-tiers.controller';
+import { RankingTiersService } from './ranking-tiers.service';
 import { RankingTierCalculatorService } from './services/ranking-tier-calculator.service';
 
 /**
@@ -14,17 +17,24 @@ import { RankingTierCalculatorService } from './services/ranking-tier-calculator
  * the caller's own section.
  */
 @Module({
-  controllers: [AnnualRankingProgressController, AnnualRankingsController],
+  controllers: [
+    AnnualRankingProgressController,
+    AnnualRankingsController,
+    AnnualRankingConfigController,
+    RankingTiersController,
+  ],
   providers: [
     AnnualRankingProgressService,
     AnnualRankingsService,
     AnnualRankingConfigService,
+    RankingTiersService,
     RankingTierCalculatorService,
   ],
   exports: [
     AnnualRankingProgressService,
     AnnualRankingsService,
     AnnualRankingConfigService,
+    RankingTiersService,
   ],
 })
 export class AnnualRankingProgressModule {}

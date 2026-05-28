@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAnnualRankingConfigDto } from './dto/create-annual-ranking-config.dto';
+import { UpdateAnnualRankingConfigDto } from './dto/update-annual-ranking-config.dto';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -14,9 +15,38 @@ export interface AnnualRankingConfigScope {
   clubTypeId: number;
 }
 
+export interface AnnualRankingConfigListFilters {
+  localFieldId?: number;
+  ecclesiasticalYearId?: number;
+  clubTypeId?: number;
+}
+
 @Injectable()
 export class AnnualRankingConfigService {
   constructor(private readonly prisma: PrismaService) {}
+
+  list(filters: AnnualRankingConfigListFilters = {}) {
+    return this.prisma.annual_ranking_configs.findMany({
+      where: {
+        active: true,
+        ...(filters.localFieldId !== undefined
+          ? { local_field_id: filters.localFieldId }
+          : {}),
+        ...(filters.ecclesiasticalYearId !== undefined
+          ? { ecclesiastical_year_id: filters.ecclesiasticalYearId }
+          : {}),
+        ...(filters.clubTypeId !== undefined
+          ? { club_type_id: filters.clubTypeId }
+          : {}),
+      },
+      include: this.activeConfigInclude(),
+      orderBy: [
+        { local_field_id: 'asc' },
+        { ecclesiastical_year_id: 'desc' },
+        { club_type_id: 'asc' },
+      ],
+    });
+  }
 
   async create(dto: CreateAnnualRankingConfigDto, userId?: string) {
     this.validateComponentBudget(dto);
@@ -93,6 +123,51 @@ export class AnnualRankingConfigService {
     return config;
   }
 
+  async update(id: string, dto: UpdateAnnualRankingConfigDto, userId?: string) {
+    this.validateComponentBudget(dto);
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.annual_ranking_configs.findFirst({
+        where: {
+          annual_ranking_config_id: id,
+          active: true,
+        },
+      });
+
+      if (!current) {
+        throw new AppNotFoundException(
+          ErrorCode.ANNUAL_RANKING_CONFIG_NOT_FOUND,
+          {
+            localFieldId: id,
+            ecclesiasticalYearId: id,
+            clubTypeId: id,
+          },
+        );
+      }
+
+      await tx.annual_ranking_component_configs.deleteMany({
+        where: { annual_ranking_config_id: id },
+      });
+
+      return tx.annual_ranking_configs.update({
+        where: { annual_ranking_config_id: id },
+        data: {
+          max_points: dto.max_points,
+          updated_by: userId ?? null,
+          components: {
+            create: dto.components.map((component, index) => ({
+              component_key: component.component_key,
+              label: component.label,
+              max_points: component.max_points,
+              sort_order: component.sort_order ?? index,
+            })),
+          },
+        },
+        include: this.configInclude(),
+      });
+    });
+  }
+
   private validateComponentBudget(dto: CreateAnnualRankingConfigDto): void {
     const total = dto.components.reduce(
       (sum, component) => sum + component.max_points,
@@ -113,6 +188,15 @@ export class AnnualRankingConfigService {
   private configInclude() {
     return {
       components: {
+        orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
+      },
+    } as const;
+  }
+
+  private activeConfigInclude() {
+    return {
+      components: {
+        where: { active: true },
         orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
       },
     } as const;

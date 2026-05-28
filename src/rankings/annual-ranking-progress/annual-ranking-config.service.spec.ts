@@ -58,9 +58,12 @@ describe('AnnualRankingConfigService', () => {
     prisma = {
       annual_ranking_configs: {
         findFirst: jest.fn(),
+        findMany: jest.fn(),
         create: jest.fn(),
+        update: jest.fn(),
       },
       annual_ranking_component_configs: {
+        deleteMany: jest.fn(),
         findMany: jest.fn(),
       },
       $transaction: jest.fn(async (callback) => callback(prisma)),
@@ -192,5 +195,117 @@ describe('AnnualRankingConfigService', () => {
         clubTypeId: 2,
       }),
     ).rejects.toBeInstanceOf(AppNotFoundException);
+  });
+
+  it('lists configs with optional scope filters', async () => {
+    prisma.annual_ranking_configs.findMany.mockResolvedValueOnce([configRow]);
+
+    const result = await service.list({
+      localFieldId: 4,
+      ecclesiasticalYearId: 1,
+      clubTypeId: 2,
+    });
+
+    expect(result).toEqual([configRow]);
+    expect(prisma.annual_ranking_configs.findMany).toHaveBeenCalledWith({
+      where: {
+        active: true,
+        local_field_id: 4,
+        ecclesiastical_year_id: 1,
+        club_type_id: 2,
+      },
+      include: {
+        components: {
+          where: { active: true },
+          orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
+        },
+      },
+      orderBy: [
+        { local_field_id: 'asc' },
+        { ecclesiastical_year_id: 'desc' },
+        { club_type_id: 'asc' },
+      ],
+    });
+  });
+
+  it('updates max points and replaces component budget atomically', async () => {
+    prisma.annual_ranking_configs.findFirst.mockResolvedValueOnce(configRow);
+    prisma.annual_ranking_configs.update.mockResolvedValueOnce({
+      ...configRow,
+      max_points: 12000,
+    });
+
+    const result = await service.update(
+      configRow.annual_ranking_config_id,
+      {
+        max_points: 12000,
+        components: [
+          {
+            component_key: 'annual_folder',
+            label: 'Carpeta anual',
+            max_points: 6000,
+            sort_order: 1,
+          },
+          {
+            component_key: 'finance',
+            label: 'Finanzas',
+            max_points: 3000,
+            sort_order: 2,
+          },
+          {
+            component_key: 'camporee',
+            label: 'Camporee',
+            max_points: 3000,
+            sort_order: 3,
+          },
+        ],
+      },
+      USER_ID,
+    );
+
+    expect(result.max_points).toBe(12000);
+    expect(
+      prisma.annual_ranking_component_configs.deleteMany,
+    ).toHaveBeenCalledWith({
+      where: {
+        annual_ranking_config_id: configRow.annual_ranking_config_id,
+      },
+    });
+    expect(prisma.annual_ranking_configs.update).toHaveBeenCalledWith({
+      where: {
+        annual_ranking_config_id: configRow.annual_ranking_config_id,
+      },
+      data: {
+        max_points: 12000,
+        updated_by: USER_ID,
+        components: {
+          create: [
+            {
+              component_key: 'annual_folder',
+              label: 'Carpeta anual',
+              max_points: 6000,
+              sort_order: 1,
+            },
+            {
+              component_key: 'finance',
+              label: 'Finanzas',
+              max_points: 3000,
+              sort_order: 2,
+            },
+            {
+              component_key: 'camporee',
+              label: 'Camporee',
+              max_points: 3000,
+              sort_order: 3,
+            },
+          ],
+        },
+      },
+      include: {
+        components: {
+          orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
+        },
+      },
+    });
   });
 });
