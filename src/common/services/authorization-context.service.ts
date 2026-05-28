@@ -163,9 +163,13 @@ type ClubAssignmentRecord = {
 
 /**
  * Cache key for a user's resolved authorization context.
- * Convention mirrors CATALOG_CACHE_KEYS: `auth:context:{userId}`
+ * Versioned so deployments can bypass stale snapshots produced by older
+ * authorization-resolution semantics.
  */
 export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
+  `auth:context:v2:${userId}`;
+
+const LEGACY_AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
   `auth:context:${userId}`;
 
 /**
@@ -216,21 +220,26 @@ export class AuthorizationContextService {
    * Mutation points that MUST call this method:
    *   - RbacService.assignRoleToUser / removeRoleFromUser / bootstrapAdmin
    *   - RbacService.assignPermissionsToRole / removePermissionFromRole / syncRolePermissions
-   *     (affects all users that hold the modified role — per-role invalidation is not
-   *      implemented; rely on TTL expiry for role-level permission changes)
+   *     (affects all users that hold the modified role)
    *   - ClubsService.assignRole / updateRoleAssignment / removeRoleAssignment
    *   - MembershipRequestsService.approve / reject
    *   - RequestsService / PostRegistrationService when creating or mutating assignments
    */
   async invalidateUserAuthorizationCache(userId: string): Promise<void> {
-    const key = AUTH_CONTEXT_CACHE_KEY(userId);
-    try {
-      await this.cacheManager.del(key);
-      this.logger.debug(`Auth context cache INVALIDATED — ${key}`);
-    } catch (err) {
-      this.logger.warn(
-        `Auth context cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
-      );
+    const keys = [
+      AUTH_CONTEXT_CACHE_KEY(userId),
+      LEGACY_AUTH_CONTEXT_CACHE_KEY(userId),
+    ];
+
+    for (const key of keys) {
+      try {
+        await this.cacheManager.del(key);
+        this.logger.debug(`Auth context cache INVALIDATED — ${key}`);
+      } catch (err) {
+        this.logger.warn(
+          `Auth context cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
+        );
+      }
     }
   }
 
