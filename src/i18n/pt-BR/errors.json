@@ -501,5 +501,8 @@
     "support_description_max_length": "A descrição não pode exceder {max} caracteres"
   },
   "RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE": "A configuração de pesos global padrão não pode ser excluída",
-  "MEMBER_RANKINGS_CLUB_ID_INVALID": "O parâmetro club_id deve ser um número inteiro positivo"
+  "MEMBER_RANKINGS_CLUB_ID_INVALID": "O parâmetro club_id deve ser um número inteiro positivo",
+  "ANNUAL_RANKING_CONFIG_NOT_FOUND": "Não existe configuração anual de ranking para o campo local {localFieldId}, ano {ecclesiasticalYearId} e tipo de clube {clubTypeId}",
+  "ANNUAL_RANKING_CONFIG_CONFLICT": "Já existe uma configuração anual de ranking para o campo local {localFieldId}, ano {ecclesiasticalYearId} e tipo de clube {clubTypeId}",
+  "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "A soma dos componentes ({componentSum}) deve ser igual ao máximo anual ({maxPoints})"
 }

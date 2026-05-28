@@ -506,5 +506,8 @@
   "RANKING_WEIGHTS_GLOBAL_RESERVED": "club_type_id is required for override configurations; the global default row is pre-seeded and cannot be created via this endpoint",
   "RANKING_WEIGHTS_SUM_INVALID": "Weights must sum to 100; got {sum}",
   "RANKING_WEIGHTS_CLUB_TYPE_CONFLICT": "An override already exists for club_type_id {clubTypeId}",
-  "MEMBER_RANKINGS_CLUB_ID_INVALID": "The club_id parameter must be a positive integer"
+  "MEMBER_RANKINGS_CLUB_ID_INVALID": "The club_id parameter must be a positive integer",
+  "ANNUAL_RANKING_CONFIG_NOT_FOUND": "No annual ranking configuration exists for local field {localFieldId}, year {ecclesiasticalYearId}, and club type {clubTypeId}",
+  "ANNUAL_RANKING_CONFIG_CONFLICT": "An annual ranking configuration already exists for local field {localFieldId}, year {ecclesiasticalYearId}, and club type {clubTypeId}",
+  "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "Component sum ({componentSum}) must equal annual max points ({maxPoints})"
 }

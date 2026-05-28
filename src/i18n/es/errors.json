@@ -506,5 +506,8 @@
   "RANKING_WEIGHTS_GLOBAL_RESERVED": "club_type_id es requerido para configuraciones de override; la fila global predeterminada está pre-cargada y no puede crearse por este endpoint",
   "RANKING_WEIGHTS_SUM_INVALID": "Los pesos deben sumar 100; se recibió {sum}",
   "RANKING_WEIGHTS_CLUB_TYPE_CONFLICT": "Ya existe un override para el club_type_id {clubTypeId}",
-  "MEMBER_RANKINGS_CLUB_ID_INVALID": "El parámetro club_id debe ser un número entero positivo"
+  "MEMBER_RANKINGS_CLUB_ID_INVALID": "El parámetro club_id debe ser un número entero positivo",
+  "ANNUAL_RANKING_CONFIG_NOT_FOUND": "No existe una configuración anual de ranking para el campo local {localFieldId}, año {ecclesiasticalYearId} y tipo de club {clubTypeId}",
+  "ANNUAL_RANKING_CONFIG_CONFLICT": "Ya existe una configuración anual de ranking para el campo local {localFieldId}, año {ecclesiasticalYearId} y tipo de club {clubTypeId}",
+  "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "La suma de componentes ({componentSum}) debe ser igual al máximo anual ({maxPoints})"
 }

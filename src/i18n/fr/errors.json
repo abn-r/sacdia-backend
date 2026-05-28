@@ -501,5 +501,8 @@
     "support_description_max_length": "La description ne peut pas dépasser {max} caractères"
   },
   "RANKING_WEIGHTS_DEFAULT_NOT_DELETABLE": "La configuration de pondération globale par défaut ne peut pas être supprimée",
-  "MEMBER_RANKINGS_CLUB_ID_INVALID": "Le paramètre club_id doit être un entier positif"
+  "MEMBER_RANKINGS_CLUB_ID_INVALID": "Le paramètre club_id doit être un entier positif",
+  "ANNUAL_RANKING_CONFIG_NOT_FOUND": "Aucune configuration annuelle de classement n'existe pour le champ local {localFieldId}, l'année {ecclesiasticalYearId} et le type de club {clubTypeId}",
+  "ANNUAL_RANKING_CONFIG_CONFLICT": "Une configuration annuelle de classement existe déjà pour le champ local {localFieldId}, l'année {ecclesiasticalYearId} et le type de club {clubTypeId}",
+  "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "La somme des composants ({componentSum}) doit être égale au maximum annuel ({maxPoints})"
 }
