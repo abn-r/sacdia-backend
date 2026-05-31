@@ -2,9 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AnnualRankingProgressController } from './annual-ranking-progress.controller';
 import { AnnualRankingProgressService } from './annual-ranking-progress.service';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
-import type {
-  AnnualRankingProgressResponseDto,
-} from './dto/annual-ranking-progress-response.dto';
+import type { AnnualRankingProgressResponseDto } from './dto/annual-ranking-progress-response.dto';
 import type { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 
 const SECTION_ID = 2;
@@ -37,10 +35,28 @@ const progressResponse: AnnualRankingProgressResponseDto = {
     to_points: 9499,
     points_to_reach: 1300,
   },
+  axes: [
+    {
+      key: 'administrative',
+      label: 'Cumplimiento Administrativo',
+      earned_points: 4200,
+      max_points: 6000,
+      progress_percentage: 70,
+      components: [
+        {
+          key: 'annual_evidence_folder',
+          label: 'Carpeta Anual de Evidencias',
+          earned_points: 4200,
+          max_points: 6000,
+          progress_percentage: 70,
+        },
+      ],
+    },
+  ],
   components: [
     {
-      key: 'annual_folder',
-      label: 'Carpeta anual',
+      key: 'annual_evidence_folder',
+      label: 'Carpeta Anual de Evidencias',
       earned_points: 4200,
       max_points: 6000,
       progress_percentage: 70,
@@ -70,7 +86,9 @@ const authorizationProfile = {
 
 describe('AnnualRankingProgressController', () => {
   let controller: AnnualRankingProgressController;
-  let service: jest.Mocked<Pick<AnnualRankingProgressService, 'getSectionProgress'>>;
+  let service: jest.Mocked<
+    Pick<AnnualRankingProgressService, 'getSectionProgress'>
+  >;
 
   beforeEach(async () => {
     service = {

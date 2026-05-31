@@ -24,7 +24,7 @@ import { CatalogsService } from '../catalogs/catalogs.service';
 import { AnnualFoldersService } from './annual-folders.service';
 import { ErrorCode } from '../common/errors/error-codes';
 
-@ApiTags('Annual Folders')
+@ApiTags('Annual Evidence Folders')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @AuthorizationResource({ type: 'active_assignment' })
@@ -39,9 +39,9 @@ export class AnnualFolderBySectionController {
   @Get()
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({
-    summary: 'Get annual folder for a club section (current year)',
+    summary: 'Get annual evidence folder for a club section (current year)',
     description:
-      'Resolves the active ecclesiastical year, finds the enrollment for the given section, and returns the full annual folder. ' +
+      'Resolves the active ecclesiastical year, finds the enrollment for the given section, and returns the full annual evidence folder. ' +
       'Returns 200 with data: null when no active enrollment or no folder has been created yet — both are valid business states.',
   })
   @ApiParam({
@@ -53,7 +53,7 @@ export class AnnualFolderBySectionController {
   @ApiResponse({
     status: 200,
     description:
-      'Annual folder details, or { status: "success", data: null } if no active enrollment or folder exists yet',
+      'Annual Evidence Folder details, or { status: "success", data: null } if no active enrollment or folder exists yet',
   })
   @ApiResponse({
     status: 401,

@@ -41,7 +41,7 @@ describe('AnnualFolderBySectionController', () => {
     });
   });
 
-  it('returns data null when the current enrollment exists but the annual folder has not been created yet', async () => {
+  it('returns data null when the current enrollment exists but the annual evidence folder has not been created yet', async () => {
     annualFoldersService.getFolderByEnrollment.mockRejectedValue(
       new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
         id: enrollmentId,

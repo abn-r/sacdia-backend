@@ -33,7 +33,7 @@ import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { RankingBreakdownDto } from './dto/ranking-breakdown.dto';
 
-@ApiTags('Annual Folders - Rankings')
+@ApiTags('Annual Evidence Folders - Rankings')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @AuthorizationResource({ type: 'global' })

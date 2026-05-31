@@ -14,8 +14,8 @@
   "ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND": "Template section with ID {id} not found",
   "ANNUAL_FOLDER_SECTION_HAS_EVIDENCES": "Cannot delete a section that already has evidences uploaded",
   "ANNUAL_FOLDER_TEMPLATE_NO_MATCH": "No folder template found for club with type {clubTypeId} and year {yearId}",
-  "ANNUAL_FOLDER_ALREADY_EXISTS": "An annual folder already exists for this enrollment",
-  "ANNUAL_FOLDER_NOT_FOUND": "Annual folder with ID {id} not found",
+  "ANNUAL_FOLDER_ALREADY_EXISTS": "An annual evidence folder already exists for this enrollment",
+  "ANNUAL_FOLDER_NOT_FOUND": "Annual Evidence Folder with ID {id} not found",
   "ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND": "Club enrollment with ID {id} not found",
   "ANNUAL_FOLDER_FILE_REQUIRED": "File is required",
   "ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD": "Cannot upload evidence to a folder with status \"{status}\". Folder must be \"open\"",
@@ -511,6 +511,10 @@
   "ANNUAL_RANKING_CONFIG_NOT_FOUND": "No annual ranking configuration exists for local field {localFieldId}, year {ecclesiasticalYearId}, and club type {clubTypeId}",
   "ANNUAL_RANKING_CONFIG_CONFLICT": "An annual ranking configuration already exists for local field {localFieldId}, year {ecclesiasticalYearId}, and club type {clubTypeId}",
   "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "Component sum ({componentSum}) must equal annual max points ({maxPoints})",
+  "ANNUAL_RANKING_AXIS_SUM_INVALID": "Axis sum ({axisSum}) must equal annual max points ({maxPoints})",
+  "ANNUAL_RANKING_AXIS_COMPONENT_SUM_INVALID": "Component sum ({componentSum}) must equal axis max points ({axisMaxPoints}) for axis {axisKey}",
+  "ANNUAL_RANKING_COMPONENT_UNKNOWN": "Annual ranking component {componentKey} is not supported",
+  "ANNUAL_RANKING_COMPONENT_DUPLICATE": "Annual ranking component {componentKey} is duplicated in the configuration",
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "Section {sectionId} was not found for annual progress calculation",
   "ANNUAL_RANKING_SECTION_NO_CLUB": "Section {sectionId} is not linked to a main club"
 }

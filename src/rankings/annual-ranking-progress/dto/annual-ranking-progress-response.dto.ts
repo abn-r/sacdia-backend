@@ -16,6 +16,15 @@ export interface AnnualRankingProgressComponentDto {
   progress_percentage: number;
 }
 
+export interface AnnualRankingProgressAxisDto {
+  key: string;
+  label: string;
+  earned_points: number;
+  max_points: number;
+  progress_percentage: number;
+  components: AnnualRankingProgressComponentDto[];
+}
+
 export interface AnnualRankingProgressPendingItemDto {
   type: string;
   title: string;
@@ -40,6 +49,7 @@ export interface AnnualRankingProgressResponseDto {
   progress_percentage: number;
   current_tier: AnnualRankingProgressTierDto | null;
   next_tier: AnnualRankingProgressTierDto | null;
+  axes: AnnualRankingProgressAxisDto[];
   components: AnnualRankingProgressComponentDto[];
   pending_items: AnnualRankingProgressPendingItemDto[];
 }

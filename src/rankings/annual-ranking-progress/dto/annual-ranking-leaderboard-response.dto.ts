@@ -1,4 +1,5 @@
 import type {
+  AnnualRankingProgressAxisDto,
   AnnualRankingProgressComponentDto,
   AnnualRankingProgressTierDto,
 } from './annual-ranking-progress-response.dto';
@@ -16,6 +17,7 @@ export interface AnnualRankingLeaderboardRowDto {
   progress_percentage: number;
   current_tier: AnnualRankingProgressTierDto | null;
   next_tier: AnnualRankingProgressTierDto | null;
+  axes: AnnualRankingProgressAxisDto[];
   components: AnnualRankingProgressComponentDto[];
 }
 

@@ -72,7 +72,7 @@ describe('EvidenceFolderService', () => {
         active: true,
         folders: {
           folder_id: 44,
-          name: 'Carpeta de Evidencias 2026',
+          name: 'Carpeta Anual de Evidencias 2026',
           description: 'Ruta formativa',
           active: true,
           max_points: 100,
@@ -152,8 +152,8 @@ describe('EvidenceFolderService', () => {
       expect(result).toEqual(
         expect.objectContaining({
           folder_id: 44,
-          folder_name: 'Carpeta de Evidencias 2026',
-          name: 'Carpeta de Evidencias 2026',
+          folder_name: 'Carpeta Anual de Evidencias 2026',
+          name: 'Carpeta Anual de Evidencias 2026',
           description: 'Ruta formativa',
           is_open: true,
           total_points: 100,

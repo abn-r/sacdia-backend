@@ -262,7 +262,7 @@ export class AnnualFoldersService {
   // ========================================
 
   /**
-   * Create an annual folder for a club enrollment, based on the matching template.
+   * Create an annual evidence folder for a club enrollment, based on the matching template.
    * Automatically selects the template matching the enrollment's club type and year.
    */
   async createFolderForEnrollment(enrollmentId: string) {
@@ -329,7 +329,7 @@ export class AnnualFoldersService {
   }
 
   /**
-   * Get an annual folder by ID with its template sections, evidences, and evaluations.
+   * Get an annual evidence folder by ID with its template sections, evidences, and evaluations.
    */
   async getFolder(folderId: string) {
     const folder = await this.prisma.annual_folders.findUnique({
@@ -424,7 +424,7 @@ export class AnnualFoldersService {
   }
 
   /**
-   * Get an annual folder by enrollment ID with sections, evidences, and evaluations.
+   * Get an annual evidence folder by enrollment ID with sections, evidences, and evaluations.
    */
   async getFolderByEnrollment(enrollmentId: string) {
     const folder = await this.prisma.annual_folders.findUnique({
@@ -607,7 +607,7 @@ export class AnnualFoldersService {
    * owns `evidenceId`. Access is granted when ANY of these is true:
    *   1. The user holds the `super-admin` global role (god-mode bypass).
    *   2. The user has at least one active `club_role_assignment` whose
-   *      section belongs to the same club that owns the annual folder.
+   *      section belongs to the same club that owns the annual evidence folder.
    *
    * Throws `ForbiddenException` when neither condition is met.
    * Throws `NotFoundException` when the evidence or its parent folder
@@ -703,7 +703,7 @@ export class AnnualFoldersService {
    * by `folderId`. Access is granted when ANY of these is true:
    *   1. The user holds the `super-admin` global role (god-mode bypass).
    *   2. The user has at least one active `club_role_assignment` whose section
-   *      belongs to the same club that owns the annual folder.
+   *      belongs to the same club that owns the annual evidence folder.
    *
    * Resolution chain: annual_folder → club_enrollment → club_section → clubs
    *
@@ -1245,7 +1245,7 @@ export class AnnualFoldersService {
   // ========================================
 
   /**
-   * Submit a single section of an annual folder (club user operation).
+   * Submit a single section of an annual evidence folder (club user operation).
    *
    * Validates that:
    *  - The folder exists and is in 'open' status.

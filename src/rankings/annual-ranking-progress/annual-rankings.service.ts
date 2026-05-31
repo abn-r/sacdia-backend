@@ -9,7 +9,12 @@ import {
   type DerivedRankingTier,
   type RankingTierInput,
 } from './services/ranking-tier-calculator.service';
+import {
+  AnnualRankingScoreRegistryService,
+  type AnnualRankingScoreContext,
+} from './services/annual-ranking-score-registry.service';
 import type {
+  AnnualRankingProgressAxisDto,
   AnnualRankingProgressComponentDto,
   AnnualRankingProgressTierDto,
 } from './dto/annual-ranking-progress-response.dto';
@@ -26,11 +31,17 @@ interface LeaderboardQuery {
   clubTypeId: number;
 }
 
-interface RankingScoreSource {
-  folder_score_pct: unknown;
-  finance_score_pct: unknown;
-  camporee_score_pct: unknown;
-  evidence_score_pct: unknown;
+interface ConfiguredRankingComponent {
+  component_key: string;
+  label: string;
+  max_points: number;
+}
+
+interface ConfiguredRankingAxis {
+  axis_key: string;
+  label: string;
+  max_points: number;
+  components: ConfiguredRankingComponent[];
 }
 
 @Injectable()
@@ -39,6 +50,7 @@ export class AnnualRankingsService {
     private readonly prisma: PrismaService,
     private readonly configService: AnnualRankingConfigService,
     private readonly tierCalculator: RankingTierCalculatorService,
+    private readonly scoreRegistry: AnnualRankingScoreRegistryService,
   ) {}
 
   async getLeaderboard(
@@ -47,7 +59,7 @@ export class AnnualRankingsService {
   ): Promise<AnnualRankingLeaderboardResponseDto> {
     this.assertCanReadLocalField(profile, query.localFieldId);
 
-    const [config, tiers, rows] = await Promise.all([
+    const [config, tiers, rows, year] = await Promise.all([
       this.configService.getByScope({
         localFieldId: query.localFieldId,
         ecclesiasticalYearId: query.yearId,
@@ -72,7 +84,7 @@ export class AnnualRankingsService {
           ],
         },
         include: {
-          hierarchy_context: { select: { local_field_id: true } },
+          hierarchy_context: { select: { local_field_id: true, union_id: true } },
           club_enrollment: {
             include: {
               club_section: {
@@ -82,6 +94,7 @@ export class AnnualRankingsService {
                       club_id: true,
                       name: true,
                       local_field_id: true,
+                      local_fields: { select: { union_id: true } },
                     },
                   },
                 },
@@ -90,14 +103,41 @@ export class AnnualRankingsService {
           },
         },
       }),
+      this.prisma.ecclesiastical_years.findUnique({
+        where: { year_id: query.yearId },
+        select: { start_date: true },
+      }),
     ]);
 
-    const mapped = rows.map((row) => {
-      const components = this.buildComponentProgress(config.components, row);
-      const currentPoints = components.reduce(
-        (sum, component) => sum + component.earned_points,
-        0,
-      );
+    const componentsToScore = this.getConfiguredComponents(config);
+    const mapped = await Promise.all(rows.map(async (row) => {
+      const club = row.club_enrollment.club_section.clubs;
+      const scoreMap = await this.scoreConfiguredComponents(componentsToScore, {
+        clubEnrollmentId: row.club_enrollment_id,
+        clubId: club?.club_id ?? 0,
+        localFieldId:
+          row.hierarchy_context?.local_field_id ??
+          club?.local_field_id ??
+          query.localFieldId,
+        unionId:
+          row.hierarchy_context?.union_id ??
+          club?.local_fields?.union_id ??
+          null,
+        ecclesiasticalYearId: query.yearId,
+        calendarYear: this.calendarYearFromStartDate(year?.start_date),
+      });
+      const axes = this.buildAxisProgress(config.axes ?? [], scoreMap);
+      const components =
+        axes.length > 0
+          ? axes.flatMap((axis) => axis.components)
+          : this.buildComponentProgress(config.components ?? [], scoreMap);
+      const currentPoints =
+        axes.length > 0
+          ? axes.reduce((sum, axis) => sum + axis.earned_points, 0)
+          : components.reduce(
+              (sum, component) => sum + component.earned_points,
+              0,
+            );
       const resolvedTier = this.tierCalculator.resolveTier({
         currentPoints,
         maxPoints: config.max_points,
@@ -107,13 +147,13 @@ export class AnnualRankingsService {
       return {
         rank_position: 0,
         club_enrollment_id: row.club_enrollment_id,
-        club_id: row.club_enrollment.club_section.clubs?.club_id ?? 0,
-        club_name: row.club_enrollment.club_section.clubs?.name ?? 'Club',
+        club_id: club?.club_id ?? 0,
+        club_name: club?.name ?? 'Club',
         club_type_id: row.club_type_id,
         ecclesiastical_year_id: row.ecclesiastical_year_id,
         local_field_id:
           row.hierarchy_context?.local_field_id ??
-          row.club_enrollment.club_section.clubs?.local_field_id ??
+          club?.local_field_id ??
           null,
         current_points: currentPoints,
         max_points: config.max_points,
@@ -123,9 +163,10 @@ export class AnnualRankingsService {
           resolvedTier.nextTier,
           resolvedTier.pointsToNextTier,
         ),
+        axes,
         components,
       };
-    });
+    }));
 
     const ranked = this.assignDenseRanks(mapped);
 
@@ -149,16 +190,34 @@ export class AnnualRankingsService {
     }));
   }
 
+  private buildAxisProgress(
+    axes: ConfiguredRankingAxis[],
+    scoreMap: Record<string, number>,
+  ): AnnualRankingProgressAxisDto[] {
+    return axes.map((axis) => {
+      const components = this.buildComponentProgress(axis.components, scoreMap);
+      const earnedPoints = components.reduce(
+        (sum, component) => sum + component.earned_points,
+        0,
+      );
+
+      return {
+        key: axis.axis_key,
+        label: axis.label,
+        earned_points: earnedPoints,
+        max_points: axis.max_points,
+        progress_percentage: this.percentage(earnedPoints, axis.max_points),
+        components,
+      };
+    });
+  }
+
   private buildComponentProgress(
-    components: Array<{
-      component_key: string;
-      label: string;
-      max_points: number;
-    }>,
-    ranking: RankingScoreSource,
+    components: ConfiguredRankingComponent[],
+    scoreMap: Record<string, number>,
   ): AnnualRankingProgressComponentDto[] {
     return components.map((component) => {
-      const scorePct = this.scorePctFor(component.component_key, ranking);
+      const scorePct = this.scorePctFor(component.component_key, scoreMap);
       const earnedPoints = Math.round((scorePct / 100) * component.max_points);
 
       return {
@@ -166,21 +225,53 @@ export class AnnualRankingsService {
         label: component.label,
         earned_points: earnedPoints,
         max_points: component.max_points,
-        progress_percentage: this.percentage(earnedPoints, component.max_points),
+        progress_percentage: this.percentage(
+          earnedPoints,
+          component.max_points,
+        ),
       };
     });
   }
 
-  private scorePctFor(key: string, ranking: RankingScoreSource): number {
-    const scoreMap: Record<string, unknown> = {
-      annual_folder: ranking.folder_score_pct,
-      folder: ranking.folder_score_pct,
-      finance: ranking.finance_score_pct,
-      camporee: ranking.camporee_score_pct,
-      evidence: ranking.evidence_score_pct,
-    };
-
+  private scorePctFor(key: string, scoreMap: Record<string, number>): number {
     return Math.max(0, Math.min(100, Number(scoreMap[key] ?? 0)));
+  }
+
+  private getConfiguredComponents(config: {
+    axes?: ConfiguredRankingAxis[] | null;
+    components?: ConfiguredRankingComponent[] | null;
+  }): ConfiguredRankingComponent[] {
+    const axes = config.axes ?? [];
+    if (axes.length > 0) {
+      return axes.flatMap((axis) => axis.components);
+    }
+
+    return config.components ?? [];
+  }
+
+  private async scoreConfiguredComponents(
+    components: ConfiguredRankingComponent[],
+    context: AnnualRankingScoreContext,
+  ): Promise<Record<string, number>> {
+    const entries = await Promise.all(
+      components.map(async (component) => {
+        const result = await this.scoreRegistry.scoreComponent(
+          { component_key: component.component_key, active: true },
+          context,
+        );
+
+        return [component.component_key, result.score_pct] as const;
+      }),
+    );
+
+    return Object.fromEntries(entries);
+  }
+
+  private calendarYearFromStartDate(
+    startDate: Date | string | null | undefined,
+  ): number {
+    if (startDate == null) return new Date().getUTCFullYear();
+    return new Date(startDate).getUTCFullYear();
   }
 
   private assignDenseRanks(
@@ -257,7 +348,9 @@ export class AnnualRankingsService {
     throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
   }
 
-  private toNumericScopeId(value: number | string | null | undefined): number | null {
+  private toNumericScopeId(
+    value: number | string | null | undefined,
+  ): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
     if (typeof value === 'string') {
       const parsed = Number(value);

@@ -12,21 +12,30 @@ import {
   type DerivedRankingTier,
   type RankingTierInput,
 } from './services/ranking-tier-calculator.service';
+import {
+  AnnualRankingScoreRegistryService,
+  type AnnualRankingScoreContext,
+} from './services/annual-ranking-score-registry.service';
 import type {
+  AnnualRankingProgressAxisDto,
   AnnualRankingProgressComponentDto,
   AnnualRankingProgressPendingItemDto,
   AnnualRankingProgressResponseDto,
   AnnualRankingProgressTierDto,
 } from './dto/annual-ranking-progress-response.dto';
 
-const GENERAL_RANKING_CATEGORY_ID = '00000000-0000-0000-0000-000000000000';
+interface ConfiguredRankingComponent {
+  component_key: string;
+  label: string;
+  max_points: number;
+}
 
-type ScoreKey =
-  | 'annual_folder'
-  | 'finance'
-  | 'camporee'
-  | 'evidence'
-  | string;
+interface ConfiguredRankingAxis {
+  axis_key: string;
+  label: string;
+  max_points: number;
+  components: ConfiguredRankingComponent[];
+}
 
 @Injectable()
 export class AnnualRankingProgressService {
@@ -34,6 +43,7 @@ export class AnnualRankingProgressService {
     private readonly prisma: PrismaService,
     private readonly configService: AnnualRankingConfigService,
     private readonly tierCalculator: RankingTierCalculatorService,
+    private readonly scoreRegistry: AnnualRankingScoreRegistryService,
   ) {}
 
   async getSectionProgress(
@@ -57,15 +67,19 @@ export class AnnualRankingProgressService {
             club_id: true,
             name: true,
             local_field_id: true,
+            local_fields: { select: { union_id: true } },
           },
         },
       },
     });
 
     if (!section) {
-      throw new AppNotFoundException(ErrorCode.ANNUAL_RANKING_SECTION_NOT_FOUND, {
-        sectionId: String(sectionId),
-      });
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_RANKING_SECTION_NOT_FOUND,
+        {
+          sectionId: String(sectionId),
+        },
+      );
     }
 
     if (!section.clubs) {
@@ -80,7 +94,7 @@ export class AnnualRankingProgressService {
       localFieldId: section.clubs.local_field_id,
     });
 
-    const [config, tiers, enrollment] = await Promise.all([
+    const [config, tiers, enrollment, year] = await Promise.all([
       this.configService.getByScope({
         localFieldId: section.clubs.local_field_id,
         ecclesiasticalYearId: yearId,
@@ -94,30 +108,42 @@ export class AnnualRankingProgressService {
         },
         select: { club_enrollment_id: true },
       }),
+      this.prisma.ecclesiastical_years.findUnique({
+        where: { year_id: yearId },
+        select: { start_date: true },
+      }),
     ]);
 
-    const ranking = enrollment
-      ? await this.prisma.club_annual_rankings.findFirst({
-          where: {
-            club_enrollment_id: enrollment.club_enrollment_id,
-            ecclesiastical_year_id: yearId,
-            award_category_id: GENERAL_RANKING_CATEGORY_ID,
+    const scoreMap = enrollment
+      ? await this.scoreConfiguredComponents(
+          this.getConfiguredComponents(config),
+          {
+            clubEnrollmentId: enrollment.club_enrollment_id,
+            clubId: section.clubs.club_id,
+            localFieldId: section.clubs.local_field_id,
+            unionId: section.clubs.local_fields?.union_id ?? null,
+            ecclesiasticalYearId: yearId,
+            calendarYear: this.calendarYearFromStartDate(year?.start_date),
           },
-          select: {
-            folder_score_pct: true,
-            finance_score_pct: true,
-            camporee_score_pct: true,
-            evidence_score_pct: true,
-          },
-        })
-      : null;
+        )
+      : {};
 
-    const components = this.buildComponentProgress(config.components, ranking);
-    const currentPoints = components.reduce(
-      (sum, component) => sum + component.earned_points,
-      0,
+    const axes = this.buildAxisProgress(config.axes ?? [], scoreMap);
+    const components =
+      axes.length > 0
+        ? axes.flatMap((axis) => axis.components)
+        : this.buildComponentProgress(config.components ?? [], scoreMap);
+    const currentPoints =
+      axes.length > 0
+        ? axes.reduce((sum, axis) => sum + axis.earned_points, 0)
+        : components.reduce(
+            (sum, component) => sum + component.earned_points,
+            0,
+          );
+    const progressPercentage = this.percentage(
+      currentPoints,
+      config.max_points,
     );
-    const progressPercentage = this.percentage(currentPoints, config.max_points);
     const resolvedTier = this.tierCalculator.resolveTier({
       currentPoints,
       maxPoints: config.max_points,
@@ -147,6 +173,7 @@ export class AnnualRankingProgressService {
         resolvedTier.nextTier,
         resolvedTier.pointsToNextTier,
       ),
+      axes,
       components,
       pending_items: pendingItems,
     };
@@ -166,55 +193,86 @@ export class AnnualRankingProgressService {
     }));
   }
 
+  private buildAxisProgress(
+    axes: ConfiguredRankingAxis[],
+    scoreMap: Record<string, number>,
+  ): AnnualRankingProgressAxisDto[] {
+    return axes.map((axis) => {
+      const components = this.buildComponentProgress(axis.components, scoreMap);
+      const earnedPoints = components.reduce(
+        (sum, component) => sum + component.earned_points,
+        0,
+      );
+
+      return {
+        key: axis.axis_key,
+        label: axis.label,
+        earned_points: earnedPoints,
+        max_points: axis.max_points,
+        progress_percentage: this.percentage(earnedPoints, axis.max_points),
+        components,
+      };
+    });
+  }
+
   private buildComponentProgress(
-    components: Array<{
-      component_key: string;
-      label: string;
-      max_points: number;
-    }>,
-    ranking: {
-      folder_score_pct: unknown;
-      finance_score_pct: unknown;
-      camporee_score_pct: unknown;
-      evidence_score_pct: unknown;
-    } | null,
+    components: ConfiguredRankingComponent[],
+    scoreMap: Record<string, number>,
   ): AnnualRankingProgressComponentDto[] {
     return components.map((component) => {
-      const scorePct = this.scorePctFor(component.component_key, ranking);
-      const earnedPoints = Math.round(
-        (scorePct / 100) * component.max_points,
-      );
+      const scorePct = this.scorePctFor(component.component_key, scoreMap);
+      const earnedPoints = Math.round((scorePct / 100) * component.max_points);
 
       return {
         key: component.component_key,
         label: component.label,
         earned_points: earnedPoints,
         max_points: component.max_points,
-        progress_percentage: this.percentage(earnedPoints, component.max_points),
+        progress_percentage: this.percentage(
+          earnedPoints,
+          component.max_points,
+        ),
       };
     });
   }
 
-  private scorePctFor(
-    key: ScoreKey,
-    ranking: {
-      folder_score_pct: unknown;
-      finance_score_pct: unknown;
-      camporee_score_pct: unknown;
-      evidence_score_pct: unknown;
-    } | null,
-  ): number {
-    if (!ranking) return 0;
-
-    const scoreMap: Record<string, unknown> = {
-      annual_folder: ranking.folder_score_pct,
-      folder: ranking.folder_score_pct,
-      finance: ranking.finance_score_pct,
-      camporee: ranking.camporee_score_pct,
-      evidence: ranking.evidence_score_pct,
-    };
-
+  private scorePctFor(key: string, scoreMap: Record<string, number>): number {
     return Math.max(0, Math.min(100, Number(scoreMap[key] ?? 0)));
+  }
+
+  private getConfiguredComponents(config: {
+    axes?: ConfiguredRankingAxis[] | null;
+    components?: ConfiguredRankingComponent[] | null;
+  }): ConfiguredRankingComponent[] {
+    const axes = config.axes ?? [];
+    if (axes.length > 0) {
+      return axes.flatMap((axis) => axis.components);
+    }
+
+    return config.components ?? [];
+  }
+
+  private async scoreConfiguredComponents(
+    components: ConfiguredRankingComponent[],
+    context: AnnualRankingScoreContext,
+  ): Promise<Record<string, number>> {
+    const entries = await Promise.all(
+      components.map(async (component) => {
+        const result = await this.scoreRegistry.scoreComponent(
+          { component_key: component.component_key, active: true },
+          context,
+        );
+
+        return [component.component_key, result.score_pct] as const;
+      }),
+    );
+
+    return Object.fromEntries(entries);
+  }
+
+  private calendarYearFromStartDate(startDate: Date | string | null | undefined) {
+    if (startDate == null) return new Date().getUTCFullYear();
+    return new Date(startDate).getUTCFullYear();
   }
 
   private async getPendingItems(

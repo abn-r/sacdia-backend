@@ -22,7 +22,7 @@ const dto = {
   components: [
     {
       component_key: 'annual_folder',
-      label: 'Carpeta anual',
+      label: 'Carpeta Anual de Evidencias',
       max_points: 6000,
       sort_order: 1,
     },

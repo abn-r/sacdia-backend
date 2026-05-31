@@ -506,6 +506,10 @@
   "ANNUAL_RANKING_CONFIG_NOT_FOUND": "Aucune configuration annuelle de classement n'existe pour le champ local {localFieldId}, l'année {ecclesiasticalYearId} et le type de club {clubTypeId}",
   "ANNUAL_RANKING_CONFIG_CONFLICT": "Une configuration annuelle de classement existe déjà pour le champ local {localFieldId}, l'année {ecclesiasticalYearId} et le type de club {clubTypeId}",
   "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "La somme des composants ({componentSum}) doit être égale au maximum annuel ({maxPoints})",
+  "ANNUAL_RANKING_AXIS_SUM_INVALID": "La somme des axes ({axisSum}) doit être égale au maximum annuel ({maxPoints})",
+  "ANNUAL_RANKING_AXIS_COMPONENT_SUM_INVALID": "La somme des composants ({componentSum}) doit être égale au maximum de l'axe ({axisMaxPoints}) pour l'axe {axisKey}",
+  "ANNUAL_RANKING_COMPONENT_UNKNOWN": "Le composant de classement annuel {componentKey} n'est pas pris en charge",
+  "ANNUAL_RANKING_COMPONENT_DUPLICATE": "Le composant de classement annuel {componentKey} est dupliqué dans la configuration",
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "La section {sectionId} est introuvable pour le calcul de la progression annuelle",
   "ANNUAL_RANKING_SECTION_NO_CLUB": "La section {sectionId} n'est pas liée à un club principal"
 }

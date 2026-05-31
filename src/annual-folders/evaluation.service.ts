@@ -28,7 +28,7 @@ export class EvaluationService {
   // ========================================
 
   /**
-   * Evaluate a section of an annual folder (LF action).
+   * Evaluate a section of an annual evidence folder (LF action).
    * Rows are eagerly created in PENDING by T-B2-1; this method updates the
    * pre-existing row instead of creating one.  Status transitions:
    *   SUBMITTED → PREAPPROVED_LF  (when requires_union_confirmation=true)
@@ -754,7 +754,7 @@ export class EvaluationService {
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(
-          `Unable to persist hierarchy snapshot for annual folder club=${input.clubId}: ${message}`,
+          `Unable to persist hierarchy snapshot for annual evidence folder club=${input.clubId}: ${message}`,
         );
         return null;
       });

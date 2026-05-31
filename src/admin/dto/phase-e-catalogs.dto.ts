@@ -190,7 +190,7 @@ export class UpdateClassSectionDto extends PartialType(CreateClassSectionDto) {}
 // ─── FOLDERS ─────────────────────────────────────────────────────────────────
 
 export class CreateFolderDto {
-  @ApiProperty({ example: 'Carpeta Anual 2025', maxLength: 255 })
+  @ApiProperty({ example: 'Carpeta Anual de Evidencias 2025', maxLength: 255 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)

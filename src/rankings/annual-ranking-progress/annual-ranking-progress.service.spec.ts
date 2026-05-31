@@ -3,6 +3,7 @@ import { AnnualRankingProgressService } from './annual-ranking-progress.service'
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnnualRankingConfigService } from './annual-ranking-config.service';
 import { RankingTierCalculatorService } from './services/ranking-tier-calculator.service';
+import { AnnualRankingScoreRegistryService } from './services/annual-ranking-score-registry.service';
 import { AppForbiddenException } from '../../common/errors/app.exception';
 import type { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 
@@ -21,19 +22,55 @@ const sectionRow = {
     club_id: CLUB_ID,
     name: 'Halcones',
     local_field_id: LOCAL_FIELD_ID,
+    local_fields: { union_id: 2 },
   },
 };
 
 const configRow = {
   max_points: 10000,
+  axes: [
+    {
+      axis_key: 'administrative',
+      label: 'Cumplimiento Administrativo',
+      max_points: 8000,
+      components: [
+        {
+          component_key: 'annual_evidence_folder',
+          label: 'Carpeta Anual de Evidencias',
+          max_points: 6000,
+        },
+        {
+          component_key: 'finance_compliance',
+          label: 'Finanzas',
+          max_points: 2000,
+        },
+      ],
+    },
+    {
+      axis_key: 'operational',
+      label: 'Vida Operativa del Club',
+      max_points: 2000,
+      components: [
+        {
+          component_key: 'camporee_events',
+          label: 'Camporee',
+          max_points: 2000,
+        },
+      ],
+    },
+  ],
   components: [
     {
-      component_key: 'annual_folder',
-      label: 'Carpeta anual',
+      component_key: 'annual_evidence_folder',
+      label: 'Carpeta Anual de Evidencias',
       max_points: 6000,
     },
-    { component_key: 'finance', label: 'Finanzas', max_points: 2000 },
-    { component_key: 'camporee', label: 'Camporee', max_points: 2000 },
+    {
+      component_key: 'finance_compliance',
+      label: 'Finanzas',
+      max_points: 2000,
+    },
+    { component_key: 'camporee_events', label: 'Camporee', max_points: 2000 },
   ],
 };
 
@@ -138,6 +175,7 @@ describe('AnnualRankingProgressService', () => {
   let prisma: any;
   let configService: jest.Mocked<AnnualRankingConfigService>;
   let tierCalculator: jest.Mocked<RankingTierCalculatorService>;
+  let scoreRegistry: jest.Mocked<AnnualRankingScoreRegistryService>;
 
   beforeEach(async () => {
     prisma = {
@@ -150,9 +188,19 @@ describe('AnnualRankingProgressService', () => {
       club_annual_rankings: {
         findFirst: jest.fn().mockResolvedValue(rankingRow),
       },
+      ecclesiastical_years: {
+        findUnique: jest.fn().mockResolvedValue({
+          start_date: new Date('2026-01-01T00:00:00Z'),
+        }),
+      },
       ranking_tiers: {
         findMany: jest.fn().mockResolvedValue([
-          { name: 'Diamante', slug: 'diamante', band_percentage: 5, sort_order: 1 },
+          {
+            name: 'Diamante',
+            slug: 'diamante',
+            band_percentage: 5,
+            sort_order: 1,
+          },
           { name: 'Oro', slug: 'oro', band_percentage: 10, sort_order: 2 },
         ]),
       },
@@ -171,6 +219,29 @@ describe('AnnualRankingProgressService', () => {
     configService = {
       getByScope: jest.fn().mockResolvedValue(configRow),
     } as any;
+
+    scoreRegistry = {
+      scoreComponent: jest.fn(async (component) => {
+        const scores: Record<string, number> = {
+          annual_evidence_folder: 70,
+          monthly_reports_timeliness: 75,
+          finance_compliance: 50,
+          institutional_data_completeness: 90,
+          activities_registered: 66.67,
+          attendance_participation: 88.5,
+          camporee_events: 100,
+          class_investiture_progress: 40,
+          sacdia_operational_usage: 55.56,
+        };
+
+        return {
+          score_pct: scores[component.component_key] ?? 0,
+          source_status: 'available',
+          source: 'annual_folder',
+        } as any;
+      }),
+    } as any;
+
     tierCalculator = {
       resolveTier: jest.fn().mockReturnValue({
         currentTier: {
@@ -196,6 +267,7 @@ describe('AnnualRankingProgressService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AnnualRankingConfigService, useValue: configService },
         { provide: RankingTierCalculatorService, useValue: tierCalculator },
+        { provide: AnnualRankingScoreRegistryService, useValue: scoreRegistry },
       ],
     }).compile();
 
@@ -214,25 +286,66 @@ describe('AnnualRankingProgressService', () => {
     expect(result.progress_percentage).toBe(72);
     expect(result.components).toEqual([
       {
-        key: 'annual_folder',
-        label: 'Carpeta anual',
+        key: 'annual_evidence_folder',
+        label: 'Carpeta Anual de Evidencias',
         earned_points: 4200,
         max_points: 6000,
         progress_percentage: 70,
       },
       {
-        key: 'finance',
+        key: 'finance_compliance',
         label: 'Finanzas',
         earned_points: 1000,
         max_points: 2000,
         progress_percentage: 50,
       },
       {
-        key: 'camporee',
+        key: 'camporee_events',
         label: 'Camporee',
         earned_points: 2000,
         max_points: 2000,
         progress_percentage: 100,
+      },
+    ]);
+    expect(result.axes).toEqual([
+      {
+        key: 'administrative',
+        label: 'Cumplimiento Administrativo',
+        earned_points: 5200,
+        max_points: 8000,
+        progress_percentage: 65,
+        components: [
+          {
+            key: 'annual_evidence_folder',
+            label: 'Carpeta Anual de Evidencias',
+            earned_points: 4200,
+            max_points: 6000,
+            progress_percentage: 70,
+          },
+          {
+            key: 'finance_compliance',
+            label: 'Finanzas',
+            earned_points: 1000,
+            max_points: 2000,
+            progress_percentage: 50,
+          },
+        ],
+      },
+      {
+        key: 'operational',
+        label: 'Vida Operativa del Club',
+        earned_points: 2000,
+        max_points: 2000,
+        progress_percentage: 100,
+        components: [
+          {
+            key: 'camporee_events',
+            label: 'Camporee',
+            earned_points: 2000,
+            max_points: 2000,
+            progress_percentage: 100,
+          },
+        ],
       },
     ]);
     expect(result.next_tier?.points_to_reach).toBe(1300);
@@ -245,6 +358,67 @@ describe('AnnualRankingProgressService', () => {
         action_label: 'Ver evidencia',
       },
     ]);
+  });
+
+
+  it('scores expanded annual ranking components through the registry', async () => {
+    configService.getByScope.mockResolvedValueOnce({
+      max_points: 9000,
+      axes: [
+        {
+          axis_key: 'administrative',
+          label: 'Cumplimiento Administrativo',
+          max_points: 4000,
+          components: [
+            { component_key: 'annual_evidence_folder', label: 'Carpeta Anual de Evidencias', max_points: 1000 },
+            { component_key: 'monthly_reports_timeliness', label: 'Informes mensuales', max_points: 1000 },
+            { component_key: 'finance_compliance', label: 'Finanzas', max_points: 1000 },
+            { component_key: 'institutional_data_completeness', label: 'Datos institucionales', max_points: 1000 },
+          ],
+        },
+        {
+          axis_key: 'operational',
+          label: 'Vida Operativa del Club',
+          max_points: 5000,
+          components: [
+            { component_key: 'activities_registered', label: 'Actividades', max_points: 1000 },
+            { component_key: 'attendance_participation', label: 'Asistencia', max_points: 1000 },
+            { component_key: 'camporee_events', label: 'Camporee', max_points: 1000 },
+            { component_key: 'class_investiture_progress', label: 'Clases', max_points: 1000 },
+            { component_key: 'sacdia_operational_usage', label: 'Uso SACDIA', max_points: 1000 },
+          ],
+        },
+      ],
+      components: [],
+    } as any);
+
+    const result = await service.getSectionProgress(
+      SECTION_ID,
+      YEAR_ID,
+      makeProfile(),
+    );
+
+    expect(result.current_points).toBe(6358);
+    expect(result.axes[0].earned_points).toBe(2850);
+    expect(result.axes[1].earned_points).toBe(3508);
+    expect(result.components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'monthly_reports_timeliness', earned_points: 750 }),
+        expect.objectContaining({ key: 'activities_registered', earned_points: 667 }),
+        expect.objectContaining({ key: 'sacdia_operational_usage', earned_points: 556 }),
+      ]),
+    );
+    expect(scoreRegistry.scoreComponent).toHaveBeenCalledWith(
+      { component_key: 'monthly_reports_timeliness', active: true },
+      expect.objectContaining({
+        clubEnrollmentId: 'enrollment-1',
+        clubId: CLUB_ID,
+        localFieldId: LOCAL_FIELD_ID,
+        unionId: 2,
+        ecclesiasticalYearId: YEAR_ID,
+        calendarYear: 2026,
+      }),
+    );
   });
 
   it('resolves annual config from section local field, year, and club type', async () => {

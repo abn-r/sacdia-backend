@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsInt,
+  IsOptional,
   IsString,
   MaxLength,
   Min,
@@ -22,7 +23,7 @@ export class CreateAnnualRankingComponentConfigDto {
 
   @ApiProperty({
     description: 'Human-readable component label',
-    example: 'Carpeta anual',
+    example: 'Carpeta Anual de Evidencias',
   })
   @IsString()
   @MaxLength(120)
@@ -44,6 +45,48 @@ export class CreateAnnualRankingComponentConfigDto {
   @IsInt()
   @Min(0)
   sort_order?: number = 0;
+}
+
+export class CreateAnnualRankingAxisConfigDto {
+  @ApiProperty({
+    description: 'Stable axis key, e.g. administrative or operational',
+    example: 'administrative',
+  })
+  @IsString()
+  @MaxLength(50)
+  axis_key!: string;
+
+  @ApiProperty({
+    description: 'Human-readable axis label',
+    example: 'Cumplimiento Administrativo',
+  })
+  @IsString()
+  @MaxLength(120)
+  label!: string;
+
+  @ApiProperty({
+    description: 'Maximum points budget for this axis',
+    example: 5000,
+  })
+  @IsInt()
+  @Min(1)
+  max_points!: number;
+
+  @ApiProperty({
+    description: 'Display order',
+    example: 1,
+    default: 0,
+  })
+  @IsInt()
+  @Min(0)
+  sort_order?: number = 0;
+
+  @ApiProperty({ type: [CreateAnnualRankingComponentConfigDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateAnnualRankingComponentConfigDto)
+  components!: CreateAnnualRankingComponentConfigDto[];
 }
 
 export class CreateAnnualRankingConfigDto {
@@ -71,10 +114,29 @@ export class CreateAnnualRankingConfigDto {
   @Min(1)
   max_points!: number;
 
-  @ApiProperty({ type: [CreateAnnualRankingComponentConfigDto] })
+  @ApiProperty({
+    type: [CreateAnnualRankingAxisConfigDto],
+    required: false,
+    description:
+      'Preferred axis-based ranking budget. New writes should use this shape.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateAnnualRankingAxisConfigDto)
+  axes?: CreateAnnualRankingAxisConfigDto[];
+
+  @ApiProperty({
+    type: [CreateAnnualRankingComponentConfigDto],
+    required: false,
+    description:
+      'Legacy flat component budget. Accepted for backwards compatibility and normalized to axes.',
+  })
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CreateAnnualRankingComponentConfigDto)
-  components!: CreateAnnualRankingComponentConfigDto[];
+  components?: CreateAnnualRankingComponentConfigDto[];
 }

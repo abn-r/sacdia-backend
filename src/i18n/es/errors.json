@@ -14,8 +14,8 @@
   "ANNUAL_FOLDER_TEMPLATE_SECTION_NOT_FOUND": "Sección de plantilla con ID {id} no encontrada",
   "ANNUAL_FOLDER_SECTION_HAS_EVIDENCES": "No se puede eliminar una sección que ya tiene evidencias cargadas",
   "ANNUAL_FOLDER_TEMPLATE_NO_MATCH": "No se encontró plantilla para el club con tipo {clubTypeId} y año {yearId}",
-  "ANNUAL_FOLDER_ALREADY_EXISTS": "Ya existe una carpeta anual para esta inscripción",
-  "ANNUAL_FOLDER_NOT_FOUND": "Carpeta anual con ID {id} no encontrada",
+  "ANNUAL_FOLDER_ALREADY_EXISTS": "Ya existe una Carpeta Anual de Evidencias para esta inscripción",
+  "ANNUAL_FOLDER_NOT_FOUND": "Carpeta Anual de Evidencias con ID {id} no encontrada",
   "ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND": "Inscripción de club con ID {id} no encontrada",
   "ANNUAL_FOLDER_FILE_REQUIRED": "El archivo es requerido",
   "ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD": "No se puede cargar evidencia en una carpeta con estado \"{status}\". La carpeta debe estar en estado \"open\"",
@@ -511,6 +511,10 @@
   "ANNUAL_RANKING_CONFIG_NOT_FOUND": "No existe una configuración anual de ranking para el campo local {localFieldId}, año {ecclesiasticalYearId} y tipo de club {clubTypeId}",
   "ANNUAL_RANKING_CONFIG_CONFLICT": "Ya existe una configuración anual de ranking para el campo local {localFieldId}, año {ecclesiasticalYearId} y tipo de club {clubTypeId}",
   "ANNUAL_RANKING_COMPONENT_SUM_INVALID": "La suma de componentes ({componentSum}) debe ser igual al máximo anual ({maxPoints})",
+  "ANNUAL_RANKING_AXIS_SUM_INVALID": "La suma de ejes ({axisSum}) debe ser igual al máximo anual ({maxPoints})",
+  "ANNUAL_RANKING_AXIS_COMPONENT_SUM_INVALID": "La suma de componentes ({componentSum}) debe ser igual al máximo del eje ({axisMaxPoints}) para el eje {axisKey}",
+  "ANNUAL_RANKING_COMPONENT_UNKNOWN": "El componente de ranking anual {componentKey} no está soportado",
+  "ANNUAL_RANKING_COMPONENT_DUPLICATE": "El componente de ranking anual {componentKey} está duplicado en la configuración",
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "No se encontró la sección {sectionId} para calcular el progreso anual",
   "ANNUAL_RANKING_SECTION_NO_CLUB": "La sección {sectionId} no está vinculada a un club principal"
 }

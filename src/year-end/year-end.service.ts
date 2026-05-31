@@ -127,7 +127,7 @@ export class YearEndService {
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
           this.logger.warn(
-            `Unable to persist hierarchy snapshot for annual folder ${folder.annual_folder_id}: ${message}`,
+            `Unable to persist hierarchy snapshot for annual evidence folder ${folder.annual_folder_id}: ${message}`,
           );
           return null;
         });
