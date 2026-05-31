@@ -368,6 +368,7 @@
   "POST_REG_LEGAL_REP_REQUIRED": "Minors under 18 must register a legal representative",
   "POST_REG_CLUB_NOT_FOUND": "Club not found",
   "POST_REG_CLASS_NOT_FOUND": "Class not found or inactive",
+  "POST_REG_CLASS_NOT_ELIGIBLE": "The selected class does not match the user's age and selected club type for the current ecclesiastical year",
   "POST_REG_DUPLICATE_MEMBERSHIP": "You already have an active or pending membership in a club of the same type",
   "POST_REG_NO_ACTIVE_YEAR": "No active ecclesiastical year configured",
   "POST_REG_MEMBER_ROLE_NOT_FOUND": "Role 'member' not found in the system",

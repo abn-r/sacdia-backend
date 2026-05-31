@@ -509,10 +509,9 @@ export class AnnualFoldersService {
     });
 
     if (!folder) {
-      throw new AppNotFoundException(
-        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
-        { id: enrollmentId },
-      );
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: enrollmentId,
+      });
     }
 
     await this.presignFolderEvidences(folder.evidences);

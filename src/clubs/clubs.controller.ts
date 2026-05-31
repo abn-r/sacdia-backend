@@ -28,12 +28,14 @@ import {
   CreateClubSectionDto,
   UpdateClubSectionDto,
   AssignRoleDto,
+  DirectorSuccessionDto,
   UpdateRoleAssignmentDto,
 } from './dto';
 import { ClubHistoryResponseDto } from './dto/overview.dto';
 import {
   AuthorizationResource,
   ClubRoles,
+  CurrentUser,
   RequirePermissions,
 } from '../common/decorators';
 import {
@@ -349,6 +351,26 @@ export class ClubsController {
       ...dto,
       club_section_id: sectionId,
     });
+  }
+
+  @Post(':clubId/sections/:sectionId/director-succession')
+  @RequirePermissions('club_roles:assign', 'club_roles:revoke')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Sucesión anual de director de sección',
+    description:
+      'Cierra la asignación activa del director actual y crea la nueva asignación director para el año eclesiástico indicado. Solo director-lf y assistant-lf pueden ejecutar este flujo.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 201, description: 'Sucesión aplicada' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  async succeedDirector(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
+    @Body() dto: DirectorSuccessionDto,
+  ) {
+    return this.clubsService.succeedSectionDirector(sectionId, user.sub, dto);
   }
 }
 

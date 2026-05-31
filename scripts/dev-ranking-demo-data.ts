@@ -664,6 +664,11 @@ async function cleanupDemoData(client: Client): Promise<void> {
     );
 
     await client.query(
+      `DELETE FROM hierarchy_contexts WHERE context->>'demo_batch' = $1`,
+      [BATCH_TAG],
+    );
+
+    await client.query(
       `
         DELETE FROM club_enrollments
         WHERE club_section_id IN (
@@ -681,10 +686,6 @@ async function cleanupDemoData(client: Client): Promise<void> {
     await client.query(`DELETE FROM clubs WHERE name LIKE $1`, [
       `${BATCH_TAG}%`,
     ]);
-    await client.query(
-      `DELETE FROM hierarchy_contexts WHERE context->>'demo_batch' = $1`,
-      [BATCH_TAG],
-    );
     await client.query(`DELETE FROM system_config WHERE config_key = $1`, [
       MANIFEST_KEY,
     ]);

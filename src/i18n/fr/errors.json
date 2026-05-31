@@ -367,6 +367,7 @@
   "POST_REG_LEGAL_REP_REQUIRED": "Les mineurs de 18 ans doivent enregistrer un représentant légal",
   "POST_REG_CLUB_NOT_FOUND": "Club introuvable",
   "POST_REG_CLASS_NOT_FOUND": "Classe introuvable ou inactive",
+  "POST_REG_CLASS_NOT_ELIGIBLE": "La classe sélectionnée ne correspond pas à l'âge de l'utilisateur ni au type de club sélectionné pour l'année ecclésiastique actuelle",
   "POST_REG_DUPLICATE_MEMBERSHIP": "Vous avez déjà une adhésion active ou en attente dans un club du même type",
   "POST_REG_NO_ACTIVE_YEAR": "Aucune année ecclésiastique active configurée",
   "POST_REG_MEMBER_ROLE_NOT_FOUND": "Le rôle 'member' n'a pas été trouvé dans le système",

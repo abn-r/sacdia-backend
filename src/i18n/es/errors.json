@@ -368,6 +368,7 @@
   "POST_REG_LEGAL_REP_REQUIRED": "Los menores de 18 años deben registrar un representante legal",
   "POST_REG_CLUB_NOT_FOUND": "Club no encontrado",
   "POST_REG_CLASS_NOT_FOUND": "Clase no encontrada o inactiva",
+  "POST_REG_CLASS_NOT_ELIGIBLE": "La clase seleccionada no corresponde a la edad del usuario y al tipo de club seleccionado para el año eclesiástico actual",
   "POST_REG_DUPLICATE_MEMBERSHIP": "Ya tienes una membresía activa o pendiente en un club del mismo tipo",
   "POST_REG_NO_ACTIVE_YEAR": "No hay año eclesiástico activo configurado",
   "POST_REG_MEMBER_ROLE_NOT_FOUND": "El rol 'member' no fue encontrado en el sistema",

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpException,
   NotFoundException,
   Param,
   ParseIntPipe,
@@ -21,6 +22,7 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { ClubEnrollmentsService } from '../club-enrollments/club-enrollments.service';
 import { CatalogsService } from '../catalogs/catalogs.service';
 import { AnnualFoldersService } from './annual-folders.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 @ApiTags('Annual Folders')
 @ApiBearerAuth()
@@ -85,7 +87,13 @@ export class AnnualFolderBySectionController {
     } catch (err: unknown) {
       // La carpeta no existe todavía — estado de negocio válido, no un error.
       // Dejamos pasar cualquier otro error (ForbiddenException, 500, etc.).
-      if (err instanceof NotFoundException) {
+      if (
+        err instanceof NotFoundException ||
+        (err instanceof HttpException &&
+          'code' in err &&
+          (err.code === ErrorCode.ANNUAL_FOLDER_NOT_FOUND ||
+            err.code === ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND))
+      ) {
         return { status: 'success', data: null };
       }
       throw err;

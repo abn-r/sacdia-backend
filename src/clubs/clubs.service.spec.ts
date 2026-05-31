@@ -30,11 +30,18 @@ describe('ClubsService', () => {
     },
     club_role_assignments: {
       findMany: jest.fn(),
+      findUnique: jest.fn(),
+      count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
     roles: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+    role_slot_limits: {
+      findUnique: jest.fn(),
     },
     activities: {
       findMany: jest.fn(),
@@ -55,6 +62,7 @@ describe('ClubsService', () => {
     enrollments: {
       count: jest.fn(),
     },
+    $transaction: jest.fn(),
   };
 
   const mockFileStorageService = {
@@ -68,6 +76,12 @@ describe('ClubsService', () => {
     listByClub: jest.fn(),
   };
 
+  const mockAuthorizationContextService = {
+    invalidateUserAuthorizationCache: jest.fn(),
+    hasAnyGlobalRole: jest.fn(),
+    canManageClub: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -76,11 +90,11 @@ describe('ClubsService', () => {
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
         {
           provide: AuthorizationContextService,
-          useValue: { invalidateUserAuthorizationCache: jest.fn() },
+          useValue: mockAuthorizationContextService,
         },
         {
           provide: NotificationsService,
-          useValue: { sendSilentToSection: jest.fn() },
+          useValue: { sendSilentToSection: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: AuditLogsService,
@@ -421,6 +435,21 @@ describe('ClubsService', () => {
 
   describe('updateRoleAssignment', () => {
     it('should update role_id on an existing assignment without recreating it', async () => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        user_id: 'user-1',
+        role_id: 'role-1',
+        club_section_id: 1,
+        active: true,
+      });
+      mockPrismaService.role_slot_limits.findUnique.mockResolvedValue({
+        max_per_section: 2,
+      });
+      mockPrismaService.club_role_assignments.count.mockResolvedValue(0);
+      mockPrismaService.roles.findUnique.mockResolvedValue({
+        role_name: 'deputy-director',
+      });
+      mockPrismaService.roles.findMany.mockResolvedValue([]);
       mockPrismaService.club_role_assignments.update.mockResolvedValue({
         assignment_id: 'assignment-1',
         role_id: 'role-2',
@@ -449,6 +478,147 @@ describe('ClubsService', () => {
           }),
         }),
       );
+    });
+
+    it('rejects updating an assignment into a second active director in the same section even when role_slot_limits is not seeded', async () => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        assignment_id: 'assignment-1',
+        user_id: 'user-1',
+        role_id: 'role-member',
+        club_section_id: 7,
+        active: true,
+      });
+      mockPrismaService.role_slot_limits.findUnique.mockResolvedValue(null);
+      mockPrismaService.roles.findUnique.mockResolvedValue({
+        role_name: 'director',
+      });
+      mockPrismaService.club_role_assignments.count.mockResolvedValue(1);
+
+      await expect(
+        service.updateRoleAssignment('assignment-1', {
+          role_id: 'role-director',
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED,
+      });
+
+      expect(mockPrismaService.club_role_assignments.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.club_role_assignments.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            club_section_id: 7,
+            role_id: 'role-director',
+            active: true,
+            assignment_id: { not: 'assignment-1' },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('succeedSectionDirector', () => {
+    const actorUserId = '00000000-0000-0000-0000-000000000001';
+    const oldDirectorUserId = '00000000-0000-0000-0000-000000000002';
+    const successorUserId = '00000000-0000-0000-0000-000000000003';
+    const currentAssignmentId = '00000000-0000-0000-0000-000000000004';
+    const newAssignmentId = '00000000-0000-0000-0000-000000000005';
+    const directorRoleId = '00000000-0000-0000-0000-000000000006';
+
+    function mockSuccessionTransaction() {
+      const tx = {
+        club_role_assignments: {
+          findUnique: jest.fn().mockResolvedValue({
+            assignment_id: currentAssignmentId,
+            user_id: oldDirectorUserId,
+            club_section_id: 7,
+            role_id: directorRoleId,
+            active: true,
+            roles: { role_name: 'director' },
+          }),
+          count: jest.fn().mockResolvedValue(0),
+          update: jest.fn().mockResolvedValue({
+            assignment_id: currentAssignmentId,
+            user_id: oldDirectorUserId,
+            club_section_id: 7,
+          }),
+          create: jest.fn().mockResolvedValue({
+            assignment_id: newAssignmentId,
+            user_id: successorUserId,
+            club_section_id: 7,
+          }),
+        },
+      };
+
+      mockPrismaService.$transaction = jest.fn((callback) => callback(tx));
+      return tx;
+    }
+
+    it('closes the current director and creates the successor in one transaction', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      const tx = mockSuccessionTransaction();
+
+      const result = await service.succeedSectionDirector(7, actorUserId, {
+        current_assignment_id: currentAssignmentId,
+        successor_user_id: successorUserId,
+        ecclesiastical_year_id: 2026,
+        start_date: new Date('2026-10-01T00:00:00.000Z'),
+      });
+
+      expect(result).toEqual({
+        ended_assignment_id: currentAssignmentId,
+        new_assignment_id: newAssignmentId,
+      });
+      expect(tx.club_role_assignments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { assignment_id: currentAssignmentId },
+          data: expect.objectContaining({
+            active: false,
+            status: 'ended',
+            end_date: new Date('2026-10-01T00:00:00.000Z'),
+          }),
+        }),
+      );
+      expect(tx.club_role_assignments.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_id: successorUserId,
+            role_id: directorRoleId,
+            club_section_id: 7,
+            ecclesiastical_year_id: 2026,
+            active: true,
+            status: 'active',
+          }),
+        }),
+      );
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(oldDirectorUserId);
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(successorUserId);
+    });
+
+    it('rejects actors that are not director-lf or assistant-lf before mutating data', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
+
+      await expect(
+        service.succeedSectionDirector(7, actorUserId, {
+          current_assignment_id: currentAssignmentId,
+          successor_user_id: successorUserId,
+          ecclesiastical_year_id: 2026,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
   });
 
