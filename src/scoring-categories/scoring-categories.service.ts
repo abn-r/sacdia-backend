@@ -108,9 +108,10 @@ export class ScoringCategoriesService {
       select: { config_value: true },
     });
 
-    const parsed = Number.parseInt(config?.config_value ?? '', 10);
+    const rawValue = config?.config_value?.trim() ?? '';
+    const parsed = Number(rawValue);
 
-    if (!Number.isFinite(parsed) || parsed <= 0) {
+    if (!Number.isInteger(parsed) || parsed < 1) {
       this.logger.warn(
         `system_config[${ScoringCategoriesService.CATEGORY_MAX_POINTS_CAP_CONFIG_KEY}] invalid ("${config?.config_value ?? 'null'}"), using default ${ScoringCategoriesService.DEFAULT_CATEGORY_MAX_POINTS_CAP}`,
       );

@@ -202,6 +202,32 @@ describe('ScoringCategoriesService', () => {
       expect(mockTx.scoring_categories.create).not.toHaveBeenCalled();
     });
 
+    it('treats non-integer numeric-like config values as invalid and falls back to 20', async () => {
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+      for (const rawValue of ['20abc', '20.5']) {
+        mockPrisma.system_config.findUnique.mockResolvedValue({
+          config_value: rawValue,
+        });
+
+        await expect(
+          service.createDivisionCategory({
+            name: `Exceso-${rawValue}`,
+            max_points: 21,
+          }),
+        ).rejects.toMatchObject({
+          code: ErrorCode.SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP,
+        });
+      }
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'system_config[scoring.category_max_points_cap] invalid',
+        ),
+      );
+      expect(mockTx.scoring_categories.create).not.toHaveBeenCalled();
+    });
+
     it('rejects update when max_points exceeds cap', async () => {
       mockAuthContext.isSuperAdmin.mockResolvedValue(true);
       mockPrisma.system_config.findUnique.mockResolvedValue({
