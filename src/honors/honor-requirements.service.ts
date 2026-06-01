@@ -18,6 +18,10 @@ import {
 @Injectable()
 export class HonorRequirementsService {
   private static readonly MAX_EVIDENCE_PER_TYPE = 3;
+  private static readonly BLOCKED_MUTATION_STATUSES = [
+    'PENDING_REVIEW',
+    'APPROVED',
+  ] as const;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -73,7 +77,6 @@ export class HonorRequirementsService {
     if (!userHonor) {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_NOT_ENROLLED);
     }
-
     const requirements = await this.prisma.honor_requirements.findMany({
       where: { honor_id: honorId, active: true },
       orderBy: { requirement_number: 'asc' },
@@ -182,12 +185,13 @@ export class HonorRequirementsService {
 
     const userHonor = await this.prisma.users_honors.findFirst({
       where: { user_id: userId, honor_id: honorId, active: true },
-      select: { user_honor_id: true },
+      select: { user_honor_id: true, validation_status: true },
     });
 
     if (!userHonor) {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_NOT_ENROLLED);
     }
+    this.assertHonorIsMutable(userHonor.validation_status);
 
     const progress = await this.prisma.user_honor_requirement_progress.upsert({
       where: {
@@ -254,12 +258,13 @@ export class HonorRequirementsService {
         honor_id: honorId,
         active: true,
       },
-      select: { user_honor_id: true },
+      select: { user_honor_id: true, validation_status: true },
     });
 
     if (!userHonor) {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_NOT_ENROLLED);
     }
+    this.assertHonorIsMutable(userHonor.validation_status);
 
     await this.prisma.$transaction(
       dto.requirements.map((item) =>
@@ -307,6 +312,7 @@ export class HonorRequirementsService {
       userId,
       honorId,
       requirementId,
+      true,
     );
 
     const existingCount = await this.prisma.requirement_evidence.count({
@@ -357,6 +363,7 @@ export class HonorRequirementsService {
       userId,
       honorId,
       requirementId,
+      true,
     );
 
     const existingCount = await this.prisma.requirement_evidence.count({
@@ -415,6 +422,7 @@ export class HonorRequirementsService {
       userId,
       honorId,
       requirementId,
+      true,
     );
 
     const evidence = await this.prisma.requirement_evidence.findFirst({
@@ -442,6 +450,7 @@ export class HonorRequirementsService {
     userId: string,
     honorId: number,
     requirementId: number,
+    enforceMutable = false,
   ) {
     const requirement = await this.prisma.honor_requirements.findUnique({
       where: { requirement_id: requirementId },
@@ -455,10 +464,13 @@ export class HonorRequirementsService {
 
     const userHonor = await this.prisma.users_honors.findFirst({
       where: { user_id: userId, honor_id: honorId, active: true },
-      select: { user_honor_id: true },
+      select: { user_honor_id: true, validation_status: true },
     });
     if (!userHonor) {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_NOT_ENROLLED);
+    }
+    if (enforceMutable) {
+      this.assertHonorIsMutable(userHonor.validation_status);
     }
 
     const progress = await this.prisma.user_honor_requirement_progress.upsert({
@@ -486,5 +498,21 @@ export class HonorRequirementsService {
       where: { user_honor_id: userHonorId },
       data: { modified_at: new Date() },
     });
+  }
+
+  private assertHonorIsMutable(validationStatus?: string | null) {
+    if (
+      validationStatus &&
+      HonorRequirementsService.BLOCKED_MUTATION_STATUSES.includes(
+        validationStatus as (typeof HonorRequirementsService.BLOCKED_MUTATION_STATUSES)[number],
+      )
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+        {
+          status: validationStatus,
+        },
+      );
+    }
   }
 }
