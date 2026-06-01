@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { EvidenceReviewController } from './evidence-review.controller';
 import { EvidenceReviewService } from './evidence-review.service';
 import { PrismaModule } from '../prisma/prisma.module';
-import { AchievementsModule } from '../achievements/achievements.module';
+import { HonorsModule } from '../honors/honors.module';
 
 @Module({
-  imports: [PrismaModule, AchievementsModule],
+  imports: [PrismaModule, HonorsModule],
   controllers: [EvidenceReviewController],
   providers: [EvidenceReviewService],
   exports: [EvidenceReviewService],
