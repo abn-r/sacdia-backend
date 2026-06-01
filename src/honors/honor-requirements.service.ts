@@ -379,7 +379,7 @@ export class HonorRequirementsService {
   }
 
   async getEvidences(userId: string, honorId: number, requirementId: number) {
-    const { progressId, userHonorId } = await this.getOrCreateProgress(
+    const { progressId } = await this.getOrCreateProgress(
       userId,
       honorId,
       requirementId,
@@ -411,7 +411,7 @@ export class HonorRequirementsService {
     requirementId: number,
     evidenceId: number,
   ) {
-    const { progressId } = await this.getOrCreateProgress(
+    const { progressId, userHonorId } = await this.getOrCreateProgress(
       userId,
       honorId,
       requirementId,

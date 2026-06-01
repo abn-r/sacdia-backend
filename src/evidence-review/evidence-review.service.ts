@@ -417,7 +417,7 @@ export class EvidenceReviewService {
 
         return {
           requirement_id: requirement.requirement_id,
-          requirement_number: requirement.requirement_number,
+          requirement_number: String(requirement.requirement_number),
           display_label: requirement.display_label,
           requirement_text: requirement.requirement_text,
           requires_evidence: requirement.requires_evidence,
