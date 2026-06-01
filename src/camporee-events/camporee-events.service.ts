@@ -16,12 +16,13 @@ import {
 } from './dto';
 
 type CamporeeScope = 'local' | 'union';
+type CamporeeEventStatusValue = `${CamporeeEventStatusDto}`;
 
 // Status transition table — forward-only machine (Spec C5).
 // `realizado` and `cancelado` are TERMINAL states: no further transitions.
 const STATUS_TRANSITIONS: Record<
-  CamporeeEventStatusDto,
-  CamporeeEventStatusDto[]
+  CamporeeEventStatusValue,
+  CamporeeEventStatusValue[]
 > = {
   programado: [
     CamporeeEventStatusDto.publicado,
@@ -230,8 +231,8 @@ export class CamporeeEventsService {
    * Throws 422 on invalid transition.
    */
   enforceStatusTransition(
-    current: CamporeeEventStatusDto,
-    next: CamporeeEventStatusDto,
+    current: CamporeeEventStatusValue,
+    next: CamporeeEventStatusValue,
   ): void {
     if (current === next) return;
     const allowed = STATUS_TRANSITIONS[current] ?? [];
@@ -591,14 +592,8 @@ export class CamporeeEventsService {
       });
     }
 
-    if (
-      dto.status &&
-      dto.status !== (existing.status as unknown as CamporeeEventStatusDto)
-    ) {
-      this.enforceStatusTransition(
-        existing.status as unknown as CamporeeEventStatusDto,
-        dto.status,
-      );
+    if (dto.status && dto.status !== existing.status) {
+      this.enforceStatusTransition(existing.status, dto.status);
     }
 
     const updated = await this.prisma.camporee_events.update({
