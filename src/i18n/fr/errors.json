@@ -323,6 +323,7 @@
   "SCORING_CATEGORY_WRONG_LEVEL": "Impossible de modifier ou supprimer une catégorie qui n'appartient pas à ce niveau",
   "SCORING_CATEGORY_UNION_FORBIDDEN": "Vous n'avez pas la permission de gérer les catégories de cette union",
   "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "Vous n'avez pas la permission de gérer les catégories de ce champ local",
+  "SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP": "Les points maximum dépassent le plafond global configuré pour les catégories de score",
   "SCORING_DIVISION_NOT_FOUND": "Division institutionnelle introuvable",
   "SCORING_UNION_NOT_FOUND": "Union introuvable",
   "SCORING_LOCAL_FIELD_NOT_FOUND": "Champ local introuvable",

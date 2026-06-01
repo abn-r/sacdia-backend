@@ -6,7 +6,6 @@ import {
   IsBoolean,
   MaxLength,
   Min,
-  Max,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -20,14 +19,13 @@ export class CreateScoringCategoryDto {
   declare name: string;
 
   @ApiProperty({
-    description: 'Puntos máximos por sesión para esta categoría',
+    description:
+      'Puntos máximos por sesión para esta categoría (cap dinámico desde system_config: scoring.category_max_points_cap)',
     minimum: 1,
-    maximum: 1000,
   })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(1000)
   declare max_points: number;
 
   @ApiPropertyOptional({
@@ -50,15 +48,14 @@ export class UpdateScoringCategoryDto {
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Puntos máximos por sesión',
+    description:
+      'Puntos máximos por sesión (cap dinámico desde system_config: scoring.category_max_points_cap)',
     minimum: 1,
-    maximum: 1000,
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(1000)
   max_points?: number;
 
   @ApiPropertyOptional({ description: 'Estado activo de la categoría' })

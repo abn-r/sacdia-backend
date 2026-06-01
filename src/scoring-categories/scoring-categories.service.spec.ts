@@ -9,6 +9,7 @@ describe('ScoringCategoriesService', () => {
   const mockTx = {
     scoring_categories: {
       create: jest.fn(),
+      update: jest.fn(),
     },
   };
 
@@ -19,6 +20,11 @@ describe('ScoringCategoriesService', () => {
     ),
     scoring_categories: {
       findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    system_config: {
+      findUnique: jest.fn(),
     },
     local_fields: {
       findUnique: jest.fn(),
@@ -120,6 +126,9 @@ describe('ScoringCategoriesService', () => {
       };
 
       mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
+      mockPrisma.system_config.findUnique.mockResolvedValue({
+        config_value: '100',
+      });
       mockTx.scoring_categories.create.mockResolvedValue(created);
 
       await expect(
@@ -140,6 +149,82 @@ describe('ScoringCategoriesService', () => {
           data: expect.objectContaining({ origin_id: 0 }),
         }),
       );
+    });
+  });
+
+  describe('category max points cap', () => {
+    it('rejects create when max_points exceeds configured cap', async () => {
+      mockPrisma.system_config.findUnique.mockResolvedValue({
+        config_value: '15',
+      });
+
+      await expect(
+        service.createDivisionCategory({
+          name: 'Exceso',
+          max_points: 16,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP,
+      });
+
+      expect(mockTx.scoring_categories.create).not.toHaveBeenCalled();
+    });
+
+    it('falls back to default cap=20 when config is missing', async () => {
+      mockPrisma.system_config.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createDivisionCategory({
+          name: 'Exceso',
+          max_points: 21,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP,
+      });
+
+      expect(mockTx.scoring_categories.create).not.toHaveBeenCalled();
+    });
+
+    it('falls back to default cap=20 when config is invalid', async () => {
+      mockPrisma.system_config.findUnique.mockResolvedValue({
+        config_value: 'NaN',
+      });
+
+      await expect(
+        service.createDivisionCategory({
+          name: 'Exceso',
+          max_points: 21,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP,
+      });
+
+      expect(mockTx.scoring_categories.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects update when max_points exceeds cap', async () => {
+      mockAuthContext.isSuperAdmin.mockResolvedValue(true);
+      mockPrisma.system_config.findUnique.mockResolvedValue({
+        config_value: '20',
+      });
+      mockPrisma.scoring_categories.findUnique.mockResolvedValue({
+        scoring_category_id: 99,
+        origin_level: 'UNION',
+        origin_id: 20,
+      });
+
+      await expect(
+        service.updateUnionCategory(
+          20,
+          99,
+          { max_points: 30 },
+          'super-admin-user',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP,
+      });
+
+      expect(mockTx.scoring_categories.update).not.toHaveBeenCalled();
     });
   });
 
