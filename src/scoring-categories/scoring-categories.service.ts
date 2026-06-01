@@ -7,6 +7,7 @@ import {
 } from './dto/scoring-categories.dto';
 import { origin_level_enum } from '@prisma/client';
 import {
+  AppBadRequestException,
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
@@ -40,6 +41,9 @@ interface LocalFieldHierarchyRow {
 export class ScoringCategoriesService {
   private readonly logger = new Logger(ScoringCategoriesService.name);
   private static readonly DEFAULT_DIVISION_CODE = 'DIA';
+  private static readonly CATEGORY_MAX_POINTS_CAP_CONFIG_KEY =
+    'scoring.category_max_points_cap';
+  private static readonly DEFAULT_CATEGORY_MAX_POINTS_CAP = 20;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -96,6 +100,44 @@ export class ScoringCategoriesService {
     }
   }
 
+  private async getCategoryMaxPointsCap(): Promise<number> {
+    const config = await this.prisma.system_config.findUnique({
+      where: {
+        config_key: ScoringCategoriesService.CATEGORY_MAX_POINTS_CAP_CONFIG_KEY,
+      },
+      select: { config_value: true },
+    });
+
+    const parsed = Number.parseInt(config?.config_value ?? '', 10);
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      this.logger.warn(
+        `system_config[${ScoringCategoriesService.CATEGORY_MAX_POINTS_CAP_CONFIG_KEY}] invalid ("${config?.config_value ?? 'null'}"), using default ${ScoringCategoriesService.DEFAULT_CATEGORY_MAX_POINTS_CAP}`,
+      );
+      return ScoringCategoriesService.DEFAULT_CATEGORY_MAX_POINTS_CAP;
+    }
+
+    return parsed;
+  }
+
+  private async assertCategoryMaxPointsCap(maxPoints?: number): Promise<void> {
+    if (maxPoints === undefined) {
+      return;
+    }
+
+    const cap = await this.getCategoryMaxPointsCap();
+
+    if (maxPoints > cap) {
+      throw new AppBadRequestException(
+        ErrorCode.SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP,
+        {
+          cap,
+          max_points: maxPoints,
+        },
+      );
+    }
+  }
+
   async findDivisionCategories(): Promise<CategoryWithReadonly[]> {
     const divisionId = await this.getDefaultDivisionId();
     const locale = this.translationService.getCurrentLocale();
@@ -126,6 +168,7 @@ export class ScoringCategoriesService {
 
   async createDivisionCategory(dto: CreateScoringCategoryDto, userId?: string) {
     this.translationService.validateTranslations(dto.translations);
+    await this.assertCategoryMaxPointsCap(dto.max_points);
     const divisionId = await this.getDefaultDivisionId();
     const { translations, ...mainData } = dto;
 
@@ -179,6 +222,8 @@ export class ScoringCategoriesService {
       );
       throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
+
+    await this.assertCategoryMaxPointsCap(dto.max_points);
 
     const { translations, ...mainDto } = dto;
 
@@ -373,6 +418,7 @@ export class ScoringCategoriesService {
     userId: string,
   ) {
     this.translationService.validateTranslations(dto.translations);
+    await this.assertCategoryMaxPointsCap(dto.max_points);
     await this.assertUserBelongsToUnion(userId, unionId);
     const { translations, ...mainData } = dto;
 
@@ -428,6 +474,8 @@ export class ScoringCategoriesService {
       );
       throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
+
+    await this.assertCategoryMaxPointsCap(dto.max_points);
 
     const { translations, ...mainDto } = dto;
 
@@ -547,6 +595,7 @@ export class ScoringCategoriesService {
     userId: string,
   ) {
     this.translationService.validateTranslations(dto.translations);
+    await this.assertCategoryMaxPointsCap(dto.max_points);
     await this.assertUserBelongsToLocalField(userId, fieldId);
 
     const localField = await this.prisma.local_fields.findUnique({
@@ -615,6 +664,8 @@ export class ScoringCategoriesService {
       );
       throw new AppForbiddenException(ErrorCode.SCORING_CATEGORY_WRONG_LEVEL);
     }
+
+    await this.assertCategoryMaxPointsCap(dto.max_points);
 
     const { translations, ...mainDto } = dto;
 

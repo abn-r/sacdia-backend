@@ -324,6 +324,7 @@
   "SCORING_CATEGORY_WRONG_LEVEL": "No puede modificar o eliminar una categoría que no pertenece a este nivel",
   "SCORING_CATEGORY_UNION_FORBIDDEN": "No tiene permisos para gestionar categorías de esta unión",
   "SCORING_CATEGORY_LOCAL_FIELD_FORBIDDEN": "No tiene permisos para gestionar categorías de este campo local",
+  "SCORING_CATEGORY_MAX_POINTS_EXCEEDS_CAP": "Los puntos máximos superan el límite global configurado para categorías de puntuación",
   "SCORING_DIVISION_NOT_FOUND": "División institucional no encontrada",
   "SCORING_UNION_NOT_FOUND": "Unión no encontrada",
   "SCORING_LOCAL_FIELD_NOT_FOUND": "Campo local no encontrado",
