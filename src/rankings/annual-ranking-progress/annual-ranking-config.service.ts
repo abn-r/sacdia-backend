@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateAnnualRankingAxisConfigDto,
@@ -356,11 +357,10 @@ export class AnnualRankingConfigService {
 
     return Object.values(RANKING_AXES)
       .map((axis) => {
-        const axisComponents =
-          groupedAxes.get(axis.axis_key as RankingAxisKey) ?? [];
+        const axisComponents = groupedAxes.get(axis.axis_key) ?? [];
 
         return {
-          axis_key: axis.axis_key as RankingAxisKey,
+          axis_key: axis.axis_key,
           label: axis.label,
           max_points: axisComponents.reduce(
             (sum, component) => sum + component.max_points,
@@ -438,11 +438,7 @@ export class AnnualRankingConfigService {
   }
 
   private async createComponents(
-    tx: {
-      annual_ranking_component_configs: {
-        createMany(args: { data: Array<Record<string, unknown>> }): unknown;
-      };
-    },
+    tx: Pick<Prisma.TransactionClient, 'annual_ranking_component_configs'>,
     config: CreatedConfigWithAxes,
     axes: NormalizedAnnualRankingAxis[],
   ) {
@@ -452,22 +448,23 @@ export class AnnualRankingConfigService {
         axis.annual_ranking_axis_config_id,
       ]),
     );
-    const data = axes.flatMap((axis) => {
-      const axisConfigId = axisIdsByKey.get(axis.axis_key);
+    const data: Prisma.annual_ranking_component_configsCreateManyInput[] =
+      axes.flatMap((axis) => {
+        const axisConfigId = axisIdsByKey.get(axis.axis_key);
 
-      if (!axisConfigId) {
-        throw new Error(`Missing annual ranking axis ${axis.axis_key}`);
-      }
+        if (!axisConfigId) {
+          throw new Error(`Missing annual ranking axis ${axis.axis_key}`);
+        }
 
-      return axis.components.map((component) => ({
-        annual_ranking_config_id: config.annual_ranking_config_id,
-        annual_ranking_axis_config_id: axisConfigId,
-        component_key: component.component_key,
-        label: component.label,
-        max_points: component.max_points,
-        sort_order: component.sort_order,
-      }));
-    });
+        return axis.components.map((component) => ({
+          annual_ranking_config_id: config.annual_ranking_config_id,
+          annual_ranking_axis_config_id: axisConfigId,
+          component_key: component.component_key,
+          label: component.label,
+          max_points: component.max_points,
+          sort_order: component.sort_order,
+        }));
+      });
 
     if (data.length === 0) {
       return;
@@ -476,7 +473,7 @@ export class AnnualRankingConfigService {
     await tx.annual_ranking_component_configs.createMany({ data });
   }
 
-  private configInclude() {
+  private configInclude(): Prisma.annual_ranking_configsInclude {
     return {
       axes: {
         orderBy: [{ sort_order: 'asc' }, { axis_key: 'asc' }],
@@ -489,10 +486,10 @@ export class AnnualRankingConfigService {
       components: {
         orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
       },
-    } as const;
+    };
   }
 
-  private activeConfigInclude() {
+  private activeConfigInclude(): Prisma.annual_ranking_configsInclude {
     return {
       axes: {
         where: { active: true },
@@ -508,14 +505,14 @@ export class AnnualRankingConfigService {
         where: { active: true },
         orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
       },
-    } as const;
+    };
   }
 
-  private axisOnlyInclude() {
+  private axisOnlyInclude(): Prisma.annual_ranking_configsInclude {
     return {
       axes: {
         orderBy: [{ sort_order: 'asc' }, { axis_key: 'asc' }],
       },
-    } as const;
+    };
   }
 }

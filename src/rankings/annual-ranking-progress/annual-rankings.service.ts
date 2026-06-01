@@ -84,7 +84,9 @@ export class AnnualRankingsService {
           ],
         },
         include: {
-          hierarchy_context: { select: { local_field_id: true, union_id: true } },
+          hierarchy_context: {
+            select: { local_field_id: true, union_id: true },
+          },
           club_enrollment: {
             include: {
               club_section: {
@@ -110,63 +112,71 @@ export class AnnualRankingsService {
     ]);
 
     const componentsToScore = this.getConfiguredComponents(config);
-    const mapped = await Promise.all(rows.map(async (row) => {
-      const club = row.club_enrollment.club_section.clubs;
-      const scoreMap = await this.scoreConfiguredComponents(componentsToScore, {
-        clubEnrollmentId: row.club_enrollment_id,
-        clubId: club?.club_id ?? 0,
-        localFieldId:
-          row.hierarchy_context?.local_field_id ??
-          club?.local_field_id ??
-          query.localFieldId,
-        unionId:
-          row.hierarchy_context?.union_id ??
-          club?.local_fields?.union_id ??
-          null,
-        ecclesiasticalYearId: query.yearId,
-        calendarYear: this.calendarYearFromStartDate(year?.start_date),
-      });
-      const axes = this.buildAxisProgress(config.axes ?? [], scoreMap);
-      const components =
-        axes.length > 0
-          ? axes.flatMap((axis) => axis.components)
-          : this.buildComponentProgress(config.components ?? [], scoreMap);
-      const currentPoints =
-        axes.length > 0
-          ? axes.reduce((sum, axis) => sum + axis.earned_points, 0)
-          : components.reduce(
-              (sum, component) => sum + component.earned_points,
-              0,
-            );
-      const resolvedTier = this.tierCalculator.resolveTier({
-        currentPoints,
-        maxPoints: config.max_points,
-        tiers,
-      });
+    const mapped = await Promise.all(
+      rows.map(async (row) => {
+        const club = row.club_enrollment.club_section.clubs;
+        const scoreMap = await this.scoreConfiguredComponents(
+          componentsToScore,
+          {
+            clubEnrollmentId: row.club_enrollment_id,
+            clubId: club?.club_id ?? 0,
+            localFieldId:
+              row.hierarchy_context?.local_field_id ??
+              club?.local_field_id ??
+              query.localFieldId,
+            unionId:
+              row.hierarchy_context?.union_id ??
+              club?.local_fields?.union_id ??
+              null,
+            ecclesiasticalYearId: query.yearId,
+            calendarYear: this.calendarYearFromStartDate(year?.start_date),
+          },
+        );
+        const axes = this.buildAxisProgress(config.axes ?? [], scoreMap);
+        const components =
+          axes.length > 0
+            ? axes.flatMap((axis) => axis.components)
+            : this.buildComponentProgress(config.components ?? [], scoreMap);
+        const currentPoints =
+          axes.length > 0
+            ? axes.reduce((sum, axis) => sum + axis.earned_points, 0)
+            : components.reduce(
+                (sum, component) => sum + component.earned_points,
+                0,
+              );
+        const resolvedTier = this.tierCalculator.resolveTier({
+          currentPoints,
+          maxPoints: config.max_points,
+          tiers,
+        });
 
-      return {
-        rank_position: 0,
-        club_enrollment_id: row.club_enrollment_id,
-        club_id: club?.club_id ?? 0,
-        club_name: club?.name ?? 'Club',
-        club_type_id: row.club_type_id,
-        ecclesiastical_year_id: row.ecclesiastical_year_id,
-        local_field_id:
-          row.hierarchy_context?.local_field_id ??
-          club?.local_field_id ??
-          null,
-        current_points: currentPoints,
-        max_points: config.max_points,
-        progress_percentage: this.percentage(currentPoints, config.max_points),
-        current_tier: this.toTierDto(resolvedTier.currentTier),
-        next_tier: this.toTierDto(
-          resolvedTier.nextTier,
-          resolvedTier.pointsToNextTier,
-        ),
-        axes,
-        components,
-      };
-    }));
+        return {
+          rank_position: 0,
+          club_enrollment_id: row.club_enrollment_id,
+          club_id: club?.club_id ?? 0,
+          club_name: club?.name ?? 'Club',
+          club_type_id: row.club_type_id,
+          ecclesiastical_year_id: row.ecclesiastical_year_id,
+          local_field_id:
+            row.hierarchy_context?.local_field_id ??
+            club?.local_field_id ??
+            null,
+          current_points: currentPoints,
+          max_points: config.max_points,
+          progress_percentage: this.percentage(
+            currentPoints,
+            config.max_points,
+          ),
+          current_tier: this.toTierDto(resolvedTier.currentTier),
+          next_tier: this.toTierDto(
+            resolvedTier.nextTier,
+            resolvedTier.pointsToNextTier,
+          ),
+          axes,
+          components,
+        };
+      }),
+    );
 
     const ranked = this.assignDenseRanks(mapped);
 
@@ -275,8 +285,11 @@ export class AnnualRankingsService {
   }
 
   private assignDenseRanks(
-    rows: Omit<AnnualRankingLeaderboardRowDto, 'rank_position'> &
-      { rank_position: number }[],
+    rows: Array<
+      Omit<AnnualRankingLeaderboardRowDto, 'rank_position'> & {
+        rank_position: number;
+      }
+    >,
   ): AnnualRankingLeaderboardRowDto[] {
     let currentRank = 0;
     let previousPoints: number | null = null;
