@@ -189,7 +189,7 @@ export class HonorRequirementsService {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_NOT_ENROLLED);
     }
 
-    return this.prisma.user_honor_requirement_progress.upsert({
+    const progress = await this.prisma.user_honor_requirement_progress.upsert({
       where: {
         user_honor_id_requirement_id: {
           user_honor_id: userHonor.user_honor_id,
@@ -214,6 +214,10 @@ export class HonorRequirementsService {
         completed_at: dto.completed ? new Date() : null,
       },
     });
+
+    await this.touchUserHonor(userHonor.user_honor_id);
+
+    return progress;
   }
 
   async bulkUpdateProgress(
@@ -283,6 +287,8 @@ export class HonorRequirementsService {
       ),
     );
 
+    await this.touchUserHonor(userHonor.user_honor_id);
+
     return this.getUserProgress(userId, honorId);
   }
 
@@ -297,7 +303,7 @@ export class HonorRequirementsService {
     file: Express.Multer.File,
     evidenceType: 'IMAGE' | 'FILE',
   ) {
-    const { progressId } = await this.getOrCreateProgress(
+    const { progressId, userHonorId } = await this.getOrCreateProgress(
       userId,
       honorId,
       requirementId,
@@ -325,7 +331,7 @@ export class HonorRequirementsService {
       { contentType: file.mimetype, overwrite: false },
     );
 
-    return this.prisma.requirement_evidence.create({
+    const evidence = await this.prisma.requirement_evidence.create({
       data: {
         progress_id: progressId,
         evidence_type: evidenceType,
@@ -335,6 +341,10 @@ export class HonorRequirementsService {
         file_size: file.size,
       },
     });
+
+    await this.touchUserHonor(userHonorId);
+
+    return evidence;
   }
 
   async addEvidenceLink(
@@ -343,7 +353,7 @@ export class HonorRequirementsService {
     requirementId: number,
     url: string,
   ) {
-    const { progressId } = await this.getOrCreateProgress(
+    const { progressId, userHonorId } = await this.getOrCreateProgress(
       userId,
       honorId,
       requirementId,
@@ -359,13 +369,17 @@ export class HonorRequirementsService {
       });
     }
 
-    return this.prisma.requirement_evidence.create({
+    const evidence = await this.prisma.requirement_evidence.create({
       data: { progress_id: progressId, evidence_type: 'LINK', url },
     });
+
+    await this.touchUserHonor(userHonorId);
+
+    return evidence;
   }
 
   async getEvidences(userId: string, honorId: number, requirementId: number) {
-    const { progressId } = await this.getOrCreateProgress(
+    const { progressId, userHonorId } = await this.getOrCreateProgress(
       userId,
       honorId,
       requirementId,
@@ -410,10 +424,14 @@ export class HonorRequirementsService {
       throw new AppNotFoundException(ErrorCode.HONOR_EVIDENCE_NOT_FOUND);
     }
 
-    return this.prisma.requirement_evidence.update({
+    const updated = await this.prisma.requirement_evidence.update({
       where: { evidence_id: evidenceId },
       data: { active: false, modified_at: new Date() },
     });
+
+    await this.touchUserHonor(userHonorId);
+
+    return updated;
   }
 
   // ========================================
@@ -457,6 +475,16 @@ export class HonorRequirementsService {
       },
     });
 
-    return { progressId: progress.progress_id };
+    return {
+      progressId: progress.progress_id,
+      userHonorId: userHonor.user_honor_id,
+    };
+  }
+
+  private async touchUserHonor(userHonorId: number) {
+    await this.prisma.users_honors.update({
+      where: { user_honor_id: userHonorId },
+      data: { modified_at: new Date() },
+    });
   }
 }

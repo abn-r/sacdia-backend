@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -13,7 +13,7 @@ import {
   EvidenceType,
 } from './dto/bulk-approve-evidence.dto';
 import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
-import { AchievementsService } from '../achievements/achievements.service';
+import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
 //
@@ -29,8 +29,6 @@ const CLASS_STATUS_VALIDATED = 'VALIDATED';
 const CLASS_STATUS_REJECTED = 'REJECTED';
 
 const HONOR_STATUS_PENDING = 'PENDING_REVIEW';
-const HONOR_STATUS_APPROVED = 'APPROVED';
-const HONOR_STATUS_REJECTED = 'REJECTED';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +68,34 @@ export type EvidenceFile = {
 export type EvidenceDetail = EvidenceItem & {
   files: EvidenceFile[];
   validated_by_name: string | null;
+  honor_review_packet?: HonorReviewPacket;
+};
+
+export type HonorRequirementReviewItem = {
+  requirement_id: number;
+  requirement_number: string;
+  display_label: string | null;
+  requirement_text: string;
+  requires_evidence: boolean;
+  completed: boolean;
+  completed_at: Date | null;
+  evidence_count: number;
+  evidences: EvidenceFile[];
+};
+
+export type HonorReviewPacket = {
+  user_honor_id: number;
+  honor_id: number;
+  honor_name: string;
+  validation_status: string;
+  progress: {
+    total_requirements: number;
+    completed_count: number;
+    progress_percentage: number;
+  };
+  general_files: EvidenceFile[];
+  requirement_files: EvidenceFile[];
+  requirements: HonorRequirementReviewItem[];
 };
 
 export type BulkOperationResult = {
@@ -94,11 +120,9 @@ const USER_NAME_SELECT = {
 
 @Injectable()
 export class EvidenceReviewService {
-  private readonly logger = new Logger(EvidenceReviewService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly achievementsService: AchievementsService,
+    private readonly honorValidationWorkflow: HonorValidationWorkflowService,
   ) {}
 
   // ============================================================
@@ -309,46 +333,11 @@ export class EvidenceReviewService {
       );
     }
 
-    let files: EvidenceFile[];
-
-    if (record.evidence_files.length > 0) {
-      // Post-migration path: use normalized evidence_files rows.
-      files = record.evidence_files.map((f) => ({
-        evidence_file_id: f.evidence_file_id,
-        file_url: f.file_url,
-        file_name: f.file_name,
-        file_type: f.file_type,
-        uploaded_at: f.uploaded_at,
-      }));
-    } else {
-      // Legacy fallback: read from the JSON images array for records that
-      // were not yet covered by the migration script.
-      const images = Array.isArray(record.images)
-        ? (record.images as unknown[])
-        : [];
-      files = images.map((img, idx) => {
-        const url =
-          typeof img === 'string' ? img : ((img as { url?: string }).url ?? '');
-        const rawName = url.split('/').pop()?.split('?')[0] ?? '';
-        const fileName = rawName.length > 0 ? rawName : `imagen-${idx + 1}`;
-        const fileType = /\.(jpe?g)$/i.test(fileName)
-          ? 'image/jpeg'
-          : /\.png$/i.test(fileName)
-            ? 'image/png'
-            : /\.gif$/i.test(fileName)
-              ? 'image/gif'
-              : /\.webp$/i.test(fileName)
-                ? 'image/webp'
-                : 'image/jpeg';
-        return {
-          evidence_file_id: idx + 1,
-          file_url: url,
-          file_name: fileName,
-          file_type: fileType,
-          uploaded_at: record.created_at ?? new Date(),
-        };
-      });
-    }
+    const honorReviewPacket = await this.buildHonorReviewPacket(record);
+    const files = this.dedupeFiles([
+      ...honorReviewPacket.general_files,
+      ...honorReviewPacket.requirement_files,
+    ]);
 
     return {
       id: record.user_honor_id,
@@ -365,7 +354,244 @@ export class EvidenceReviewService {
       validated_by_name: record.validator
         ? buildMemberName(record.validator)
         : null,
+      honor_review_packet: honorReviewPacket,
     };
+  }
+
+  private async buildHonorReviewPacket(record: {
+    user_honor_id: number;
+    honor_id: number;
+    validation_status: string;
+    certificate?: string | null;
+    document?: unknown;
+    images?: unknown;
+    created_at?: Date | null;
+    honors?: { honor_id: number; name: string } | null;
+    evidence_files: Array<{
+      evidence_file_id: number;
+      file_url: string;
+      file_name: string;
+      file_type: string;
+      uploaded_at: Date;
+    }>;
+  }): Promise<HonorReviewPacket> {
+    const [requirements, progressRows] = await Promise.all([
+      this.prisma.honor_requirements.findMany({
+        where: { honor_id: record.honor_id, active: true },
+        select: {
+          requirement_id: true,
+          requirement_number: true,
+          display_label: true,
+          requirement_text: true,
+          requires_evidence: true,
+          parent_id: true,
+        },
+        orderBy: { requirement_number: 'asc' },
+      }),
+      this.prisma.user_honor_requirement_progress.findMany({
+        where: { user_honor_id: record.user_honor_id, active: true },
+        include: {
+          requirement_evidence: {
+            where: { active: true },
+            orderBy: { created_at: 'asc' },
+          },
+        },
+      }),
+    ]);
+
+    const progressByRequirement = new Map(
+      progressRows.map((progress) => [progress.requirement_id, progress]),
+    );
+
+    const requirementsPacket: HonorRequirementReviewItem[] = requirements.map(
+      (requirement) => {
+        const progress = progressByRequirement.get(requirement.requirement_id);
+        const evidences = (progress?.requirement_evidence ?? []).map(
+          (evidence, index) =>
+            this.mapRequirementEvidenceFile(
+              evidence,
+              requirement.requirement_id,
+              index,
+            ),
+        );
+
+        return {
+          requirement_id: requirement.requirement_id,
+          requirement_number: requirement.requirement_number,
+          display_label: requirement.display_label,
+          requirement_text: requirement.requirement_text,
+          requires_evidence: requirement.requires_evidence,
+          completed: progress?.completed ?? false,
+          completed_at: progress?.completed_at ?? null,
+          evidence_count: evidences.length,
+          evidences,
+        };
+      },
+    );
+
+    const parentIds = new Set(
+      requirements
+        .map((requirement) => requirement.parent_id)
+        .filter((id): id is number => id !== null),
+    );
+    const leafRequirementIds = requirements
+      .filter((requirement) => !parentIds.has(requirement.requirement_id))
+      .map((requirement) => requirement.requirement_id);
+    const completedCount = leafRequirementIds.filter(
+      (requirementId) =>
+        progressByRequirement.get(requirementId)?.completed === true,
+    ).length;
+    const totalRequirements = leafRequirementIds.length;
+
+    const normalizedFiles = record.evidence_files.map((file) => ({
+      evidence_file_id: file.evidence_file_id,
+      file_url: file.file_url,
+      file_name: file.file_name,
+      file_type: file.file_type,
+      uploaded_at: file.uploaded_at,
+    }));
+    const legacyFiles = this.buildLegacyHonorFiles(record);
+    const generalFiles = this.dedupeFiles([...normalizedFiles, ...legacyFiles]);
+    const requirementFiles = this.dedupeFiles(
+      requirementsPacket.flatMap((requirement) => requirement.evidences),
+    );
+
+    return {
+      user_honor_id: record.user_honor_id,
+      honor_id: record.honor_id,
+      honor_name: record.honors?.name ?? `Honor #${record.honor_id}`,
+      validation_status: record.validation_status,
+      progress: {
+        total_requirements: totalRequirements,
+        completed_count: completedCount,
+        progress_percentage:
+          totalRequirements === 0
+            ? 0
+            : Math.round((completedCount / totalRequirements) * 10000) / 100,
+      },
+      general_files: generalFiles,
+      requirement_files: requirementFiles,
+      requirements: requirementsPacket,
+    };
+  }
+
+  private buildLegacyHonorFiles(record: {
+    certificate?: string | null;
+    document?: unknown;
+    images?: unknown;
+    created_at?: Date | null;
+  }): EvidenceFile[] {
+    const uploadedAt = record.created_at ?? new Date(0);
+    const files: EvidenceFile[] = [];
+
+    if (record.certificate) {
+      files.push(
+        this.buildSyntheticFile(
+          -1,
+          record.certificate,
+          uploadedAt,
+          'certificado',
+        ),
+      );
+    }
+
+    if (typeof record.document === 'string' && record.document.length > 0) {
+      files.push(
+        this.buildSyntheticFile(-2, record.document, uploadedAt, 'documento'),
+      );
+    }
+
+    const images = Array.isArray(record.images)
+      ? (record.images as unknown[])
+      : [];
+    images.forEach((image, index) => {
+      const url =
+        typeof image === 'string'
+          ? image
+          : ((image as { url?: string }).url ?? '');
+      if (url.length === 0) return;
+      files.push(
+        this.buildSyntheticFile(
+          -1000 - index,
+          url,
+          uploadedAt,
+          `imagen-${index + 1}`,
+        ),
+      );
+    });
+
+    return files;
+  }
+
+  private mapRequirementEvidenceFile(
+    evidence: {
+      evidence_id: number;
+      url: string;
+      filename: string | null;
+      mime_type: string | null;
+      created_at: Date;
+    },
+    requirementId: number,
+    index: number,
+  ): EvidenceFile {
+    const fallbackName = `requisito-${requirementId}-evidencia-${index + 1}`;
+    const fileName =
+      evidence.filename ?? this.fileNameFromUrl(evidence.url) ?? fallbackName;
+
+    return {
+      evidence_file_id: -100000 - evidence.evidence_id,
+      file_url: evidence.url,
+      file_name: fileName,
+      file_type: this.inferFileType(fileName, evidence.url, evidence.mime_type),
+      uploaded_at: evidence.created_at,
+    };
+  }
+
+  private buildSyntheticFile(
+    evidenceFileId: number,
+    url: string,
+    uploadedAt: Date,
+    fallbackName: string,
+  ): EvidenceFile {
+    const fileName = this.fileNameFromUrl(url) ?? fallbackName;
+    return {
+      evidence_file_id: evidenceFileId,
+      file_url: url,
+      file_name: fileName,
+      file_type: this.inferFileType(fileName, url),
+      uploaded_at: uploadedAt,
+    };
+  }
+
+  private fileNameFromUrl(url: string): string | null {
+    const rawName = url.split('/').pop()?.split('?')[0] ?? '';
+    return rawName.length > 0 ? rawName : null;
+  }
+
+  private inferFileType(
+    fileName: string,
+    url: string,
+    explicitType?: string | null,
+  ): string {
+    if (explicitType) return explicitType;
+    const value = `${fileName} ${url}`.toLowerCase();
+    if (/\.(jpe?g)(\?|$|\s)/i.test(value)) return 'image/jpeg';
+    if (/\.png(\?|$|\s)/i.test(value)) return 'image/png';
+    if (/\.gif(\?|$|\s)/i.test(value)) return 'image/gif';
+    if (/\.webp(\?|$|\s)/i.test(value)) return 'image/webp';
+    if (/\.pdf(\?|$|\s)/i.test(value)) return 'application/pdf';
+    return 'application/octet-stream';
+  }
+
+  private dedupeFiles(files: EvidenceFile[]): EvidenceFile[] {
+    const seen = new Set<string>();
+    const deduped: EvidenceFile[] = [];
+    for (const file of files) {
+      if (seen.has(file.file_url)) continue;
+      seen.add(file.file_url);
+      deduped.push(file);
+    }
+    return deduped;
   }
 
   // ============================================================
@@ -382,7 +608,7 @@ export class EvidenceReviewService {
       case 'class':
         return this.approveClass(id, actorId, dto.comments);
       case 'honor':
-        return this.approveHonor(id, actorId, dto.comments);
+        return this.honorValidationWorkflow.approve(id, actorId, dto.comments);
       default:
         throw new AppBadRequestException(
           ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
@@ -443,86 +669,6 @@ export class EvidenceReviewService {
     };
   }
 
-  private async approveHonor(id: number, actorId: string, comments?: string) {
-    const record = await this.prisma.users_honors.findUnique({
-      where: { user_honor_id: id },
-      include: {
-        honors: {
-          select: {
-            honor_id: true,
-            name: true,
-            honors_category_id: true,
-            club_type_id: true,
-          },
-        },
-      },
-    });
-
-    if (!record) {
-      throw new AppNotFoundException(
-        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
-        { id },
-      );
-    }
-
-    if (record.validation_status !== HONOR_STATUS_PENDING) {
-      throw new AppBadRequestException(
-        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_PENDING,
-        { status: record.validation_status },
-      );
-    }
-
-    const now = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.users_honors.update({
-        where: { user_honor_id: id },
-        data: {
-          validation_status: HONOR_STATUS_APPROVED,
-          validate: true,
-          validated_by_id: actorId,
-          validated_at: now,
-          rejection_reason: null,
-        },
-      });
-
-      await tx.validation_logs.create({
-        data: {
-          entity_type: 'honor',
-          entity_id: String(id),
-          user_id: record.user_id,
-          action: 'APPROVED',
-          performed_by: actorId,
-          comment: comments ?? null,
-        },
-      });
-
-      return result;
-    });
-
-    try {
-      await this.achievementsService.emitEvent({
-        userId: record.user_id,
-        eventType: 'honor.validated',
-        payload: {
-          honor_id: record.honors?.honor_id ?? record.honor_id,
-          category_id: record.honors?.honors_category_id ?? null,
-          honor_name: record.honors?.name ?? null,
-          club_type_id: record.honors?.club_type_id ?? null,
-        },
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Failed to emit achievement event: ${(error as Error).message}`,
-      );
-    }
-
-    return {
-      id: updated.user_honor_id,
-      type: 'honor' as EvidenceType,
-      status: updated.validation_status,
-    };
-  }
-
   // ============================================================
   // POST /evidence-review/:type/:id/reject
   // ============================================================
@@ -537,7 +683,7 @@ export class EvidenceReviewService {
       case 'class':
         return this.rejectClass(id, actorId, dto.reason);
       case 'honor':
-        return this.rejectHonor(id, actorId, dto.reason);
+        return this.honorValidationWorkflow.reject(id, actorId, dto.reason);
       default:
         throw new AppBadRequestException(
           ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
@@ -600,63 +746,6 @@ export class EvidenceReviewService {
       id: updated.section_progress_id,
       type: 'class' as EvidenceType,
       status: updated.status,
-    };
-  }
-
-  private async rejectHonor(id: number, actorId: string, reason: string) {
-    const record = await this.prisma.users_honors.findUnique({
-      where: { user_honor_id: id },
-    });
-
-    if (!record) {
-      throw new AppNotFoundException(
-        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
-        { id },
-      );
-    }
-
-    if (record.validation_status === HONOR_STATUS_REJECTED) {
-      throw new AppBadRequestException(
-        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_REJECTED,
-      );
-    }
-
-    if (record.validation_status === HONOR_STATUS_APPROVED) {
-      throw new AppConflictException(
-        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_ALREADY_APPROVED,
-      );
-    }
-
-    const now = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.users_honors.update({
-        where: { user_honor_id: id },
-        data: {
-          validation_status: HONOR_STATUS_REJECTED,
-          validated_by_id: actorId,
-          validated_at: now,
-          rejection_reason: reason,
-        },
-      });
-
-      await tx.validation_logs.create({
-        data: {
-          entity_type: 'honor',
-          entity_id: String(id),
-          user_id: record.user_id,
-          action: 'REJECTED',
-          performed_by: actorId,
-          comment: reason,
-        },
-      });
-
-      return result;
-    });
-
-    return {
-      id: updated.user_honor_id,
-      type: 'honor' as EvidenceType,
-      status: updated.validation_status,
     };
   }
 
