@@ -24,7 +24,12 @@
     "verify:fcm-migration": "npx tsx scripts/verify-fcm-migration.ts",
     "import:legacy-catalogs": "npx ts-node scripts/import-legacy-catalogs.ts",
     "migrate:storage-urls:r2": "npx tsx scripts/migrate-storage-urls-to-r2.ts",
-    "audit:security": "pnpm audit --audit-level=high"
+    "audit:security": "pnpm audit --audit-level=high",
+    "benchmark:smoke": "node scripts/benchmark-api.js --profile smoke",
+    "benchmark:baseline": "node scripts/benchmark-api.js --profile baseline",
+    "benchmark:stress": "node scripts/benchmark-api.js --profile stress",
+    "benchmark:spike": "node scripts/benchmark-api.js --profile spike",
+    "benchmark:self-test": "node --test scripts/benchmark-api.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",

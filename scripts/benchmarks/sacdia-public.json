@@ -1,0 +1,17 @@
+{
+  "name": "sacdia-public-readiness",
+  "description": "Safe public/read-only SACDIA API benchmark scenario.",
+  "defaults": {
+    "method": "GET"
+  },
+  "targets": [
+    {
+      "name": "health",
+      "endpoint": "/api/v1/health"
+    },
+    {
+      "name": "swagger-docs",
+      "endpoint": "/api"
+    }
+  ]
+}

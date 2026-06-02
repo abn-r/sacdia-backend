@@ -99,8 +99,18 @@ pnpm run verify:fcm-migration
 # Utilidades
 pnpm run generate:spec
 pnpm run load-test
+pnpm run benchmark:smoke
+pnpm run benchmark:baseline
+pnpm run benchmark:stress
+pnpm run benchmark:spike
 pnpm run migrate:storage-urls:r2
 ```
+
+## Benchmarking
+
+La suite de benchmark vive en `scripts/benchmark-api.js` y usa `autocannon`.
+Por defecto mide `http://localhost:3000/api/v1/health` y bloquea targets remotos salvo `BENCH_ALLOW_REMOTE=1`.
+Ver `docs/BENCHMARKING.md` para perfiles, escenarios y lectura de capacidad estable.
 
 ## Variables de entorno
 
@@ -146,6 +156,7 @@ pnpm run migrate:storage-urls:r2 -- --apply
 ```
 
 Notas:
+
 - En `NODE_ENV=production`, `REDIS_URL` es obligatorio para rate limiting distribuido.
   Si falta, es inválido o Redis no responde, el backend falla al iniciar. En desarrollo/test
   se permite fallback a memoria para no bloquear trabajo local.
@@ -180,6 +191,7 @@ Notas:
 ### Monitoreo Auth post-cutover (14 días)
 
 Eventos estructurados emitidos:
+
 - `auth_refresh_legacy_rejected`
 - `auth_refresh_legacy_allowed`
 - `auth_refresh_success`
@@ -192,6 +204,7 @@ Eventos estructurados emitidos:
 - `mfa_session_bind_failed`
 
 Consultas sugeridas (Sentry/Logs):
+
 - Tasa de legacy rechazado: `event:auth_refresh_legacy_rejected`
 - Éxito de refresh: `event:auth_refresh_success`
 - Fallos de refresh: `event:auth_refresh_failed`
