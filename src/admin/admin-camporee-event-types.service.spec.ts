@@ -6,7 +6,10 @@ import {
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
 import { TranslationService } from '../common/services/translation.service';
-import { AppConflictException, AppNotFoundException } from '../common/errors/app.exception';
+import {
+  AppConflictException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
 
 // ─── Mock factories ────────────────────────────────────────────────────────
 
@@ -98,7 +101,9 @@ describe('AdminCamporeeEventTypesService', () => {
       prisma.camporee_event_types.findFirst.mockResolvedValue(null);
       prisma.$transaction.mockImplementation(async (fn: any) => {
         return fn({
-          camporee_event_types: { create: jest.fn().mockResolvedValue(baseEventType) },
+          camporee_event_types: {
+            create: jest.fn().mockResolvedValue(baseEventType),
+          },
         });
       });
 
@@ -167,7 +172,9 @@ describe('AdminCamporeeEventTypesService', () => {
       prisma.camporee_event_types.findFirst.mockResolvedValue(null);
       prisma.$transaction.mockImplementation(async (fn: any) => {
         return fn({
-          camporee_event_types: { update: jest.fn().mockResolvedValue(updated) },
+          camporee_event_types: {
+            update: jest.fn().mockResolvedValue(updated),
+          },
         });
       });
 

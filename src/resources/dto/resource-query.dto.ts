@@ -26,15 +26,15 @@ export class ResourceQueryDto {
 
   @ApiPropertyOptional({
     description: 'Filtrar por nivel de alcance',
-    enum: ['system', 'union', 'local_field'],
+    enum: ['system', 'division', 'union', 'local_field'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['system', 'union', 'local_field'])
+  @IsIn(['system', 'division', 'union', 'local_field'])
   scope_level?: string;
 
   @ApiPropertyOptional({
-    description: 'Filtrar por ID del ámbito (union o campo local)',
+    description: 'Filtrar por ID del ámbito (división, unión o campo local)',
   })
   @IsOptional()
   @Type(() => Number)

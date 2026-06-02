@@ -115,6 +115,9 @@ const mockPrismaService = {
     create: jest.fn(),
     update: jest.fn(),
   },
+  club_role_assignments: {
+    findMany: jest.fn(),
+  },
   // Prisma interactive transaction mock: executes callback with a tx proxy
   $transaction: jest
     .fn()
@@ -135,6 +138,8 @@ describe('RbacService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrismaService.users_roles.findMany.mockResolvedValue([]);
+    mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -1025,6 +1030,37 @@ describe('RbacService', () => {
 
       expect(result.removed).toBe(1);
       expect(result.added).toBe(0);
+    });
+
+    it('invalidates auth-context cache for global and club users that hold the changed role', async () => {
+      const clubUserId = '44444444-4444-4444-4444-444444444444';
+      const currentAssignments = [
+        { ...baseRolePermissionRecord, permission_id: PERMISSION_ID },
+      ];
+
+      mockPrismaService.roles.findUnique.mockResolvedValue(baseRole);
+      mockPrismaService.role_permissions.findMany.mockResolvedValue(
+        currentAssignments,
+      );
+      mockPrismaService.role_permissions.updateMany.mockResolvedValue({
+        count: 1,
+      });
+      mockPrismaService.users_roles.findMany.mockResolvedValue([
+        { user_id: USER_ID },
+      ]);
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: clubUserId },
+      ]);
+
+      await service.syncRolePermissions(ROLE_ID, []);
+
+      const authorizationContext = (service as any).authorizationContext;
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(USER_ID);
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(clubUserId);
     });
   });
 });

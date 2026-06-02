@@ -9,15 +9,34 @@ import type { Cache } from 'cache-manager';
  *   - Static catalogs (no filter):  `cache:catalogs:club_types`
  *   - Filtered catalogs:            `cache:catalogs:unions:country:42`
  */
+type UnionCacheFilter =
+  | number
+  | {
+      countryId?: number;
+      divisionId?: number;
+    };
+
 export const CATALOG_CACHE_KEYS = {
   CLUB_TYPES: 'cache:catalogs:club_types',
   ACTIVITY_TYPES: 'cache:catalogs:activity_types',
   RELATIONSHIP_TYPES: 'cache:catalogs:relationship_types',
   COUNTRIES: 'cache:catalogs:countries',
-  UNIONS: (countryId?: number) =>
-    countryId
-      ? `cache:catalogs:unions:country:${countryId}`
-      : 'cache:catalogs:unions:all',
+  DIVISIONS: 'cache:catalogs:divisions',
+  UNIONS: (filter?: UnionCacheFilter) => {
+    if (typeof filter === 'number') {
+      return `cache:catalogs:unions:country:${filter}`;
+    }
+    if (filter?.countryId && filter?.divisionId) {
+      return `cache:catalogs:unions:division:${filter.divisionId}:country:${filter.countryId}`;
+    }
+    if (filter?.divisionId) {
+      return `cache:catalogs:unions:division:${filter.divisionId}`;
+    }
+    if (filter?.countryId) {
+      return `cache:catalogs:unions:country:${filter.countryId}`;
+    }
+    return 'cache:catalogs:unions:all';
+  },
   LOCAL_FIELDS: (unionId?: number) =>
     unionId
       ? `cache:catalogs:local_fields:union:${unionId}`
@@ -204,6 +223,7 @@ export class CatalogCacheService {
       CATALOG_CACHE_KEYS.ACTIVITY_TYPES,
       CATALOG_CACHE_KEYS.RELATIONSHIP_TYPES,
       CATALOG_CACHE_KEYS.COUNTRIES,
+      CATALOG_CACHE_KEYS.DIVISIONS,
       CATALOG_CACHE_KEYS.UNIONS(),
       CATALOG_CACHE_KEYS.LOCAL_FIELDS(),
       CATALOG_CACHE_KEYS.DISTRICTS(),

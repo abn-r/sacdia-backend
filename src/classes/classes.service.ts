@@ -142,6 +142,88 @@ export class ClassesService {
     };
   }
 
+  private async findCurrentEcclesiasticalYear(): Promise<{
+    year_id: number;
+    start_date: Date;
+  }> {
+    const now = new Date();
+    const yearByCurrentDate = await this.prisma.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: now },
+        end_date: { gte: now },
+      },
+      select: {
+        year_id: true,
+        start_date: true,
+      },
+      orderBy: { start_date: 'desc' },
+    });
+
+    const activeYear =
+      yearByCurrentDate ??
+      (await this.prisma.ecclesiastical_years.findFirst({
+        where: { active: true },
+        select: {
+          year_id: true,
+          start_date: true,
+        },
+        orderBy: { start_date: 'desc' },
+      }));
+
+    if (!activeYear) {
+      throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
+    }
+
+    return activeYear;
+  }
+
+  private buildAvailabilityWhere(
+    targetYearStartDate: Date,
+  ): Prisma.classesWhereInput {
+    return {
+      AND: [
+        {
+          OR: [
+            { available_from_year_id: null },
+            {
+              available_from_year: {
+                start_date: { lte: targetYearStartDate },
+              },
+            },
+          ],
+        },
+        {
+          OR: [
+            { available_until_year_id: null },
+            {
+              available_until_year: {
+                start_date: { gte: targetYearStartDate },
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private isClassAvailableForYear(params: {
+    targetYearStartDate: Date;
+    available_from_year?: { start_date: Date } | null;
+    available_until_year?: { start_date: Date } | null;
+  }): boolean {
+    const { targetYearStartDate, available_from_year, available_until_year } =
+      params;
+
+    const startsAfterFrom =
+      !available_from_year ||
+      available_from_year.start_date <= targetYearStartDate;
+    const startsBeforeUntil =
+      !available_until_year ||
+      available_until_year.start_date >= targetYearStartDate;
+
+    return startsAfterFrom && startsBeforeUntil;
+  }
+
   // ========================================
   // CLASSES
   // ========================================
@@ -151,9 +233,11 @@ export class ClassesService {
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
     const locale = this.translationService.getCurrentLocale();
-    const where = {
+    const activeYear = await this.findCurrentEcclesiasticalYear();
+    const where: Prisma.classesWhereInput = {
       active: true,
       ...(clubTypeId && { club_type_id: clubTypeId }),
+      ...this.buildAvailabilityWhere(activeYear.start_date),
     };
 
     const [data, total] = await Promise.all([
@@ -279,10 +363,37 @@ export class ClassesService {
       //    encoding/collation differences in the DB.
       const targetClass = await tx.classes.findUnique({
         where: { class_id: classId },
-        include: { club_types: { select: { name: true } } },
+        include: {
+          club_types: { select: { name: true } },
+          available_from_year: { select: { start_date: true } },
+          available_until_year: { select: { start_date: true } },
+        },
       });
       if (!targetClass) {
         throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
+      }
+      if (targetClass.active === false) {
+        throw new AppNotFoundException(ErrorCode.CLASS_NOT_FOUND);
+      }
+
+      const targetYear = await tx.ecclesiastical_years.findUnique({
+        where: { year_id: ecclesiasticalYearId },
+        select: { start_date: true, end_date: true },
+      });
+      if (!targetYear) {
+        throw new AppNotFoundException(ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND);
+      }
+
+      if (
+        !this.isClassAvailableForYear({
+          targetYearStartDate: targetYear.start_date,
+          available_from_year: targetClass.available_from_year,
+          available_until_year: targetClass.available_until_year,
+        })
+      ) {
+        throw new AppBadRequestException(
+          ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR,
+        );
       }
 
       const clubTypeName = targetClass.club_types?.name?.toLowerCase() ?? '';

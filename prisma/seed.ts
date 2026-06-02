@@ -160,6 +160,27 @@ async function main() {
         skipDuplicates: true,
     });
 
+    // Seed global annual ranking recognition tiers.
+    // These are percentage bands calculated downward from each local field's annual max points.
+    console.log('📝 Seeding ranking_tiers...');
+    await prisma.$executeRaw`
+        INSERT INTO ranking_tiers (name, slug, band_percentage, color, icon, sort_order, active)
+        VALUES
+            ('Diamante', 'diamante', 5.00, '#7DD3FC', 'diamond', 1, true),
+            ('Oro', 'oro', 10.00, '#F59E0B', 'medal', 2, true),
+            ('Plata', 'plata', 15.00, '#A8A29E', 'award', 3, true),
+            ('Bronce', 'bronce', 20.00, '#B45309', 'badge', 4, true)
+        ON CONFLICT (slug) DO UPDATE
+        SET
+            name = EXCLUDED.name,
+            band_percentage = EXCLUDED.band_percentage,
+            color = EXCLUDED.color,
+            icon = EXCLUDED.icon,
+            sort_order = EXCLUDED.sort_order,
+            active = EXCLUDED.active,
+            updated_at = now()
+    `;
+
     // Seed countries
     console.log('📝 Seeding countries...');
     await prisma.countries.createMany({

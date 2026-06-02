@@ -1799,6 +1799,24 @@ WHERE r.role_name = 'super-admin'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================
+-- notifications:club — active club section leadership
+-- ============================
+-- Direct/broadcast notification permissions stay global-admin only:
+-- admin and super-admin pick them up automatically via the wildcard grants above.
+-- Club notification send is deliberately scoped to the actor's active club
+-- assignment, and granted only to section leadership roles.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('secretary', 'secretary-treasurer', 'deputy-director', 'director')
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'notifications:club'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
 -- attendance:approve_late — field/union directors and assistants
 -- ============================
 -- Grant to: director-lf, assistant-lf, director-union, assistant-union (all GLOBAL)

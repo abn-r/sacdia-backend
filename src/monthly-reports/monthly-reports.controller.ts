@@ -29,14 +29,9 @@ import { MonthlyReportsPdfService } from './monthly-reports-pdf.service';
 import { UpdateManualDataDto } from './dto';
 import {
   AuthorizationResource,
-  GlobalRoles,
   RequirePermissions,
 } from '../common/decorators';
-import {
-  GlobalRolesGuard,
-  JwtAuthGuard,
-  PermissionsGuard,
-} from '../common/guards';
+import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('monthly-reports')
 @ApiBearerAuth()
@@ -311,12 +306,12 @@ export class MonthlyReportsController {
   // ========================================
 
   @Get('admin/list')
-  @UseGuards(JwtAuthGuard, GlobalRolesGuard, PermissionsGuard)
-  @GlobalRoles('admin', 'coordinator', 'assistant-admin')
   @RequirePermissions('reports:read')
-  @AuthorizationResource({ type: 'global' })
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Listar reportes multi-club (admin/coordinator)' })
   @ApiQuery({ name: 'club_type_id', required: false, type: Number })
+  @ApiQuery({ name: 'division_id', required: false, type: Number })
+  @ApiQuery({ name: 'union_id', required: false, type: Number })
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
   @ApiQuery({ name: 'year', required: false, type: Number })
   @ApiQuery({ name: 'month', required: false, type: Number })
@@ -331,6 +326,10 @@ export class MonthlyReportsController {
     @Req() req: any,
     @Query('club_type_id', new ParseIntPipe({ optional: true }))
     clubTypeId?: number,
+    @Query('division_id', new ParseIntPipe({ optional: true }))
+    divisionId?: number,
+    @Query('union_id', new ParseIntPipe({ optional: true }))
+    unionId?: number,
     @Query('local_field_id', new ParseIntPipe({ optional: true }))
     localFieldId?: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
@@ -341,6 +340,8 @@ export class MonthlyReportsController {
   ) {
     const data = await this.monthlyReportsService.listForAdmin(req.user.sub, {
       clubTypeId,
+      divisionId,
+      unionId,
       localFieldId,
       year,
       month,

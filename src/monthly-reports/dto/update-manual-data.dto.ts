@@ -117,20 +117,22 @@ export class UpdateManualDataDto {
   @ApiPropertyOptional({
     description: 'Descripción de participación del club',
     example: 'El club participó en el desfile de la ciudad',
+    nullable: true,
   })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  club_participation_description?: string;
+  club_participation_description?: string | null;
 
   @ApiPropertyOptional({
     description: 'Descripción de servicio comunitario',
     example: 'Se realizó limpieza del parque municipal',
+    nullable: true,
   })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
-  community_service_description?: string;
+  community_service_description?: string | null;
 
   @ApiPropertyOptional({
     description: '¿Se entregaron certificados?',

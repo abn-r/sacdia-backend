@@ -2,6 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RankingsController } from '../rankings.controller';
 import { RankingsService } from '../rankings.service';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
+import {
+  AuthorizationContextService,
+  type ResolvedAuthorizationProfile,
+} from '../../common/services/authorization-context.service';
+import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
+import { AppForbiddenException } from '../../common/errors/app.exception';
 
 /**
  * Unit tests for RankingsController.
@@ -20,6 +26,12 @@ describe('RankingsController', () => {
       | 'recalculateRankings'
     >
   >;
+  let authorizationContext: jest.Mocked<
+    Pick<AuthorizationContextService, 'canAccessHierarchyScope'>
+  >;
+  let hierarchy: jest.Mocked<
+    Pick<InstitutionalHierarchyService, 'resolveCurrent'>
+  >;
 
   beforeEach(async () => {
     rankingsService = {
@@ -28,6 +40,12 @@ describe('RankingsController', () => {
       getBreakdown: jest.fn(),
       recalculateRankings: jest.fn(),
     };
+    authorizationContext = {
+      canAccessHierarchyScope: jest.fn(),
+    };
+    hierarchy = {
+      resolveCurrent: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RankingsController],
@@ -35,6 +53,14 @@ describe('RankingsController', () => {
         {
           provide: RankingsService,
           useValue: rankingsService,
+        },
+        {
+          provide: AuthorizationContextService,
+          useValue: authorizationContext,
+        },
+        {
+          provide: InstitutionalHierarchyService,
+          useValue: hierarchy,
         },
       ],
     })
@@ -53,6 +79,145 @@ describe('RankingsController', () => {
 
   it('controller is defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('GET rankings', () => {
+    it('passes optional local_field_id to the rankings service', async () => {
+      rankingsService.getRankings.mockResolvedValueOnce([]);
+
+      const result = await controller.getRankings('2', '2026', undefined, '10');
+
+      expect(result).toEqual({ status: 'success', data: [] });
+      expect(rankingsService.getRankings).toHaveBeenCalledWith(
+        2,
+        2026,
+        undefined,
+        10,
+      );
+    });
+
+    it('defaults rankings to the authenticated local field scope when local_field_id is omitted', async () => {
+      rankingsService.getRankings.mockResolvedValueOnce([]);
+
+      const result = await controller.getRankings(
+        '2',
+        '2026',
+        undefined,
+        undefined,
+        {
+          authorizationProfile: makeAuthorizationProfile({ localFieldId: 10 }),
+        },
+      );
+
+      expect(result).toEqual({ status: 'success', data: [] });
+      expect(rankingsService.getRankings).toHaveBeenCalledWith(
+        2,
+        2026,
+        undefined,
+        10,
+      );
+      expect(hierarchy.resolveCurrent).not.toHaveBeenCalled();
+    });
+
+    it('defaults rankings to the active club assignment local field before the profile local field', async () => {
+      rankingsService.getRankings.mockResolvedValueOnce([]);
+
+      const result = await controller.getRankings(
+        '2',
+        '2026',
+        undefined,
+        undefined,
+        {
+          authorizationProfile: makeAuthorizationProfile({
+            localFieldId: 99,
+            activeClubLocalFieldId: 10,
+          }),
+        },
+      );
+
+      expect(result).toEqual({ status: 'success', data: [] });
+      expect(rankingsService.getRankings).toHaveBeenCalledWith(
+        2,
+        2026,
+        undefined,
+        10,
+      );
+      expect(hierarchy.resolveCurrent).not.toHaveBeenCalled();
+    });
+
+    it('allows an explicit local_field_id when the authenticated profile can read that hierarchy scope', async () => {
+      rankingsService.getRankings.mockResolvedValueOnce([]);
+      hierarchy.resolveCurrent.mockResolvedValueOnce({
+        division_id: 1,
+        union_id: 5,
+        local_field_id: 99,
+        as_of: new Date('2026-01-01T00:00:00Z'),
+        source: 'current',
+        precision: 'exact',
+      });
+      authorizationContext.canAccessHierarchyScope.mockReturnValueOnce(true);
+
+      await controller.getRankings('2', '2026', undefined, '99', {
+        authorizationProfile: makeAuthorizationProfile({ unionId: 5 }),
+      });
+
+      expect(hierarchy.resolveCurrent).toHaveBeenCalledWith({
+        localFieldId: 99,
+      });
+      expect(authorizationContext.canAccessHierarchyScope).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ local_field_id: 99, union_id: 5 }),
+        'historical-read',
+      );
+      expect(rankingsService.getRankings).toHaveBeenCalledWith(
+        2,
+        2026,
+        undefined,
+        99,
+      );
+    });
+
+    it('allows an explicit local_field_id matching the active club assignment field', async () => {
+      rankingsService.getRankings.mockResolvedValueOnce([]);
+
+      await controller.getRankings('2', '2026', undefined, '10', {
+        authorizationProfile: makeAuthorizationProfile({
+          localFieldId: 99,
+          activeClubLocalFieldId: 10,
+        }),
+      });
+
+      expect(rankingsService.getRankings).toHaveBeenCalledWith(
+        2,
+        2026,
+        undefined,
+        10,
+      );
+      expect(hierarchy.resolveCurrent).not.toHaveBeenCalled();
+      expect(
+        authorizationContext.canAccessHierarchyScope,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects an explicit local_field_id outside the authenticated hierarchy scope', async () => {
+      hierarchy.resolveCurrent.mockResolvedValueOnce({
+        division_id: 1,
+        union_id: 5,
+        local_field_id: 99,
+        as_of: new Date('2026-01-01T00:00:00Z'),
+        source: 'current',
+        precision: 'exact',
+      });
+      authorizationContext.canAccessHierarchyScope.mockReturnValueOnce(false);
+
+      await expect(
+        controller.getRankings('2', '2026', undefined, '99', {
+          authorizationProfile: makeAuthorizationProfile({ localFieldId: 10 }),
+        }),
+      ).rejects.toBeInstanceOf(AppForbiddenException);
+
+      expect(rankingsService.getRankings).not.toHaveBeenCalled();
+    });
   });
 
   // ---------------------------------------------------------------
@@ -127,3 +292,130 @@ describe('RankingsController', () => {
     });
   });
 });
+
+function makeAuthorizationProfile({
+  localFieldId = null,
+  unionId = null,
+  roleName = 'director-lf',
+  activeClubLocalFieldId = null,
+}: {
+  localFieldId?: number | null;
+  unionId?: number | null;
+  roleName?: string;
+  activeClubLocalFieldId?: number | null;
+}): ResolvedAuthorizationProfile {
+  const activeClubAssignment =
+    activeClubLocalFieldId === null
+      ? null
+      : {
+          assignment_id: 'active-assignment-1',
+          role_name: 'director',
+          permissions: ['rankings:read'],
+          club: {
+            club_id: 1,
+            club_name: 'Club Amanecer',
+          },
+          section: {
+            club_section_id: 2,
+            club_type_name: 'Conquistadores',
+          },
+          scope: {
+            local_field: { id: activeClubLocalFieldId, name: 'Campo activo' },
+          },
+          status: 'active',
+          start_date: null,
+          end_date: null,
+        };
+  const legacyActiveClubAssignment = activeClubAssignment
+    ? {
+        assignment_id: activeClubAssignment.assignment_id,
+        role_name: activeClubAssignment.role_name,
+        club_section_id: activeClubAssignment.section.club_section_id,
+        club_id: activeClubAssignment.club.club_id,
+        club_name: activeClubAssignment.club.club_name,
+        club_type: activeClubAssignment.section.club_type_name,
+      }
+    : null;
+
+  return {
+    profile: {
+      user_id: 'user-id',
+      email: 'director@example.com',
+      name: 'Directora',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: null,
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      blood: null,
+      user_image: null,
+      country_id: null,
+      union_id: unionId,
+      local_field_id: localFieldId,
+      created_at: new Date('2026-01-01T00:00:00Z'),
+    },
+    post_register_complete: true,
+    authorization: {
+      grants: {
+        global_roles: [
+          {
+            role_name: roleName,
+            permissions: ['rankings:read'],
+            scope: {
+              ...(unionId !== null
+                ? { union: { id: unionId, name: 'Unión' } }
+                : {}),
+              ...(localFieldId !== null
+                ? { local_field: { id: localFieldId, name: 'Campo' } }
+                : {}),
+            },
+          },
+        ],
+        club_assignments: activeClubAssignment ? [activeClubAssignment] : [],
+      },
+      active_assignment: {
+        assignment_id: activeClubAssignment?.assignment_id ?? null,
+      },
+      effective: {
+        permissions: ['rankings:read'],
+        scope: {
+          global: {
+            ...(unionId !== null
+              ? { union: { id: unionId, name: 'Unión' } }
+              : {}),
+            ...(localFieldId !== null
+              ? { local_field: { id: localFieldId, name: 'Campo' } }
+              : {}),
+          },
+          club: activeClubAssignment
+            ? {
+                assignment_id: activeClubAssignment.assignment_id,
+                role_name: activeClubAssignment.role_name,
+                club: activeClubAssignment.club,
+                section: activeClubAssignment.section,
+              }
+            : null,
+        },
+      },
+    },
+    legacy: {
+      roles: [roleName],
+      permissions: ['rankings:read'],
+      club: activeClubAssignment
+        ? {
+            club_id: activeClubAssignment.club.club_id,
+            club_name: activeClubAssignment.club.club_name,
+            club_type: activeClubAssignment.section.club_type_name,
+          }
+        : null,
+      club_context: {
+        active_assignment_id: activeClubAssignment?.assignment_id ?? null,
+        active: legacyActiveClubAssignment,
+        available: legacyActiveClubAssignment
+          ? [legacyActiveClubAssignment]
+          : [],
+      },
+    },
+  };
+}

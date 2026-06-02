@@ -14,6 +14,10 @@ import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { maskEmail } from '../common/utils/mask-email.util';
 
+type AssignRolePermissionOptions = {
+  invalidateAffectedUsers?: boolean;
+};
+
 @Injectable()
 export class RbacService {
   private readonly logger = new Logger(RbacService.name);
@@ -364,7 +368,11 @@ export class RbacService {
 
   // ─── Asignación de permisos a roles ─────────────────────────
 
-  async assignPermissionsToRole(roleId: string, permissionIds: string[]) {
+  async assignPermissionsToRole(
+    roleId: string,
+    permissionIds: string[],
+    options: AssignRolePermissionOptions = {},
+  ) {
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },
     });
@@ -417,6 +425,13 @@ export class RbacService {
     const created = results.filter((r) => r === 'created').length;
     const reactivated = results.filter((r) => r === 'reactivated').length;
 
+    if (
+      (options.invalidateAffectedUsers ?? true) &&
+      (created > 0 || reactivated > 0)
+    ) {
+      await this.invalidateAuthorizationCacheForRoleHolders(roleId);
+    }
+
     this.logger.log(
       `Permisos asignados a rol ${role.role_name}: ${created} nuevos, ${reactivated} reactivados`,
     );
@@ -445,6 +460,8 @@ export class RbacService {
       where: { role_permission_id: assignment.role_permission_id },
       data: { active: false, modified_at: new Date() },
     });
+
+    await this.invalidateAuthorizationCacheForRoleHolders(roleId);
 
     this.logger.log(`Permiso ${permissionId} removido del rol ${roleId}`);
 
@@ -765,7 +782,13 @@ export class RbacService {
 
     // Agregar los nuevos (o reactivar)
     if (toAdd.length > 0) {
-      await this.assignPermissionsToRole(roleId, toAdd);
+      await this.assignPermissionsToRole(roleId, toAdd, {
+        invalidateAffectedUsers: false,
+      });
+    }
+
+    if (toRemove.length > 0 || toAdd.length > 0) {
+      await this.invalidateAuthorizationCacheForRoleHolders(roleId);
     }
 
     this.logger.log(
@@ -777,5 +800,40 @@ export class RbacService {
       added: toAdd.length,
       removed: toRemove.length,
     };
+  }
+
+  private async invalidateAuthorizationCacheForRoleHolders(
+    roleId: string,
+  ): Promise<void> {
+    const [globalAssignments, clubAssignments] = await Promise.all([
+      this.prisma.users_roles.findMany({
+        where: { role_id: roleId, active: true },
+        select: { user_id: true },
+      }),
+      this.prisma.club_role_assignments.findMany({
+        where: { role_id: roleId, active: true },
+        select: { user_id: true },
+      }),
+    ]);
+
+    const userIds = new Set<string>();
+    for (const assignment of globalAssignments) {
+      userIds.add(assignment.user_id);
+    }
+    for (const assignment of clubAssignments) {
+      userIds.add(assignment.user_id);
+    }
+
+    await Promise.all(
+      Array.from(userIds).map((userId) =>
+        this.authorizationContext.invalidateUserAuthorizationCache(userId),
+      ),
+    );
+
+    if (userIds.size > 0) {
+      this.logger.debug(
+        `Auth context cache invalidado para ${userIds.size} usuario(s) por cambio de permisos del rol ${roleId}`,
+      );
+    }
   }
 }

@@ -14,6 +14,7 @@ import { CamporeeScoreService } from '../score-calculators/camporee-score';
 import { EvidenceScoreService } from '../score-calculators/evidence-score';
 import { WeightsResolverService } from '../score-calculators/weights-resolver';
 import { CompositeScoreService } from '../score-calculators/composite-score';
+import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
 
 describe('RankingsService', () => {
   let service: RankingsService;
@@ -23,9 +24,10 @@ describe('RankingsService', () => {
     $transaction: jest.Mock;
     $executeRaw: jest.Mock;
     ecclesiastical_years: { findUnique: jest.Mock; findFirst: jest.Mock };
-    annual_folders: { findMany: jest.Mock };
+    annual_folders: { findMany: jest.Mock; update: jest.Mock };
     award_categories: { findMany: jest.Mock };
     system_config: { findUnique: jest.Mock };
+    hierarchy_contexts: { findUnique: jest.Mock };
     club_annual_rankings: {
       upsert: jest.Mock;
       deleteMany: jest.Mock;
@@ -44,6 +46,13 @@ describe('RankingsService', () => {
   let mockMemberCompositeScore: { calculate: jest.Mock };
   let mockSectionAggregation: { aggregate: jest.Mock };
   let mockSystemConfig: { get: jest.Mock };
+  const mockHierarchyService: {
+    resolveAsOf: jest.Mock;
+    snapshotForClub: jest.Mock;
+  } = {
+    resolveAsOf: jest.fn(),
+    snapshotForClub: jest.fn(),
+  };
 
   // $transaction passes the same mock as the transaction client so all
   // individual table mocks are accessible inside the callback.
@@ -56,11 +65,15 @@ describe('RankingsService', () => {
     },
     annual_folders: {
       findMany: jest.fn(),
+      update: jest.fn(),
     },
     award_categories: {
       findMany: jest.fn(),
     },
     system_config: {
+      findUnique: jest.fn(),
+    },
+    hierarchy_contexts: {
       findUnique: jest.fn(),
     },
     club_annual_rankings: {
@@ -145,6 +158,15 @@ describe('RankingsService', () => {
       active_enrollment_count: 0,
     });
     mockSystemConfig.get.mockResolvedValue(null);
+    mockHierarchyService.resolveAsOf.mockResolvedValue({
+      local_field_id: 1,
+      union_id: 5,
+    });
+    mockHierarchyService.snapshotForClub.mockResolvedValue({
+      hierarchy_context_id: 'ctx-snapshot-1',
+    });
+    mockPrismaService.annual_folders.update.mockResolvedValue({});
+    mockPrismaService.hierarchy_contexts.findUnique.mockResolvedValue(null);
     mockPrismaService.$executeRaw.mockResolvedValue(0);
 
     // Re-establish default return values for score calculator mocks
@@ -199,6 +221,10 @@ describe('RankingsService', () => {
           provide: SystemConfigService,
           useValue: mockSystemConfig,
         },
+        {
+          provide: InstitutionalHierarchyService,
+          useValue: mockHierarchyService,
+        },
         { provide: FolderScoreService, useValue: folderScore },
         { provide: FinanceScoreService, useValue: financeScore },
         { provide: CamporeeScoreService, useValue: camporeeScore },
@@ -227,12 +253,14 @@ describe('RankingsService', () => {
       max: number,
       pct: number,
       clubTypeId = 2,
+      hierarchyContextId: string | null = null,
     ) => ({
       annual_folder_id: id,
       club_enrollment_id: clubEnrollmentId,
       total_earned_points: earned,
       total_max_points: max,
       progress_percentage: pct,
+      hierarchy_context_id: hierarchyContextId,
       folder_template: {
         club_type_id: clubTypeId,
         ecclesiastical_year_id: 2026,
@@ -338,6 +366,113 @@ describe('RankingsService', () => {
         }),
       );
       expect(result.updated).toBe(1);
+    });
+
+    it('uses historical hierarchy context for camporee scoring scope', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+      mockHierarchyService.resolveAsOf.mockResolvedValue({
+        local_field_id: 88,
+        union_id: 99,
+      });
+
+      await service.recalculateRankings();
+
+      expect(camporeeScore.calc).toHaveBeenCalledWith(10, 88, 99, 2026);
+      expect(mockHierarchyService.resolveAsOf).toHaveBeenCalledWith(
+        { type: 'club', id: 10 },
+        expect.any(Date),
+      );
+    });
+
+    it('stores immutable hierarchy snapshot for folders and ranking rows when context is missing', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+
+      await service.recalculateRankings();
+
+      expect(mockHierarchyService.snapshotForClub).toHaveBeenCalledWith(
+        10,
+        expect.any(Date),
+      );
+      expect(mockPrismaService.annual_folders.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { annual_folder_id: 'folder-1' },
+          data: { hierarchy_context_id: 'ctx-snapshot-1' },
+        }),
+      );
+      expect(
+        mockPrismaService.club_annual_rankings.upsert,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            hierarchy_context_id: 'ctx-snapshot-1',
+          }),
+          update: expect.objectContaining({
+            hierarchy_context_id: 'ctx-snapshot-1',
+          }),
+        }),
+      );
+    });
+
+    it('uses stored hierarchy snapshot instead of as-of resolution when context exists', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2, 'ctx-fixed'),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+      mockPrismaService.hierarchy_contexts.findUnique.mockResolvedValue({
+        local_field_id: 77,
+        union_id: 88,
+      });
+      mockHierarchyService.resolveAsOf.mockRejectedValue(
+        new Error('should not run when snapshot exists'),
+      );
+
+      await service.recalculateRankings();
+
+      expect(
+        mockPrismaService.hierarchy_contexts.findUnique,
+      ).toHaveBeenCalled();
+      expect(mockHierarchyService.resolveAsOf).not.toHaveBeenCalled();
+      expect(camporeeScore.calc).toHaveBeenCalledWith(10, 77, 88, 2026);
+    });
+
+    it('skips composite scoring without aborting when historical hierarchy is unavailable', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([]);
+      mockHierarchyService.resolveAsOf.mockRejectedValue(
+        new Error('history unavailable'),
+      );
+
+      const result = await service.recalculateRankings();
+
+      expect(result.updated).toBe(0);
+      expect(camporeeScore.calc).not.toHaveBeenCalled();
     });
 
     it('should create category-specific rankings when composite qualifies (non-legacy)', async () => {
@@ -539,6 +674,62 @@ describe('RankingsService', () => {
       expect(r3?.rank_position).toBe(2); // dense: 2, not 3
     });
 
+    it('should assign dense rank positions independently per local field', async () => {
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
+        mockActiveYear,
+      );
+      mockPrismaService.annual_folders.findMany.mockResolvedValue([
+        buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
+      ]);
+      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
+      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
+
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([
+        {
+          ranking_id: 'r-lf1-top',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          composite_score_pct: 90,
+          hierarchy_context: { local_field_id: 10 },
+        },
+        {
+          ranking_id: 'r-lf2-top',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          composite_score_pct: 80,
+          hierarchy_context: { local_field_id: 20 },
+        },
+        {
+          ranking_id: 'r-lf1-second',
+          club_type_id: 2,
+          award_category_id: GENERAL_CATEGORY_ID,
+          composite_score_pct: 70,
+          hierarchy_context: { local_field_id: 10 },
+        },
+      ]);
+      mockPrismaService.club_annual_rankings.update.mockResolvedValue({});
+
+      await service.recalculateRankings();
+
+      const updateCalls =
+        mockPrismaService.club_annual_rankings.update.mock.calls.map(
+          ([call]) => ({
+            ranking_id: call.where.ranking_id,
+            rank_position: call.data.rank_position,
+          }),
+        );
+
+      expect(
+        updateCalls.find((c) => c.ranking_id === 'r-lf1-top')?.rank_position,
+      ).toBe(1);
+      expect(
+        updateCalls.find((c) => c.ranking_id === 'r-lf1-second')?.rank_position,
+      ).toBe(2);
+      expect(
+        updateCalls.find((c) => c.ranking_id === 'r-lf2-top')?.rank_position,
+      ).toBe(1);
+    });
+
     it('should handle max_points boundary (points equal to max_points still qualify) for legacy categories', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
@@ -713,6 +904,7 @@ describe('RankingsService', () => {
       {
         ranking_id: 'r-1',
         rank_position: 1,
+        club_enrollment_id: 'enroll-1',
         club_type_id: 2,
         ecclesiastical_year_id: 2026,
         award_category_id: null,
@@ -725,6 +917,7 @@ describe('RankingsService', () => {
         evidence_score_pct: 95,
         composite_score_pct: 82,
         composite_calculated_at: new Date('2026-01-15T10:00:00Z'),
+        hierarchy_context: { local_field_id: 10 },
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -735,6 +928,7 @@ describe('RankingsService', () => {
       {
         ranking_id: 'r-2',
         rank_position: 2,
+        club_enrollment_id: 'enroll-2',
         club_type_id: 2,
         ecclesiastical_year_id: 2026,
         award_category_id: null,
@@ -747,6 +941,7 @@ describe('RankingsService', () => {
         evidence_score_pct: 70,
         composite_score_pct: 60,
         composite_calculated_at: null,
+        hierarchy_context: { local_field_id: 10 },
         award_category: null,
         club_enrollment: {
           club_section: {
@@ -767,6 +962,22 @@ describe('RankingsService', () => {
       expect(result[0].rank_position).toBe(1);
       expect(result[0].club_name).toBe('Club Alfa');
       expect(result[1].rank_position).toBe(2);
+    });
+
+    it('should include identifiers required by ranking detail links', async () => {
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
+
+      const result = await service.getRankings(2, 2026);
+
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          club_enrollment_id: 'enroll-1',
+          ecclesiastical_year_id: 2026,
+          local_field_id: 10,
+        }),
+      );
     });
 
     it('should include component and composite score fields in each entry', async () => {
@@ -846,6 +1057,24 @@ describe('RankingsService', () => {
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ award_category_id: 'cat-gold' }),
+        }),
+      );
+    });
+
+    it('should filter by local_field_id when provided', async () => {
+      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue(
+        mockRankingRecords,
+      );
+
+      await service.getRankings(2, 2026, undefined, 10);
+
+      expect(
+        mockPrismaService.club_annual_rankings.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            hierarchy_context: { local_field_id: 10 },
+          }),
         }),
       );
     });
@@ -1133,6 +1362,20 @@ describe('RankingsService', () => {
       expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledTimes(
         1,
       );
+      expect(mockHierarchyService.snapshotForClub).toHaveBeenCalledWith(
+        10,
+        expect.any(Date),
+      );
+      expect(mockPrismaService.enrollmentRanking.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            hierarchy_context_id: 'ctx-snapshot-1',
+          }),
+          update: expect.objectContaining({
+            hierarchy_context_id: 'ctx-snapshot-1',
+          }),
+        }),
+      );
     });
 
     it('recalculateSectionAggregates: per-section error skips', async () => {
@@ -1157,6 +1400,16 @@ describe('RankingsService', () => {
 
       // Only the successful section triggers an upsert
       expect(mockPrismaService.sectionRanking.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.sectionRanking.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            hierarchy_context_id: 'ctx-snapshot-1',
+          }),
+          update: expect.objectContaining({
+            hierarchy_context_id: 'ctx-snapshot-1',
+          }),
+        }),
+      );
     });
   });
 

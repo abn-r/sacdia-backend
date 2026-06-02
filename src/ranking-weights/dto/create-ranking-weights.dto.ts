@@ -12,7 +12,7 @@ export class CreateRankingWeightsDto {
   club_type_id?: number;
 
   @ApiProperty({
-    description: 'Weight for annual folders component (0–100)',
+    description: 'Weight for annual evidence folders component (0–100)',
     example: 30,
   })
   @IsInt()

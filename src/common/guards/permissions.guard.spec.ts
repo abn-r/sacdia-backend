@@ -5,6 +5,7 @@ import { AuthorizationContextService } from '../services/authorization-context.s
 import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../errors/error-codes';
+import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
 
 const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
 
@@ -16,6 +17,11 @@ describe('PermissionsGuard', () => {
   const mockAuthorizationContext = {
     resolveUserAuthorization: jest.fn(),
     canManageClub: jest.fn(),
+    canAccessHierarchyScope: jest.fn(),
+  };
+
+  const mockHierarchy = {
+    resolveCurrent: jest.fn(),
   };
 
   const mockPrisma = {
@@ -40,6 +46,7 @@ describe('PermissionsGuard', () => {
     mockReflector as unknown as Reflector,
     mockAuthorizationContext as unknown as AuthorizationContextService,
     mockPrisma as unknown as PrismaService,
+    mockHierarchy as unknown as InstitutionalHierarchyService,
   );
 
   const createContext = (
@@ -62,6 +69,11 @@ describe('PermissionsGuard', () => {
     instanceId = 22,
     localFieldId = 50,
     unionId = 70,
+    divisionId = 1,
+    globalCountryId,
+    globalUnionId,
+    globalLocalFieldId,
+    globalDivisionId,
   }: {
     globalPermissions?: string[];
     activeClubPermissions?: string[];
@@ -70,6 +82,11 @@ describe('PermissionsGuard', () => {
     instanceId?: number;
     localFieldId?: number;
     unionId?: number;
+    divisionId?: number;
+    globalCountryId?: number;
+    globalUnionId?: number;
+    globalLocalFieldId?: number;
+    globalDivisionId?: number;
   }) => ({
     authorization: {
       grants: {
@@ -77,7 +94,16 @@ describe('PermissionsGuard', () => {
           {
             role_name: 'admin',
             permissions: globalPermissions,
-            scope: {},
+            scope: {
+              ...(globalDivisionId
+                ? { division: { id: globalDivisionId } }
+                : {}),
+              ...(globalCountryId ? { country: { id: globalCountryId } } : {}),
+              ...(globalUnionId ? { union: { id: globalUnionId } } : {}),
+              ...(globalLocalFieldId
+                ? { local_field: { id: globalLocalFieldId } }
+                : {}),
+            },
           },
         ],
         club_assignments: [
@@ -94,6 +120,7 @@ describe('PermissionsGuard', () => {
               club_type_name: instanceType,
             },
             scope: {
+              division: { id: divisionId, name: 'División Interamericana' },
               local_field: { id: localFieldId, name: 'Campo Norte' },
               union: { id: unionId, name: 'Union Norte' },
             },
@@ -111,7 +138,14 @@ describe('PermissionsGuard', () => {
           ...new Set([...globalPermissions, ...activeClubPermissions]),
         ],
         scope: {
-          global: {},
+          global: {
+            ...(globalDivisionId ? { division: { id: globalDivisionId } } : {}),
+            ...(globalCountryId ? { country: { id: globalCountryId } } : {}),
+            ...(globalUnionId ? { union: { id: globalUnionId } } : {}),
+            ...(globalLocalFieldId
+              ? { local_field: { id: globalLocalFieldId } }
+              : {}),
+          },
           club: activeClubPermissions.length
             ? {
                 assignment_id: 'assignment-1',
@@ -134,6 +168,36 @@ describe('PermissionsGuard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
+    mockAuthorizationContext.canAccessHierarchyScope.mockImplementation(
+      (resolved, scope) => {
+        const globalScope = resolved.authorization.effective.scope.global ?? {};
+        if (
+          typeof scope.local_field_id === 'number' &&
+          globalScope.local_field?.id === scope.local_field_id
+        ) {
+          return true;
+        }
+        if (
+          typeof scope.union_id === 'number' &&
+          globalScope.union?.id === scope.union_id
+        ) {
+          return true;
+        }
+        return (
+          typeof scope.division_id === 'number' &&
+          globalScope.division?.id === scope.division_id
+        );
+      },
+    );
+    mockHierarchy.resolveCurrent.mockResolvedValue({
+      division_id: 1,
+      division_name: 'División Interamericana',
+      union_id: 70,
+      local_field_id: 50,
+      as_of: new Date('2026-01-01'),
+      source: 'current',
+      precision: 'exact',
+    });
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {
         return undefined;
@@ -255,6 +319,30 @@ describe('PermissionsGuard', () => {
     await expect(
       guard.canActivate(createContext({ user: { sub: 'admin-1' } })),
     ).resolves.toBe(true);
+  });
+
+  it('attaches both the authorization snapshot and full resolved profile to the request', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['section_rankings:read_club'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'active_assignment' };
+      }
+      return undefined;
+    });
+    const resolved = createResolved({
+      activeClubPermissions: ['section_rankings:read_club'],
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolved,
+    );
+    const request = { user: { sub: 'club-user-1' } };
+
+    await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
+
+    expect((request as any).authorization).toBe(resolved.authorization);
+    expect((request as any).authorizationProfile).toBe(resolved);
   });
 
   it('rejects a global resource when the permission only exists on the active club assignment', async () => {
