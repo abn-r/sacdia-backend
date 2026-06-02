@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
 import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
+import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 
 describe('PostRegistrationService', () => {
   let service: PostRegistrationService;
@@ -33,8 +34,20 @@ describe('PostRegistrationService', () => {
     },
     club_role_assignments: {
       findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn().mockResolvedValue({ assignment_id: 'assignment-1' }),
-      update: jest.fn().mockResolvedValue({ assignment_id: 'assignment-1' }),
+      create: jest.fn().mockResolvedValue({
+        assignment_id: 'assignment-1',
+        user_id: '20a9a762-a4fa-49dd-93a6-3851e27f8b69',
+        club_section_id: 10,
+        active: true,
+        status: 'pending',
+      }),
+      update: jest.fn().mockResolvedValue({
+        assignment_id: 'assignment-1',
+        user_id: '20a9a762-a4fa-49dd-93a6-3851e27f8b69',
+        club_section_id: 10,
+        active: true,
+        status: 'pending',
+      }),
     },
     classes: {
       findUnique: jest.fn().mockResolvedValue({
@@ -96,6 +109,11 @@ describe('PostRegistrationService', () => {
     findOne: jest.fn(),
   };
 
+  const mockMembershipRequestsService = {
+    notifyNewRequestCreated: jest.fn().mockResolvedValue(undefined),
+    cancelPendingForUser: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -116,6 +134,10 @@ describe('PostRegistrationService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: UsersService, useValue: mockUsersService },
         { provide: LegalRepresentativesService, useValue: mockLegalRepService },
+        {
+          provide: MembershipRequestsService,
+          useValue: mockMembershipRequestsService,
+        },
       ],
     }).compile();
 
@@ -417,6 +439,40 @@ describe('PostRegistrationService', () => {
       expect(transactionMock.users_pr.update).toHaveBeenCalled();
     });
 
+    it('should reject a new club selection when the user already has another pending request', async () => {
+      transactionMock.club_role_assignments.findFirst.mockResolvedValueOnce({
+        assignment_id: 'pending-other-section',
+        user_id: userId,
+        club_section_id: 99,
+        status: 'pending',
+        active: true,
+      });
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({
+        code: ErrorCode.POST_REG_DUPLICATE_MEMBERSHIP,
+      });
+
+      expect(
+        transactionMock.club_role_assignments.create,
+      ).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
+    });
+
+    it('should notify section reviewers when a pending membership request is created', async () => {
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(
+        mockMembershipRequestsService.notifyNewRequestCreated,
+      ).toHaveBeenCalledWith({
+        userId,
+        clubSectionId: dto.club_section_id,
+        assignmentId: 'assignment-1',
+      });
+    });
+
     it('should reactivate existing inactive enrollment without resetting metadata', async () => {
       transactionMock.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 1002,
@@ -540,6 +596,28 @@ describe('PostRegistrationService', () => {
       await expect(
         service.completeStep3(userId, dto, adminActor),
       ).rejects.toMatchObject({ code: ErrorCode.POST_REG_NOT_INITIATED });
+    });
+  });
+
+  describe('cancelPendingMembershipRequest', () => {
+    it('should cancel the pending request through membership requests and reopen club selection for the owner', async () => {
+      mockMembershipRequestsService.cancelPendingForUser.mockResolvedValue({
+        assignment_id: 'assignment-1',
+      });
+
+      const result = await service.cancelPendingMembershipRequest(
+        ownerActor.actorUserId,
+        ownerActor,
+      );
+
+      expect(
+        mockMembershipRequestsService.cancelPendingForUser,
+      ).toHaveBeenCalledWith(ownerActor.actorUserId, ownerActor.actorUserId);
+      expect(result).toEqual({
+        status: 'success',
+        message:
+          'Solicitud de membresía cancelada. Puedes elegir club y sección nuevamente.',
+      });
     });
   });
 });

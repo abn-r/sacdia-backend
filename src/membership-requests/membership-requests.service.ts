@@ -8,6 +8,19 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
+const MEMBERSHIP_REQUEST_REVIEWER_ROLES = [
+  'director',
+  'deputy-director',
+  'secretary',
+  'secretary-treasurer',
+] as const;
+
+export type PendingMembershipRequestNotificationInput = {
+  userId: string;
+  clubSectionId: number;
+  assignmentId: string;
+};
+
 @Injectable()
 export class MembershipRequestsService {
   private readonly logger = new Logger(MembershipRequestsService.name);
@@ -141,6 +154,98 @@ export class MembershipRequestsService {
     );
 
     return assignment;
+  }
+
+  /**
+   * Cancel the current user's pending request and reopen post-registration at
+   * the club/section selection step. This is user-owned self-service, not an
+   * administrative rejection.
+   */
+  async cancelPendingForUser(userId: string, actorId: string) {
+    const now = new Date();
+
+    const cancelledAssignment = await this.prisma.$transaction(async (tx) => {
+      const pendingAssignment = await tx.club_role_assignments.findFirst({
+        where: {
+          user_id: userId,
+          status: 'pending',
+          active: true,
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      if (!pendingAssignment) {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+
+      const result = await tx.club_role_assignments.updateMany({
+        where: {
+          assignment_id: pendingAssignment.assignment_id,
+          user_id: userId,
+          status: 'pending',
+          active: true,
+        },
+        data: {
+          status: 'cancelled',
+          active: false,
+          expires_at: null,
+          end_date: now,
+          modified_at: now,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
+      }
+
+      await tx.users_pr.update({
+        where: { user_id: userId },
+        data: {
+          club_selection_complete: false,
+          complete: false,
+          date_completed: null,
+          active_club_assignment_id: null,
+        },
+      });
+
+      return {
+        ...pendingAssignment,
+        status: 'cancelled',
+        active: false,
+        expires_at: null,
+        end_date: now,
+        modified_at: now,
+      };
+    });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+
+    this.emitRealtimeInvalidation(
+      cancelledAssignment.club_section_id,
+      cancelledAssignment.assignment_id,
+      'DELETED',
+      actorId,
+    );
+
+    return cancelledAssignment;
+  }
+
+  async notifyNewRequestCreated(
+    input: PendingMembershipRequestNotificationInput,
+  ): Promise<void> {
+    await this.notificationsService.sendToSectionRole(
+      input.clubSectionId,
+      [...MEMBERSHIP_REQUEST_REVIEWER_ROLES],
+      'Nueva solicitud de membresía',
+      'Hay una nueva solicitud pendiente de aprobación para tu sección.',
+      {
+        type: 'membership_request_created',
+        userId: input.userId,
+        assignmentId: input.assignmentId,
+        clubSectionId: String(input.clubSectionId),
+      },
+      'membership_requests:new_request',
+    );
   }
 
   /**

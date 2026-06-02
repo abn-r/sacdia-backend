@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
+import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
 import {
   ClassAssignmentResolverService,
@@ -28,6 +29,19 @@ type ResolvedClubSection = {
   club_type_id: number;
 };
 
+type ResolvedMemberAssignment = {
+  assignment_id: string;
+  user_id: string;
+  club_section_id: number | null;
+  active: boolean;
+  status: string | null;
+};
+
+type ResolveMemberAssignmentResult = {
+  assignment: ResolvedMemberAssignment;
+  shouldNotifyReviewers: boolean;
+};
+
 @Injectable()
 export class PostRegistrationService {
   private readonly logger = new Logger(PostRegistrationService.name);
@@ -37,6 +51,7 @@ export class PostRegistrationService {
     private usersService: UsersService,
     private legalRepService: LegalRepresentativesService,
     private classAssignmentResolver: ClassAssignmentResolverService,
+    private membershipRequestsService: MembershipRequestsService,
   ) {}
 
   async getStatus(
@@ -223,7 +238,7 @@ export class PostRegistrationService {
     actor: PostRegistrationActorContext = this.createOwnerContext(userId),
   ) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const completion = await this.prisma.$transaction(async (tx) => {
         const now = new Date();
         const currentYear = await this.resolveActiveEcclesiasticalYear(tx, now);
         const memberRoleId = await this.resolveMemberRoleId(tx);
@@ -247,7 +262,7 @@ export class PostRegistrationService {
           },
         });
 
-        await this.resolveMemberAssignment(tx, {
+        const membershipRequest = await this.resolveMemberAssignment(tx, {
           userId,
           roleId: memberRoleId,
           clubInstanceField,
@@ -298,19 +313,63 @@ export class PostRegistrationService {
         };
 
         if (actor.isOwner) {
-          return response;
+          return { response, membershipRequest };
         }
 
         return {
-          status: 'success',
-          message: 'Paso 3 completado',
+          response: {
+            status: 'success',
+            message: 'Paso 3 completado',
+          },
+          membershipRequest,
         };
       });
+
+      if (completion.membershipRequest.shouldNotifyReviewers) {
+        await this.membershipRequestsService.notifyNewRequestCreated({
+          userId,
+          clubSectionId:
+            completion.membershipRequest.assignment.club_section_id ??
+            dto.club_section_id,
+          assignmentId: completion.membershipRequest.assignment.assignment_id,
+        });
+      }
+
+      return completion.response;
     } catch (error) {
       throw this.sanitizeAdministrativeValidationError(
         error,
         actor,
         'No se puede completar el paso 3 para este usuario',
+      );
+    }
+  }
+
+  async cancelPendingMembershipRequest(
+    userId: string,
+    actor: PostRegistrationActorContext = this.createOwnerContext(userId),
+  ) {
+    try {
+      await this.membershipRequestsService.cancelPendingForUser(
+        userId,
+        actor.actorUserId,
+      );
+
+      return actor.isOwner
+        ? {
+            status: 'success',
+            message:
+              'Solicitud de membresía cancelada. Puedes elegir club y sección nuevamente.',
+          }
+        : {
+            status: 'success',
+            message: 'Solicitud de membresía cancelada',
+          };
+    } catch (error) {
+      throw this.sanitizeAdministrativeValidationError(
+        error,
+        actor,
+        'No se puede cancelar la solicitud de membresía para este usuario',
       );
     }
   }
@@ -390,7 +449,7 @@ export class PostRegistrationService {
       ecclesiasticalYearId: number;
       assignmentStartDate: Date;
     },
-  ) {
+  ): Promise<ResolveMemberAssignmentResult> {
     // --- Multi-club same-type validation ---
     const targetSection = await tx.club_sections.findUnique({
       where: { club_section_id: params.clubInstanceId },
@@ -401,22 +460,32 @@ export class PostRegistrationService {
       throw new AppBadRequestException(ErrorCode.POST_REG_CLUB_NOT_FOUND);
     }
 
-    const existingSameType = await tx.club_role_assignments.findFirst({
-      where: {
-        user_id: params.userId,
-        status: { in: ['active', 'pending'] },
-        active: true,
-        club_sections: {
-          club_type_id: targetSection.club_type_id,
-        },
-        // Exclude the exact same club section (re-registration case)
-        NOT: {
-          club_section_id: params.clubInstanceId,
-        },
-      },
-    });
+    const currentAssignmentIdentity = {
+      role_id: params.roleId,
+      ecclesiastical_year_id: params.ecclesiasticalYearId,
+      [params.clubInstanceField]: params.clubInstanceId,
+      start_date: params.assignmentStartDate,
+    };
 
-    if (existingSameType) {
+    const existingConflictingMembership =
+      await tx.club_role_assignments.findFirst({
+        where: {
+          user_id: params.userId,
+          active: true,
+          OR: [
+            { status: 'pending' },
+            {
+              status: 'active',
+              club_sections: {
+                club_type_id: targetSection.club_type_id,
+              },
+            },
+          ],
+          NOT: currentAssignmentIdentity,
+        },
+      });
+
+    if (existingConflictingMembership) {
       throw new AppConflictException(ErrorCode.POST_REG_DUPLICATE_MEMBERSHIP);
     }
 
@@ -424,16 +493,22 @@ export class PostRegistrationService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 8);
 
+    const assignmentSelect = {
+      assignment_id: true,
+      user_id: true,
+      club_section_id: true,
+      active: true,
+      status: true,
+    } satisfies Prisma.club_role_assignmentsSelect;
+
     const where: Prisma.club_role_assignmentsWhereInput = {
       user_id: params.userId,
-      role_id: params.roleId,
-      ecclesiastical_year_id: params.ecclesiasticalYearId,
-      [params.clubInstanceField]: params.clubInstanceId,
-      start_date: params.assignmentStartDate,
+      ...currentAssignmentIdentity,
     };
 
     const existingAssignment = await tx.club_role_assignments.findFirst({
       where,
+      select: assignmentSelect,
     });
 
     if (existingAssignment) {
@@ -441,7 +516,7 @@ export class PostRegistrationService {
         !existingAssignment.active ||
         existingAssignment.status !== 'pending'
       ) {
-        await tx.club_role_assignments.update({
+        const updatedAssignment = await tx.club_role_assignments.update({
           where: {
             assignment_id: existingAssignment.assignment_id,
           },
@@ -451,14 +526,23 @@ export class PostRegistrationService {
             expires_at: expiresAt,
             end_date: null,
           },
+          select: assignmentSelect,
         });
+
+        return {
+          assignment: updatedAssignment,
+          shouldNotifyReviewers: true,
+        };
       }
 
-      return;
+      return {
+        assignment: existingAssignment,
+        shouldNotifyReviewers: false,
+      };
     }
 
     try {
-      await tx.club_role_assignments.create({
+      const createdAssignment = await tx.club_role_assignments.create({
         data: {
           user_id: params.userId,
           role_id: params.roleId,
@@ -469,7 +553,13 @@ export class PostRegistrationService {
           status: 'pending',
           expires_at: expiresAt,
         },
+        select: assignmentSelect,
       });
+
+      return {
+        assignment: createdAssignment,
+        shouldNotifyReviewers: true,
+      };
     } catch (error) {
       if (!this.isUniqueConstraintError(error)) {
         throw error;
@@ -477,6 +567,7 @@ export class PostRegistrationService {
 
       const recoveredAssignment = await tx.club_role_assignments.findFirst({
         where,
+        select: assignmentSelect,
       });
 
       if (!recoveredAssignment) {
@@ -489,7 +580,7 @@ export class PostRegistrationService {
         !recoveredAssignment.active ||
         recoveredAssignment.status !== 'pending'
       ) {
-        await tx.club_role_assignments.update({
+        const updatedRecoveredAssignment = await tx.club_role_assignments.update({
           where: {
             assignment_id: recoveredAssignment.assignment_id,
           },
@@ -499,8 +590,19 @@ export class PostRegistrationService {
             expires_at: expiresAt,
             end_date: null,
           },
+          select: assignmentSelect,
         });
+
+        return {
+          assignment: updatedRecoveredAssignment,
+          shouldNotifyReviewers: true,
+        };
       }
+
+      return {
+        assignment: recoveredAssignment,
+        shouldNotifyReviewers: false,
+      };
     }
   }
 

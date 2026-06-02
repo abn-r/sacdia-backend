@@ -11,9 +11,11 @@ describe('PostRegistrationController', () => {
     completeStep1: jest.fn(),
     completeStep2: jest.fn(),
     completeStep3: jest.fn(),
+    cancelPendingMembershipRequest: jest.fn(),
   };
 
   beforeEach(() => {
+    jest.clearAllMocks();
     controller = new PostRegistrationController(
       mockPostRegistrationService as unknown as PostRegistrationService,
     );
@@ -122,5 +124,33 @@ describe('PostRegistrationController', () => {
         isOwner: false,
       },
     );
+  });
+
+  it('should delegate pending membership cancellation with owner actor context', async () => {
+    const userId = '20a9a762-a4fa-49dd-93a6-3851e27f8b69';
+    const request = {
+      user: { sub: userId },
+    } as unknown as Request;
+    const expectedResponse = {
+      status: 'success',
+      message:
+        'Solicitud de membresía cancelada. Puedes elegir club y sección nuevamente.',
+    };
+    mockPostRegistrationService.cancelPendingMembershipRequest.mockResolvedValue(
+      expectedResponse,
+    );
+
+    const result = await controller.cancelPendingMembershipRequest(
+      userId,
+      request,
+    );
+
+    expect(
+      mockPostRegistrationService.cancelPendingMembershipRequest,
+    ).toHaveBeenCalledWith(userId, {
+      actorUserId: userId,
+      isOwner: true,
+    });
+    expect(result).toBe(expectedResponse);
   });
 });
