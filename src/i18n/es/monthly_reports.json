@@ -69,7 +69,8 @@
     "total_income": "Total ingresos",
     "total_expenses": "Total egresos",
     "month_balance": "Balance del mes",
-    "transaction_count": "Total de transacciones"
+    "transaction_count": "Total de transacciones",
+    "club_total_balance": "Saldo total del club"
   },
   "missionary": {
     "soul_target": "Blanco de almas",

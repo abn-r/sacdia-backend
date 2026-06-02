@@ -10,13 +10,18 @@ import {
   ParseIntPipe,
   ParseUUIDPipe,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   Request,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
@@ -39,8 +44,8 @@ import {
   UpdatePaymentDto,
   RejectEnrollmentDto,
   CamporeeStatusQueryDto,
-  UnionMembersPaginationDto,
-  CamporeeMembersPaginationDto,
+  UnionMembersListQueryDto,
+  CamporeeMembersListQueryDto,
 } from './dto';
 
 @ApiTags('camporees')
@@ -339,13 +344,12 @@ export class CamporeesController {
   @ApiResponse({ status: 404, description: 'Camporee de unión no encontrado' })
   async getUnionMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Query() query: CamporeeStatusQueryDto,
-    @Query() pagination: UnionMembersPaginationDto,
+    @Query() query: UnionMembersListQueryDto,
   ) {
     return this.camporeesService.getUnionMembers(
       camporeeId,
       query.status,
-      pagination,
+      query,
     );
   }
 
@@ -799,14 +803,9 @@ export class CamporeesController {
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async getMembers(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
-    @Query() query: CamporeeStatusQueryDto,
-    @Query() pagination: CamporeeMembersPaginationDto,
+    @Query() query: CamporeeMembersListQueryDto,
   ) {
-    return this.camporeesService.getMembers(
-      camporeeId,
-      query.status,
-      pagination,
-    );
+    return this.camporeesService.getMembers(camporeeId, query.status, query);
   }
 
   @Delete(':camporeeId/members/:userId')
@@ -1003,6 +1002,67 @@ export class CamporeesController {
     @Body() dto: UpdatePaymentDto,
   ) {
     return this.camporeesService.updatePayment(paymentId, dto);
+  }
+
+  @Post(':camporeeId/payments/:paymentId/voucher')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'Adjuntar comprobante a un pago',
+    description:
+      'Sube un archivo (JPG, PNG, WebP o PDF, máximo 10MB) como comprobante del pago. ' +
+      'Reemplaza cualquier comprobante previo.',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'paymentId', type: String, description: 'UUID del pago' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Comprobante adjuntado' })
+  @ApiResponse({ status: 400, description: 'Archivo inválido' })
+  @ApiResponse({
+    status: 404,
+    description: 'Pago no encontrado o no pertenece al camporee',
+  })
+  async uploadPaymentVoucher(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.camporeesService.uploadPaymentVoucher(
+      camporeeId,
+      paymentId,
+      file,
+    );
+  }
+
+  @Delete(':camporeeId/payments/:paymentId/voucher')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Remover comprobante de un pago',
+    description:
+      'Elimina el archivo de comprobante asociado al pago. Mantiene el registro del pago.',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiParam({ name: 'paymentId', type: String, description: 'UUID del pago' })
+  @ApiResponse({ status: 200, description: 'Comprobante removido' })
+  @ApiResponse({
+    status: 404,
+    description: 'Pago no encontrado o no pertenece al camporee',
+  })
+  async removePaymentVoucher(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+  ) {
+    return this.camporeesService.removePaymentVoucher(camporeeId, paymentId);
   }
 
   @Patch('payments/:camporeePaymentId/approve')

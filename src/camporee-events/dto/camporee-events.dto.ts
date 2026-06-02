@@ -1,21 +1,39 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsBoolean,
+  IsEnum,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
+  Matches,
   MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
 
+// Camporee event status enum — mirrors Prisma CamporeeEventStatus
+export enum CamporeeEventStatusDto {
+  programado = 'programado',
+  publicado = 'publicado',
+  en_curso = 'en_curso',
+  realizado = 'realizado',
+  cancelado = 'cancelado',
+}
+
 export class CreateCamporeeEventDto {
-  @ApiProperty({ example: 1, description: 'FK to camporee_event_types' })
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'FK to camporee_event_types. When omitted, the service resolves the "general" event type for agenda events.',
+  })
+  @IsOptional()
   @IsInt()
   @Min(1)
-  declare event_type_id: number;
+  declare event_type_id?: number;
 
   @ApiProperty({ example: 'Orden Cerrado' })
   @IsString()
@@ -99,6 +117,99 @@ export class CreateCamporeeEventDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  // ── Agenda fields (camporee-agenda-events) ──────────────────────────────
+
+  @ApiPropertyOptional({ example: 1, minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  day_number?: number;
+
+  @ApiPropertyOptional({ example: '09:00' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'starts_at must be in HH:MM format (e.g. 09:00)',
+  })
+  starts_at?: string;
+
+  @ApiPropertyOptional({ example: '10:30' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'ends_at must be in HH:MM format (e.g. 10:30)',
+  })
+  ends_at?: string;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  venue_id?: number;
+
+  @ApiPropertyOptional({ example: 'abc-123-uuid' })
+  @IsOptional()
+  @IsUUID()
+  leader_user_id?: string;
+
+  @ApiPropertyOptional({ example: 'Dr. Roberto Gimenez' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  leader_name_override?: string;
+
+  @ApiPropertyOptional({ example: 'Director de Juegos' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  leader_role?: string;
+
+  @ApiPropertyOptional({
+    example: ['pathfinders'],
+    enum: ['adventurers', 'pathfinders', 'master_guides'],
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(['adventurers', 'pathfinders', 'master_guides'], { each: true })
+  sections?: string[];
+
+  @ApiPropertyOptional({
+    example: 'competencia',
+    enum: [
+      'espiritual',
+      'competencia',
+      'taller',
+      'ceremonial',
+      'social',
+      'logistico',
+    ],
+  })
+  @IsOptional()
+  @IsIn([
+    'espiritual',
+    'competencia',
+    'taller',
+    'ceremonial',
+    'social',
+    'logistico',
+  ])
+  display_category?: string;
+
+  @ApiPropertyOptional({ enum: CamporeeEventStatusDto })
+  @IsOptional()
+  @IsEnum(CamporeeEventStatusDto)
+  status?: CamporeeEventStatusDto;
+
+  @ApiPropertyOptional({ example: 40, minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  capacity?: number;
+
+  @ApiPropertyOptional({ example: 12, minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  registered_count?: number;
 }
 
 export class CloneFromTemplateDto {
@@ -208,6 +319,99 @@ export class UpdateCamporeeEventDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  // ── Agenda fields (camporee-agenda-events) ──────────────────────────────
+
+  @ApiPropertyOptional({ example: 1, minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  day_number?: number;
+
+  @ApiPropertyOptional({ example: '09:00' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'starts_at must be in HH:MM format',
+  })
+  starts_at?: string;
+
+  @ApiPropertyOptional({ example: '10:30' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'ends_at must be in HH:MM format',
+  })
+  ends_at?: string;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  venue_id?: number;
+
+  @ApiPropertyOptional({ example: 'abc-123-uuid' })
+  @IsOptional()
+  @IsUUID()
+  leader_user_id?: string;
+
+  @ApiPropertyOptional({ example: 'Dr. Roberto Gimenez' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  leader_name_override?: string;
+
+  @ApiPropertyOptional({ example: 'Director de Juegos' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  leader_role?: string;
+
+  @ApiPropertyOptional({
+    example: ['pathfinders'],
+    enum: ['adventurers', 'pathfinders', 'master_guides'],
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(['adventurers', 'pathfinders', 'master_guides'], { each: true })
+  sections?: string[];
+
+  @ApiPropertyOptional({
+    example: 'competencia',
+    enum: [
+      'espiritual',
+      'competencia',
+      'taller',
+      'ceremonial',
+      'social',
+      'logistico',
+    ],
+  })
+  @IsOptional()
+  @IsIn([
+    'espiritual',
+    'competencia',
+    'taller',
+    'ceremonial',
+    'social',
+    'logistico',
+  ])
+  display_category?: string;
+
+  @ApiPropertyOptional({ enum: CamporeeEventStatusDto })
+  @IsOptional()
+  @IsEnum(CamporeeEventStatusDto)
+  status?: CamporeeEventStatusDto;
+
+  @ApiPropertyOptional({ example: 40, minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  capacity?: number;
+
+  @ApiPropertyOptional({ example: 12, minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  registered_count?: number;
 }
 
 export class ReorderCamporeeEventDto {

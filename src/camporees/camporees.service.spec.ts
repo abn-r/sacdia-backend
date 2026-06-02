@@ -6,7 +6,7 @@ import { AchievementsService } from '../achievements/achievements.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { CamporeeMembersPaginationDto } from './dto/camporee-members-pagination.dto';
+import { CamporeeMembersListQueryDto } from './dto/camporee-members-list-query.dto';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
@@ -27,6 +27,10 @@ describe('CamporeesService', () => {
       update: jest.fn(),
       count: jest.fn(),
     },
+    camporee_payments: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     member_insurances: {
       findUnique: jest.fn(),
     },
@@ -46,6 +50,9 @@ describe('CamporeesService', () => {
     getSignedDownloadUrl: jest.fn(
       async (_bucket: unknown, value: string) => value,
     ),
+    upload: jest.fn(),
+    deleteMany: jest.fn(),
+    extractKeyFromPublicUrl: jest.fn((_bucket: unknown, url: string) => url),
   };
 
   const mockNotificationsService = {
@@ -705,7 +712,7 @@ describe('CamporeesService', () => {
       mockPrismaService.camporee_members.findMany.mockResolvedValue([]);
       mockPrismaService.camporee_members.count.mockResolvedValue(30);
 
-      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersListQueryDto(), {
         page: 3,
         limit: 50,
       });
@@ -739,7 +746,7 @@ describe('CamporeesService', () => {
       );
       mockPrismaService.camporee_members.count.mockResolvedValue(120);
 
-      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersListQueryDto(), {
         page: 1,
         limit: 50,
       });
@@ -758,7 +765,7 @@ describe('CamporeesService', () => {
 
       const getMembers = jest.spyOn(service, 'getMembers');
 
-      const pagination = Object.assign(new CamporeeMembersPaginationDto(), {
+      const pagination = Object.assign(new CamporeeMembersListQueryDto(), {
         page: 2,
         limit: 10,
       });
@@ -1142,6 +1149,211 @@ describe('CamporeesService', () => {
 
       expect(result.insurance_verified).toBe(false);
       expect(result.insurance_id).toBeNull();
+    });
+  });
+
+  describe('uploadPaymentVoucher', () => {
+    const CAMPOREE_ID = 7;
+    const PAYMENT_ID = '11111111-2222-3333-4444-555555555555';
+
+    const makeFile = (
+      overrides: Partial<Express.Multer.File> = {},
+    ): Express.Multer.File => ({
+      fieldname: 'file',
+      originalname: 'receipt.jpg',
+      encoding: '7bit',
+      mimetype: 'image/jpeg',
+      size: 1024,
+      buffer: Buffer.from('fake-image-bytes'),
+      destination: '',
+      filename: 'receipt.jpg',
+      path: '',
+      stream: undefined as any,
+      ...overrides,
+    });
+
+    it('uploads a valid file and updates the payment with voucher metadata', async () => {
+      const payment = {
+        camporee_payment_id: PAYMENT_ID,
+        camporee_member_id: 99,
+        voucher_url: null,
+        voucher_uploaded_at: null,
+        camporee_member: {
+          camporee_member_id: 99,
+          camporee_id: CAMPOREE_ID,
+          union_camporee_id: null,
+        },
+      };
+
+      mockPrismaService.camporee_payments.findUnique.mockResolvedValue(payment);
+
+      mockFileStorageService.upload.mockResolvedValue({
+        key: 'camporee-payments/7/.../file.jpg',
+        url: 'https://r2.example.com/camporee-payments/7/.../file.jpg',
+      });
+
+      mockPrismaService.camporee_payments.update.mockResolvedValue({
+        ...payment,
+        voucher_url: 'https://r2.example.com/camporee-payments/7/.../file.jpg',
+        voucher_uploaded_at: new Date(),
+      });
+
+      const file = makeFile();
+      const result = await service.uploadPaymentVoucher(
+        CAMPOREE_ID,
+        PAYMENT_ID,
+        file,
+      );
+
+      expect(mockFileStorageService.upload).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.camporee_payments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { camporee_payment_id: PAYMENT_ID },
+          data: expect.objectContaining({
+            voucher_url:
+              'https://r2.example.com/camporee-payments/7/.../file.jpg',
+            voucher_uploaded_at: expect.any(Date),
+          }),
+        }),
+      );
+      expect(result.voucher_url).toBe(
+        'https://r2.example.com/camporee-payments/7/.../file.jpg',
+      );
+    });
+
+    it('rejects when no file is provided', async () => {
+      await expect(
+        service.uploadPaymentVoucher(
+          CAMPOREE_ID,
+          PAYMENT_ID,
+          undefined as unknown as Express.Multer.File,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_PAYMENT_VOUCHER_REQUIRED,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+    });
+
+    it('rejects oversized files (>10MB)', async () => {
+      const file = makeFile({ size: 11 * 1024 * 1024 });
+      await expect(
+        service.uploadPaymentVoucher(CAMPOREE_ID, PAYMENT_ID, file),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_PAYMENT_VOUCHER_TOO_LARGE,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+    });
+
+    it('rejects unsupported mimetypes', async () => {
+      const file = makeFile({ mimetype: 'application/zip' });
+      await expect(
+        service.uploadPaymentVoucher(CAMPOREE_ID, PAYMENT_ID, file),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_PAYMENT_VOUCHER_MIME_INVALID,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when payment is not found', async () => {
+      mockPrismaService.camporee_payments.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.uploadPaymentVoucher(CAMPOREE_ID, PAYMENT_ID, makeFile()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_PAYMENT_NOT_FOUND,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+    });
+
+    it('rejects when payment belongs to a different camporee', async () => {
+      mockPrismaService.camporee_payments.findUnique.mockResolvedValue({
+        camporee_payment_id: PAYMENT_ID,
+        camporee_member_id: 99,
+        voucher_url: null,
+        camporee_member: {
+          camporee_member_id: 99,
+          camporee_id: 999, // different camporee
+          union_camporee_id: null,
+        },
+      });
+
+      await expect(
+        service.uploadPaymentVoucher(CAMPOREE_ID, PAYMENT_ID, makeFile()),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_PAYMENT_SCOPE_MISMATCH,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removePaymentVoucher', () => {
+    const CAMPOREE_ID = 7;
+    const PAYMENT_ID = '11111111-2222-3333-4444-555555555555';
+
+    it('clears voucher fields and best-effort deletes the R2 object', async () => {
+      const payment = {
+        camporee_payment_id: PAYMENT_ID,
+        camporee_member_id: 99,
+        voucher_url: 'https://r2.example.com/camporee-payments/7/x.jpg',
+        voucher_uploaded_at: new Date(),
+        camporee_member: {
+          camporee_member_id: 99,
+          camporee_id: CAMPOREE_ID,
+          union_camporee_id: null,
+        },
+      };
+
+      mockPrismaService.camporee_payments.findUnique.mockResolvedValue(payment);
+      mockFileStorageService.deleteMany.mockResolvedValue(undefined);
+      mockPrismaService.camporee_payments.update.mockResolvedValue({
+        ...payment,
+        voucher_url: null,
+        voucher_uploaded_at: null,
+      });
+
+      const result = await service.removePaymentVoucher(
+        CAMPOREE_ID,
+        PAYMENT_ID,
+      );
+
+      expect(mockFileStorageService.deleteMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.camporee_payments.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { camporee_payment_id: PAYMENT_ID },
+          data: { voucher_url: null, voucher_uploaded_at: null },
+        }),
+      );
+      expect(result.voucher_url).toBeNull();
+    });
+
+    it('still clears DB fields when R2 deletion fails', async () => {
+      const payment = {
+        camporee_payment_id: PAYMENT_ID,
+        camporee_member_id: 99,
+        voucher_url: 'https://r2.example.com/camporee-payments/7/x.jpg',
+        voucher_uploaded_at: new Date(),
+        camporee_member: {
+          camporee_member_id: 99,
+          camporee_id: CAMPOREE_ID,
+          union_camporee_id: null,
+        },
+      };
+
+      mockPrismaService.camporee_payments.findUnique.mockResolvedValue(payment);
+      mockFileStorageService.deleteMany.mockRejectedValue(
+        new Error('R2 unavailable'),
+      );
+      mockPrismaService.camporee_payments.update.mockResolvedValue({
+        ...payment,
+        voucher_url: null,
+        voucher_uploaded_at: null,
+      });
+
+      const result = await service.removePaymentVoucher(
+        CAMPOREE_ID,
+        PAYMENT_ID,
+      );
+      expect(result.voucher_url).toBeNull();
     });
   });
 });

@@ -193,6 +193,31 @@ describe('MemberRankingsController', () => {
     expect(controller).toBeDefined();
   });
 
+  it('delegates scoped ranking reads with the full authorization profile resolved by PermissionsGuard', async () => {
+    const paginatedResult = {
+      data: [mockRankingRow],
+      total: 1,
+      page: 1,
+      limit: 20,
+    };
+    mockService.list.mockResolvedValueOnce(paginatedResult);
+
+    const req = {
+      user: { user_id: directorProfileOwnClub.profile.user_id },
+      authorization: directorProfileOwnClub.authorization,
+      authorizationProfile: directorProfileOwnClub,
+    };
+
+    await controller.list(req, YEAR_ID);
+
+    expect(mockService.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile: directorProfileOwnClub,
+        yearId: YEAR_ID,
+      }),
+    );
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // 1. GET / member self → 200 (own only)
   // ─────────────────────────────────────────────────────────────────────────

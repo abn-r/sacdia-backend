@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import {
   AppNotFoundException,
   AppBadRequestException,
@@ -34,7 +30,9 @@ export class CamporeeEventTemplatesService {
   /**
    * Get the union_id from the user's global role grants (director-union / assistant-union).
    */
-  private getUnionIdFromGrant(authorization: AuthorizationSnapshot): number | null {
+  private getUnionIdFromGrant(
+    authorization: AuthorizationSnapshot,
+  ): number | null {
     const grant = authorization.grants.global_roles.find((g) =>
       ['director-union', 'assistant-union'].includes(g.role_name),
     );
@@ -44,7 +42,9 @@ export class CamporeeEventTemplatesService {
   /**
    * Get the local_field_id from the user's global role grants (director-lf / assistant-lf).
    */
-  private getLfIdFromGrant(authorization: AuthorizationSnapshot): number | null {
+  private getLfIdFromGrant(
+    authorization: AuthorizationSnapshot,
+  ): number | null {
     const grant = authorization.grants.global_roles.find((g) =>
       ['director-lf', 'assistant-lf'].includes(g.role_name),
     );
@@ -128,10 +128,7 @@ export class CamporeeEventTemplatesService {
     });
   }
 
-  async getTemplate(
-    templateId: number,
-    authorization: AuthorizationSnapshot,
-  ) {
+  async getTemplate(templateId: number, authorization: AuthorizationSnapshot) {
     const template = await this.prisma.camporee_event_templates.findUnique({
       where: { event_template_id: templateId },
       include: { event_type: true },
@@ -158,8 +155,17 @@ export class CamporeeEventTemplatesService {
   ) {
     this.validateScopePayload(dto.scope, dto.union_id, dto.local_field_id);
     this.validatePoints(dto.max_points, dto.min_points ?? 0);
-    this.validateParticipants(dto.participants_mode, dto.participants_count, dto.participants_by_class);
-    await this.assertCanMutateScope(dto.scope, dto.union_id, dto.local_field_id, authorization);
+    this.validateParticipants(
+      dto.participants_mode,
+      dto.participants_count,
+      dto.participants_by_class,
+    );
+    await this.assertCanMutateScope(
+      dto.scope,
+      dto.union_id,
+      dto.local_field_id,
+      authorization,
+    );
 
     await this.ensureEventTypeExists(dto.event_type_id);
 
@@ -231,10 +237,20 @@ export class CamporeeEventTemplatesService {
     const minPoints = dto.min_points ?? existing.min_points;
     this.validatePoints(maxPoints, minPoints);
 
-    const participantsMode = dto.participants_mode ?? existing.participants_mode;
-    const participantsCount = dto.participants_count ?? existing.participants_count ?? undefined;
-    const participantsByClass = dto.participants_by_class ?? (existing.participants_by_class ? existing.participants_by_class as object[] : undefined);
-    this.validateParticipants(participantsMode, participantsCount, participantsByClass);
+    const participantsMode =
+      dto.participants_mode ?? existing.participants_mode;
+    const participantsCount =
+      dto.participants_count ?? existing.participants_count ?? undefined;
+    const participantsByClass =
+      dto.participants_by_class ??
+      (existing.participants_by_class
+        ? (existing.participants_by_class as object[])
+        : undefined);
+    this.validateParticipants(
+      participantsMode,
+      participantsCount,
+      participantsByClass,
+    );
 
     if (dto.event_type_id) {
       await this.ensureEventTypeExists(dto.event_type_id);
@@ -245,19 +261,41 @@ export class CamporeeEventTemplatesService {
       data: {
         ...(dto.event_type_id ? { event_type_id: dto.event_type_id } : {}),
         ...(dto.title ? { title: dto.title } : {}),
-        ...(typeof dto.description === 'string' ? { description: dto.description } : {}),
-        ...(typeof dto.requirements === 'string' ? { requirements: dto.requirements } : {}),
-        ...(typeof dto.development === 'string' ? { development: dto.development } : {}),
-        ...(typeof dto.prerequisites === 'string' ? { prerequisites: dto.prerequisites } : {}),
-        ...(typeof dto.materials === 'string' ? { materials: dto.materials } : {}),
-        ...(typeof dto.auxiliaries === 'string' ? { auxiliaries: dto.auxiliaries } : {}),
+        ...(typeof dto.description === 'string'
+          ? { description: dto.description }
+          : {}),
+        ...(typeof dto.requirements === 'string'
+          ? { requirements: dto.requirements }
+          : {}),
+        ...(typeof dto.development === 'string'
+          ? { development: dto.development }
+          : {}),
+        ...(typeof dto.prerequisites === 'string'
+          ? { prerequisites: dto.prerequisites }
+          : {}),
+        ...(typeof dto.materials === 'string'
+          ? { materials: dto.materials }
+          : {}),
+        ...(typeof dto.auxiliaries === 'string'
+          ? { auxiliaries: dto.auxiliaries }
+          : {}),
         ...(dto.max_points !== undefined ? { max_points: dto.max_points } : {}),
         ...(dto.min_points !== undefined ? { min_points: dto.min_points } : {}),
-        ...(dto.penalties !== undefined ? { penalties: dto.penalties as any } : {}),
-        ...(dto.participants_mode ? { participants_mode: dto.participants_mode } : {}),
-        ...(dto.participants_count !== undefined ? { participants_count: dto.participants_count } : {}),
-        ...(dto.participants_by_class !== undefined ? { participants_by_class: dto.participants_by_class as any } : {}),
-        ...(dto.duration_seconds !== undefined ? { duration_seconds: dto.duration_seconds } : {}),
+        ...(dto.penalties !== undefined
+          ? { penalties: dto.penalties as any }
+          : {}),
+        ...(dto.participants_mode
+          ? { participants_mode: dto.participants_mode }
+          : {}),
+        ...(dto.participants_count !== undefined
+          ? { participants_count: dto.participants_count }
+          : {}),
+        ...(dto.participants_by_class !== undefined
+          ? { participants_by_class: dto.participants_by_class as any }
+          : {}),
+        ...(dto.duration_seconds !== undefined
+          ? { duration_seconds: dto.duration_seconds }
+          : {}),
         ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
         modified_by: actorId,
         modified_at: new Date(),
@@ -400,7 +438,9 @@ export class CamporeeEventTemplatesService {
       return;
     }
 
-    throw new ForbiddenException(ErrorCode.CAMPOREE_EVENT_TEMPLATE_ACCESS_DENIED);
+    throw new ForbiddenException(
+      ErrorCode.CAMPOREE_EVENT_TEMPLATE_ACCESS_DENIED,
+    );
   }
 
   private async assertTemplateVisible(
@@ -426,7 +466,8 @@ export class CamporeeEventTemplatesService {
     }
 
     if (lfId) {
-      if (template.scope === 'local_field' && template.local_field_id === lfId) return;
+      if (template.scope === 'local_field' && template.local_field_id === lfId)
+        return;
       if (template.scope === 'union') {
         const lf = await this.prisma.local_fields.findUnique({
           where: { local_field_id: lfId },
@@ -436,7 +477,9 @@ export class CamporeeEventTemplatesService {
       }
     }
 
-    throw new ForbiddenException(ErrorCode.CAMPOREE_EVENT_TEMPLATE_ACCESS_DENIED);
+    throw new ForbiddenException(
+      ErrorCode.CAMPOREE_EVENT_TEMPLATE_ACCESS_DENIED,
+    );
   }
 
   private async ensureEventTypeExists(eventTypeId: number) {

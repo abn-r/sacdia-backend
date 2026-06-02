@@ -17,13 +17,19 @@ export class CreateCamporeeEventTemplateDto {
   @IsIn(['union', 'local_field'])
   declare scope: string;
 
-  @ApiPropertyOptional({ example: 1, description: 'Required when scope = union' })
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Required when scope = union',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
   union_id?: number;
 
-  @ApiPropertyOptional({ example: 2, description: 'Required when scope = local_field' })
+  @ApiPropertyOptional({
+    example: 2,
+    description: 'Required when scope = local_field',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -82,7 +88,13 @@ export class CreateCamporeeEventTemplateDto {
   min_points?: number;
 
   @ApiPropertyOptional({
-    example: [{ description: 'Paso fuera de lugar', points_deducted: 5, time_seconds: null }],
+    example: [
+      {
+        description: 'Paso fuera de lugar',
+        points_deducted: 5,
+        time_seconds: null,
+      },
+    ],
   })
   @IsOptional()
   penalties?: object[];
@@ -92,7 +104,10 @@ export class CreateCamporeeEventTemplateDto {
   @IsIn(['count', 'by_class'])
   declare participants_mode: string;
 
-  @ApiPropertyOptional({ example: 8, description: 'Required when participants_mode = count' })
+  @ApiPropertyOptional({
+    example: 8,
+    description: 'Required when participants_mode = count',
+  })
   @ValidateIf((o) => o.participants_mode === 'count')
   @IsInt()
   @Min(1)

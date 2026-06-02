@@ -10,7 +10,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateTemplateDto {
   @ApiProperty({
-    description: 'Nombre del template de carpeta anual',
+    description: 'Nombre del template de carpeta anual de evidencias',
     example: 'Carpeta Conquistadores 2026',
     maxLength: 200,
   })

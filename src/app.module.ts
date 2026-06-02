@@ -56,10 +56,12 @@ import { QrModule } from './qr/qr.module';
 import { SupportModule } from './support/support.module';
 import { BackgroundJobsModule } from './background-jobs/background-jobs.module';
 import { RankingWeightsModule } from './ranking-weights/ranking-weights.module';
+import { AnnualRankingProgressModule } from './rankings/annual-ranking-progress/annual-ranking-progress.module';
 import { MaterialsModule } from './materials/materials.module';
 import { CertificateBulkImportsModule } from './certificate-bulk-imports/certificate-bulk-imports.module';
 import { CamporeeEventTemplatesModule } from './camporee-event-templates/camporee-event-templates.module';
 import { CamporeeEventsModule } from './camporee-events/camporee-events.module';
+import { CamporeeVenuesModule } from './camporee-venues/camporee-venues.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 import { buildThrottlerOptions } from './config/throttler.config';
@@ -226,10 +228,12 @@ import { buildThrottlerOptions } from './config/throttler.config';
     SupportModule,
     BackgroundJobsModule,
     RankingWeightsModule,
+    AnnualRankingProgressModule,
     MaterialsModule,
     CertificateBulkImportsModule,
     CamporeeEventTemplatesModule,
     CamporeeEventsModule,
+    CamporeeVenuesModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

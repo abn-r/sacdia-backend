@@ -5,6 +5,7 @@ import { AuthorizationContextService } from '../services/authorization-context.s
 import { AUTHORIZATION_RESOURCE_KEY, PERMISSIONS_KEY } from '../decorators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../errors/error-codes';
+import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
 
 const SENSITIVE_USER_SUBRESOURCE_KEY = 'sensitive_user_subresource';
 
@@ -16,6 +17,11 @@ describe('PermissionsGuard', () => {
   const mockAuthorizationContext = {
     resolveUserAuthorization: jest.fn(),
     canManageClub: jest.fn(),
+    canAccessHierarchyScope: jest.fn(),
+  };
+
+  const mockHierarchy = {
+    resolveCurrent: jest.fn(),
   };
 
   const mockPrisma = {
@@ -40,6 +46,7 @@ describe('PermissionsGuard', () => {
     mockReflector as unknown as Reflector,
     mockAuthorizationContext as unknown as AuthorizationContextService,
     mockPrisma as unknown as PrismaService,
+    mockHierarchy as unknown as InstitutionalHierarchyService,
   );
 
   const createContext = (
@@ -62,6 +69,11 @@ describe('PermissionsGuard', () => {
     instanceId = 22,
     localFieldId = 50,
     unionId = 70,
+    divisionId = 1,
+    globalCountryId,
+    globalUnionId,
+    globalLocalFieldId,
+    globalDivisionId,
   }: {
     globalPermissions?: string[];
     activeClubPermissions?: string[];
@@ -70,6 +82,11 @@ describe('PermissionsGuard', () => {
     instanceId?: number;
     localFieldId?: number;
     unionId?: number;
+    divisionId?: number;
+    globalCountryId?: number;
+    globalUnionId?: number;
+    globalLocalFieldId?: number;
+    globalDivisionId?: number;
   }) => ({
     authorization: {
       grants: {
@@ -77,7 +94,16 @@ describe('PermissionsGuard', () => {
           {
             role_name: 'admin',
             permissions: globalPermissions,
-            scope: {},
+            scope: {
+              ...(globalDivisionId
+                ? { division: { id: globalDivisionId } }
+                : {}),
+              ...(globalCountryId ? { country: { id: globalCountryId } } : {}),
+              ...(globalUnionId ? { union: { id: globalUnionId } } : {}),
+              ...(globalLocalFieldId
+                ? { local_field: { id: globalLocalFieldId } }
+                : {}),
+            },
           },
         ],
         club_assignments: [
@@ -94,6 +120,7 @@ describe('PermissionsGuard', () => {
               club_type_name: instanceType,
             },
             scope: {
+              division: { id: divisionId, name: 'División Interamericana' },
               local_field: { id: localFieldId, name: 'Campo Norte' },
               union: { id: unionId, name: 'Union Norte' },
             },
@@ -111,7 +138,14 @@ describe('PermissionsGuard', () => {
           ...new Set([...globalPermissions, ...activeClubPermissions]),
         ],
         scope: {
-          global: {},
+          global: {
+            ...(globalDivisionId ? { division: { id: globalDivisionId } } : {}),
+            ...(globalCountryId ? { country: { id: globalCountryId } } : {}),
+            ...(globalUnionId ? { union: { id: globalUnionId } } : {}),
+            ...(globalLocalFieldId
+              ? { local_field: { id: globalLocalFieldId } }
+              : {}),
+          },
           club: activeClubPermissions.length
             ? {
                 assignment_id: 'assignment-1',
@@ -134,6 +168,36 @@ describe('PermissionsGuard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
+    mockAuthorizationContext.canAccessHierarchyScope.mockImplementation(
+      (resolved, scope) => {
+        const globalScope = resolved.authorization.effective.scope.global ?? {};
+        if (
+          typeof scope.local_field_id === 'number' &&
+          globalScope.local_field?.id === scope.local_field_id
+        ) {
+          return true;
+        }
+        if (
+          typeof scope.union_id === 'number' &&
+          globalScope.union?.id === scope.union_id
+        ) {
+          return true;
+        }
+        return (
+          typeof scope.division_id === 'number' &&
+          globalScope.division?.id === scope.division_id
+        );
+      },
+    );
+    mockHierarchy.resolveCurrent.mockResolvedValue({
+      division_id: 1,
+      division_name: 'División Interamericana',
+      union_id: 70,
+      local_field_id: 50,
+      as_of: new Date('2026-01-01'),
+      source: 'current',
+      precision: 'exact',
+    });
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {
         return undefined;
@@ -255,6 +319,30 @@ describe('PermissionsGuard', () => {
     await expect(
       guard.canActivate(createContext({ user: { sub: 'admin-1' } })),
     ).resolves.toBe(true);
+  });
+
+  it('attaches both the authorization snapshot and full resolved profile to the request', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['section_rankings:read_club'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'active_assignment' };
+      }
+      return undefined;
+    });
+    const resolved = createResolved({
+      activeClubPermissions: ['section_rankings:read_club'],
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      resolved,
+    );
+    const request = { user: { sub: 'club-user-1' } };
+
+    await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
+
+    expect((request as any).authorization).toBe(resolved.authorization);
+    expect((request as any).authorizationProfile).toBe(resolved);
   });
 
   it('rejects a global resource when the permission only exists on the active club assignment', async () => {
@@ -799,5 +887,298 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+  });
+
+  // ── camporee_event RBAC (Phase 3 — Spec C7) ──────────────────────────────
+
+  describe('camporee_event scope (dynamic camporee-scoped RBAC)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      (mockPrisma as any).camporee_events = { findUnique: jest.fn() };
+      (mockPrisma as any).union_camporees = { findUnique: jest.fn() };
+    });
+
+    it('C7.3 — throws 404 when event does not exist', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === 'permissions')
+          return { permissions: ['camporee_events:update'], mode: 'all' };
+        if (key === 'authorization_resource')
+          return { type: 'camporee_event', idParam: 'eventId' };
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ globalPermissions: ['camporee_events:update'] }),
+      );
+      (mockPrisma as any).camporee_events.findUnique.mockResolvedValue(null);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'user-1' },
+            params: { eventId: '999' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_EVENT_NOT_FOUND });
+    });
+
+    it('C7.1 — authorized user mutates their own camporee event (local scope)', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === 'permissions')
+          return { permissions: ['camporee_events:update'], mode: 'all' };
+        if (key === 'authorization_resource')
+          return { type: 'camporee_event', idParam: 'eventId' };
+        return undefined;
+      });
+      // Construct a resolved profile where global scope has local_field_id=50
+      const resolvedWithLocalField = {
+        authorization: {
+          grants: {
+            global_roles: [
+              {
+                role_name: 'coordinator',
+                permissions: ['camporee_events:update'],
+                scope: {},
+              },
+            ],
+            club_assignments: [],
+          },
+          active_assignment: { assignment_id: null },
+          effective: {
+            permissions: ['camporee_events:update'],
+            scope: {
+              global: {
+                local_field: { id: 50, name: 'Campo Norte' },
+                union: { id: 70 },
+                country: null,
+              },
+              club: null,
+            },
+          },
+        },
+      };
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        resolvedWithLocalField,
+      );
+      (mockPrisma as any).camporee_events.findUnique.mockResolvedValue({
+        local_camporee_id: 7,
+        union_camporee_id: null,
+      });
+      mockPrisma.local_camporees.findUnique.mockResolvedValue({
+        local_field_id: 50,
+        local_fields: { union_id: 70, unions: { country_id: 1 } },
+      });
+
+      const result = await guard.canActivate(
+        createContext({
+          user: { sub: 'director-1' },
+          params: { eventId: '1' },
+        }),
+      );
+      expect(result).toBe(true);
+    });
+
+    it('C7.2 — user blocked from mutating event of another camporee', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === 'permissions')
+          return { permissions: ['camporee_events:update'], mode: 'all' };
+        if (key === 'authorization_resource')
+          return { type: 'camporee_event', idParam: 'eventId' };
+        return undefined;
+      });
+      // User is from local_field=50, but event belongs to local_field=99
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalPermissions: ['camporee_events:update'],
+          localFieldId: 50,
+        }),
+      );
+      (mockPrisma as any).camporee_events.findUnique.mockResolvedValue({
+        local_camporee_id: 9,
+        union_camporee_id: null,
+      });
+      mockPrisma.local_camporees.findUnique.mockResolvedValue({
+        local_field_id: 99, // different local_field
+        local_fields: { union_id: 70, unions: { country_id: 1 } },
+      });
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'director-2' },
+            params: { eventId: '5' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+    });
+  });
+
+  // ── camporee_venue RBAC (Spec C2 / C7 — venue PATCH/DELETE/POST scope) ───
+
+  describe('camporee_venue scope (dynamic venue-scoped RBAC)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      (mockPrisma as any).camporee_venues = { findUnique: jest.fn() };
+      (mockPrisma as any).unions = { findUnique: jest.fn() };
+      (mockPrisma as any).local_fields = { findUnique: jest.fn() };
+    });
+
+    it('V1 — throws 404 when venue does not exist (PATCH/DELETE by id)', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === 'permissions')
+          return { permissions: ['camporee_events:update'], mode: 'all' };
+        if (key === 'authorization_resource')
+          return { type: 'camporee_venue', idParam: 'venueId' };
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({ globalPermissions: ['camporee_events:update'] }),
+      );
+      (mockPrisma as any).camporee_venues.findUnique.mockResolvedValue(null);
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'user-1' },
+            params: { venueId: '999' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_VENUE_NOT_FOUND });
+    });
+
+    it('V2 — denies cross local_field mutation (PATCH venue belongs to LF 99, user in LF 50)', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === 'permissions')
+          return { permissions: ['camporee_events:update'], mode: 'all' };
+        if (key === 'authorization_resource')
+          return { type: 'camporee_venue', idParam: 'venueId' };
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+        createResolved({
+          globalPermissions: ['camporee_events:update'],
+          localFieldId: 50,
+        }),
+      );
+      (mockPrisma as any).camporee_venues.findUnique.mockResolvedValue({
+        scope: 'local_field',
+        union_id: null,
+        local_field_id: 99,
+      });
+      (mockPrisma as any).local_fields.findUnique.mockResolvedValue({
+        union_id: 70,
+        unions: { country_id: 1 },
+      });
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'user-x' },
+            params: { venueId: '12' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+    });
+
+    it('V3 — denies cross union mutation (POST union venue for union 9 by user in union 70)', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === 'permissions')
+          return { permissions: ['camporee_events:create'], mode: 'all' };
+        if (key === 'authorization_resource') return { type: 'camporee_venue' };
+        return undefined;
+      });
+      // User has global admin + union scope 70.
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+        authorization: {
+          grants: {
+            global_roles: [
+              {
+                role_name: 'assistant-admin',
+                permissions: ['camporee_events:create'],
+                scope: {},
+              },
+            ],
+            club_assignments: [],
+          },
+          active_assignment: { assignment_id: null },
+          effective: {
+            permissions: ['camporee_events:create'],
+            scope: {
+              global: {
+                local_field: null,
+                union: { id: 70, name: 'Union Norte' },
+                country: null,
+              },
+              club: null,
+            },
+          },
+        },
+      });
+      (mockPrisma as any).unions.findUnique.mockResolvedValue({
+        country_id: 1,
+      });
+
+      await expect(
+        guard.canActivate(
+          createContext({
+            user: { sub: 'user-y' },
+            params: {},
+            body: { scope: 'union', union_id: 9, name: 'Cancha cruzada' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
+    });
+
+    it('V4 — allows mutation when venue local_field matches user scope', async () => {
+      mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+        if (key === 'permissions')
+          return { permissions: ['camporee_events:update'], mode: 'all' };
+        if (key === 'authorization_resource')
+          return { type: 'camporee_venue', idParam: 'venueId' };
+        return undefined;
+      });
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+        authorization: {
+          grants: {
+            global_roles: [
+              {
+                role_name: 'coordinator',
+                permissions: ['camporee_events:update'],
+                scope: {},
+              },
+            ],
+            club_assignments: [],
+          },
+          active_assignment: { assignment_id: null },
+          effective: {
+            permissions: ['camporee_events:update'],
+            scope: {
+              global: {
+                local_field: { id: 50, name: 'Campo Norte' },
+                union: { id: 70 },
+                country: null,
+              },
+              club: null,
+            },
+          },
+        },
+      });
+      (mockPrisma as any).camporee_venues.findUnique.mockResolvedValue({
+        scope: 'local_field',
+        union_id: null,
+        local_field_id: 50,
+      });
+      (mockPrisma as any).local_fields.findUnique.mockResolvedValue({
+        union_id: 70,
+        unions: { country_id: 1 },
+      });
+
+      const result = await guard.canActivate(
+        createContext({
+          user: { sub: 'director-z' },
+          params: { venueId: '15' },
+        }),
+      );
+      expect(result).toBe(true);
+    });
   });
 });

@@ -31,7 +31,7 @@ type CurrentUserPayload = {
 };
 
 /**
- * Evaluation endpoints for annual folders follow a deliberate
+ * Evaluation endpoints for annual evidence folders follow a deliberate
  * "read-wider-than-write" RBAC policy:
  *
  * - WRITE operations (evaluate section, reopen, set reviewer note) require
@@ -46,7 +46,7 @@ type CurrentUserPayload = {
  * Introduced by SDD `annual-folders-ownership-rework` (ADR-6). See
  * `docs/steering/runtime-sacdia.md` for the canon rationale.
  */
-@ApiTags('Annual Folders - Evaluation')
+@ApiTags('Annual Evidence Folders - Evaluation')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('annual-folders')
@@ -63,8 +63,8 @@ export class EvaluationController {
   @Post(':folderId/sections/:sectionId/evaluate')
   @RequirePermissions('annual_folders:evaluate')
   @AuthorizationResource({ type: 'global' })
-  @ApiOperation({ summary: 'Evaluate a section of an annual folder' })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiOperation({ summary: 'Evaluate a section of an annual evidence folder' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section evaluated' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
@@ -102,7 +102,7 @@ export class EvaluationController {
   @ApiOperation({
     summary: 'Reopen a section for re-evaluation (removes existing evaluation)',
   })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section reopened' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
@@ -142,7 +142,7 @@ export class EvaluationController {
       'was pre-approved at local-field level. An optional note can be provided to document the ' +
       'rationale for any override. Requires annual_folders:evaluate at global scope.',
   })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiBody({ type: ConfirmUnionDto })
   @ApiResponse({
@@ -201,7 +201,7 @@ export class EvaluationController {
   })
   @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Get all section evaluations for a folder' })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiResponse({ status: 200, description: 'List of section evaluations' })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   @ApiResponse({

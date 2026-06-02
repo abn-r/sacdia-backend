@@ -9,7 +9,7 @@ export class ClassBreakdownDto {
   required_sections!: number;
 
   @ApiPropertyOptional({
-    description: 'Submission status of the annual folder',
+    description: 'Submission status of the annual evidence folder',
     nullable: true,
   })
   folder_status!: string | null;

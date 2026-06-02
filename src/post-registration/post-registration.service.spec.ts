@@ -5,12 +5,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
+import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 
 describe('PostRegistrationService', () => {
   let service: PostRegistrationService;
 
   const createTransactionMock = () => ({
-    users: { update: jest.fn().mockResolvedValue({}) },
+    users: {
+      findUnique: jest.fn().mockResolvedValue({
+        birthday: new Date('2016-01-01'),
+      }),
+      update: jest.fn().mockResolvedValue({}),
+    },
     ecclesiastical_years: {
       findFirst: jest.fn().mockResolvedValue({
         year_id: 2026,
@@ -23,7 +29,7 @@ describe('PostRegistrationService', () => {
     club_sections: {
       findUnique: jest.fn().mockResolvedValue({
         club_section_id: 10,
-        club_type_id: 1,
+        club_type_id: 2,
       }),
     },
     club_role_assignments: {
@@ -36,7 +42,18 @@ describe('PostRegistrationService', () => {
       update: jest.fn().mockResolvedValue({ assignment_id: 'assignment-1' }),
     },
     classes: {
-      findUnique: jest.fn().mockResolvedValue({ class_id: 5, active: true }),
+      findUnique: jest.fn().mockResolvedValue({
+        class_id: 5,
+        active: true,
+        club_type_id: 2,
+        minimum_age: 10,
+        available_from_year: null,
+        available_until_year: null,
+      }),
+      findFirst: jest.fn().mockResolvedValue({
+        class_id: 5,
+        minimum_age: 10,
+      }),
     },
     enrollments: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -105,6 +122,7 @@ describe('PostRegistrationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PostRegistrationService,
+        ClassAssignmentResolverService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: UsersService, useValue: mockUsersService },
         { provide: LegalRepresentativesService, useValue: mockLegalRepService },
@@ -260,6 +278,115 @@ describe('PostRegistrationService', () => {
       club_section_id: 10,
       class_id: 5,
     };
+
+    beforeEach(() => {
+      transactionMock.users.findUnique.mockResolvedValue({
+        birthday: new Date('2016-01-01'),
+      });
+    });
+
+    it('should derive the operational class from birthday and selected club type when class_id is omitted', async () => {
+      const dtoWithoutClass = {
+        country_id: 1,
+        union_id: 2,
+        local_field_id: 3,
+        club_section_id: 10,
+      };
+
+      const result = await service.completeStep3(
+        userId,
+        dtoWithoutClass as any,
+        ownerActor,
+      );
+
+      expect(result).toMatchObject({
+        status: 'success',
+        data: {
+          classId: 5,
+        },
+      });
+      expect(transactionMock.enrollments.create).toHaveBeenCalledWith({
+        data: {
+          user_id: userId,
+          class_id: 5,
+          ecclesiastical_year_id: 2026,
+        },
+      });
+    });
+
+    it('should derive the operational class when class_id is explicitly null', async () => {
+      const result = await service.completeStep3(
+        userId,
+        {
+          ...dto,
+          class_id: null,
+        } as any,
+        ownerActor,
+      );
+
+      expect(result).toMatchObject({
+        status: 'success',
+        data: {
+          classId: 5,
+        },
+      });
+      expect(transactionMock.classes.findUnique).not.toHaveBeenCalledWith({
+        where: { class_id: null },
+        select: expect.any(Object),
+      });
+      expect(transactionMock.enrollments.create).toHaveBeenCalledWith({
+        data: {
+          user_id: userId,
+          class_id: 5,
+          ecclesiastical_year_id: 2026,
+        },
+      });
+    });
+
+    it('should reject a selected class that does not match the age-derived class for the selected club type', async () => {
+      transactionMock.classes.findUnique.mockResolvedValue({
+        class_id: 6,
+        active: true,
+        club_type_id: 2,
+        minimum_age: 11,
+        available_from_year: null,
+        available_until_year: null,
+      });
+      transactionMock.classes.findFirst.mockResolvedValue({
+        class_id: 5,
+        minimum_age: 10,
+      });
+
+      await expect(
+        service.completeStep3(
+          userId,
+          {
+            ...dto,
+            class_id: 6,
+          },
+          ownerActor,
+        ),
+      ).rejects.toMatchObject({ code: 'POST_REG_CLASS_NOT_ELIGIBLE' });
+
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a selected class from a different club type than the selected section', async () => {
+      transactionMock.classes.findUnique.mockResolvedValue({
+        class_id: 5,
+        active: true,
+        club_type_id: 3,
+        minimum_age: 16,
+        available_from_year: null,
+        available_until_year: null,
+      });
+
+      await expect(
+        service.completeStep3(userId, dto, ownerActor),
+      ).rejects.toMatchObject({ code: 'POST_REG_CLASS_NOT_ELIGIBLE' });
+
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+    });
 
     it('should reuse existing club assignment and class enrollment on retry', async () => {
       transactionMock.club_role_assignments.findFirst

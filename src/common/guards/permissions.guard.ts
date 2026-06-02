@@ -11,6 +11,7 @@ import {
   AuthorizationContextService,
   type ResolvedAuthorizationProfile,
 } from '../services/authorization-context.service';
+import { InstitutionalHierarchyService } from '../services/institutional-hierarchy.service';
 import {
   AUTHORIZATION_RESOURCE_KEY,
   type AuthorizationResourceMetadata,
@@ -41,11 +42,13 @@ type ResolvedJointActivityScope = {
 type ResolvedTerritoryScope = {
   localFieldId: number;
   unionId?: number | null;
+  divisionId?: number | null;
   countryId?: number | null;
 };
 
 type ResolvedUnionCamporeeScope = {
   unionId: number;
+  divisionId?: number | null;
   countryId: number | null;
 };
 
@@ -55,6 +58,7 @@ export class PermissionsGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly prisma: PrismaService,
+    private readonly hierarchy: InstitutionalHierarchyService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -81,8 +85,6 @@ export class PermissionsGuard implements CanActivate {
       );
 
     if (!resource) {
-      const className = context.getClass().name;
-      const handlerName = context.getHandler().name;
       throw new AppInternalServerErrorException(
         ErrorCode.GUARD_RBAC_MISCONFIGURATION,
       );
@@ -103,6 +105,7 @@ export class PermissionsGuard implements CanActivate {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
     request.authorization = resolved.authorization;
+    request.authorizationProfile = resolved;
 
     if (
       !this.hasRequiredPermissions(
@@ -138,6 +141,28 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveUnionCamporeeScope(request, resource),
         );
+      case 'camporee_event': {
+        const eventScope = await this.resolveCamporeeEventScope(
+          request,
+          resource,
+        );
+        if (eventScope.type === 'local') {
+          return this.validateTerritoryScope(resolved, eventScope.scope);
+        } else {
+          return this.validateUnionCamporeeScope(resolved, eventScope.scope);
+        }
+      }
+      case 'camporee_venue': {
+        const venueScope = await this.resolveCamporeeVenueScope(
+          request,
+          resource,
+        );
+        if (venueScope.type === 'local_field') {
+          return this.validateTerritoryScope(resolved, venueScope.scope);
+        } else {
+          return this.validateUnionCamporeeScope(resolved, venueScope.scope);
+        }
+      }
       case 'activity': {
         const activityScopeResult = await this.resolveActivityScope(
           request,
@@ -423,46 +448,17 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedTerritoryScope,
   ): boolean {
-    const globalRoleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-
-    if (globalRoleNames.has('super-admin')) {
-      return true;
-    }
-
-    const globalScope = resolved.authorization.effective.scope.global;
-    const globalLocalFieldId = globalScope.local_field?.id;
-    const globalUnionId = globalScope.union?.id;
-    const globalCountryId = globalScope.country?.id;
-
     if (
-      typeof globalLocalFieldId === 'number' &&
-      globalLocalFieldId === resourceScope.localFieldId &&
-      (globalRoleNames.has('admin') ||
-        globalRoleNames.has('assistant-admin') ||
-        globalRoleNames.has('coordinator'))
+      this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        this.toHierarchyScope(resourceScope),
+        'current-write',
+      )
     ) {
       return true;
     }
 
-    if (
-      typeof resourceScope.unionId === 'number' &&
-      typeof globalUnionId === 'number' &&
-      globalUnionId === resourceScope.unionId &&
-      (globalRoleNames.has('admin') || globalRoleNames.has('assistant-admin'))
-    ) {
-      return true;
-    }
-
-    if (
-      typeof resourceScope.countryId === 'number' &&
-      typeof globalCountryId === 'number' &&
-      globalCountryId === resourceScope.countryId &&
-      globalRoleNames.has('admin')
-    ) {
+    if (this.canUseLegacyCountryFallback(resolved, resourceScope)) {
       return true;
     }
 
@@ -583,11 +579,205 @@ export class PermissionsGuard implements CanActivate {
       throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND);
     }
 
+    const hierarchy = await this.hierarchy.resolveCurrent({
+      localFieldId: camporee.local_field_id,
+    });
+
     return {
       localFieldId: camporee.local_field_id,
-      unionId: camporee.local_fields?.union_id ?? null,
+      unionId: hierarchy.union_id ?? camporee.local_fields?.union_id ?? null,
+      divisionId: hierarchy.division_id,
       countryId: camporee.local_fields?.unions?.country_id ?? null,
     };
+  }
+
+  private async resolveCamporeeEventScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<
+    | { type: 'local'; scope: ResolvedTerritoryScope }
+    | { type: 'union'; scope: ResolvedUnionCamporeeScope }
+  > {
+    const eventId = this.getRequiredNumericValue(
+      this.getRequestValue(request, 'param', resource.idParam ?? 'eventId'),
+      'Event ID not found in request',
+    );
+
+    const event = await this.prisma.camporee_events.findUnique({
+      where: { camporee_event_id: eventId },
+      select: {
+        local_camporee_id: true,
+        union_camporee_id: true,
+      },
+    });
+
+    if (!event) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_EVENT_NOT_FOUND);
+    }
+
+    if (event.local_camporee_id) {
+      const camporee = await this.prisma.local_camporees.findUnique({
+        where: { local_camporee_id: event.local_camporee_id },
+        select: {
+          local_field_id: true,
+          local_fields: {
+            select: {
+              union_id: true,
+              unions: { select: { country_id: true } },
+            },
+          },
+        },
+      });
+
+      if (!camporee) {
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND);
+      }
+
+      return {
+        type: 'local',
+        scope: {
+          localFieldId: camporee.local_field_id,
+          unionId: camporee.local_fields?.union_id ?? null,
+          countryId: camporee.local_fields?.unions?.country_id ?? null,
+        },
+      };
+    } else {
+      const camporee = await this.prisma.union_camporees.findUnique({
+        where: { union_camporee_id: event.union_camporee_id! },
+        select: {
+          union_id: true,
+          unions: { select: { country_id: true } },
+        },
+      });
+
+      if (!camporee) {
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+        );
+      }
+
+      return {
+        type: 'union',
+        scope: {
+          unionId: camporee.union_id,
+          countryId: camporee.unions?.country_id ?? null,
+        },
+      };
+    }
+  }
+
+  /**
+   * Resolves territory/union scope for a camporee venue.
+   *
+   * - PATCH/DELETE /camporee-venues/:venueId → looks up the venue row by id
+   *   and returns its `union_id` (union scope) xor `local_field_id`
+   *   (local_field scope).
+   * - POST /camporee-venues (generic create) → no `idParam` and no row exists
+   *   yet, so the scope is read from the request body (`scope` +
+   *   `union_id` | `local_field_id`).
+   *
+   * Note: the camporee-scoped POST endpoints (POST
+   * /local-camporees/:id/venues and POST /union-camporees/:id/venues) are
+   * still authorized via `camporee` / `union_camporee` resource types —
+   * those derive the scope from the parent camporee row.
+   */
+  private async resolveCamporeeVenueScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<
+    | { type: 'local_field'; scope: ResolvedTerritoryScope }
+    | { type: 'union'; scope: ResolvedUnionCamporeeScope }
+  > {
+    // Case 1: mutation by id (PATCH/DELETE).
+    const rawId = this.getRequestValue(
+      request,
+      'param',
+      resource.idParam ?? 'venueId',
+    );
+
+    if (rawId !== undefined && rawId !== null && rawId !== '') {
+      const venueId = this.getRequiredNumericValue(
+        rawId,
+        'Venue ID not found in request',
+      );
+
+      const venue = await this.prisma.camporee_venues.findUnique({
+        where: { camporee_venue_id: venueId },
+        select: {
+          scope: true,
+          union_id: true,
+          local_field_id: true,
+        },
+      });
+
+      if (!venue) {
+        throw new AppNotFoundException(ErrorCode.CAMPOREE_VENUE_NOT_FOUND);
+      }
+
+      return this.buildCamporeeVenueScopeFromRow(venue);
+    }
+
+    // Case 2: create via generic POST — read from body.
+    const body = request.body ?? {};
+    return this.buildCamporeeVenueScopeFromRow({
+      scope: body.scope,
+      union_id: body.union_id ?? null,
+      local_field_id: body.local_field_id ?? null,
+    });
+  }
+
+  private async buildCamporeeVenueScopeFromRow(venue: {
+    scope: string | null | undefined;
+    union_id: number | null | undefined;
+    local_field_id: number | null | undefined;
+  }): Promise<
+    | { type: 'local_field'; scope: ResolvedTerritoryScope }
+    | { type: 'union'; scope: ResolvedUnionCamporeeScope }
+  > {
+    if (venue.scope === 'union') {
+      if (typeof venue.union_id !== 'number') {
+        throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+      }
+
+      const union = await this.prisma.unions.findUnique({
+        where: { union_id: venue.union_id },
+        select: { country_id: true },
+      });
+
+      return {
+        type: 'union',
+        scope: {
+          unionId: venue.union_id,
+          countryId: union?.country_id ?? null,
+        },
+      };
+    }
+
+    if (venue.scope === 'local_field') {
+      if (typeof venue.local_field_id !== 'number') {
+        throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+      }
+
+      const localField = await this.prisma.local_fields.findUnique({
+        where: { local_field_id: venue.local_field_id },
+        select: {
+          union_id: true,
+          unions: { select: { country_id: true } },
+        },
+      });
+
+      return {
+        type: 'local_field',
+        scope: {
+          localFieldId: venue.local_field_id,
+          unionId: localField?.union_id ?? null,
+          countryId: localField?.unions?.country_id ?? null,
+        },
+      };
+    }
+
+    // Unknown / missing scope on the row or in the body → reject.
+    throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
   }
 
   private async resolveUnionCamporeeScope(
@@ -617,8 +807,13 @@ export class PermissionsGuard implements CanActivate {
       );
     }
 
+    const hierarchy = await this.hierarchy.resolveCurrent({
+      unionId: camporee.union_id,
+    });
+
     return {
       unionId: camporee.union_id,
+      divisionId: hierarchy.division_id,
       countryId: camporee.unions?.country_id ?? null,
     };
   }
@@ -627,34 +822,17 @@ export class PermissionsGuard implements CanActivate {
     resolved: ResolvedAuthorizationProfile,
     resourceScope: ResolvedUnionCamporeeScope,
   ): boolean {
-    const globalRoleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-
-    if (globalRoleNames.has('super-admin')) {
-      return true;
-    }
-
-    const globalScope = resolved.authorization.effective.scope.global;
-    const globalUnionId = globalScope.union?.id;
-    const globalCountryId = globalScope.country?.id;
-
     if (
-      typeof globalUnionId === 'number' &&
-      globalUnionId === resourceScope.unionId &&
-      (globalRoleNames.has('admin') || globalRoleNames.has('assistant-admin'))
+      this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        this.toHierarchyScope(resourceScope),
+        'current-write',
+      )
     ) {
       return true;
     }
 
-    if (
-      typeof resourceScope.countryId === 'number' &&
-      typeof globalCountryId === 'number' &&
-      globalCountryId === resourceScope.countryId &&
-      globalRoleNames.has('admin')
-    ) {
+    if (this.canUseLegacyCountryFallback(resolved, resourceScope)) {
       return true;
     }
 
@@ -662,15 +840,16 @@ export class PermissionsGuard implements CanActivate {
     // and club-assignment actors with a local field are permitted through —
     // the service layer enforces that the local field participates in this
     // union camporee via union_camporee_local_fields.
+    const globalScope = resolved.authorization.effective.scope.global;
     const globalLocalFieldId = globalScope.local_field?.id;
 
     if (
       typeof globalLocalFieldId === 'number' &&
-      (globalRoleNames.has('admin') ||
-        globalRoleNames.has('assistant-admin') ||
-        globalRoleNames.has('coordinator') ||
-        globalRoleNames.has('director-lf') ||
-        globalRoleNames.has('assistant-lf'))
+      (this.hasGlobalRole(resolved, 'admin') ||
+        this.hasGlobalRole(resolved, 'assistant-admin') ||
+        this.hasGlobalRole(resolved, 'coordinator') ||
+        this.hasGlobalRole(resolved, 'director-lf') ||
+        this.hasGlobalRole(resolved, 'assistant-lf'))
     ) {
       return true;
     }
@@ -687,6 +866,50 @@ export class PermissionsGuard implements CanActivate {
     }
 
     throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+  }
+
+  private toHierarchyScope(
+    scope: ResolvedTerritoryScope | ResolvedUnionCamporeeScope,
+  ): {
+    division_id: number | null;
+    union_id: number | null;
+    local_field_id: number | null;
+  } {
+    return {
+      division_id: scope.divisionId ?? null,
+      union_id: scope.unionId ?? null,
+      local_field_id: 'localFieldId' in scope ? scope.localFieldId : null,
+    };
+  }
+
+  private canUseLegacyCountryFallback(
+    resolved: ResolvedAuthorizationProfile,
+    resourceScope: Pick<ResolvedTerritoryScope, 'divisionId' | 'countryId'>,
+  ): boolean {
+    // Country is geography now, not authority. Keep this fallback only for
+    // legacy resource resolvers that cannot provide a division yet.
+    if (typeof resourceScope.divisionId === 'number') {
+      return false;
+    }
+
+    const globalCountryId =
+      resolved.authorization.effective.scope.global.country?.id;
+
+    return (
+      typeof resourceScope.countryId === 'number' &&
+      typeof globalCountryId === 'number' &&
+      globalCountryId === resourceScope.countryId &&
+      this.hasGlobalRole(resolved, 'admin')
+    );
+  }
+
+  private hasGlobalRole(
+    resolved: ResolvedAuthorizationProfile,
+    roleName: string,
+  ): boolean {
+    return resolved.authorization.grants.global_roles.some(
+      (grant) => grant.role_name.toLowerCase() === roleName,
+    );
   }
 
   private async resolveFinanceScope(

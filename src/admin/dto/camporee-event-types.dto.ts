@@ -26,7 +26,9 @@ export class CreateCamporeeEventTypeDto {
   @MaxLength(100)
   declare name: string;
 
-  @ApiPropertyOptional({ example: 'Eventos de naturaleza espiritual y devocional' })
+  @ApiPropertyOptional({
+    example: 'Eventos de naturaleza espiritual y devocional',
+  })
   @IsOptional()
   @IsString()
   description?: string;
@@ -68,7 +70,9 @@ export class UpdateCamporeeEventTypeDto {
   @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional({ example: 'Eventos de naturaleza espiritual y devocional' })
+  @ApiPropertyOptional({
+    example: 'Eventos de naturaleza espiritual y devocional',
+  })
   @IsOptional()
   @IsString()
   description?: string;

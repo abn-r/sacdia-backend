@@ -22,6 +22,7 @@
     "generate:spec": "npx ts-node scripts/generate-openapi.ts",
     "load-test": "node scripts/load-test.js",
     "verify:fcm-migration": "npx tsx scripts/verify-fcm-migration.ts",
+    "verify:institutional-hierarchy-migration": "tsx scripts/verify-institutional-hierarchy-migration.ts",
     "import:legacy-catalogs": "npx ts-node scripts/import-legacy-catalogs.ts",
     "migrate:storage-urls:r2": "npx tsx scripts/migrate-storage-urls-to-r2.ts",
     "audit:security": "pnpm audit --audit-level=high"

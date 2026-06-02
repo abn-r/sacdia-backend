@@ -10,6 +10,7 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
 
 type EntityType = 'class' | 'honor';
 
@@ -20,6 +21,7 @@ export class ValidationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly honorValidationWorkflow: HonorValidationWorkflowService,
   ) {}
 
   // ========================================
@@ -34,7 +36,7 @@ export class ValidationService {
     if (entityType === 'class') {
       return this.submitClassForReview(entityId, userId);
     }
-    return this.submitHonorForReview(entityId, userId);
+    return this.honorValidationWorkflow.submitForReview(entityId, userId);
   }
 
   private async submitClassForReview(enrollmentId: number, userId: string) {
@@ -123,98 +125,6 @@ export class ValidationService {
     return result;
   }
 
-  private async submitHonorForReview(userHonorId: number, userId: string) {
-    const userHonor = await this.prisma.users_honors.findUnique({
-      where: { user_honor_id: userHonorId },
-    });
-
-    if (!userHonor) {
-      throw new AppNotFoundException(ErrorCode.VALIDATION_USER_HONOR_NOT_FOUND);
-    }
-
-    if (userHonor.user_id !== userId) {
-      throw new AppBadRequestException(ErrorCode.VALIDATION_HONOR_NOT_OWNED);
-    }
-
-    if (
-      userHonor.validate === true ||
-      userHonor.validation_status === 'APPROVED'
-    ) {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_HONOR_ALREADY_VALIDATED,
-      );
-    }
-
-    if (userHonor.validation_status === 'PENDING_REVIEW') {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_HONOR_ALREADY_PENDING,
-      );
-    }
-
-    // Allow submission from: IN_PROGRESS, REJECTED
-    const allowedStatuses = ['IN_PROGRESS', 'REJECTED'];
-    if (!allowedStatuses.includes(userHonor.validation_status)) {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
-      );
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.users_honors.update({
-        where: { user_honor_id: userHonorId },
-        data: {
-          validation_status: 'PENDING_REVIEW',
-          submitted_at: new Date(),
-          rejection_reason: null, // Clear any previous rejection
-          modified_at: new Date(),
-        },
-      });
-
-      // Generic validation log
-      await tx.validation_logs.create({
-        data: {
-          entity_type: 'honor',
-          entity_id: String(userHonorId),
-          user_id: userId,
-          action: 'submitted',
-          performed_by: userId,
-          comment: 'Honor enviado a revision por el miembro',
-        },
-      });
-
-      return updated;
-    });
-
-    // Notify coordinators/directors of the member's section
-    try {
-      const memberSection = await this.prisma.club_role_assignments.findFirst({
-        where: { user_id: userId, active: true },
-        select: { club_section_id: true },
-      });
-
-      if (memberSection?.club_section_id) {
-        void this.notifications.sendToSectionRole(
-          memberSection.club_section_id,
-          ['coordinator', 'director'],
-          'Nuevo honor enviado a revisión',
-          'Un miembro ha enviado un honor para validación',
-          {
-            type: 'validation',
-            entity_type: 'honor',
-            entity_id: String(userHonorId),
-          },
-          'validation:honor_submitted',
-        );
-      }
-    } catch (error: unknown) {
-      this.logger.warn(
-        `Notification failed for honor submission ${userHonorId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    return result;
-  }
-
   // ========================================
   // REVIEW (APPROVE / REJECT)
   // ========================================
@@ -235,7 +145,16 @@ export class ValidationService {
     if (entityType === 'class') {
       return this.reviewClass(entityId, action, performedBy, comment);
     }
-    return this.reviewHonor(entityId, action, performedBy, comment);
+
+    if (action === 'approved') {
+      return this.honorValidationWorkflow.approve(
+        entityId,
+        performedBy,
+        comment,
+      );
+    }
+
+    return this.honorValidationWorkflow.reject(entityId, performedBy, comment!);
   }
 
   private async reviewClass(
@@ -332,82 +251,6 @@ export class ValidationService {
     } catch (error: unknown) {
       this.logger.warn(
         `Notification failed for class review ${enrollmentId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    return result;
-  }
-
-  private async reviewHonor(
-    userHonorId: number,
-    action: 'approved' | 'rejected',
-    performedBy: string,
-    comment?: string,
-  ) {
-    const userHonor = await this.prisma.users_honors.findUnique({
-      where: { user_honor_id: userHonorId },
-    });
-
-    if (!userHonor) {
-      throw new AppNotFoundException(ErrorCode.VALIDATION_USER_HONOR_NOT_FOUND);
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Update validation_status + backward-compat boolean
-      const newValidationStatus =
-        action === 'approved' ? 'APPROVED' : 'REJECTED';
-
-      const updated = await tx.users_honors.update({
-        where: { user_honor_id: userHonorId },
-        data: {
-          validate: action === 'approved',
-          validation_status: newValidationStatus,
-          validated_by_id: performedBy,
-          validated_at: new Date(),
-          rejection_reason: action === 'rejected' ? comment : null,
-          modified_at: new Date(),
-        },
-      });
-
-      // Generic validation log
-      await tx.validation_logs.create({
-        data: {
-          entity_type: 'honor',
-          entity_id: String(userHonorId),
-          user_id: userHonor.user_id,
-          action,
-          performed_by: performedBy,
-          comment: comment ?? null,
-        },
-      });
-
-      return updated;
-    });
-
-    // Notify the member about approval/rejection
-    try {
-      const title =
-        action === 'approved' ? 'Honor aprobado' : 'Honor rechazado';
-      const body =
-        action === 'approved'
-          ? 'Tu honor ha sido aprobado por el revisor'
-          : `Tu honor ha sido rechazado: ${comment}`;
-
-      void this.notifications.notifySafe(
-        userHonor.user_id,
-        title,
-        body,
-        {
-          type: 'validation',
-          entity_type: 'honor',
-          entity_id: String(userHonorId),
-          action,
-        },
-        `validation:honor_${action}`,
-      );
-    } catch (error: unknown) {
-      this.logger.warn(
-        `Notification failed for honor review ${userHonorId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 

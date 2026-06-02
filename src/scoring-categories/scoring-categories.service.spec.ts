@@ -3,9 +3,20 @@ import { ScoringCategoriesService } from './scoring-categories.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { TranslationService } from '../common/services/translation.service';
+import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
 
 describe('ScoringCategoriesService', () => {
+  const mockTx = {
+    scoring_categories: {
+      create: jest.fn(),
+    },
+  };
+
   const mockPrisma = {
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn(async (callback: (tx: typeof mockTx) => unknown) =>
+      callback(mockTx),
+    ),
     scoring_categories: {
       findMany: jest.fn(),
     },
@@ -23,21 +34,113 @@ describe('ScoringCategoriesService', () => {
 
   const mockTranslationService = {
     getCurrentLocale: jest.fn().mockReturnValue('es'),
+    validateTranslations: jest.fn(),
     translateMany: jest
       .fn()
       .mockImplementation((records: unknown[]) => records),
+    upsertTranslations: jest.fn(),
+  };
+
+  const mockHierarchy = {
+    resolveCurrent: jest.fn(),
   };
 
   const service = new ScoringCategoriesService(
     mockPrisma as unknown as PrismaService,
     mockAuthContext as unknown as AuthorizationContextService,
     mockTranslationService as unknown as TranslationService,
+    mockHierarchy as unknown as InstitutionalHierarchyService,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
     // Default: not a super-admin so existing territory checks run normally.
     mockAuthContext.isSuperAdmin.mockResolvedValue(false);
+    mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
+    mockHierarchy.resolveCurrent.mockImplementation(
+      ({
+        unionId,
+        localFieldId,
+      }: {
+        unionId?: number;
+        localFieldId?: number;
+      }) =>
+        Promise.resolve({
+          division_id: 1,
+          union_id: unionId ?? 7,
+          local_field_id: localFieldId ?? null,
+          as_of: new Date('2026-01-01'),
+          source: 'current',
+          precision: 'exact',
+        }),
+    );
+  });
+
+  describe('division categories', () => {
+    it('reads categories from the real DIA division instead of sentinel origin_id=0', async () => {
+      const categories = [
+        {
+          scoring_category_id: 1,
+          name: 'Asistencia',
+          max_points: 100,
+          origin_level: 'DIVISION',
+          origin_id: 1,
+          active: true,
+          created_at: new Date('2026-04-15T00:00:00.000Z'),
+          modified_at: new Date('2026-04-15T00:00:00.000Z'),
+        },
+      ];
+
+      mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
+      mockPrisma.scoring_categories.findMany.mockResolvedValue(categories);
+
+      await expect(service.findDivisionCategories()).resolves.toEqual(
+        categories.map((category) => ({
+          ...category,
+          readonly: false,
+          origin_badge: 'Division',
+        })),
+      );
+
+      expect(mockPrisma.scoring_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { origin_level: 'DIVISION', origin_id: 1 },
+        }),
+      );
+    });
+
+    it('creates division categories with DIA division_id and never origin_id=0', async () => {
+      const created = {
+        scoring_category_id: 10,
+        name: 'Puntualidad',
+        max_points: 100,
+        origin_level: 'DIVISION',
+        origin_id: 1,
+        active: true,
+      };
+
+      mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
+      mockTx.scoring_categories.create.mockResolvedValue(created);
+
+      await expect(
+        service.createDivisionCategory({
+          name: 'Puntualidad',
+          max_points: 100,
+        }),
+      ).resolves.toEqual(created);
+
+      expect(mockTx.scoring_categories.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          origin_level: 'DIVISION',
+          origin_id: 1,
+        }),
+      });
+      expect(mockTx.scoring_categories.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ origin_id: 0 }),
+        }),
+      );
+    });
   });
 
   describe('findUnionCategories', () => {
@@ -69,6 +172,7 @@ describe('ScoringCategoriesService', () => {
       mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-1',
       });
+      mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
       mockPrisma.scoring_categories.findMany.mockResolvedValue(categories);
 
       await expect(service.findUnionCategories(20, 'user-1')).resolves.toEqual(
@@ -96,14 +200,30 @@ describe('ScoringCategoriesService', () => {
           select: { assignment_id: true },
         }),
       );
+      expect(mockPrisma.scoring_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { origin_level: 'DIVISION', origin_id: 1 },
+              { origin_level: 'UNION', origin_id: 20 },
+            ],
+          },
+        }),
+      );
+      expect(mockHierarchy.resolveCurrent).toHaveBeenCalledWith({
+        unionId: 20,
+      });
     });
   });
 
   describe('findLocalFieldCategories', () => {
     it('rejects a caller whose active assignment belongs to another local field', async () => {
-      mockPrisma.local_fields.findUnique.mockResolvedValue({
-        union_id: 7,
-      });
+      mockPrisma.$queryRaw.mockResolvedValue([
+        {
+          union_id: 7,
+          division_id: 1,
+        },
+      ]);
       mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
@@ -128,9 +248,12 @@ describe('ScoringCategoriesService', () => {
         },
       ];
 
-      mockPrisma.local_fields.findUnique.mockResolvedValue({
-        union_id: 7,
-      });
+      mockPrisma.$queryRaw.mockResolvedValue([
+        {
+          union_id: 7,
+          division_id: 1,
+        },
+      ]);
       mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
         assignment_id: 'assignment-2',
       });
@@ -161,12 +284,27 @@ describe('ScoringCategoriesService', () => {
           select: { assignment_id: true },
         }),
       );
+      expect(mockPrisma.scoring_categories.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { origin_level: 'DIVISION', origin_id: 1 },
+              { origin_level: 'UNION', origin_id: 7 },
+              { origin_level: 'LOCAL_FIELD', origin_id: 99 },
+            ],
+          },
+        }),
+      );
+      expect(mockHierarchy.resolveCurrent).toHaveBeenCalledWith({
+        localFieldId: 99,
+      });
     });
   });
 
   describe('super-admin bypass (H-02)', () => {
     it('allows super-admin to read union categories without a club_role_assignment', async () => {
       mockAuthContext.isSuperAdmin.mockResolvedValue(true);
+      mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
       await expect(service.findUnionCategories(20, 'super-1')).resolves.toEqual(
@@ -178,7 +316,7 @@ describe('ScoringCategoriesService', () => {
 
     it('allows super-admin to read local field categories without a club_role_assignment', async () => {
       mockAuthContext.isSuperAdmin.mockResolvedValue(true);
-      mockPrisma.local_fields.findUnique.mockResolvedValue({ union_id: 7 });
+      mockPrisma.$queryRaw.mockResolvedValue([{ union_id: 7, division_id: 1 }]);
       mockPrisma.scoring_categories.findMany.mockResolvedValue([]);
 
       await expect(

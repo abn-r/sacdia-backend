@@ -173,6 +173,9 @@ model churches {
   districlub_type_id Int
   districts          districts                @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: NoAction, onUpdate: NoAction)
   clubs              clubs[]
+  church_district_history    church_district_history[]    @relation("church_district_history_church")
+  club_institutional_history club_institutional_history[] @relation("club_institutional_history_church")
+  hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_church")
   translations       churches_translations[]
 }
 
@@ -500,6 +503,7 @@ model club_types {
   folder_templates           folder_templates[]
   resources                  resources[]
   award_categories           award_categories[]
+  annual_ranking_configs     annual_ranking_configs[]
   club_annual_rankings       club_annual_rankings[]
   achievements               achievements[]
   ranking_weight_configs     ranking_weight_configs?
@@ -530,6 +534,8 @@ model clubs {
   quarterly_reports       quarterly_reports[]
   annual_reports          annual_reports[]
   audit_logs              audit_logs[]
+  club_institutional_history club_institutional_history[] @relation("club_institutional_history_club")
+  hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_club")
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
 }
@@ -633,6 +639,40 @@ model countries_translations {
   @@index([country_id])
 }
 
+model divisions {
+  division_id  Int       @id @default(autoincrement())
+  code         String    @unique @db.VarChar(50)
+  name         String    @unique @db.VarChar(100)
+  abbreviation String    @unique @db.VarChar(16)
+  active       Boolean   @default(true)
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+  modified_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  unions                     unions[]
+  translations               divisions_translations[]
+  union_division_history     union_division_history[]     @relation("union_division_history_division")
+  club_institutional_history club_institutional_history[] @relation("club_institutional_history_division")
+  hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_division")
+
+  @@index([active], map: "idx_divisions_active")
+  @@map("divisions")
+}
+
+model divisions_translations {
+  id          Int       @id @default(autoincrement())
+  division_id Int
+  locale      String    @db.VarChar(10)
+  name        String?   @db.Text
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  divisions   divisions @relation(fields: [division_id], references: [division_id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([division_id, locale], name: "divisions_translations_unique_locale", map: "divisions_translations_unique_locale")
+  @@index([locale], map: "divisions_translations_locale_idx")
+  @@index([division_id], map: "divisions_translations_division_id_idx")
+  @@map("divisions_translations")
+}
+
 model districts {
   name               String                    @db.VarChar(50)
   active             Boolean                   @default(false)
@@ -643,6 +683,10 @@ model districts {
   churches           churches[]
   clubs              clubs[]
   local_fields       local_fields              @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  district_local_field_history district_local_field_history[] @relation("district_local_field_history_district")
+  church_district_history      church_district_history[]      @relation("church_district_history_district")
+  club_institutional_history   club_institutional_history[]   @relation("club_institutional_history_district")
+  hierarchy_contexts           hierarchy_contexts[]           @relation("hierarchy_contexts_district")
   translations       districts_translations[]
 }
 
@@ -678,6 +722,7 @@ model ecclesiastical_years {
   club_enrollments             club_enrollments[]
   folder_templates             folder_templates[]
   club_annual_rankings         club_annual_rankings[]
+  annual_ranking_configs       annual_ranking_configs[]
   user_achievements            user_achievements[]
   annual_reports               annual_reports[]
   enrollment_rankings          EnrollmentRanking[]
@@ -1194,6 +1239,11 @@ model local_fields {
   local_camporees             local_camporees[]
   certificate_bulk_import_batches certificate_bulk_import_batches[]
   unions                      unions                           @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
+  local_field_union_history   local_field_union_history[]      @relation("local_field_union_history_local_field")
+  district_local_field_history district_local_field_history[]   @relation("district_local_field_history_local_field")
+  club_institutional_history  club_institutional_history[]     @relation("club_institutional_history_local_field")
+  hierarchy_contexts          hierarchy_contexts[]             @relation("hierarchy_contexts_local_field")
+  annual_ranking_configs      annual_ranking_configs[]
   union_camporee_local_fields union_camporee_local_fields[]
   users                       users[]
   translations                local_fields_translations[]
@@ -1202,6 +1252,7 @@ model local_fields {
   material_folio_counters      MaterialFolioCounter[]
   material_config              MaterialConfig?
   camporee_event_templates     camporee_event_templates[]
+  camporee_venues              camporee_venues[]
 }
 
 model local_fields_translations {
@@ -1333,15 +1384,24 @@ model unions {
   abbreviation     String                 @unique @db.VarChar(8)
   active           Boolean                @default(false)
   country_id       Int
+  division_id      Int                    @default(1)
   created_at       DateTime?              @default(now()) @db.Timestamptz(6)
   modified_at      DateTime?              @default(now()) @db.Timestamptz(6)
   local_fields              local_fields[]
   union_camporees           union_camporees[]
   folder_templates          folder_templates[]
   camporee_event_templates  camporee_event_templates[]
+  camporee_venues           camporee_venues[]
   countries                 countries              @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
+  divisions                 divisions              @relation(fields: [division_id], references: [division_id], onDelete: NoAction, onUpdate: NoAction)
+  union_division_history    union_division_history[] @relation("union_division_history_union")
+  local_field_union_history local_field_union_history[] @relation("local_field_union_history_union")
+  club_institutional_history club_institutional_history[] @relation("club_institutional_history_union")
+  hierarchy_contexts        hierarchy_contexts[]     @relation("hierarchy_contexts_union")
   users                     users[]
   translations              unions_translations[]
+
+  @@index([division_id], map: "idx_unions_division_id")
 }
 
 model unions_translations {
@@ -1356,6 +1416,143 @@ model unions_translations {
   @@unique([union_id, locale], name: "unions_translations_unique_locale", map: "unions_translations_unique_locale")
   @@index([locale])
   @@index([union_id])
+}
+
+model union_division_history {
+  union_division_history_id BigInt    @id @default(autoincrement())
+  union_id                  Int
+  division_id               Int
+  valid_from                DateTime  @db.Date
+  valid_to                  DateTime? @db.Date
+  precision                 String    @default("system_backfill") @db.VarChar(30)
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  created_by                String?   @db.Uuid
+
+  unions    unions    @relation("union_division_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  divisions divisions @relation("union_division_history_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([division_id], map: "idx_union_division_history_division_id")
+  @@index([union_id, valid_from, valid_to], map: "idx_union_division_history_union_period")
+  @@map("union_division_history")
+}
+
+model local_field_union_history {
+  local_field_union_history_id BigInt    @id @default(autoincrement())
+  local_field_id               Int
+  union_id                     Int
+  valid_from                   DateTime  @db.Date
+  valid_to                     DateTime? @db.Date
+  precision                    String    @default("system_backfill") @db.VarChar(30)
+  created_at                   DateTime  @default(now()) @db.Timestamptz(6)
+  created_by                   String?   @db.Uuid
+
+  local_fields local_fields @relation("local_field_union_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  unions       unions       @relation("local_field_union_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([union_id], map: "idx_local_field_union_history_union_id")
+  @@index([local_field_id, valid_from, valid_to], map: "idx_local_field_union_history_field_period")
+  @@map("local_field_union_history")
+}
+
+model district_local_field_history {
+  district_local_field_history_id BigInt    @id @default(autoincrement())
+  districlub_type_id              Int
+  local_field_id                  Int
+  valid_from                      DateTime  @db.Date
+  valid_to                        DateTime? @db.Date
+  precision                       String    @default("system_backfill") @db.VarChar(30)
+  created_at                      DateTime  @default(now()) @db.Timestamptz(6)
+  created_by                      String?   @db.Uuid
+
+  districts    districts    @relation("district_local_field_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields local_fields @relation("district_local_field_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([local_field_id], map: "idx_district_local_field_history_field_id")
+  @@index([districlub_type_id, valid_from, valid_to], map: "idx_district_local_field_history_district_period")
+  @@map("district_local_field_history")
+}
+
+model church_district_history {
+  church_district_history_id BigInt    @id @default(autoincrement())
+  church_id                  Int
+  districlub_type_id         Int
+  valid_from                 DateTime  @db.Date
+  valid_to                   DateTime? @db.Date
+  precision                  String    @default("system_backfill") @db.VarChar(30)
+  created_at                 DateTime  @default(now()) @db.Timestamptz(6)
+  created_by                 String?   @db.Uuid
+
+  churches  churches  @relation("church_district_history_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+  districts districts @relation("church_district_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([districlub_type_id], map: "idx_church_district_history_district_id")
+  @@index([church_id, valid_from, valid_to], map: "idx_church_district_history_church_period")
+  @@map("church_district_history")
+}
+
+model club_institutional_history {
+  club_institutional_history_id BigInt    @id @default(autoincrement())
+  club_id                       Int
+  division_id                   Int
+  union_id                      Int
+  local_field_id                Int
+  districlub_type_id            Int
+  church_id                     Int
+  valid_from                    DateTime  @db.Date
+  valid_to                      DateTime? @db.Date
+  precision                     String    @default("system_backfill") @db.VarChar(30)
+  created_at                    DateTime  @default(now()) @db.Timestamptz(6)
+  created_by                    String?   @db.Uuid
+
+  clubs        clubs        @relation("club_institutional_history_club", fields: [club_id], references: [club_id], onDelete: Restrict, onUpdate: NoAction)
+  divisions    divisions    @relation("club_institutional_history_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+  unions       unions       @relation("club_institutional_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields local_fields @relation("club_institutional_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  districts    districts    @relation("club_institutional_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  churches     churches     @relation("club_institutional_history_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([division_id], map: "idx_club_institutional_history_division_id")
+  @@index([union_id], map: "idx_club_institutional_history_union_id")
+  @@index([local_field_id], map: "idx_club_institutional_history_local_field_id")
+  @@index([districlub_type_id], map: "idx_club_institutional_history_district_id")
+  @@index([church_id], map: "idx_club_institutional_history_church_id")
+  @@index([club_id, valid_from, valid_to], map: "idx_club_institutional_history_club_period")
+  @@map("club_institutional_history")
+}
+
+model hierarchy_contexts {
+  hierarchy_context_id String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  division_id          Int
+  union_id             Int?
+  local_field_id       Int?
+  districlub_type_id   Int?
+  church_id            Int?
+  club_id              Int?
+  as_of                DateTime @db.Timestamptz(6)
+  source               String   @db.VarChar(40)
+  precision            String   @default("system_backfill") @db.VarChar(30)
+  context              Json?
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  created_by           String?  @db.Uuid
+
+  divisions    divisions     @relation("hierarchy_contexts_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+  unions       unions?       @relation("hierarchy_contexts_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields local_fields? @relation("hierarchy_contexts_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  districts    districts?    @relation("hierarchy_contexts_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  churches     churches?     @relation("hierarchy_contexts_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+  clubs        clubs?        @relation("hierarchy_contexts_club", fields: [club_id], references: [club_id], onDelete: Restrict, onUpdate: NoAction)
+  annual_folders        annual_folders[]
+  club_annual_rankings  club_annual_rankings[]
+  enrollment_rankings   EnrollmentRanking[]
+  section_rankings      SectionRanking[]
+
+  @@index([division_id, as_of], map: "idx_hierarchy_contexts_division_as_of")
+  @@index([union_id, as_of], map: "idx_hierarchy_contexts_union_as_of")
+  @@index([local_field_id, as_of], map: "idx_hierarchy_contexts_local_field_as_of")
+  @@index([districlub_type_id, as_of], map: "idx_hierarchy_contexts_district_as_of")
+  @@index([church_id, as_of], map: "idx_hierarchy_contexts_church_as_of")
+  @@index([club_id, as_of], map: "idx_hierarchy_contexts_club_as_of")
+  @@map("hierarchy_contexts")
 }
 
 model unit_members {
@@ -1516,6 +1713,7 @@ model users {
   camporee_event_templates_modified       camporee_event_templates[]    @relation("camporee_event_template_modifier")
   camporee_events_created                 camporee_events[]             @relation("camporee_event_creator")
   camporee_events_modified                camporee_events[]             @relation("camporee_event_modifier")
+  camporee_events_led                     camporee_events[]             @relation("camporee_event_leader")
 }
 
 model notification_preferences {
@@ -2328,20 +2526,22 @@ model system_config {
 }
 
 model camporee_payments {
-  camporee_payment_id String   @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  camporee_payment_id String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
   camporee_member_id  Int
-  amount              Decimal  @db.Decimal(10, 2)
-  payment_type        String   @db.VarChar(50)
-  reference           String?  @db.VarChar(100)
+  amount              Decimal   @db.Decimal(10, 2)
+  payment_type        String    @db.VarChar(50)
+  reference           String?   @db.VarChar(100)
   notes               String?
-  registered_by       String   @db.Uuid
-  paid_at             DateTime @db.Date
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
-  modified_at         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
-  status              String   @default("registered") @db.VarChar(20)
+  voucher_url         String?   @db.VarChar(500)
+  voucher_uploaded_at DateTime? @db.Timestamptz(6)
+  registered_by       String    @db.Uuid
+  paid_at             DateTime  @db.Date
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  status              String    @default("registered") @db.VarChar(20)
   rejection_reason    String?
-  approved_by         String?  @db.Uuid
-  rejected_by         String?  @db.Uuid
+  approved_by         String?   @db.Uuid
+  rejected_by         String?   @db.Uuid
 
   camporee_member camporee_members @relation(fields: [camporee_member_id], references: [camporee_member_id], onDelete: Cascade, onUpdate: NoAction)
   registrar       users            @relation("camporee_payments_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2408,6 +2608,7 @@ model annual_folders {
   annual_folder_id            String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
   club_enrollment_id          String    @db.Uuid
   folder_template_id          String    @db.Uuid
+  hierarchy_context_id        String?   @db.Uuid
   local_camporee_id           Int?
   union_camporee_id           Int?
   requires_union_confirmation Boolean   @default(false)
@@ -2424,6 +2625,7 @@ model annual_folders {
 
   club_enrollment     club_enrollments                    @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
   folder_template     folder_templates                    @relation(fields: [folder_template_id], references: [folder_template_id], onDelete: NoAction, onUpdate: NoAction)
+  hierarchy_context   hierarchy_contexts?                 @relation(fields: [hierarchy_context_id], references: [hierarchy_context_id], onDelete: SetNull, onUpdate: NoAction)
   local_camporee      local_camporees?                    @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: NoAction, onUpdate: NoAction)
   union_camporee      union_camporees?                    @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: NoAction, onUpdate: NoAction)
   evidences           annual_folder_evidences[]
@@ -2432,6 +2634,7 @@ model annual_folders {
 
   @@unique([club_enrollment_id])
   @@index([folder_template_id], map: "idx_annual_folders_template")
+  @@index([hierarchy_context_id], map: "idx_annual_folders_hierarchy_context")
   @@index([local_camporee_id], map: "idx_annual_folders_local_camporee")
   @@index([union_camporee_id], map: "idx_annual_folders_union_camporee")
 }
@@ -2559,6 +2762,87 @@ model ranking_weight_configs {
   club_types               club_types? @relation(fields: [club_type_id], references: [club_type_id], onDelete: Cascade)
 }
 
+model ranking_tiers {
+  ranking_tier_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String   @db.VarChar(100)
+  slug            String   @unique @db.VarChar(80)
+  band_percentage Decimal  @db.Decimal(5, 2)
+  color           String?  @db.VarChar(20)
+  icon            String?  @db.VarChar(100)
+  sort_order      Int
+  active          Boolean  @default(true)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([active, sort_order], map: "idx_ranking_tiers_active_order")
+  @@map("ranking_tiers")
+}
+
+model annual_ranking_configs {
+  annual_ranking_config_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  local_field_id           Int
+  ecclesiastical_year_id   Int
+  club_type_id             Int
+  max_points               Int
+  active                   Boolean  @default(true)
+  created_by               String?  @db.Uuid
+  updated_by               String?  @db.Uuid
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  local_field         local_fields                      @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  ecclesiastical_year ecclesiastical_years              @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Restrict, onUpdate: NoAction)
+  club_type           club_types                        @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
+  axes                annual_ranking_axis_configs[]
+  components          annual_ranking_component_configs[]
+
+  @@unique([local_field_id, ecclesiastical_year_id, club_type_id], map: "annual_ranking_configs_unique_scope")
+  @@index([ecclesiastical_year_id, club_type_id], map: "idx_annual_ranking_configs_year_type")
+  @@index([active], map: "idx_annual_ranking_configs_active")
+  @@map("annual_ranking_configs")
+}
+
+model annual_ranking_axis_configs {
+  annual_ranking_axis_config_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  annual_ranking_config_id      String   @db.Uuid
+  axis_key                      String   @db.VarChar(50)
+  label                         String   @db.VarChar(120)
+  max_points                    Int
+  sort_order                    Int      @default(0)
+  active                        Boolean  @default(true)
+  created_at                    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  annual_ranking_config annual_ranking_configs            @relation(fields: [annual_ranking_config_id], references: [annual_ranking_config_id], onDelete: Cascade, onUpdate: NoAction)
+  components            annual_ranking_component_configs[]
+
+  @@unique([annual_ranking_config_id, axis_key], map: "annual_ranking_axis_configs_unique_axis")
+  @@index([active, sort_order], map: "idx_annual_ranking_axis_configs_active_order")
+  @@index([annual_ranking_config_id, active, sort_order], map: "idx_annual_ranking_axis_configs_config_active_order")
+  @@map("annual_ranking_axis_configs")
+}
+
+model annual_ranking_component_configs {
+  annual_ranking_component_config_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  annual_ranking_config_id           String   @db.Uuid
+  annual_ranking_axis_config_id      String?  @db.Uuid
+  component_key                      String   @db.VarChar(50)
+  label                              String   @db.VarChar(120)
+  max_points                         Int
+  sort_order                         Int      @default(0)
+  active                             Boolean  @default(true)
+  created_at                         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at                         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  annual_ranking_config      annual_ranking_configs       @relation(fields: [annual_ranking_config_id], references: [annual_ranking_config_id], onDelete: Cascade, onUpdate: NoAction)
+  annual_ranking_axis_config annual_ranking_axis_configs? @relation(fields: [annual_ranking_axis_config_id], references: [annual_ranking_axis_config_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([annual_ranking_config_id, component_key], map: "annual_ranking_component_configs_unique_component")
+  @@index([active, sort_order], map: "idx_annual_ranking_component_configs_active_order")
+  @@index([annual_ranking_axis_config_id], map: "idx_annual_ranking_component_configs_axis_id")
+  @@map("annual_ranking_component_configs")
+}
+
 model club_annual_rankings {
   ranking_id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   club_enrollment_id      String    @db.Uuid
@@ -2578,17 +2862,20 @@ model club_annual_rankings {
   evidence_score_pct      Decimal   @default(0) @db.Decimal(5, 2)
   composite_score_pct     Decimal   @default(0) @db.Decimal(5, 2)
   composite_calculated_at DateTime? @db.Timestamptz(6)
+  hierarchy_context_id    String?   @db.Uuid
 
   club_enrollment     club_enrollments     @relation(fields: [club_enrollment_id], references: [club_enrollment_id], onDelete: NoAction, onUpdate: NoAction)
   club_type           club_types           @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   ecclesiastical_year ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   award_category      award_categories     @relation(fields: [award_category_id], references: [award_category_id], onDelete: NoAction, onUpdate: NoAction)
+  hierarchy_context   hierarchy_contexts?  @relation(fields: [hierarchy_context_id], references: [hierarchy_context_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([club_enrollment_id, ecclesiastical_year_id, award_category_id])
   @@index([club_type_id], map: "idx_club_annual_rankings_club_type")
   @@index([ecclesiastical_year_id], map: "idx_club_annual_rankings_year")
   @@index([award_category_id], map: "idx_club_annual_rankings_category")
   @@index([rank_position], map: "idx_club_annual_rankings_rank")
+  @@index([hierarchy_context_id], map: "idx_club_annual_rankings_hierarchy_context")
   @@index([ecclesiastical_year_id, composite_score_pct(sort: Desc)], map: "idx_rankings_composite")
   @@map("club_annual_rankings")
 }
@@ -2983,6 +3270,7 @@ model EnrollmentRanking {
   composite_score_pct      Decimal?  @db.Decimal(5, 2)
   rank_position            Int?
   awarded_category_id      String?   @db.Uuid
+  hierarchy_context_id     String?   @db.Uuid
   composite_calculated_at  DateTime? @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   modified_at              DateTime  @default(now()) @db.Timestamptz(6)
@@ -2993,6 +3281,7 @@ model EnrollmentRanking {
   club_section        club_sections?       @relation(fields: [club_section_id], references: [club_section_id])
   ecclesiastical_year ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id])
   awarded_category    award_categories?    @relation(fields: [awarded_category_id], references: [award_category_id])
+  hierarchy_context   hierarchy_contexts?  @relation(fields: [hierarchy_context_id], references: [hierarchy_context_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([enrollment_id, ecclesiastical_year_id], map: "uq_enrollment_rankings_enrollment_year")
   @@index([club_id, ecclesiastical_year_id], map: "idx_enrollment_rankings_club_year")
@@ -3000,6 +3289,7 @@ model EnrollmentRanking {
   @@index([club_id, ecclesiastical_year_id, composite_score_pct(sort: Desc)], map: "idx_enrollment_rankings_composite")
   @@index([user_id], map: "idx_enrollment_rankings_user")
   @@index([awarded_category_id], map: "idx_enrollment_rankings_award_category")
+  @@index([hierarchy_context_id], map: "idx_enrollment_rankings_hierarchy_context")
   @@map("enrollment_rankings")
 }
 
@@ -3012,6 +3302,7 @@ model SectionRanking {
   active_enrollment_count  Int       @default(0)
   rank_position            Int?
   awarded_category_id      String?   @db.Uuid
+  hierarchy_context_id     String?   @db.Uuid
   composite_calculated_at  DateTime? @db.Timestamptz(6)
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   modified_at              DateTime  @default(now()) @db.Timestamptz(6)
@@ -3020,11 +3311,13 @@ model SectionRanking {
   club                clubs                @relation(fields: [club_id], references: [club_id])
   ecclesiastical_year ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id])
   awarded_category    award_categories?    @relation(fields: [awarded_category_id], references: [award_category_id])
+  hierarchy_context   hierarchy_contexts?  @relation(fields: [hierarchy_context_id], references: [hierarchy_context_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([club_section_id, ecclesiastical_year_id], map: "uq_section_rankings_section_year")
   @@index([club_id, ecclesiastical_year_id], map: "idx_section_rankings_club_year")
   @@index([club_id, ecclesiastical_year_id, composite_score_pct(sort: Desc)], map: "idx_section_rankings_composite")
   @@index([awarded_category_id], map: "idx_section_rankings_award_category")
+  @@index([hierarchy_context_id], map: "idx_section_rankings_hierarchy_context")
   @@map("section_rankings")
 }
 
@@ -3253,18 +3546,77 @@ model camporee_events {
   modified_at           DateTime                  @default(now()) @db.Timestamptz(6)
   created_by            String?                   @db.Uuid
   modified_by           String?                   @db.Uuid
+
+  // Agenda fields (camporee-agenda-events)
+  day_number              Int                  @default(1)
+  starts_at               String?              @db.VarChar(5)
+  ends_at                 String?              @db.VarChar(5)
+  venue_id                Int?
+  leader_user_id          String?              @db.Uuid
+  leader_name_override    String?              @db.VarChar(100)
+  leader_role             String?              @db.VarChar(100)
+  sections                String[]             @default([])
+  display_category        String               @default("logistico") @db.VarChar(40)
+  status                  CamporeeEventStatus  @default(programado)
+  capacity                Int?
+  registered_count        Int                  @default(0)
+
   event_type            camporee_event_types      @relation(fields: [event_type_id], references: [event_type_id], onDelete: Restrict, onUpdate: NoAction)
   event_template        camporee_event_templates? @relation(fields: [event_template_id], references: [event_template_id], onDelete: SetNull, onUpdate: NoAction)
   local_camporee        local_camporees?          @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   union_camporee        union_camporees?          @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   creator               users?                    @relation("camporee_event_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
   modifier              users?                    @relation("camporee_event_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  venue                 camporee_venues?          @relation(fields: [venue_id], references: [camporee_venue_id], onDelete: SetNull, onUpdate: NoAction)
+  leader                users?                    @relation("camporee_event_leader", fields: [leader_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([local_camporee_id], map: "idx_camporee_events_local_camporee")
   @@index([union_camporee_id], map: "idx_camporee_events_union_camporee")
   @@index([event_template_id], map: "idx_camporee_events_template")
   @@index([active], map: "idx_camporee_events_active")
   @@index([local_camporee_id, display_order], map: "idx_camporee_events_display_order")
+  @@index([day_number, active], map: "camporee_events_day_idx")
+  @@index([status, active], map: "camporee_events_status_idx")
+  @@index([display_category, active], map: "camporee_events_category_idx")
+  @@index([venue_id], map: "camporee_events_venue_idx")
+  @@index([leader_user_id], map: "camporee_events_leader_idx")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMPOREE AGENDA EVENTS — enums + venues + schema extensions
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CamporeeEventStatus {
+  programado
+  publicado
+  en_curso
+  realizado
+  cancelado
+
+  @@map("camporee_event_status")
+}
+
+model camporee_venues {
+  camporee_venue_id Int      @id @default(autoincrement())
+  scope             String   @db.VarChar(20)
+  union_id          Int?
+  local_field_id    Int?
+  name              String   @db.VarChar(150)
+  description       String?  @db.VarChar(500)
+  capacity          Int?
+  active            Boolean  @default(true)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by        String?  @db.Uuid
+  modified_by       String?  @db.Uuid
+
+  union       unions?       @relation(fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_field local_fields? @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  events      camporee_events[]
+
+  @@index([union_id, active], map: "camporee_venues_union_idx")
+  @@index([local_field_id, active], map: "camporee_venues_local_field_idx")
+  @@index([scope, active], map: "camporee_venues_scope_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

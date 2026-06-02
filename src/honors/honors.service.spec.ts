@@ -409,6 +409,32 @@ describe('HonorsService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.HONOR_FILE_REQUIRED });
     });
 
+    it('should block uploads when honor is pending review', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        honor_id: 15,
+        active: true,
+      } as any);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        validation_status: 'PENDING_REVIEW',
+      });
+
+      const documentFile = {
+        originalname: 'evidencia.pdf',
+        mimetype: 'application/pdf',
+        size: 1024,
+        buffer: Buffer.from('doc'),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadUserHonorFiles('user-123', 15, {
+          document: [documentFile],
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+      });
+    });
+
     it('should throw HONOR_EVIDENCE_MAX_REACHED when more than 10 images are provided', async () => {
       const mockImage = {
         originalname: 'img.jpg',
@@ -701,6 +727,38 @@ describe('HonorsService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('updateUserHonor', () => {
+    it('should block update when honor is approved', async () => {
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        validation_status: 'APPROVED',
+        active: true,
+      });
+
+      await expect(
+        service.updateUserHonor('user-123', 15, { validate: false }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+      });
+    });
+
+    it('should allow update when honor is rejected', async () => {
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        validation_status: 'REJECTED',
+        active: true,
+      });
+      mockPrismaService.users_honors.update.mockResolvedValue({
+        user_honor_id: 70,
+        validation_status: 'REJECTED',
+      });
+
+      await expect(
+        service.updateUserHonor('user-123', 15, { validate: false }),
+      ).resolves.toMatchObject({ user_honor_id: 70 });
     });
   });
 

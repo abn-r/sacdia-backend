@@ -52,7 +52,7 @@ type CurrentUserPayload = {
 // TEMPLATE MANAGEMENT (Admin)
 // ========================================
 
-@ApiTags('Annual Folders - Templates')
+@ApiTags('Annual Evidence Folders - Templates')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @AuthorizationResource({ type: 'global' })
@@ -157,7 +157,7 @@ export class AnnualFolderTemplatesController {
 // ANNUAL FOLDER OPERATIONS (Club level)
 // ========================================
 
-@ApiTags('Annual Folders')
+@ApiTags('Annual Evidence Folders')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @AuthorizationResource({ type: 'active_assignment' })
@@ -167,9 +167,9 @@ export class AnnualFoldersController {
 
   @Post('enrollments/:enrollmentId')
   @RequirePermissions('evidence_folders:update')
-  @ApiOperation({ summary: 'Create annual folder for a club enrollment' })
+  @ApiOperation({ summary: 'Create annual evidence folder for a club enrollment' })
   @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
-  @ApiResponse({ status: 201, description: 'Annual folder created' })
+  @ApiResponse({ status: 201, description: 'Annual Evidence Folder created' })
   @ApiResponse({ status: 404, description: 'Enrollment or template not found' })
   @ApiResponse({
     status: 409,
@@ -184,8 +184,8 @@ export class AnnualFoldersController {
 
   @Get(':folderId')
   @RequirePermissions('evidence_folders:read')
-  @ApiOperation({ summary: 'Get annual folder with sections and evidences' })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiOperation({ summary: 'Get annual evidence folder with sections and evidences' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiResponse({
     status: 200,
     description: 'Folder details',
@@ -222,7 +222,7 @@ export class AnnualFoldersController {
 
   @Get('by-enrollment/:enrollmentId')
   @RequirePermissions('evidence_folders:read')
-  @ApiOperation({ summary: 'Get annual folder by enrollment ID' })
+  @ApiOperation({ summary: 'Get annual evidence folder by enrollment ID' })
   @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
   @ApiResponse({
     status: 200,
@@ -265,7 +265,7 @@ export class AnnualFoldersController {
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload evidence to a folder section' })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiBody({
     schema: {
@@ -353,11 +353,11 @@ export class AnnualFoldersController {
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({
     summary:
-      'Get the current status of a single section within an annual folder',
+      'Get the current status of a single section within an annual evidence folder',
     description:
       'Returns section metadata, evidence count, submission record (if submitted), and evaluation record (if evaluated). Useful for the Flutter app to show per-section progress.',
   })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 200, description: 'Section status snapshot' })
   @ApiResponse({ status: 404, description: 'Folder or section not found' })
@@ -377,11 +377,11 @@ export class AnnualFoldersController {
   @Post(':folderId/sections/:sectionId/submit')
   @RequirePermissions('evidence_folders:update')
   @ApiOperation({
-    summary: 'Submit a single section of an annual folder',
+    summary: 'Submit a single section of an annual evidence folder',
     description:
       'Club-user operation. Records that the user has finished uploading evidence for this section. Does NOT change the overall folder status.',
   })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiParam({ name: 'sectionId', description: 'Template section UUID' })
   @ApiResponse({ status: 201, description: 'Section submitted' })
   @ApiResponse({
@@ -415,7 +415,7 @@ export class AnnualFoldersController {
     description:
       "Changes folder status from 'open' to 'submitted'. Restricted to coordinators and field admins (annual_folders:submit permission). Club users should submit per-section instead.",
   })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiResponse({ status: 200, description: 'Folder submitted' })
   @ApiResponse({ status: 400, description: 'Folder is not open' })
   @ApiResponse({ status: 404, description: 'Folder not found' })
@@ -432,9 +432,9 @@ export class AnnualFoldersController {
   @ApiOperation({
     summary: 'Close folder (field-level action)',
     description:
-      "Closes an annual folder. Accepts folders in 'submitted' or 'evaluated' status.",
+      "Closes an annual evidence folder. Accepts folders in 'submitted' or 'evaluated' status.",
   })
-  @ApiParam({ name: 'folderId', description: 'Annual folder UUID' })
+  @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiResponse({ status: 200, description: 'Folder closed' })
   @ApiResponse({
     status: 400,

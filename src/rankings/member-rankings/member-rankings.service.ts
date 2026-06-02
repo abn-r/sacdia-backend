@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, investiture_status_enum } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SystemConfigService } from '../../system-config/system-config.service';
 import {
@@ -24,6 +24,7 @@ import { EnrollmentWeightsResolverService } from './services/enrollment-weights-
 import { EnrollmentClubResolverService } from './services/enrollment-club-resolver.service';
 import { RankingsService } from '../../annual-folders/rankings.service';
 import { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
+import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -51,6 +52,7 @@ export class MemberRankingsService {
     private readonly rankingsService: RankingsService,
     private readonly weightsResolver: EnrollmentWeightsResolverService,
     private readonly clubResolver: EnrollmentClubResolverService,
+    private readonly hierarchy: InstitutionalHierarchyService,
   ) {}
 
   // ========================================
@@ -238,6 +240,7 @@ export class MemberRankingsService {
       row.user_id,
       row.club_id,
       yearId,
+      row.hierarchy_context_id ?? null,
     );
 
     const base = MemberRankingResponseDto.fromEnrollmentRanking(row);
@@ -538,25 +541,50 @@ export class MemberRankingsService {
   }
 
   private async buildCamporeeBreakdown(
-    enrollmentId: number,
+    _enrollmentId: number,
     userId: string,
     clubId: number,
     yearId: number,
+    hierarchyContextId: string | null,
   ): Promise<CamporeeBreakdownDto> {
-    const club = await this.prisma.clubs.findUnique({
-      where: { club_id: clubId },
-      select: {
-        local_field_id: true,
-        local_fields: { select: { union_id: true } },
-      },
-    });
-
-    if (!club) {
+    const snapshotContext = hierarchyContextId
+      ? await this.prisma.hierarchy_contexts.findUnique({
+          where: { hierarchy_context_id: hierarchyContextId },
+          select: { local_field_id: true, union_id: true },
+        })
+      : null;
+    const ecclesiasticalYear =
+      await this.prisma.ecclesiastical_years.findUnique({
+        where: { year_id: yearId },
+        select: { start_date: true, end_date: true },
+      });
+    const asOf =
+      ecclesiasticalYear?.end_date ??
+      ecclesiasticalYear?.start_date ??
+      new Date(`${yearId}-12-31T23:59:59.999Z`);
+    const hierarchyAsOf = snapshotContext
+      ? null
+      : await this.hierarchy
+          .resolveAsOf({ type: 'club', id: clubId }, asOf)
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            this.logger.warn(
+              `buildCamporeeBreakdown: unable to resolve historical hierarchy for club=${clubId} year=${yearId}: ${message}`,
+            );
+            return null;
+          });
+    if (!hierarchyAsOf && !snapshotContext) {
       return { participated: false, total_camporees: null };
     }
 
-    const localFieldId = club.local_field_id;
-    const unionId = club.local_fields?.union_id ?? null;
+    const localFieldId =
+      snapshotContext?.local_field_id ?? hierarchyAsOf?.local_field_id ?? null;
+    const unionId =
+      snapshotContext?.union_id ?? hierarchyAsOf?.union_id ?? null;
+
+    if (localFieldId == null) {
+      return { participated: false, total_camporees: null };
+    }
 
     const [localCamporees, unionCamporees] = await Promise.all([
       this.prisma.local_camporees.findMany({
