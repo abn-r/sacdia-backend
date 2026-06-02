@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EvaluationService } from '../evaluation.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../../common/errors/error-codes';
+import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
 
 describe('EvaluationService', () => {
   let service: EvaluationService;
@@ -26,6 +27,9 @@ describe('EvaluationService', () => {
   });
 
   let txMock: ReturnType<typeof createTxMock>;
+  const mockHierarchyService = {
+    snapshotForClub: jest.fn(),
+  };
 
   const mockPrismaService = {
     $transaction: jest.fn(),
@@ -44,6 +48,9 @@ describe('EvaluationService', () => {
     jest.clearAllMocks();
 
     txMock = createTxMock();
+    mockHierarchyService.snapshotForClub.mockResolvedValue({
+      hierarchy_context_id: 'ctx-eval-1',
+    });
 
     mockPrismaService.$transaction.mockImplementation(
       (callback: (tx: ReturnType<typeof createTxMock>) => Promise<unknown>) =>
@@ -54,6 +61,10 @@ describe('EvaluationService', () => {
       providers: [
         EvaluationService,
         { provide: PrismaService, useValue: mockPrismaService },
+        {
+          provide: InstitutionalHierarchyService,
+          useValue: mockHierarchyService,
+        },
       ],
     }).compile();
 
@@ -78,7 +89,15 @@ describe('EvaluationService', () => {
     const baseFolder = {
       annual_folder_id: folderId,
       status: 'submitted',
+      hierarchy_context_id: null,
       requires_union_confirmation: true,
+      club_enrollment: {
+        club_section: {
+          clubs: {
+            club_id: 10,
+          },
+        },
+      },
       folder_template: {
         folder_template_id: 'tmpl-1',
         sections: [
@@ -399,6 +418,16 @@ describe('EvaluationService', () => {
       expect(result.folder_summary.status).toBe('under_evaluation');
     });
 
+    it('does not store hierarchy snapshot while folder remains under_evaluation', async () => {
+      setupHappyPathMocks({ status: 'submitted' });
+
+      await service.evaluateSection(folderId, sectionId, dto, evaluatorId);
+
+      expect(mockHierarchyService.snapshotForClub).not.toHaveBeenCalled();
+      const updateCall = txMock.annual_folders.update.mock.calls.at(-1)?.[0];
+      expect(updateCall?.data).not.toHaveProperty('hierarchy_context_id');
+    });
+
     it('should transition folder status to "evaluated" when ALL sections are evaluated', async () => {
       const allDecidedEvaluations = [
         {
@@ -462,6 +491,54 @@ describe('EvaluationService', () => {
         }),
       );
       expect(result.folder_summary.status).toBe('evaluated');
+    });
+
+    it('stores hierarchy snapshot when folder reaches evaluated state', async () => {
+      const allDecidedEvaluations = [
+        { evaluation_id: 'e1', section_id: sectionId, status: 'VALIDATED' },
+        {
+          evaluation_id: 'e2',
+          section_id: 'section-uuid-2',
+          status: 'VALIDATED',
+        },
+      ];
+
+      txMock.annual_folders.findUnique
+        .mockResolvedValueOnce({ ...baseFolder, status: 'under_evaluation' })
+        .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
+      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(
+        existingEvalRow,
+      );
+      txMock.annual_folder_section_evaluations.update.mockResolvedValue(
+        mockEvaluation,
+      );
+      txMock.annual_folder_section_evaluations.findMany
+        .mockResolvedValueOnce([{ earned_points: 80 }, { earned_points: 40 }])
+        .mockResolvedValueOnce(allDecidedEvaluations);
+      txMock.folder_template_sections.findMany.mockResolvedValue([
+        { max_points: 100 },
+        { max_points: 50 },
+      ]);
+      txMock.annual_folders.update.mockResolvedValue({
+        ...updatedFolder,
+        status: 'evaluated',
+        evaluated_at: new Date(),
+      });
+
+      await service.evaluateSection(folderId, sectionId, dto, evaluatorId);
+
+      expect(mockHierarchyService.snapshotForClub).toHaveBeenCalledWith(
+        10,
+        expect.any(Date),
+        evaluatorId,
+      );
+      expect(txMock.annual_folders.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            hierarchy_context_id: 'ctx-eval-1',
+          }),
+        }),
+      );
     });
 
     it('should update folder totals correctly after evaluation', async () => {

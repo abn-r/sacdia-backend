@@ -15,6 +15,9 @@ describe('UnitsService', () => {
     club_sections: {
       findUnique: jest.fn(),
     },
+    club_role_assignments: {
+      findFirst: jest.fn(),
+    },
     units: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -112,18 +115,32 @@ describe('UnitsService', () => {
       });
     });
 
-    it('should query without section filter when club has no sections', async () => {
+    it('should return empty array without querying all units when club has no sections', async () => {
       const mockClub = { club_id: 1, club_sections: [] };
       mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
-      mockPrismaService.units.findMany.mockResolvedValue([]);
 
       const result = await service.findByClub(1);
 
       expect(result).toEqual([]);
-      expect(mockPrismaService.units.findMany).toHaveBeenCalledWith(
+      expect(mockPrismaService.units.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should only use active club sections to list units', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_id: 1,
+        club_sections: [{ club_section_id: 10 }],
+      });
+      mockPrismaService.units.findMany.mockResolvedValue([]);
+
+      await service.findByClub(1);
+
+      expect(mockPrismaService.clubs.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.not.objectContaining({
-            club_section_id: expect.anything(),
+          select: expect.objectContaining({
+            club_sections: {
+              where: { active: true },
+              select: { club_section_id: true },
+            },
           }),
         }),
       );
@@ -142,6 +159,24 @@ describe('UnitsService', () => {
       const result = await service.findOne(1);
 
       expect(result).toEqual(mockUnit);
+    });
+
+    it('should scope the unit lookup to the requested club when clubId is provided', async () => {
+      const mockUnit = { unit_id: 5, name: 'Falange Sur', unit_members: [] };
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
+
+      const result = await service.findOne(5, 1);
+
+      expect(result).toEqual(mockUnit);
+      expect(mockPrismaService.units.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            unit_id: 5,
+            active: true,
+            club_sections: { main_club_id: 1 },
+          }),
+        }),
+      );
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {
@@ -173,6 +208,8 @@ describe('UnitsService', () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
         main_club_id: 1,
+        club_type_id: 2,
+        active: true,
       });
       mockPrismaService.units.create.mockResolvedValue(mockUnit);
 
@@ -210,6 +247,8 @@ describe('UnitsService', () => {
       mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
         main_club_id: 99,
+        club_type_id: 2,
+        active: true,
       });
 
       await expect(service.create(1, createDto)).rejects.toMatchObject({
@@ -217,18 +256,31 @@ describe('UnitsService', () => {
       });
     });
 
-    it('should create a unit without club_section_id', async () => {
+    it('should reject creating a unit when club_type_id does not match section type', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 1,
+        club_type_id: 1,
+        active: true,
+      });
+
+      await expect(service.create(1, createDto)).rejects.toMatchObject({
+        code: 'UNIT_SECTION_TYPE_MISMATCH',
+      });
+      expect(mockPrismaService.units.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject creating a unit without club_section_id', async () => {
       const dtoWithoutSection = { ...createDto };
       delete (dtoWithoutSection as any).club_section_id;
 
-      const mockUnit = { unit_id: 2, ...dtoWithoutSection, active: true };
       mockPrismaService.clubs.findUnique.mockResolvedValue({ club_id: 1 });
-      mockPrismaService.units.create.mockResolvedValue(mockUnit);
 
-      const result = await service.create(1, dtoWithoutSection);
-
-      expect(result).toEqual(mockUnit);
+      await expect(service.create(1, dtoWithoutSection)).rejects.toMatchObject({
+        code: ErrorCode.UNIT_SECTION_NOT_FOUND,
+      });
       expect(mockPrismaService.club_sections.findUnique).not.toHaveBeenCalled();
+      expect(mockPrismaService.units.create).not.toHaveBeenCalled();
     });
   });
 
@@ -261,6 +313,28 @@ describe('UnitsService', () => {
       await expect(service.update(999, { name: 'X' })).rejects.toMatchObject({
         code: ErrorCode.UNIT_NOT_FOUND,
       });
+    });
+
+    it('should reject updating club_type_id when it does not match the unit section type', async () => {
+      mockPrismaService.units.findFirst.mockResolvedValue({
+        unit_id: 1,
+        club_section_id: 10,
+        club_type_id: 2,
+        club_sections: { main_club_id: 1 },
+        unit_members: [],
+      });
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 1,
+        club_type_id: 2,
+        active: true,
+      });
+
+      await expect(service.update(1, { club_type_id: 1 }, 1)).rejects.toMatchObject(
+        {
+          code: 'UNIT_SECTION_TYPE_MISMATCH',
+        },
+      );
+      expect(mockPrismaService.units.update).not.toHaveBeenCalled();
     });
   });
 
@@ -349,6 +423,9 @@ describe('UnitsService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'assignment-1',
+      });
       // First findFirst: cross-section conflict check (null = no conflict in section 10)
       // Second findFirst: finds the inactive membership in THIS unit
       mockPrismaService.unit_members.findFirst
@@ -375,6 +452,9 @@ describe('UnitsService', () => {
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: dto.user_id,
       });
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'assignment-1',
+      });
       // First findFirst: cross-section conflict check (null = no conflict in section 10)
       // Second findFirst: finds the active membership in THIS unit → triggers ConflictException
       mockPrismaService.unit_members.findFirst
@@ -384,6 +464,24 @@ describe('UnitsService', () => {
       await expect(service.addMember(1, dto)).rejects.toMatchObject({
         code: ErrorCode.UNIT_MEMBER_ALREADY_IN_UNIT,
       });
+    });
+
+    it('should reject adding a user that does not belong to the unit section', async () => {
+      mockPrismaService.units.findFirst.mockResolvedValue({
+        unit_id: 1,
+        club_section_id: 10,
+        unit_members: [],
+      });
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: dto.user_id,
+      });
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      await expect(service.addMember(1, dto)).rejects.toMatchObject({
+        code: 'UNIT_USER_NOT_IN_SECTION',
+      });
+      expect(mockPrismaService.unit_members.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.unit_members.update).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when unit does not exist', async () => {

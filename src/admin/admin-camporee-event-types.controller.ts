@@ -27,10 +27,7 @@ import {
   GlobalRolesGuard,
 } from '../common/guards';
 import { AdminCamporeeEventTypesService } from './admin-camporee-event-types.service';
-import {
-  CreateCamporeeEventTypeDto,
-  UpdateCamporeeEventTypeDto,
-} from './dto';
+import { CreateCamporeeEventTypeDto, UpdateCamporeeEventTypeDto } from './dto';
 
 @ApiTags('admin-camporee-event-types')
 @ApiBearerAuth()
@@ -39,9 +36,7 @@ import {
 @AuthorizationResource({ type: 'global' })
 @Controller('admin')
 export class AdminCamporeeEventTypesController {
-  constructor(
-    private readonly service: AdminCamporeeEventTypesService,
-  ) {}
+  constructor(private readonly service: AdminCamporeeEventTypesService) {}
 
   @Get('camporee-event-types')
   @RequirePermissions('camporee_event_types:read')
@@ -54,10 +49,7 @@ export class AdminCamporeeEventTypesController {
   @Post('camporee-event-types')
   @RequirePermissions('camporee_event_types:create')
   @ApiOperation({ summary: 'Create camporee event type' })
-  async create(
-    @Body() dto: CreateCamporeeEventTypeDto,
-    @Request() req: any,
-  ) {
+  async create(@Body() dto: CreateCamporeeEventTypeDto, @Request() req: any) {
     const data = await this.service.createCamporeeEventType(dto, req.user.sub);
     return { status: 'success', data };
   }

@@ -1,14 +1,39 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UpdateManualDataDto } from './dto';
 import {
   AppBadRequestException,
-  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import {
+  buildReportClubSectionWhere,
+  resolveReportVisibilityScope,
+} from '../reports/report-visibility-scope';
+
+const MONTHLY_REPORT_REMINDER_SOURCE = 'monthly_reports:reminder';
+const MONTHLY_REPORT_REMINDER_ROLES = [
+  'director',
+  'secretary',
+  'secretary-treasurer',
+] as const;
+const MONTHLY_REPORT_REMINDER_TIME_ZONE = 'America/Mexico_City';
+
+type MonthlyReportReminderAction =
+  | 'capture_reminder'
+  | 'five_days_left'
+  | 'one_day_left'
+  | 'closed'
+  | 'generated';
+
+interface MonthlyReportReminderSchedule {
+  action: MonthlyReportReminderAction;
+  month: number;
+  year: number;
+}
 
 @Injectable()
 export class MonthlyReportsService {
@@ -17,6 +42,8 @@ export class MonthlyReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    @Optional()
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   // ========================================
@@ -172,7 +199,7 @@ export class MonthlyReportsService {
   /**
    * Freezes the auto-calculated data into snapshot_data and sets status to 'generated'.
    */
-  async generate(reportId: string, userId: string) {
+  async generate(reportId: string, _userId: string) {
     const report = await this.prisma.monthly_reports.findUnique({
       where: { monthly_report_id: reportId },
     });
@@ -308,8 +335,10 @@ export class MonthlyReportsService {
 
   /**
    * Paginated list of monthly reports across clubs.
-   * - super-admin / admin: can filter by any local_field_id supplied in filters.
-   * - coordinator: scope is forced to their own local_field_id (filters.localFieldId ignored).
+   * - super-admin / admin / DIA: can filter by division, union and local field.
+   * - union roles: scope is forced to their own union, optionally narrowed by local field.
+   * - local-field roles: scope is forced to their own local field.
+   * - club roles: scope is forced to the active club section.
    * Roles and territory scope are derived from the resolved authorization profile
    * so that this method never trusts unverified JWT claims directly.
    */
@@ -317,6 +346,8 @@ export class MonthlyReportsService {
     userId: string,
     filters: {
       clubTypeId?: number;
+      divisionId?: number;
+      unionId?: number;
       localFieldId?: number;
       year?: number;
       month?: number;
@@ -328,32 +359,11 @@ export class MonthlyReportsService {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
 
-    const globalRoleNames = new Set(
-      resolved.authorization.grants.global_roles.map((grant) =>
-        grant.role_name.toLowerCase(),
-      ),
-    );
-
-    const isAdmin =
-      globalRoleNames.has('admin') || globalRoleNames.has('super-admin');
-    const isScopedAdmin =
-      globalRoleNames.has('coordinator') ||
-      globalRoleNames.has('assistant-admin');
-
-    if (!isAdmin && !isScopedAdmin) {
-      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
-    }
-
-    const userLocalFieldId = resolved.authorization.effective.scope.global
-      .local_field?.id as number | undefined;
-
-    const scopedLocalFieldId: number | undefined = isAdmin
-      ? filters.localFieldId
-      : userLocalFieldId;
-
-    if (!isAdmin && scopedLocalFieldId === undefined) {
-      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
-    }
+    const reportScope = resolveReportVisibilityScope(resolved, {
+      divisionId: filters.divisionId,
+      unionId: filters.unionId,
+      localFieldId: filters.localFieldId,
+    });
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? 25, 100);
@@ -364,14 +374,11 @@ export class MonthlyReportsService {
       ...(filters.month !== undefined && { month: filters.month }),
       ...(filters.status && { status: filters.status }),
       club_enrollment: {
-        club_section: {
+        club_section: buildReportClubSectionWhere(reportScope, {
           ...(filters.clubTypeId !== undefined && {
             club_type_id: filters.clubTypeId,
           }),
-          ...(scopedLocalFieldId !== undefined && {
-            clubs: { local_field_id: scopedLocalFieldId },
-          }),
-        },
+        }),
       },
     };
 
@@ -623,6 +630,81 @@ export class MonthlyReportsService {
     return { itemsProcessed: successCount };
   }
 
+  async runReminderNotifications(
+    forceDate?: Date,
+  ): Promise<{ itemsProcessed: number }> {
+    if (!this.notificationsService) {
+      this.logger.warn(
+        'NotificationsService is not available. Skipping monthly report reminders.',
+      );
+      return { itemsProcessed: 0 };
+    }
+
+    const enabled = await this.areReminderNotificationsEnabled();
+    if (!enabled) {
+      this.logger.log('Monthly report reminders are disabled. Skipping.');
+      return { itemsProcessed: 0 };
+    }
+
+    const schedule = this.resolveReminderSchedule(forceDate ?? new Date());
+    if (!schedule) {
+      return { itemsProcessed: 0 };
+    }
+
+    const activeEnrollments = await this.prisma.club_enrollments.findMany({
+      where: { status: 'active' },
+      select: {
+        club_enrollment_id: true,
+        club_section: {
+          select: {
+            club_section_id: true,
+            clubs: { select: { name: true } },
+            club_types: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    let itemsProcessed = 0;
+
+    for (const enrollment of activeEnrollments) {
+      const clubSectionId = enrollment.club_section?.club_section_id;
+      if (!clubSectionId) {
+        continue;
+      }
+
+      if (!(await this.shouldSendReminderForEnrollment(enrollment, schedule))) {
+        continue;
+      }
+
+      const message = this.buildReminderMessage(schedule);
+      const clubName = enrollment.club_section?.clubs?.name ?? '';
+      const clubType = enrollment.club_section?.club_types?.name ?? '';
+
+      await this.notificationsService.sendToSectionRole(
+        clubSectionId,
+        [...MONTHLY_REPORT_REMINDER_ROLES],
+        message.title,
+        message.body,
+        {
+          type: 'monthly_report_reminder',
+          action: schedule.action,
+          reportMonth: String(schedule.month),
+          reportYear: String(schedule.year),
+          route: '/home/reports',
+          enrollmentId: enrollment.club_enrollment_id,
+          clubName,
+          clubType,
+        },
+        MONTHLY_REPORT_REMINDER_SOURCE,
+      );
+
+      itemsProcessed++;
+    }
+
+    return { itemsProcessed };
+  }
+
   // ========================================
   // PRIVATE HELPERS — auto-calculated queries
   // ========================================
@@ -641,6 +723,143 @@ export class MonthlyReportsService {
         active: true,
       },
     });
+  }
+
+  private async areReminderNotificationsEnabled(): Promise<boolean> {
+    const config = await this.prisma.system_config.findUnique({
+      where: { config_key: 'reports.reminders_enabled' },
+    });
+
+    return config?.config_value !== 'false';
+  }
+
+  private async shouldSendReminderForEnrollment(
+    enrollment: { club_enrollment_id: string },
+    schedule: MonthlyReportReminderSchedule,
+  ): Promise<boolean> {
+    if (schedule.action !== 'generated') {
+      return true;
+    }
+
+    const report = await this.prisma.monthly_reports.findUnique({
+      where: {
+        club_enrollment_id_month_year: {
+          club_enrollment_id: enrollment.club_enrollment_id,
+          month: schedule.month,
+          year: schedule.year,
+        },
+      },
+      select: { status: true },
+    });
+
+    return report?.status === 'generated' || report?.status === 'submitted';
+  }
+
+  private resolveReminderSchedule(
+    date: Date,
+  ): MonthlyReportReminderSchedule | null {
+    const { day, month, year } = this.getDatePartsInReportsTimeZone(date);
+
+    if (day === 27) {
+      return { action: 'capture_reminder', month, year };
+    }
+
+    if ([1, 4, 5, 6].includes(day)) {
+      const previousMonth = month === 1 ? 12 : month - 1;
+      const previousYear = month === 1 ? year - 1 : year;
+      const actionByDay: Record<number, MonthlyReportReminderAction> = {
+        1: 'five_days_left',
+        4: 'one_day_left',
+        5: 'closed',
+        6: 'generated',
+      };
+
+      return {
+        action: actionByDay[day]!,
+        month: previousMonth,
+        year: previousYear,
+      };
+    }
+
+    return null;
+  }
+
+  private getDatePartsInReportsTimeZone(date: Date): {
+    day: number;
+    month: number;
+    year: number;
+  } {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: MONTHLY_REPORT_REMINDER_TIME_ZONE,
+      day: 'numeric',
+      month: 'numeric',
+      year: 'numeric',
+    }).formatToParts(date);
+
+    const getPart = (type: 'day' | 'month' | 'year') => {
+      const value = parts.find((part) => part.type === type)?.value;
+      return value ? parseInt(value, 10) : NaN;
+    };
+
+    return {
+      day: getPart('day'),
+      month: getPart('month'),
+      year: getPart('year'),
+    };
+  }
+
+  private buildReminderMessage(schedule: MonthlyReportReminderSchedule): {
+    title: string;
+    body: string;
+  } {
+    const monthName = this.getSpanishMonthName(schedule.month);
+
+    switch (schedule.action) {
+      case 'capture_reminder':
+        return {
+          title: `Registrá avances del informe de ${monthName}`,
+          body: 'Recordatorio para director y secretaría: actualicen los datos manuales del informe mensual.',
+        };
+      case 'five_days_left':
+        return {
+          title: `Quedan 5 días para cerrar el informe de ${monthName}`,
+          body: 'Completá o revisá los datos manuales antes del cierre mensual.',
+        };
+      case 'one_day_left':
+        return {
+          title: `Último día para completar el informe de ${monthName}`,
+          body: 'Mañana se cierra el registro del informe mensual. Revisá que los datos estén completos.',
+        };
+      case 'closed':
+        return {
+          title: `Registro cerrado del informe de ${monthName}`,
+          body: 'El periodo de captura del informe mensual ya cerró. El sistema preparará el reporte generado.',
+        };
+      case 'generated':
+        return {
+          title: `Informe de ${monthName} generado`,
+          body: 'El informe mensual ya está disponible para revisar en Reportes.',
+        };
+    }
+  }
+
+  private getSpanishMonthName(month: number): string {
+    const months = [
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
+    ];
+
+    return months[month - 1] ?? String(month);
   }
 
   /**
@@ -803,6 +1022,19 @@ export class MonthlyReportsService {
       },
     });
 
+    const accumulatedFinances = await this.prisma.finances.findMany({
+      where: {
+        club_section_id: clubSectionId,
+        active: true,
+        OR: [{ year: { lt: year } }, { year, month: { lte: month } }],
+      },
+      include: {
+        finances_categories: {
+          select: { type: true },
+        },
+      },
+    });
+
     let totalIncome = 0;
     let totalExpenses = 0;
 
@@ -815,10 +1047,18 @@ export class MonthlyReportsService {
       }
     }
 
+    let totalBalance = 0;
+
+    for (const f of accumulatedFinances) {
+      // type 0 = income, type 1 = expense
+      totalBalance += f.finances_categories.type === 0 ? f.amount : -f.amount;
+    }
+
     return {
       income: totalIncome,
       expenses: totalExpenses,
       balance: totalIncome - totalExpenses,
+      total_balance: totalBalance,
       transactions: finances.length,
     };
   }

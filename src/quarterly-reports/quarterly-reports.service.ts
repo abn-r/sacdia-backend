@@ -6,6 +6,11 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { UpdateQuarterlyManualDataDto } from './dto';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import {
+  buildReportClubWhere,
+  resolveReportVisibilityScope,
+} from '../reports/report-visibility-scope';
 
 // ============================================================
 // Shape of the computed_data JSON column
@@ -40,7 +45,10 @@ export interface QuarterlyComputedData {
 export class QuarterlyReportsService {
   private readonly logger = new Logger(QuarterlyReportsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ========================================
   // GET OR CREATE DRAFT
@@ -71,7 +79,7 @@ export class QuarterlyReportsService {
     quarter: number,
   ): Promise<QuarterlyComputedData> {
     this.validateQuarterYear(quarter, year);
-    const club = await this.validateClubExists(clubId);
+    await this.validateClubExists(clubId);
 
     const months = this.getMonthsForQuarter(quarter);
 
@@ -264,7 +272,7 @@ export class QuarterlyReportsService {
   // GENERATE (freeze computed_data)
   // ========================================
 
-  async generate(reportId: number, triggeredBy: string) {
+  async generate(reportId: number, _triggeredBy: string) {
     const report = await this.prisma.quarterly_reports.findUnique({
       where: { quarterly_report_id: reportId },
     });
@@ -377,14 +385,29 @@ export class QuarterlyReportsService {
   // LIST FOR ADMIN
   // ========================================
 
-  async listForAdmin(filters: {
-    clubId?: number;
-    year?: number;
-    quarter?: number;
-    status?: string;
-    page?: number;
-    limit?: number;
-  }) {
+  async listForAdmin(
+    userId: string,
+    filters: {
+      divisionId?: number;
+      unionId?: number;
+      localFieldId?: number;
+      clubId?: number;
+      year?: number;
+      quarter?: number;
+      status?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(userId);
+    const reportScope = resolveReportVisibilityScope(resolved, {
+      divisionId: filters.divisionId,
+      unionId: filters.unionId,
+      localFieldId: filters.localFieldId,
+    });
+    const clubWhere = buildReportClubWhere(reportScope);
+
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? 25, 100);
     const skip = (page - 1) * limit;
@@ -394,6 +417,7 @@ export class QuarterlyReportsService {
       ...(filters.year !== undefined && { year: filters.year }),
       ...(filters.quarter !== undefined && { quarter: filters.quarter }),
       ...(filters.status && { status: filters.status }),
+      ...(Object.keys(clubWhere).length > 0 && { club: clubWhere }),
     };
 
     const [total, items] = await Promise.all([

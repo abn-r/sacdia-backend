@@ -49,6 +49,7 @@ interface SnapshotData {
     income: number;
     expenses: number;
     balance: number;
+    total_balance?: number;
     transactions: number;
   };
   meeting_days: string | null;
@@ -90,6 +91,16 @@ const BCP47: Record<string, string> = {
 
 const PAGE_MARGIN = 40;
 const CONTENT_WIDTH = 612 - PAGE_MARGIN * 2; // Letter width minus margins
+const PDF_COLORS = {
+  primary: '#1D4ED8',
+  primaryDark: '#1E3A8A',
+  accent: '#F97316',
+  ink: '#0F172A',
+  muted: '#64748B',
+  line: '#DBEAFE',
+  surface: '#F8FAFC',
+  softBlue: '#EFF6FF',
+};
 
 @Injectable()
 export class MonthlyReportsPdfService {
@@ -272,58 +283,63 @@ export class MonthlyReportsPdfService {
     year: number,
     t: (key: string, args?: Record<string, unknown>) => string,
   ) {
-    // Title
+    const headerHeight = 104;
+
     doc
-      .fontSize(16)
+      .save()
+      .roundedRect(PAGE_MARGIN, PAGE_MARGIN, CONTENT_WIDTH, headerHeight, 18)
+      .fill(PDF_COLORS.primary);
+
+    doc
+      .fillColor('#FFFFFF')
+      .fontSize(17)
       .font('Helvetica-Bold')
-      .text(t('header.title'), PAGE_MARGIN, PAGE_MARGIN, {
-        width: CONTENT_WIDTH,
+      .text(t('header.title'), PAGE_MARGIN + 18, PAGE_MARGIN + 16, {
+        width: CONTENT_WIDTH - 36,
         align: 'center',
       });
 
-    doc.moveDown(0.3);
-
-    // Club type subtitle
     doc
-      .fontSize(12)
+      .fontSize(11)
       .font('Helvetica')
+      .fillColor('#DBEAFE')
       .text(t('header.club_type', { type: clubType }), {
-        width: CONTENT_WIDTH,
+        width: CONTENT_WIDTH - 36,
         align: 'center',
       });
 
-    doc.moveDown(0.8);
+    const metaY = PAGE_MARGIN + 66;
+    this.drawHeaderMeta(
+      doc,
+      PAGE_MARGIN + 18,
+      metaY,
+      t('header.district'),
+      districtName,
+    );
+    this.drawHeaderMeta(
+      doc,
+      PAGE_MARGIN + 158,
+      metaY,
+      t('header.church'),
+      churchName,
+    );
+    this.drawHeaderMeta(
+      doc,
+      PAGE_MARGIN + 300,
+      metaY,
+      t('header.club'),
+      clubName,
+    );
+    this.drawHeaderMeta(
+      doc,
+      PAGE_MARGIN + 420,
+      metaY,
+      t('header.month'),
+      `${monthName} ${year}`,
+    );
 
-    // Info grid
-    const y = doc.y;
-    const col1X = PAGE_MARGIN;
-    const col2X = PAGE_MARGIN + CONTENT_WIDTH / 2 + 10;
-
-    doc.fontSize(10).font('Helvetica-Bold');
-
-    doc.text(`${t('header.district')}: `, col1X, y, { continued: true });
-    doc.font('Helvetica').text(districtName);
-
-    doc
-      .font('Helvetica-Bold')
-      .text(`${t('header.church')}: `, col2X, y, { continued: true });
-    doc.font('Helvetica').text(churchName);
-
-    const y2 = doc.y + 2;
-    doc
-      .font('Helvetica-Bold')
-      .text(`${t('header.club')}: `, col1X, y2, { continued: true });
-    doc.font('Helvetica').text(clubName);
-
-    doc
-      .font('Helvetica-Bold')
-      .text(`${t('header.month')}: `, col2X, y2, { continued: true });
-    doc.font('Helvetica').text(`${monthName} ${year}`);
-
-    doc.moveDown(1);
-
-    // Horizontal line
-    this.drawHorizontalLine(doc);
+    doc.restore();
+    doc.y = PAGE_MARGIN + headerHeight + 14;
   }
 
   private drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
@@ -333,24 +349,20 @@ export class MonthlyReportsPdfService {
     }
 
     doc.moveDown(0.5);
-    doc
-      .fontSize(11)
-      .font('Helvetica-Bold')
-      .fillColor('#1a365d')
-      .text(title, PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
-    doc.fillColor('#000000');
-    doc.moveDown(0.3);
-
-    // Thin line under section title
     const y = doc.y;
     doc
-      .strokeColor('#1a365d')
-      .lineWidth(0.5)
-      .moveTo(PAGE_MARGIN, y)
-      .lineTo(PAGE_MARGIN + CONTENT_WIDTH, y)
-      .stroke();
-    doc.strokeColor('#000000');
-    doc.moveDown(0.3);
+      .roundedRect(PAGE_MARGIN, y, CONTENT_WIDTH, 22, 8)
+      .fill(PDF_COLORS.softBlue);
+
+    doc
+      .fontSize(10)
+      .font('Helvetica-Bold')
+      .fillColor(PDF_COLORS.primaryDark)
+      .text(title, PAGE_MARGIN + 10, y + 6, { width: CONTENT_WIDTH - 20 });
+
+    doc.roundedRect(PAGE_MARGIN, y, 4, 22, 2).fill(PDF_COLORS.accent);
+    doc.fillColor(PDF_COLORS.ink);
+    doc.y = y + 30;
   }
 
   private drawAdministracion(
@@ -579,6 +591,7 @@ export class MonthlyReportsPdfService {
       expenses: 0,
       balance: 0,
       transactions: 0,
+      total_balance: 0,
     };
 
     // Keep same shape (decimal, not currency style) — just swap locale for number formatting.
@@ -604,6 +617,11 @@ export class MonthlyReportsPdfService {
       {
         label: t('finances.month_balance'),
         value: formatMoney(finances.balance),
+        bold: true,
+      },
+      {
+        label: t('finances.club_total_balance'),
+        value: formatMoney(finances.total_balance ?? finances.balance),
         bold: true,
       },
       {
@@ -802,18 +820,41 @@ export class MonthlyReportsPdfService {
     const y = doc.y;
     doc
       .font('Helvetica-Bold')
+      .fillColor(PDF_COLORS.ink)
       .text(`${label}: `, PAGE_MARGIN, y, { continued: true });
-    doc.font('Helvetica').text(value);
+    doc.font('Helvetica').fillColor(PDF_COLORS.muted).text(value);
+    doc.fillColor(PDF_COLORS.ink);
   }
 
   private drawHorizontalLine(doc: PDFKit.PDFDocument) {
     const y = doc.y;
     doc
       .lineWidth(1)
+      .strokeColor(PDF_COLORS.line)
       .moveTo(PAGE_MARGIN, y)
       .lineTo(PAGE_MARGIN + CONTENT_WIDTH, y)
       .stroke();
+    doc.strokeColor('#000000');
     doc.moveDown(0.3);
+  }
+
+  private drawHeaderMeta(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    label: string,
+    value: string,
+  ) {
+    doc
+      .fontSize(6.5)
+      .font('Helvetica-Bold')
+      .fillColor('#BFDBFE')
+      .text(label.toUpperCase(), x, y, { width: 104 });
+    doc
+      .fontSize(8.5)
+      .font('Helvetica-Bold')
+      .fillColor('#FFFFFF')
+      .text(value, x, y + 11, { width: 104, ellipsis: true });
   }
 
   private boolLabel(

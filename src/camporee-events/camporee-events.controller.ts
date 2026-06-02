@@ -162,6 +162,16 @@ export class CamporeeEventsController {
   // INSTANCE mutations (scope-independent)
   // =========================================================================
 
+  @Get('camporee-events/:eventId')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @ApiOperation({ summary: 'Get a camporee event instance by ID' })
+  @ApiParam({ name: 'eventId', type: Number })
+  async getEvent(@Param('eventId', ParseIntPipe) eventId: number) {
+    const data = await this.service.getEvent(eventId);
+    return { status: 'success', data };
+  }
+
   @Patch('camporee-events/:eventId')
   @RequirePermissions('camporee_events:update')
   @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })

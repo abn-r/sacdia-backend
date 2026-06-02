@@ -69,7 +69,8 @@
     "total_income": "Total de receitas",
     "total_expenses": "Total de despesas",
     "month_balance": "Saldo do mes",
-    "transaction_count": "Total de transacoes"
+    "transaction_count": "Total de transacoes",
+    "club_total_balance": "Saldo total do clube"
   },
   "missionary": {
     "soul_target": "Meta de almas",

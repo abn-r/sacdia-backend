@@ -35,6 +35,7 @@ import pLimit from 'p-limit';
 // fire thousands of simultaneous HMAC presigns. Cap is 20, matching the pattern
 // used by PROFILE_URL_LIMITER in camporees.service.ts.
 export const HONOR_DETAIL_URL_LIMITER = pLimit(20);
+const HONOR_MUTATION_BLOCKED_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -635,8 +636,11 @@ export class HonorsService {
         certificate: true,
         images: true,
         document: true,
+        validation_status: true,
       },
     });
+
+    this.assertHonorIsMutable(existingUserHonor?.validation_status);
 
     const currentImages = this.extractImageUrls(existingUserHonor?.images);
     let nextCertificateUrl = existingUserHonor?.certificate || '';
@@ -835,6 +839,8 @@ export class HonorsService {
       throw new AppNotFoundException(ErrorCode.HONOR_USER_HONOR_NOT_FOUND);
     }
 
+    this.assertHonorIsMutable(userHonor.validation_status);
+
     const updateData: any = {
       modified_at: new Date(),
     };
@@ -936,6 +942,22 @@ export class HonorsService {
       images: (dto.images || []) as Prisma.InputJsonValue,
       document: dto.document || null,
     };
+  }
+
+  private assertHonorIsMutable(validationStatus?: string | null) {
+    if (
+      validationStatus &&
+      HONOR_MUTATION_BLOCKED_STATUSES.includes(
+        validationStatus as (typeof HONOR_MUTATION_BLOCKED_STATUSES)[number],
+      )
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+        {
+          status: validationStatus,
+        },
+      );
+    }
   }
 
   private buildUpdateDataFromCreateDto(dto: CreateUserHonorDto) {

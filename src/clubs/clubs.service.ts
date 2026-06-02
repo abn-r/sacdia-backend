@@ -8,6 +8,7 @@ import {
   UpdateClubSectionDto,
   AssignRoleDto,
   UpdateRoleAssignmentDto,
+  DirectorSuccessionDto,
 } from './dto';
 import {
   PaginationDto,
@@ -26,6 +27,7 @@ import type { ListByClubResult } from '../audit-logs/audit-logs.service';
 import {
   AppBadRequestException,
   AppConflictException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -34,6 +36,16 @@ import { ErrorCode } from '../common/errors/error-codes';
 export class ClubsService {
   private readonly logger = new Logger(ClubsService.name);
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+  private static readonly CANONICAL_ROLE_SLOT_LIMITS_BY_NAME: Record<
+    string,
+    number
+  > = {
+    director: 1,
+    'deputy-director': 2,
+    secretary: 1,
+    treasurer: 1,
+    'secretary-treasurer': 1,
+  };
 
   constructor(
     private readonly prisma: PrismaService,
@@ -418,12 +430,41 @@ export class ClubsService {
     assignmentId: string,
     dto: UpdateRoleAssignmentDto,
   ) {
+    const existing = await this.prisma.club_role_assignments.findUnique({
+      where: { assignment_id: assignmentId },
+      select: {
+        assignment_id: true,
+        user_id: true,
+        role_id: true,
+        club_section_id: true,
+        active: true,
+      },
+    });
+
+    if (!existing) {
+      throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+    }
+
     const updateData: Record<string, unknown> = {
       modified_at: new Date(),
     };
 
     if (dto.role_id || dto.role) {
-      updateData.role_id = await this.resolveRoleId(dto);
+      const targetRoleId = await this.resolveRoleId(dto);
+
+      if (
+        targetRoleId !== existing.role_id &&
+        existing.active &&
+        existing.club_section_id != null
+      ) {
+        await this.validateRoleSlot(
+          existing.club_section_id,
+          targetRoleId,
+          existing.assignment_id,
+        );
+      }
+
+      updateData.role_id = targetRoleId;
     }
 
     if (dto.ecclesiastical_year_id !== undefined) {
@@ -492,6 +533,130 @@ export class ClubsService {
     );
 
     return removed;
+  }
+
+  async succeedSectionDirector(
+    sectionId: number,
+    actorUserId: string,
+    dto: DirectorSuccessionDto,
+  ): Promise<{
+    ended_assignment_id: string;
+    new_assignment_id: string;
+  }> {
+    await this.assertCanSucceedSectionDirector(actorUserId, sectionId);
+
+    const directorRole = await this.prisma.roles.findFirst({
+      where: {
+        role_name: 'director',
+        role_category: 'CLUB',
+        active: true,
+      },
+      select: { role_id: true },
+    });
+
+    if (!directorRole) {
+      throw new AppNotFoundException(ErrorCode.CLUB_ROLE_NOT_FOUND);
+    }
+
+    const startDate = dto.start_date ?? new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.club_role_assignments.findUnique({
+        where: { assignment_id: dto.current_assignment_id },
+        select: {
+          assignment_id: true,
+          user_id: true,
+          club_section_id: true,
+          role_id: true,
+          active: true,
+          roles: { select: { role_name: true } },
+        },
+      });
+
+      if (
+        !current ||
+        current.club_section_id !== sectionId ||
+        !current.active ||
+        current.roles.role_name.toLowerCase() !== 'director'
+      ) {
+        throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+      }
+
+      const ended = await tx.club_role_assignments.update({
+        where: { assignment_id: dto.current_assignment_id },
+        data: {
+          active: false,
+          status: 'ended',
+          end_date: startDate,
+          modified_at: new Date(),
+        },
+        select: {
+          assignment_id: true,
+          user_id: true,
+          club_section_id: true,
+        },
+      });
+
+      const existingActiveDirectorCount =
+        await tx.club_role_assignments.count({
+          where: {
+            club_section_id: sectionId,
+            role_id: directorRole.role_id,
+            active: true,
+            assignment_id: { not: dto.current_assignment_id },
+          },
+        });
+
+      if (existingActiveDirectorCount > 0) {
+        throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
+      }
+
+      const created = await tx.club_role_assignments.create({
+        data: {
+          user_id: dto.successor_user_id,
+          role_id: directorRole.role_id,
+          ecclesiastical_year_id: dto.ecclesiastical_year_id,
+          start_date: startDate,
+          active: true,
+          status: 'active',
+          club_section_id: sectionId,
+        },
+        select: {
+          assignment_id: true,
+          user_id: true,
+          club_section_id: true,
+        },
+      });
+
+      return { ended, created };
+    });
+
+    await Promise.all([
+      this.authorizationContext.invalidateUserAuthorizationCache(
+        result.ended.user_id,
+      ),
+      this.authorizationContext.invalidateUserAuthorizationCache(
+        result.created.user_id,
+      ),
+    ]);
+
+    this.emitRealtimeInvalidation(
+      sectionId,
+      result.ended.assignment_id,
+      'DELETED',
+      actorUserId,
+    );
+    this.emitRealtimeInvalidation(
+      sectionId,
+      result.created.assignment_id,
+      'CREATED',
+      actorUserId,
+    );
+
+    return {
+      ended_assignment_id: result.ended.assignment_id,
+      new_assignment_id: result.created.assignment_id,
+    };
   }
 
   // ========================================
@@ -896,31 +1061,8 @@ export class ClubsService {
   private async validateRoleSlot(
     sectionId: number,
     roleId: string,
+    excludeAssignmentId?: string,
   ): Promise<void> {
-    // 1. Check max_per_section from role_slot_limits
-    const slotLimit = await this.prisma.role_slot_limits.findUnique({
-      where: { role_id: roleId },
-    });
-
-    if (slotLimit?.max_per_section != null) {
-      const currentCount = await this.prisma.club_role_assignments.count({
-        where: {
-          club_section_id: sectionId,
-          role_id: roleId,
-          active: true,
-        },
-      });
-
-      if (currentCount >= slotLimit.max_per_section) {
-        const role = await this.prisma.roles.findUnique({
-          where: { role_id: roleId },
-          select: { role_name: true },
-        });
-        throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
-      }
-    }
-
-    // 2. Mutual exclusivity: secretary / treasurer vs secretary-treasurer
     const role = await this.prisma.roles.findUnique({
       where: { role_id: roleId },
       select: { role_name: true },
@@ -930,18 +1072,52 @@ export class ClubsService {
 
     const roleName = role.role_name.toLowerCase();
 
+    // 1. Check max_per_section from role_slot_limits, with canonical fallback
+    // for core leadership roles. This makes the invariant effective even when
+    // the seed was not applied in an environment.
+    const slotLimit = await this.prisma.role_slot_limits.findUnique({
+      where: { role_id: roleId },
+    });
+    const maxPerSection = this.getEffectiveMaxPerSection(
+      roleName,
+      slotLimit?.max_per_section,
+    );
+
+    if (maxPerSection != null) {
+      const where: Prisma.club_role_assignmentsWhereInput = {
+        club_section_id: sectionId,
+        role_id: roleId,
+        active: true,
+        ...(excludeAssignmentId
+          ? { assignment_id: { not: excludeAssignmentId } }
+          : {}),
+      };
+      const currentCount = await this.prisma.club_role_assignments.count({
+        where,
+      });
+
+      if (currentCount >= maxPerSection) {
+        throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
+      }
+    }
+
+    // 2. Mutual exclusivity: secretary / treasurer vs secretary-treasurer
     if (roleName === 'secretary' || roleName === 'treasurer') {
-      const secTreasRole = await this.prisma.roles.findFirst({
-        where: { role_name: 'secretary-treasurer', active: true },
+      const secTreasRoles = await this.prisma.roles.findMany({
+        where: { role_name: { in: ['secretary-treasurer'] }, active: true },
         select: { role_id: true },
       });
 
-      if (secTreasRole) {
+      if (secTreasRoles.length > 0) {
+        const secTreasRoleIds = secTreasRoles.map((item) => item.role_id);
         const hasSecTreas = await this.prisma.club_role_assignments.findFirst({
           where: {
             club_section_id: sectionId,
-            role_id: secTreasRole.role_id,
+            role_id: { in: secTreasRoleIds },
             active: true,
+            ...(excludeAssignmentId
+              ? { assignment_id: { not: excludeAssignmentId } }
+              : {}),
           },
         });
 
@@ -967,6 +1143,9 @@ export class ClubsService {
               club_section_id: sectionId,
               role_id: { in: conflictingIds },
               active: true,
+              ...(excludeAssignmentId
+                ? { assignment_id: { not: excludeAssignmentId } }
+                : {}),
             },
             include: {
               roles: { select: { role_name: true } },
@@ -980,6 +1159,50 @@ export class ClubsService {
         }
       }
     }
+  }
+
+  private async assertCanSucceedSectionDirector(
+    actorUserId: string,
+    sectionId: number,
+  ): Promise<void> {
+    const hasAllowedGlobalRole =
+      await this.authorizationContext.hasAnyGlobalRole(actorUserId, [
+        'director-lf',
+        'assistant-lf',
+      ]);
+
+    if (!hasAllowedGlobalRole) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { main_club_id: true },
+    });
+
+    if (!section || section.main_club_id == null) {
+      throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
+    }
+
+    const canManageClub = await this.authorizationContext.canManageClub(
+      actorUserId,
+      section.main_club_id,
+    );
+
+    if (!canManageClub) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+  }
+
+  private getEffectiveMaxPerSection(
+    roleName: string,
+    configuredMax: number | null | undefined,
+  ): number | null {
+    return (
+      configuredMax ??
+      ClubsService.CANONICAL_ROLE_SLOT_LIMITS_BY_NAME[roleName] ??
+      null
+    );
   }
 
   private async getActiveEcclesiasticalYearId(): Promise<number> {

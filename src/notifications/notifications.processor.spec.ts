@@ -75,6 +75,7 @@ const mockPrismaService = {
   },
   notification_logs: {
     create: jest.fn(),
+    update: jest.fn(),
   },
   notification_deliveries: {
     createMany: jest.fn(),
@@ -361,6 +362,7 @@ describe('NotificationsProcessor — send-to-club-members', () => {
     mockPrismaService.notification_logs.create.mockResolvedValue({
       log_id: 99,
     });
+    mockPrismaService.notification_logs.update.mockResolvedValue({});
     mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
       count: 1,
     });

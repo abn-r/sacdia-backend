@@ -2,12 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CatalogsService } from './catalogs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogCacheService } from './catalog-cache.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
 describe('CatalogsService', () => {
   let service: CatalogsService;
-  let prisma: PrismaService;
 
   const mockPrismaService = {
+    $queryRaw: jest.fn(),
     club_types: {
       findMany: jest.fn(),
     },
@@ -68,7 +69,6 @@ describe('CatalogsService', () => {
     }).compile();
 
     service = module.get<CatalogsService>(CatalogsService);
-    prisma = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
@@ -174,37 +174,102 @@ describe('CatalogsService', () => {
     });
   });
 
+  describe('getDivisions', () => {
+    it('should return active divisions from the catalog cache loader', async () => {
+      const mockDivisions = [
+        {
+          division_id: 1,
+          code: 'DIA',
+          name: 'División Interamericana',
+          abbreviation: 'DIA',
+        },
+      ];
+
+      mockPrismaService.$queryRaw.mockResolvedValue(mockDivisions);
+
+      const result = await service.getDivisions();
+
+      expect(result).toEqual(mockDivisions);
+      expect(mockCatalogCacheService.getOrSet).toHaveBeenCalledWith(
+        expect.stringContaining('cache:catalogs:divisions'),
+        expect.any(Function),
+      );
+      expect(mockPrismaService.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('getUnions', () => {
     it('should return unions filtered by country', async () => {
       const mockUnions = [
-        { union_id: 1, name: 'Unión Mexicana del Norte', country_id: 1 },
+        {
+          union_id: 1,
+          name: 'Unión Mexicana del Norte',
+          country_id: 1,
+          division_id: 1,
+        },
       ];
 
-      mockPrismaService.unions.findMany.mockResolvedValue(mockUnions);
+      mockPrismaService.$queryRaw
+        .mockResolvedValueOnce([{ division_id: 1 }])
+        .mockResolvedValueOnce(mockUnions);
 
       const result = await service.getUnions(1);
 
       expect(result).toEqual(mockUnions);
-      expect(mockPrismaService.unions.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            country_id: 1,
-          }),
-        }),
+      expect(mockCatalogCacheService.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:unions:country:1',
+        expect.any(Function),
       );
+      expect(mockPrismaService.$queryRaw).toHaveBeenCalledTimes(2);
     });
 
     it('should return all unions when no filter', async () => {
       const mockUnions = [
-        { union_id: 1, name: 'Unión 1' },
-        { union_id: 2, name: 'Unión 2' },
+        { union_id: 1, name: 'Unión 1', country_id: 1, division_id: 1 },
+        { union_id: 2, name: 'Unión 2', country_id: 1, division_id: 1 },
       ];
 
-      mockPrismaService.unions.findMany.mockResolvedValue(mockUnions);
+      mockPrismaService.$queryRaw.mockResolvedValue(mockUnions);
 
       const result = await service.getUnions();
 
       expect(result).toEqual(mockUnions);
+      expect(mockCatalogCacheService.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:unions:all',
+        expect.any(Function),
+      );
+    });
+
+    it('should return unions filtered by division', async () => {
+      const mockUnions = [
+        { union_id: 1, name: 'Unión 1', country_id: 1, division_id: 1 },
+      ];
+
+      mockPrismaService.$queryRaw.mockResolvedValue(mockUnions);
+
+      const result = await service.getUnions({ divisionId: 1 });
+
+      expect(result).toEqual(mockUnions);
+      expect(mockCatalogCacheService.getOrSet).toHaveBeenCalledWith(
+        'cache:catalogs:unions:division:1',
+        expect.any(Function),
+      );
+      expect(mockPrismaService.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject legacy country-only filtering when country maps to multiple divisions', async () => {
+      mockPrismaService.$queryRaw.mockResolvedValueOnce([
+        { division_id: 1 },
+        { division_id: 2 },
+      ]);
+
+      await expect(service.getUnions({ countryId: 1 })).rejects.toMatchObject({
+        code: ErrorCode.HIERARCHY_COUNTRY_DIVISION_AMBIGUOUS,
+      });
+      expect(mockCatalogCacheService.getOrSet).not.toHaveBeenCalledWith(
+        'cache:catalogs:unions:country:1',
+        expect.any(Function),
+      );
     });
   });
 

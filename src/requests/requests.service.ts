@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -7,14 +8,26 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 
 @Injectable()
 export class RequestsService {
   private readonly logger = new Logger(RequestsService.name);
+  private static readonly CANONICAL_ROLE_SLOT_LIMITS_BY_NAME: Record<
+    string,
+    number
+  > = {
+    director: 1,
+    'deputy-director': 2,
+    secretary: 1,
+    treasurer: 1,
+    'secretary-treasurer': 1,
+  };
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly classAssignmentResolver: ClassAssignmentResolverService,
   ) {}
 
   // ========================================
@@ -157,6 +170,11 @@ export class RequestsService {
           },
         });
 
+        await this.resolveTransferOperationalEnrollment(tx, {
+          userId: request.user_id,
+          clubSectionId: request.to_section_id,
+        });
+
         // Update the transfer request status
         const updated = await tx.club_transfer_requests.update({
           where: { transfer_request_id: requestId },
@@ -254,6 +272,94 @@ export class RequestsService {
     }
 
     return result;
+  }
+
+  private async resolveTransferOperationalEnrollment(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: string;
+      clubSectionId: number;
+    },
+  ) {
+    const now = new Date();
+    const currentYear = await tx.ecclesiastical_years.findFirst({
+      where: {
+        start_date: { lte: now },
+        end_date: { gte: now },
+      },
+      select: {
+        year_id: true,
+        start_date: true,
+      },
+    });
+
+    if (!currentYear) {
+      throw new AppBadRequestException(ErrorCode.POST_REG_NO_ACTIVE_YEAR);
+    }
+
+    const targetSection = await tx.club_sections.findUnique({
+      where: { club_section_id: params.clubSectionId },
+      select: { club_type_id: true },
+    });
+
+    if (!targetSection) {
+      throw new AppNotFoundException(
+        ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND,
+      );
+    }
+
+    const expectedClassId =
+      await this.classAssignmentResolver.resolveClassIdForUserClubType(tx, {
+        userId: params.userId,
+        clubTypeId: targetSection.club_type_id,
+        currentYear,
+        userNotFoundExceptionFactory: () =>
+          new AppNotFoundException(ErrorCode.USER_NOT_FOUND),
+      });
+
+    await tx.enrollments.updateMany({
+      where: {
+        user_id: params.userId,
+        ecclesiastical_year_id: currentYear.year_id,
+        active: true,
+        NOT: { class_id: expectedClassId },
+      },
+      data: { active: false },
+    });
+
+    const enrollmentWhere = {
+      user_id_class_id_ecclesiastical_year_id: {
+        user_id: params.userId,
+        class_id: expectedClassId,
+        ecclesiastical_year_id: currentYear.year_id,
+      },
+    };
+
+    const existingEnrollment = await tx.enrollments.findUnique({
+      where: enrollmentWhere,
+      select: {
+        enrollment_id: true,
+        active: true,
+      },
+    });
+
+    if (existingEnrollment) {
+      if (!existingEnrollment.active) {
+        await tx.enrollments.update({
+          where: { enrollment_id: existingEnrollment.enrollment_id },
+          data: { active: true },
+        });
+      }
+      return;
+    }
+
+    await tx.enrollments.create({
+      data: {
+        user_id: params.userId,
+        class_id: expectedClassId,
+        ecclesiastical_year_id: currentYear.year_id,
+      },
+    });
   }
 
   async getTransferRequests(filters?: { status?: string; sectionId?: number }) {
@@ -385,7 +491,9 @@ export class RequestsService {
     }
 
     // Check role_slot_limits before creating request
-    await this.validateRoleSlotForRequest(sectionId, roleId);
+    await this.validateRoleSlotForRequest(sectionId, roleId, {
+      includePendingRequests: true,
+    });
 
     // Check no pending request for same user + role + section
     const pendingRequest = await this.prisma.role_assignment_requests.findFirst(
@@ -481,28 +589,14 @@ export class RequestsService {
 
     if (action === 'approved') {
       result = await this.prisma.$transaction(async (tx) => {
-        // Re-validate role_slot_limits at approval time (in case things changed)
-        const slotLimit = await tx.role_slot_limits.findUnique({
-          where: { role_id: request.role_id },
-        });
+        // Re-validate role limits/exclusivity at approval time in case section
+        // leadership changed after the request was created.
+        await this.validateRoleSlotForRequest(
+          request.club_section_id,
+          request.role_id,
+          { client: tx, includePendingRequests: false },
+        );
 
-        if (slotLimit?.max_per_section != null) {
-          const currentCount = await tx.club_role_assignments.count({
-            where: {
-              club_section_id: request.club_section_id,
-              role_id: request.role_id,
-              active: true,
-            },
-          });
-
-          if (currentCount >= slotLimit.max_per_section) {
-            throw new AppConflictException(
-              ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED,
-            );
-          }
-        }
-
-        // Get active ecclesiastical year
         const ecclesiasticalYearId =
           await this.getActiveEcclesiasticalYearId(tx);
 
@@ -746,14 +840,31 @@ export class RequestsService {
   private async validateRoleSlotForRequest(
     sectionId: number,
     roleId: string,
+    options: {
+      client?: PrismaService | Prisma.TransactionClient;
+      includePendingRequests?: boolean;
+    } = {},
   ): Promise<void> {
-    const slotLimit = await this.prisma.role_slot_limits.findUnique({
+    const client = options.client ?? this.prisma;
+    const role = await client.roles.findUnique({
       where: { role_id: roleId },
+      select: { role_name: true },
     });
 
-    if (slotLimit?.max_per_section != null) {
+    if (!role) return;
+
+    const roleName = role.role_name.toLowerCase();
+    const slotLimit = await client.role_slot_limits.findUnique({
+      where: { role_id: roleId },
+    });
+    const maxPerSection = this.getEffectiveMaxPerSection(
+      roleName,
+      slotLimit?.max_per_section,
+    );
+
+    if (maxPerSection != null) {
       // Count current active assignments
-      const currentCount = await this.prisma.club_role_assignments.count({
+      const currentCount = await client.club_role_assignments.count({
         where: {
           club_section_id: sectionId,
           role_id: roleId,
@@ -762,24 +873,69 @@ export class RequestsService {
       });
 
       // Also count pending requests for same role+section
-      const pendingCount = await this.prisma.role_assignment_requests.count({
-        where: {
-          club_section_id: sectionId,
-          role_id: roleId,
-          status: 'pending',
-        },
-      });
+      const pendingCount = options.includePendingRequests
+        ? await client.role_assignment_requests.count({
+            where: {
+              club_section_id: sectionId,
+              role_id: roleId,
+              status: 'pending',
+            },
+          })
+        : 0;
 
-      if (currentCount + pendingCount >= slotLimit.max_per_section) {
-        const role = await this.prisma.roles.findUnique({
-          where: { role_id: roleId },
-          select: { role_name: true },
-        });
+      if (currentCount + pendingCount >= maxPerSection) {
         throw new AppConflictException(
           ErrorCode.REQUEST_ROLE_SLOT_LIMIT_REACHED,
         );
       }
     }
+
+    await this.validateRoleExclusivityForRequest(client, sectionId, roleName);
+  }
+
+  private async validateRoleExclusivityForRequest(
+    client: PrismaService | Prisma.TransactionClient,
+    sectionId: number,
+    roleName: string,
+  ): Promise<void> {
+    const conflictingRoleNames =
+      roleName === 'secretary' || roleName === 'treasurer'
+        ? ['secretary-treasurer']
+        : roleName === 'secretary-treasurer'
+          ? ['secretary', 'treasurer']
+          : [];
+
+    if (conflictingRoleNames.length === 0) return;
+
+    const conflictingRoles = await client.roles.findMany({
+      where: { role_name: { in: conflictingRoleNames }, active: true },
+      select: { role_id: true },
+    });
+
+    if (conflictingRoles.length === 0) return;
+
+    const existingConflict = await client.club_role_assignments.findFirst({
+      where: {
+        club_section_id: sectionId,
+        role_id: { in: conflictingRoles.map((item) => item.role_id) },
+        active: true,
+      },
+    });
+
+    if (existingConflict) {
+      throw new AppConflictException(ErrorCode.CLUB_ROLE_EXCLUSIVE_CONFLICT);
+    }
+  }
+
+  private getEffectiveMaxPerSection(
+    roleName: string,
+    configuredMax: number | null | undefined,
+  ): number | null {
+    return (
+      configuredMax ??
+      RequestsService.CANONICAL_ROLE_SLOT_LIMITS_BY_NAME[roleName] ??
+      null
+    );
   }
 
   private async getActiveEcclesiasticalYearId(

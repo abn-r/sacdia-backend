@@ -52,6 +52,10 @@ describe('NotificationsService', () => {
     users: {
       findMany: jest.fn(),
     },
+    club_sections: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
     user_fcm_tokens: {
       findMany: jest.fn(),
       updateMany: jest.fn(),
@@ -61,6 +65,7 @@ describe('NotificationsService', () => {
     },
     notification_logs: {
       create: jest.fn(),
+      update: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
     },
@@ -87,7 +92,14 @@ describe('NotificationsService', () => {
       sendEachForMulticast: mockSendEachForMulticast,
     });
     mockPrismaService.users.findMany.mockResolvedValue([]);
+    mockPrismaService.club_sections.findMany.mockResolvedValue([]);
+    mockPrismaService.club_sections.findFirst.mockResolvedValue({
+      club_section_id: 42,
+      club_type_id: 1,
+      club_types: { name: 'Aventureros' },
+    });
     mockPrismaService.notification_logs.create.mockResolvedValue({ log_id: 1 });
+    mockPrismaService.notification_logs.update.mockResolvedValue({});
     mockPrismaService.notification_deliveries.create.mockResolvedValue({});
     mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
       count: 1,
@@ -142,6 +154,156 @@ describe('NotificationsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('getAuthorizedClubTargets', () => {
+    it('returns only the active assignment target mapped to club instance shape', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: SENT_BY },
+          authorization: buildAuthorizationSnapshot({
+            assignmentId: 'assignment-1',
+            activePermissions: ['notifications:club'],
+            clubSectionId: 42,
+            clubId: 7,
+            clubName: 'Club Sur',
+            clubTypeName: 'Conquistadores',
+          }),
+        } as any,
+      );
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
+        {
+          club_section_id: 42,
+          club_type_id: 2,
+          name: 'Conquistadores Centro',
+          clubs: { club_id: 7, name: 'Club Sur' },
+          club_types: { name: 'Conquistadores' },
+        },
+      ]);
+
+      const result = await service.getAuthorizedClubTargets(SENT_BY);
+
+      expect(result).toEqual({
+        data: [
+          {
+            clubId: 7,
+            clubName: 'Club Sur',
+            sectionId: 42,
+            sectionName: 'Conquistadores Centro',
+            instanceType: 'pathfinders',
+            instanceId: 42,
+            label: 'Club Sur — Conquistadores Centro',
+          },
+        ],
+      });
+      expect(mockPrismaService.club_sections.findMany).toHaveBeenCalledWith({
+        where: {
+          club_section_id: {
+            in: [42],
+          },
+          active: true,
+        },
+        select: {
+          club_section_id: true,
+          club_type_id: true,
+          name: true,
+          clubs: {
+            select: {
+              club_id: true,
+              name: true,
+            },
+          },
+          club_types: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+    });
+
+    it('returns empty data when actor has no active assignment scope', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: SENT_BY },
+          authorization: buildAuthorizationSnapshot({
+            assignmentId: null,
+            activePermissions: ['notifications:club'],
+          }),
+        } as any,
+      );
+
+      const result = await service.getAuthorizedClubTargets(SENT_BY);
+
+      expect(result).toEqual({ data: [] });
+      expect(mockPrismaService.club_sections.findMany).not.toHaveBeenCalled();
+    });
+
+    it('omits active assignment target when club type cannot be mapped safely', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: SENT_BY },
+          authorization: buildAuthorizationSnapshot({
+            assignmentId: 'assignment-unknown',
+            activePermissions: ['notifications:club'],
+            clubSectionId: 55,
+            clubId: 9,
+            clubName: 'Club Experimental',
+            clubTypeName: 'Experimental',
+          }),
+        } as any,
+      );
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
+        {
+          club_section_id: 55,
+          club_type_id: 99,
+          name: 'Experimental',
+          clubs: { club_id: 9, name: 'Club Experimental' },
+          club_types: { name: 'Experimental' },
+        },
+      ]);
+
+      const result = await service.getAuthorizedClubTargets(SENT_BY);
+
+      expect(result).toEqual({ data: [] });
+    });
+
+    it('maps club target instance type from club type name before numeric id fallback', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        {
+          profile: { user_id: SENT_BY },
+          authorization: buildAuthorizationSnapshot({
+            assignmentId: 'assignment-master',
+            activePermissions: ['notifications:club'],
+            clubSectionId: 77,
+            clubId: 12,
+            clubName: 'Club Norte',
+            clubTypeName: 'Guías Mayores',
+          }),
+        } as any,
+      );
+      mockPrismaService.club_sections.findMany.mockResolvedValue([
+        {
+          club_section_id: 77,
+          club_type_id: 99,
+          name: null,
+          clubs: { club_id: 12, name: 'Club Norte' },
+          club_types: { name: 'Guías Mayores' },
+        },
+      ]);
+
+      const result = await service.getAuthorizedClubTargets(SENT_BY);
+
+      expect(result.data).toEqual([
+        expect.objectContaining({
+          sectionId: 77,
+          sectionName: 'Guías Mayores',
+          instanceType: 'master_guilds',
+          instanceId: 77,
+        }),
+      ]);
+    });
+
   });
 
   // ---------------------------------------------------------------------------
@@ -206,6 +368,10 @@ describe('NotificationsService', () => {
           data: expect.objectContaining({ type: 'USER', sent_by: SENT_BY }),
         }),
       );
+      expect(mockPrismaService.notification_logs.update).toHaveBeenCalledWith({
+        where: { log_id: 1 },
+        data: { tokens_sent: 2, tokens_failed: 0 },
+      });
     });
 
     it('should deactivate invalid tokens on FCM failure', async () => {
@@ -260,15 +426,25 @@ describe('NotificationsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('should return not-configured message when FCM apps array is empty', async () => {
+    it('should still create inbox delivery when FCM apps array is empty', async () => {
       firebaseAdminMock.apps = []; // simulate Firebase not initialized
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'token-a' },
+      ]);
 
       const result = await service.sendToUser(dto, SENT_BY);
 
-      expect(result).toEqual({
-        success: false,
-        message: 'FCM service is not configured in this environment',
+      expect(result).toMatchObject({
+        success: true,
+        successCount: 0,
+        failureCount: 0,
+        skippedPush: true,
       });
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(mockPrismaService.notification_logs.create).toHaveBeenCalled();
+      expect(
+        mockPrismaService.notification_deliveries.create,
+      ).toHaveBeenCalled();
     });
   });
 
@@ -383,15 +559,30 @@ describe('NotificationsService', () => {
       });
     });
 
-    it('should return not-configured message when FCM apps array is empty', async () => {
+    it('should create broadcast deliveries when FCM apps array is empty', async () => {
       firebaseAdminMock.apps = [];
+      mockPrismaService.users.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+        { user_id: 'user-2' },
+      ]);
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'tok-1' },
+      ]);
 
       const result = await service.broadcast(dto, SENT_BY);
 
-      expect(result).toEqual({
-        success: false,
-        message: 'FCM service is not configured in this environment',
+      expect(result).toMatchObject({
+        success: true,
+        successCount: 0,
+        failureCount: 0,
+        deliveriesCreated: 2,
+        skippedPush: true,
       });
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(mockPrismaService.notification_logs.create).toHaveBeenCalled();
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalled();
     });
   });
 
@@ -431,6 +622,63 @@ describe('NotificationsService', () => {
         mockPrismaService.club_role_assignments.findMany,
       ).not.toHaveBeenCalled();
       expect(mockPrismaService.notification_logs.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject club sends when route instance type does not match the target section type', async () => {
+      mockPrismaService.club_sections.findFirst.mockResolvedValue({
+        club_section_id: clubSectionId,
+        club_type_id: 2,
+        club_types: { name: 'Conquistadores' },
+      });
+
+      await expect(
+        service.sendToClubMembers(
+          clubSectionId,
+          dto,
+          SENT_BY,
+          'admin:club_send',
+          'adventurers',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.NOTIF_TARGET_TYPE_MISMATCH,
+      });
+
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.notification_logs.create).not.toHaveBeenCalled();
+    });
+
+    it('should allow club sends when route instance type matches the target section type', async () => {
+      mockPrismaService.club_sections.findFirst.mockResolvedValue({
+        club_section_id: clubSectionId,
+        club_type_id: 2,
+        club_types: { name: 'Conquistadores' },
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([]);
+
+      const result = await service.sendToClubMembers(
+        clubSectionId,
+        dto,
+        SENT_BY,
+        'admin:club_send',
+        'pathfinders',
+      );
+
+      expect(result).toEqual({ success: false, message: 'No members found' });
+      expect(mockPrismaService.club_sections.findFirst).toHaveBeenCalledWith({
+        where: { club_section_id: clubSectionId, active: true },
+        select: {
+          club_section_id: true,
+          club_type_id: true,
+          club_types: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+      expect(mockPrismaService.club_role_assignments.findMany).toHaveBeenCalled();
     });
 
     it('should not resolve system callers through user authorization and should still send to club members', async () => {
@@ -551,7 +799,11 @@ describe('NotificationsService', () => {
       expect(
         mockPrismaService.club_role_assignments.findMany,
       ).toHaveBeenCalledWith({
-        where: { club_section_id: clubSectionId, active: true },
+        where: {
+          club_section_id: clubSectionId,
+          active: true,
+          status: 'active',
+        },
         select: { user_id: true },
       });
       expect(mockPrismaService.user_fcm_tokens.findMany).toHaveBeenCalledWith({
@@ -614,8 +866,14 @@ describe('NotificationsService', () => {
       });
     });
 
-    it('should return not-configured message when FCM apps array is empty', async () => {
+    it('should create club deliveries when FCM apps array is empty', async () => {
       firebaseAdminMock.apps = [];
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+      ]);
+      mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+        { token: 'tok-1' },
+      ]);
 
       const result = await service.sendToClubMembers(
         clubSectionId,
@@ -623,10 +881,18 @@ describe('NotificationsService', () => {
         SENT_BY,
       );
 
-      expect(result).toEqual({
-        success: false,
-        message: 'FCM service is not configured in this environment',
+      expect(result).toMatchObject({
+        success: true,
+        successCount: 0,
+        failureCount: 0,
+        memberCount: 1,
+        skippedPush: true,
       });
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(mockPrismaService.notification_logs.create).toHaveBeenCalled();
+      expect(
+        mockPrismaService.notification_deliveries.createMany,
+      ).toHaveBeenCalled();
     });
   });
 

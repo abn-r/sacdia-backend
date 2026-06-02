@@ -4,10 +4,16 @@ import { FolderScoreService } from './folder-score';
 
 describe('FolderScoreService.calc', () => {
   let svc: FolderScoreService;
-  let prisma: { $queryRaw: jest.Mock };
+  let prisma: {
+    $queryRaw: jest.Mock;
+    annual_folders: { findFirst: jest.Mock };
+  };
 
   beforeEach(async () => {
-    prisma = { $queryRaw: jest.fn() };
+    prisma = {
+      $queryRaw: jest.fn(),
+      annual_folders: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
     const m = await Test.createTestingModule({
       providers: [
         FolderScoreService,
@@ -15,6 +21,24 @@ describe('FolderScoreService.calc', () => {
       ],
     }).compile();
     svc = m.get(FolderScoreService);
+  });
+
+  it('uses persisted annual evidence folder progress percentage when available', async () => {
+    prisma.annual_folders.findFirst.mockResolvedValueOnce({
+      progress_percentage: 53.33,
+    });
+
+    const result = await svc.calc('11111111-1111-1111-1111-111111111111', 5);
+
+    expect(result).toBe(53.33);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.annual_folders.findFirst).toHaveBeenCalledWith({
+      where: {
+        club_enrollment_id: '11111111-1111-1111-1111-111111111111',
+        folder_template: { ecclesiastical_year_id: 5 },
+      },
+      select: { progress_percentage: true },
+    });
   });
 
   it('returns 0 when SUM(max_points) is 0', async () => {
