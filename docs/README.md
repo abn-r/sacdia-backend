@@ -9,6 +9,8 @@ La documentación funcional oficial del producto está en el repositorio padre: 
 
 - `README.md`
   - Guía operativa actual del backend (setup, scripts, endpoints críticos, checklist de release).
+- `BENCHMARKING.md`
+  - Guía para ejecutar benchmark baseline, stress y spike de la API con autocannon.
 - `docs/storage/r2-keyprefix-conventions.md`
   - Convenciones de key-prefix y URL pública para los buckets de Cloudflare R2. Incluye tabla de los 13 aliases, los dos patrones de construcción de URL (bare vs embedded), la lógica de detección `isKeyPrefixInPublicBaseUrl`, el plan de migración al estado objetivo (bare-domain), y las convenciones de scripts one-shot.
 - `docs/IMPLEMENTATION-SESSION-2026-02-13-admin-hardening.md`
