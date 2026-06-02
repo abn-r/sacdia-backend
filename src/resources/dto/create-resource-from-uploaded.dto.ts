@@ -50,11 +50,11 @@ export class CreateResourceFromUploadedDto {
 
   @ApiProperty({
     description: 'Nivel de alcance',
-    enum: ['system', 'union', 'local_field'],
+    enum: ['system', 'division', 'union', 'local_field'],
   })
   @IsString()
-  @IsIn(['system', 'union', 'local_field'])
-  declare scope_level: 'system' | 'union' | 'local_field';
+  @IsIn(['system', 'division', 'union', 'local_field'])
+  declare scope_level: 'system' | 'division' | 'union' | 'local_field';
 
   @ApiPropertyOptional({ description: 'ID del ámbito' })
   @IsOptional()

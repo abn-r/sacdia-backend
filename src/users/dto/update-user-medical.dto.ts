@@ -44,7 +44,8 @@ export class DiseaseEntryDto {
 
   @ApiPropertyOptional({
     example: 2018,
-    description: 'Año desde el cual el usuario padece la enfermedad (1900–2100)',
+    description:
+      'Año desde el cual el usuario padece la enfermedad (1900–2100)',
     minimum: 1900,
     maximum: 2100,
   })

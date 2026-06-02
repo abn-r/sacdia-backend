@@ -15,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { ResourceQueryDto } from './dto/resource-query.dto';
 import { ResourcesService } from './resources.service';
 
@@ -30,7 +31,10 @@ import { ResourcesService } from './resources.service';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class ResourcesAppController {
-  constructor(private readonly resourcesService: ResourcesService) {}
+  constructor(
+    private readonly resourcesService: ResourcesService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // GET /resources/me — Recursos visibles para el usuario autenticado
@@ -41,7 +45,7 @@ export class ResourcesAppController {
     summary: 'Mis recursos',
     description:
       'Devuelve los recursos visibles para el usuario según su scope ' +
-      '(sistema, unión o campo local) y tipo de club. ' +
+      '(sistema, división, unión o campo local) y tipo de club. ' +
       'No requiere permiso RBAC explícito — solo autenticación.',
   })
   @ApiResponse({
@@ -50,7 +54,13 @@ export class ResourcesAppController {
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
   async getMyResources(@Query() query: ResourceQueryDto, @Request() req: any) {
-    return this.resourcesService.getVisibleResources(query, req.authorization);
+    const resolved = await this.authorizationContext.resolveUserAuthorization(
+      req.user.sub,
+    );
+    return this.resourcesService.getVisibleResources(
+      query,
+      resolved.authorization,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -72,7 +82,10 @@ export class ResourcesAppController {
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: any,
   ) {
-    return this.resourcesService.findOne(id);
+    const resolved = await this.authorizationContext.resolveUserAuthorization(
+      req.user.sub,
+    );
+    return this.resourcesService.findOneVisible(id, resolved.authorization);
   }
 
   // ---------------------------------------------------------------------------
@@ -97,6 +110,12 @@ export class ResourcesAppController {
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: any,
   ) {
-    return this.resourcesService.getSignedUrl(id);
+    const resolved = await this.authorizationContext.resolveUserAuthorization(
+      req.user.sub,
+    );
+    return this.resourcesService.getVisibleSignedUrl(
+      id,
+      resolved.authorization,
+    );
   }
 }

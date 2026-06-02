@@ -65,26 +65,47 @@ export class CatalogsController {
   }
 
   // ========================================
+  // DIVISIONS
+  // ========================================
+  @Get('divisions')
+  @ApiOperation({
+    summary: 'Obtener divisiones',
+    description: 'Lista divisiones institucionales activas',
+  })
+  @ApiResponse({ status: 200, description: 'Lista de divisiones' })
+  async getDivisions() {
+    return this.catalogsService.getDivisions();
+  }
+
+  // ========================================
   // UNIONS
   // ========================================
   @Get('unions')
   @ApiOperation({
     summary: 'Obtener uniones',
     description:
-      'Lista uniones de la organización, opcionalmente filtradas por país',
+      'Lista uniones de la organización, opcionalmente filtradas por división. countryId queda como compatibilidad legacy solo si es un alias no ambiguo.',
+  })
+  @ApiQuery({
+    name: 'divisionId',
+    required: false,
+    type: Number,
+    description: 'ID de la división institucional para filtrar',
   })
   @ApiQuery({
     name: 'countryId',
     required: false,
     type: Number,
-    description: 'ID del país para filtrar',
+    description: 'ID del país para compatibilidad legacy',
   })
   @ApiResponse({ status: 200, description: 'Lista de uniones' })
   async getUnions(
     @Query('countryId', new ParseIntPipe({ optional: true }))
     countryId?: number,
+    @Query('divisionId', new ParseIntPipe({ optional: true }))
+    divisionId?: number,
   ) {
-    return this.catalogsService.getUnions(countryId);
+    return this.catalogsService.getUnions({ countryId, divisionId });
   }
 
   // ========================================

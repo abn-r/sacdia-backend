@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
+  AppBadRequestException,
   AppConflictException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
@@ -13,15 +15,45 @@ import { TranslationService } from '../common/services/translation.service';
 import {
   CreateChurchDto,
   CreateCountryDto,
+  CreateDivisionDto,
   CreateDistrictDto,
   CreateLocalFieldDto,
   CreateUnionDto,
   UpdateChurchDto,
   UpdateCountryDto,
+  UpdateDivisionDto,
   UpdateDistrictDto,
   UpdateLocalFieldDto,
   UpdateUnionDto,
 } from './dto';
+
+type DivisionRow = {
+  division_id: number;
+  code: string;
+  name: string;
+  abbreviation: string;
+  active: boolean;
+  created_at: Date | null;
+  modified_at: Date | null;
+  translations?: unknown[];
+};
+
+type UnionRow = {
+  union_id: number;
+  name: string;
+  abbreviation: string;
+  active: boolean;
+  country_id: number;
+  division_id: number;
+  created_at: Date | null;
+  modified_at: Date | null;
+  translations?: unknown[];
+};
+
+type ListUnionFilters = {
+  countryId?: number;
+  divisionId?: number;
+};
 
 @Injectable()
 export class AdminGeographyService {
@@ -41,6 +73,10 @@ export class AdminGeographyService {
     return value.trim().toUpperCase();
   }
 
+  private normalizeCode(value: string): string {
+    return value.trim().toUpperCase().replace(/\s+/g, '-');
+  }
+
   private logMutation(
     action: string,
     resource: string,
@@ -56,6 +92,143 @@ export class AdminGeographyService {
         timestamp: new Date().toISOString(),
       }),
     );
+  }
+
+  // ─── DIVISIONS ─────────────────────────────────────────────────────────────
+
+  async listDivisions() {
+    return this.queryDivisions();
+  }
+
+  async createDivision(dto: CreateDivisionDto, actorId: string) {
+    const code = this.normalizeCode(dto.code);
+    const name = this.normalizeName(dto.name);
+    const abbreviation = this.normalizeAbbreviation(dto.abbreviation);
+
+    this.translationService.validateTranslations(dto.translations);
+    await this.ensureDivisionUnique({ code, name, abbreviation });
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<DivisionRow[]>(Prisma.sql`
+        INSERT INTO divisions (code, name, abbreviation, active, created_at, modified_at)
+        VALUES (${code}, ${name}, ${abbreviation}, ${dto.active ?? true}, NOW(), NOW())
+        RETURNING division_id, code, name, abbreviation, active, created_at, modified_at
+      `);
+      const created = this.requireSingleRow(
+        rows,
+        ErrorCode.ADMIN_DIVISION_NOT_FOUND,
+      );
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'divisions_translations',
+        'division_id',
+        'divisions_translations_unique_locale',
+        created.division_id,
+        dto.translations,
+        ['name'],
+      );
+
+      return created;
+    });
+
+    this.logMutation('create', 'divisions', result.division_id, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DIVISIONS);
+
+    return result;
+  }
+
+  async updateDivision(
+    divisionId: number,
+    dto: UpdateDivisionDto,
+    actorId: string,
+  ) {
+    await this.ensureDivisionExists(divisionId);
+
+    const code = dto.code ? this.normalizeCode(dto.code) : undefined;
+    const name = dto.name ? this.normalizeName(dto.name) : undefined;
+    const abbreviation = dto.abbreviation
+      ? this.normalizeAbbreviation(dto.abbreviation)
+      : undefined;
+
+    if (code || name || abbreviation) {
+      await this.ensureDivisionUnique({ code, name, abbreviation }, divisionId);
+    }
+
+    this.translationService.validateTranslations(dto.translations);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const setClauses = [
+        ...(code ? [Prisma.sql`code = ${code}`] : []),
+        ...(name ? [Prisma.sql`name = ${name}`] : []),
+        ...(abbreviation ? [Prisma.sql`abbreviation = ${abbreviation}`] : []),
+        ...(typeof dto.active === 'boolean'
+          ? [Prisma.sql`active = ${dto.active}`]
+          : []),
+        Prisma.sql`modified_at = NOW()`,
+      ];
+
+      const rows = await tx.$queryRaw<DivisionRow[]>(Prisma.sql`
+        UPDATE divisions
+        SET ${Prisma.join(setClauses, ', ')}
+        WHERE division_id = ${divisionId}
+        RETURNING division_id, code, name, abbreviation, active, created_at, modified_at
+      `);
+      const updated = this.requireSingleRow(
+        rows,
+        ErrorCode.ADMIN_DIVISION_NOT_FOUND,
+      );
+
+      await this.translationService.upsertTranslations(
+        tx,
+        'divisions_translations',
+        'division_id',
+        'divisions_translations_unique_locale',
+        divisionId,
+        dto.translations,
+        ['name'],
+      );
+
+      return updated;
+    });
+
+    this.logMutation('update', 'divisions', divisionId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DIVISIONS);
+
+    return result;
+  }
+
+  async deleteDivision(divisionId: number, actorId: string) {
+    await this.ensureDivisionExists(divisionId);
+
+    const activeUnions = await this.countActiveUnionsForDivision(divisionId);
+
+    if (activeUnions > 0) {
+      throw new AppConflictException(
+        ErrorCode.ADMIN_DIVISION_HAS_ACTIVE_UNIONS,
+        { id: divisionId },
+      );
+    }
+
+    const rows = await this.prisma.$queryRaw<DivisionRow[]>(Prisma.sql`
+      UPDATE divisions
+      SET active = FALSE,
+          modified_at = NOW()
+      WHERE division_id = ${divisionId}
+      RETURNING division_id, code, name, abbreviation, active, created_at, modified_at
+    `);
+    const division = this.requireSingleRow(
+      rows,
+      ErrorCode.ADMIN_DIVISION_NOT_FOUND,
+    );
+
+    this.logMutation('delete', 'divisions', divisionId, actorId);
+
+    await this.catalogCache.invalidate(CATALOG_CACHE_KEYS.DIVISIONS);
+
+    return division;
   }
 
   // ─── COUNTRIES ─────────────────────────────────────────────────────────────
@@ -188,18 +361,19 @@ export class AdminGeographyService {
 
   // ─── UNIONS ────────────────────────────────────────────────────────────────
 
-  async listUnions(countryId?: number) {
+  async listUnions(filters: ListUnionFilters = {}) {
+    const { countryId, divisionId } = filters;
+    if (countryId && !divisionId) {
+      await this.ensureCountryAliasUnambiguous(countryId);
+    }
+
     // Geography catalog: unions per country are in the tens at most.
-    return this.prisma.unions.findMany({
-      where: countryId ? { country_id: countryId } : undefined,
-      orderBy: { name: 'asc' },
-      take: 500,
-      include: { translations: true },
-    });
+    return this.queryUnions({ countryId, divisionId });
   }
 
   async createUnion(dto: CreateUnionDto, actorId: string) {
     await this.ensureCountryExists(dto.country_id);
+    await this.ensureDivisionExists(dto.division_id);
 
     const name = this.normalizeName(dto.name);
     const abbreviation = this.normalizeAbbreviation(dto.abbreviation);
@@ -208,14 +382,38 @@ export class AdminGeographyService {
     this.translationService.validateTranslations(dto.translations);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.unions.create({
-        data: {
+      const rows = await tx.$queryRaw<UnionRow[]>(Prisma.sql`
+        INSERT INTO unions (
           name,
           abbreviation,
-          country_id: dto.country_id,
-          active: dto.active ?? true,
-        },
-      });
+          country_id,
+          division_id,
+          active,
+          created_at,
+          modified_at
+        )
+        VALUES (
+          ${name},
+          ${abbreviation},
+          ${dto.country_id},
+          ${dto.division_id},
+          ${dto.active ?? true},
+          NOW(),
+          NOW()
+        )
+        RETURNING union_id, name, abbreviation, active, country_id, division_id, created_at, modified_at
+      `);
+      const created = this.requireSingleRow(
+        rows,
+        ErrorCode.ADMIN_UNION_NOT_FOUND,
+      );
+
+      await this.openUnionDivisionHistory(
+        tx,
+        created.union_id,
+        dto.division_id,
+        actorId,
+      );
 
       await this.translationService.upsertTranslations(
         tx,
@@ -233,10 +431,12 @@ export class AdminGeographyService {
     this.logMutation('create', 'unions', result.union_id, actorId);
 
     // Invalidate both the unfiltered list and the country-filtered variant
-    await this.catalogCache.invalidateMany([
-      CATALOG_CACHE_KEYS.UNIONS(),
-      CATALOG_CACHE_KEYS.UNIONS(dto.country_id),
-    ]);
+    await this.catalogCache.invalidateMany(
+      this.unionCacheKeys({
+        countryIds: [dto.country_id],
+        divisionIds: [dto.division_id],
+      }),
+    );
 
     return result;
   }
@@ -246,6 +446,9 @@ export class AdminGeographyService {
 
     if (dto.country_id) {
       await this.ensureCountryExists(dto.country_id);
+    }
+    if (dto.division_id) {
+      await this.ensureDivisionExists(dto.division_id);
     }
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
@@ -260,16 +463,38 @@ export class AdminGeographyService {
     this.translationService.validateTranslations(dto.translations);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.unions.update({
-        where: { union_id: unionId },
-        data: {
-          ...(name ? { name } : {}),
-          ...(abbreviation ? { abbreviation } : {}),
-          ...(dto.country_id ? { country_id: dto.country_id } : {}),
-          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-          modified_at: new Date(),
-        },
-      });
+      const setClauses = [
+        ...(name ? [Prisma.sql`name = ${name}`] : []),
+        ...(abbreviation ? [Prisma.sql`abbreviation = ${abbreviation}`] : []),
+        ...(dto.country_id ? [Prisma.sql`country_id = ${dto.country_id}`] : []),
+        ...(dto.division_id
+          ? [Prisma.sql`division_id = ${dto.division_id}`]
+          : []),
+        ...(typeof dto.active === 'boolean'
+          ? [Prisma.sql`active = ${dto.active}`]
+          : []),
+        Prisma.sql`modified_at = NOW()`,
+      ];
+
+      const rows = await tx.$queryRaw<UnionRow[]>(Prisma.sql`
+        UPDATE unions
+        SET ${Prisma.join(setClauses, ', ')}
+        WHERE union_id = ${unionId}
+        RETURNING union_id, name, abbreviation, active, country_id, division_id, created_at, modified_at
+      `);
+      const updated = this.requireSingleRow(
+        rows,
+        ErrorCode.ADMIN_UNION_NOT_FOUND,
+      );
+
+      if (dto.division_id && dto.division_id !== existing.division_id) {
+        await this.reassignUnionDivisionHistory(
+          tx,
+          unionId,
+          dto.division_id,
+          actorId,
+        );
+      }
 
       await this.translationService.upsertTranslations(
         tx,
@@ -287,12 +512,12 @@ export class AdminGeographyService {
     this.logMutation('update', 'unions', unionId, actorId);
 
     // Invalidate all union variants (original country, new country if changed)
-    const keysToInvalidate = [CATALOG_CACHE_KEYS.UNIONS()];
-    keysToInvalidate.push(CATALOG_CACHE_KEYS.UNIONS(existing.country_id));
-    if (dto.country_id && dto.country_id !== existing.country_id) {
-      keysToInvalidate.push(CATALOG_CACHE_KEYS.UNIONS(dto.country_id));
-    }
-    await this.catalogCache.invalidateMany(keysToInvalidate);
+    await this.catalogCache.invalidateMany(
+      this.unionCacheKeys({
+        countryIds: [existing.country_id, dto.country_id],
+        divisionIds: [existing.division_id, dto.division_id],
+      }),
+    );
 
     return result;
   }
@@ -327,6 +552,11 @@ export class AdminGeographyService {
     await this.catalogCache.invalidateMany([
       CATALOG_CACHE_KEYS.UNIONS(),
       CATALOG_CACHE_KEYS.UNIONS(existing.country_id),
+      CATALOG_CACHE_KEYS.UNIONS({ divisionId: existing.division_id }),
+      CATALOG_CACHE_KEYS.UNIONS({
+        countryId: existing.country_id,
+        divisionId: existing.division_id,
+      }),
     ]);
 
     return union;
@@ -794,6 +1024,299 @@ export class AdminGeographyService {
 
   // ─── PRIVATE GUARDS ────────────────────────────────────────────────────────
 
+  private requireSingleRow<T>(rows: T[], code: ErrorCode): T {
+    const row = rows[0];
+    if (!row) {
+      throw new AppNotFoundException(code);
+    }
+    return row;
+  }
+
+  private async queryDivisions(): Promise<DivisionRow[]> {
+    return this.prisma.$queryRaw<DivisionRow[]>(Prisma.sql`
+      SELECT
+        d.division_id,
+        d.code,
+        d.name,
+        d.abbreviation,
+        d.active,
+        d.created_at,
+        d.modified_at,
+        COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', dt.id,
+              'division_id', dt.division_id,
+              'locale', dt.locale,
+              'name', dt.name,
+              'created_at', dt.created_at,
+              'updated_at', dt.updated_at
+            )
+            ORDER BY dt.locale
+          ) FILTER (WHERE dt.id IS NOT NULL),
+          '[]'::jsonb
+        ) AS translations
+      FROM divisions d
+      LEFT JOIN divisions_translations dt ON dt.division_id = d.division_id
+      GROUP BY d.division_id
+      ORDER BY d.name ASC
+      LIMIT 300
+    `);
+  }
+
+  private async queryUnions(
+    filters: ListUnionFilters = {},
+  ): Promise<UnionRow[]> {
+    const conditions = [Prisma.sql`u.active = TRUE`];
+
+    if (filters.countryId) {
+      conditions.push(Prisma.sql`u.country_id = ${filters.countryId}`);
+    }
+    if (filters.divisionId) {
+      conditions.push(Prisma.sql`u.division_id = ${filters.divisionId}`);
+    }
+
+    return this.prisma.$queryRaw<UnionRow[]>(Prisma.sql`
+      SELECT
+        u.union_id,
+        u.name,
+        u.abbreviation,
+        u.active,
+        u.country_id,
+        u.division_id,
+        u.created_at,
+        u.modified_at,
+        COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', ut.id,
+              'union_id', ut.union_id,
+              'locale', ut.locale,
+              'name', ut.name,
+              'created_at', ut.created_at,
+              'updated_at', ut.updated_at
+            )
+            ORDER BY ut.locale
+          ) FILTER (WHERE ut.id IS NOT NULL),
+          '[]'::jsonb
+        ) AS translations
+      FROM unions u
+      LEFT JOIN unions_translations ut ON ut.union_id = u.union_id
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      GROUP BY u.union_id
+      ORDER BY u.name ASC
+      LIMIT 500
+    `);
+  }
+
+  private async countActiveUnionsForDivision(
+    divisionId: number,
+  ): Promise<number> {
+    const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number }>>(
+      Prisma.sql`
+        SELECT COUNT(*)::int AS count
+        FROM unions
+        WHERE division_id = ${divisionId}
+          AND active = TRUE
+      `,
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  private async ensureDivisionUnique(
+    values: {
+      code?: string;
+      name?: string;
+      abbreviation?: string;
+    },
+    divisionId?: number,
+  ): Promise<void> {
+    if (values.code) {
+      const rows = await this.prisma.$queryRaw<Array<{ division_id: number }>>(
+        Prisma.sql`
+          SELECT division_id
+          FROM divisions
+          WHERE LOWER(code) = LOWER(${values.code})
+            ${divisionId ? Prisma.sql`AND division_id <> ${divisionId}` : Prisma.empty}
+          LIMIT 1
+        `,
+      );
+      if (rows.length > 0) {
+        throw new AppConflictException(ErrorCode.ADMIN_DIVISION_CODE_CONFLICT);
+      }
+    }
+
+    if (values.name) {
+      const rows = await this.prisma.$queryRaw<Array<{ division_id: number }>>(
+        Prisma.sql`
+          SELECT division_id
+          FROM divisions
+          WHERE LOWER(name) = LOWER(${values.name})
+            ${divisionId ? Prisma.sql`AND division_id <> ${divisionId}` : Prisma.empty}
+          LIMIT 1
+        `,
+      );
+      if (rows.length > 0) {
+        throw new AppConflictException(ErrorCode.ADMIN_DIVISION_NAME_CONFLICT);
+      }
+    }
+
+    if (values.abbreviation) {
+      const rows = await this.prisma.$queryRaw<Array<{ division_id: number }>>(
+        Prisma.sql`
+          SELECT division_id
+          FROM divisions
+          WHERE LOWER(abbreviation) = LOWER(${values.abbreviation})
+            ${divisionId ? Prisma.sql`AND division_id <> ${divisionId}` : Prisma.empty}
+          LIMIT 1
+        `,
+      );
+      if (rows.length > 0) {
+        throw new AppConflictException(
+          ErrorCode.ADMIN_DIVISION_ABBREVIATION_CONFLICT,
+        );
+      }
+    }
+  }
+
+  private async ensureDivisionExists(divisionId: number): Promise<DivisionRow> {
+    const rows = await this.prisma.$queryRaw<DivisionRow[]>(Prisma.sql`
+      SELECT division_id, code, name, abbreviation, active, created_at, modified_at
+      FROM divisions
+      WHERE division_id = ${divisionId}
+      LIMIT 1
+    `);
+
+    if (rows.length === 0) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_DIVISION_NOT_FOUND, {
+        id: divisionId,
+      });
+    }
+
+    return rows[0];
+  }
+
+  private async ensureCountryAliasUnambiguous(
+    countryId: number,
+  ): Promise<void> {
+    const rows = await this.prisma.$queryRaw<Array<{ division_id: number }>>(
+      Prisma.sql`
+        SELECT DISTINCT division_id
+        FROM unions
+        WHERE country_id = ${countryId}
+          AND active = TRUE
+      `,
+    );
+
+    if (rows.length > 1) {
+      throw new AppBadRequestException(
+        ErrorCode.HIERARCHY_COUNTRY_DIVISION_AMBIGUOUS,
+        { countryId },
+      );
+    }
+  }
+
+  private async openUnionDivisionHistory(
+    tx: Pick<PrismaService, '$queryRaw' | '$executeRaw'>,
+    unionId: number,
+    divisionId: number,
+    actorId: string,
+  ): Promise<void> {
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO union_division_history (
+        union_id,
+        division_id,
+        valid_from,
+        valid_to,
+        precision,
+        created_by
+      )
+      VALUES (
+        ${unionId},
+        ${divisionId},
+        CURRENT_DATE,
+        NULL,
+        'exact',
+        ${actorId}::uuid
+      )
+      ON CONFLICT DO NOTHING
+    `);
+  }
+
+  private async reassignUnionDivisionHistory(
+    tx: Pick<PrismaService, '$queryRaw' | '$executeRaw'>,
+    unionId: number,
+    divisionId: number,
+    actorId: string,
+  ): Promise<void> {
+    const openRows = await tx.$queryRaw<Array<{ valid_from: Date | string }>>(
+      Prisma.sql`
+        SELECT valid_from
+        FROM union_division_history
+        WHERE union_id = ${unionId}
+          AND valid_to IS NULL
+        LIMIT 1
+      `,
+    );
+
+    const validFrom = openRows[0]?.valid_from
+      ? new Date(openRows[0].valid_from)
+      : null;
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    if (validFrom && validFrom >= today) {
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE union_division_history
+        SET division_id = ${divisionId},
+            precision = 'exact',
+            created_by = ${actorId}::uuid
+        WHERE union_id = ${unionId}
+          AND valid_to IS NULL
+      `);
+      return;
+    }
+
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE union_division_history
+      SET valid_to = CURRENT_DATE
+      WHERE union_id = ${unionId}
+        AND valid_to IS NULL
+    `);
+
+    await this.openUnionDivisionHistory(tx, unionId, divisionId, actorId);
+  }
+
+  private unionCacheKeys({
+    countryIds,
+    divisionIds,
+  }: {
+    countryIds: Array<number | undefined>;
+    divisionIds: Array<number | undefined>;
+  }): string[] {
+    const keys = new Set<string>([CATALOG_CACHE_KEYS.UNIONS()]);
+    const countries = Array.from(
+      new Set(countryIds.filter((id): id is number => typeof id === 'number')),
+    );
+    const divisions = Array.from(
+      new Set(divisionIds.filter((id): id is number => typeof id === 'number')),
+    );
+
+    for (const countryId of countries) {
+      keys.add(CATALOG_CACHE_KEYS.UNIONS(countryId));
+    }
+    for (const divisionId of divisions) {
+      keys.add(CATALOG_CACHE_KEYS.UNIONS({ divisionId }));
+    }
+    for (const countryId of countries) {
+      for (const divisionId of divisions) {
+        keys.add(CATALOG_CACHE_KEYS.UNIONS({ countryId, divisionId }));
+      }
+    }
+
+    return Array.from(keys);
+  }
+
   private async ensureCountryUnique(
     name?: string,
     abbreviation?: string,
@@ -913,9 +1436,13 @@ export class AdminGeographyService {
   }
 
   private async ensureUnionExists(unionId: number) {
-    const union = await this.prisma.unions.findUnique({
-      where: { union_id: unionId },
-    });
+    const rows = await this.prisma.$queryRaw<UnionRow[]>(Prisma.sql`
+      SELECT union_id, name, abbreviation, active, country_id, division_id, created_at, modified_at
+      FROM unions
+      WHERE union_id = ${unionId}
+      LIMIT 1
+    `);
+    const union = rows[0];
 
     if (!union) {
       throw new AppNotFoundException(ErrorCode.ADMIN_UNION_NOT_FOUND, {

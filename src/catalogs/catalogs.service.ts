@@ -1,10 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { role_category } from '@prisma/client';
+import { Prisma, role_category } from '@prisma/client';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
 } from './catalog-cache.service';
+import { AppBadRequestException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
+
+type GetUnionsFilters = {
+  countryId?: number;
+  divisionId?: number;
+};
 
 @Injectable()
 export class CatalogsService {
@@ -78,25 +85,90 @@ export class CatalogsService {
   }
 
   // ========================================
+  // DIVISIONS
+  // ========================================
+  async getDivisions() {
+    return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.DIVISIONS, () =>
+      this.prisma.$queryRaw<
+        Array<{
+          division_id: number;
+          code: string;
+          name: string;
+          abbreviation: string;
+        }>
+      >(Prisma.sql`
+        SELECT division_id, code, name, abbreviation
+        FROM divisions
+        WHERE active = TRUE
+        ORDER BY name ASC
+      `),
+    );
+  }
+
+  // ========================================
   // UNIONS
   // ========================================
-  async getUnions(countryId?: number) {
-    return this.catalogCache.getOrSet(
-      CATALOG_CACHE_KEYS.UNIONS(countryId),
-      () =>
-        this.prisma.unions.findMany({
-          where: {
-            active: true,
-            ...(countryId && { country_id: countryId }),
-          },
-          select: {
-            union_id: true,
-            name: true,
-            country_id: true,
-          },
-          orderBy: { name: 'asc' },
-        }),
+  async getUnions(
+    countryIdOrFilters?: number | GetUnionsFilters,
+    divisionId?: number,
+  ) {
+    const filters =
+      typeof countryIdOrFilters === 'object'
+        ? countryIdOrFilters
+        : { countryId: countryIdOrFilters, divisionId };
+
+    if (filters.countryId && !filters.divisionId) {
+      await this.ensureCountryAliasUnambiguous(filters.countryId);
+    }
+
+    return this.catalogCache.getOrSet(CATALOG_CACHE_KEYS.UNIONS(filters), () =>
+      this.queryUnions(filters),
     );
+  }
+
+  private async ensureCountryAliasUnambiguous(
+    countryId: number,
+  ): Promise<void> {
+    const rows = await this.prisma.$queryRaw<Array<{ division_id: number }>>(
+      Prisma.sql`
+        SELECT DISTINCT division_id
+        FROM unions
+        WHERE country_id = ${countryId}
+          AND active = TRUE
+      `,
+    );
+
+    if (rows.length > 1) {
+      throw new AppBadRequestException(
+        ErrorCode.HIERARCHY_COUNTRY_DIVISION_AMBIGUOUS,
+        { countryId },
+      );
+    }
+  }
+
+  private async queryUnions(filters: GetUnionsFilters) {
+    const conditions = [Prisma.sql`active = TRUE`];
+
+    if (filters.countryId) {
+      conditions.push(Prisma.sql`country_id = ${filters.countryId}`);
+    }
+    if (filters.divisionId) {
+      conditions.push(Prisma.sql`division_id = ${filters.divisionId}`);
+    }
+
+    return this.prisma.$queryRaw<
+      Array<{
+        union_id: number;
+        name: string;
+        country_id: number;
+        division_id: number;
+      }>
+    >(Prisma.sql`
+      SELECT union_id, name, country_id, division_id
+      FROM unions
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY name ASC
+    `);
   }
 
   // ========================================

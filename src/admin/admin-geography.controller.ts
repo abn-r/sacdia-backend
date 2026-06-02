@@ -31,11 +31,13 @@ import { AdminGeographyService } from './admin-geography.service';
 import {
   CreateChurchDto,
   CreateCountryDto,
+  CreateDivisionDto,
   CreateDistrictDto,
   CreateLocalFieldDto,
   CreateUnionDto,
   UpdateChurchDto,
   UpdateCountryDto,
+  UpdateDivisionDto,
   UpdateDistrictDto,
   UpdateLocalFieldDto,
   UpdateUnionDto,
@@ -49,6 +51,54 @@ import {
 @Controller('admin')
 export class AdminGeographyController {
   constructor(private readonly geographyService: AdminGeographyService) {}
+
+  @Get('divisions')
+  @RequirePermissions('countries:read')
+  @ApiOperation({
+    summary: 'List institutional divisions for admin management',
+  })
+  async listDivisions() {
+    const data = await this.geographyService.listDivisions();
+    return { status: 'success', data };
+  }
+
+  @Post('divisions')
+  @RequirePermissions('countries:create')
+  @ApiOperation({ summary: 'Create institutional division' })
+  async createDivision(@Body() dto: CreateDivisionDto, @Request() req) {
+    const data = await this.geographyService.createDivision(dto, req.user.sub);
+    return { status: 'success', data };
+  }
+
+  @Patch('divisions/:divisionId')
+  @RequirePermissions('countries:update')
+  @ApiOperation({ summary: 'Update institutional division' })
+  async updateDivision(
+    @Param('divisionId', ParseIntPipe) divisionId: number,
+    @Body() dto: UpdateDivisionDto,
+    @Request() req,
+  ) {
+    const data = await this.geographyService.updateDivision(
+      divisionId,
+      dto,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('divisions/:divisionId')
+  @RequirePermissions('countries:delete')
+  @ApiOperation({ summary: 'Soft delete institutional division' })
+  async deleteDivision(
+    @Param('divisionId', ParseIntPipe) divisionId: number,
+    @Request() req,
+  ) {
+    const data = await this.geographyService.deleteDivision(
+      divisionId,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
 
   @Get('countries')
   @RequirePermissions('countries:read')
@@ -100,11 +150,17 @@ export class AdminGeographyController {
   @RequirePermissions('unions:read')
   @ApiOperation({ summary: 'List unions for admin management' })
   @ApiQuery({ name: 'countryId', required: false, type: Number })
+  @ApiQuery({ name: 'divisionId', required: false, type: Number })
   async listUnions(
     @Query('countryId', new ParseIntPipe({ optional: true }))
     countryId?: number,
+    @Query('divisionId', new ParseIntPipe({ optional: true }))
+    divisionId?: number,
   ) {
-    const data = await this.geographyService.listUnions(countryId);
+    const data = await this.geographyService.listUnions({
+      countryId,
+      divisionId,
+    });
     return { status: 'success', data };
   }
 

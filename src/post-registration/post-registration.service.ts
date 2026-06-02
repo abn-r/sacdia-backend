@@ -5,6 +5,10 @@ import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
 import {
+  ClassAssignmentResolverService,
+  ClassResolutionYear,
+} from '../common/services/class-assignment-resolver.service';
+import {
   AppBadRequestException,
   AppConflictException,
   AppException,
@@ -19,6 +23,11 @@ export type PostRegistrationActorContext = {
 
 type ClubInstanceField = 'club_section_id';
 
+type ResolvedClubSection = {
+  club_section_id: number;
+  club_type_id: number;
+};
+
 @Injectable()
 export class PostRegistrationService {
   private readonly logger = new Logger(PostRegistrationService.name);
@@ -27,6 +36,7 @@ export class PostRegistrationService {
     private prisma: PrismaService,
     private usersService: UsersService,
     private legalRepService: LegalRepresentativesService,
+    private classAssignmentResolver: ClassAssignmentResolverService,
   ) {}
 
   async getStatus(
@@ -219,8 +229,14 @@ export class PostRegistrationService {
         const memberRoleId = await this.resolveMemberRoleId(tx);
         const clubInstanceField: ClubInstanceField = 'club_section_id';
 
-        await this.resolveSelectedClub(tx, dto);
-        await this.resolveSelectedClass(tx, dto.class_id);
+        const selectedClub = await this.resolveSelectedClub(tx, dto);
+        const resolvedClassId =
+          await this.classAssignmentResolver.resolveClassIdForUserClubType(tx, {
+            userId,
+            requestedClassId: dto.class_id,
+            clubTypeId: selectedClub.club_type_id,
+            currentYear,
+          });
 
         await tx.users.update({
           where: { user_id: userId },
@@ -245,7 +261,7 @@ export class PostRegistrationService {
             user_id: userId,
             ecclesiastical_year_id: currentYear.year_id,
             active: true,
-            NOT: { class_id: dto.class_id },
+            NOT: { class_id: resolvedClassId },
           },
           data: {
             active: false,
@@ -254,7 +270,7 @@ export class PostRegistrationService {
 
         await this.resolveOperationalEnrollment(tx, {
           userId,
-          classId: dto.class_id,
+          classId: resolvedClassId,
           ecclesiasticalYearId: currentYear.year_id,
         });
 
@@ -276,7 +292,7 @@ export class PostRegistrationService {
           message: 'Post-registro completado exitosamente',
           data: {
             clubSectionId: dto.club_section_id,
-            classId: dto.class_id,
+            classId: resolvedClassId,
             ecclesiasticalYear: currentYear.year_id,
           },
         };
@@ -302,7 +318,7 @@ export class PostRegistrationService {
   private async resolveActiveEcclesiasticalYear(
     tx: Prisma.TransactionClient,
     at: Date,
-  ): Promise<{ year_id: number; start_date: Date }> {
+  ): Promise<ClassResolutionYear> {
     const currentYear = await tx.ecclesiastical_years.findFirst({
       where: {
         start_date: { lte: at },
@@ -348,31 +364,20 @@ export class PostRegistrationService {
   private async resolveSelectedClub(
     tx: Prisma.TransactionClient,
     dto: CompleteClubSelectionDto,
-  ) {
+  ): Promise<ResolvedClubSection> {
     const section = await tx.club_sections.findUnique({
       where: { club_section_id: dto.club_section_id },
+      select: {
+        club_section_id: true,
+        club_type_id: true,
+      },
     });
 
     if (!section) {
       throw new AppBadRequestException(ErrorCode.POST_REG_CLUB_NOT_FOUND);
     }
-  }
 
-  private async resolveSelectedClass(
-    tx: Prisma.TransactionClient,
-    classId: number,
-  ) {
-    const selectedClass = await tx.classes.findUnique({
-      where: { class_id: classId },
-      select: {
-        class_id: true,
-        active: true,
-      },
-    });
-
-    if (!selectedClass || !selectedClass.active) {
-      throw new AppBadRequestException(ErrorCode.POST_REG_CLASS_NOT_FOUND);
-    }
+    return section;
   }
 
   private async resolveMemberAssignment(

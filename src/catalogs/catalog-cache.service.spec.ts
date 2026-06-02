@@ -4,11 +4,14 @@ import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
 } from './catalog-cache.service';
-import type { Cache } from 'cache-manager';
 
 describe('CatalogCacheService', () => {
   let service: CatalogCacheService;
-  let cacheManager: jest.Mocked<Cache>;
+  let cacheManager: {
+    get: jest.Mock;
+    set: jest.Mock;
+    del: jest.Mock;
+  };
 
   beforeEach(async () => {
     cacheManager = {
@@ -179,6 +182,9 @@ describe('CatalogCacheService', () => {
         CATALOG_CACHE_KEYS.COUNTRIES,
       );
       expect(cacheManager.del).toHaveBeenCalledWith(
+        CATALOG_CACHE_KEYS.DIVISIONS,
+      );
+      expect(cacheManager.del).toHaveBeenCalledWith(
         CATALOG_CACHE_KEYS.ALLERGIES,
       );
       expect(cacheManager.del).toHaveBeenCalledWith(
@@ -204,6 +210,18 @@ describe('CatalogCacheService', () => {
     it('builds union key with countryId', () => {
       expect(CATALOG_CACHE_KEYS.UNIONS(3)).toBe(
         'cache:catalogs:unions:country:3',
+      );
+    });
+
+    it('builds union key with divisionId', () => {
+      expect(CATALOG_CACHE_KEYS.UNIONS({ divisionId: 2 })).toBe(
+        'cache:catalogs:unions:division:2',
+      );
+    });
+
+    it('builds union key with divisionId and legacy countryId', () => {
+      expect(CATALOG_CACHE_KEYS.UNIONS({ divisionId: 2, countryId: 3 })).toBe(
+        'cache:catalogs:unions:division:2:country:3',
       );
     });
 

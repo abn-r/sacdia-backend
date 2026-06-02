@@ -289,10 +289,16 @@ export class CamporeeVenuesService {
     if (dto.scope !== undefined) {
       this.validateScopeXOR({
         scope: dto.scope,
-        union_id: dto.union_id ?? (existing.scope === 'union' ? (existing.union_id ?? undefined) : undefined),
+        union_id:
+          dto.union_id ??
+          (existing.scope === 'union'
+            ? (existing.union_id ?? undefined)
+            : undefined),
         local_field_id:
           dto.local_field_id ??
-          (existing.scope === 'local_field' ? (existing.local_field_id ?? undefined) : undefined),
+          (existing.scope === 'local_field'
+            ? (existing.local_field_id ?? undefined)
+            : undefined),
       });
     }
 

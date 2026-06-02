@@ -10,9 +10,11 @@ import { AdminHonorsController } from '../admin/admin-honors.controller';
 import { AdminHonorsService } from '../admin/admin-honors.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AchievementsModule } from '../achievements/achievements.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { HonorValidationWorkflowService } from './honor-validation-workflow.service';
 
 @Module({
-  imports: [PrismaModule, AchievementsModule],
+  imports: [PrismaModule, AchievementsModule, NotificationsModule],
   controllers: [
     HonorsController,
     UserHonorsController,
@@ -20,7 +22,12 @@ import { AchievementsModule } from '../achievements/achievements.module';
     UserHonorRequirementsController,
     AdminHonorsController,
   ],
-  providers: [HonorsService, HonorRequirementsService, AdminHonorsService],
-  exports: [HonorsService],
+  providers: [
+    HonorsService,
+    HonorRequirementsService,
+    AdminHonorsService,
+    HonorValidationWorkflowService,
+  ],
+  exports: [HonorsService, HonorValidationWorkflowService],
 })
 export class HonorsModule {}

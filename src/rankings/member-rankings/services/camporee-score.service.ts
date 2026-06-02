@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { EnrollmentClubResolverService } from './enrollment-club-resolver.service';
+import { InstitutionalHierarchyService } from '../../../common/services/institutional-hierarchy.service';
 
 @Injectable()
 export class CamporeeScoreService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clubResolver: EnrollmentClubResolverService,
+    private readonly hierarchy: InstitutionalHierarchyService,
   ) {}
 
   async calculate(
@@ -24,19 +26,24 @@ export class CamporeeScoreService {
       ecclesiasticalYearId,
     );
     if (!club) return null;
+    const ecclesiasticalYear =
+      await this.prisma.ecclesiastical_years.findUnique({
+        where: { year_id: ecclesiasticalYearId },
+        select: { start_date: true, end_date: true },
+      });
+    const asOf =
+      ecclesiasticalYear?.end_date ??
+      ecclesiasticalYear?.start_date ??
+      new Date(`${ecclesiasticalYearId}-12-31T23:59:59.999Z`);
+    const hierarchyAsOf = await this.hierarchy
+      .resolveAsOf({ type: 'club', id: club.clubId }, asOf)
+      .catch(() => null);
+    if (!hierarchyAsOf) return null;
 
-    // engram #1850: clubs has no direct union_id; resolve via local_fields
-    const clubData = await this.prisma.clubs.findUnique({
-      where: { club_id: club.clubId },
-      select: {
-        local_field_id: true,
-        local_fields: { select: { union_id: true } },
-      },
-    });
-    if (!clubData) return null;
+    const localFieldId = hierarchyAsOf.local_field_id;
+    const resolvedUnionId = hierarchyAsOf.union_id ?? null;
 
-    const localFieldId = clubData.local_field_id;
-    const resolvedUnionId = clubData.local_fields?.union_id ?? null;
+    if (localFieldId == null) return null;
 
     const [localCamporees, unionCamporees] = await Promise.all([
       this.prisma.local_camporees.findMany({

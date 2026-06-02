@@ -121,6 +121,10 @@ export class NotificationsProcessor
     super();
   }
 
+  private isFcmConfigured(): boolean {
+    return firebaseAdmin.apps.length > 0;
+  }
+
   /**
    * Attach error/stalled event listeners to the BullMQ worker so that
    * Redis connection drops and job failures never emit an unhandled 'error'
@@ -202,6 +206,8 @@ export class NotificationsProcessor
 
     // Step 2: Create log + delivery BEFORE FCM push. The inbox entry must
     // exist regardless of whether the user has active FCM tokens.
+    let logId: number | undefined;
+
     await this.prisma
       .$transaction(async (tx) => {
         const log = await tx.notification_logs.create({
@@ -217,6 +223,7 @@ export class NotificationsProcessor
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.create({
           data: { log_id: log.log_id, user_id: userId },
         });
@@ -233,9 +240,9 @@ export class NotificationsProcessor
       select: { token: true },
     });
 
-    if (tokens.length === 0) {
+    if (tokens.length === 0 || !this.isFcmConfigured()) {
       this.logger.debug(
-        `handleSendToUser: no active FCM tokens for user ${userId} — delivery created, push skipped (job ${job.id})`,
+        `handleSendToUser: ${tokens.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for user ${userId} — delivery created, push skipped (job ${job.id})`,
       );
       return { successCount: 0, failureCount: 0, skippedPush: true };
     }
@@ -246,6 +253,12 @@ export class NotificationsProcessor
       title,
       body,
       data,
+    );
+    await this.updateNotificationLogTokenCounts(
+      logId,
+      successCount,
+      failureCount,
+      `handleSendToUser job ${job.id}`,
     );
 
     return { successCount, failureCount, skippedPush: false };
@@ -290,6 +303,8 @@ export class NotificationsProcessor
     }
 
     // Step 2: Create log + deliveries for all allowed users atomically.
+    let logId: number | undefined;
+
     await this.prisma
       .$transaction(async (tx) => {
         const log = await tx.notification_logs.create({
@@ -305,6 +320,7 @@ export class NotificationsProcessor
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
           skipDuplicates: true,
@@ -322,9 +338,9 @@ export class NotificationsProcessor
       select: { token: true },
     });
 
-    if (tokens.length === 0) {
+    if (tokens.length === 0 || !this.isFcmConfigured()) {
       this.logger.debug(
-        `handleSendToSectionRole: no active FCM tokens for section ${clubSectionId} — deliveries created, push skipped (job ${job.id})`,
+        `handleSendToSectionRole: ${tokens.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for section ${clubSectionId} — deliveries created, push skipped (job ${job.id})`,
       );
       return { successCount: 0, failureCount: 0, skippedPush: true };
     }
@@ -348,6 +364,12 @@ export class NotificationsProcessor
         );
       }
     }
+    await this.updateNotificationLogTokenCounts(
+      logId,
+      totalSuccess,
+      totalFailure,
+      `handleSendToSectionRole job ${job.id}`,
+    );
 
     return {
       successCount: totalSuccess,
@@ -406,6 +428,8 @@ export class NotificationsProcessor
     }
 
     // Step 2: Create log + deliveries for all allowed users atomically.
+    let logId: number | undefined;
+
     await this.prisma
       .$transaction(async (tx) => {
         const log = await tx.notification_logs.create({
@@ -414,13 +438,18 @@ export class NotificationsProcessor
             body,
             type: 'GLOBAL_ROLE',
             target_type: 'global_role',
-            target_id: localFieldId ? String(localFieldId) : null,
+            target_id: unionId
+              ? String(unionId)
+              : localFieldId
+                ? String(localFieldId)
+                : null,
             sent_by: null,
             source: source ?? null,
             tokens_sent: 0,
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
           skipDuplicates: true,
@@ -438,9 +467,9 @@ export class NotificationsProcessor
       select: { token: true },
     });
 
-    if (tokens.length === 0) {
+    if (tokens.length === 0 || !this.isFcmConfigured()) {
       this.logger.debug(
-        `handleSendToGlobalRole: no active FCM tokens for roles ${roleNames.join(',')} — deliveries created, push skipped (job ${job.id})`,
+        `handleSendToGlobalRole: ${tokens.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for roles ${roleNames.join(',')} — deliveries created, push skipped (job ${job.id})`,
       );
       return { successCount: 0, failureCount: 0, skippedPush: true };
     }
@@ -464,6 +493,12 @@ export class NotificationsProcessor
         );
       }
     }
+    await this.updateNotificationLogTokenCounts(
+      logId,
+      totalSuccess,
+      totalFailure,
+      `handleSendToGlobalRole job ${job.id}`,
+    );
 
     return {
       successCount: totalSuccess,
@@ -486,7 +521,7 @@ export class NotificationsProcessor
 
     // Step 1: Resolve members — genuine empty set is a hard stop.
     const members = await this.prisma.club_role_assignments.findMany({
-      where: { club_section_id: clubSectionId, active: true },
+      where: { club_section_id: clubSectionId, active: true, status: 'active' },
       select: { user_id: true },
     });
 
@@ -514,6 +549,8 @@ export class NotificationsProcessor
 
     // Step 3: Create log + deliveries for all allowed members atomically.
     // This happens regardless of FCM token availability (inbox-first guarantee).
+    let logId: number | undefined;
+
     await this.prisma
       .$transaction(async (tx) => {
         const log = await tx.notification_logs.create({
@@ -529,6 +566,7 @@ export class NotificationsProcessor
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
           skipDuplicates: true,
@@ -546,9 +584,9 @@ export class NotificationsProcessor
       select: { token: true },
     });
 
-    if (tokenRows.length === 0) {
+    if (tokenRows.length === 0 || !this.isFcmConfigured()) {
       this.logger.debug(
-        `handleSendToClubMembers: no active FCM tokens for section ${clubSectionId} — deliveries created, push skipped (job ${job.id})`,
+        `handleSendToClubMembers: ${tokenRows.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for section ${clubSectionId} — deliveries created, push skipped (job ${job.id})`,
       );
       return {
         successCount: 0,
@@ -577,6 +615,12 @@ export class NotificationsProcessor
         );
       }
     }
+    await this.updateNotificationLogTokenCounts(
+      logId,
+      totalSuccess,
+      totalFailure,
+      `handleSendToClubMembers job ${job.id}`,
+    );
 
     return {
       successCount: totalSuccess,
@@ -621,6 +665,8 @@ export class NotificationsProcessor
     }
 
     // Step 2: Create log + deliveries for all allowed users atomically.
+    let logId: number | undefined;
+
     await this.prisma
       .$transaction(async (tx) => {
         const log = await tx.notification_logs.create({
@@ -636,6 +682,7 @@ export class NotificationsProcessor
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: allowedUserIds.map((uid) => ({
             log_id: log.log_id,
@@ -656,9 +703,9 @@ export class NotificationsProcessor
       select: { token: true },
     });
 
-    if (tokenRows.length === 0) {
+    if (tokenRows.length === 0 || !this.isFcmConfigured()) {
       this.logger.debug(
-        `handleBroadcast: no active FCM tokens for any allowed user — deliveries created, push skipped (job ${job.id})`,
+        `handleBroadcast: ${tokenRows.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for any allowed user — deliveries created, push skipped (job ${job.id})`,
       );
       return {
         successCount: 0,
@@ -678,6 +725,12 @@ export class NotificationsProcessor
       totalSuccess += result.successCount;
       totalFailure += result.failureCount;
     }
+    await this.updateNotificationLogTokenCounts(
+      logId,
+      totalSuccess,
+      totalFailure,
+      `handleBroadcast job ${job.id}`,
+    );
 
     return {
       successCount: totalSuccess,
@@ -834,6 +887,29 @@ export class NotificationsProcessor
   // ---------------------------------------------------------------------------
   // Core FCM helper — shared by processor and NotificationsService fallback
   // ---------------------------------------------------------------------------
+
+  private async updateNotificationLogTokenCounts(
+    logId: number | undefined,
+    tokensSent: number,
+    tokensFailed: number,
+    context: string,
+  ): Promise<void> {
+    if (typeof logId !== 'number') return;
+
+    await this.prisma.notification_logs
+      .update({
+        where: { log_id: logId },
+        data: {
+          tokens_sent: tokensSent,
+          tokens_failed: tokensFailed,
+        },
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `${context}: failed to update notification token counters for log ${logId}: ${err.message}`,
+        );
+      });
+  }
 
   /**
    * Sends a multicast FCM message to the given tokens.

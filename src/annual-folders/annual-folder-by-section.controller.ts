@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpException,
   NotFoundException,
   Param,
   ParseIntPipe,
@@ -21,8 +22,9 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import { ClubEnrollmentsService } from '../club-enrollments/club-enrollments.service';
 import { CatalogsService } from '../catalogs/catalogs.service';
 import { AnnualFoldersService } from './annual-folders.service';
+import { ErrorCode } from '../common/errors/error-codes';
 
-@ApiTags('Annual Folders')
+@ApiTags('Annual Evidence Folders')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @AuthorizationResource({ type: 'active_assignment' })
@@ -37,9 +39,9 @@ export class AnnualFolderBySectionController {
   @Get()
   @RequirePermissions('evidence_folders:read')
   @ApiOperation({
-    summary: 'Get annual folder for a club section (current year)',
+    summary: 'Get annual evidence folder for a club section (current year)',
     description:
-      'Resolves the active ecclesiastical year, finds the enrollment for the given section, and returns the full annual folder. ' +
+      'Resolves the active ecclesiastical year, finds the enrollment for the given section, and returns the full annual evidence folder. ' +
       'Returns 200 with data: null when no active enrollment or no folder has been created yet — both are valid business states.',
   })
   @ApiParam({
@@ -51,7 +53,7 @@ export class AnnualFolderBySectionController {
   @ApiResponse({
     status: 200,
     description:
-      'Annual folder details, or { status: "success", data: null } if no active enrollment or folder exists yet',
+      'Annual Evidence Folder details, or { status: "success", data: null } if no active enrollment or folder exists yet',
   })
   @ApiResponse({
     status: 401,
@@ -85,7 +87,13 @@ export class AnnualFolderBySectionController {
     } catch (err: unknown) {
       // La carpeta no existe todavía — estado de negocio válido, no un error.
       // Dejamos pasar cualquier otro error (ForbiddenException, 500, etc.).
-      if (err instanceof NotFoundException) {
+      if (
+        err instanceof NotFoundException ||
+        (err instanceof HttpException &&
+          'code' in err &&
+          (err.code === ErrorCode.ANNUAL_FOLDER_NOT_FOUND ||
+            err.code === ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND))
+      ) {
         return { status: 'success', data: null };
       }
       throw err;

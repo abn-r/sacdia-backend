@@ -10,10 +10,7 @@ import {
   CATALOG_CACHE_KEYS,
 } from '../catalogs/catalog-cache.service';
 import { TranslationService } from '../common/services/translation.service';
-import {
-  CreateCamporeeEventTypeDto,
-  UpdateCamporeeEventTypeDto,
-} from './dto';
+import { CreateCamporeeEventTypeDto, UpdateCamporeeEventTypeDto } from './dto';
 
 @Injectable()
 export class AdminCamporeeEventTypesService {
@@ -192,11 +189,7 @@ export class AdminCamporeeEventTypesService {
     return entity;
   }
 
-  private async ensureUnique(
-    name?: string,
-    code?: string,
-    excludeId?: number,
-  ) {
+  private async ensureUnique(name?: string, code?: string, excludeId?: number) {
     if (name) {
       const existingByName = await this.prisma.camporee_event_types.findFirst({
         where: {

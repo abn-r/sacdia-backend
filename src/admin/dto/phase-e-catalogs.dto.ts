@@ -78,6 +78,28 @@ export class CreateClassDto {
   @Min(0)
   display_order?: number;
 
+  @ApiPropertyOptional({ example: 2025, nullable: true })
+  @IsOptional()
+  @IsInt()
+  available_from_year_id?: number | null;
+
+  @ApiPropertyOptional({ example: 2026, nullable: true })
+  @IsOptional()
+  @IsInt()
+  available_until_year_id?: number | null;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  min_duration_years?: number;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  max_duration_years?: number;
+
   @ApiPropertyOptional({
     description: 'Non-es translations (pt-BR, en, fr).',
     type: [CatalogTranslationDto],
@@ -168,7 +190,7 @@ export class UpdateClassSectionDto extends PartialType(CreateClassSectionDto) {}
 // ─── FOLDERS ─────────────────────────────────────────────────────────────────
 
 export class CreateFolderDto {
-  @ApiProperty({ example: 'Carpeta Anual 2025', maxLength: 255 })
+  @ApiProperty({ example: 'Carpeta Anual de Evidencias 2025', maxLength: 255 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)

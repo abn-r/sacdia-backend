@@ -73,6 +73,79 @@ export class UpdateCountryDto {
   translations?: CatalogTranslationDto[];
 }
 
+export class CreateDivisionDto {
+  @ApiProperty({ example: 'DIA' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  declare code: string;
+
+  @ApiProperty({ example: 'División Interamericana' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  declare name: string;
+
+  @ApiProperty({ example: 'DIA' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(16)
+  declare abbreviation: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
+}
+
+export class UpdateDivisionDto {
+  @ApiPropertyOptional({ example: 'DIA' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  code?: string;
+
+  @ApiPropertyOptional({ example: 'División Interamericana' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'DIA' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(16)
+  abbreviation?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @ApiPropertyOptional({
+    type: [CatalogTranslationDto],
+    description: 'Non-es translations (pt-BR, en, fr).',
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CatalogTranslationDto)
+  @ArrayMaxSize(3)
+  translations?: CatalogTranslationDto[];
+}
+
 export class CreateUnionDto {
   @ApiProperty({ example: 'Unión Mexicana del Norte' })
   @IsString()
@@ -90,6 +163,11 @@ export class CreateUnionDto {
   @IsInt()
   @Min(1)
   declare country_id: number;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  declare division_id: number;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -127,6 +205,12 @@ export class UpdateUnionDto {
   @IsInt()
   @Min(1)
   country_id?: number;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  division_id?: number;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

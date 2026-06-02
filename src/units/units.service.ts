@@ -102,7 +102,10 @@ export class UnitsService {
       where: { club_id: clubId },
       select: {
         club_id: true,
-        club_sections: { select: { club_section_id: true } },
+        club_sections: {
+          where: { active: true },
+          select: { club_section_id: true },
+        },
       },
     });
 
@@ -112,21 +115,29 @@ export class UnitsService {
 
     const sectionIds = club.club_sections.map((s) => s.club_section_id);
 
+    if (sectionIds.length === 0) {
+      return [];
+    }
+
     return this.prisma.units.findMany({
       where: {
         active: true,
-        ...(sectionIds.length > 0
-          ? { club_section_id: { in: sectionIds } }
-          : {}),
+        club_section_id: { in: sectionIds },
       },
       include: this.unitInclude,
       orderBy: { name: 'asc' },
     });
   }
 
-  async findOne(unitId: number) {
+  async findOne(unitId: number, clubId?: number) {
     const unit = await this.prisma.units.findFirst({
-      where: { unit_id: unitId, active: true },
+      where: {
+        unit_id: unitId,
+        active: true,
+        ...(clubId !== undefined
+          ? { club_sections: { main_club_id: clubId } }
+          : {}),
+      },
       include: this.unitInclude,
     });
 
@@ -147,20 +158,15 @@ export class UnitsService {
       throw new AppNotFoundException(ErrorCode.UNIT_CLUB_NOT_FOUND);
     }
 
-    if (dto.club_section_id) {
-      const section = await this.prisma.club_sections.findUnique({
-        where: { club_section_id: dto.club_section_id },
-        select: { main_club_id: true },
-      });
-
-      if (!section) {
-        throw new AppBadRequestException(ErrorCode.UNIT_SECTION_NOT_FOUND);
-      }
-
-      if (section.main_club_id !== clubId) {
-        throw new AppBadRequestException(ErrorCode.UNIT_SECTION_WRONG_CLUB);
-      }
+    if (!dto.club_section_id) {
+      throw new AppBadRequestException(ErrorCode.UNIT_SECTION_NOT_FOUND);
     }
+
+    await this.validateSectionBelongsToClub(
+      dto.club_section_id,
+      clubId,
+      dto.club_type_id,
+    );
 
     return this.prisma.units.create({
       data: {
@@ -179,8 +185,24 @@ export class UnitsService {
     });
   }
 
-  async update(unitId: number, dto: UpdateUnitDto) {
-    await this.findOne(unitId);
+  async update(unitId: number, dto: UpdateUnitDto, clubId?: number) {
+    const existing = await this.findOne(unitId, clubId);
+
+    if (dto.club_section_id !== undefined || dto.club_type_id !== undefined) {
+      const targetClubId = clubId ?? existing.club_sections?.main_club_id;
+      const targetSectionId = dto.club_section_id ?? existing.club_section_id;
+      if (targetClubId == null) {
+        throw new AppBadRequestException(ErrorCode.UNIT_SECTION_WRONG_CLUB);
+      }
+      if (targetSectionId === undefined || targetSectionId === null) {
+        throw new AppBadRequestException(ErrorCode.UNIT_SECTION_NOT_FOUND);
+      }
+      await this.validateSectionBelongsToClub(
+        targetSectionId,
+        targetClubId,
+        dto.club_type_id ?? existing.club_type_id,
+      );
+    }
 
     const updateData: any = { modified_at: new Date() };
 
@@ -204,8 +226,8 @@ export class UnitsService {
     });
   }
 
-  async remove(unitId: number) {
-    await this.findOne(unitId);
+  async remove(unitId: number, clubId?: number) {
+    await this.findOne(unitId, clubId);
 
     return this.prisma.units.update({
       where: { unit_id: unitId },
@@ -217,8 +239,8 @@ export class UnitsService {
   // MIEMBROS
   // ========================================
 
-  async addMember(unitId: number, dto: AddUnitMemberDto) {
-    const unit = await this.findOne(unitId);
+  async addMember(unitId: number, dto: AddUnitMemberDto, clubId?: number) {
+    const unit = await this.findOne(unitId, clubId);
 
     const userExists = await this.prisma.users.findUnique({
       where: { user_id: dto.user_id },
@@ -231,6 +253,19 @@ export class UnitsService {
 
     // Service-layer validation: user can only be in ONE active unit per club_section
     if (unit.club_section_id) {
+      const sectionAssignment =
+        await this.prisma.club_role_assignments.findFirst({
+          where: {
+            user_id: dto.user_id,
+            club_section_id: unit.club_section_id,
+            active: true,
+          },
+        });
+
+      if (!sectionAssignment) {
+        throw new AppBadRequestException(ErrorCode.UNIT_USER_NOT_IN_SECTION);
+      }
+
       const conflictingMembership = await this.prisma.unit_members.findFirst({
         where: {
           user_id: dto.user_id,
@@ -290,8 +325,8 @@ export class UnitsService {
     return result;
   }
 
-  async removeMember(unitId: number, memberId: number) {
-    const unit = await this.findOne(unitId);
+  async removeMember(unitId: number, memberId: number, clubId?: number) {
+    const unit = await this.findOne(unitId, clubId);
 
     const member = await this.prisma.unit_members.findFirst({
       where: { unit_member_id: memberId, unit_id: unitId },
@@ -380,8 +415,8 @@ export class UnitsService {
     },
   } as const;
 
-  async findWeeklyRecords(unitId: number) {
-    const unit = await this.findOne(unitId);
+  async findWeeklyRecords(unitId: number, clubId?: number) {
+    const unit = await this.findOne(unitId, clubId);
 
     const memberUserIds = unit.unit_members
       .filter((m) => m.active)
@@ -407,8 +442,9 @@ export class UnitsService {
     unitId: number,
     dto: CreateWeeklyRecordDto,
     userId: string,
+    clubId?: number,
   ) {
-    const unit = await this.findOne(unitId);
+    const unit = await this.findOne(unitId, clubId);
 
     const isMember = unit.unit_members.some(
       (m) => m.user_id === dto.user_id && m.active,
@@ -514,8 +550,9 @@ export class UnitsService {
     unitId: number,
     recordId: number,
     dto: UpdateWeeklyRecordDto,
+    clubId?: number,
   ) {
-    const unit = await this.findOne(unitId);
+    const unit = await this.findOne(unitId, clubId);
 
     const record = await this.prisma.weekly_records.findFirst({
       where: { record_id: recordId },
@@ -618,6 +655,32 @@ export class UnitsService {
   // ========================================
   // Helpers
   // ========================================
+
+  private async validateSectionBelongsToClub(
+    sectionId: number,
+    clubId: number,
+    expectedClubTypeId?: number,
+  ): Promise<void> {
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { active: true, main_club_id: true, club_type_id: true },
+    });
+
+    if (!section || !section.active) {
+      throw new AppBadRequestException(ErrorCode.UNIT_SECTION_NOT_FOUND);
+    }
+
+    if (section.main_club_id !== clubId) {
+      throw new AppBadRequestException(ErrorCode.UNIT_SECTION_WRONG_CLUB);
+    }
+
+    if (
+      expectedClubTypeId !== undefined &&
+      section.club_type_id !== expectedClubTypeId
+    ) {
+      throw new AppBadRequestException(ErrorCode.UNIT_SECTION_TYPE_MISMATCH);
+    }
+  }
 
   /**
    * Resolves the local_field_id for a given unit by traversing:
