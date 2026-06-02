@@ -25,6 +25,7 @@
     "verify:institutional-hierarchy-migration": "tsx scripts/verify-institutional-hierarchy-migration.ts",
     "audit:master-honor-assignments": "tsx scripts/audit-master-honor-assignments.ts",
     "import:master-honor-rules": "tsx scripts/import-master-honor-rules.ts",
+    "prisma:seed:core": "tsx prisma/seeds/core.ts",
     "import:legacy-catalogs": "npx ts-node scripts/import-legacy-catalogs.ts",
     "migrate:storage-urls:r2": "npx tsx scripts/migrate-storage-urls-to-r2.ts",
     "audit:security": "pnpm audit --audit-level=high",

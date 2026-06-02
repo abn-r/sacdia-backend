@@ -94,6 +94,7 @@ pnpm run test:cov
 
 # Prisma
 pnpm prisma migrate deploy
+pnpm run prisma:seed:core
 pnpm run verify:fcm-migration
 
 # Utilidades
