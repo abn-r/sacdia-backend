@@ -32,6 +32,7 @@ import { InstitutionalHierarchyService } from '../common/services/institutional-
 import { AppForbiddenException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { RankingBreakdownDto } from './dto/ranking-breakdown.dto';
+import { namedThrottle } from '../config/throttler.helpers';
 
 @ApiTags('Annual Evidence Folders - Rankings')
 @ApiBearerAuth()
@@ -306,7 +307,7 @@ export class RankingsController {
   @RequirePermissions('rankings:recalculate')
   // Rate limit: 1 call per 5 minutes — this endpoint runs a full system-wide
   // DB transaction; even a single extra concurrent run can DoS the DB.
-  @Throttle({ default: { ttl: 300_000, limit: 1 } })
+  @Throttle(namedThrottle({ ttl: 300_000, limit: 1 }))
   @ApiOperation({
     summary: 'Manually trigger a rankings recalculation',
     description:

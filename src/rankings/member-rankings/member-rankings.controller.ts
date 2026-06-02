@@ -29,6 +29,7 @@ import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import { MemberRankingResponseDto } from './dto/member-ranking-response.dto';
 import { MemberBreakdownDto } from './dto/member-breakdown.dto';
 import { MemberMyRankingDto } from './dto/member-my-ranking.dto';
+import { namedThrottle } from '../../config/throttler.helpers';
 
 @ApiTags('Member Rankings')
 @ApiBearerAuth()
@@ -76,7 +77,7 @@ export class MemberRankingsController {
   @Post('recalculate')
   @RequirePermissions('member_ranking_weights:write')
   // Rate limit: 1 call per 5 minutes — recalculation is a full-table DB operation.
-  @Throttle({ default: { ttl: 300_000, limit: 1 } })
+  @Throttle(namedThrottle({ ttl: 300_000, limit: 1 }))
   @ApiOperation({
     summary: 'Manually trigger member + section ranking recalculation',
     description:
