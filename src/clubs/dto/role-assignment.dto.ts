@@ -86,3 +86,24 @@ export class UpdateRoleAssignmentDto {
   @IsString()
   status?: string;
 }
+
+export class DirectorSuccessionDto {
+  @ApiProperty({ description: 'Asignación activa del director actual' })
+  @IsUUID()
+  declare current_assignment_id: string;
+
+  @ApiProperty({ description: 'Usuario que será asignado como nuevo director' })
+  @IsUUID()
+  declare successor_user_id: string;
+
+  @ApiProperty({ description: 'ID del nuevo año eclesiástico' })
+  @Type(() => Number)
+  @IsInt()
+  declare ecclesiastical_year_id: number;
+
+  @ApiPropertyOptional({ description: 'Fecha de inicio del nuevo director' })
+  @IsOptional()
+  @IsDate()
+  @Type(() => Date)
+  start_date?: Date;
+}

@@ -7,3 +7,4 @@ export * from './create-investiture-config.dto';
 export * from './update-investiture-config.dto';
 export * from './bulk-approve-enrollments.dto';
 export * from './bulk-reject-enrollments.dto';
+export * from './expire-overdue-enrollments.dto';

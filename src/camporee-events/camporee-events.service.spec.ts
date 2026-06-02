@@ -159,6 +159,48 @@ describe('CamporeeEventsService', () => {
     });
   });
 
+  // ── getEvent ─────────────────────────────────────────────────────────────
+
+  describe('getEvent', () => {
+    it('throws not found for non-existent or inactive event', async () => {
+      prisma.camporee_events.findFirst.mockResolvedValue(null);
+
+      await expect(service.getEvent(999)).rejects.toBeInstanceOf(
+        AppNotFoundException,
+      );
+
+      expect(prisma.camporee_events.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { camporee_event_id: 999, active: true },
+        }),
+      );
+    });
+
+    it('returns an active event with timeline relations', async () => {
+      const event = {
+        ...baseEvent,
+        event_type: baseEventType,
+        leader: null,
+        venue: null,
+      };
+      prisma.camporee_events.findFirst.mockResolvedValue(event);
+
+      const result = await service.getEvent(1);
+
+      expect(result).toBe(event);
+      expect(prisma.camporee_events.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { camporee_event_id: 1, active: true },
+          include: expect.objectContaining({
+            event_type: true,
+            leader: expect.any(Object),
+            venue: expect.any(Object),
+          }),
+        }),
+      );
+    });
+  });
+
   // ── createEvent ──────────────────────────────────────────────────────────
 
   describe('createEvent', () => {

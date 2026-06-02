@@ -229,7 +229,11 @@ describe('UsersService', () => {
     it('should return active medicines with dose as a flat list', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
       mockPrismaService.users_medicines.findMany.mockResolvedValue([
-        { medicine_id: 3, dose: '5 mg cada 8 hs', medicines: { name: 'Ibuprofeno' } },
+        {
+          medicine_id: 3,
+          dose: '5 mg cada 8 hs',
+          medicines: { name: 'Ibuprofeno' },
+        },
         { medicine_id: 9, dose: null, medicines: { name: 'Paracetamol' } },
       ]);
 
@@ -272,15 +276,16 @@ describe('UsersService', () => {
         { medicine_id: 7 },
       ]);
       transactionMock.users_medicines.findMany.mockResolvedValue([
-        { medicine_id: 3, dose: '5 mg cada 8 hs', medicines: { name: 'Ibuprofeno' } },
+        {
+          medicine_id: 3,
+          dose: '5 mg cada 8 hs',
+          medicines: { name: 'Ibuprofeno' },
+        },
         { medicine_id: 7, dose: null, medicines: { name: 'Paracetamol' } },
       ]);
 
       const result = await service.updateMedicines('u1', {
-        medicines: [
-          { id: 3, dose: '5 mg cada 8 hs' },
-          { id: 7 },
-        ],
+        medicines: [{ id: 3, dose: '5 mg cada 8 hs' }, { id: 7 }],
       });
 
       expect(result).toEqual({
@@ -295,7 +300,9 @@ describe('UsersService', () => {
 
     it('should store NULL dose when dose is omitted', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
-      mockPrismaService.medicines.findMany.mockResolvedValue([{ medicine_id: 3 }]);
+      mockPrismaService.medicines.findMany.mockResolvedValue([
+        { medicine_id: 3 },
+      ]);
       transactionMock.users_medicines.findFirst.mockResolvedValue(null);
       transactionMock.users_medicines.findMany.mockResolvedValue([
         { medicine_id: 3, dose: null, medicines: { name: 'Ibuprofeno' } },
@@ -312,7 +319,9 @@ describe('UsersService', () => {
 
     it('should reject invalid or inactive medicines', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
-      mockPrismaService.medicines.findMany.mockResolvedValue([{ medicine_id: 3 }]);
+      mockPrismaService.medicines.findMany.mockResolvedValue([
+        { medicine_id: 3 },
+      ]);
 
       await expect(
         service.updateMedicines('u1', {
@@ -331,8 +340,16 @@ describe('UsersService', () => {
       ]);
       transactionMock.users_allergies.findFirst.mockResolvedValue(null);
       transactionMock.users_allergies.findMany.mockResolvedValue([
-        { allergy_id: 1, severity: SeverityLevel.alta, allergies: { name: 'Polen' } },
-        { allergy_id: 3, severity: SeverityLevel.media, allergies: { name: 'Penicilina' } },
+        {
+          allergy_id: 1,
+          severity: SeverityLevel.alta,
+          allergies: { name: 'Polen' },
+        },
+        {
+          allergy_id: 3,
+          severity: SeverityLevel.media,
+          allergies: { name: 'Penicilina' },
+        },
       ]);
 
       const result = await service.updateAllergies('u1', {
@@ -354,10 +371,16 @@ describe('UsersService', () => {
 
     it('should persist severity on newly created allergy row', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
-      mockPrismaService.allergies.findMany.mockResolvedValue([{ allergy_id: 5 }]);
+      mockPrismaService.allergies.findMany.mockResolvedValue([
+        { allergy_id: 5 },
+      ]);
       transactionMock.users_allergies.findFirst.mockResolvedValue(null);
       transactionMock.users_allergies.findMany.mockResolvedValue([
-        { allergy_id: 5, severity: SeverityLevel.alta, allergies: { name: 'Latex' } },
+        {
+          allergy_id: 5,
+          severity: SeverityLevel.alta,
+          allergies: { name: 'Latex' },
+        },
       ]);
 
       await service.updateAllergies('u1', {
@@ -375,7 +398,9 @@ describe('UsersService', () => {
   describe('updateDiseases', () => {
     it('should replace the active diseases set with since_year per entry', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
-      mockPrismaService.diseases.findMany.mockResolvedValue([{ disease_id: 4 }]);
+      mockPrismaService.diseases.findMany.mockResolvedValue([
+        { disease_id: 4 },
+      ]);
       transactionMock.users_diseases.findFirst.mockResolvedValue(null);
       transactionMock.users_diseases.findMany.mockResolvedValue([
         { disease_id: 4, since_year: 2018, diseases: { name: 'Asma' } },
@@ -394,7 +419,9 @@ describe('UsersService', () => {
 
     it('should store NULL since_year when since_year is omitted', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue({ user_id: 'u1' });
-      mockPrismaService.diseases.findMany.mockResolvedValue([{ disease_id: 4 }]);
+      mockPrismaService.diseases.findMany.mockResolvedValue([
+        { disease_id: 4 },
+      ]);
       transactionMock.users_diseases.findFirst.mockResolvedValue(null);
       transactionMock.users_diseases.findMany.mockResolvedValue([
         { disease_id: 4, since_year: null, diseases: { name: 'Asma' } },

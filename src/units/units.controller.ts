@@ -78,10 +78,10 @@ export class UnitsController {
   @ApiResponse({ status: 200, description: 'Unidad encontrada' })
   @ApiResponse({ status: 404, description: 'Unidad no encontrada' })
   async findOne(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
   ) {
-    return this.unitsService.findOne(unitId);
+    return this.unitsService.findOne(unitId, clubId);
   }
 
   @Patch('clubs/:clubId/units/:unitId')
@@ -93,11 +93,11 @@ export class UnitsController {
   @ApiResponse({ status: 200, description: 'Unidad actualizada' })
   @ApiResponse({ status: 404, description: 'Unidad no encontrada' })
   async update(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
     @Body() dto: UpdateUnitDto,
   ) {
-    return this.unitsService.update(unitId, dto);
+    return this.unitsService.update(unitId, dto, clubId);
   }
 
   @Delete('clubs/:clubId/units/:unitId')
@@ -109,10 +109,10 @@ export class UnitsController {
   @ApiResponse({ status: 200, description: 'Unidad desactivada' })
   @ApiResponse({ status: 404, description: 'Unidad no encontrada' })
   async remove(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
   ) {
-    return this.unitsService.remove(unitId);
+    return this.unitsService.remove(unitId, clubId);
   }
 
   // ========================================
@@ -132,11 +132,11 @@ export class UnitsController {
     description: 'El usuario ya es miembro de una unidad',
   })
   async addMember(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
     @Body() dto: AddUnitMemberDto,
   ) {
-    return this.unitsService.addMember(unitId, dto);
+    return this.unitsService.addMember(unitId, dto, clubId);
   }
 
   @Delete('clubs/:clubId/units/:unitId/members/:memberId')
@@ -152,11 +152,11 @@ export class UnitsController {
     description: 'Miembro no encontrado en la unidad',
   })
   async removeMember(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
     @Param('memberId', ParseIntPipe) memberId: number,
   ) {
-    return this.unitsService.removeMember(unitId, memberId);
+    return this.unitsService.removeMember(unitId, memberId, clubId);
   }
 
   // ========================================
@@ -176,10 +176,10 @@ export class UnitsController {
   @ApiResponse({ status: 200, description: 'Lista de registros semanales' })
   @ApiResponse({ status: 404, description: 'Unidad no encontrada' })
   async findWeeklyRecords(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
   ) {
-    return this.unitsService.findWeeklyRecords(unitId);
+    return this.unitsService.findWeeklyRecords(unitId, clubId);
   }
 
   @Post('clubs/:clubId/units/:unitId/weekly-records')
@@ -198,12 +198,17 @@ export class UnitsController {
     description: 'Ya existe un registro para esa semana',
   })
   async createWeeklyRecord(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
     @Body() dto: CreateWeeklyRecordDto,
     @Request() req: any,
   ) {
-    return this.unitsService.createWeeklyRecord(unitId, dto, req.user.sub);
+    return this.unitsService.createWeeklyRecord(
+      unitId,
+      dto,
+      req.user.sub,
+      clubId,
+    );
   }
 
   @Patch('clubs/:clubId/units/:unitId/weekly-records/:recordId')
@@ -216,11 +221,11 @@ export class UnitsController {
   @ApiResponse({ status: 200, description: 'Registro actualizado' })
   @ApiResponse({ status: 404, description: 'Registro no encontrado' })
   async updateWeeklyRecord(
-    @Param('clubId', ParseIntPipe) _clubId: number,
+    @Param('clubId', ParseIntPipe) clubId: number,
     @Param('unitId', ParseIntPipe) unitId: number,
     @Param('recordId', ParseIntPipe) recordId: number,
     @Body() dto: UpdateWeeklyRecordDto,
   ) {
-    return this.unitsService.updateWeeklyRecord(unitId, recordId, dto);
+    return this.unitsService.updateWeeklyRecord(unitId, recordId, dto, clubId);
   }
 }

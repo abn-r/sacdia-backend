@@ -60,10 +60,18 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   'investiture:rejected': 'approvals',
   // Validation (class and honor submission review)
   'validation:class_submitted': 'approvals',
+  'validation:class_approved': 'approvals',
+  'validation:class_rejected': 'approvals',
   'validation:honor_submitted': 'approvals',
+  'validation:honor_approved': 'approvals',
+  'validation:honor_rejected': 'approvals',
   // Transfer and assignment requests
   'requests:transfer_created': 'approvals',
+  'requests:transfer_approved': 'approvals',
+  'requests:transfer_rejected': 'approvals',
   'requests:assignment_created': 'approvals',
+  'requests:assignment_approved': 'approvals',
+  'requests:assignment_rejected': 'approvals',
   // Member-of-month (director notification = approval-adjacent)
   'units:member_of_month': 'approvals',
   'units:member_of_month_director': 'approvals',
@@ -73,6 +81,8 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   // ---------------------------------------------------------------------------
   'camporees:late_enrollment': 'reminders',
   'camporees:late_payment': 'reminders',
+  'monthly_reports:reminder': 'reminders',
+  'system_alert:cron_failure': 'reminders',
 
   // ---------------------------------------------------------------------------
   // invitations — reserved for future use

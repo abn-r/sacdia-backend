@@ -37,6 +37,7 @@ export type ClubAuthorizationGrant = {
   };
   section: {
     club_section_id: number;
+    club_type_id: number;
     club_type_name?: string | null;
   };
   scope: AuthorizationTerritoryScope;
@@ -55,6 +56,7 @@ export type EffectiveClubAuthorization = {
   };
   section: {
     club_section_id: number;
+    club_type_id: number;
     club_type_name?: string | null;
   };
 };
@@ -80,6 +82,7 @@ export type LegacyAssignmentContext = {
   assignment_id: string;
   role_name: string;
   club_section_id: number;
+  club_type_id: number;
   club_id: number;
   club_name: string;
   club_type: string | null;
@@ -156,6 +159,7 @@ type ClubAssignmentRecord = {
   };
   club_sections?: {
     club_section_id: number;
+    club_type_id: number;
     club_types?: { name: string | null } | null;
     clubs?: ClubHierarchyRecord | null;
   } | null;
@@ -163,10 +167,19 @@ type ClubAssignmentRecord = {
 
 /**
  * Cache key for a user's resolved authorization context.
- * Convention mirrors CATALOG_CACHE_KEYS: `auth:context:{userId}`
+ * Versioned so deployments can bypass stale snapshots produced by older
+ * authorization-resolution semantics.
  */
 export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
+  `auth:context:v3:${userId}`;
+
+const LEGACY_AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
   `auth:context:${userId}`;
+
+const PREVIOUS_AUTH_CONTEXT_CACHE_KEYS = (userId: string): string[] => [
+  `auth:context:v2:${userId}`,
+  LEGACY_AUTH_CONTEXT_CACHE_KEY(userId),
+];
 
 /**
  * TTL for user authorization context — 5 minutes in milliseconds.
@@ -216,21 +229,26 @@ export class AuthorizationContextService {
    * Mutation points that MUST call this method:
    *   - RbacService.assignRoleToUser / removeRoleFromUser / bootstrapAdmin
    *   - RbacService.assignPermissionsToRole / removePermissionFromRole / syncRolePermissions
-   *     (affects all users that hold the modified role — per-role invalidation is not
-   *      implemented; rely on TTL expiry for role-level permission changes)
+   *     (affects all users that hold the modified role)
    *   - ClubsService.assignRole / updateRoleAssignment / removeRoleAssignment
    *   - MembershipRequestsService.approve / reject
    *   - RequestsService / PostRegistrationService when creating or mutating assignments
    */
   async invalidateUserAuthorizationCache(userId: string): Promise<void> {
-    const key = AUTH_CONTEXT_CACHE_KEY(userId);
-    try {
-      await this.cacheManager.del(key);
-      this.logger.debug(`Auth context cache INVALIDATED — ${key}`);
-    } catch (err) {
-      this.logger.warn(
-        `Auth context cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
-      );
+    const keys = [
+      AUTH_CONTEXT_CACHE_KEY(userId),
+      ...PREVIOUS_AUTH_CONTEXT_CACHE_KEYS(userId),
+    ];
+
+    for (const key of keys) {
+      try {
+        await this.cacheManager.del(key);
+        this.logger.debug(`Auth context cache INVALIDATED — ${key}`);
+      } catch (err) {
+        this.logger.warn(
+          `Auth context cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
+        );
+      }
     }
   }
 
@@ -352,6 +370,7 @@ export class AuthorizationContextService {
             club_sections: {
               select: {
                 club_section_id: true,
+                club_type_id: true,
                 club_types: { select: { name: true } },
                 clubs: { select: CLUB_SCOPE_SELECT },
               },
@@ -699,6 +718,7 @@ export class AuthorizationContextService {
         },
         section: {
           club_section_id: assignment.club_sections.club_section_id,
+          club_type_id: assignment.club_sections.club_type_id,
           club_type_name: assignment.club_sections.club_types?.name ?? null,
         },
         scope: this.buildClubScope(assignment.club_sections.clubs),
@@ -788,6 +808,7 @@ export class AuthorizationContextService {
       assignment_id: assignment.assignment_id,
       role_name: assignment.role_name,
       club_section_id: assignment.section.club_section_id,
+      club_type_id: assignment.section.club_type_id,
       club_id: assignment.club.club_id,
       club_name: assignment.club.club_name,
       club_type: assignment.section.club_type_name ?? null,

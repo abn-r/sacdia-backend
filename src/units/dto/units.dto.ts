@@ -43,11 +43,10 @@ export class CreateUnitDto {
   @IsInt()
   declare club_type_id: number;
 
-  @ApiPropertyOptional({ description: 'ID de la sección del club' })
-  @IsOptional()
+  @ApiProperty({ description: 'ID de la sección del club' })
   @Type(() => Number)
   @IsInt()
-  club_section_id?: number;
+  declare club_section_id: number;
 }
 
 export class UpdateUnitDto {

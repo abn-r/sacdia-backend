@@ -6,6 +6,7 @@ import { AchievementsService } from '../achievements/achievements.service';
 import { TranslationService } from '../common/services/translation.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { EVIDENCE_URL_LIMITER } from './classes.service';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 describe('ClassesService', () => {
   let service: ClassesService;
@@ -29,7 +30,7 @@ describe('ClassesService', () => {
   const mockPrismaService = {
     $transaction: jest.fn(),
     classes: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
-    ecclesiastical_years: { findFirst: jest.fn() },
+    ecclesiastical_years: { findFirst: jest.fn(), findUnique: jest.fn() },
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
     class_sections: { findFirst: jest.fn() },
     class_section_progress: {
@@ -133,6 +134,72 @@ describe('ClassesService', () => {
     }).compile();
 
     service = module.get<ClassesService>(ClassesService);
+  });
+
+  describe('class availability windows', () => {
+    it('resolves the current ecclesiastical year by date range before falling back to active flag', async () => {
+      const currentYearStart = new Date('2026-01-01T00:00:00.000Z');
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValueOnce({
+        year_id: 2026,
+        start_date: currentYearStart,
+      });
+      mockPrismaService.classes.findMany.mockResolvedValue([]);
+      mockPrismaService.classes.count.mockResolvedValue(0);
+
+      await service.findAll(undefined, new PaginationDto());
+
+      expect(
+        mockPrismaService.ecclesiastical_years.findFirst,
+      ).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: {
+            start_date: { lte: expect.any(Date) },
+            end_date: { gte: expect.any(Date) },
+          },
+        }),
+      );
+    });
+
+    it('lists only classes startable in the current active ecclesiastical year', async () => {
+      const activeYearStart = new Date('2026-01-01T00:00:00.000Z');
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+        start_date: activeYearStart,
+      });
+      mockPrismaService.classes.findMany.mockResolvedValue([
+        {
+          class_id: 1,
+          name: 'Actual',
+          available_until_year_id: null,
+          translations: [],
+        },
+      ]);
+      mockPrismaService.classes.count.mockResolvedValue(1);
+
+      const result = await service.findAll(undefined, new PaginationDto());
+
+      expect(result.data).toHaveLength(1);
+      expect(mockPrismaService.classes.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            AND: expect.arrayContaining([
+              expect.objectContaining({
+                OR: expect.arrayContaining([
+                  { available_until_year_id: null },
+                  {
+                    available_until_year: {
+                      start_date: { gte: activeYearStart },
+                    },
+                  },
+                ]),
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
   });
 
   describe('getUserProgress', () => {
@@ -446,6 +513,28 @@ describe('ClassesService', () => {
     const classId = 10;
     const yearId = 1;
 
+    it('should block enrollment when the class is not available for the target ecclesiastical year', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+          available_from_year: null,
+          available_until_year: { start_date: new Date('2025-01-01') },
+          club_types: { name: 'Aventureros' },
+        },
+        ecclesiasticalYear: {
+          start_date: new Date('2026-01-01'),
+          end_date: new Date('2026-12-31'),
+        },
+      });
+
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_NOT_AVAILABLE_FOR_YEAR });
+    });
+
     it('should allow first enrollment in Aventureros when no active enrollments exist', async () => {
       // findFirst calls: highestInvested (null), baseEnrollment (null = first-ever)
       setupTransactionMock({
@@ -657,6 +746,23 @@ describe('ClassesService', () => {
     it('should throw NotFoundException when target class does not exist', async () => {
       setupTransactionMock({
         targetClass: null,
+      });
+
+      await expect(
+        service.enrollUser(userId, classId, yearId),
+      ).rejects.toMatchObject({ code: ErrorCode.CLASS_NOT_FOUND });
+    });
+
+    it('should throw NotFoundException when target class is inactive', async () => {
+      setupTransactionMock({
+        targetClass: {
+          class_id: 10,
+          active: false,
+          club_type_id: 1,
+          requires_invested_gm: false,
+          display_order: 1,
+          club_types: { name: 'Aventureros' },
+        },
       });
 
       await expect(

@@ -24,7 +24,10 @@ import type { Response } from 'express';
 import { QuarterlyReportsService } from './quarterly-reports.service';
 import { QuarterlyReportsPdfService } from './quarterly-reports-pdf.service';
 import { UpdateQuarterlyManualDataDto } from './dto';
-import { RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 
 @ApiTags('quarterly-reports')
@@ -43,7 +46,11 @@ export class QuarterlyReportsController {
 
   @Get('admin/quarterly-reports')
   @RequirePermissions('reports:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({ summary: 'Listar informes trimestrales (admin)' })
+  @ApiQuery({ name: 'divisionId', required: false, type: Number })
+  @ApiQuery({ name: 'unionId', required: false, type: Number })
+  @ApiQuery({ name: 'localFieldId', required: false, type: Number })
   @ApiQuery({ name: 'clubId', required: false, type: Number })
   @ApiQuery({ name: 'year', required: false, type: Number })
   @ApiQuery({ name: 'quarter', required: false, type: Number })
@@ -59,6 +66,12 @@ export class QuarterlyReportsController {
     description: 'Lista paginada de informes trimestrales',
   })
   async listAdmin(
+    @Req() req: any,
+    @Query('divisionId', new ParseIntPipe({ optional: true }))
+    divisionId?: number,
+    @Query('unionId', new ParseIntPipe({ optional: true })) unionId?: number,
+    @Query('localFieldId', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
     @Query('clubId', new ParseIntPipe({ optional: true })) clubId?: number,
     @Query('year', new ParseIntPipe({ optional: true })) year?: number,
     @Query('quarter', new ParseIntPipe({ optional: true })) quarter?: number,
@@ -66,7 +79,10 @@ export class QuarterlyReportsController {
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    const data = await this.quarterlyReportsService.listForAdmin({
+    const data = await this.quarterlyReportsService.listForAdmin(req.user.sub, {
+      divisionId,
+      unionId,
+      localFieldId,
       clubId,
       year,
       quarter,

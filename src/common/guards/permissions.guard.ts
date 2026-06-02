@@ -105,6 +105,7 @@ export class PermissionsGuard implements CanActivate {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(userId);
     request.authorization = resolved.authorization;
+    request.authorizationProfile = resolved;
 
     if (
       !this.hasRequiredPermissions(

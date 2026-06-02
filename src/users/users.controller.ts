@@ -154,7 +154,10 @@ export class UsersController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Payload inválido o alergia no existe' })
+  @ApiResponse({
+    status: 400,
+    description: 'Payload inválido o alergia no existe',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateAllergies(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -183,7 +186,10 @@ export class UsersController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Payload inválido o enfermedad no existe' })
+  @ApiResponse({
+    status: 400,
+    description: 'Payload inválido o enfermedad no existe',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateDiseases(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -212,7 +218,10 @@ export class UsersController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Payload inválido o medicamento no existe' })
+  @ApiResponse({
+    status: 400,
+    description: 'Payload inválido o medicamento no existe',
+  })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   async updateMedicines(
     @Param('userId', ParseUUIDPipe) userId: string,

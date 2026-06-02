@@ -18,6 +18,7 @@
 
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
+  AppBadRequestException,
   AppNotFoundException,
   AppForbiddenException,
 } from '../common/errors/app.exception';
@@ -52,6 +53,21 @@ export interface BroadcastNotificationDto {
   title: string;
   body: string;
   data?: Record<string, string>;
+}
+
+export type NotificationClubInstanceType =
+  | 'adventurers'
+  | 'pathfinders'
+  | 'master_guilds';
+
+export interface NotificationClubTarget {
+  clubId: number;
+  clubName: string;
+  sectionId: number;
+  sectionName: string;
+  instanceType: NotificationClubInstanceType;
+  instanceId: number;
+  label: string;
 }
 
 /**
@@ -125,14 +141,7 @@ export class NotificationsService {
    * Enqueues via BullMQ when Redis is available; otherwise sends synchronously.
    */
   async sendToUser(dto: SendNotificationDto, sentBy: string, source?: string) {
-    if (!this.isFcmConfigured()) {
-      return {
-        success: false,
-        message: 'FCM service is not configured in this environment',
-      };
-    }
-
-    if (this.isQueueReady()) {
+    if (this.isQueueReady() && this.isFcmConfigured()) {
       const jobData: SendToUserJobData = {
         userId: dto.userId,
         title: dto.title,
@@ -161,14 +170,7 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
-    if (!this.isFcmConfigured()) {
-      return {
-        success: false,
-        message: 'FCM service is not configured in this environment',
-      };
-    }
-
-    if (this.isQueueReady()) {
+    if (this.isQueueReady() && this.isFcmConfigured()) {
       const jobData: BroadcastJobData = {
         title: dto.title,
         body: dto.body,
@@ -196,19 +198,20 @@ export class NotificationsService {
     dto: Omit<BroadcastNotificationDto, 'userId'>,
     sentBy: string,
     source?: string,
+    expectedInstanceType?: NotificationClubInstanceType,
   ) {
     if (isUuid(sentBy)) {
       await this.assertExactClubAssignmentScope(sentBy, clubSectionId);
     }
 
-    if (!this.isFcmConfigured()) {
-      return {
-        success: false,
-        message: 'FCM service is not configured in this environment',
-      };
+    if (expectedInstanceType) {
+      await this.assertClubSectionMatchesInstanceType(
+        clubSectionId,
+        expectedInstanceType,
+      );
     }
 
-    if (this.isQueueReady()) {
+    if (this.isQueueReady() && this.isFcmConfigured()) {
       const jobData: SendToClubMembersJobData = {
         clubSectionId,
         title: dto.title,
@@ -246,7 +249,7 @@ export class NotificationsService {
     source?: string,
   ): Promise<void> {
     try {
-      if (this.isQueueReady()) {
+      if (this.isQueueReady() && this.isFcmConfigured()) {
         const jobData: SendToSectionRoleJobData = {
           clubSectionId,
           roleNames,
@@ -297,7 +300,7 @@ export class NotificationsService {
     unionId?: number,
   ): Promise<void> {
     try {
-      if (this.isQueueReady()) {
+      if (this.isQueueReady() && this.isFcmConfigured()) {
         const jobData: SendToGlobalRoleJobData = {
           roleNames,
           title,
@@ -494,6 +497,124 @@ export class NotificationsService {
     };
   }
 
+  async getAuthorizedClubTargets(
+    callerUserId: string,
+  ): Promise<{ data: NotificationClubTarget[] }> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(callerUserId);
+
+    const activeAssignmentId =
+      resolved.authorization.active_assignment.assignment_id;
+    if (!activeAssignmentId) {
+      return { data: [] };
+    }
+
+    const activeGrant = resolved.authorization.grants.club_assignments.find(
+      (assignment) => assignment.assignment_id === activeAssignmentId,
+    );
+    const activeSectionId =
+      activeGrant?.section.club_section_id ??
+      resolved.authorization.effective.scope.club?.section.club_section_id;
+
+    if (!activeSectionId) {
+      return { data: [] };
+    }
+
+    const sections = await this.prisma.club_sections.findMany({
+      where: {
+        club_section_id: { in: [activeSectionId] },
+        active: true,
+      },
+      select: {
+        club_section_id: true,
+        club_type_id: true,
+        name: true,
+        clubs: {
+          select: {
+            club_id: true,
+            name: true,
+          },
+        },
+        club_types: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    const data = sections
+      .filter((section) => Boolean(section.clubs?.club_id))
+      .flatMap((section) => {
+        const instanceType = this.mapClubSectionToInstanceType(section);
+        if (!instanceType) {
+          return [];
+        }
+
+        const clubName =
+          section.clubs?.name ??
+          activeGrant?.club.club_name ??
+          resolved.authorization.effective.scope.club?.club.club_name ??
+          `Club ${section.clubs?.club_id ?? section.club_section_id}`;
+
+        const sectionName =
+          section.name ??
+          section.club_types?.name ??
+          activeGrant?.section.club_type_name ??
+          `Sección ${section.club_section_id}`;
+
+        return {
+          clubId:
+            section.clubs?.club_id ??
+            activeGrant?.club.club_id ??
+            resolved.authorization.effective.scope.club?.club.club_id ??
+            0,
+          clubName,
+          sectionId: section.club_section_id,
+          sectionName,
+          instanceType,
+          instanceId: section.club_section_id,
+          label: `${clubName} — ${sectionName}`,
+        } satisfies NotificationClubTarget;
+      })
+      .filter((target) => target.clubId > 0)
+      .sort((a, b) =>
+        a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }),
+      );
+
+    return { data };
+  }
+
+  private async assertClubSectionMatchesInstanceType(
+    clubSectionId: number,
+    expectedInstanceType: NotificationClubInstanceType,
+  ): Promise<void> {
+    const section = await this.prisma.club_sections.findFirst({
+      where: { club_section_id: clubSectionId, active: true },
+      select: {
+        club_section_id: true,
+        club_type_id: true,
+        club_types: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    const actualInstanceType = section
+      ? this.mapClubSectionToInstanceType(section)
+      : null;
+
+    if (actualInstanceType !== expectedInstanceType) {
+      throw new AppBadRequestException(ErrorCode.NOTIF_TARGET_TYPE_MISMATCH, {
+        clubSectionId,
+        expectedInstanceType,
+        actualInstanceType,
+      });
+    }
+  }
+
   private async assertExactClubAssignmentScope(
     userId: string,
     clubSectionId: number,
@@ -508,6 +629,43 @@ export class NotificationsService {
     ) {
       throw new AppForbiddenException(ErrorCode.NOTIF_SEND_FORBIDDEN);
     }
+  }
+
+  private mapClubSectionToInstanceType(section: {
+    club_type_id: number | null;
+    club_types?: { name: string | null } | null;
+  }): NotificationClubInstanceType | null {
+    const byName = this.mapClubTypeNameToInstanceType(
+      section.club_types?.name,
+    );
+    if (byName) {
+      return byName;
+    }
+
+    return this.mapClubTypeIdToInstanceType(section.club_type_id);
+  }
+
+  private mapClubTypeNameToInstanceType(
+    clubTypeName?: string | null,
+  ): NotificationClubInstanceType | null {
+    const normalized = (clubTypeName ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    if (normalized.includes('aventur')) {
+      return 'adventurers';
+    }
+
+    if (normalized.includes('conquist') || normalized.includes('pathfinder')) {
+      return 'pathfinders';
+    }
+
+    if (normalized.includes('guia') || normalized.includes('master')) {
+      return 'master_guilds';
+    }
+
+    return null;
   }
 
   private buildAdminHistoryWhere(
@@ -567,6 +725,21 @@ export class NotificationsService {
     }
 
     return { sent_by: callerUserId };
+  }
+
+  private mapClubTypeIdToInstanceType(
+    clubTypeId: number | null,
+  ): NotificationClubInstanceType | null {
+    switch (clubTypeId) {
+      case 1:
+        return 'adventurers';
+      case 2:
+        return 'pathfinders';
+      case 3:
+        return 'master_guilds';
+      default:
+        return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -639,6 +812,7 @@ export class NotificationsService {
     // exist regardless of whether the user has active FCM tokens.
     let successCount = 0;
     let failureCount = 0;
+    let logId: number | undefined;
 
     await this.prisma
       .$transaction(async (tx) => {
@@ -655,6 +829,7 @@ export class NotificationsService {
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.create({
           data: { log_id: log.log_id, user_id: dto.userId },
         });
@@ -671,7 +846,7 @@ export class NotificationsService {
       select: { token: true },
     });
 
-    if (tokens.length > 0) {
+    if (tokens.length > 0 && this.isFcmConfigured()) {
       const tokenStrings = tokens.map((t) => t.token);
       ({ successCount, failureCount } = await this.sendMulticastDirect(
         tokenStrings,
@@ -679,6 +854,16 @@ export class NotificationsService {
         dto.body,
         dto.data,
       ));
+      await this.updateNotificationLogTokenCounts(
+        logId,
+        successCount,
+        failureCount,
+        `sendToUserSync user ${dto.userId}`,
+      );
+    } else if (tokens.length > 0) {
+      this.logger.debug(
+        `sendToUserSync: FCM not configured — delivery created, push skipped for user ${dto.userId}`,
+      );
     } else {
       this.logger.debug(
         `sendToUserSync: no active FCM tokens for user ${dto.userId} — delivery created, push skipped`,
@@ -689,7 +874,7 @@ export class NotificationsService {
       success: true,
       successCount,
       failureCount,
-      skippedPush: tokens.length === 0,
+      skippedPush: tokens.length === 0 || !this.isFcmConfigured(),
     };
   }
 
@@ -725,6 +910,7 @@ export class NotificationsService {
     // Token count is unknown at this point; we'll update after FCM.
     let totalSuccess = 0;
     let totalFailure = 0;
+    let logId: number | undefined;
 
     await this.prisma
       .$transaction(async (tx) => {
@@ -741,6 +927,7 @@ export class NotificationsService {
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: allowedUserIds.map((uid) => ({
             log_id: log.log_id,
@@ -761,7 +948,7 @@ export class NotificationsService {
       select: { token: true },
     });
 
-    if (tokenRows.length > 0) {
+    if (tokenRows.length > 0 && this.isFcmConfigured()) {
       const tokenStrings = tokenRows.map((t) => t.token);
       const batches = chunkArray(tokenStrings, 500);
 
@@ -775,6 +962,16 @@ export class NotificationsService {
         totalSuccess += result.successCount;
         totalFailure += result.failureCount;
       }
+      await this.updateNotificationLogTokenCounts(
+        logId,
+        totalSuccess,
+        totalFailure,
+        'broadcastSync',
+      );
+    } else if (tokenRows.length > 0) {
+      this.logger.debug(
+        `broadcastSync: FCM not configured — deliveries created, push skipped`,
+      );
     } else {
       this.logger.debug(
         `broadcastSync: no active FCM tokens for any allowed user — deliveries created, push skipped`,
@@ -786,7 +983,7 @@ export class NotificationsService {
       successCount: totalSuccess,
       failureCount: totalFailure,
       deliveriesCreated: allowedUserIds.length,
-      skippedPush: tokenRows.length === 0,
+      skippedPush: tokenRows.length === 0 || !this.isFcmConfigured(),
     };
   }
 
@@ -798,7 +995,7 @@ export class NotificationsService {
   ) {
     // Step 1: Resolve members — genuine empty set is a hard stop.
     const members = await this.prisma.club_role_assignments.findMany({
-      where: { club_section_id: clubSectionId, active: true },
+      where: { club_section_id: clubSectionId, active: true, status: 'active' },
       select: { user_id: true },
     });
 
@@ -822,6 +1019,7 @@ export class NotificationsService {
     // This happens regardless of FCM token availability.
     let totalSuccess = 0;
     let totalFailure = 0;
+    let logId: number | undefined;
 
     await this.prisma
       .$transaction(async (tx) => {
@@ -838,6 +1036,7 @@ export class NotificationsService {
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
           skipDuplicates: true,
@@ -855,7 +1054,7 @@ export class NotificationsService {
       select: { token: true },
     });
 
-    if (tokens.length > 0) {
+    if (tokens.length > 0 && this.isFcmConfigured()) {
       const tokenStrings = tokens.map((t) => t.token);
       const batches = chunkArray(tokenStrings, 500);
 
@@ -869,6 +1068,16 @@ export class NotificationsService {
         totalSuccess += result.successCount;
         totalFailure += result.failureCount;
       }
+      await this.updateNotificationLogTokenCounts(
+        logId,
+        totalSuccess,
+        totalFailure,
+        `sendToClubMembersSync section ${clubSectionId}`,
+      );
+    } else if (tokens.length > 0) {
+      this.logger.debug(
+        `sendToClubMembersSync: FCM not configured for section ${clubSectionId} — deliveries created, push skipped`,
+      );
     } else {
       this.logger.debug(
         `sendToClubMembersSync: no active FCM tokens for section ${clubSectionId} — deliveries created, push skipped`,
@@ -880,7 +1089,7 @@ export class NotificationsService {
       successCount: totalSuccess,
       failureCount: totalFailure,
       memberCount: rawUserIds.length,
-      skippedPush: tokens.length === 0,
+      skippedPush: tokens.length === 0 || !this.isFcmConfigured(),
     };
   }
 
@@ -922,6 +1131,8 @@ export class NotificationsService {
 
     // Step 2: Create log + deliveries for all allowed users atomically.
     // This happens regardless of FCM token availability.
+    let logId: number | undefined;
+
     await this.prisma
       .$transaction(async (tx) => {
         const log = await tx.notification_logs.create({
@@ -937,6 +1148,7 @@ export class NotificationsService {
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
           skipDuplicates: true,
@@ -954,9 +1166,9 @@ export class NotificationsService {
       select: { token: true },
     });
 
-    if (tokens.length === 0) {
+    if (tokens.length === 0 || !this.isFcmConfigured()) {
       this.logger.debug(
-        `sendToSectionRoleSync: no active FCM tokens for section ${clubSectionId} — deliveries created, push skipped`,
+        `sendToSectionRoleSync: ${tokens.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for section ${clubSectionId} — deliveries created, push skipped`,
       );
       return;
     }
@@ -964,10 +1176,16 @@ export class NotificationsService {
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
 
-    await Promise.allSettled(
+    const batchResults = await Promise.allSettled(
       batches.map((batch) =>
         this.sendMulticastDirect(batch, title, body, data),
       ),
+    );
+    await this.updateNotificationLogTokenCounts(
+      logId,
+      this.sumFulfilledCounts(batchResults, 'successCount'),
+      this.sumFulfilledCounts(batchResults, 'failureCount'),
+      `sendToSectionRoleSync section ${clubSectionId}`,
     );
   }
 
@@ -1020,6 +1238,8 @@ export class NotificationsService {
 
     // Step 2: Create log + deliveries for all allowed users atomically.
     // This happens regardless of FCM token availability.
+    let logId: number | undefined;
+
     await this.prisma
       .$transaction(async (tx) => {
         const log = await tx.notification_logs.create({
@@ -1028,13 +1248,18 @@ export class NotificationsService {
             body,
             type: 'GLOBAL_ROLE',
             target_type: 'global_role',
-            target_id: localFieldId ? String(localFieldId) : null,
+            target_id: unionId
+              ? String(unionId)
+              : localFieldId
+                ? String(localFieldId)
+                : null,
             sent_by: null,
             source: source ?? null,
             tokens_sent: 0,
             tokens_failed: 0,
           },
         });
+        logId = log.log_id;
         await tx.notification_deliveries.createMany({
           data: userIds.map((uid) => ({ log_id: log.log_id, user_id: uid })),
           skipDuplicates: true,
@@ -1052,9 +1277,9 @@ export class NotificationsService {
       select: { token: true },
     });
 
-    if (tokens.length === 0) {
+    if (tokens.length === 0 || !this.isFcmConfigured()) {
       this.logger.debug(
-        `sendToGlobalRoleSync: no active FCM tokens for roles ${roleNames.join(',')} — deliveries created, push skipped`,
+        `sendToGlobalRoleSync: ${tokens.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for roles ${roleNames.join(',')} — deliveries created, push skipped`,
       );
       return;
     }
@@ -1062,16 +1287,60 @@ export class NotificationsService {
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
 
-    await Promise.allSettled(
+    const batchResults = await Promise.allSettled(
       batches.map((batch) =>
         this.sendMulticastDirect(batch, title, body, data),
       ),
+    );
+    await this.updateNotificationLogTokenCounts(
+      logId,
+      this.sumFulfilledCounts(batchResults, 'successCount'),
+      this.sumFulfilledCounts(batchResults, 'failureCount'),
+      `sendToGlobalRoleSync roles ${roleNames.join(',')}`,
     );
   }
 
   // ---------------------------------------------------------------------------
   // Core FCM helper (synchronous path)
   // ---------------------------------------------------------------------------
+
+  private sumFulfilledCounts(
+    results: PromiseSettledResult<{
+      successCount: number;
+      failureCount: number;
+    }>[],
+    key: 'successCount' | 'failureCount',
+  ): number {
+    return results.reduce((total, result) => {
+      if (result.status !== 'fulfilled') {
+        return total;
+      }
+      return total + result.value[key];
+    }, 0);
+  }
+
+  private async updateNotificationLogTokenCounts(
+    logId: number | undefined,
+    tokensSent: number,
+    tokensFailed: number,
+    context: string,
+  ): Promise<void> {
+    if (typeof logId !== 'number') return;
+
+    await this.prisma.notification_logs
+      .update({
+        where: { log_id: logId },
+        data: {
+          tokens_sent: tokensSent,
+          tokens_failed: tokensFailed,
+        },
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `${context}: failed to update notification token counters for log ${logId}: ${err.message}`,
+        );
+      });
+  }
 
   /**
    * Direct FCM multicast — used by the synchronous fallback methods.

@@ -28,7 +28,7 @@ import { MemberRankingResponseDto } from '../member-rankings/dto/member-ranking-
 @ApiTags('Section Rankings')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@AuthorizationResource({ type: 'global' })
+@AuthorizationResource({ type: 'active_assignment' })
 @Controller('section-rankings')
 export class SectionRankingsController {
   private readonly logger = new Logger(SectionRankingsController.name);
@@ -85,7 +85,11 @@ export class SectionRankingsController {
     @Req() req: any,
   ): Promise<MemberRankingResponseDto[]> {
     this.logger.log(`getMembers: sectionId=${sectionId} yearId=${yearId}`);
-    return this.service.getMembers(sectionId, yearId, req.authorization);
+    return this.service.getMembers(
+      sectionId,
+      yearId,
+      req.authorizationProfile ?? req.authorization,
+    );
   }
 
   @Get()
@@ -141,7 +145,7 @@ export class SectionRankingsController {
   }> {
     this.logger.log(`list: yearId=${yearId} clubId=${clubIdRaw}`);
     return this.service.list({
-      profile: req.authorization,
+      profile: req.authorizationProfile ?? req.authorization,
       clubId: clubIdRaw !== undefined ? Number(clubIdRaw) : undefined,
       yearId,
       page: pageRaw !== undefined ? Number(pageRaw) : 1,

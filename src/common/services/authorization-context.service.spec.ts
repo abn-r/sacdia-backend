@@ -1,12 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AuthorizationContextService } from './authorization-context.service';
+import {
+  AUTH_CONTEXT_CACHE_KEY,
+  AuthorizationContextService,
+} from './authorization-context.service';
 import { ErrorCode } from '../errors/error-codes';
 import { InstitutionalHierarchyService } from './institutional-hierarchy.service';
 
 describe('AuthorizationContextService', () => {
   let service: AuthorizationContextService;
+  let cacheManager: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
 
   const mockPrismaService = {
     users: {
@@ -19,6 +23,8 @@ describe('AuthorizationContextService', () => {
   };
 
   beforeEach(async () => {
+    cacheManager = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
+
     mockHierarchyService.resolveCurrent.mockResolvedValue({
       division_id: 1,
       division_name: 'División Interamericana',
@@ -39,7 +45,7 @@ describe('AuthorizationContextService', () => {
         },
         {
           provide: CACHE_MANAGER,
-          useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() },
+          useValue: cacheManager,
         },
       ],
     }).compile();
@@ -51,6 +57,18 @@ describe('AuthorizationContextService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('uses versioned cache keys so stale legacy snapshots are bypassed', () => {
+    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v3:user-123');
+  });
+
+  it('invalidates both current and legacy authorization cache keys', async () => {
+    await service.invalidateUserAuthorizationCache('user-123');
+
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v3:user-123');
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v2:user-123');
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:user-123');
   });
 
   it('should throw UnauthorizedException when user is not found', async () => {
@@ -110,6 +128,7 @@ describe('AuthorizationContextService', () => {
           },
           club_sections: {
             club_section_id: 11,
+            club_type_id: 1,
             club_types: { name: 'Aventureros' },
             clubs: {
               club_id: 10,
@@ -143,6 +162,7 @@ describe('AuthorizationContextService', () => {
           },
           club_sections: {
             club_section_id: 22,
+            club_type_id: 2,
             club_types: { name: 'Conquistadores' },
             clubs: {
               club_id: 10,
@@ -197,6 +217,7 @@ describe('AuthorizationContextService', () => {
       },
       section: {
         club_section_id: 22,
+        club_type_id: 2,
         club_type_name: 'Conquistadores',
       },
     });
@@ -204,6 +225,7 @@ describe('AuthorizationContextService', () => {
       assignment_id: 'assignment-2',
       role_name: 'treasurer',
       club_section_id: 22,
+      club_type_id: 2,
       club_id: 10,
       club_name: 'Club Amanecer',
       club_type: 'Conquistadores',
@@ -347,6 +369,7 @@ describe('AuthorizationContextService', () => {
           },
           club_sections: {
             club_section_id: 33,
+            club_type_id: 3,
             club_types: { name: 'Guías Mayores' },
             clubs: {
               club_id: 44,
@@ -372,6 +395,7 @@ describe('AuthorizationContextService', () => {
       },
       section: {
         club_section_id: 33,
+        club_type_id: 3,
         club_type_name: 'Guías Mayores',
       },
     });

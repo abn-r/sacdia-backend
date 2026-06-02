@@ -205,7 +205,9 @@ describe('Users E2E Tests', () => {
         .expect((res) => {
           expect(res.body).toEqual({
             status: 'success',
-            data: [{ medicine_id: 3, name: 'Ibuprofeno', dose: '5 mg cada 8 hs' }],
+            data: [
+              { medicine_id: 3, name: 'Ibuprofeno', dose: '5 mg cada 8 hs' },
+            ],
           });
         });
     });
@@ -218,27 +220,25 @@ describe('Users E2E Tests', () => {
       jest
         .spyOn(prisma.users, 'findUnique')
         .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
-      jest.spyOn(prisma.allergies, 'findMany').mockResolvedValue([
-        { allergy_id: 1 },
-      ] as any);
       jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (cb: any) =>
-          cb({
-            users_allergies: {
-              updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-              findFirst: jest.fn().mockResolvedValue(null),
-              create: jest.fn().mockResolvedValue({}),
-              findMany: jest.fn().mockResolvedValue([
-                {
-                  allergy_id: 1,
-                  severity: SeverityLevel.alta,
-                  allergies: { name: 'Polen' },
-                },
-              ]),
-            },
-          }),
-        );
+        .spyOn(prisma.allergies, 'findMany')
+        .mockResolvedValue([{ allergy_id: 1 }] as any);
+      jest.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) =>
+        cb({
+          users_allergies: {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue({}),
+            findMany: jest.fn().mockResolvedValue([
+              {
+                allergy_id: 1,
+                severity: SeverityLevel.alta,
+                allergies: { name: 'Polen' },
+              },
+            ]),
+          },
+        }),
+      );
 
       return request(app.getHttpServer())
         .put('/api/v1/users/test-user-id/allergies')
@@ -270,27 +270,25 @@ describe('Users E2E Tests', () => {
       jest
         .spyOn(prisma.users, 'findUnique')
         .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
-      jest.spyOn(prisma.diseases, 'findMany').mockResolvedValue([
-        { disease_id: 5 },
-      ] as any);
       jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (cb: any) =>
-          cb({
-            users_diseases: {
-              updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-              findFirst: jest.fn().mockResolvedValue(null),
-              create: jest.fn().mockResolvedValue({}),
-              findMany: jest.fn().mockResolvedValue([
-                {
-                  disease_id: 5,
-                  since_year: 2018,
-                  diseases: { name: 'Asma' },
-                },
-              ]),
-            },
-          }),
-        );
+        .spyOn(prisma.diseases, 'findMany')
+        .mockResolvedValue([{ disease_id: 5 }] as any);
+      jest.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) =>
+        cb({
+          users_diseases: {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue({}),
+            findMany: jest.fn().mockResolvedValue([
+              {
+                disease_id: 5,
+                since_year: 2018,
+                diseases: { name: 'Asma' },
+              },
+            ]),
+          },
+        }),
+      );
 
       return request(app.getHttpServer())
         .put('/api/v1/users/test-user-id/diseases')
@@ -321,27 +319,25 @@ describe('Users E2E Tests', () => {
       jest
         .spyOn(prisma.users, 'findUnique')
         .mockResolvedValueOnce({ user_id: 'test-user-id' } as any);
-      jest.spyOn(prisma.medicines, 'findMany').mockResolvedValue([
-        { medicine_id: 7 },
-      ] as any);
       jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (cb: any) =>
-          cb({
-            users_medicines: {
-              updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-              findFirst: jest.fn().mockResolvedValue(null),
-              create: jest.fn().mockResolvedValue({}),
-              findMany: jest.fn().mockResolvedValue([
-                {
-                  medicine_id: 7,
-                  dose: '5 mg cada 8 hs',
-                  medicines: { name: 'Ibuprofeno' },
-                },
-              ]),
-            },
-          }),
-        );
+        .spyOn(prisma.medicines, 'findMany')
+        .mockResolvedValue([{ medicine_id: 7 }] as any);
+      jest.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) =>
+        cb({
+          users_medicines: {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue({}),
+            findMany: jest.fn().mockResolvedValue([
+              {
+                medicine_id: 7,
+                dose: '5 mg cada 8 hs',
+                medicines: { name: 'Ibuprofeno' },
+              },
+            ]),
+          },
+        }),
+      );
 
       return request(app.getHttpServer())
         .put('/api/v1/users/test-user-id/medicines')

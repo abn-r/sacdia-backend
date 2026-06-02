@@ -22,11 +22,15 @@ import {
 import { CamporeesController } from '../../camporees/camporees.controller';
 import { FinancesController } from '../../finances/finances.controller';
 import { InventoryController } from '../../inventory/inventory.controller';
+import { InvestitureController } from '../../investiture/investiture.controller';
+import { RankingsController } from '../../annual-folders/rankings.controller';
 import { EmergencyContactsController } from '../../emergency-contacts/emergency-contacts.controller';
 import { LegalRepresentativesController } from '../../legal-representatives/legal-representatives.controller';
 import { NotificationsController } from '../../notifications/notifications.controller';
 import { PostRegistrationController } from '../../post-registration/post-registration.controller';
 import { RbacController } from '../../rbac/rbac.controller';
+import { MemberRankingsController } from '../../rankings/member-rankings/member-rankings.controller';
+import { SectionRankingsController } from '../../rankings/section-rankings/section-rankings.controller';
 import { UsersController } from '../../users/users.controller';
 
 class SensitiveUserSubresourceMetadataFixture {
@@ -56,6 +60,21 @@ class SensitiveUserSubresourceMetadataFixture {
 }
 
 describe('Permissions metadata', () => {
+  it('marks admin overdue expiration as a global permission resource', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        InvestitureController.prototype.expireOverdueEnrollments,
+      ),
+    ).toEqual({ permissions: ['catalogs:update'], mode: 'all' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        InvestitureController.prototype.expireOverdueEnrollments,
+      ),
+    ).toEqual({ type: 'global' });
+  });
+
   it('marks admin users listing with users:read', () => {
     expect(
       Reflect.getMetadata(
@@ -774,6 +793,42 @@ describe('Permissions metadata', () => {
         FinancesController.prototype.update,
       ),
     ).toEqual({ type: 'finance', idParam: 'financeId' });
+  });
+
+  it('marks ranking controllers as active-assignment resources so club role permissions can pass the guard', () => {
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        SectionRankingsController,
+      ),
+    ).toEqual({ type: 'active_assignment' });
+    expect(
+      Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, MemberRankingsController),
+    ).toEqual({ type: 'active_assignment' });
+  });
+
+  it('marks annual ranking list as active-assignment scoped while keeping detail/recalculate globally scoped', () => {
+    expect(
+      Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, RankingsController),
+    ).toEqual({ type: 'global' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        RankingsController.prototype.getRankings,
+      ),
+    ).toEqual({ type: 'active_assignment' });
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        RankingsController.prototype.getRankingForClub,
+      ),
+    ).toBeUndefined();
+    expect(
+      Reflect.getMetadata(
+        AUTHORIZATION_RESOURCE_KEY,
+        RankingsController.prototype.recalculate,
+      ),
+    ).toBeUndefined();
   });
 
   // ==========================================================================
