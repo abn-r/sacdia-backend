@@ -2,6 +2,9 @@ import { QrController } from './qr.controller';
 import { QrService } from './qr.service';
 import type { Request, Response } from 'express';
 
+const throttlerLimitMetadata = 'THROTTLER:LIMIT';
+const throttlerTtlMetadata = 'THROTTLER:TTL';
+
 describe('QrController', () => {
   let controller: QrController;
 
@@ -90,5 +93,52 @@ describe('QrController', () => {
     await expect(controller.scan(req, { token: 'token-1' })).resolves.toEqual({
       member: { user_id: 'u' },
     });
+  });
+
+  it('applies named throttler overrides to self-service QR reads', () => {
+    for (const handlerName of [
+      'getMemberToken',
+      'getMe',
+      'getCard',
+      'getCardPdf',
+    ] as const) {
+      const handler = QrController.prototype[handlerName];
+
+      for (const throttlerName of ['short', 'medium', 'long']) {
+        expect(
+          Reflect.getMetadata(
+            `${throttlerLimitMetadata}${throttlerName}`,
+            handler,
+          ),
+        ).toBe(10);
+        expect(
+          Reflect.getMetadata(
+            `${throttlerTtlMetadata}${throttlerName}`,
+            handler,
+          ),
+        ).toBe(60_000);
+      }
+    }
+  });
+
+  it('applies named throttler overrides to QR scan writes', () => {
+    for (const handlerName of ['validate', 'scan'] as const) {
+      const handler = QrController.prototype[handlerName];
+
+      for (const throttlerName of ['short', 'medium', 'long']) {
+        expect(
+          Reflect.getMetadata(
+            `${throttlerLimitMetadata}${throttlerName}`,
+            handler,
+          ),
+        ).toBe(60);
+        expect(
+          Reflect.getMetadata(
+            `${throttlerTtlMetadata}${throttlerName}`,
+            handler,
+          ),
+        ).toBe(60_000);
+      }
+    }
   });
 });

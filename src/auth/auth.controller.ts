@@ -32,6 +32,7 @@ import { DeleteAccountDto } from './dto/delete-account.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { namedThrottle } from '../config/throttler.helpers';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -43,7 +44,7 @@ export class AuthController {
 
   @Post('register')
   // Strict rate limit: 5 attempts per minute on registration
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
   @ApiOperation({ summary: 'Registrar nuevo usuario' })
   @ApiResponse({
     status: 201,
@@ -60,7 +61,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   // Strict rate limit: 5 attempts per minute on login (brute-force protection)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
   @ApiOperation({ summary: 'Iniciar sesión' })
   @ApiResponse({
     status: 200,
@@ -99,7 +100,7 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   // Strict rate limit: 5 attempts per minute — matches login (replay/token-stuffing protection)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
   @ApiOperation({ summary: 'Refrescar sesión con refresh token' })
   @ApiResponse({
     status: 200,
@@ -176,7 +177,7 @@ export class AuthController {
   @Post('password/reset-request')
   @HttpCode(HttpStatus.OK)
   // Strict rate limit: 3 requests per minute to prevent email enumeration
-  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 3 }))
   @ApiOperation({ summary: 'Solicitar recuperación de contraseña' })
   @ApiResponse({
     status: 200,
@@ -191,7 +192,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   // Rate limit: max 3 sends per minute to prevent token farming
-  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 3 }))
   @ApiOperation({
     summary: 'Enviar email de verificación al usuario autenticado',
   })
@@ -210,7 +211,7 @@ export class AuthController {
     return this.authService.sendVerificationEmail(user.userId);
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @Post('verify-email/confirm')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Confirmar verificación de email con token' })
@@ -234,7 +235,7 @@ export class AuthController {
   }
 
   @Post('update-password')
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update authenticated user password' })
@@ -362,7 +363,7 @@ export class AuthController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
   // Strict rate limit: 1 request per hour — destructive action, no retry spam
-  @Throttle({ default: { ttl: 3600000, limit: 1 } })
+  @Throttle(namedThrottle({ ttl: 3600000, limit: 1 }))
   @ApiOperation({
     summary: 'Eliminar cuenta del usuario autenticado',
     description:

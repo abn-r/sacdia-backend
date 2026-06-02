@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { MfaGuard } from '../common/guards/mfa.guard';
 import { SkipMfaCheck } from '../common/decorators/skip-mfa-check.decorator';
 import { MfaService } from '../common/services/mfa.service';
+import { namedThrottle } from '../config/throttler.helpers';
 import { EnrollMfaDto, VerifyMfaDto, DisableMfaDto } from './dto/mfa.dto';
 
 /**
@@ -114,7 +115,7 @@ export class MfaController {
   @SkipMfaCheck()
   // Strict rate limit: 5 attempts per minute — TOTP is 6-digit so brute force is feasible
   // without this guard. Allows for reasonable typos while blocking automated attacks.
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 5 }))
   @ApiOperation({
     summary: 'Verificar código TOTP',
     description:

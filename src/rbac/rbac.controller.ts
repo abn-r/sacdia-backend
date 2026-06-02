@@ -25,6 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
+import { namedThrottle } from '../config/throttler.helpers';
 import {
   AuthorizationResource,
   RequirePermissions,
@@ -307,7 +308,7 @@ export class RbacBootstrapController {
 
   @Post('bootstrap-admin')
   // Rate limit estricto: 1 request por minuto (protección contra race condition en deploy)
-  @Throttle({ default: { ttl: 60000, limit: 1 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 1 }))
   @ApiOperation({
     summary: 'Crear el primer super-admin (solo funciona si no existe ninguno)',
     description:

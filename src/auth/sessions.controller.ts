@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { namedThrottle } from '../config/throttler.helpers';
 import { SessionsService } from './sessions.service';
 import {
   SessionListResponseDto,
@@ -51,7 +52,7 @@ export class SessionsController {
   // ---------------------------------------------------------------------------
 
   @Get()
-  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 30 }))
   @ApiOperation({
     summary: 'List active sessions',
     description:
@@ -77,7 +78,7 @@ export class SessionsController {
   // ---------------------------------------------------------------------------
 
   @Delete(':sessionId')
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Revoke a specific session',
@@ -126,7 +127,7 @@ export class SessionsController {
   // ---------------------------------------------------------------------------
 
   @Delete()
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Throttle(namedThrottle({ ttl: 60000, limit: 10 }))
   @ApiOperation({
     summary: 'Revoke all other sessions',
     description:

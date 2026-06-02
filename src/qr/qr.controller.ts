@@ -30,6 +30,11 @@ import {
   QrValidationResponseDto,
 } from './dto/qr-credential.dto';
 import { QrService } from './qr.service';
+import { namedThrottle } from '../config/throttler.helpers';
+
+const QR_SELF_SERVICE_THROTTLE = namedThrottle({ ttl: 60_000, limit: 10 });
+
+const QR_SCAN_THROTTLE = namedThrottle({ ttl: 60_000, limit: 60 });
 
 @ApiTags('qr')
 @Controller('qr')
@@ -45,7 +50,7 @@ export class QrController {
   }
 
   @Get('member/token')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
     summary: 'Issue a short-lived QR token for the authenticated member',
     description:
@@ -65,7 +70,7 @@ export class QrController {
   }
 
   @Get('me')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
     summary: 'Get the authenticated user QR metadata',
     description:
@@ -83,7 +88,7 @@ export class QrController {
   }
 
   @Get('me/card')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiOperation({
     summary: 'Get the QR card payload for the authenticated user',
     description:
@@ -101,7 +106,7 @@ export class QrController {
   }
 
   @Get('me/card.pdf')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Throttle(QR_SELF_SERVICE_THROTTLE)
   @ApiProduces('application/pdf')
   @ApiOperation({
     summary: 'Generate a PDF version of the authenticated user QR card',
@@ -133,7 +138,7 @@ export class QrController {
   @UseGuards(PermissionsGuard)
   @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('qr:validate')
-  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Throttle(QR_SCAN_THROTTLE)
   @ApiOperation({
     summary: 'Validate a scanned QR token with the canonical QR contract',
     description:
@@ -164,7 +169,7 @@ export class QrController {
   @UseGuards(PermissionsGuard)
   @AuthorizationResource({ type: 'active_assignment' })
   @RequirePermissions('attendance:manage')
-  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Throttle(QR_SCAN_THROTTLE)
   @ApiOperation({
     summary: 'Legacy alias for QR validation + attendance capture',
     description:

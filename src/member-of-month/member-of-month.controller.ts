@@ -25,6 +25,7 @@ import {
   AuthorizationResource,
   RequirePermissions,
 } from '../common/decorators';
+import { namedThrottle } from '../config/throttler.helpers';
 
 @ApiTags('member-of-month')
 @Controller()
@@ -148,7 +149,7 @@ export class MemberOfMonthController {
   @Post('clubs/:clubId/sections/:sectionId/member-of-month/evaluate')
   @RequirePermissions('mom:evaluate')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle(namedThrottle({ limit: 5, ttl: 60000 }))
   @ApiOperation({
     summary: 'Disparar evaluación manual de miembro del mes',
     description: 'Solo directores del club pueden ejecutar esta acción',
