@@ -174,4 +174,37 @@ export class PostRegistrationController {
       this.buildActorContext(userId, request),
     );
   }
+
+  @Post('membership-request/cancel')
+  @RequirePermissions('registration:complete')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancelar solicitud pendiente de membresía',
+    description:
+      'Permite al usuario cancelar su solicitud pendiente y volver a elegir club/sección en post-registro',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Solicitud pendiente cancelada',
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid JWT' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Insufficient permissions — owner self-service or registration:complete',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Solicitud pendiente no encontrada',
+  })
+  async cancelPendingMembershipRequest(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.postRegistrationService.cancelPendingMembershipRequest(
+      userId,
+      this.buildActorContext(userId, request),
+    );
+  }
 }

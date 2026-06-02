@@ -123,7 +123,10 @@ ALTER TABLE material_orders
 
 -- Drop global folio_referencia UNIQUE, replace with scoped UNIQUE
 ALTER TABLE material_orders
+  DROP CONSTRAINT IF EXISTS material_orders_folio_key;
+ALTER TABLE material_orders
   DROP CONSTRAINT IF EXISTS material_orders_folio_referencia_key;
+DROP INDEX IF EXISTS material_orders_folio_key;
 DROP INDEX IF EXISTS material_orders_folio_referencia_key;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_material_orders_lf_folio_ref

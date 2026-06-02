@@ -3,9 +3,10 @@ import { PostRegistrationController } from './post-registration.controller';
 import { PostRegistrationService } from './post-registration.service';
 import { UsersModule } from '../users/users.module';
 import { LegalRepresentativesModule } from '../legal-representatives/legal-representatives.module';
+import { MembershipRequestsModule } from '../membership-requests/membership-requests.module';
 
 @Module({
-  imports: [UsersModule, LegalRepresentativesModule],
+  imports: [UsersModule, LegalRepresentativesModule, MembershipRequestsModule],
   controllers: [PostRegistrationController],
   providers: [PostRegistrationService],
   exports: [PostRegistrationService],
