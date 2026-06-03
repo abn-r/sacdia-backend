@@ -203,7 +203,13 @@ export class AchievementsProcessor
         userId,
         '¡Logro desbloqueado!',
         `Completaste: ${achievement.name}`,
-        { achievement_id: String(achievementId), type: 'achievement_unlocked' },
+        {
+          achievement_id: String(achievementId),
+          achievement_name: achievement.name,
+          type: 'achievement_unlocked',
+          tier: achievement.tier,
+          points: String(achievement.points),
+        },
         'achievements:retroactive',
       );
     }
@@ -395,6 +401,7 @@ export class AchievementsProcessor
       `Completaste: ${achievement.name}`,
       {
         achievement_id: String(achievement.achievement_id),
+        achievement_name: achievement.name,
         type: 'achievement_unlocked',
         tier: achievement.tier,
         points: String(achievement.points),

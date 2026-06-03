@@ -213,7 +213,13 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
       userId,
       '¡Logro desbloqueado!',
       `Completaste: ${mockAchievement.name}`,
-      expect.objectContaining({ achievement_id: '1' }),
+      expect.objectContaining({
+        achievement_id: '1',
+        achievement_name: mockAchievement.name,
+        points: '50',
+        tier: 'BRONZE',
+        type: 'achievement_unlocked',
+      }),
       'achievements:unlock',
     );
   });

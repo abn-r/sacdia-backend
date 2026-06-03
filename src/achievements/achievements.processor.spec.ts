@@ -282,7 +282,13 @@ describe('AchievementsProcessor', () => {
         'user-1',
         '¡Logro desbloqueado!',
         `Completaste: ${mockAchievement.name}`,
-        expect.objectContaining({ achievement_id: '1' }),
+        expect.objectContaining({
+          achievement_id: '1',
+          achievement_name: mockAchievement.name,
+          points: '50',
+          tier: 'BRONZE',
+          type: 'achievement_unlocked',
+        }),
         'achievements:unlock',
       );
     });
@@ -590,7 +596,13 @@ describe('AchievementsProcessor', () => {
         'user-1',
         '¡Logro desbloqueado!',
         `Completaste: ${mockAchievement.name}`,
-        expect.objectContaining({ achievement_id: '10' }),
+        expect.objectContaining({
+          achievement_id: '10',
+          achievement_name: mockAchievement.name,
+          points: '75',
+          tier: 'SILVER',
+          type: 'achievement_unlocked',
+        }),
         'achievements:retroactive',
       );
     });
