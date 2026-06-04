@@ -28,6 +28,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { TranslationService } from '../common/services/translation.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import pLimit from 'p-limit';
+import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 
 // Cap concurrent presign calls for USERS_HONORS bucket images. A single honor
 // detail request resolves certificate + document + N image URLs. Without the
@@ -53,6 +54,7 @@ export class HonorsService {
     private readonly fileStorage: FileStorageService,
     private readonly achievementsService: AchievementsService,
     private readonly translationService: TranslationService,
+    private readonly masterHonorsEvaluator: MasterHonorsEvaluatorService,
   ) {}
 
   // ========================================
@@ -376,6 +378,8 @@ export class HonorsService {
         },
       });
 
+      await this.evaluateMasterHonors(userId);
+
       try {
         await this.achievementsService.emitEvent({
           userId,
@@ -437,6 +441,18 @@ export class HonorsService {
     }
 
     return this.mapUserHonorPrivateUrls(created);
+  }
+
+  private async evaluateMasterHonors(userId: string) {
+    try {
+      await this.masterHonorsEvaluator.evaluateUser(userId);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Failed to evaluate master honors for user ${userId} after start honor: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   async createUserHonor(userId: string, dto: CreateUserHonorDto) {

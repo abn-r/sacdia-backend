@@ -7,6 +7,7 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 import {
   HonorValidationResult,
   HonorValidationStatus,
@@ -39,6 +40,7 @@ export class HonorValidationWorkflowService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly achievementsService: AchievementsService,
+    private readonly masterHonorsEvaluator: MasterHonorsEvaluatorService,
   ) {}
 
   async submitForReview(userHonorId: number, userId: string) {
@@ -176,6 +178,8 @@ export class HonorValidationWorkflowService {
       return result;
     });
 
+    await this.evaluateMasterHonors(record.user_id, 'approve');
+
     await Promise.all([
       this.emitHonorValidated(record),
       this.notifyHonorReviewed(record.user_id, userHonorId, 'approved'),
@@ -236,6 +240,8 @@ export class HonorValidationWorkflowService {
 
       return result;
     });
+
+    await this.evaluateMasterHonors(record.user_id, 'reject');
 
     await this.notifyHonorReviewed(
       record.user_id,
@@ -447,6 +453,18 @@ export class HonorValidationWorkflowService {
     } catch (error) {
       this.logger.warn(
         `Failed to emit achievement event: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private async evaluateMasterHonors(userId: string, transition: string) {
+    try {
+      await this.masterHonorsEvaluator.evaluateUser(userId);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Failed to evaluate master honors for user ${userId} after honor status ${transition}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }

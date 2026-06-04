@@ -8,6 +8,7 @@ import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
+import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 
 describe('HonorsService', () => {
   let service: HonorsService;
@@ -29,6 +30,10 @@ describe('HonorsService', () => {
       upsert: jest.fn(),
       count: jest.fn(),
     },
+  };
+
+  const masterHonorsEvaluator = {
+    evaluateUser: jest.fn(),
   };
 
   mockPrismaService.$transaction = jest.fn(async (callback: any) =>
@@ -60,6 +65,9 @@ describe('HonorsService', () => {
   };
 
   beforeEach(async () => {
+    masterHonorsEvaluator.evaluateUser.mockReset();
+    masterHonorsEvaluator.evaluateUser.mockResolvedValue([]);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HonorsService,
@@ -72,6 +80,10 @@ describe('HonorsService', () => {
               .fn()
               .mockResolvedValue({ eventLogId: 1, queued: true }),
           },
+        },
+        {
+          provide: MasterHonorsEvaluatorService,
+          useValue: masterHonorsEvaluator,
         },
         {
           provide: TranslationService,
@@ -288,6 +300,86 @@ describe('HonorsService', () => {
       await expect(service.startHonor('user-123', 1)).rejects.toMatchObject({
         code: ErrorCode.HONOR_USER_ALREADY_IN_PROGRESS,
       });
+    });
+
+    it('should reactivate inactive user honor and evaluate master honors', async () => {
+      const mockHonor = { honor_id: 1, name: 'Nudos' };
+      const mockExistingHonor = {
+        user_honor_id: 1,
+        user_id: 'user-123',
+        honor_id: 1,
+        active: false,
+      };
+      const mockUpdated = {
+        ...mockExistingHonor,
+        active: true,
+        validation_status: 'IN_PROGRESS',
+        validate: false,
+        certificate: '',
+        images: [],
+        document: null,
+        honors: {
+          name: 'Nudos',
+          honor_image: null,
+          honors_categories: { name: 'General' },
+        },
+      };
+
+      mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue(
+        mockExistingHonor,
+      );
+      mockPrismaService.users_honors.update.mockResolvedValue(mockUpdated);
+
+      const result = await service.startHonor('user-123', 1);
+
+      expect(result).toEqual(mockUpdated);
+      expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-123');
+      expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user_honor_id: 1 },
+          data: expect.objectContaining({
+            validation_status: 'IN_PROGRESS',
+            active: true,
+          }),
+        }),
+      );
+    });
+
+    it('should keep startHonor flow when master honors evaluation fails', async () => {
+      const mockHonor = { honor_id: 1, name: 'Nudos' };
+      const mockExistingHonor = {
+        user_honor_id: 1,
+        user_id: 'user-123',
+        honor_id: 1,
+        active: false,
+      };
+      const mockUpdated = {
+        ...mockExistingHonor,
+        active: true,
+        validation_status: 'IN_PROGRESS',
+        validate: false,
+        certificate: '',
+        images: [],
+        document: null,
+      };
+
+      mockPrismaService.honors.findUnique.mockResolvedValue(mockHonor);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue(
+        mockExistingHonor,
+      );
+      mockPrismaService.users_honors.update.mockResolvedValue(mockUpdated);
+      masterHonorsEvaluator.evaluateUser.mockRejectedValue(
+        new Error('evaluator failure'),
+      );
+
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+      const result = await service.startHonor('user-123', 1);
+
+      expect(result).toEqual(mockUpdated);
+      expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-123');
+      expect(warnSpy).toHaveBeenCalled();
     });
   });
 
