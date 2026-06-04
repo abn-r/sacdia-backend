@@ -685,6 +685,7 @@ export class CreateMasterHonorDto {
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })
+  @Min(1, { each: true })
   division_ids?: number[];
 
   @ApiPropertyOptional({

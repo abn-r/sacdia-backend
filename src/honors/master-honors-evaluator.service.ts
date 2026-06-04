@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   master_honor_applicability_scope_enum,
   master_honor_requirement_group_type_enum,
@@ -48,6 +49,14 @@ export interface MasterHonorEvaluationResult {
   user_master_honor_id: number | null;
   snapshot: MasterHonorEvaluationSnapshot;
 }
+
+type MasterHonorNotificationTransition = 'awarded' | 'recovered' | 'not_current';
+
+type MasterHonorNotificationData = {
+  title: string;
+  body: string;
+  source: string;
+};
 
 type EvaluatableMasterHonor = Prisma.master_honorsGetPayload<{
   include: {
@@ -103,7 +112,10 @@ type ApprovedHonorSet = {
 
 @Injectable()
 export class MasterHonorsEvaluatorService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async evaluateUser(
     userId: string,
@@ -113,13 +125,25 @@ export class MasterHonorsEvaluatorService {
       const result = await this.evaluateUserForMasterHonor(userId, opts.masterHonorId, {
         jobId: opts.jobId,
       });
-      return result ? [result] : [];
+      return [result];
     }
 
-    return this.evaluateUserInternal(userId, {
+    const results = await this.evaluateUserInternal(userId, {
       includeUnawarded: false,
       jobId: opts?.jobId,
     });
+
+    await this.notifyTransitionChanges(
+      userId,
+      results.filter(
+        (result) =>
+          result.transition === 'AWARDED' ||
+          result.transition === 'RECOVERED' ||
+          result.transition === 'REVOKED',
+      ),
+    );
+
+    return results;
   }
 
   async evaluateUserForMasterHonor(
@@ -136,6 +160,16 @@ export class MasterHonorsEvaluatorService {
     if (results.length === 0) {
       throw new Error(`Master honor ${masterHonorId} not found`);
     }
+
+    await this.notifyTransitionChanges(
+      userId,
+      results.filter(
+        (result) =>
+          result.transition === 'AWARDED' ||
+          result.transition === 'RECOVERED' ||
+          result.transition === 'REVOKED',
+      ),
+    );
 
     return results[0];
   }
@@ -236,6 +270,129 @@ export class MasterHonorsEvaluatorService {
 
       return results;
     });
+  }
+
+  private async notifyTransitionChanges(
+    userId: string,
+    transitions: MasterHonorEvaluationResult[],
+  ) {
+    const byType = new Map<MasterHonorNotificationTransition, Array<{
+      id: number;
+      name: string;
+    }>>();
+
+    for (const transition of transitions) {
+      const mappedTransition = this.mapToNotificationTransition(transition.transition);
+      if (!mappedTransition) {
+        continue;
+      }
+
+      const bucket = byType.get(mappedTransition) ?? [];
+      bucket.push({
+        id: transition.master_honor_id,
+        name: transition.master_honor_name,
+      });
+      byType.set(mappedTransition, bucket);
+    }
+
+    if (byType.size === 0) {
+      return;
+    }
+
+    await Promise.all(
+      Array.from(byType.entries()).map(
+        ([transition, groupedHonors]) =>
+          this.sendNotification(userId, transition, groupedHonors),
+      ),
+    );
+  }
+
+  private mapToNotificationTransition(
+    transition: MasterHonorTransition,
+  ): MasterHonorNotificationTransition | null {
+    switch (transition) {
+      case 'AWARDED':
+        return 'awarded';
+      case 'RECOVERED':
+        return 'recovered';
+      case 'REVOKED':
+        return 'not_current';
+      default:
+        return null;
+    }
+  }
+
+  private getNotificationContent(
+    transition: MasterHonorNotificationTransition,
+    names: string[],
+  ): MasterHonorNotificationData {
+    const total = names.length;
+    const singleName = names[0];
+    const isPlural = total > 1;
+
+    switch (transition) {
+      case 'awarded':
+        return {
+          title: isPlural
+            ? '¡Nuevas maestrías obtenidas!'
+            : '¡Nueva maestría obtenida!',
+          body: isPlural
+            ? 'Has obtenido nuevas maestrías en tu perfil.'
+            : `Has obtenido la maestría ${singleName}.`,
+          source: 'master_honors:awarded',
+        };
+      case 'recovered':
+        return {
+          title: isPlural
+            ? 'Maestrías vigentes nuevamente'
+            : 'Maestría vigente nuevamente',
+          body: isPlural
+            ? 'Algunas maestrías volvieron a estar vigentes en tu perfil.'
+            : `La maestría ${singleName} vuelve a estar vigente en tu perfil.`,
+          source: 'master_honors:recovered',
+        };
+      case 'not_current':
+        return {
+          title: isPlural
+            ? 'Maestrías marcadas como No vigentes'
+            : 'Maestría marcada como No vigente',
+          body: isPlural
+            ? 'Algunas maestrías dejaron de cumplir sus validaciones y ya no están vigentes.'
+            : 'Las validaciones requeridas para la maestría {nombre} cambiaron. Actualmente no cumples con los requisitos, por lo que quedó marcada como No vigente.'.replace(
+                '{nombre}',
+                singleName,
+              ),
+          source: 'master_honors:not_current',
+        };
+      default:
+        throw new Error(`Unsupported master honor transition: ${transition}`);
+    }
+  }
+
+  private async sendNotification(
+    userId: string,
+    transition: MasterHonorNotificationTransition,
+    groupedHonors: Array<{ id: number; name: string }>,
+  ): Promise<void> {
+    const names = groupedHonors.map((row) => row.name);
+    const ids = groupedHonors.map((row) => row.id);
+    const { title, body, source } = this.getNotificationContent(
+      transition,
+      names,
+    );
+
+    await this.notificationsService.notifySafe(
+      userId,
+      title,
+      body,
+      {
+        type: 'master_honor_changed',
+        transition,
+        master_honor_ids: ids.join(','),
+        master_honor_names: names.join('|'),
+      },
+      source,
+    );
   }
 
   private evaluateMasterHonor(

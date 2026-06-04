@@ -13,9 +13,31 @@ import { AchievementsModule } from '../achievements/achievements.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { HonorValidationWorkflowService } from './honor-validation-workflow.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
+import { MasterHonorsQueueModule } from './master-honors-queue.module';
+import { MasterHonorsRecalculationProcessor } from './master-honors-recalculation.processor';
+import { isPlaceholderUrl } from '../config/bullmq.config';
+
+function isRedisConfigured(): boolean {
+  const rawUrl = process.env.REDIS_URL?.trim();
+  if (!rawUrl || isPlaceholderUrl(rawUrl)) {
+    return false;
+  }
+
+  try {
+    new URL(rawUrl);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 @Module({
-  imports: [PrismaModule, AchievementsModule, NotificationsModule],
+  imports: [
+    PrismaModule,
+    AchievementsModule,
+    NotificationsModule,
+    MasterHonorsQueueModule,
+  ],
   controllers: [
     HonorsController,
     UserHonorsController,
@@ -29,6 +51,7 @@ import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service'
     AdminHonorsService,
     HonorValidationWorkflowService,
     MasterHonorsEvaluatorService,
+    ...(isRedisConfigured() ? [MasterHonorsRecalculationProcessor] : []),
   ],
   exports: [HonorsService, HonorValidationWorkflowService],
 })

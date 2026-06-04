@@ -8,7 +8,14 @@
  * Unique index name format: Prisma auto-generates <col1>_<col2> for
  * @@unique([col1, col2]) when no explicit `map:` name is provided.
  */
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import {
   AppNotFoundException,
   AppConflictException,
@@ -16,6 +23,11 @@ import {
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { TranslationService } from '../common/services/translation.service';
+import {
+  MASTER_HONOR_RECALCULATION_JOB_OPTIONS,
+  MASTER_HONORS_QUEUE,
+  MasterHonorJobMasterHonorData,
+} from '../honors/master-honors.constants';
 import {
   master_honor_applicability_scope_enum,
   master_honor_requirement_group_type_enum,
@@ -50,6 +62,9 @@ export class AdminPhaseECatalogsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly translationService: TranslationService,
+    @Optional()
+    @InjectQueue(MASTER_HONORS_QUEUE)
+    private readonly masterHonorsQueue: Queue | undefined,
   ) {}
 
   private normalizeName(value: string): string {
@@ -1967,12 +1982,32 @@ export class AdminPhaseECatalogsService {
     await this.ensureMasterHonorExists(id);
     this.logMutation('recalculate', 'master_honors', id, actorId);
 
-    return {
-      status: 'pending_implementation',
-      master_honor_id: id,
-      message:
-        'Master honor recalculation endpoint is registered; evaluator job is pending implementation.',
-      requested_at: new Date().toISOString(),
+    if (!this.masterHonorsQueue) {
+      this.logger.warn(
+        `Master honor recalculation for ${id} requested, but queue is not available (REDIS_URL not configured).`,
+      );
+      return { queued: false };
+    }
+
+    const jobData: MasterHonorJobMasterHonorData = {
+      kind: 'master-honor',
+      masterHonorId: id,
     };
+
+    try {
+      await this.masterHonorsQueue.add(
+        'recalculate-master-honor',
+        jobData,
+        MASTER_HONOR_RECALCULATION_JOB_OPTIONS,
+      );
+
+      return { queued: true };
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Master honor recalculation enqueue failed for ${id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      return { queued: false };
+    }
   }
 }

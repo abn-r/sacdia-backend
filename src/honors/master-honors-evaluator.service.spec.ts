@@ -95,6 +95,7 @@ const divisionFromAssignment = (divisionId: number | null) =>
 
 describe('MasterHonorsEvaluatorService', () => {
   let service: MasterHonorsEvaluatorService;
+  let notificationsServiceMock: { notifySafe: jest.Mock };
 
   let tx: any;
   let prisma: any;
@@ -167,6 +168,10 @@ describe('MasterHonorsEvaluatorService', () => {
       history_id: 10,
     });
 
+    notificationsServiceMock = {
+      notifySafe: jest.fn().mockResolvedValue(undefined),
+    };
+
     prisma = {
       $transaction: jest.fn(async (callback: any) => callback(tx)),
       users_honors: tx.users_honors,
@@ -177,7 +182,10 @@ describe('MasterHonorsEvaluatorService', () => {
       master_honors: tx.master_honors,
     };
 
-    service = new MasterHonorsEvaluatorService(prisma);
+    service = new MasterHonorsEvaluatorService(
+      prisma,
+      notificationsServiceMock as any,
+    );
 
     tx.users_honors.findMany.mockResolvedValue([]);
     tx.master_honors.findMany.mockResolvedValue([]);
@@ -232,6 +240,258 @@ describe('MasterHonorsEvaluatorService', () => {
           to_status: user_master_honor_status_enum.AWARDED,
         }),
       }),
+    );
+  });
+
+  it('notifies awarded transition for a user using single maestría payload', async () => {
+    mockMasterHonors([
+      createMasterHonor({
+        master_honor_id: 1,
+        name: 'Maestría de Base',
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 1,
+            minimumRequired: 1,
+            optionHonors: [[1]],
+          }),
+        ],
+      }),
+    ]);
+
+    mockApprovedHonors([{ honorId: 1, categoryId: 1 }]);
+
+    await service.evaluateUserForMasterHonor('user-1', 1);
+
+    expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
+      'user-1',
+      '¡Nueva maestría obtenida!',
+      'Has obtenido la maestría Maestría de Base.',
+      expect.objectContaining({
+        type: 'master_honor_changed',
+        transition: 'awarded',
+        master_honor_ids: '1',
+        master_honor_names: 'Maestría de Base',
+      }),
+      'master_honors:awarded',
+    );
+  });
+
+  it('notifies recovered transition for users that regain a revoked master honor', async () => {
+    mockMasterHonors([
+      createMasterHonor({
+        master_honor_id: 1,
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 1,
+            minimumRequired: 1,
+            optionHonors: [[1]],
+          }),
+        ],
+      }),
+    ]);
+
+    tx.users_master_honors.findMany.mockResolvedValue([
+      {
+        ...createExistingUserMasterHonor({
+          status: user_master_honor_status_enum.REVOKED,
+          awardedDivisionId: 10,
+        }),
+      },
+    ]);
+
+    mockApprovedHonors([{ honorId: 1, categoryId: 1 }]);
+
+    await service.evaluateUserForMasterHonor('user-1', 1);
+
+    expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
+      'user-1',
+      'Maestría vigente nuevamente',
+      'La maestría Honores de Base vuelve a estar vigente en tu perfil.',
+      expect.objectContaining({
+        type: 'master_honor_changed',
+        transition: 'recovered',
+      }),
+      'master_honors:recovered',
+    );
+  });
+
+  it('notifies awarded transition for multiple master honors in a single notification', async () => {
+    mockMasterHonors([
+      createMasterHonor({
+        master_honor_id: 1,
+        name: 'Maestría Uno',
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 1,
+            minimumRequired: 1,
+            optionHonors: [[1]],
+          }),
+        ],
+      }),
+      createMasterHonor({
+        master_honor_id: 2,
+        name: 'Maestría Dos',
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 2,
+            minimumRequired: 1,
+            optionHonors: [[2]],
+          }),
+        ],
+      }),
+    ]);
+
+    mockApprovedHonors([
+      { honorId: 1, categoryId: 1 },
+      { honorId: 2, categoryId: 1 },
+    ]);
+
+    await service.evaluateUser('user-1');
+
+    expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
+      'user-1',
+      '¡Nuevas maestrías obtenidas!',
+      'Has obtenido nuevas maestrías en tu perfil.',
+      expect.objectContaining({
+        type: 'master_honor_changed',
+        transition: 'awarded',
+        master_honor_ids: '1,2',
+        master_honor_names: 'Maestría Uno|Maestría Dos',
+      }),
+      'master_honors:awarded',
+    );
+  });
+
+  it('does not send duplicate awarded notifications when evaluateUser is scoped to one masterHonorId', async () => {
+    mockMasterHonors([
+      createMasterHonor({
+        master_honor_id: 1,
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 1,
+            minimumRequired: 1,
+            optionHonors: [[1]],
+          }),
+        ],
+      }),
+      createMasterHonor({
+        master_honor_id: 2,
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 2,
+            minimumRequired: 1,
+            optionHonors: [[2]],
+          }),
+        ],
+      }),
+    ]);
+
+    mockApprovedHonors([
+      { honorId: 1, categoryId: 1 },
+      { honorId: 2, categoryId: 1 },
+    ]);
+
+    await service.evaluateUser('user-1', {
+      masterHonorId: 1,
+    });
+
+    expect(notificationsServiceMock.notifySafe).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws when evaluateUser is scoped to a missing masterHonorId', async () => {
+    mockMasterHonors([]);
+
+    await expect(
+      service.evaluateUser('user-1', {
+        masterHonorId: 404,
+      }),
+    ).rejects.toThrow('Master honor 404 not found');
+
+    expect(notificationsServiceMock.notifySafe).not.toHaveBeenCalled();
+  });
+
+  it('sends notifications after persistence callback resolved', async () => {
+    const order: string[] = [];
+
+    tx.users_master_honors.create.mockImplementation((payload: any) => {
+      order.push('create');
+      return Promise.resolve({
+        user_master_honor_id: AWARDED_RECORD_ID,
+        ...payload.data,
+      });
+    });
+
+    tx.master_honor_evaluation_history.create.mockImplementation((payload: any) => {
+      order.push('history');
+      return Promise.resolve({
+        history_id: 10,
+        ...payload.data,
+      });
+    });
+
+    notificationsServiceMock.notifySafe.mockImplementation(async () => {
+      order.push('notify');
+      return Promise.resolve(undefined);
+    });
+
+    mockMasterHonors([
+      createMasterHonor({
+        master_honor_id: 1,
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 1,
+            minimumRequired: 1,
+            optionHonors: [[1]],
+          }),
+        ],
+      }),
+    ]);
+
+    mockApprovedHonors([{ honorId: 1, categoryId: 1 }]);
+
+    await service.evaluateUserForMasterHonor('user-1', 1);
+
+    expect(order.indexOf('notify')).toBeGreaterThan(order.indexOf('create'));
+    expect(order.indexOf('notify')).toBeGreaterThan(order.indexOf('history'));
+    expect(order).toEqual(['create', 'history', 'notify']);
+  });
+
+  it('notifies not_current transition when criteria is no longer satisfied', async () => {
+    mockMasterHonors([
+      createMasterHonor({
+        master_honor_id: 1,
+        requirement_groups: [
+          createExplicitGroup({
+            groupId: 1,
+            minimumRequired: 1,
+            optionHonors: [[1]],
+          }),
+        ],
+      }),
+    ]);
+
+    tx.users_master_honors.findMany.mockResolvedValue([
+      {
+        ...createExistingUserMasterHonor({
+          status: user_master_honor_status_enum.AWARDED,
+          awardedDivisionId: 10,
+        }),
+      },
+    ]);
+
+    mockApprovedHonors([]);
+
+    await service.evaluateUserForMasterHonor('user-1', 1);
+
+    expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
+      'user-1',
+      'Maestría marcada como No vigente',
+      'Las validaciones requeridas para la maestría Honores de Base cambiaron. Actualmente no cumples con los requisitos, por lo que quedó marcada como No vigente.',
+      expect.objectContaining({
+        type: 'master_honor_changed',
+        transition: 'not_current',
+      }),
+      'master_honors:not_current',
     );
   });
 

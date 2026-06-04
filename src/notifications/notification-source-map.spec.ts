@@ -52,6 +52,10 @@ describe('notification-source-map', () => {
         'requests:assignment_created',
         'requests:assignment_approved',
         'requests:assignment_rejected',
+        // achievements — master honors
+        'master_honors:awarded',
+        'master_honors:recovered',
+        'master_honors:not_current',
         // approvals — units
         'units:member_of_month',
         'units:member_of_month_director',
@@ -92,6 +96,9 @@ describe('notification-source-map', () => {
       ['requests:assignment_created', 'approvals'],
       ['requests:assignment_approved', 'approvals'],
       ['requests:assignment_rejected', 'approvals'],
+      ['master_honors:awarded', 'achievements'],
+      ['master_honors:recovered', 'achievements'],
+      ['master_honors:not_current', 'achievements'],
       ['units:member_of_month', 'approvals'],
       ['units:member_of_month_director', 'approvals'],
       ['camporees:late_enrollment', 'reminders'],

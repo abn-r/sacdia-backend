@@ -18,6 +18,7 @@ import { AdminReferenceService } from './admin-reference.service';
 import { AdminUsersService } from './admin-users.service';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
 import { AdminCronAlertsService } from './admin-cron-alerts.service';
+import { MasterHonorsQueueModule } from '../honors/master-honors-queue.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AdminCronAlertsService } from './admin-cron-alerts.service';
     BetterAuthModule,
     // Note: TranslationService is provided by the global CommonModule (app.module.ts)
     // — no explicit import needed here.
+    MasterHonorsQueueModule,
   ],
   controllers: [
     AdminAuthController,

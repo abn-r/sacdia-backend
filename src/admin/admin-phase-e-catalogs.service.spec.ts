@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { getQueueToken } from '@nestjs/bullmq';
 import { Test, TestingModule } from '@nestjs/testing';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -6,6 +7,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TranslationService } from '../common/services/translation.service';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
 import { MasterHonorRequirementGroupDto } from './dto/phase-e-catalogs.dto';
+import { CreateMasterHonorDto } from './dto/phase-e-catalogs.dto';
+import {
+  MASTER_HONOR_RECALCULATION_JOB_OPTIONS,
+  MASTER_HONORS_QUEUE,
+} from '../honors/master-honors.constants';
 import {
   master_honor_applicability_scope_enum,
   master_honor_requirement_group_type_enum,
@@ -108,32 +114,79 @@ describe('MasterHonorRequirementGroupDto', () => {
   });
 });
 
+describe('CreateMasterHonorDto', () => {
+  it('accepts positive division_ids', async () => {
+    const dto = plainToInstance(CreateMasterHonorDto, {
+      name: 'Maestría de Prueba',
+      applicability_scope: master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+      division_ids: [1, 2],
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects zero or negative division_ids', async () => {
+    const dto = plainToInstance(CreateMasterHonorDto, {
+      name: 'Maestría de Prueba',
+      applicability_scope: master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+      division_ids: [0, -1],
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          property: 'division_ids',
+        }),
+      ]),
+    );
+  });
+});
+
 describe('AdminPhaseECatalogsService', () => {
   let service: AdminPhaseECatalogsService;
   let prismaMock: ReturnType<typeof makePrismaMock>;
   let translationMock: ReturnType<typeof makeTranslationMock>;
   let txMock: ReturnType<typeof makePrismaMock>;
+  let masterHonorsQueueMock: { add: jest.Mock };
+
+  const buildService = async (hasQueue: boolean) => {
+    const providers = [
+      AdminPhaseECatalogsService,
+      { provide: PrismaService, useValue: prismaMock },
+      { provide: TranslationService, useValue: translationMock },
+    ];
+
+    if (hasQueue) {
+      providers.push({
+        provide: getQueueToken(MASTER_HONORS_QUEUE),
+        useValue: masterHonorsQueueMock,
+      });
+    }
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers,
+    }).compile();
+
+    return module.get<AdminPhaseECatalogsService>(
+      AdminPhaseECatalogsService,
+    );
+  };
 
   beforeEach(async () => {
     prismaMock = makePrismaMock();
     translationMock = makeTranslationMock();
     txMock = makePrismaMock();
+    masterHonorsQueueMock = { add: jest.fn() };
 
     prismaMock.$transaction.mockImplementation(
       async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
     );
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AdminPhaseECatalogsService,
-        { provide: PrismaService, useValue: prismaMock },
-        { provide: TranslationService, useValue: translationMock },
-      ],
-    }).compile();
-
-    service = module.get<AdminPhaseECatalogsService>(
-      AdminPhaseECatalogsService,
-    );
+    service = await buildService(true);
   });
 
   describe('classes legacy duration and availability', () => {
@@ -387,18 +440,44 @@ describe('AdminPhaseECatalogsService', () => {
       expect(txMock.master_honor_requirement_groups.create).not.toHaveBeenCalled();
     });
 
-    it('returns an explicit pending implementation status for recalculation placeholder', async () => {
+    it('enqueues a recalculation job and returns queued=true when queue is available', async () => {
       prismaMock.master_honors.findUnique.mockResolvedValue({
         master_honor_id: 9,
         name: 'Maestro',
       });
+      masterHonorsQueueMock.add.mockResolvedValue({ id: 'job-1' } as any);
 
       const result = await service.recalculateMasterHonor(9, ACTOR_ID);
 
       expect(result).toEqual(
         expect.objectContaining({
-          status: 'pending_implementation',
-          master_honor_id: 9,
+          queued: true,
+        }),
+      );
+
+      expect(masterHonorsQueueMock.add).toHaveBeenCalledWith(
+        'recalculate-master-honor',
+        {
+          kind: 'master-honor',
+          masterHonorId: 9,
+        },
+        MASTER_HONOR_RECALCULATION_JOB_OPTIONS,
+      );
+    });
+
+    it('returns queued=false when recalculation queue is not configured', async () => {
+      prismaMock.master_honors.findUnique.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+      });
+
+      service = await buildService(false);
+
+      const result = await service.recalculateMasterHonor(9, ACTOR_ID);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          queued: false,
         }),
       );
     });

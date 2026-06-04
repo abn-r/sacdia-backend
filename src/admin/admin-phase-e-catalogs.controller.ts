@@ -775,7 +775,7 @@ export class AdminPhaseECatalogsController {
   @RequirePermissions('honors:update')
   @ApiOperation({
     summary:
-      'Queue recalculation of affected users for one master honor (placeholder)',
+      'Queue recalculation of affected users for one master honor',
   })
   async recalculateMasterHonor(
     @Param('id', ParseIntPipe) id: number,
