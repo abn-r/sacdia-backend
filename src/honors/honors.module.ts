@@ -12,6 +12,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { HonorValidationWorkflowService } from './honor-validation-workflow.service';
+import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 
 @Module({
   imports: [PrismaModule, AchievementsModule, NotificationsModule],
@@ -27,6 +28,7 @@ import { HonorValidationWorkflowService } from './honor-validation-workflow.serv
     HonorRequirementsService,
     AdminHonorsService,
     HonorValidationWorkflowService,
+    MasterHonorsEvaluatorService,
   ],
   exports: [HonorsService, HonorValidationWorkflowService],
 })
