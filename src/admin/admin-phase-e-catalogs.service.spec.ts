@@ -1,8 +1,21 @@
 import { BadRequestException } from '@nestjs/common';
+import { getQueueToken } from '@nestjs/bullmq';
 import { Test, TestingModule } from '@nestjs/testing';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { TranslationService } from '../common/services/translation.service';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
+import { MasterHonorRequirementGroupDto } from './dto/phase-e-catalogs.dto';
+import { CreateMasterHonorDto } from './dto/phase-e-catalogs.dto';
+import {
+  MASTER_HONOR_RECALCULATION_JOB_OPTIONS,
+  MASTER_HONORS_QUEUE,
+} from '../honors/master-honors.constants';
+import {
+  master_honor_applicability_scope_enum,
+  master_honor_requirement_group_type_enum,
+} from '@prisma/client';
 
 const ACTOR_ID = 'actor-uuid';
 
@@ -14,6 +27,53 @@ const makePrismaMock = () => ({
     create: jest.fn(),
     update: jest.fn(),
   },
+  master_honors: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  master_honor_divisions: {
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  master_honor_requirement_groups: {
+    deleteMany: jest.fn(),
+    create: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+  },
+  master_honor_requirement_options: {
+    deleteMany: jest.fn(),
+    create: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+  },
+  divisions: {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  honors_categories: {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  honors: {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
   $transaction: jest.fn(),
 });
 
@@ -22,32 +82,111 @@ const makeTranslationMock = () => ({
   upsertTranslations: jest.fn().mockResolvedValue(undefined),
 });
 
+describe('MasterHonorRequirementGroupDto', () => {
+  it('allows CATEGORY_COUNT groups to omit options', async () => {
+    const dto = plainToInstance(MasterHonorRequirementGroupDto, {
+      group_type: master_honor_requirement_group_type_enum.CATEGORY_COUNT,
+      minimum_required: 1,
+      honors_category_id: 3,
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors).toHaveLength(0);
+  });
+
+  it('validates provided nested options', async () => {
+    const dto = plainToInstance(MasterHonorRequirementGroupDto, {
+      group_type: master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS,
+      minimum_required: 1,
+      options: [{ label: 'Opción sin honores', honor_ids: [] }],
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          property: 'options',
+        }),
+      ]),
+    );
+  });
+});
+
+describe('CreateMasterHonorDto', () => {
+  it('accepts positive division_ids', async () => {
+    const dto = plainToInstance(CreateMasterHonorDto, {
+      name: 'Maestría de Prueba',
+      applicability_scope: master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+      division_ids: [1, 2],
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects zero or negative division_ids', async () => {
+    const dto = plainToInstance(CreateMasterHonorDto, {
+      name: 'Maestría de Prueba',
+      applicability_scope: master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+      division_ids: [0, -1],
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          property: 'division_ids',
+        }),
+      ]),
+    );
+  });
+});
+
 describe('AdminPhaseECatalogsService', () => {
   let service: AdminPhaseECatalogsService;
   let prismaMock: ReturnType<typeof makePrismaMock>;
   let translationMock: ReturnType<typeof makeTranslationMock>;
   let txMock: ReturnType<typeof makePrismaMock>;
+  let masterHonorsQueueMock: { add: jest.Mock };
+
+  const buildService = async (hasQueue: boolean) => {
+    const providers = [
+      AdminPhaseECatalogsService,
+      { provide: PrismaService, useValue: prismaMock },
+      { provide: TranslationService, useValue: translationMock },
+    ];
+
+    if (hasQueue) {
+      providers.push({
+        provide: getQueueToken(MASTER_HONORS_QUEUE),
+        useValue: masterHonorsQueueMock,
+      });
+    }
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers,
+    }).compile();
+
+    return module.get<AdminPhaseECatalogsService>(
+      AdminPhaseECatalogsService,
+    );
+  };
 
   beforeEach(async () => {
     prismaMock = makePrismaMock();
     translationMock = makeTranslationMock();
     txMock = makePrismaMock();
+    masterHonorsQueueMock = { add: jest.fn() };
 
     prismaMock.$transaction.mockImplementation(
       async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
     );
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AdminPhaseECatalogsService,
-        { provide: PrismaService, useValue: prismaMock },
-        { provide: TranslationService, useValue: translationMock },
-      ],
-    }).compile();
-
-    service = module.get<AdminPhaseECatalogsService>(
-      AdminPhaseECatalogsService,
-    );
+    service = await buildService(true);
   });
 
   describe('classes legacy duration and availability', () => {
@@ -161,6 +300,304 @@ describe('AdminPhaseECatalogsService', () => {
             club_type_id: 1,
             min_duration_years: 3,
             max_duration_years: 2,
+          } as any,
+          ACTOR_ID,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('master honor configurable requirements', () => {
+    it('creates a master honor with philosophy, notes and applicability scope', async () => {
+      prismaMock.master_honors.findFirst.mockResolvedValue(null);
+      txMock.master_honors.create.mockResolvedValue({
+        master_honor_id: 11,
+        name: 'Maestro',
+        applicability_scope:
+          master_honor_applicability_scope_enum.ALL,
+      });
+      txMock.master_honor_divisions.deleteMany.mockResolvedValue({ count: 0 });
+      txMock.master_honor_requirement_groups.create.mockResolvedValue({ group_id: 1 });
+
+      await service.createMasterHonor(
+        {
+          name: 'Maestro',
+          philosophy: 'Filosofía de servicio',
+          notes: 'Notas internas',
+          applicability_scope:
+            master_honor_applicability_scope_enum.ALL,
+        } as any,
+        ACTOR_ID,
+      );
+
+      expect(txMock.master_honors.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          name: 'Maestro',
+          philosophy: 'Filosofía de servicio',
+          notes: 'Notas internas',
+          applicability_scope: master_honor_applicability_scope_enum.ALL,
+        }),
+      });
+    });
+
+    it('updates a master honor with philosophy, notes and applicability scope', async () => {
+      prismaMock.master_honors.findUnique.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+        applicability_scope: master_honor_applicability_scope_enum.ALL,
+      });
+      txMock.master_honors.update.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+      });
+      txMock.master_honor_divisions.deleteMany.mockResolvedValue({ count: 0 });
+      txMock.master_honor_divisions.createMany.mockResolvedValue({ count: 0 });
+
+      await service.updateMasterHonor(
+        9,
+        {
+          philosophy: 'Filosofía actualizada',
+          notes: 'Notas actualizadas',
+          applicability_scope:
+            master_honor_applicability_scope_enum.ALL,
+        } as any,
+        ACTOR_ID,
+      );
+
+      expect(txMock.master_honors.update).toHaveBeenCalledWith({
+        where: { master_honor_id: 9 },
+        data: expect.objectContaining({
+          philosophy: 'Filosofía actualizada',
+          notes: 'Notas actualizadas',
+          applicability_scope: master_honor_applicability_scope_enum.ALL,
+        }),
+      });
+    });
+
+    it('updates requirement groups without resending division_ids for an existing selected-division master honor', async () => {
+      prismaMock.master_honors.findUnique.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+        applicability_scope:
+          master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+      });
+      prismaMock.honors.findMany.mockResolvedValue([{ honor_id: 1 }]);
+      txMock.master_honors.update.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+      });
+      txMock.master_honor_requirement_options.deleteMany.mockResolvedValue({
+        count: 0,
+      });
+      txMock.master_honor_requirement_groups.deleteMany.mockResolvedValue({
+        count: 0,
+      });
+      txMock.master_honor_requirement_groups.create.mockResolvedValue({
+        group_id: 1,
+      });
+
+      await service.updateMasterHonor(
+        9,
+        {
+          requirement_groups: [
+            {
+              group_type:
+                master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS,
+              minimum_required: 1,
+              options: [{ label: 'Opción', honor_ids: [1] }],
+            },
+          ],
+        } as any,
+        ACTOR_ID,
+      );
+
+      expect(txMock.master_honor_divisions.deleteMany).not.toHaveBeenCalled();
+      expect(txMock.master_honor_requirement_groups.create).toHaveBeenCalled();
+    });
+
+    it('does not clear requirement groups when a partial update omits requirement_groups', async () => {
+      prismaMock.master_honors.findUnique.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+        applicability_scope: master_honor_applicability_scope_enum.ALL,
+      });
+      txMock.master_honors.update.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+      });
+
+      await service.updateMasterHonor(
+        9,
+        {
+          notes: 'Solo actualizar notas',
+        } as any,
+        ACTOR_ID,
+      );
+
+      expect(
+        txMock.master_honor_requirement_groups.deleteMany,
+      ).not.toHaveBeenCalled();
+      expect(txMock.master_honor_requirement_groups.create).not.toHaveBeenCalled();
+    });
+
+    it('enqueues a recalculation job and returns queued=true when queue is available', async () => {
+      prismaMock.master_honors.findUnique.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+      });
+      masterHonorsQueueMock.add.mockResolvedValue({ id: 'job-1' } as any);
+
+      const result = await service.recalculateMasterHonor(9, ACTOR_ID);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          queued: true,
+        }),
+      );
+
+      expect(masterHonorsQueueMock.add).toHaveBeenCalledWith(
+        'recalculate-master-honor',
+        {
+          kind: 'master-honor',
+          masterHonorId: 9,
+        },
+        MASTER_HONOR_RECALCULATION_JOB_OPTIONS,
+      );
+    });
+
+    it('returns queued=false when recalculation queue is not configured', async () => {
+      prismaMock.master_honors.findUnique.mockResolvedValue({
+        master_honor_id: 9,
+        name: 'Maestro',
+      });
+
+      service = await buildService(false);
+
+      const result = await service.recalculateMasterHonor(9, ACTOR_ID);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          queued: false,
+        }),
+      );
+    });
+
+    it('requires at least one division_id when applicability_scope is SELECTED_DIVISIONS', async () => {
+      prismaMock.master_honors.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createMasterHonor(
+          {
+            name: 'Maestro',
+            applicability_scope:
+              master_honor_applicability_scope_enum.SELECTED_DIVISIONS,
+            division_ids: [],
+          } as any,
+          ACTOR_ID,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('clears selected divisions when applicability_scope is ALL', async () => {
+      prismaMock.master_honors.findFirst.mockResolvedValue(null);
+      txMock.master_honors.create.mockResolvedValue({
+        master_honor_id: 12,
+        name: 'Maestro',
+        applicability_scope: master_honor_applicability_scope_enum.ALL,
+      });
+      txMock.master_honor_divisions.deleteMany.mockResolvedValue({ count: 0 });
+      txMock.master_honor_divisions.createMany.mockResolvedValue({ count: 0 });
+
+      await service.createMasterHonor(
+        {
+          name: 'Maestro',
+          applicability_scope: master_honor_applicability_scope_enum.ALL,
+          division_ids: [1, 2],
+        } as any,
+        ACTOR_ID,
+      );
+
+      expect(txMock.master_honor_divisions.createMany).not.toHaveBeenCalled();
+    });
+
+    it('validates minimum_required >= 1 for rule groups', async () => {
+      prismaMock.master_honors.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createMasterHonor(
+          {
+            name: 'Maestro',
+            requirement_groups: [
+              {
+                group_type:
+                  master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS,
+                minimum_required: 0,
+                options: [{ label: 'O', honor_ids: [1] }],
+              },
+            ],
+          } as any,
+          ACTOR_ID,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('requires explicit groups to have options', async () => {
+      prismaMock.master_honors.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createMasterHonor(
+          {
+            name: 'Maestro',
+            requirement_groups: [
+              {
+                group_type:
+                  master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS,
+                minimum_required: 1,
+                options: [],
+              },
+            ],
+          } as any,
+          ACTOR_ID,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects category groups without category id', async () => {
+      prismaMock.master_honors.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createMasterHonor(
+          {
+            name: 'Maestro',
+            requirement_groups: [
+              {
+                group_type:
+                  master_honor_requirement_group_type_enum.CATEGORY_COUNT,
+                minimum_required: 1,
+                options: [],
+              },
+            ],
+          } as any,
+          ACTOR_ID,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('requires category groups to set category and not include options', async () => {
+      prismaMock.master_honors.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createMasterHonor(
+          {
+            name: 'Maestro',
+            requirement_groups: [
+              {
+                group_type:
+                  master_honor_requirement_group_type_enum.CATEGORY_COUNT,
+                minimum_required: 1,
+                options: [{ label: 'No permitido', honor_ids: [1] }],
+              },
+            ],
           } as any,
           ACTOR_ID,
         ),

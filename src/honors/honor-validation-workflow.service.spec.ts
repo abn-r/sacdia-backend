@@ -4,6 +4,10 @@ import { HonorValidationWorkflowService } from './honor-validation-workflow.serv
 describe('HonorValidationWorkflowService', () => {
   const now = new Date('2026-06-01T12:00:00.000Z');
 
+  const masterHonorsEvaluator = {
+    evaluateUser: jest.fn(),
+  };
+
   const mockPrisma = {
     users_honors: {
       findUnique: jest.fn(),
@@ -32,15 +36,18 @@ describe('HonorValidationWorkflowService', () => {
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(now);
     jest.clearAllMocks();
+    masterHonorsEvaluator.evaluateUser.mockResolvedValue([]);
     mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
     service = new HonorValidationWorkflowService(
       mockPrisma as any,
       notifications as any,
       achievements as any,
+      masterHonorsEvaluator as any,
     );
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
@@ -128,6 +135,7 @@ describe('HonorValidationWorkflowService', () => {
         }),
       }),
     );
+    expect(masterHonorsEvaluator.evaluateUser).not.toHaveBeenCalled();
   });
 
   it('blocks rejected honor resubmit when there are no changes after rejection', async () => {
@@ -169,6 +177,7 @@ describe('HonorValidationWorkflowService', () => {
       user_honor_id: 10,
       validation_status: 'PENDING_REVIEW',
     });
+    expect(masterHonorsEvaluator.evaluateUser).not.toHaveBeenCalled();
   });
 
   it('approves only pending honors and keeps validate in sync', async () => {
@@ -193,6 +202,7 @@ describe('HonorValidationWorkflowService', () => {
         }),
       }),
     );
+    expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
   });
 
   it('rejects only pending honors and clears validate', async () => {
@@ -218,5 +228,48 @@ describe('HonorValidationWorkflowService', () => {
         }),
       }),
     );
+    expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
+  });
+
+  it('does not fail validation workflow when master honors evaluation fails on approve', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(honorRecord());
+    mockPrisma.users_honors.update.mockResolvedValue(
+      honorRecord({ validation_status: 'APPROVED', validate: true }),
+    );
+    masterHonorsEvaluator.evaluateUser.mockRejectedValue(
+      new Error('evaluator unavailable'),
+    );
+    const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+    await expect(service.approve(10, 'reviewer-1', 'ok')).resolves.toEqual({
+      id: 10,
+      type: 'honor',
+      status: 'APPROVED',
+    });
+
+    expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('does not fail validation workflow when master honors evaluation fails on reject', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(honorRecord());
+    mockPrisma.users_honors.update.mockResolvedValue(
+      honorRecord({ validation_status: 'REJECTED', validate: false }),
+    );
+    masterHonorsEvaluator.evaluateUser.mockRejectedValue(
+      new Error('evaluator unavailable'),
+    );
+    const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+    await expect(
+      service.reject(10, 'reviewer-1', 'Falta evidencia'),
+    ).resolves.toEqual({
+      id: 10,
+      type: 'honor',
+      status: 'REJECTED',
+    });
+
+    expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
+    expect(warnSpy).toHaveBeenCalled();
   });
 });

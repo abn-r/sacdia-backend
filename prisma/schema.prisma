@@ -649,6 +649,8 @@ model divisions {
   modified_at  DateTime? @default(now()) @db.Timestamptz(6)
 
   unions                     unions[]
+  master_honor_divisions     master_honor_divisions[]
+  awarded_users_master_honors users_master_honors[] @relation("users_master_honors_awarded_division")
   translations               divisions_translations[]
   union_division_history     union_division_history[]     @relation("union_division_history_division")
   club_institutional_history club_institutional_history[] @relation("club_institutional_history_division")
@@ -1055,6 +1057,7 @@ model honors {
   certificate_bulk_import_items certificate_bulk_import_items[]
   users_honors       users_honors[]
   honor_requirements honor_requirements[]
+  master_honor_requirement_option_honors master_honor_requirement_option_honors[]
   translations       honors_translations[]
 }
 
@@ -1152,6 +1155,7 @@ model honors_categories {
   created_at        DateTime?                        @default(now()) @db.Timestamptz(6)
   modified_at       DateTime?                        @default(now()) @db.Timestamptz(6)
   honors            honors[]
+  master_honor_requirement_groups master_honor_requirement_groups[]
   translations      honors_categories_translations[]
 }
 
@@ -1274,9 +1278,16 @@ model master_honors {
   name            String                       @unique @db.VarChar(100)
   master_image    String?
   active          Boolean                      @default(false)
+  applicability_scope master_honor_applicability_scope_enum @default(ALL)
+  philosophy      String?
+  notes           String?
   created_at      DateTime?                    @default(now()) @db.Timestamptz(6)
   modified_at     DateTime?                    @default(now()) @db.Timestamptz(6)
   honors          honors[]
+  master_honor_divisions master_honor_divisions[]
+  requirement_groups master_honor_requirement_groups[]
+  users_master_honors users_master_honors[] @relation("users_master_honors_master_honor")
+  evaluation_history master_honor_evaluation_history[] @relation("master_honor_evaluation_history_master_honor")
   translations    master_honors_translations[]
 }
 
@@ -1292,6 +1303,119 @@ model master_honors_translations {
   @@unique([master_honor_id, locale])
   @@index([locale])
   @@index([master_honor_id])
+}
+
+model master_honor_divisions {
+  master_honor_division_id Int       @id @default(autoincrement())
+  master_honor_id          Int
+  division_id              Int
+  active                   Boolean  @default(true)
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime @default(now()) @db.Timestamptz(6)
+
+  master_honor master_honors @relation(fields: [master_honor_id], references: [master_honor_id], onDelete: Cascade, onUpdate: Cascade)
+  division     divisions     @relation(fields: [division_id], references: [division_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([master_honor_id, division_id])
+  @@index([division_id])
+}
+
+model master_honor_requirement_groups {
+  group_id           Int                              @id @default(autoincrement())
+  master_honor_id    Int
+  group_type         master_honor_requirement_group_type_enum
+  title              String?                          @db.VarChar(200)
+  description        String?
+  minimum_required    Int
+  honors_category_id  Int?
+  display_order      Int                              @default(0)
+  active             Boolean                          @default(true)
+  created_at         DateTime                         @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime                         @default(now()) @db.Timestamptz(6)
+
+  master_honor   master_honors      @relation(fields: [master_honor_id], references: [master_honor_id], onDelete: Cascade, onUpdate: Cascade)
+  honor_category honors_categories? @relation(fields: [honors_category_id], references: [honor_category_id], onDelete: NoAction, onUpdate: NoAction)
+  options        master_honor_requirement_options[]
+
+  @@index([master_honor_id])
+  @@index([honors_category_id])
+}
+
+model master_honor_requirement_options {
+  option_id     Int      @id @default(autoincrement())
+  group_id      Int
+  label         String   @db.VarChar(200)
+  display_order Int      @default(0)
+  active        Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  modified_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  group  master_honor_requirement_groups            @relation(fields: [group_id], references: [group_id], onDelete: Cascade, onUpdate: Cascade)
+  honors master_honor_requirement_option_honors[]
+
+  @@index([group_id])
+}
+
+model master_honor_requirement_option_honors {
+  option_honor_id Int      @id @default(autoincrement())
+  option_id       Int
+  honor_id        Int
+  active          Boolean  @default(true)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  option master_honor_requirement_options @relation(fields: [option_id], references: [option_id], onDelete: Cascade, onUpdate: Cascade)
+  honor  honors                           @relation(fields: [honor_id], references: [honor_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([option_id, honor_id])
+  @@index([honor_id])
+}
+
+model users_master_honors {
+  user_master_honor_id Int                           @id @default(autoincrement())
+  user_id              String                        @db.Uuid
+  master_honor_id      Int
+  status               user_master_honor_status_enum
+  awarded_at           DateTime?                     @db.Timestamptz(6)
+  revoked_at           DateTime?                     @db.Timestamptz(6)
+  recovered_at         DateTime?                     @db.Timestamptz(6)
+  evaluated_at         DateTime                      @default(now()) @db.Timestamptz(6)
+  awarded_division_id  Int?
+  source               user_master_honor_source_enum @default(AUTO)
+  status_reason        user_master_honor_status_reason_enum?
+  evaluation_snapshot   Json
+  active               Boolean                       @default(true)
+  created_at           DateTime                      @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime                      @default(now()) @db.Timestamptz(6)
+
+  user             users          @relation("users_master_honors_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  master_honor     master_honors   @relation("users_master_honors_master_honor", fields: [master_honor_id], references: [master_honor_id], onDelete: NoAction, onUpdate: NoAction)
+  awarded_division divisions?      @relation("users_master_honors_awarded_division", fields: [awarded_division_id], references: [division_id], onDelete: NoAction, onUpdate: NoAction)
+  history          master_honor_evaluation_history[] @relation("user_master_honor_history")
+
+  @@unique([user_id, master_honor_id])
+  @@index([user_id, status])
+  @@index([master_honor_id, status])
+}
+
+model master_honor_evaluation_history {
+  history_id           Int                                  @id @default(autoincrement())
+  user_master_honor_id Int
+  user_id              String                               @db.Uuid
+  master_honor_id      Int
+  from_status          user_master_honor_status_enum?
+  to_status            user_master_honor_status_enum
+  reason               user_master_honor_status_reason_enum?
+  evaluation_snapshot   Json
+  created_at           DateTime                             @default(now()) @db.Timestamptz(6)
+  created_by_job_id    String?                              @db.VarChar(100)
+
+  user_master_honor users_master_honors @relation("user_master_honor_history", fields: [user_master_honor_id], references: [user_master_honor_id], onDelete: Cascade, onUpdate: Cascade)
+  user              users               @relation("master_honor_evaluation_history_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  master_honor      master_honors       @relation("master_honor_evaluation_history_master_honor", fields: [master_honor_id], references: [master_honor_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_id, created_at])
+  @@index([master_honor_id, created_at])
 }
 
 model permissions {
@@ -1657,6 +1781,8 @@ model users {
   users_certifications              users_certifications[]
   users_diseases                    users_diseases[]
   users_honors                      users_honors[]
+  users_master_honors               users_master_honors[]              @relation("users_master_honors_user")
+  master_honor_evaluation_history    master_honor_evaluation_history[]   @relation("master_honor_evaluation_history_user")
   users_medicines                   users_medicines[]
   users_permissions                 users_permissions[]
   users_pr                          users_pr?
@@ -2318,6 +2444,33 @@ enum severity_level {
 enum gender {
   Masculino
   Femenino
+}
+
+enum master_honor_applicability_scope_enum {
+  ALL
+  SELECTED_DIVISIONS
+}
+
+enum master_honor_requirement_group_type_enum {
+  EXPLICIT_OPTIONS
+  CATEGORY_COUNT
+}
+
+enum user_master_honor_status_enum {
+  AWARDED
+  REVOKED
+  RETIRED
+}
+
+enum user_master_honor_source_enum {
+  AUTO
+}
+
+enum user_master_honor_status_reason_enum {
+  CRITERIA_CHANGED
+  USER_NO_LONGER_QUALIFIES
+  MASTER_HONOR_INACTIVE
+  RECOVERED
 }
 
 enum role_category {

@@ -47,6 +47,9 @@ export const NOTIFICATION_SOURCE_MAP: Readonly<
   // ---------------------------------------------------------------------------
   'achievements:unlock': 'achievements',
   'achievements:retroactive': 'achievements',
+  'master_honors:awarded': 'achievements',
+  'master_honors:recovered': 'achievements',
+  'master_honors:not_current': 'achievements',
 
   // ---------------------------------------------------------------------------
   // approvals — investiture, validation, requests, membership

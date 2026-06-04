@@ -770,4 +770,21 @@ export class AdminPhaseECatalogsController {
     );
     return { status: 'success', data };
   }
+
+  @Post('master-honors/:id/recalculate')
+  @RequirePermissions('honors:update')
+  @ApiOperation({
+    summary:
+      'Queue recalculation of affected users for one master honor',
+  })
+  async recalculateMasterHonor(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: ExpressRequest & { user: { sub: string } },
+  ) {
+    const data = await this.catalogsService.recalculateMasterHonor(
+      id,
+      this.getActorId(req),
+    );
+    return { status: 'success', data };
+  }
 }
