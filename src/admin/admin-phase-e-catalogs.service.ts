@@ -17,6 +17,10 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { TranslationService } from '../common/services/translation.service';
 import {
+  master_honor_applicability_scope_enum,
+  master_honor_requirement_group_type_enum,
+} from '@prisma/client';
+import {
   CreateClassDto,
   UpdateClassDto,
   CreateClassModuleDto,
@@ -1438,6 +1442,41 @@ export class AdminPhaseECatalogsService {
         translations: {
           select: { locale: true, name: true },
         },
+        master_honor_divisions: {
+          where: { active: true },
+          select: {
+            master_honor_division_id: true,
+            division_id: true,
+            active: true,
+          },
+        },
+        requirement_groups: {
+          where: { active: true },
+          orderBy: { display_order: 'asc' },
+          include: {
+            options: {
+              where: { active: true },
+              orderBy: { display_order: 'asc' },
+              include: {
+                honors: {
+                  where: { active: true },
+                  select: {
+                    option_honor_id: true,
+                    honor_id: true,
+                    active: true,
+                    honor: {
+                      select: {
+                        honor_id: true,
+                        name: true,
+                        honors_category_id: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { name: 'asc' },
     });
@@ -1448,7 +1487,25 @@ export class AdminPhaseECatalogsService {
     const name = this.normalizeName(dto.name);
     await this.ensureMasterHonorUnique(name);
 
-    const { translations, ...mainData } = dto;
+    const {
+      translations,
+      division_ids = [],
+      requirement_groups = [],
+      ...mainData
+    } = dto;
+
+    this.validateMasterHonorConfig(
+      mainData.applicability_scope ??
+        master_honor_applicability_scope_enum.ALL,
+      division_ids,
+      requirement_groups,
+    );
+    await this.validateMasterHonorReferences(
+      mainData.applicability_scope ??
+        master_honor_applicability_scope_enum.ALL,
+      division_ids,
+      requirement_groups,
+    );
 
     const record = await this.prisma.$transaction(async (tx) => {
       const masterHonor = await tx.master_honors.create({
@@ -1456,6 +1513,13 @@ export class AdminPhaseECatalogsService {
           name,
           master_image: mainData.master_image ?? null,
           active: mainData.active ?? false,
+          ...(mainData.applicability_scope !== undefined
+            ? { applicability_scope: mainData.applicability_scope }
+            : {}),
+          ...(mainData.philosophy !== undefined
+            ? { philosophy: mainData.philosophy }
+            : {}),
+          ...(mainData.notes !== undefined ? { notes: mainData.notes } : {}),
         },
       });
 
@@ -1467,6 +1531,20 @@ export class AdminPhaseECatalogsService {
         masterHonor.master_honor_id,
         translations,
         ['name'],
+      );
+
+      await this.syncMasterHonorDivisions(
+        tx,
+        masterHonor.master_honor_id,
+        mainData.applicability_scope ??
+          master_honor_applicability_scope_enum.ALL,
+        division_ids,
+      );
+
+      await this.syncMasterHonorRequirementGroups(
+        tx,
+        masterHonor.master_honor_id,
+        requirement_groups,
       );
 
       return masterHonor;
@@ -1487,14 +1565,53 @@ export class AdminPhaseECatalogsService {
     actorId: string,
   ) {
     this.translationService.validateTranslations(dto.translations);
-    await this.ensureMasterHonorExists(id);
+    const masterHonor = await this.ensureMasterHonorExists(id);
 
     const name = dto.name ? this.normalizeName(dto.name) : undefined;
     if (name) {
       await this.ensureMasterHonorUnique(name, id);
     }
 
-    const { translations, ...mainDto } = dto;
+    const {
+      translations,
+      division_ids,
+      requirement_groups,
+      ...mainDto
+    } = dto;
+
+    const applicabilityScope =
+      mainDto.applicability_scope ??
+      masterHonor.applicability_scope ??
+      master_honor_applicability_scope_enum.ALL;
+    const syncDivisions =
+      dto.division_ids !== undefined || dto.applicability_scope !== undefined;
+    const syncRequirementGroups = dto.requirement_groups !== undefined;
+
+    if (syncDivisions) {
+      this.validateMasterHonorConfig(
+        applicabilityScope,
+        division_ids ?? [],
+        requirement_groups ?? [],
+      );
+      await this.validateMasterHonorReferences(
+        applicabilityScope,
+        division_ids ?? [],
+        requirement_groups ?? [],
+      );
+    } else if (syncRequirementGroups) {
+      this.validateMasterHonorConfig(
+        applicabilityScope,
+        [],
+        requirement_groups ?? [],
+        { validateDivisions: false },
+      );
+      await this.validateMasterHonorReferences(
+        applicabilityScope,
+        [],
+        requirement_groups ?? [],
+        { validateDivisions: false },
+      );
+    }
 
     const record = await this.prisma.$transaction(async (tx) => {
       const masterHonor = await tx.master_honors.update({
@@ -1507,6 +1624,13 @@ export class AdminPhaseECatalogsService {
           ...(typeof mainDto.active === 'boolean'
             ? { active: mainDto.active }
             : {}),
+          ...(mainDto.applicability_scope !== undefined
+            ? { applicability_scope: mainDto.applicability_scope }
+            : {}),
+          ...(mainDto.philosophy !== undefined
+            ? { philosophy: mainDto.philosophy }
+            : {}),
+          ...(mainDto.notes !== undefined ? { notes: mainDto.notes } : {}),
           modified_at: new Date(),
         },
       });
@@ -1520,6 +1644,24 @@ export class AdminPhaseECatalogsService {
         translations,
         ['name'],
       );
+
+      if (syncDivisions) {
+        await this.syncMasterHonorDivisions(
+          tx,
+          id,
+          applicabilityScope,
+          division_ids,
+        );
+      }
+
+      if (syncRequirementGroups) {
+        await this.deleteMasterHonorRequirementStructure(tx, id);
+        await this.syncMasterHonorRequirementGroups(
+          tx,
+          id,
+          requirement_groups ?? [],
+        );
+      }
 
       return masterHonor;
     });
@@ -1564,5 +1706,273 @@ export class AdminPhaseECatalogsService {
         ErrorCode.ADMIN_MASTER_HONOR_NAME_CONFLICT,
       );
     }
+  }
+
+  private validateMasterHonorConfig(
+    applicabilityScope:
+      | master_honor_applicability_scope_enum
+      | undefined
+      | null,
+    divisionIds: number[],
+    requirementGroups: Array<{
+      group_type: master_honor_requirement_group_type_enum;
+      minimum_required: number;
+      honors_category_id?: number | null;
+      options?: Array<{ honor_ids: number[] }>;
+    }>,
+    options: { validateDivisions?: boolean } = {},
+  ) {
+    const validateDivisions = options.validateDivisions ?? true;
+    if (
+      validateDivisions &&
+      applicabilityScope ===
+      master_honor_applicability_scope_enum.SELECTED_DIVISIONS
+    ) {
+      if (!divisionIds.length) {
+        throw new BadRequestException(
+          'SELECTED_DIVISIONS requires at least one division_id',
+        );
+      }
+    }
+
+    for (const group of requirementGroups) {
+      if (!Number.isInteger(group.minimum_required) || group.minimum_required < 1) {
+        throw new BadRequestException(
+          'minimum_required must be at least 1',
+        );
+      }
+
+      if (group.group_type === master_honor_requirement_group_type_enum.CATEGORY_COUNT) {
+        if (!group.honors_category_id) {
+          throw new BadRequestException(
+            'CATEGORY_COUNT groups require honors_category_id',
+          );
+        }
+        if (group.options && group.options.length > 0) {
+          throw new BadRequestException(
+            'CATEGORY_COUNT groups must not include options',
+          );
+        }
+      }
+
+      if (group.group_type === master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS) {
+        if (!group.options || group.options.length === 0) {
+          throw new BadRequestException(
+            'EXPLICIT_OPTIONS groups require at least one option',
+          );
+        }
+        for (const option of group.options) {
+          if (!option.honor_ids.length) {
+            throw new BadRequestException(
+              'EXPLICIT_OPTIONS option requires at least one honor_id',
+            );
+          }
+        }
+      }
+    }
+  }
+
+  private async validateMasterHonorReferences(
+    applicabilityScope:
+      | master_honor_applicability_scope_enum
+      | undefined
+      | null,
+    divisionIds: number[],
+    requirementGroups: Array<{
+      group_type: master_honor_requirement_group_type_enum;
+      honors_category_id?: number | null;
+      options?: Array<{ honor_ids: number[] }>;
+    }>,
+    options: { validateDivisions?: boolean } = {},
+  ) {
+    const validateDivisions = options.validateDivisions ?? true;
+    if (
+      validateDivisions &&
+      applicabilityScope ===
+      master_honor_applicability_scope_enum.SELECTED_DIVISIONS
+    ) {
+      await this.ensureDivisionIdsExist(divisionIds);
+    }
+
+    const honorsCategoryIds = [
+      ...new Set(
+        requirementGroups
+          .filter(
+            (group) =>
+              group.group_type ===
+                master_honor_requirement_group_type_enum.CATEGORY_COUNT &&
+              typeof group.honors_category_id === 'number',
+          )
+          .map((group) => group.honors_category_id as number),
+      ),
+    ];
+    if (honorsCategoryIds.length) {
+      await this.ensureHonorsCategoriesExist(honorsCategoryIds);
+    }
+
+    const honorIds = [
+      ...new Set(
+        requirementGroups.flatMap((group) =>
+          group.group_type ===
+            master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS
+            ? (group.options ?? []).flatMap((option) => option.honor_ids)
+            : [],
+        ),
+      ),
+    ];
+    if (honorIds.length) {
+      await this.ensureHonorsExist(honorIds);
+    }
+  }
+
+  private async ensureDivisionIdsExist(divisionIds: number[]) {
+    const uniqueDivisionIds = [...new Set(divisionIds)];
+    if (!uniqueDivisionIds.length) {
+      return;
+    }
+    const existing = await this.prisma.divisions.findMany({
+      where: { division_id: { in: uniqueDivisionIds } },
+      select: { division_id: true },
+    });
+    if (existing.length !== uniqueDivisionIds.length) {
+      throw new BadRequestException(
+        'One or more division_id values do not exist',
+      );
+    }
+  }
+
+  private async ensureHonorsCategoriesExist(categoryIds: number[]) {
+    const uniqueCategoryIds = [...new Set(categoryIds)];
+    const existing = await this.prisma.honors_categories.findMany({
+      where: { honor_category_id: { in: uniqueCategoryIds } },
+      select: { honor_category_id: true },
+    });
+    if (existing.length !== uniqueCategoryIds.length) {
+      throw new BadRequestException(
+        'One or more honors_category_id values do not exist',
+      );
+    }
+  }
+
+  private async ensureHonorsExist(honorIds: number[]) {
+    const uniqueHonorIds = [...new Set(honorIds)];
+    const existing = await this.prisma.honors.findMany({
+      where: { honor_id: { in: uniqueHonorIds } },
+      select: { honor_id: true },
+    });
+    if (existing.length !== uniqueHonorIds.length) {
+      throw new BadRequestException(
+        'One or more honor_id values do not exist',
+      );
+    }
+  }
+
+  private async syncMasterHonorDivisions(
+    tx: any,
+    masterHonorId: number,
+    applicabilityScope:
+      | master_honor_applicability_scope_enum
+      | undefined
+      | null,
+    divisionIds?: number[],
+  ) {
+    await tx.master_honor_divisions.deleteMany({
+      where: { master_honor_id: masterHonorId },
+    });
+
+    const normalizedScope =
+      applicabilityScope ??
+      master_honor_applicability_scope_enum.ALL;
+    if (
+      normalizedScope !== master_honor_applicability_scope_enum.SELECTED_DIVISIONS
+    ) {
+      return;
+    }
+
+    const uniqueDivisionIds = [...new Set(divisionIds ?? [])];
+    if (!uniqueDivisionIds.length) {
+      return;
+    }
+
+    await tx.master_honor_divisions.createMany({
+      data: uniqueDivisionIds.map((division_id) => ({
+        master_honor_id: masterHonorId,
+        division_id,
+      })),
+    });
+  }
+
+  private async syncMasterHonorRequirementGroups(
+    tx: any,
+    masterHonorId: number,
+    groups: Array<{
+      group_type: master_honor_requirement_group_type_enum;
+      title?: string | null;
+      description?: string | null;
+      minimum_required: number;
+      honors_category_id?: number | null;
+      display_order?: number;
+      active?: boolean;
+      options?: Array<{
+        label: string;
+        display_order?: number;
+        active?: boolean;
+        honor_ids: number[];
+      }>;
+    }>,
+  ) {
+    for (const group of groups) {
+      await tx.master_honor_requirement_groups.create({
+        data: {
+          master_honor_id: masterHonorId,
+          group_type: group.group_type,
+          title: group.title ?? null,
+          description: group.description ?? null,
+          minimum_required: group.minimum_required,
+          honors_category_id:
+            group.group_type ===
+            master_honor_requirement_group_type_enum.CATEGORY_COUNT
+              ? group.honors_category_id
+              : null,
+          display_order: group.display_order ?? 0,
+          active: group.active ?? true,
+          options: {
+            create: (group.options ?? []).map((option) => ({
+              label: option.label,
+              display_order: option.display_order ?? 0,
+              active: option.active ?? true,
+              honors: {
+                create: option.honor_ids.map((honor_id) => ({
+                  honor_id,
+                  active: true,
+                })),
+              },
+            })),
+          },
+        },
+      });
+    }
+  }
+
+  private async deleteMasterHonorRequirementStructure(
+    tx: any,
+    masterHonorId: number,
+  ) {
+    await tx.master_honor_requirement_groups.deleteMany({
+      where: { master_honor_id: masterHonorId },
+    });
+  }
+
+  async recalculateMasterHonor(id: number, actorId: string) {
+    await this.ensureMasterHonorExists(id);
+    this.logMutation('recalculate', 'master_honors', id, actorId);
+
+    return {
+      status: 'pending_implementation',
+      master_honor_id: id,
+      message:
+        'Master honor recalculation endpoint is registered; evaluator job is pending implementation.',
+      requested_at: new Date().toISOString(),
+    };
   }
 }

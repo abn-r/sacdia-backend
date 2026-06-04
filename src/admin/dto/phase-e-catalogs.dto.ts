@@ -14,6 +14,9 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   IsBoolean,
+  IsArray,
+  ArrayMinSize,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -23,6 +26,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  master_honor_applicability_scope_enum,
+  master_honor_requirement_group_type_enum,
+} from '@prisma/client';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
 // ─── SHARED: translation field mixin ─────────────────────────────────────────
@@ -533,6 +540,102 @@ export class UpdateHonorCatalogDto extends PartialType(CreateHonorCatalogDto) {}
 /**
  * master_honors_translations has only `name` (no description field).
  */
+
+export class MasterHonorRuleOptionDto {
+  @ApiPropertyOptional({ example: 1, description: 'option_id (for updates)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  option_id?: number;
+
+  @ApiProperty({ example: 'Natación avanzada', maxLength: 200 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  label!: string;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  display_order = 0;
+
+  @ApiProperty({ example: [1, 2], description: 'Honor IDs included in this option' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  honor_ids!: number[];
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class MasterHonorRequirementGroupDto {
+  @ApiPropertyOptional({ example: 10, description: 'group_id (for updates)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  group_id?: number;
+
+  @ApiProperty({
+    enum: master_honor_requirement_group_type_enum,
+    example: master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS,
+  })
+  @IsEnum(master_honor_requirement_group_type_enum)
+  group_type!: master_honor_requirement_group_type_enum;
+
+  @ApiPropertyOptional({ example: 'Especialidades base', maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @ApiPropertyOptional({
+    example: 'Mínimo 3 entre estas especialidades',
+  })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ example: 2 })
+  @IsInt()
+  @Min(1)
+  minimum_required!: number;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description: 'Required for CATEGORY_COUNT groups',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  honors_category_id?: number;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  display_order?: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Group-specific options for EXPLICIT_OPTIONS groups',
+    type: [MasterHonorRuleOptionDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MasterHonorRuleOptionDto)
+  options?: MasterHonorRuleOptionDto[];
+}
+
 export class CreateMasterHonorDto {
   @ApiProperty({ example: 'Maestro en Natación', maxLength: 100 })
   @IsString()
@@ -552,6 +655,47 @@ export class CreateMasterHonorDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    enum: master_honor_applicability_scope_enum,
+    example: master_honor_applicability_scope_enum.ALL,
+    description:
+      'Define si aplica a todas las divisiones o a una lista específica.',
+  })
+  @IsOptional()
+  @IsEnum(master_honor_applicability_scope_enum)
+  applicability_scope?: master_honor_applicability_scope_enum;
+
+  @ApiPropertyOptional({ example: 'Enfocado a servicio y liderazgo' })
+  @IsOptional()
+  @IsString()
+  philosophy?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'Requiere aprobación de una comisión local y evidencia de 6 meses.',
+  })
+  @IsOptional()
+  @IsString()
+  notes?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'IDs de divisiones cuando applicability_scope es SELECTED_DIVISIONS',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  division_ids?: number[];
+
+  @ApiPropertyOptional({
+    type: [MasterHonorRequirementGroupDto],
+    description: 'Reglas de requisitos configurables para la maestría',
+  })
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => MasterHonorRequirementGroupDto)
+  requirement_groups?: MasterHonorRequirementGroupDto[];
 
   @ApiPropertyOptional({
     description: 'Non-es translations for name only (pt-BR, en, fr).',
