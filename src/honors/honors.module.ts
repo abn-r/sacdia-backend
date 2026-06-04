@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { HonorsController, UserHonorsController } from './honors.controller';
+import { UserMasterHonorsController } from './master-honors.controller';
 import {
   HonorRequirementsController,
   UserHonorRequirementsController,
@@ -13,6 +14,7 @@ import { AchievementsModule } from '../achievements/achievements.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { HonorValidationWorkflowService } from './honor-validation-workflow.service';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
+import { MasterHonorsService } from './master-honors.service';
 import { MasterHonorsQueueModule } from './master-honors-queue.module';
 import { MasterHonorsRecalculationProcessor } from './master-honors-recalculation.processor';
 import { isPlaceholderUrl } from '../config/bullmq.config';
@@ -41,6 +43,7 @@ function isRedisConfigured(): boolean {
   controllers: [
     HonorsController,
     UserHonorsController,
+    UserMasterHonorsController,
     HonorRequirementsController,
     UserHonorRequirementsController,
     AdminHonorsController,
@@ -48,6 +51,7 @@ function isRedisConfigured(): boolean {
   providers: [
     HonorsService,
     HonorRequirementsService,
+    MasterHonorsService,
     AdminHonorsService,
     HonorValidationWorkflowService,
     MasterHonorsEvaluatorService,
