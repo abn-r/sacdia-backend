@@ -291,6 +291,13 @@ describe('master honor rule importer', () => {
     expect(
       tx.master_honor_requirement_groups.deleteMany,
     ).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({
+        maxWait: 15_000,
+        timeout: 60_000,
+      }),
+    );
   });
 
   it('dry-run rejects category count groups that require more active honors than the catalog has', async () => {
