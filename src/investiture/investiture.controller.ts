@@ -682,7 +682,16 @@ export class InvestitureController {
 
   @Get('admin/investiture/config')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'coordinator')
+  @GlobalRoles(
+    'admin',
+    'coordinator',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
   @ApiOperation({ summary: 'Listar configuraciones de investidura' })
   @ApiQuery({
     name: 'local_field_id',
@@ -697,15 +706,26 @@ export class InvestitureController {
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   async getConfigs(
     @Query('local_field_id', new ParseIntPipe({ optional: true }))
-    localFieldId?: number,
+    localFieldId: number | undefined,
+    @Request() req,
   ) {
-    const data = await this.investitureService.getConfigs(localFieldId);
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.getConfigs(actorId, localFieldId);
     return { status: 'success', data };
   }
 
   @Get('admin/investiture/config/:configId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin', 'coordinator')
+  @GlobalRoles(
+    'admin',
+    'coordinator',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
   @ApiOperation({ summary: 'Obtener configuración de investidura por ID' })
   @ApiParam({
     name: 'configId',
@@ -715,14 +735,27 @@ export class InvestitureController {
   @ApiResponse({ status: 200, description: 'Configuración de investidura' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
-  async getConfig(@Param('configId', ParseIntPipe) configId: number) {
-    const data = await this.investitureService.getConfig(configId);
+  async getConfig(
+    @Param('configId', ParseIntPipe) configId: number,
+    @Request() req,
+  ) {
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.getConfig(configId, actorId);
     return { status: 'success', data };
   }
 
   @Post('admin/investiture/config')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin')
+  @GlobalRoles(
+    'admin',
+    'coordinator',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
   @ApiOperation({ summary: 'Crear configuración de investidura' })
   @ApiResponse({ status: 201, description: 'Configuración creada' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin' })
@@ -730,14 +763,24 @@ export class InvestitureController {
     status: 409,
     description: 'Ya existe configuración para este campo local y año',
   })
-  async createConfig(@Body() dto: CreateInvestitureConfigDto) {
-    const data = await this.investitureService.createConfig(dto);
+  async createConfig(@Body() dto: CreateInvestitureConfigDto, @Request() req) {
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.createConfig(actorId, dto);
     return { status: 'success', data };
   }
 
   @Patch('admin/investiture/config/:configId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin')
+  @GlobalRoles(
+    'admin',
+    'coordinator',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
   @ApiOperation({ summary: 'Actualizar configuración de investidura' })
   @ApiParam({
     name: 'configId',
@@ -750,14 +793,25 @@ export class InvestitureController {
   async updateConfig(
     @Param('configId', ParseIntPipe) configId: number,
     @Body() dto: UpdateInvestitureConfigDto,
+    @Request() req,
   ) {
-    const data = await this.investitureService.updateConfig(configId, dto);
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.updateConfig(actorId, configId, dto);
     return { status: 'success', data };
   }
 
   @Delete('admin/investiture/config/:configId')
   @UseGuards(JwtAuthGuard, GlobalRolesGuard)
-  @GlobalRoles('admin')
+  @GlobalRoles(
+    'admin',
+    'coordinator',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
   @ApiOperation({
     summary: 'Soft-delete de configuración de investidura (active = false)',
   })
@@ -769,8 +823,12 @@ export class InvestitureController {
   @ApiResponse({ status: 200, description: 'Configuración desactivada' })
   @ApiResponse({ status: 403, description: 'Sin rol de admin' })
   @ApiResponse({ status: 404, description: 'Configuración no encontrada' })
-  async deleteConfig(@Param('configId', ParseIntPipe) configId: number) {
-    const data = await this.investitureService.deleteConfig(configId);
+  async deleteConfig(
+    @Param('configId', ParseIntPipe) configId: number,
+    @Request() req,
+  ) {
+    const actorId: string = req.user.sub;
+    const data = await this.investitureService.deleteConfig(actorId, configId);
     return { status: 'success', data };
   }
 }

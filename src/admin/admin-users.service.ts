@@ -68,11 +68,12 @@ export type BulkUsersResult = {
 };
 
 // ── Scope types ───────────────────────────────────────────────────────────────
-type ScopeType = 'ALL' | 'UNION' | 'LOCAL_FIELD';
+type ScopeType = 'ALL' | 'DIVISION' | 'UNION' | 'LOCAL_FIELD';
 
 interface ActorScope {
   type: ScopeType;
   roles: string[];
+  divisionId?: number;
   unionId?: number;
   localFieldId?: number;
 }
@@ -80,6 +81,7 @@ interface ActorScope {
 interface ScopeMeta {
   type: ScopeType;
   roles: string[];
+  division_id: number | null;
   union_id: number | null;
   local_field_id: number | null;
 }
@@ -472,9 +474,9 @@ export class AdminUsersService {
     actorUserId: string,
     userId: string,
   ): Promise<AdminUserDetail> {
-    const scope = await this.resolveScope(actorUserId);
     const resolvedAuthorization =
       await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    const scope = await this.resolveScope(actorUserId, resolvedAuthorization);
     const actorGlobalPermissions = this.getActorGlobalPermissions(
       resolvedAuthorization,
     );
@@ -629,6 +631,28 @@ export class AdminUsersService {
   private static readonly DIA_ROLES: ReadonlyArray<string> = [
     'assistant-dia',
     'director-dia',
+  ];
+  private static readonly DIVISION_SCOPE_ROLES: ReadonlyArray<string> = [
+    'director-dia',
+    'assistant-dia',
+  ];
+  private static readonly UNION_SCOPE_ROLES: ReadonlyArray<string> = [
+    'director-union',
+    'assistant-union',
+  ];
+  private static readonly LOCAL_FIELD_SCOPE_ROLES: ReadonlyArray<string> = [
+    'director-lf',
+    'assistant-lf',
+  ];
+  private static readonly ADMIN_SCOPE_ROLES: ReadonlyArray<string> = [
+    'admin',
+    'assistant-admin',
+  ];
+  private static readonly COORDINATOR_SCOPE_ROLES: ReadonlyArray<string> = [
+    'coordinator',
+    'zone-coordinator',
+    'general-coordinator',
+    'pastor',
   ];
 
   private static readonly ROLE_HIERARCHY: ReadonlyArray<{
@@ -980,74 +1004,92 @@ export class AdminUsersService {
     };
   }
 
-  private async resolveScope(actorUserId: string): Promise<ActorScope> {
-    const actor = await this.prisma.users.findUnique({
-      where: { user_id: actorUserId },
-      select: {
-        user_id: true,
-        union_id: true,
-        local_field_id: true,
-        users_roles: {
-          where: {
-            active: true,
-            roles: {
-              active: true,
-              role_category: role_category.GLOBAL,
-            },
-          },
-          select: {
-            roles: {
-              select: {
-                role_name: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!actor) {
-      throw new AppForbiddenException(ErrorCode.ADMIN_USER_NOT_FOUND);
-    }
-
-    const roles = this.extractRoleNames(actor.users_roles);
+  private async resolveScope(
+    actorUserId: string,
+    resolvedAuthorization?: ResolvedAuthorizationProfile,
+  ): Promise<ActorScope> {
+    const resolved =
+      resolvedAuthorization ??
+      (await this.authorizationContext.resolveUserAuthorization(actorUserId));
+    const roles = this.extractResolvedRoleNames(resolved);
 
     if (roles.includes('super-admin')) {
       return { type: 'ALL', roles };
     }
 
-    const hasAdminLevelRole =
-      roles.includes('admin') || roles.includes('assistant-admin');
+    const globalScope = resolved.authorization.effective.scope.global;
 
-    if (hasAdminLevelRole) {
-      if (actor.union_id) {
-        return { type: 'UNION', roles, unionId: actor.union_id };
+    if (this.hasAnyRole(roles, AdminUsersService.DIVISION_SCOPE_ROLES)) {
+      const divisionId = globalScope.division?.id;
+
+      if (typeof divisionId === 'number') {
+        return { type: 'DIVISION', roles, divisionId };
       }
 
-      if (actor.local_field_id) {
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    if (this.hasAnyRole(roles, AdminUsersService.UNION_SCOPE_ROLES)) {
+      const unionId = globalScope.union?.id;
+
+      if (typeof unionId === 'number') {
+        return { type: 'UNION', roles, unionId };
+      }
+
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    if (this.hasAnyRole(roles, AdminUsersService.LOCAL_FIELD_SCOPE_ROLES)) {
+      const localFieldId = globalScope.local_field?.id;
+
+      if (typeof localFieldId === 'number') {
+        return { type: 'LOCAL_FIELD', roles, localFieldId };
+      }
+
+      throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
+    }
+
+    if (this.hasAnyRole(roles, AdminUsersService.ADMIN_SCOPE_ROLES)) {
+      if (typeof globalScope.union?.id === 'number') {
+        return { type: 'UNION', roles, unionId: globalScope.union.id };
+      }
+
+      if (typeof globalScope.local_field?.id === 'number') {
         return {
           type: 'LOCAL_FIELD',
           roles,
-          localFieldId: actor.local_field_id,
+          localFieldId: globalScope.local_field.id,
+        };
+      }
+
+      if (typeof globalScope.division?.id === 'number') {
+        return {
+          type: 'DIVISION',
+          roles,
+          divisionId: globalScope.division.id,
         };
       }
 
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
 
-    if (roles.includes('coordinator')) {
-      if (actor.local_field_id) {
-        return {
-          type: 'LOCAL_FIELD',
-          roles,
-          localFieldId: actor.local_field_id,
-        };
+    if (this.hasAnyRole(roles, AdminUsersService.COORDINATOR_SCOPE_ROLES)) {
+      const localFieldId = globalScope.local_field?.id;
+
+      if (typeof localFieldId === 'number') {
+        return { type: 'LOCAL_FIELD', roles, localFieldId };
       }
 
       throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
     }
 
-    throw new AppForbiddenException(ErrorCode.ADMIN_USER_NO_GLOBAL_PERMISSIONS);
+    if (roles.length === 0) {
+      throw new AppForbiddenException(
+        ErrorCode.ADMIN_USER_NO_GLOBAL_PERMISSIONS,
+      );
+    }
+
+    throw new AppForbiddenException(ErrorCode.ADMIN_USER_SCOPE_MISSING);
   }
 
   private buildListWhere(
@@ -1120,6 +1162,10 @@ export class AdminUsersService {
       return {};
     }
 
+    if (scope.type === 'DIVISION') {
+      return { division_id: scope.divisionId! };
+    }
+
     if (scope.type === 'UNION') {
       return { union_id: scope.unionId! };
     }
@@ -1131,9 +1177,29 @@ export class AdminUsersService {
     return {
       type: scope.type,
       roles: scope.roles,
+      division_id: scope.divisionId ?? null,
       union_id: scope.unionId ?? null,
       local_field_id: scope.localFieldId ?? null,
     };
+  }
+
+  private hasAnyRole(
+    roles: string[],
+    candidates: ReadonlyArray<string>,
+  ): boolean {
+    return candidates.some((role) => roles.includes(role));
+  }
+
+  private extractResolvedRoleNames(
+    resolved: ResolvedAuthorizationProfile,
+  ): string[] {
+    return [
+      ...new Set(
+        resolved.authorization.grants.global_roles.map((grant) =>
+          grant.role_name.toLowerCase(),
+        ),
+      ),
+    ];
   }
 
   private extractRoleNames(

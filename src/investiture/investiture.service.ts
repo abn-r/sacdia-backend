@@ -1467,15 +1467,97 @@ export class InvestitureService {
   // INVESTITURE CONFIG CRUD
   // ========================================
 
+  private async buildInvestitureConfigWhere(
+    actorId: string,
+    requestedLocalFieldId?: number,
+  ): Promise<Prisma.investiture_configWhereInput> {
+    const allowedLocalFieldIds =
+      await this.resolveAccessibleInvestitureConfigLocalFieldIds(actorId);
+
+    if (allowedLocalFieldIds === null) {
+      return requestedLocalFieldId ? { local_field_id: requestedLocalFieldId } : {};
+    }
+
+    if (requestedLocalFieldId) {
+      if (!allowedLocalFieldIds.includes(requestedLocalFieldId)) {
+        throw new AppForbiddenException(ErrorCode.INVESTITURE_ACCESS_DENIED);
+      }
+      return { local_field_id: requestedLocalFieldId };
+    }
+
+    return { local_field_id: { in: allowedLocalFieldIds } };
+  }
+
+  private async assertCanAccessInvestitureConfigLocalField(
+    actorId: string,
+    localFieldId: number,
+  ): Promise<void> {
+    const allowedLocalFieldIds =
+      await this.resolveAccessibleInvestitureConfigLocalFieldIds(actorId);
+
+    if (allowedLocalFieldIds === null) {
+      return;
+    }
+
+    if (!allowedLocalFieldIds.includes(localFieldId)) {
+      throw new AppForbiddenException(ErrorCode.INVESTITURE_ACCESS_DENIED);
+    }
+  }
+
+  private async resolveAccessibleInvestitureConfigLocalFieldIds(
+    actorId: string,
+  ): Promise<number[] | null> {
+    const resolved = await this.authorizationContext.resolveUserAuthorization(actorId);
+    const roleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    if (roleNames.has('super-admin')) {
+      return null;
+    }
+
+    const globalScope = resolved.authorization.effective.scope.global;
+
+    if (
+      roleNames.has('admin') &&
+      !globalScope.division?.id &&
+      !globalScope.union?.id &&
+      !globalScope.local_field?.id
+    ) {
+      return null;
+    }
+
+    if (typeof globalScope.local_field?.id === 'number') {
+      return [globalScope.local_field.id];
+    }
+
+    if (typeof globalScope.union?.id === 'number') {
+      const localFields = await this.prisma.local_fields.findMany({
+        where: { union_id: globalScope.union.id },
+        select: { local_field_id: true },
+      });
+      return localFields.map((field) => field.local_field_id);
+    }
+
+    if (typeof globalScope.division?.id === 'number') {
+      const localFields = await this.prisma.local_fields.findMany({
+        where: { unions: { division_id: globalScope.division.id } },
+        select: { local_field_id: true },
+      });
+      return localFields.map((field) => field.local_field_id);
+    }
+
+    throw new AppForbiddenException(ErrorCode.INVESTITURE_ACCESS_DENIED);
+  }
+
   /**
    * Listar todas las configuraciones de investidura.
    * Filtrado opcional por campo local.
    */
-  async getConfigs(localFieldId?: number) {
-    const where: Prisma.investiture_configWhereInput = {};
-    if (localFieldId) {
-      where.local_field_id = localFieldId;
-    }
+  async getConfigs(actorId: string, localFieldId?: number) {
+    const where = await this.buildInvestitureConfigWhere(actorId, localFieldId);
 
     return this.prisma.investiture_config.findMany({
       where,
@@ -1490,7 +1572,7 @@ export class InvestitureService {
   /**
    * Obtener una configuración de investidura por su ID.
    */
-  async getConfig(configId: number) {
+  async getConfig(configId: number, actorId?: string) {
     const config = await this.prisma.investiture_config.findUnique({
       where: { config_id: configId },
       include: {
@@ -1503,6 +1585,13 @@ export class InvestitureService {
       throw new AppNotFoundException(ErrorCode.INVESTITURE_CONFIG_NOT_FOUND);
     }
 
+    if (actorId) {
+      await this.assertCanAccessInvestitureConfigLocalField(
+        actorId,
+        config.local_field_id,
+      );
+    }
+
     return config;
   }
 
@@ -1510,7 +1599,12 @@ export class InvestitureService {
    * Crear una nueva configuración de investidura.
    * Fuerza UNIQUE(local_field_id, ecclesiastical_year_id).
    */
-  async createConfig(dto: CreateInvestitureConfigDto) {
+  async createConfig(actorId: string, dto: CreateInvestitureConfigDto) {
+    await this.assertCanAccessInvestitureConfigLocalField(
+      actorId,
+      dto.local_field_id,
+    );
+
     try {
       return await this.prisma.investiture_config.create({
         data: {
@@ -1538,8 +1632,12 @@ export class InvestitureService {
   /**
    * Actualizar deadline, fecha de investidura y/o estado activo de una config.
    */
-  async updateConfig(configId: number, dto: UpdateInvestitureConfigDto) {
-    await this.getConfig(configId);
+  async updateConfig(
+    actorId: string,
+    configId: number,
+    dto: UpdateInvestitureConfigDto,
+  ) {
+    await this.getConfig(configId, actorId);
 
     const data: Prisma.investiture_configUpdateInput = {};
     if (dto.submission_deadline !== undefined) {
@@ -1565,8 +1663,8 @@ export class InvestitureService {
   /**
    * Soft-delete: marcar una config como inactiva (active = false).
    */
-  async deleteConfig(configId: number) {
-    await this.getConfig(configId);
+  async deleteConfig(actorId: string, configId: number) {
+    await this.getConfig(configId, actorId);
 
     const updated = await this.prisma.investiture_config.update({
       where: { config_id: configId },
