@@ -87,40 +87,66 @@ describe('AdminUsersService', () => {
     jest.clearAllMocks();
   });
 
-  const buildResolvedAuthorization = (globalPermissions: string[]) => ({
-    profile: {},
-    post_register_complete: false,
-    authorization: {
-      grants: {
-        global_roles: [
-          {
-            role_name: 'admin',
-            permissions: globalPermissions,
+  const buildResolvedAuthorization = (
+    options: {
+      roles?: string[];
+      permissions?: string[];
+      divisionId?: number | null;
+      unionId?: number | null;
+      localFieldId?: number | null;
+    } = {},
+  ) => {
+    const {
+      roles = ['admin'],
+      permissions = [],
+      divisionId = null,
+      unionId = null,
+      localFieldId = null,
+    } = options;
+
+    return {
+      profile: {},
+      post_register_complete: false,
+      authorization: {
+        grants: {
+          global_roles: roles.map((role_name) => ({
+            role_name,
+            permissions,
             scope: {},
+          })),
+          club_assignments: [],
+        },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions,
+          scope: {
+            global: {
+              ...(divisionId !== null
+                ? { division: { id: divisionId, name: 'División' } }
+                : {}),
+              ...(unionId !== null
+                ? { union: { id: unionId, name: 'Unión' } }
+                : {}),
+              ...(localFieldId !== null
+                ? { local_field: { id: localFieldId, name: 'Campo Local' } }
+                : {}),
+            },
+            club: null,
           },
-        ],
-        club_assignments: [],
-      },
-      active_assignment: { assignment_id: null },
-      effective: {
-        permissions: globalPermissions,
-        scope: {
-          global: {},
-          club: null,
         },
       },
-    },
-    legacy: {
-      roles: ['admin'],
-      permissions: globalPermissions,
-      club: null,
-      club_context: {
-        active_assignment_id: null,
-        active: null,
-        available: [],
+      legacy: {
+        roles,
+        permissions,
+        club: null,
+        club_context: {
+          active_assignment_id: null,
+          active: null,
+          available: [],
+        },
       },
-    },
-  });
+    };
+  };
 
   const buildAdminDetailRecord = (): any => ({
     user_id: 'user-1',
@@ -248,12 +274,11 @@ describe('AdminUsersService', () => {
 
   describe('listUsers', () => {
     it('should allow super-admin with ALL scope', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-super',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super-admin' } }],
-      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
       mockPrismaService.users.findMany.mockResolvedValue([
         {
           user_id: 'u1',
@@ -300,12 +325,14 @@ describe('AdminUsersService', () => {
     });
 
     it('should enforce UNION scope for admin with union_id', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-admin',
-        union_id: 7,
-        local_field_id: 99,
-        users_roles: [{ roles: { role_name: 'admin' } }],
-      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['admin'],
+          divisionId: 1,
+          unionId: 7,
+          localFieldId: 99,
+        }),
+      );
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
 
@@ -319,12 +346,13 @@ describe('AdminUsersService', () => {
     });
 
     it('should enforce LOCAL_FIELD scope for coordinator', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-coordinator',
-        union_id: 5,
-        local_field_id: 11,
-        users_roles: [{ roles: { role_name: 'coordinator' } }],
-      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['coordinator'],
+          unionId: 5,
+          localFieldId: 11,
+        }),
+      );
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
 
@@ -338,12 +366,11 @@ describe('AdminUsersService', () => {
     });
 
     it('should reject admin without union_id/local_field_id', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-admin',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'admin' } }],
-      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['admin'],
+        }),
+      );
 
       await expect(
         service.listUsers('actor-admin', buildListQuery()),
@@ -351,12 +378,12 @@ describe('AdminUsersService', () => {
     });
 
     it('should reject coordinator without local_field_id', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-coordinator',
-        union_id: 5,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'coordinator' } }],
-      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['coordinator'],
+          unionId: 5,
+        }),
+      );
 
       await expect(
         service.listUsers('actor-coordinator', buildListQuery()),
@@ -364,12 +391,14 @@ describe('AdminUsersService', () => {
     });
 
     it('should enforce UNION scope for assistant-admin with union_id', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-assistant-admin',
-        union_id: 12,
-        local_field_id: 44,
-        users_roles: [{ roles: { role_name: 'assistant-admin' } }],
-      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['assistant-admin'],
+          divisionId: 2,
+          unionId: 12,
+          localFieldId: 44,
+        }),
+      );
       mockPrismaService.users.findMany.mockResolvedValue([]);
       mockPrismaService.users.count.mockResolvedValue(0);
 
@@ -383,29 +412,56 @@ describe('AdminUsersService', () => {
     });
 
     it('should reject assistant-admin without union_id/local_field_id', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-assistant-admin',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'assistant-admin' } }],
-      });
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['assistant-admin'],
+        }),
+      );
 
       await expect(
         service.listUsers('actor-assistant-admin', buildListQuery()),
+      ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
+    });
+
+    it('should enforce DIVISION scope for director-dia with division_id', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['director-dia'],
+          divisionId: 3,
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers('actor-director-dia', buildListQuery());
+
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { division_id: 3 },
+        }),
+      );
+    });
+
+    it('should reject director-dia without division scope', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['director-dia'],
+        }),
+      );
+
+      await expect(
+        service.listUsers('actor-director-dia', buildListQuery()),
       ).rejects.toMatchObject({ code: ErrorCode.ADMIN_USER_SCOPE_MISSING });
     });
   });
 
   describe('getUserById', () => {
     it('should return user detail in scope', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-super',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super-admin' } }],
-      });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-        buildResolvedAuthorization(['users:read_detail']),
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
       );
 
       mockPrismaService.users.findFirst.mockResolvedValue({
@@ -457,15 +513,69 @@ describe('AdminUsersService', () => {
       expect(result.classes).toEqual([]);
     });
 
-    it('should throw NotFoundException when user is outside scope', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-admin',
-        union_id: 4,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'admin' } }],
-      });
+    it('should apply DIVISION scope for director-dia detail access', async () => {
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-        buildResolvedAuthorization(['users:read_detail']),
+        buildResolvedAuthorization({
+          roles: ['director-dia'],
+          permissions: ['users:read_detail'],
+          divisionId: 1,
+        }),
+      );
+      mockPrismaService.users.findFirst.mockResolvedValue({
+        user_id: 'user-division',
+        email: 'division@example.com',
+        name: 'María',
+        paternal_last_name: 'López',
+        maternal_last_name: 'Díaz',
+        gender: 'Femenino',
+        birthday: new Date('2010-10-01'),
+        blood: 'A_POSITIVE',
+        baptism: false,
+        baptism_date: null,
+        user_image: null,
+        active: true,
+        access_app: true,
+        access_panel: false,
+        country_id: 1,
+        union_id: 2,
+        local_field_id: 3,
+        created_at: new Date('2026-01-01'),
+        modified_at: new Date('2026-01-05'),
+        countries: { country_id: 1, name: 'México' },
+        unions: { union_id: 2, name: 'UMS' },
+        local_fields: { local_field_id: 3, union_id: 2, name: 'Campo Sur' },
+        users_roles: [{ role_id: 'r1', roles: { role_name: 'user' } }],
+        users_pr: [
+          {
+            complete: false,
+            profile_picture_complete: true,
+            personal_info_complete: false,
+            club_selection_complete: false,
+            date_completed: null,
+          },
+        ],
+        enrollments: [],
+        club_role_assignments: [],
+        emergency_contact: [],
+        legal_representative: null,
+      });
+
+      const result = await service.getUserById(
+        'actor-director-dia',
+        'user-division',
+      );
+
+      expect(result.scope.type).toBe('DIVISION');
+      expect(result.scope.division_id).toBe(1);
+    });
+
+    it('should throw NotFoundException when user is outside scope', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['admin'],
+          permissions: ['users:read_detail'],
+          unionId: 4,
+        }),
       );
       mockPrismaService.users.findFirst.mockResolvedValue(null);
 
@@ -478,7 +588,12 @@ describe('AdminUsersService', () => {
       const findFirstArgs = findFirstCalls[0]?.[0] as
         | {
             where?: {
-              AND?: Array<{ user_id?: string; union_id?: number }>;
+              AND?: Array<{
+                user_id?: string;
+                division_id?: number;
+                union_id?: number;
+                local_field_id?: number;
+              }>;
             };
           }
         | undefined;
@@ -523,7 +638,11 @@ describe('AdminUsersService', () => {
         'should expose only %s block for fine-grained readers',
         async (_family, permissions, visibleBlock) => {
           mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-            buildResolvedAuthorization(permissions),
+            buildResolvedAuthorization({
+              roles: ['admin'],
+              permissions,
+              unionId: 2,
+            }),
           );
 
           const result = await service.getUserById('actor-admin', 'user-1');
@@ -551,7 +670,11 @@ describe('AdminUsersService', () => {
 
       it('should preserve transitional legacy compatibility for users:read_detail', async () => {
         mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-          buildResolvedAuthorization(['users:read_detail']),
+          buildResolvedAuthorization({
+            roles: ['admin'],
+            permissions: ['users:read_detail'],
+            unionId: 2,
+          }),
         );
 
         const result = await service.getUserById('actor-admin', 'user-1');
@@ -568,7 +691,11 @@ describe('AdminUsersService', () => {
 
       it('should prune sensitive blocks when actor lacks fine and legacy detail permissions', async () => {
         mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-          buildResolvedAuthorization(['users:read']),
+          buildResolvedAuthorization({
+            roles: ['admin'],
+            permissions: ['users:read'],
+            unionId: 2,
+          }),
         );
 
         const result = await service.getUserById('actor-admin', 'user-1');
@@ -581,14 +708,11 @@ describe('AdminUsersService', () => {
     });
 
     it('should map operational and trajectory sources with legacy classes alias', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-super',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super-admin' } }],
-      });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-        buildResolvedAuthorization(['users:read_detail']),
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
       );
 
       const userRecord = buildAdminDetailRecord();
@@ -628,14 +752,11 @@ describe('AdminUsersService', () => {
     });
 
     it('should return null operational enrollment when active year has no enrollment candidates', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-super',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super-admin' } }],
-      });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-        buildResolvedAuthorization(['users:read_detail']),
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
       );
 
       const userRecord = buildAdminDetailRecord();
@@ -655,14 +776,11 @@ describe('AdminUsersService', () => {
     });
 
     it('should return trajectory item with null class_name when linked class metadata is missing', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-super',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super-admin' } }],
-      });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-        buildResolvedAuthorization(['users:read_detail']),
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
       );
 
       const userRecord = buildAdminDetailRecord();
@@ -686,14 +804,11 @@ describe('AdminUsersService', () => {
     });
 
     it('should return null operational enrollment and warn on enrollment conflicts', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        user_id: 'actor-super',
-        union_id: null,
-        local_field_id: null,
-        users_roles: [{ roles: { role_name: 'super-admin' } }],
-      });
       mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
-        buildResolvedAuthorization(['users:read_detail']),
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
       );
 
       const userRecord = buildAdminDetailRecord();
