@@ -108,6 +108,7 @@ const mockPrismaService = {
     findFirst: jest.fn(),
   },
   annual_folder_evidences: {
+    count: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -157,8 +158,10 @@ describe('AnnualFoldersService — single-evidence presign', () => {
         mockSection,
       );
       mockFileStorageService.upload.mockResolvedValue({ url: RAW_KEY });
+      mockPrismaService.annual_folder_evidences.count.mockResolvedValue(0);
       mockPrismaService.annual_folder_evidences.create.mockResolvedValue({
         ...mockCreatedEvidence,
+        file_name: 'Evidencia 01.pdf',
       });
     });
 
@@ -176,6 +179,23 @@ describe('AnnualFoldersService — single-evidence presign', () => {
       expect(mockFileStorageService.getSignedDownloadUrl).toHaveBeenCalledWith(
         StorageBucketAlias.EVIDENCE_FILES,
         RAW_KEY,
+      );
+      expect(
+        mockPrismaService.annual_folder_evidences.count,
+      ).toHaveBeenCalledWith({
+        where: {
+          annual_folder_id: FOLDER_ID,
+          section_id: SECTION_ID,
+        },
+      });
+      expect(
+        mockPrismaService.annual_folder_evidences.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            file_name: 'Evidencia 01.pdf',
+          }),
+        }),
       );
       expect(result.file_url).toBe(SIGNED_URL);
     });

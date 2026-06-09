@@ -21,6 +21,10 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import {
+  buildEvidenceDisplayNameForFile,
+  resolveEvidenceFileExtension,
+} from '../common/utils/evidence-file-names';
 import pLimit from 'p-limit';
 
 // Concurrency cap for the evidence URL presign fan-out in getUserProgress.
@@ -953,8 +957,17 @@ export class ClassesService {
     }
 
     const progressId = sectionProgress.section_progress_id;
-    const extension = this.resolveFileExtension(file);
+    const extension = resolveEvidenceFileExtension(file);
     const objectKey = `${progressId}-${Date.now()}.${extension}`;
+    const existingEvidenceCount = await (
+      this.prisma as any
+    ).evidence_files.count({
+      where: { section_progress_id: progressId },
+    });
+    const displayName = buildEvidenceDisplayNameForFile(
+      existingEvidenceCount + 1,
+      file,
+    );
 
     const uploaded = await this.fileStorage.upload(
       StorageBucketAlias.CLASS_EVIDENCE,
@@ -967,7 +980,7 @@ export class ClassesService {
       data: {
         section_progress_id: progressId,
         file_url: uploaded.url,
-        file_name: file.originalname || objectKey,
+        file_name: displayName,
         file_type: this.resolveEvidenceFileType(file),
         uploaded_by_id: userId,
         active: true,

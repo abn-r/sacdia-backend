@@ -25,6 +25,10 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import {
+  buildEvidenceDisplayNameForFile,
+  resolveEvidenceFileExtension,
+} from '../common/utils/evidence-file-names';
 
 // Cap concurrent presign calls for EVIDENCE_FILES bucket. A folder can contain
 // many sections × many files each — without the cap, a single getFolder request
@@ -569,8 +573,20 @@ export class AnnualFoldersService {
       );
     }
 
-    const extension = this.resolveFileExtension(file);
+    const extension = resolveEvidenceFileExtension(file);
     const objectKey = `annual-evidence-${folderId}-${sectionId}-${Date.now()}.${extension}`;
+    const existingEvidenceCount =
+      await this.prisma.annual_folder_evidences.count({
+        where: {
+          annual_folder_id: folderId,
+          section_id: sectionId,
+        },
+      });
+    const displayName = buildEvidenceDisplayNameForFile(
+      existingEvidenceCount + 1,
+      file,
+    );
+
     const uploaded = await this.fileStorage.upload(
       StorageBucketAlias.EVIDENCE_FILES,
       objectKey,
@@ -583,7 +599,7 @@ export class AnnualFoldersService {
         annual_folder_id: folderId,
         section_id: sectionId,
         file_url: uploaded.url,
-        file_name: file.originalname || objectKey,
+        file_name: displayName,
         uploaded_by: userId,
         notes: dto.notes,
       },

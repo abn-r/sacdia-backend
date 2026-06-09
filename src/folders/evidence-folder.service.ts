@@ -12,6 +12,10 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import {
+  buildEvidenceDisplayNameForFile,
+  resolveEvidenceFileExtension,
+} from '../common/utils/evidence-file-names';
 
 type UserNameRecord = {
   name?: string | null;
@@ -201,8 +205,16 @@ export class EvidenceFolderService {
       );
     }
 
-    const extension = this.resolveFileExtension(file);
+    const extension = resolveEvidenceFileExtension(file);
     const objectKey = `evidence-${sectionRecord.folder_section_record_id}-${Date.now()}.${extension}`;
+    const existingEvidenceCount = await this.db.evidence_files.count({
+      where: { section_record_id: sectionRecord.folder_section_record_id },
+    });
+    const displayName = buildEvidenceDisplayNameForFile(
+      existingEvidenceCount + 1,
+      file,
+    );
+
     const uploaded = await this.fileStorage.upload(
       StorageBucketAlias.EVIDENCE_FILES,
       objectKey,
@@ -214,7 +226,7 @@ export class EvidenceFolderService {
       data: {
         section_record_id: sectionRecord.folder_section_record_id,
         file_url: uploaded.url,
-        file_name: file.originalname || objectKey,
+        file_name: displayName,
         file_type: this.resolveEvidenceFileType(file),
         uploaded_by_id: userId,
         active: true,

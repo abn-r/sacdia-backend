@@ -14,6 +14,10 @@ import {
   UpdateRequirementProgressDto,
   BulkUpdateRequirementProgressDto,
 } from './dto';
+import {
+  buildEvidenceDisplayNameForFile,
+  resolveEvidenceFileExtension,
+} from '../common/utils/evidence-file-names';
 
 @Injectable()
 export class HonorRequirementsService {
@@ -329,7 +333,15 @@ export class HonorRequirementsService {
       });
     }
 
-    const r2Key = `requirement_evidence/${userId}/${honorId}/${requirementId}/${Date.now()}-${file.originalname}`;
+    const displayIndex = await this.prisma.requirement_evidence.count({
+      where: {
+        progress_id: progressId,
+        evidence_type: { in: ['IMAGE', 'FILE'] },
+      },
+    });
+    const extension = resolveEvidenceFileExtension(file);
+    const displayName = buildEvidenceDisplayNameForFile(displayIndex + 1, file);
+    const r2Key = `requirement_evidence/${userId}/${honorId}/${requirementId}/${Date.now()}.${extension}`;
     const { url } = await this.fileStorageService.upload(
       StorageBucketAlias.EVIDENCE_FILES,
       r2Key,
@@ -342,7 +354,7 @@ export class HonorRequirementsService {
         progress_id: progressId,
         evidence_type: evidenceType,
         url,
-        filename: file.originalname,
+        filename: displayName,
         mime_type: file.mimetype,
         file_size: file.size,
       },

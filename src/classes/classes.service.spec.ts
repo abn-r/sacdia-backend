@@ -41,6 +41,7 @@ describe('ClassesService', () => {
     },
     evidence_files: {
       create: jest.fn(),
+      count: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
     },
@@ -98,11 +99,12 @@ describe('ClassesService', () => {
     mockPrismaService.evidence_files.create.mockResolvedValue({
       evidence_file_id: 55,
       file_url: 'https://r2.example/class/123.pdf',
-      file_name: 'evidence.pdf',
+      file_name: 'Evidencia 01.pdf',
       file_type: 'document',
       uploaded_at: new Date('2026-05-10T00:00:00.000Z'),
       uploaded_by: null,
     });
+    mockPrismaService.evidence_files.count.mockResolvedValue(0);
 
     const mockFileStorageService = {
       upload: jest.fn(),
@@ -401,6 +403,17 @@ describe('ClassesService', () => {
             enrollment_id: 901,
             section_id: 101,
             active: true,
+          }),
+        }),
+      );
+      expect(mockPrismaService.evidence_files.count).toHaveBeenCalledWith({
+        where: { section_progress_id: 123 },
+      });
+      expect(mockPrismaService.evidence_files.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            section_progress_id: 123,
+            file_name: 'Evidencia 01.pdf',
           }),
         }),
       );

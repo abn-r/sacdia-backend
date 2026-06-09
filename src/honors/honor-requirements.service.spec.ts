@@ -90,6 +90,52 @@ describe('HonorRequirementsService change tracking', () => {
     });
   });
 
+  it('stores uploaded requirement evidence with a sequential display filename', async () => {
+    mockPrisma.user_honor_requirement_progress.upsert.mockResolvedValue({
+      progress_id: 99,
+      user_honor_id: 10,
+      requirement_id: 7,
+    });
+    mockPrisma.requirement_evidence.count.mockResolvedValue(0);
+    fileStorage.upload.mockResolvedValue({
+      url: 'https://cdn.r2.example/requirement-evidence/99.jpg',
+    });
+    mockPrisma.requirement_evidence.create.mockResolvedValue({
+      evidence_id: 123,
+      progress_id: 99,
+      evidence_type: 'IMAGE',
+      filename: 'Evidencia 01.jpg',
+      url: 'https://cdn.r2.example/requirement-evidence/99.jpg',
+    });
+
+    await service.uploadEvidence(
+      'user-1',
+      20,
+      7,
+      {
+        buffer: Buffer.from('image'),
+        originalname: 'image_picker_ABC123.jpg',
+        mimetype: 'image/jpeg',
+        size: 5,
+      } as Express.Multer.File,
+      'IMAGE',
+    );
+
+    expect(fileStorage.upload).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.not.stringContaining('image_picker_ABC123.jpg'),
+      expect.any(Buffer),
+      expect.any(Object),
+    );
+    expect(mockPrisma.requirement_evidence.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          filename: 'Evidencia 01.jpg',
+        }),
+      }),
+    );
+  });
+
   it('blocks progress update when honor is pending review', async () => {
     mockPrisma.users_honors.findFirst.mockResolvedValue({
       user_honor_id: 10,

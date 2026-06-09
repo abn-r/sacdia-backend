@@ -25,6 +25,7 @@ describe('EvidenceFolderService', () => {
     },
     evidence_files: {
       findFirst: jest.fn(),
+      count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -431,13 +432,14 @@ describe('EvidenceFolderService', () => {
         evidence_file_id: 100,
         file_url:
           'https://cdn.r2.example/evidence_files/evidence-502-1710748800000.jpg',
-        file_name: 'foto.jpg',
+        file_name: 'Evidencia 01.jpg',
         file_type: 'image',
         uploaded_by_id: 'user-1',
         uploaded_at: new Date('2026-03-18T00:00:00.000Z'),
         active: true,
         uploaded_by: null,
       });
+      mockPrismaService.evidence_files.count.mockResolvedValue(0);
 
       const result = await service.uploadFile('user-1', 9, 11, {
         buffer: Buffer.from('img'),
@@ -454,6 +456,9 @@ describe('EvidenceFolderService', () => {
         expect.any(Buffer),
         { contentType: 'image/jpeg' },
       );
+      expect(mockPrismaService.evidence_files.count).toHaveBeenCalledWith({
+        where: { section_record_id: 502 },
+      });
       expect(result).toEqual(
         expect.objectContaining({ file_id: 100, file_type: 'image' }),
       );
@@ -523,12 +528,13 @@ describe('EvidenceFolderService', () => {
         evidence_file_id: 99,
         file_url:
           'https://cdn.r2.example/evidence_files/evidence-501-1710748800000.pdf',
-        file_name: 'comprobante.pdf',
+        file_name: 'Evidencia 01.pdf',
         file_type: 'pdf',
         uploaded_by_id: 'user-1',
         uploaded_at: new Date('2026-03-18T00:00:00.000Z'),
         active: true,
       });
+      mockPrismaService.evidence_files.count.mockResolvedValue(0);
 
       const result = await service.uploadFile('user-1', 9, 11, {
         buffer: Buffer.from('fake'),
@@ -559,7 +565,7 @@ describe('EvidenceFolderService', () => {
             section_record_id: 501,
             file_url:
               'https://cdn.r2.example/evidence_files/evidence-501-1710748800000.pdf',
-            file_name: 'comprobante.pdf',
+            file_name: 'Evidencia 01.pdf',
             file_type: 'pdf',
             uploaded_by_id: 'user-1',
             active: true,
@@ -569,7 +575,7 @@ describe('EvidenceFolderService', () => {
       expect(result).toEqual(
         expect.objectContaining({
           file_id: 99,
-          file_name: 'comprobante.pdf',
+          file_name: 'Evidencia 01.pdf',
           file_type: 'pdf',
         }),
       );
