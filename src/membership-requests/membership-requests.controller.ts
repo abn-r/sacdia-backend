@@ -39,7 +39,7 @@ export class MembershipRequestsController {
 
   @Get()
   @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubSectionId' })
+  @AuthorizationResource({ type: 'club_section', idParam: 'clubSectionId' })
   @ApiOperation({
     summary: 'Listar solicitudes pendientes de membresía',
     description:
@@ -69,7 +69,7 @@ export class MembershipRequestsController {
 
   @Post(':assignmentId/approve')
   @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubSectionId' })
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({
     summary: 'Aprobar solicitud de membresía',
     description:
@@ -91,6 +91,7 @@ export class MembershipRequestsController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.membershipRequestsService.approve(
+      clubSectionId,
       assignmentId,
       currentUser.sub,
     );
@@ -99,7 +100,7 @@ export class MembershipRequestsController {
 
   @Post(':assignmentId/reject')
   @RequirePermissions('club_members:approve')
-  @AuthorizationResource({ type: 'club', clubIdParam: 'clubSectionId' })
+  @AuthorizationResource({ type: 'club_assignment', idParam: 'assignmentId' })
   @ApiOperation({
     summary: 'Rechazar solicitud de membresía',
     description:
@@ -122,6 +123,7 @@ export class MembershipRequestsController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.membershipRequestsService.reject(
+      clubSectionId,
       assignmentId,
       currentUser.sub,
       dto.reason,

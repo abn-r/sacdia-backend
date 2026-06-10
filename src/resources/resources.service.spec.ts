@@ -8,6 +8,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ResourcesService } from './resources.service';
 
 describe('ResourcesService scope authorization', () => {
+  const prisma = {
+    unions: {
+      findUnique: jest.fn(),
+    },
+    local_fields: {
+      findUnique: jest.fn(),
+    },
+  };
   const fileStorage = {
     getSignedUploadUrl: jest.fn().mockResolvedValue({
       url: 'https://r2.example/upload',
@@ -20,7 +28,7 @@ describe('ResourcesService scope authorization', () => {
   };
 
   const service = new ResourcesService(
-    {} as any,
+    prisma as any,
     hierarchy as unknown as InstitutionalHierarchyService,
     fileStorage as any,
   );
@@ -35,6 +43,8 @@ describe('ResourcesService scope authorization', () => {
   beforeEach(() => {
     fileStorage.getSignedUploadUrl.mockClear();
     hierarchy.resolveCurrent.mockReset();
+    prisma.unions.findUnique.mockReset();
+    prisma.local_fields.findUnique.mockReset();
   });
 
   it('accepts the direct authorization snapshot provided by request guards', async () => {
@@ -108,9 +118,46 @@ describe('ResourcesService scope authorization', () => {
       ),
     ).rejects.toBeInstanceOf(AppForbiddenException);
   });
+
+  it('keeps scoped country admins constrained to unions inside their country', async () => {
+    prisma.unions.findUnique.mockResolvedValue({ country_id: 2 });
+
+    await expect(
+      service.generateUploadUrl(
+        {
+          ...baseDto,
+          scope_level: 'union',
+          scope_id: 8,
+        },
+        {
+          effective: {
+            permissions: ['resources:create'],
+            scope: {
+              global: {
+                country: { id: 1, name: 'México' },
+              },
+              club: null,
+            },
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(AppForbiddenException);
+
+    expect(fileStorage.getSignedUploadUrl).not.toHaveBeenCalled();
+  });
 });
 
 describe('ResourcesService file replacement', () => {
+  const unscopedGlobalAdmin = {
+    effective: {
+      permissions: ['resources:update', 'resources:delete', 'resources:read'],
+      scope: {
+        global: {},
+        club: null,
+      },
+    },
+  };
+
   it('replaces the stored file metadata and removes the previous object after update', async () => {
     const prisma = {
       resources: {
@@ -143,12 +190,17 @@ describe('ResourcesService file replacement', () => {
       fileStorage as any,
     );
 
-    await service.update('res-1', { title: 'Manual actualizado' }, {
-      buffer: Buffer.from('%PDF-1.4\n'),
-      originalname: 'manual.pdf',
-      mimetype: 'application/pdf',
-      size: 9,
-    } as Express.Multer.File);
+    await service.update(
+      'res-1',
+      { title: 'Manual actualizado' },
+      {
+        buffer: Buffer.from('%PDF-1.4\n'),
+        originalname: 'manual.pdf',
+        mimetype: 'application/pdf',
+        size: 9,
+      } as Express.Multer.File,
+      unscopedGlobalAdmin,
+    );
 
     expect(fileStorage.upload).toHaveBeenCalledWith(
       'RESOURCES_FILES',
@@ -176,20 +228,67 @@ describe('ResourcesService file replacement', () => {
     const service = new ResourcesService(
       {
         resources: {
-          findUnique: jest.fn().mockResolvedValue({
-            resource_id: 'res-1',
-            file_key: 'system/system/file.pdf',
-            active: false,
-          }),
+          findFirst: jest.fn().mockResolvedValue(null),
         },
       } as any,
       { resolveCurrent: jest.fn() } as unknown as InstitutionalHierarchyService,
       {} as any,
     );
 
-    await expect(service.getSignedUrl('res-1')).rejects.toBeInstanceOf(
-      AppNotFoundException,
+    await expect(
+      service.getSignedUrl('res-1', unscopedGlobalAdmin),
+    ).rejects.toBeInstanceOf(AppNotFoundException);
+  });
+
+  it('does not upload or update when actor cannot access the existing resource scope', async () => {
+    const prisma = {
+      resources: {
+        findUnique: jest.fn().mockResolvedValue({
+          resource_id: 'res-1',
+          resource_type: 'document',
+          scope_level: 'union',
+          scope_id: 8,
+          file_key: 'union/8/old.pdf',
+        }),
+        update: jest.fn(),
+      },
+    };
+    const fileStorage = {
+      upload: jest.fn(),
+      deleteMany: jest.fn(),
+    };
+    const service = new ResourcesService(
+      prisma as any,
+      { resolveCurrent: jest.fn() } as unknown as InstitutionalHierarchyService,
+      fileStorage as any,
     );
+
+    await expect(
+      service.update(
+        'res-1',
+        { title: 'Manual externo' },
+        {
+          buffer: Buffer.from('%PDF-1.4\n'),
+          originalname: 'manual.pdf',
+          mimetype: 'application/pdf',
+          size: 9,
+        } as Express.Multer.File,
+        {
+          effective: {
+            permissions: ['resources:update'],
+            scope: {
+              global: {
+                union: { id: 7, name: 'Unión 7' },
+              },
+              club: null,
+            },
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(AppForbiddenException);
+
+    expect(fileStorage.upload).not.toHaveBeenCalled();
+    expect(prisma.resources.update).not.toHaveBeenCalled();
   });
 });
 

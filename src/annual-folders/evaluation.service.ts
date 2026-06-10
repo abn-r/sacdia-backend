@@ -12,6 +12,9 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { InstitutionalHierarchyService } from '../common/services/institutional-hierarchy.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+
+type EvaluationTerritoryMode = 'folder' | 'union';
 
 @Injectable()
 export class EvaluationService {
@@ -19,6 +22,7 @@ export class EvaluationService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
     @Optional()
     private readonly hierarchy?: InstitutionalHierarchyService,
   ) {}
@@ -43,6 +47,12 @@ export class EvaluationService {
     dto: EvaluateSectionDto,
     evaluatorUserId: string,
   ) {
+    await this.assertFolderEvaluationTerritoryAccess(
+      folderId,
+      evaluatorUserId,
+      'folder',
+    );
+
     return this.prisma.$transaction(async (tx) => {
       // Fetch folder with template sections
       const folder = await tx.annual_folders.findUnique({
@@ -296,6 +306,12 @@ export class EvaluationService {
     dto: ConfirmUnionDto,
     actorUserId: string,
   ) {
+    await this.assertFolderEvaluationTerritoryAccess(
+      folderId,
+      actorUserId,
+      'union',
+    );
+
     // ── Role check (Option B — service-layer enforcement) ──────────────────
     // Only director-union and assistant-union may confirm evaluations at the
     // union tier. This check runs outside the transaction because it queries a
@@ -516,6 +532,12 @@ export class EvaluationService {
     sectionId: string,
     actorUserId: string,
   ) {
+    await this.assertFolderEvaluationTerritoryAccess(
+      folderId,
+      actorUserId,
+      'folder',
+    );
+
     return this.prisma.$transaction(async (tx) => {
       // Validate folder exists
       const folder = await tx.annual_folders.findUnique({
@@ -661,6 +683,88 @@ export class EvaluationService {
       });
 
     return evaluations.map((e) => this.formatEvaluation(e));
+  }
+
+  private async assertFolderEvaluationTerritoryAccess(
+    folderId: string,
+    actorUserId: string,
+    mode: EvaluationTerritoryMode,
+  ): Promise<void> {
+    const folder = await this.prisma.annual_folders.findUnique({
+      where: { annual_folder_id: folderId },
+      select: {
+        club_enrollment: {
+          select: {
+            club_section: {
+              select: {
+                clubs: {
+                  select: {
+                    local_field_id: true,
+                    local_fields: {
+                      select: {
+                        union_id: true,
+                        unions: {
+                          select: {
+                            division_id: true,
+                            country_id: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!folder) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
+    }
+
+    const club = folder.club_enrollment?.club_section?.clubs;
+    const localField = club?.local_fields;
+
+    if (!club?.local_field_id || !localField?.union_id) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
+        { folderId },
+      );
+    }
+
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    const scope =
+      mode === 'union'
+        ? {
+            union_id: localField.union_id,
+            division_id: localField.unions?.division_id ?? null,
+            country_id: localField.unions?.country_id ?? null,
+          }
+        : {
+            local_field_id: club.local_field_id,
+            union_id: localField.union_id,
+            division_id: localField.unions?.division_id ?? null,
+            country_id: localField.unions?.country_id ?? null,
+          };
+
+    if (
+      this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        scope,
+        'current-write',
+      )
+    ) {
+      return;
+    }
+
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
+    );
   }
 
   // ========================================

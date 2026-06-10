@@ -215,8 +215,11 @@ export class AnnualFoldersController {
     },
   })
   @ApiResponse({ status: 404, description: 'Folder not found' })
-  async getFolder(@Param('folderId', ParseUUIDPipe) folderId: string) {
-    const data = await this.service.getFolder(folderId);
+  async getFolder(
+    @Param('folderId', ParseUUIDPipe) folderId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const data = await this.service.getFolder(folderId, user.sub);
     return { status: 'success', data };
   }
 
@@ -255,8 +258,12 @@ export class AnnualFoldersController {
   @ApiResponse({ status: 404, description: 'Folder not found for enrollment' })
   async getFolderByEnrollment(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.service.getFolderByEnrollment(enrollmentId);
+    const data = await this.service.getFolderByEnrollment(
+      enrollmentId,
+      user.sub,
+    );
     return { status: 'success', data };
   }
 

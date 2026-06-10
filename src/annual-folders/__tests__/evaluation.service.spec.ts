@@ -3,6 +3,7 @@ import { EvaluationService } from '../evaluation.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 
 describe('EvaluationService', () => {
   let service: EvaluationService;
@@ -30,6 +31,27 @@ describe('EvaluationService', () => {
   const mockHierarchyService = {
     snapshotForClub: jest.fn(),
   };
+  const mockAuthorizationContext = {
+    resolveUserAuthorization: jest.fn(),
+    canAccessHierarchyScope: jest.fn(),
+  };
+
+  const mockFolderTerritory = {
+    club_enrollment: {
+      club_section: {
+        clubs: {
+          local_field_id: 30,
+          local_fields: {
+            union_id: 20,
+            unions: {
+              division_id: 1,
+              country_id: 1,
+            },
+          },
+        },
+      },
+    },
+  };
 
   const mockPrismaService = {
     $transaction: jest.fn(),
@@ -51,6 +73,13 @@ describe('EvaluationService', () => {
     mockHierarchyService.snapshotForClub.mockResolvedValue({
       hierarchy_context_id: 'ctx-eval-1',
     });
+    mockPrismaService.annual_folders.findUnique.mockResolvedValue(
+      mockFolderTerritory,
+    );
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+      authorization: { grants: { global_roles: [] } },
+    });
+    mockAuthorizationContext.canAccessHierarchyScope.mockReturnValue(true);
 
     mockPrismaService.$transaction.mockImplementation(
       (callback: (tx: ReturnType<typeof createTxMock>) => Promise<unknown>) =>
@@ -61,6 +90,10 @@ describe('EvaluationService', () => {
       providers: [
         EvaluationService,
         { provide: PrismaService, useValue: mockPrismaService },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContext,
+        },
         {
           provide: InstitutionalHierarchyService,
           useValue: mockHierarchyService,
@@ -194,6 +227,18 @@ describe('EvaluationService', () => {
       expect(
         txMock.annual_folder_section_evaluations.update,
       ).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects cross-territory evaluation before opening a transaction', async () => {
+      mockAuthorizationContext.canAccessHierarchyScope.mockReturnValue(false);
+
+      await expect(
+        service.evaluateSection(folderId, sectionId, dto, evaluatorId),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
+      });
+
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
 
     it('should write lf_approved_by, lf_approved_at, and status on update', async () => {
@@ -725,6 +770,24 @@ describe('EvaluationService', () => {
 
       expect(result.evaluation).toBeDefined();
       expect(result.folder_summary).toBeDefined();
+    });
+
+    it('rejects cross-union confirmation before role check or transaction', async () => {
+      mockAuthorizationContext.canAccessHierarchyScope.mockReturnValue(false);
+
+      await expect(
+        service.confirmUnion(
+          folderId,
+          sectionId,
+          { decision: 'APPROVED' },
+          unionActorId,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
+      });
+
+      expect(mockPrismaService.users_roles.findMany).not.toHaveBeenCalled();
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
 
     it('REJECTED_OVERRIDE → status REJECTED, union_* set, lf_* preserved', async () => {

@@ -87,7 +87,9 @@ export class UpdateUserDto {
 
   @ApiPropertyOptional({
     example: 1,
-    description: 'ID del país',
+    description:
+      'Solo lectura en actualización self-service. Usar flujo administrativo para cambios territoriales.',
+    deprecated: true,
   })
   @IsOptional()
   @Type(() => Number)
@@ -97,7 +99,9 @@ export class UpdateUserDto {
 
   @ApiPropertyOptional({
     example: 1,
-    description: 'ID de la unión',
+    description:
+      'Solo lectura en actualización self-service. Usar flujo administrativo para cambios territoriales.',
+    deprecated: true,
   })
   @IsOptional()
   @Type(() => Number)
@@ -107,7 +111,9 @@ export class UpdateUserDto {
 
   @ApiPropertyOptional({
     example: 1,
-    description: 'ID del campo local',
+    description:
+      'Solo lectura en actualización self-service. Usar flujo administrativo para cambios territoriales.',
+    deprecated: true,
   })
   @IsOptional()
   @Type(() => Number)

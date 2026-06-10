@@ -58,10 +58,10 @@ describe('MembershipRequestsService', () => {
     transactionMock = createTransactionMock();
     mockPrismaService.$transaction.mockImplementation(
       (
-        callback: (
-          tx: ReturnType<typeof createTransactionMock>,
-        ) => Promise<unknown>,
-      ) => callback(transactionMock),
+        input:
+          | ((tx: ReturnType<typeof createTransactionMock>) => Promise<unknown>)
+          | Promise<unknown>[],
+      ) => (Array.isArray(input) ? Promise.all(input) : input(transactionMock)),
     );
 
     const module: TestingModule = await Test.createTestingModule({
@@ -77,6 +77,82 @@ describe('MembershipRequestsService', () => {
     }).compile();
 
     service = module.get<MembershipRequestsService>(MembershipRequestsService);
+  });
+
+  describe('approve/reject', () => {
+    beforeEach(() => {
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue(
+        pendingAssignment,
+      );
+    });
+
+    it('approves only when assignment belongs to the path club section', async () => {
+      mockPrismaService.club_role_assignments.updateMany.mockResolvedValue({
+        count: 1,
+      });
+
+      await service.approve(10, pendingAssignment.assignment_id, actorId);
+
+      expect(
+        mockPrismaService.club_role_assignments.updateMany,
+      ).toHaveBeenCalledWith({
+        where: {
+          assignment_id: pendingAssignment.assignment_id,
+          club_section_id: 10,
+          status: 'pending',
+          active: true,
+        },
+        data: {
+          status: 'active',
+          expires_at: null,
+          modified_at: expect.any(Date),
+        },
+      });
+    });
+
+    it('rejects path/assignment section mismatches as not found', async () => {
+      mockPrismaService.club_role_assignments.updateMany.mockResolvedValue({
+        count: 0,
+      });
+      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+        ...pendingAssignment,
+        club_section_id: 99,
+      });
+
+      await expect(
+        service.approve(10, pendingAssignment.assignment_id, actorId),
+      ).rejects.toMatchObject({ code: ErrorCode.MR_NOT_FOUND });
+
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
+      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+    });
+
+    it('rejects only when assignment belongs to the path club section', async () => {
+      mockPrismaService.club_role_assignments.updateMany.mockResolvedValue({
+        count: 1,
+      });
+
+      await service.reject(10, pendingAssignment.assignment_id, actorId, 'No');
+
+      expect(
+        mockPrismaService.club_role_assignments.updateMany,
+      ).toHaveBeenCalledWith({
+        where: {
+          assignment_id: pendingAssignment.assignment_id,
+          club_section_id: 10,
+          status: 'pending',
+          active: true,
+        },
+        data: {
+          status: 'rejected',
+          expires_at: null,
+          rejection_reason: 'No',
+          modified_at: expect.any(Date),
+        },
+      });
+    });
   });
 
   describe('cancelPendingForUser', () => {

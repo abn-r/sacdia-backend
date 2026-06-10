@@ -39,6 +39,14 @@ const mockEvidenceClubChain = {
   },
 };
 
+const mockFolderClubChain = {
+  club_enrollment: {
+    club_section: {
+      clubs: { club_id: 10 },
+    },
+  },
+};
+
 // Minimal club-chain shape required by assertEvidenceTerritoryAccess
 const mockEvidenceTerritoryChain = {
   annual_folder: {
@@ -117,6 +125,9 @@ const mockPrismaService = {
   users_roles: {
     findFirst: jest.fn(),
   },
+  club_role_assignments: {
+    findFirst: jest.fn(),
+  },
 };
 
 const mockFileStorageService = {
@@ -151,9 +162,9 @@ describe('AnnualFoldersService — single-evidence presign', () => {
   // ================================================================
   describe('uploadEvidence', () => {
     beforeEach(() => {
-      mockPrismaService.annual_folders.findUnique.mockResolvedValue(
-        mockOpenFolder,
-      );
+      mockPrismaService.annual_folders.findUnique
+        .mockResolvedValueOnce(mockFolderClubChain)
+        .mockResolvedValue(mockOpenFolder);
       mockPrismaService.folder_template_sections.findFirst.mockResolvedValue(
         mockSection,
       );
@@ -214,6 +225,32 @@ describe('AnnualFoldersService — single-evidence presign', () => {
       );
 
       expect(result.file_url).toBe(RAW_KEY);
+    });
+
+    it('rejects cross-club upload before R2 upload or evidence creation', async () => {
+      mockPrismaService.annual_folders.findUnique.mockReset();
+      mockPrismaService.annual_folders.findUnique.mockResolvedValue(
+        mockFolderClubChain,
+      );
+      mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.uploadEvidence(
+          FOLDER_ID,
+          SECTION_ID,
+          { notes: undefined },
+          USER_ID,
+          mockMulterFile,
+        ),
+      ).rejects.toMatchObject({
+        code: 'ANNUAL_FOLDER_FOLDER_ACCESS_DENIED',
+      });
+
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.annual_folder_evidences.create,
+      ).not.toHaveBeenCalled();
     });
   });
 

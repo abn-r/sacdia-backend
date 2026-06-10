@@ -335,7 +335,20 @@ export class AnnualFoldersService {
   /**
    * Get an annual evidence folder by ID with its template sections, evidences, and evaluations.
    */
-  async getFolder(folderId: string) {
+  async getFolder(folderId: string, userId: string) {
+    const folderRef = await this.prisma.annual_folders.findUnique({
+      where: { annual_folder_id: folderId },
+      select: { annual_folder_id: true },
+    });
+
+    if (!folderRef) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
+    }
+
+    await this.assertFolderClubAccess(folderId, userId);
+
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },
       include: {
@@ -430,7 +443,20 @@ export class AnnualFoldersService {
   /**
    * Get an annual evidence folder by enrollment ID with sections, evidences, and evaluations.
    */
-  async getFolderByEnrollment(enrollmentId: string) {
+  async getFolderByEnrollment(enrollmentId: string, userId: string) {
+    const folderRef = await this.prisma.annual_folders.findUnique({
+      where: { club_enrollment_id: enrollmentId },
+      select: { annual_folder_id: true },
+    });
+
+    if (!folderRef) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: enrollmentId,
+      });
+    }
+
+    await this.assertFolderClubAccess(folderRef.annual_folder_id, userId);
+
     const folder = await this.prisma.annual_folders.findUnique({
       where: { club_enrollment_id: enrollmentId },
       include: {
@@ -540,6 +566,8 @@ export class AnnualFoldersService {
     if (!file?.buffer) {
       throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_FILE_REQUIRED);
     }
+
+    await this.assertFolderClubAccess(folderId, userId);
 
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },

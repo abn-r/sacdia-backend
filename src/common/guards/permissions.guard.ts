@@ -971,17 +971,28 @@ export class PermissionsGuard implements CanActivate {
       this.getRequestValue(request, 'param', resource.idParam ?? 'sectionId'),
       'Club section ID not found in request',
     );
-    const expectedClubId = this.getRequiredNumericValue(
-      this.getRequestValue(request, 'param', resource.clubIdParam ?? 'clubId'),
-      'Club ID not found in request',
+    const expectedClubIdValue = this.getRequestValue(
+      request,
+      'param',
+      resource.clubIdParam ?? 'clubId',
     );
+    const expectedClubId =
+      expectedClubIdValue === undefined || expectedClubIdValue === null
+        ? null
+        : this.getRequiredNumericValue(
+            expectedClubIdValue,
+            'Club ID not found in request',
+          );
 
     const section = await this.prisma.club_sections.findUnique({
       where: { club_section_id: sectionId },
       select: { club_section_id: true, main_club_id: true, club_type_id: true },
     });
 
-    if (!section || section.main_club_id !== expectedClubId) {
+    if (
+      !section ||
+      (expectedClubId !== null && section.main_club_id !== expectedClubId)
+    ) {
       throw new AppNotFoundException(ErrorCode.CLUB_SECTION_NOT_FOUND);
     }
 

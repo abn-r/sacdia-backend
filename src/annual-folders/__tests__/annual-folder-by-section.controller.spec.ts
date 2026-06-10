@@ -48,9 +48,15 @@ describe('AnnualFolderBySectionController', () => {
       }),
     );
 
-    await expect(controller.getFolderBySection(2)).resolves.toEqual({
+    await expect(
+      controller.getFolderBySection(2, { sub: 'user-1' }),
+    ).resolves.toEqual({
       status: 'success',
       data: null,
     });
+    expect(annualFoldersService.getFolderByEnrollment).toHaveBeenCalledWith(
+      enrollmentId,
+      'user-1',
+    );
   });
 });

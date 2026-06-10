@@ -251,6 +251,7 @@
   "USER_DISEASE_INVALID": "Invalid or inactive diseases: {ids}",
   "USER_MEDICINE_INVALID": "Invalid or inactive medicines: {ids}",
   "USER_BAPTISM_DATE_CONFLICT": "Cannot specify baptism date if not baptized",
+  "USER_PROFILE_GEOGRAPHY_READ_ONLY": "Profile territory fields are read-only in self-service updates",
   "USER_ALLERGY_NOT_IN_PROFILE": "Allergy not found in user profile",
   "USER_DISEASE_NOT_IN_PROFILE": "Disease not found in user profile",
   "USER_MEDICINE_NOT_IN_PROFILE": "Medicine not found in user profile",

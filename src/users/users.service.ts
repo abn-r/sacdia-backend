@@ -120,6 +120,18 @@ export class UsersService {
     }
   }
 
+  private assertNoSelfServiceGeographyUpdate(updateUserDto: UpdateUserDto) {
+    if (
+      updateUserDto.country_id !== undefined ||
+      updateUserDto.union_id !== undefined ||
+      updateUserDto.local_field_id !== undefined
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.USER_PROFILE_GEOGRAPHY_READ_ONLY,
+      );
+    }
+  }
+
   private async validateAllergiesExist(allergyIds: number[]) {
     if (!allergyIds.length) return;
 
@@ -237,6 +249,7 @@ export class UsersService {
   async update(userId: string, updateUserDto: UpdateUserDto) {
     // Validar que el usuario existe
     const existingUser = await this.ensureUserExists(userId);
+    this.assertNoSelfServiceGeographyUpdate(updateUserDto);
 
     // Validar baptism_date solo si baptism es true
     if (updateUserDto.baptism === false && updateUserDto.baptism_date) {

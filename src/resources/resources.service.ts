@@ -373,16 +373,18 @@ export class ResourcesService {
   }
 
   // ---------------------------------------------------------------------------
-  // FIND ALL (admin — without scope filtering)
+  // FIND ALL (admin — scope filtered)
   // ---------------------------------------------------------------------------
 
-  async findAll(query: ResourceQueryDto) {
+  async findAll(query: ResourceQueryDto, userContext: any) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
+    const visibleConditions = this.buildVisibleResourceConditions(userContext);
 
     const where: Record<string, any> = {
       active: true,
+      ...(visibleConditions.length > 0 && { AND: visibleConditions }),
       ...(query.resource_type && { resource_type: query.resource_type }),
       ...(query.resource_category_id && {
         resource_category_id: query.resource_category_id,
@@ -425,9 +427,14 @@ export class ResourcesService {
   // FIND ONE
   // ---------------------------------------------------------------------------
 
-  async findOne(id: string) {
-    const resource = await this.prisma.resources.findUnique({
-      where: { resource_id: id },
+  async findOne(id: string, userContext: any) {
+    const visibleConditions = this.buildVisibleResourceConditions(userContext);
+    const resource = await this.prisma.resources.findFirst({
+      where: {
+        resource_id: id,
+        active: true,
+        ...(visibleConditions.length > 0 && { AND: visibleConditions }),
+      },
       include: {
         resource_categories: true,
         club_types: true,
@@ -457,10 +464,11 @@ export class ResourcesService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
+    const visibleConditions = this.buildVisibleResourceConditions(userContext);
 
     const where: Record<string, any> = {
       active: true,
-      AND: this.buildVisibleResourceConditions(userContext),
+      ...(visibleConditions.length > 0 && { AND: visibleConditions }),
       // Filtros adicionales del query
       ...(query.resource_type && { resource_type: query.resource_type }),
       ...(query.resource_category_id && {
@@ -495,11 +503,12 @@ export class ResourcesService {
   }
 
   async findOneVisible(id: string, userContext: any) {
+    const visibleConditions = this.buildVisibleResourceConditions(userContext);
     const resource = await this.prisma.resources.findFirst({
       where: {
         resource_id: id,
         active: true,
-        AND: this.buildVisibleResourceConditions(userContext),
+        ...(visibleConditions.length > 0 && { AND: visibleConditions }),
       },
       include: {
         resource_categories: true,
@@ -523,11 +532,12 @@ export class ResourcesService {
   }
 
   async getVisibleSignedUrl(id: string, userContext: any) {
+    const visibleConditions = this.buildVisibleResourceConditions(userContext);
     const resource = await this.prisma.resources.findFirst({
       where: {
         resource_id: id,
         active: true,
-        AND: this.buildVisibleResourceConditions(userContext),
+        ...(visibleConditions.length > 0 && { AND: visibleConditions }),
       },
       select: { resource_id: true, file_key: true },
     });
@@ -549,7 +559,12 @@ export class ResourcesService {
   // UPDATE
   // ---------------------------------------------------------------------------
 
-  async update(id: string, dto: UpdateResourceDto, file?: Express.Multer.File) {
+  async update(
+    id: string,
+    dto: UpdateResourceDto,
+    file?: Express.Multer.File,
+    userContext?: any,
+  ) {
     const existing = await this.prisma.resources.findUnique({
       where: { resource_id: id },
       select: {
@@ -564,6 +579,21 @@ export class ResourcesService {
     if (!existing) {
       throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
+
+    await this.validateScopeAuthorization(
+      existing.scope_level,
+      existing.scope_id,
+      userContext,
+    );
+
+    const targetScopeLevel = dto.scope_level ?? existing.scope_level;
+    const targetScopeId =
+      dto.scope_id !== undefined ? dto.scope_id : existing.scope_id;
+    await this.validateScopeAuthorization(
+      targetScopeLevel,
+      targetScopeId,
+      userContext,
+    );
 
     const updateData: Record<string, any> = {};
 
@@ -585,13 +615,13 @@ export class ResourcesService {
       validateResourceFile(file, existing.resource_type);
 
       const scopeSegment =
-        existing.scope_id != null ? String(existing.scope_id) : 'system';
+        targetScopeId != null ? String(targetScopeId) : 'system';
       const uuid = randomUUID();
       const rawExt = file.originalname.includes('.')
         ? file.originalname.slice(file.originalname.lastIndexOf('.'))
         : '';
       const safeExtension = rawExt.replace(/[^a-zA-Z0-9.]/g, '');
-      const fileKey = `${existing.scope_level}/${scopeSegment}/${uuid}${safeExtension}`;
+      const fileKey = `${targetScopeLevel}/${scopeSegment}/${uuid}${safeExtension}`;
 
       const uploaded = await this.fileStorage.upload(
         StorageBucketAlias.RESOURCES_FILES,
@@ -640,15 +670,21 @@ export class ResourcesService {
   // REMOVE (soft delete)
   // ---------------------------------------------------------------------------
 
-  async remove(id: string) {
+  async remove(id: string, userContext: any) {
     const existing = await this.prisma.resources.findUnique({
       where: { resource_id: id },
-      select: { resource_id: true },
+      select: { resource_id: true, scope_level: true, scope_id: true },
     });
 
     if (!existing) {
       throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
+
+    await this.validateScopeAuthorization(
+      existing.scope_level,
+      existing.scope_id,
+      userContext,
+    );
 
     await this.prisma.resources.update({
       where: { resource_id: id },
@@ -662,17 +698,18 @@ export class ResourcesService {
   // GET SIGNED URL
   // ---------------------------------------------------------------------------
 
-  async getSignedUrl(id: string) {
-    const resource = await this.prisma.resources.findUnique({
-      where: { resource_id: id },
-      select: { resource_id: true, file_key: true, active: true },
+  async getSignedUrl(id: string, userContext: any) {
+    const visibleConditions = this.buildVisibleResourceConditions(userContext);
+    const resource = await this.prisma.resources.findFirst({
+      where: {
+        resource_id: id,
+        active: true,
+        ...(visibleConditions.length > 0 && { AND: visibleConditions }),
+      },
+      select: { resource_id: true, file_key: true },
     });
 
     if (!resource) {
-      throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
-    }
-
-    if (!resource.active) {
       throw new AppNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
@@ -747,8 +784,10 @@ export class ResourcesService {
         if (await this.isWithinDivisionScope(scopes, { unionId: scopeId })) {
           return;
         }
+        if (await this.isWithinCountryScope(scopes, { unionId: scopeId })) {
+          return;
+        }
       }
-      if (scopes.divisionIds.size === 0 && scopes.countryIds.size > 0) return;
       throw new AppForbiddenException(
         ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_UNION,
         { scope_id: String(scopeId) },
@@ -763,8 +802,12 @@ export class ResourcesService {
         ) {
           return;
         }
+        if (
+          await this.isWithinCountryScope(scopes, { localFieldId: scopeId })
+        ) {
+          return;
+        }
       }
-      if (scopes.divisionIds.size === 0 && scopes.countryIds.size > 0) return;
       throw new AppForbiddenException(
         ErrorCode.RESOURCE_SCOPE_ACCESS_DENIED_LOCAL_FIELD,
         { scope_id: String(scopeId) },
@@ -893,6 +936,10 @@ export class ResourcesService {
   private buildVisibleResourceConditions(
     userContext: any,
   ): Record<string, any>[] {
+    if (this.isUnscopedGlobalAdminContext(userContext)) {
+      return [];
+    }
+
     const authorization = this.extractAuthorizationSnapshot(userContext);
     const visibleScopes = this.collectResourceScopes(authorization);
     const userClubTypeId = this.extractActiveClubTypeId(
@@ -927,6 +974,21 @@ export class ResourcesService {
     ];
   }
 
+  private isUnscopedGlobalAdminContext(userContext: any): boolean {
+    const effectiveScope =
+      userContext?.authorization?.effective?.scope ??
+      userContext?.effective?.scope;
+    const globalScope = effectiveScope?.global;
+
+    return Boolean(
+      globalScope &&
+        !globalScope.division &&
+        !globalScope.country &&
+        !globalScope.union &&
+        !globalScope.local_field,
+    );
+  }
+
   private scopeContains(scopeIds: Set<number>, requestedId: number): boolean {
     return scopeIds.has(requestedId);
   }
@@ -945,6 +1007,40 @@ export class ResourcesService {
     } catch {
       return false;
     }
+  }
+
+  private async isWithinCountryScope(
+    scopes: ResourceScopeSets,
+    input: ResolveCurrentInput,
+  ): Promise<boolean> {
+    if (scopes.countryIds.size === 0) {
+      return false;
+    }
+
+    try {
+      if (typeof input.unionId === 'number') {
+        const union = await this.prisma.unions.findUnique({
+          where: { union_id: input.unionId },
+          select: { country_id: true },
+        });
+        return Boolean(
+          union?.country_id && scopes.countryIds.has(union.country_id),
+        );
+      }
+
+      if (typeof input.localFieldId === 'number') {
+        const localField = await this.prisma.local_fields.findUnique({
+          where: { local_field_id: input.localFieldId },
+          select: { unions: { select: { country_id: true } } },
+        });
+        const countryId = localField?.unions?.country_id;
+        return Boolean(countryId && scopes.countryIds.has(countryId));
+      }
+    } catch {
+      return false;
+    }
+
+    return false;
   }
 
   /** Genera una URL firmada para un file_key en R2. */

@@ -75,10 +75,19 @@ export class MembershipRequestsService {
    * does not have approved_by_id / approved_at columns on club_role_assignments.
    * A separate migration is required to close this audit gap.
    */
-  async approve(assignmentId: string, approvedById: string) {
+  async approve(
+    clubSectionId: number,
+    assignmentId: string,
+    approvedById: string,
+  ) {
     const [result, assignment] = await this.prisma.$transaction([
       this.prisma.club_role_assignments.updateMany({
-        where: { assignment_id: assignmentId, status: 'pending', active: true },
+        where: {
+          assignment_id: assignmentId,
+          club_section_id: clubSectionId,
+          status: 'pending',
+          active: true,
+        },
         data: { status: 'active', expires_at: null, modified_at: new Date() },
       }),
       this.prisma.club_role_assignments.findUnique({
@@ -88,6 +97,9 @@ export class MembershipRequestsService {
 
     if (result.count === 0) {
       if (!assignment) {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+      if (assignment.club_section_id !== clubSectionId) {
         throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
       throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);
@@ -119,10 +131,20 @@ export class MembershipRequestsService {
    * does not have rejected_by_id / rejected_at columns on club_role_assignments.
    * A separate migration is required to close this audit gap.
    */
-  async reject(assignmentId: string, rejectedById: string, reason?: string) {
+  async reject(
+    clubSectionId: number,
+    assignmentId: string,
+    rejectedById: string,
+    reason?: string,
+  ) {
     const [result, assignment] = await this.prisma.$transaction([
       this.prisma.club_role_assignments.updateMany({
-        where: { assignment_id: assignmentId, status: 'pending', active: true },
+        where: {
+          assignment_id: assignmentId,
+          club_section_id: clubSectionId,
+          status: 'pending',
+          active: true,
+        },
         data: {
           status: 'rejected',
           expires_at: null,
@@ -137,6 +159,9 @@ export class MembershipRequestsService {
 
     if (result.count === 0) {
       if (!assignment) {
+        throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
+      }
+      if (assignment.club_section_id !== clubSectionId) {
         throw new AppNotFoundException(ErrorCode.MR_NOT_FOUND);
       }
       throw new AppConflictException(ErrorCode.MR_ALREADY_PENDING);

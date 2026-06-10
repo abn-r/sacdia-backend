@@ -250,6 +250,7 @@
   "USER_DISEASE_INVALID": "Maladies invalides ou inactives : {ids}",
   "USER_MEDICINE_INVALID": "Médicaments invalides ou inactifs : {ids}",
   "USER_BAPTISM_DATE_CONFLICT": "Impossible de spécifier une date de baptême si non baptisé",
+  "USER_PROFILE_GEOGRAPHY_READ_ONLY": "Les champs de territoire du profil sont en lecture seule en libre-service",
   "USER_ALLERGY_NOT_IN_PROFILE": "Allergie introuvable dans le profil de l'utilisateur",
   "USER_DISEASE_NOT_IN_PROFILE": "Maladie introuvable dans le profil de l'utilisateur",
   "USER_MEDICINE_NOT_IN_PROFILE": "Médicament introuvable dans le profil de l'utilisateur",

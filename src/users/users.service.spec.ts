@@ -909,75 +909,40 @@ describe('UsersService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.USER_BAPTISM_DATE_CONFLICT });
     });
 
-    it('TC-U04 - geography: invalid country → BadRequestException', async () => {
+    it('TC-U04 - security: rejects self-service country changes before validation', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
-      mockPrismaService.countries.findFirst.mockResolvedValue(null);
 
       await expect(
         service.update('u1', { country_id: 999 }),
       ).rejects.toMatchObject({
-        code: ErrorCode.USER_COUNTRY_INVALID,
+        code: ErrorCode.USER_PROFILE_GEOGRAPHY_READ_ONLY,
       });
+      expect(mockPrismaService.countries.findFirst).not.toHaveBeenCalled();
+      expect(mockPrismaService.users.update).not.toHaveBeenCalled();
     });
 
-    it('TC-U05 - geography: invalid union → BadRequestException', async () => {
+    it('TC-U05 - security: rejects self-service union changes before validation', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
-      mockPrismaService.unions.findFirst.mockResolvedValue(null);
 
       await expect(
         service.update('u1', { union_id: 999 }),
       ).rejects.toMatchObject({
-        code: ErrorCode.USER_UNION_INVALID,
+        code: ErrorCode.USER_PROFILE_GEOGRAPHY_READ_ONLY,
       });
+      expect(mockPrismaService.unions.findFirst).not.toHaveBeenCalled();
+      expect(mockPrismaService.users.update).not.toHaveBeenCalled();
     });
 
-    it('TC-U06 - geography: invalid local_field → BadRequestException', async () => {
+    it('TC-U06 - security: rejects self-service local-field changes before validation', async () => {
       mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
-      mockPrismaService.local_fields.findFirst.mockResolvedValue(null);
 
       await expect(
         service.update('u1', { local_field_id: 999 }),
-      ).rejects.toMatchObject({ code: ErrorCode.USER_LOCAL_FIELD_INVALID });
-    });
-
-    it('TC-U07 - geography: union does not belong to country → BadRequestException', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue(existingUser);
-      // country valid
-      mockPrismaService.countries.findFirst.mockResolvedValue({
-        country_id: 5,
-      });
-      // union valid but belongs to a different country
-      mockPrismaService.unions.findFirst.mockResolvedValue({
-        union_id: 10,
-        country_id: 99, // <-- mismatch
-      });
-
-      await expect(
-        service.update('u1', { country_id: 5, union_id: 10 }),
-      ).rejects.toMatchObject({ code: ErrorCode.USER_UNION_COUNTRY_MISMATCH });
-    });
-
-    it('TC-U08 - geography: local field does not belong to union → BadRequestException', async () => {
-      mockPrismaService.users.findUnique.mockResolvedValue({
-        ...existingUser,
-        country_id: null,
-      });
-      // No country update, so union cross-check is skipped.
-      // local_field validation active
-      mockPrismaService.local_fields.findFirst.mockResolvedValue({
-        local_field_id: 50,
-      });
-      // the unique lookup returns a mismatched union
-      mockPrismaService.local_fields.findUnique.mockResolvedValue({
-        local_field_id: 50,
-        union_id: 999, // <-- different from currentUser.union_id=2
-      });
-
-      await expect(
-        service.update('u1', { local_field_id: 50 }),
       ).rejects.toMatchObject({
-        code: ErrorCode.USER_LOCAL_FIELD_UNION_MISMATCH,
+        code: ErrorCode.USER_PROFILE_GEOGRAPHY_READ_ONLY,
       });
+      expect(mockPrismaService.local_fields.findFirst).not.toHaveBeenCalled();
+      expect(mockPrismaService.users.update).not.toHaveBeenCalled();
     });
   });
 

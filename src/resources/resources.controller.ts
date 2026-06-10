@@ -182,8 +182,8 @@ export class ResourcesController {
       'Acepta filtros por tipo, categoría, tipo de club, scope y texto libre.',
   })
   @ApiResponse({ status: 200, description: 'Lista paginada de recursos' })
-  async findAll(@Query() query: ResourceQueryDto) {
-    return this.resourcesService.findAll(query);
+  async findAll(@Query() query: ResourceQueryDto, @Request() req: any) {
+    return this.resourcesService.findAll(query, req.authorization);
   }
 
   // ---------------------------------------------------------------------------
@@ -199,8 +199,8 @@ export class ResourcesController {
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso encontrado' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.resourcesService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    const data = await this.resourcesService.findOne(id, req.authorization);
     return { status: 'success', data };
   }
 
@@ -222,8 +222,14 @@ export class ResourcesController {
     description: 'El recurso no tiene archivo asociado',
   })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
-  async getSignedUrl(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.resourcesService.getSignedUrl(id);
+  async getSignedUrl(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
+  ) {
+    const data = await this.resourcesService.getSignedUrl(
+      id,
+      req.authorization,
+    );
     return { status: 'success', data };
   }
 
@@ -249,8 +255,14 @@ export class ResourcesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateResourceDto,
     @UploadedFile() file: Express.Multer.File | undefined,
+    @Request() req: any,
   ) {
-    const data = await this.resourcesService.update(id, dto, file);
+    const data = await this.resourcesService.update(
+      id,
+      dto,
+      file,
+      req.authorization,
+    );
     return { status: 'success', data };
   }
 
@@ -268,8 +280,8 @@ export class ResourcesController {
   @ApiParam({ name: 'id', type: String, description: 'UUID del recurso' })
   @ApiResponse({ status: 200, description: 'Recurso eliminado correctamente' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.resourcesService.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    const data = await this.resourcesService.remove(id, req.authorization);
     return { status: 'success', data };
   }
 }

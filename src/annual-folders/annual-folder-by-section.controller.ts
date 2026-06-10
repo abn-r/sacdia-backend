@@ -16,6 +16,7 @@ import {
 } from '@nestjs/swagger';
 import {
   AuthorizationResource,
+  CurrentUser,
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
@@ -38,6 +39,7 @@ export class AnnualFolderBySectionController {
 
   @Get()
   @RequirePermissions('evidence_folders:read')
+  @AuthorizationResource({ type: 'club_section', idParam: 'sectionId' })
   @ApiOperation({
     summary: 'Get annual evidence folder for a club section (current year)',
     description:
@@ -66,6 +68,7 @@ export class AnnualFolderBySectionController {
   })
   async getFolderBySection(
     @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
   ) {
     const [activeYear, enrollment] = await Promise.all([
       this.catalogsService.getCurrentEcclesiasticalYear(),
@@ -83,6 +86,7 @@ export class AnnualFolderBySectionController {
     try {
       data = await this.annualFoldersService.getFolderByEnrollment(
         enrollment.club_enrollment_id,
+        user.sub,
       );
     } catch (err: unknown) {
       // La carpeta no existe todavía — estado de negocio válido, no un error.

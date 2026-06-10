@@ -87,6 +87,7 @@ import {
 } from '@nestjs/common';
 import { EvaluationService } from '../evaluation.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthorizationContextService } from '../../common/services/authorization-context.service';
 import {
   annual_folder_section_status_enum,
   union_evaluation_decision_enum,
@@ -352,6 +353,15 @@ beforeAll(async () => {
       {
         provide: PrismaService,
         useValue: rawPrisma,
+      },
+      {
+        provide: AuthorizationContextService,
+        useValue: {
+          resolveUserAuthorization: jest.fn().mockResolvedValue({
+            authorization: { grants: { global_roles: [] } },
+          }),
+          canAccessHierarchyScope: jest.fn().mockReturnValue(true),
+        },
       },
     ],
   }).compile();

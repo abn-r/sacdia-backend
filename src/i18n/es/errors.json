@@ -251,6 +251,7 @@
   "USER_DISEASE_INVALID": "Enfermedades inválidas o inactivas: {ids}",
   "USER_MEDICINE_INVALID": "Medicamentos inválidos o inactivos: {ids}",
   "USER_BAPTISM_DATE_CONFLICT": "No se puede especificar fecha de bautismo si no está bautizado",
+  "USER_PROFILE_GEOGRAPHY_READ_ONLY": "Los campos de territorio del perfil son de solo lectura en autoservicio",
   "USER_ALLERGY_NOT_IN_PROFILE": "Alergia no encontrada en el perfil del usuario",
   "USER_DISEASE_NOT_IN_PROFILE": "Enfermedad no encontrada en el perfil del usuario",
   "USER_MEDICINE_NOT_IN_PROFILE": "Medicamento no encontrado en el perfil del usuario",

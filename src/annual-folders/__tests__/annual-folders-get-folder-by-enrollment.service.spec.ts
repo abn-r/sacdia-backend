@@ -11,10 +11,16 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
     annual_folders: {
       findUnique: jest.fn(),
     },
+    users_roles: {
+      findFirst: jest.fn(),
+    },
+    club_role_assignments: {
+      findFirst: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
-    getSignedUrl: jest.fn(),
+    getSignedDownloadUrl: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -35,9 +41,37 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
     mockPrismaService.annual_folders.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.getFolderByEnrollment('621ea0d0-4779-4a06-98eb-25e13b1af398'),
+      service.getFolderByEnrollment(
+        '621ea0d0-4779-4a06-98eb-25e13b1af398',
+        'user-1',
+      ),
     ).rejects.toMatchObject({
       code: ErrorCode.ANNUAL_FOLDER_NOT_FOUND,
     });
+  });
+
+  it('rejects cross-club reads before presigning evidences', async () => {
+    mockPrismaService.annual_folders.findUnique
+      .mockResolvedValueOnce({ annual_folder_id: 'folder-1' })
+      .mockResolvedValueOnce({
+        club_enrollment: {
+          club_section: {
+            clubs: { club_id: 10 },
+          },
+        },
+      });
+    mockPrismaService.users_roles.findFirst.mockResolvedValue(null);
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.getFolderByEnrollment(
+        '621ea0d0-4779-4a06-98eb-25e13b1af398',
+        'user-1',
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
+    });
+
+    expect(mockFileStorageService.getSignedDownloadUrl).not.toHaveBeenCalled();
   });
 });
