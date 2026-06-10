@@ -7,6 +7,18 @@ const mockPrisma = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
   },
+  master_honors: {
+    findMany: jest.fn(),
+  },
+  users_honors: {
+    findMany: jest.fn(),
+  },
+  users_pr: {
+    findUnique: jest.fn(),
+  },
+  club_role_assignments: {
+    findFirst: jest.fn(),
+  },
 };
 
 const makeRecord = (overrides: Record<string, unknown> = {}) => ({
@@ -143,5 +155,141 @@ describe('MasterHonorsService', () => {
     await expect(
       service.getUserMasterHonorDetail('user-1', 99),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('returns read-only roadmap with progress for unawarded master honors', async () => {
+    mockPrisma.master_honors.findMany.mockResolvedValue([
+      {
+        master_honor_id: 7,
+        name: 'Maestría en Naturaleza',
+        master_image: null,
+        applicability_scope: 'ALL',
+        master_honor_divisions: [],
+        requirement_groups: [
+          {
+            group_id: 100,
+            group_type: 'CATEGORY_COUNT',
+            title: null,
+            description: null,
+            minimum_required: 3,
+            honors_category_id: 5,
+            honor_category: {
+              honor_category_id: 5,
+              name: 'Estudio de la Naturaleza',
+            },
+            options: [],
+          },
+          {
+            group_id: 101,
+            group_type: 'EXPLICIT_OPTIONS',
+            title: 'Especialidades base',
+            description: null,
+            minimum_required: 1,
+            honors_category_id: null,
+            honor_category: null,
+            options: [
+              {
+                option_id: 1,
+                label: 'Agricultura',
+                honors: [{ honor_id: 10 }],
+              },
+              {
+                option_id: 2,
+                label: 'Flores',
+                honors: [{ honor_id: 20 }],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    mockPrisma.users_honors.findMany.mockResolvedValue([
+      {
+        honors: {
+          honor_id: 10,
+          honors_category_id: 5,
+        },
+      },
+    ]);
+    mockPrisma.users_master_honors.findMany.mockResolvedValue([]);
+    mockPrisma.users_pr.findUnique.mockResolvedValue(null);
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+    const result = await service.getUserMasterHonorRoadmap('user-1');
+
+    expect(mockPrisma.master_honors.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { active: true },
+        take: 500,
+      }),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        master_honor_id: 7,
+        name: 'Maestría en Naturaleza',
+        is_awarded: false,
+        is_current: false,
+        completed_groups: 1,
+        total_groups: 2,
+        progress_percent: 50,
+      }),
+    ]);
+    expect(result[0].requirement_groups[0]).toMatchObject({
+      group_id: 100,
+      group_type: 'CATEGORY_COUNT',
+      current_count: 1,
+      minimum_required: 3,
+      passed: false,
+      category_name: 'Estudio de la Naturaleza',
+      matched_honor_ids: [10],
+    });
+    expect(result[0].requirement_groups[1]).toMatchObject({
+      group_id: 101,
+      current_count: 1,
+      passed: true,
+      options: [
+        expect.objectContaining({
+          option_id: 1,
+          completed: true,
+          completed_honor_ids: [10],
+        }),
+        expect.objectContaining({
+          option_id: 2,
+          completed: false,
+          completed_honor_ids: [],
+        }),
+      ],
+    });
+  });
+
+  it('filters selected-division master honors when the user has no matching division', async () => {
+    mockPrisma.master_honors.findMany.mockResolvedValue([
+      {
+        master_honor_id: 8,
+        name: 'Maestría local',
+        master_image: null,
+        applicability_scope: 'SELECTED_DIVISIONS',
+        master_honor_divisions: [{ division_id: 2 }],
+        requirement_groups: [],
+      },
+    ]);
+    mockPrisma.users_honors.findMany.mockResolvedValue([]);
+    mockPrisma.users_master_honors.findMany.mockResolvedValue([]);
+    mockPrisma.users_pr.findUnique.mockResolvedValue(null);
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+      club_sections: {
+        clubs: {
+          local_fields: {
+            unions: {
+              division_id: 1,
+            },
+          },
+        },
+      },
+    });
+
+    const result = await service.getUserMasterHonorRoadmap('user-1');
+
+    expect(result).toEqual([]);
   });
 });

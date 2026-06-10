@@ -28,6 +28,7 @@ import type { FileStorageService } from '../common/services/file-storage.service
 import { TranslationService } from '../common/services/translation.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import pLimit from 'p-limit';
+import { randomUUID } from 'crypto';
 import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service';
 
 // Cap concurrent presign calls for USERS_HONORS bucket images. A single honor
@@ -712,7 +713,7 @@ export class HonorsService {
       let imageIndex = currentImages.length + 1;
       for (const imageFile of imageFiles) {
         const extension = this.getFileExtension(imageFile);
-        const imageName = `img-${userId}-${honorId}-img${imageIndex}.${extension}`;
+        const imageName = `img-${userId}-${honorId}-${Date.now()}-${randomUUID()}-img${imageIndex}.${extension}`;
         const uploadedImage = await this.fileStorage.upload(
           StorageBucketAlias.USERS_HONORS,
           imageName,
@@ -730,6 +731,10 @@ export class HonorsService {
         imageIndex += 1;
       }
     } catch (error) {
+      this.logger.error(
+        `Failed to upload honor evidence files for user=${userId} honor=${honorId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
       await this.rollbackUploadedObjects(uploadedObjects);
       throw new AppInternalServerErrorException(
         ErrorCode.HONOR_FILE_UPLOAD_FAILED,
@@ -782,6 +787,10 @@ export class HonorsService {
         }),
       );
     } catch (error) {
+      this.logger.error(
+        `Failed to persist honor evidence files for user=${userId} honor=${honorId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
       await this.rollbackUploadedObjects(uploadedObjects);
       throw new AppInternalServerErrorException(
         ErrorCode.HONOR_FILE_UPLOAD_FAILED,

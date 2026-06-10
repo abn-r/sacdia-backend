@@ -13,11 +13,15 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthorizationResource, RequirePermissions } from '../common/decorators';
+import {
+  AuthorizationResource,
+  RequirePermissions,
+} from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 import {
   UserMasterHonorDetailDto,
   UserMasterHonorDto,
+  UserMasterHonorRoadmapDto,
 } from './dto/master-honors.dto';
 import { MasterHonorsService } from './master-honors.service';
 
@@ -47,6 +51,27 @@ export class UserMasterHonorsController {
     return this.masterHonorsService.getUserMasterHonors(userId);
   }
 
+  @Get('roadmap')
+  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @RequirePermissions('user_honors:read')
+  @ApiOperation({
+    summary: 'Obtener roadmap de maestrías del usuario',
+    description:
+      'Lista maestrías activas aplicables con avance y requisitos, incluso si el usuario todavía no obtuvo ninguna.',
+  })
+  @ApiParam({ name: 'userId', type: String })
+  @ApiResponse({
+    status: 200,
+    description: 'Roadmap de maestrías del usuario',
+    type: UserMasterHonorRoadmapDto,
+    isArray: true,
+  })
+  async getUserMasterHonorRoadmap(
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
+    return this.masterHonorsService.getUserMasterHonorRoadmap(userId);
+  }
+
   @Get(':masterHonorId')
   @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
   @RequirePermissions('user_honors:read')
@@ -62,7 +87,10 @@ export class UserMasterHonorsController {
     description: 'Detalle de maestría del usuario',
     type: UserMasterHonorDetailDto,
   })
-  @ApiResponse({ status: 404, description: 'Maestría de usuario no encontrada' })
+  @ApiResponse({
+    status: 404,
+    description: 'Maestría de usuario no encontrada',
+  })
   async getUserMasterHonorDetail(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('masterHonorId', ParseIntPipe) masterHonorId: number,

@@ -1163,7 +1163,7 @@ export class AdminUsersService {
     }
 
     if (scope.type === 'DIVISION') {
-      return { division_id: scope.divisionId! };
+      return { unions: { division_id: scope.divisionId! } };
     }
 
     if (scope.type === 'UNION') {

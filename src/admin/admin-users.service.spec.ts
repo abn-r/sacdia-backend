@@ -437,7 +437,7 @@ describe('AdminUsersService', () => {
 
       expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { division_id: 3 },
+          where: { unions: { division_id: 3 } },
         }),
       );
     });
@@ -590,7 +590,7 @@ describe('AdminUsersService', () => {
             where?: {
               AND?: Array<{
                 user_id?: string;
-                division_id?: number;
+                unions?: { division_id?: number };
                 union_id?: number;
                 local_field_id?: number;
               }>;

@@ -334,7 +334,9 @@ describe('HonorsService', () => {
       const result = await service.startHonor('user-123', 1);
 
       expect(result).toEqual(mockUpdated);
-      expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-123');
+      expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith(
+        'user-123',
+      );
       expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { user_honor_id: 1 },
@@ -378,7 +380,9 @@ describe('HonorsService', () => {
       const result = await service.startHonor('user-123', 1);
 
       expect(result).toEqual(mockUpdated);
-      expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-123');
+      expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith(
+        'user-123',
+      );
       expect(warnSpy).toHaveBeenCalled();
     });
   });
@@ -636,14 +640,14 @@ describe('HonorsService', () => {
       expect(mockFileStorageService.upload).toHaveBeenNthCalledWith(
         2,
         StorageBucketAlias.USERS_HONORS,
-        'img-user-123-15-img3.jpg',
+        expect.stringMatching(/^img-user-123-15-\d+-[0-9a-f-]+-img3\.jpg$/),
         image1.buffer,
         expect.objectContaining({ contentType: 'image/jpeg' }),
       );
       expect(mockFileStorageService.upload).toHaveBeenNthCalledWith(
         3,
         StorageBucketAlias.USERS_HONORS,
-        'img-user-123-15-img4.png',
+        expect.stringMatching(/^img-user-123-15-\d+-[0-9a-f-]+-img4\.png$/),
         image2.buffer,
         expect.objectContaining({ contentType: 'image/png' }),
       );
@@ -656,8 +660,12 @@ describe('HonorsService', () => {
             images: [
               'https://cdn.example.com/old-1.jpg',
               'https://cdn.example.com/old-2.jpg',
-              'https://cdn.r2.example/users-honors/img-user-123-15-img3.jpg',
-              'https://cdn.r2.example/users-honors/img-user-123-15-img4.png',
+              expect.stringMatching(
+                /^https:\/\/cdn\.r2\.example\/users-honors\/img-user-123-15-\d+-[0-9a-f-]+-img3\.jpg$/,
+              ),
+              expect.stringMatching(
+                /^https:\/\/cdn\.r2\.example\/users-honors\/img-user-123-15-\d+-[0-9a-f-]+-img4\.png$/,
+              ),
             ],
           }),
         }),
