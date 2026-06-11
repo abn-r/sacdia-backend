@@ -63,7 +63,10 @@ export class CategoriesService {
   // UPDATE
   // ---------------------------------------------------------------------------
 
-  async update(id: string, dto: UpdateCategoryDto): Promise<CategoryAdminDto> {
+  async update(
+    id: string,
+    dto: UpdateCategoryDto,
+  ): Promise<CategoryAdminDto> {
     const existing = await this.prisma.materialCategory.findUnique({
       where: { id },
     });
