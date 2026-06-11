@@ -17,6 +17,14 @@ const HONOR_STATUS_IN_PROGRESS = 'IN_PROGRESS' as const;
 const HONOR_STATUS_PENDING = 'PENDING_REVIEW' as const;
 const HONOR_STATUS_APPROVED = 'APPROVED' as const;
 const HONOR_STATUS_REJECTED = 'REJECTED' as const;
+const HONOR_COMPLETION_MODE_UNDECIDED = 'UNDECIDED' as const;
+const HONOR_COMPLETION_MODE_IN_APP = 'IN_APP' as const;
+const HONOR_COMPLETION_MODE_EXTERNAL = 'EXTERNAL' as const;
+
+type HonorCompletionMode =
+  | typeof HONOR_COMPLETION_MODE_UNDECIDED
+  | typeof HONOR_COMPLETION_MODE_IN_APP
+  | typeof HONOR_COMPLETION_MODE_EXTERNAL;
 
 type UserHonorRecord = {
   user_honor_id: number;
@@ -25,11 +33,26 @@ type UserHonorRecord = {
   active: boolean;
   validate: boolean;
   validation_status: string;
+  completion_mode: string | null;
   images: unknown;
   document: string | null;
   certificate: string | null;
   validated_at: Date | null;
   modified_at: Date;
+};
+
+type HonorRequirementRecord = {
+  requirement_id: number;
+  parent_id: number | null;
+  is_choice_group: boolean;
+  choice_min: number | null;
+  requires_evidence: boolean;
+};
+
+type RequirementEvaluation = {
+  satisfied: boolean;
+  selectedLeafRequirementIds: number[];
+  evidenceRequirementIds: number[];
 };
 
 @Injectable()
@@ -257,21 +280,18 @@ export class HonorValidationWorkflowService {
   }
 
   private async assertSubmitEligibility(userHonor: UserHonorRecord) {
-    const hasEvidence = await this.hasMinimumEvidence(userHonor);
-    if (!hasEvidence) {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_HONOR_MISSING_EVIDENCE,
-      );
-    }
-
-    const requirementsComplete = await this.areRequiredRequirementsComplete(
-      userHonor.user_honor_id,
-      userHonor.honor_id,
-    );
-    if (!requirementsComplete) {
-      throw new AppBadRequestException(
-        ErrorCode.VALIDATION_HONOR_REQUIREMENTS_INCOMPLETE,
-      );
+    switch (userHonor.completion_mode as HonorCompletionMode | null) {
+      case HONOR_COMPLETION_MODE_IN_APP:
+        await this.assertInAppSubmitEligibility(userHonor);
+        break;
+      case HONOR_COMPLETION_MODE_EXTERNAL:
+        await this.assertExternalSubmitEligibility(userHonor);
+        break;
+      case HONOR_COMPLETION_MODE_UNDECIDED:
+      default:
+        throw new AppBadRequestException(
+          ErrorCode.VALIDATION_HONOR_COMPLETION_MODE_REQUIRED,
+        );
     }
 
     if (
@@ -285,83 +305,284 @@ export class HonorValidationWorkflowService {
     }
   }
 
-  private async hasMinimumEvidence(
+  private async assertInAppSubmitEligibility(
+    userHonor: Pick<UserHonorRecord, 'user_honor_id' | 'honor_id'>,
+  ) {
+    const requirementEvaluation =
+      await this.evaluateInAppRequirementCompletion(
+        userHonor.user_honor_id,
+        userHonor.honor_id,
+      );
+
+    if (!requirementEvaluation.satisfied) {
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_REQUIREMENTS_INCOMPLETE,
+      );
+    }
+
+    const missingEvidenceRequirementIds =
+      requirementEvaluation.evidenceRequirementIds.filter(
+        (requirementId) =>
+          !requirementEvaluation.evidenceByRequirementId.has(requirementId),
+      );
+
+    if (missingEvidenceRequirementIds.length > 0) {
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_MISSING_EVIDENCE,
+      );
+    }
+  }
+
+  private async assertExternalSubmitEligibility(
     userHonor: Pick<
       UserHonorRecord,
-      'user_honor_id' | 'images' | 'document' | 'certificate'
+      'user_honor_id' | 'images' | 'document'
     >,
+  ) {
+    if (!this.hasCompletedExternalFormat(userHonor)) {
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_MISSING_EVIDENCE,
+      );
+    }
+
+    const hasGeneralEvidence = await this.hasExternalGeneralEvidence(userHonor);
+    if (!hasGeneralEvidence) {
+      throw new AppBadRequestException(
+        ErrorCode.VALIDATION_HONOR_MISSING_EVIDENCE,
+      );
+    }
+  }
+
+  private hasCompletedExternalFormat(
+    userHonor: Pick<UserHonorRecord, 'document'>,
+  ): boolean {
+    return typeof userHonor.document === 'string' && userHonor.document !== '';
+  }
+
+  private async hasExternalGeneralEvidence(
+    userHonor: Pick<UserHonorRecord, 'user_honor_id' | 'images'>,
   ): Promise<boolean> {
     const images = Array.isArray(userHonor.images) ? userHonor.images : [];
-    if (
-      images.length > 0 ||
-      Boolean(userHonor.document) ||
-      Boolean(userHonor.certificate)
-    ) {
+    if (images.length > 0) {
       return true;
     }
 
     const generalEvidenceCount = await this.prisma.evidence_files.count({
       where: { user_honor_id: userHonor.user_honor_id, active: true },
     });
-    if (generalEvidenceCount > 0) {
-      return true;
+
+    return generalEvidenceCount > 0;
+  }
+
+  private async evaluateInAppRequirementCompletion(
+    userHonorId: number,
+    honorId: number,
+  ): Promise<
+    RequirementEvaluation & {
+      evidenceByRequirementId: Set<number>;
+    }
+  > {
+    const requirements: HonorRequirementRecord[] =
+      await this.prisma.honor_requirements.findMany({
+        where: { honor_id: honorId, active: true },
+        select: {
+          requirement_id: true,
+          parent_id: true,
+          is_choice_group: true,
+          choice_min: true,
+          requires_evidence: true,
+        },
+        orderBy: { requirement_number: 'asc' },
+      });
+
+    if (requirements.length === 0) {
+      return {
+        satisfied: true,
+        selectedLeafRequirementIds: [],
+        evidenceRequirementIds: [],
+        evidenceByRequirementId: new Set(),
+      };
     }
 
-    const requirementEvidenceCount =
-      await this.prisma.requirement_evidence.count({
+    const progressRows =
+      await this.prisma.user_honor_requirement_progress.findMany({
         where: {
+          user_honor_id: userHonorId,
           active: true,
-          progress: {
-            user_honor_id: userHonor.user_honor_id,
-            active: true,
+          completed: true,
+        },
+        select: {
+          requirement_id: true,
+          requirement_evidence: {
+            where: { active: true },
+            select: { evidence_id: true },
           },
         },
       });
 
-    return requirementEvidenceCount > 0;
+    const completedRequirementIds = new Set(
+      progressRows.map((progress) => progress.requirement_id),
+    );
+    const evidenceByRequirementId = new Set(
+      progressRows
+        .filter(
+          (progress) => (progress.requirement_evidence ?? []).length > 0,
+        )
+        .map((progress) => progress.requirement_id),
+    );
+
+    const childrenByParent = this.groupRequirementsByParent(requirements);
+    const topLevelRequirements = childrenByParent.get(null) ?? [];
+    const topLevelEvaluation = topLevelRequirements.map((requirement) =>
+      this.evaluateRequirementNode(
+        requirement,
+        childrenByParent,
+        completedRequirementIds,
+      ),
+    );
+
+    return {
+      satisfied: topLevelEvaluation.every(
+        (evaluation) => evaluation.satisfied,
+      ),
+      selectedLeafRequirementIds: [
+        ...new Set(
+          topLevelEvaluation.flatMap(
+            (evaluation) => evaluation.selectedLeafRequirementIds,
+          ),
+        ),
+      ],
+      evidenceRequirementIds: [
+        ...new Set(
+          topLevelEvaluation.flatMap(
+            (evaluation) => evaluation.evidenceRequirementIds,
+          ),
+        ),
+      ],
+      evidenceByRequirementId,
+    };
   }
 
-  private async areRequiredRequirementsComplete(
-    userHonorId: number,
-    honorId: number,
-  ): Promise<boolean> {
-    const requirements = await this.prisma.honor_requirements.findMany({
-      where: { honor_id: honorId, active: true },
-      select: { requirement_id: true, parent_id: true },
-    });
+  private groupRequirementsByParent(requirements: HonorRequirementRecord[]) {
+    const childrenByParent = new Map<number | null, HonorRequirementRecord[]>();
+    for (const requirement of requirements) {
+      const siblings = childrenByParent.get(requirement.parent_id) ?? [];
+      siblings.push(requirement);
+      childrenByParent.set(requirement.parent_id, siblings);
+    }
+    return childrenByParent;
+  }
 
-    if (requirements.length === 0) {
-      return true;
+  private evaluateRequirementNode(
+    requirement: HonorRequirementRecord,
+    childrenByParent: Map<number | null, HonorRequirementRecord[]>,
+    completedRequirementIds: Set<number>,
+  ): RequirementEvaluation {
+    const children = childrenByParent.get(requirement.requirement_id) ?? [];
+
+    if (requirement.is_choice_group) {
+      return this.evaluateChoiceGroup(
+        requirement,
+        children,
+        childrenByParent,
+        completedRequirementIds,
+      );
     }
 
-    const parentIds = new Set(
-      requirements
-        .map((requirement) => requirement.parent_id)
-        .filter((id): id is number => id !== null),
-    );
-    const leafRequirementIds = requirements
-      .filter((requirement) => !parentIds.has(requirement.requirement_id))
-      .map((requirement) => requirement.requirement_id);
+    if (children.length > 0) {
+      const childEvaluations = children.map((child) =>
+        this.evaluateRequirementNode(
+          child,
+          childrenByParent,
+          completedRequirementIds,
+        ),
+      );
+      const satisfied = childEvaluations.every(
+        (evaluation) => evaluation.satisfied,
+      );
 
-    if (leafRequirementIds.length === 0) {
-      return true;
+      return {
+        satisfied,
+        selectedLeafRequirementIds: satisfied
+          ? childEvaluations.flatMap(
+              (evaluation) => evaluation.selectedLeafRequirementIds,
+            )
+          : [],
+        evidenceRequirementIds: satisfied
+          ? [
+              ...childEvaluations.flatMap(
+                (evaluation) => evaluation.evidenceRequirementIds,
+              ),
+              ...(requirement.requires_evidence
+                ? [requirement.requirement_id]
+                : []),
+            ]
+          : [],
+      };
     }
 
-    const completedProgress =
-      await this.prisma.user_honor_requirement_progress.findMany({
-        where: {
-          user_honor_id: userHonorId,
-          requirement_id: { in: leafRequirementIds },
-          active: true,
-          completed: true,
-        },
-        select: { requirement_id: true },
-      });
+    const satisfied = completedRequirementIds.has(requirement.requirement_id);
 
-    return (
-      new Set(completedProgress.map((progress) => progress.requirement_id))
-        .size === leafRequirementIds.length
-    );
+    return {
+      satisfied,
+      selectedLeafRequirementIds: satisfied
+        ? [requirement.requirement_id]
+        : [],
+      evidenceRequirementIds:
+        satisfied && requirement.requires_evidence
+          ? [requirement.requirement_id]
+          : [],
+    };
+  }
+
+  private evaluateChoiceGroup(
+    requirement: HonorRequirementRecord,
+    children: HonorRequirementRecord[],
+    childrenByParent: Map<number | null, HonorRequirementRecord[]>,
+    completedRequirementIds: Set<number>,
+  ): RequirementEvaluation {
+    const minimumChoices = Math.max(requirement.choice_min ?? 1, 0);
+    if (minimumChoices === 0) {
+      return {
+        satisfied: true,
+        selectedLeafRequirementIds: [],
+        evidenceRequirementIds: requirement.requires_evidence
+          ? [requirement.requirement_id]
+          : [],
+      };
+    }
+
+    const satisfiedChildren = children
+      .map((child) =>
+        this.evaluateRequirementNode(
+          child,
+          childrenByParent,
+          completedRequirementIds,
+        ),
+      )
+      .filter((evaluation) => evaluation.satisfied);
+
+    if (satisfiedChildren.length < minimumChoices) {
+      return {
+        satisfied: false,
+        selectedLeafRequirementIds: [],
+        evidenceRequirementIds: [],
+      };
+    }
+
+    const selectedChildren = satisfiedChildren.slice(0, minimumChoices);
+    return {
+      satisfied: true,
+      selectedLeafRequirementIds: selectedChildren.flatMap(
+        (evaluation) => evaluation.selectedLeafRequirementIds,
+      ),
+      evidenceRequirementIds: [
+        ...selectedChildren.flatMap(
+          (evaluation) => evaluation.evidenceRequirementIds,
+        ),
+        ...(requirement.requires_evidence ? [requirement.requirement_id] : []),
+      ],
+    };
   }
 
   private async notifyHonorSubmitted(userHonorId: number, userId: string) {

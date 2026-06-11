@@ -78,6 +78,7 @@ export type HonorRequirementReviewItem = {
   requirement_text: string;
   requires_evidence: boolean;
   completed: boolean;
+  text_response: string | null;
   completed_at: Date | null;
   evidence_count: number;
   evidences: EvidenceFile[];
@@ -88,11 +89,13 @@ export type HonorReviewPacket = {
   honor_id: number;
   honor_name: string;
   validation_status: string;
+  completion_mode: string;
   progress: {
     total_requirements: number;
     completed_count: number;
     progress_percentage: number;
   };
+  completed_format_file: EvidenceFile | null;
   general_files: EvidenceFile[];
   requirement_files: EvidenceFile[];
   requirements: HonorRequirementReviewItem[];
@@ -335,6 +338,9 @@ export class EvidenceReviewService {
 
     const honorReviewPacket = await this.buildHonorReviewPacket(record);
     const files = this.dedupeFiles([
+      ...(honorReviewPacket.completed_format_file
+        ? [honorReviewPacket.completed_format_file]
+        : []),
       ...honorReviewPacket.general_files,
       ...honorReviewPacket.requirement_files,
     ]);
@@ -362,6 +368,7 @@ export class EvidenceReviewService {
     user_honor_id: number;
     honor_id: number;
     validation_status: string;
+    completion_mode?: string | null;
     certificate?: string | null;
     document?: unknown;
     images?: unknown;
@@ -422,6 +429,7 @@ export class EvidenceReviewService {
           requirement_text: requirement.requirement_text,
           requires_evidence: requirement.requires_evidence,
           completed: progress?.completed ?? false,
+          text_response: progress?.text_response ?? null,
           completed_at: progress?.completed_at ?? null,
           evidence_count: evidences.length,
           evidences,
@@ -450,6 +458,7 @@ export class EvidenceReviewService {
       file_type: file.file_type,
       uploaded_at: file.uploaded_at,
     }));
+    const completedFormatFile = this.buildCompletedFormatFile(record);
     const legacyFiles = this.buildLegacyHonorFiles(record);
     const generalFiles = this.dedupeFiles([...normalizedFiles, ...legacyFiles]);
     const requirementFiles = this.dedupeFiles(
@@ -461,6 +470,7 @@ export class EvidenceReviewService {
       honor_id: record.honor_id,
       honor_name: record.honors?.name ?? `Honor #${record.honor_id}`,
       validation_status: record.validation_status,
+      completion_mode: record.completion_mode ?? 'UNDECIDED',
       progress: {
         total_requirements: totalRequirements,
         completed_count: completedCount,
@@ -469,15 +479,31 @@ export class EvidenceReviewService {
             ? 0
             : Math.round((completedCount / totalRequirements) * 10000) / 100,
       },
+      completed_format_file: completedFormatFile,
       general_files: generalFiles,
       requirement_files: requirementFiles,
       requirements: requirementsPacket,
     };
   }
 
+  private buildCompletedFormatFile(record: {
+    document?: unknown;
+    created_at?: Date | null;
+  }): EvidenceFile | null {
+    if (typeof record.document !== 'string' || record.document.length === 0) {
+      return null;
+    }
+
+    return this.buildSyntheticFile(
+      -2,
+      record.document,
+      record.created_at ?? new Date(0),
+      'formato-completado',
+    );
+  }
+
   private buildLegacyHonorFiles(record: {
     certificate?: string | null;
-    document?: unknown;
     images?: unknown;
     created_at?: Date | null;
   }): EvidenceFile[] {
@@ -492,12 +518,6 @@ export class EvidenceReviewService {
           uploadedAt,
           'certificado',
         ),
-      );
-    }
-
-    if (typeof record.document === 'string' && record.document.length > 0) {
-      files.push(
-        this.buildSyntheticFile(-2, record.document, uploadedAt, 'documento'),
       );
     }
 

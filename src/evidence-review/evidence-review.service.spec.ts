@@ -61,6 +61,7 @@ describe('EvidenceReviewService', () => {
       user_id: 'user-1',
       honor_id: 20,
       validation_status: 'PENDING_REVIEW',
+      completion_mode: 'EXTERNAL',
       submitted_at: submittedAt,
       validated_at: null,
       rejection_reason: null,
@@ -95,6 +96,7 @@ describe('EvidenceReviewService', () => {
       {
         requirement_id: 1,
         completed: true,
+        text_response: 'Respuesta del miembro',
         completed_at: completedAt,
         requirement_evidence: [
           {
@@ -118,18 +120,23 @@ describe('EvidenceReviewService', () => {
       honor_id: 20,
       honor_name: 'Arte cristiano',
       validation_status: 'PENDING_REVIEW',
+      completion_mode: 'EXTERNAL',
       progress: {
         total_requirements: 2,
         completed_count: 1,
         progress_percentage: 50,
       },
+      completed_format_file: expect.objectContaining({
+        file_url: 'https://cdn.example/documento.pdf',
+      }),
     });
-    expect(detail.honor_review_packet?.general_files).toHaveLength(3);
+    expect(detail.honor_review_packet?.general_files).toHaveLength(2);
     expect(detail.honor_review_packet?.requirement_files).toHaveLength(1);
     expect(detail.honor_review_packet?.requirements).toEqual([
       expect.objectContaining({
         requirement_id: 1,
         completed: true,
+        text_response: 'Respuesta del miembro',
         evidence_count: 1,
       }),
       expect.objectContaining({
@@ -138,6 +145,38 @@ describe('EvidenceReviewService', () => {
         evidence_count: 0,
       }),
     ]);
+  });
+
+  it('keeps legacy honor packets reviewable when completion mode is missing', async () => {
+    const submittedAt = new Date('2026-06-01T10:00:00.000Z');
+
+    mockPrisma.users_honors.findUnique.mockResolvedValue({
+      user_honor_id: 11,
+      user_id: 'user-1',
+      honor_id: 21,
+      validation_status: 'PENDING_REVIEW',
+      completion_mode: null,
+      submitted_at: submittedAt,
+      validated_at: null,
+      rejection_reason: null,
+      certificate: '',
+      document: null,
+      images: ['https://cdn.example/legacy-foto.jpg'],
+      created_at: submittedAt,
+      users: { user_id: 'user-1', name: 'Ana', paternal_last_name: 'Pérez' },
+      honors: { honor_id: 21, name: 'Honor legacy' },
+      validator: null,
+      evidence_files: [],
+    });
+
+    const detail = await service.getDetail('honor', 11);
+
+    expect(detail.honor_review_packet).toMatchObject({
+      completion_mode: 'UNDECIDED',
+      completed_format_file: null,
+    });
+    expect(detail.honor_review_packet?.general_files).toHaveLength(1);
+    expect(detail.file_count).toBe(1);
   });
 
   it('delegates honor approval to HonorValidationWorkflowService', async () => {

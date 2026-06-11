@@ -12,6 +12,7 @@ describe('HonorRequirementsService change tracking', () => {
     },
     user_honor_requirement_progress: {
       upsert: jest.fn(),
+      findMany: jest.fn(),
     },
     requirement_evidence: {
       count: jest.fn(),
@@ -19,6 +20,7 @@ describe('HonorRequirementsService change tracking', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    $transaction: jest.fn(async (operations) => Promise.all(operations)),
   };
 
   const fileStorage = {
@@ -29,6 +31,12 @@ describe('HonorRequirementsService change tracking', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPrisma.honor_requirements.findMany.mockReset();
+    mockPrisma.user_honor_requirement_progress.findMany.mockReset();
+    mockPrisma.user_honor_requirement_progress.upsert.mockReset();
+    mockPrisma.$transaction.mockImplementation(async (operations) =>
+      Promise.all(operations),
+    );
     service = new HonorRequirementsService(
       mockPrisma as any,
       fileStorage as any,
@@ -188,9 +196,9 @@ describe('HonorRequirementsService change tracking', () => {
   });
 
   it('blocks bulk progress update when honor is pending review', async () => {
-    mockPrisma.honor_requirements.findMany = jest
-      .fn()
-      .mockResolvedValue([{ requirement_id: 7, honor_id: 20 }]);
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([
+      { requirement_id: 7, honor_id: 20 },
+    ]);
     mockPrisma.users_honors.findFirst.mockResolvedValue({
       user_honor_id: 10,
       validation_status: 'PENDING_REVIEW',
@@ -203,5 +211,68 @@ describe('HonorRequirementsService change tracking', () => {
     ).rejects.toMatchObject({
       code: 'VALIDATION_HONOR_INVALID_STATUS',
     });
+  });
+
+  it('persists text responses in bulk progress updates', async () => {
+    mockPrisma.honor_requirements.findMany
+      .mockResolvedValueOnce([{ requirement_id: 7, honor_id: 20 }])
+      .mockResolvedValueOnce([
+        {
+          requirement_id: 7,
+          requirement_number: 1,
+          display_label: '1',
+          requirement_text: 'Describe el proceso',
+          reference_text: null,
+          has_sub_items: false,
+          is_choice_group: false,
+          choice_min: null,
+          requires_evidence: false,
+          needs_review: true,
+          parent_id: null,
+        },
+      ]);
+    mockPrisma.user_honor_requirement_progress.upsert.mockResolvedValue({
+      progress_id: 99,
+      user_honor_id: 10,
+      requirement_id: 7,
+      completed: true,
+      text_response: 'Respuesta escrita',
+      requirement_evidence: [],
+    });
+    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+      {
+        progress_id: 99,
+        user_honor_id: 10,
+        requirement_id: 7,
+        completed: true,
+        text_response: 'Respuesta escrita',
+        notes: null,
+        completed_at: new Date('2026-06-01T12:00:00.000Z'),
+        requirement_evidence: [],
+      },
+    ]);
+
+    await service.bulkUpdateProgress('user-1', 20, {
+      requirements: [
+        {
+          requirementId: 7,
+          completed: true,
+          textResponse: 'Respuesta escrita',
+        },
+      ],
+    });
+
+    expect(
+      mockPrisma.user_honor_requirement_progress.upsert,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          text_response: 'Respuesta escrita',
+        }),
+        create: expect.objectContaining({
+          text_response: 'Respuesta escrita',
+        }),
+      }),
+    );
   });
 });

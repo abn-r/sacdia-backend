@@ -595,6 +595,40 @@ describe('HonorsService', () => {
       ).resolves.toBeDefined();
     });
 
+    it('should reject uploads that would exceed 10 total persisted general images', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        honor_id: 15,
+        active: true,
+      } as any);
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        user_id: 'user-123',
+        honor_id: 15,
+        certificate: '',
+        images: Array.from(
+          { length: 9 },
+          (_, index) => `https://cdn.example.com/old-${index + 1}.jpg`,
+        ),
+        document: null,
+        validation_status: 'IN_PROGRESS',
+      });
+
+      const image = {
+        originalname: 'img.jpg',
+        mimetype: 'image/jpeg',
+        size: 1024,
+        buffer: Buffer.from('img'),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadUserHonorFiles('user-123', 15, {
+          images: [image, image],
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_EVIDENCE_MAX_REACHED });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+      expect(mockPrismaService.users_honors.upsert).not.toHaveBeenCalled();
+    });
+
     it('should upload files to R2 and persist generated URLs', async () => {
       jest.spyOn(service, 'findOne').mockResolvedValue({
         honor_id: 15,

@@ -281,6 +281,9 @@ export class HonorRequirementsService {
           },
           update: {
             completed: item.completed,
+            ...(item.textResponse !== undefined && {
+              text_response: item.textResponse,
+            }),
             ...(item.notes !== undefined && { notes: item.notes }),
             completed_at: item.completed ? new Date() : null,
             modified_at: new Date(),
@@ -289,6 +292,7 @@ export class HonorRequirementsService {
             user_honor_id: userHonor.user_honor_id,
             requirement_id: item.requirementId,
             completed: item.completed,
+            text_response: item.textResponse ?? null,
             notes: item.notes ?? null,
             completed_at: item.completed ? new Date() : null,
           },

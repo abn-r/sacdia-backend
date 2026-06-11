@@ -664,6 +664,10 @@ export class HonorsService {
     this.assertHonorIsMutable(existingUserHonor?.validation_status);
 
     const currentImages = this.extractImageUrls(existingUserHonor?.images);
+    if (currentImages.length + imageFiles.length > 10) {
+      throw new AppBadRequestException(ErrorCode.HONOR_EVIDENCE_MAX_REACHED);
+    }
+
     let nextCertificateUrl = existingUserHonor?.certificate || '';
     let nextDocumentUrl =
       typeof existingUserHonor?.document === 'string'

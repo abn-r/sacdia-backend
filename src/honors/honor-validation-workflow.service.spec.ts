@@ -59,6 +59,7 @@ describe('HonorValidationWorkflowService', () => {
       active: true,
       validate: false,
       validation_status: 'PENDING_REVIEW',
+      completion_mode: 'IN_APP',
       images: ['r2://image.jpg'],
       document: null,
       certificate: '',
@@ -75,33 +76,80 @@ describe('HonorValidationWorkflowService', () => {
     };
   }
 
-  it('blocks submit when evidence is missing', async () => {
+  it('blocks submit when completion mode is undecided', async () => {
     mockPrisma.users_honors.findUnique.mockResolvedValue(
       honorRecord({
         validation_status: 'IN_PROGRESS',
+        completion_mode: 'UNDECIDED',
+      }),
+    );
+
+    await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION_HONOR_COMPLETION_MODE_REQUIRED,
+    });
+    expect(mockPrisma.honor_requirements.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.evidence_files.count).not.toHaveBeenCalled();
+  });
+
+  it('blocks external submit when completed format or general evidence is missing', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'EXTERNAL',
         images: [],
-        document: null,
+        document: 'r2://completed-format.pdf',
         certificate: '',
       }),
     );
     mockPrisma.evidence_files.count.mockResolvedValue(0);
-    mockPrisma.requirement_evidence.count.mockResolvedValue(0);
 
     await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject({
       code: ErrorCode.VALIDATION_HONOR_MISSING_EVIDENCE,
     });
+    expect(mockPrisma.honor_requirements.findMany).not.toHaveBeenCalled();
+  });
+
+  it('submits external honor with completed format and general evidence without checklist checks', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'EXTERNAL',
+        images: ['r2://general-evidence.jpg'],
+        document: 'r2://completed-format.pdf',
+      }),
+    );
+    mockPrisma.users_honors.update.mockResolvedValue(
+      honorRecord({
+        validation_status: 'PENDING_REVIEW',
+        submitted_at: now,
+        completion_mode: 'EXTERNAL',
+      }),
+    );
+
+    await expect(service.submitForReview(10, 'user-1')).resolves.toMatchObject({
+      user_honor_id: 10,
+      validation_status: 'PENDING_REVIEW',
+    });
+    expect(mockPrisma.honor_requirements.findMany).not.toHaveBeenCalled();
   });
 
   it('blocks submit when required requirements are incomplete', async () => {
     mockPrisma.users_honors.findUnique.mockResolvedValue(
-      honorRecord({ validation_status: 'IN_PROGRESS' }),
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'IN_APP',
+      }),
     );
-    mockPrisma.evidence_files.count.mockResolvedValue(0);
     mockPrisma.honor_requirements.findMany.mockResolvedValue([
-      { requirement_id: 1, parent_id: null },
+      {
+        requirement_id: 1,
+        parent_id: null,
+        is_choice_group: false,
+        choice_min: null,
+        requires_evidence: false,
+      },
     ]);
     mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
-    mockPrisma.requirement_evidence.count.mockResolvedValue(0);
 
     await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject({
       code: ErrorCode.VALIDATION_HONOR_REQUIREMENTS_INCOMPLETE,
@@ -110,12 +158,12 @@ describe('HonorValidationWorkflowService', () => {
 
   it('submits eligible honor for review', async () => {
     mockPrisma.users_honors.findUnique.mockResolvedValue(
-      honorRecord({ validation_status: 'IN_PROGRESS' }),
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'IN_APP',
+      }),
     );
-    mockPrisma.evidence_files.count.mockResolvedValue(0);
     mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
-    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
-    mockPrisma.requirement_evidence.count.mockResolvedValue(0);
     mockPrisma.users_honors.update.mockResolvedValue(
       honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
     );
@@ -138,19 +186,93 @@ describe('HonorValidationWorkflowService', () => {
     expect(masterHonorsEvaluator.evaluateUser).not.toHaveBeenCalled();
   });
 
+  it('respects in-app choice groups when enough child requirements are completed', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'IN_APP',
+      }),
+    );
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([
+      {
+        requirement_id: 1,
+        parent_id: null,
+        is_choice_group: true,
+        choice_min: 2,
+        requires_evidence: false,
+      },
+      {
+        requirement_id: 2,
+        parent_id: 1,
+        is_choice_group: false,
+        choice_min: null,
+        requires_evidence: false,
+      },
+      {
+        requirement_id: 3,
+        parent_id: 1,
+        is_choice_group: false,
+        choice_min: null,
+        requires_evidence: false,
+      },
+      {
+        requirement_id: 4,
+        parent_id: 1,
+        is_choice_group: false,
+        choice_min: null,
+        requires_evidence: false,
+      },
+    ]);
+    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+      { requirement_id: 2, requirement_evidence: [] },
+      { requirement_id: 3, requirement_evidence: [] },
+    ]);
+    mockPrisma.users_honors.update.mockResolvedValue(
+      honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
+    );
+
+    await expect(service.submitForReview(10, 'user-1')).resolves.toMatchObject({
+      user_honor_id: 10,
+      validation_status: 'PENDING_REVIEW',
+    });
+  });
+
+  it('requires active requirement evidence for in-app requirements that require evidence', async () => {
+    mockPrisma.users_honors.findUnique.mockResolvedValue(
+      honorRecord({
+        validation_status: 'IN_PROGRESS',
+        completion_mode: 'IN_APP',
+      }),
+    );
+    mockPrisma.honor_requirements.findMany.mockResolvedValue([
+      {
+        requirement_id: 1,
+        parent_id: null,
+        is_choice_group: false,
+        choice_min: null,
+        requires_evidence: true,
+      },
+    ]);
+    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([
+      { requirement_id: 1, requirement_evidence: [] },
+    ]);
+
+    await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION_HONOR_MISSING_EVIDENCE,
+    });
+  });
+
   it('blocks rejected honor resubmit when there are no changes after rejection', async () => {
     const rejectionTime = new Date('2026-06-01T11:30:00.000Z');
     mockPrisma.users_honors.findUnique.mockResolvedValue(
       honorRecord({
         validation_status: 'REJECTED',
+        completion_mode: 'IN_APP',
         validated_at: rejectionTime,
         modified_at: rejectionTime,
       }),
     );
-    mockPrisma.evidence_files.count.mockResolvedValue(0);
     mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
-    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
-    mockPrisma.requirement_evidence.count.mockResolvedValue(0);
 
     await expect(service.submitForReview(10, 'user-1')).rejects.toMatchObject({
       code: ErrorCode.VALIDATION_HONOR_NO_CHANGES_AFTER_REJECTION,
@@ -161,14 +283,12 @@ describe('HonorValidationWorkflowService', () => {
     mockPrisma.users_honors.findUnique.mockResolvedValue(
       honorRecord({
         validation_status: 'REJECTED',
+        completion_mode: 'IN_APP',
         validated_at: new Date('2026-06-01T11:00:00.000Z'),
         modified_at: new Date('2026-06-01T11:30:00.000Z'),
       }),
     );
-    mockPrisma.evidence_files.count.mockResolvedValue(0);
     mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
-    mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
-    mockPrisma.requirement_evidence.count.mockResolvedValue(0);
     mockPrisma.users_honors.update.mockResolvedValue(
       honorRecord({ validation_status: 'PENDING_REVIEW', submitted_at: now }),
     );
