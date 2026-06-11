@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
 import { SupportController } from './support.controller';
+import { SupportAdminController } from './support-admin.controller';
 import { SupportService } from './support.service';
 
 /**
@@ -14,7 +15,7 @@ import { SupportService } from './support.service';
  */
 @Module({
   imports: [PrismaModule, CommonModule],
-  controllers: [SupportController],
+  controllers: [SupportController, SupportAdminController],
   providers: [SupportService],
   exports: [SupportService],
 })
