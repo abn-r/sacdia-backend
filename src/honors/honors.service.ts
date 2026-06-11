@@ -14,6 +14,7 @@ import {
   HonorFiltersDto,
   CreateUserHonorDto,
   BulkCreateUserHonorsDto,
+  HonorCompletionModeDto,
 } from './dto';
 import {
   PaginationDto,
@@ -38,6 +39,7 @@ import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service'
 // used by PROFILE_URL_LIMITER in camporees.service.ts.
 export const HONOR_DETAIL_URL_LIMITER = pLimit(20);
 const HONOR_MUTATION_BLOCKED_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
+const INITIAL_HONOR_COMPLETION_MODE = HonorCompletionModeDto.UNDECIDED;
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -359,6 +361,7 @@ export class HonorsService {
           date: dto?.date ? new Date(dto.date) : new Date(),
           validate: false,
           validation_status: 'IN_PROGRESS',
+          completion_mode: INITIAL_HONOR_COMPLETION_MODE,
           certificate: '',
           images: [],
           document: null,
@@ -409,6 +412,7 @@ export class HonorsService {
         date: dto?.date ? new Date(dto.date) : new Date(),
         validate: false,
         validation_status: 'IN_PROGRESS',
+        completion_mode: INITIAL_HONOR_COMPLETION_MODE,
         certificate: '',
         images: [],
         active: true,
@@ -888,6 +892,11 @@ export class HonorsService {
       updateData.document = dto.document || null;
     }
 
+    // Permitir seleccionar o limpiar el modo de trabajo mientras el honor sea mutable
+    if (dto.completionMode !== undefined) {
+      updateData.completion_mode = dto.completionMode;
+    }
+
     // Actualizar fecha
     if (dto.date) updateData.date = new Date(dto.date);
 
@@ -963,6 +972,7 @@ export class HonorsService {
       active: true,
       date: dto.date ? new Date(dto.date) : new Date(),
       validate: dto.validate ?? false,
+      completion_mode: INITIAL_HONOR_COMPLETION_MODE,
       certificate: dto.certificate || '',
       images: (dto.images || []) as Prisma.InputJsonValue,
       document: dto.document || null,
@@ -988,6 +998,7 @@ export class HonorsService {
   private buildUpdateDataFromCreateDto(dto: CreateUserHonorDto) {
     const data: Prisma.users_honorsUncheckedUpdateInput = {
       active: true,
+      completion_mode: INITIAL_HONOR_COMPLETION_MODE,
       modified_at: new Date(),
     };
 

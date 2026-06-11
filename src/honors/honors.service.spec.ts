@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { TranslationService } from '../common/services/translation.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { HonorCompletionModeDto } from './dto';
 import {
   FILE_STORAGE_SERVICE,
   StorageBucketAlias,
@@ -282,6 +283,13 @@ describe('HonorsService', () => {
       const result = await service.startHonor('user-123', 1);
 
       expect(result).toEqual(mockUserHonor);
+      expect(mockPrismaService.users_honors.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            completion_mode: HonorCompletionModeDto.UNDECIDED,
+          }),
+        }),
+      );
     });
 
     it('should throw ConflictException if already has honor', async () => {
@@ -342,6 +350,7 @@ describe('HonorsService', () => {
           where: { user_honor_id: 1 },
           data: expect.objectContaining({
             validation_status: 'IN_PROGRESS',
+            completion_mode: HonorCompletionModeDto.UNDECIDED,
             active: true,
           }),
         }),
@@ -414,6 +423,7 @@ describe('HonorsService', () => {
             user_id: 'user-123',
             honor_id: 5,
             validate: true,
+            completion_mode: HonorCompletionModeDto.UNDECIDED,
             certificate: 'https://cdn.example.com/cert.pdf',
             document: 'https://cdn.example.com/evidence-doc.pdf',
           }),
@@ -445,6 +455,7 @@ describe('HonorsService', () => {
           where: { user_honor_id: 7 },
           data: expect.objectContaining({
             active: true,
+            completion_mode: HonorCompletionModeDto.UNDECIDED,
             images: [],
             document: null,
           }),
@@ -485,6 +496,9 @@ describe('HonorsService', () => {
       expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { user_honor_id: 200 },
+          data: expect.objectContaining({
+            completion_mode: HonorCompletionModeDto.UNDECIDED,
+          }),
         }),
       );
       expect(mockPrismaService.users_honors.create).toHaveBeenCalledWith(
@@ -492,6 +506,7 @@ describe('HonorsService', () => {
           data: expect.objectContaining({
             user_id: 'user-123',
             honor_id: 2,
+            completion_mode: HonorCompletionModeDto.UNDECIDED,
           }),
         }),
       );
@@ -859,6 +874,54 @@ describe('HonorsService', () => {
       await expect(
         service.updateUserHonor('user-123', 15, { validate: false }),
       ).resolves.toMatchObject({ user_honor_id: 70 });
+    });
+
+    it('should persist completion mode while honor is mutable', async () => {
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        validation_status: 'IN_PROGRESS',
+        active: true,
+      });
+      mockPrismaService.users_honors.update.mockResolvedValue({
+        user_honor_id: 70,
+        completion_mode: HonorCompletionModeDto.IN_APP,
+      });
+
+      await expect(
+        service.updateUserHonor('user-123', 15, {
+          completionMode: HonorCompletionModeDto.IN_APP,
+        }),
+      ).resolves.toMatchObject({
+        user_honor_id: 70,
+        completion_mode: HonorCompletionModeDto.IN_APP,
+      });
+
+      expect(mockPrismaService.users_honors.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user_honor_id: 70 },
+          data: expect.objectContaining({
+            completion_mode: HonorCompletionModeDto.IN_APP,
+          }),
+        }),
+      );
+    });
+
+    it('should block completion mode updates while honor is pending review', async () => {
+      mockPrismaService.users_honors.findFirst.mockResolvedValue({
+        user_honor_id: 70,
+        validation_status: 'PENDING_REVIEW',
+        active: true,
+      });
+
+      await expect(
+        service.updateUserHonor('user-123', 15, {
+          completionMode: HonorCompletionModeDto.EXTERNAL,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_HONOR_INVALID_STATUS,
+      });
+
+      expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
     });
   });
 

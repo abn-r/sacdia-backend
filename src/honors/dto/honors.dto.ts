@@ -6,12 +6,19 @@ import {
   IsBoolean,
   IsArray,
   IsDateString,
+  IsEnum,
   Min,
   Max,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+export enum HonorCompletionModeDto {
+  UNDECIDED = 'UNDECIDED',
+  IN_APP = 'IN_APP',
+  EXTERNAL = 'EXTERNAL',
+}
 
 export class StartHonorDto {
   @ApiPropertyOptional({ description: 'Fecha de inicio del honor' })
@@ -55,6 +62,14 @@ export class UpdateUserHonorDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Modo de trabajo elegido para completar el honor',
+    enum: HonorCompletionModeDto,
+  })
+  @IsOptional()
+  @IsEnum(HonorCompletionModeDto)
+  completionMode?: HonorCompletionModeDto;
 }
 
 export class CreateUserHonorDto {
