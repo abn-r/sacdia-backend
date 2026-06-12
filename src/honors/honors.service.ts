@@ -67,17 +67,30 @@ export class HonorsService {
   // CATÁLOGO DE HONORES
   // ========================================
 
+  private buildHonorCatalogWhere(
+    filters?: HonorFiltersDto,
+  ): Prisma.honorsWhereInput {
+    return {
+      active: true,
+      ...(filters?.categoryId && { honors_category_id: filters.categoryId }),
+      ...(filters?.clubTypeId && {
+        honor_club_types: {
+          some: {
+            club_type_id: filters.clubTypeId,
+            active: true,
+          },
+        },
+      }),
+      ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
+    };
+  }
+
   async findAll(
     filters?: HonorFiltersDto,
     pagination?: PaginationDto,
   ): Promise<PaginatedResult<any>> {
     const locale = this.translationService.getCurrentLocale();
-    const where = {
-      active: true,
-      ...(filters?.categoryId && { honors_category_id: filters.categoryId }),
-      ...(filters?.clubTypeId && { club_type_id: filters.clubTypeId }),
-      ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
-    };
+    const where = this.buildHonorCatalogWhere(filters);
 
     const [data, total] = await Promise.all([
       this.prisma.honors.findMany({
@@ -85,6 +98,13 @@ export class HonorsService {
         include: {
           honors_categories: { select: { name: true, icon: true } },
           club_types: { select: { name: true } },
+          honor_club_types: {
+            where: { active: true },
+            select: {
+              club_type_id: true,
+              club_type: { select: { name: true } },
+            },
+          },
           translations: {
             where: { locale },
             select: { locale: true, name: true, description: true },
@@ -113,12 +133,7 @@ export class HonorsService {
 
   async getGroupedByCategory(filters?: HonorFiltersDto) {
     const locale = this.translationService.getCurrentLocale();
-    const where = {
-      active: true,
-      ...(filters?.categoryId && { honors_category_id: filters.categoryId }),
-      ...(filters?.clubTypeId && { club_type_id: filters.clubTypeId }),
-      ...(filters?.skillLevel && { skill_level: filters.skillLevel }),
-    };
+    const where = this.buildHonorCatalogWhere(filters);
 
     // Safety cap: the honors catalog is expected to stay in the low thousands.
     // A take of 2000 prevents a full-table scan if the catalog grows unexpectedly.
@@ -146,6 +161,13 @@ export class HonorsService {
           },
         },
         club_types: { select: { name: true } },
+        honor_club_types: {
+          where: { active: true },
+          select: {
+            club_type_id: true,
+            club_type: { select: { name: true } },
+          },
+        },
       },
       orderBy: [{ honors_category_id: 'asc' }, { name: 'asc' }],
       take: 2000,
@@ -169,6 +191,10 @@ export class HonorsService {
           material_url: string | null;
           club_type_id: number | null;
           club_type_name: string | null;
+          applicable_club_types: Array<{
+            club_type_id: number;
+            name: string;
+          }>;
         }>;
       }
     >();
@@ -215,6 +241,12 @@ export class HonorsService {
         material_url: honor.material_url,
         club_type_id: honor.club_type_id,
         club_type_name: honor.club_types?.name ?? null,
+        applicable_club_types: (honor.honor_club_types ?? []).map(
+          (applicability: any) => ({
+            club_type_id: applicability.club_type_id,
+            name: applicability.club_type?.name ?? '',
+          }),
+        ),
       });
     }
 

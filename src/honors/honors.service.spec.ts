@@ -150,6 +150,37 @@ describe('HonorsService', () => {
         }),
       );
     });
+
+    it('should filter by many-to-many club type applicability', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+      mockPrismaService.honors.count.mockResolvedValue(0);
+
+      await service.findAll({ clubTypeId: 1 });
+
+      expect(mockPrismaService.honors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            honor_club_types: {
+              some: {
+                club_type_id: 1,
+                active: true,
+              },
+            },
+          }),
+        }),
+      );
+      expect(mockPrismaService.honors.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          honor_club_types: {
+            some: {
+              club_type_id: 1,
+              active: true,
+            },
+          },
+        }),
+      });
+    });
   });
 
   describe('findOne', () => {
@@ -270,9 +301,34 @@ describe('HonorsService', () => {
           where: {
             active: true,
             honors_category_id: 2,
-            club_type_id: 3,
+            honor_club_types: {
+              some: {
+                club_type_id: 3,
+                active: true,
+              },
+            },
             skill_level: 1,
           },
+        }),
+      );
+    });
+
+    it('should filter grouped honors by many-to-many club type applicability', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([]);
+
+      await service.getGroupedByCategory({ clubTypeId: 1 });
+
+      expect(mockPrismaService.honors.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            honor_club_types: {
+              some: {
+                club_type_id: 1,
+                active: true,
+              },
+            },
+          }),
         }),
       );
     });
