@@ -208,7 +208,12 @@ export class DashboardService {
 
       const activities = await this.prisma.activities.findMany({
         where: {
-          club_section_id: clubSectionId,
+          activity_instances: {
+            some: {
+              active: true,
+              club_section_id: clubSectionId,
+            },
+          },
           active: true,
           activity_date: { gte: now },
         },

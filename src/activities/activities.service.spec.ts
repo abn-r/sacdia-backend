@@ -179,6 +179,39 @@ describe('ActivitiesService', () => {
       );
     });
 
+    it('should keep listing activities when private asset URL signing fails', async () => {
+      const mockClub = {
+        club_id: 1,
+        club_sections: [{ club_section_id: 1, club_type_id: 1 }],
+      };
+      const mockActivities = [
+        {
+          activity_id: 3,
+          name: 'Comida recreativa',
+          active: true,
+          image: 'activities/3/image.jpg',
+          users: { user_image: 'profiles/creator.jpg' },
+        },
+      ];
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
+      mockPrismaService.activities.findMany.mockResolvedValue(mockActivities);
+      mockPrismaService.activities.count.mockResolvedValue(1);
+      mockFileStorageService.getSignedDownloadUrl
+        .mockRejectedValueOnce(new Error('R2 activities bucket missing'))
+        .mockRejectedValueOnce(new Error('R2 profiles bucket missing'));
+
+      const result = await service.findByClub(
+        1,
+        { active: true },
+        undefined,
+        1,
+      );
+
+      expect(result.data[0].image).toBe('activities/3/image.jpg');
+      expect(result.data[0].users.user_image).toBe('profiles/creator.jpg');
+    });
+
     it('should filter by activityTypeId when provided (member path)', async () => {
       const mockClub = {
         club_id: 1,

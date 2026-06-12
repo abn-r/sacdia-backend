@@ -908,9 +908,17 @@ export class ActivitiesService {
   ): Promise<string | null> {
     if (!value) return null;
 
-    return this.fileStorage.getSignedDownloadUrl(bucketAlias, value, {
-      expiresInSeconds: ActivitiesService.PRIVATE_ASSET_URL_TTL_SECONDS,
-    });
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(bucketAlias, value, {
+        expiresInSeconds: ActivitiesService.PRIVATE_ASSET_URL_TTL_SECONDS,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate signed URL for ${bucketAlias}. Returning original value.`,
+        error,
+      );
+      return value;
+    }
   }
 
   async uploadImage(activityId: number, file: Express.Multer.File) {

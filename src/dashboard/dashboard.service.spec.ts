@@ -117,6 +117,17 @@ describe('DashboardService', () => {
       expect(result.upcoming_activities[0].id).toBe(1);
       expect(result.upcoming_activities[0].title).toBe('Campamento');
       expect(result.upcoming_activities[0].location).toBe('Parque Nacional');
+      expect(mockPrismaService.activities.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            activity_instances: {
+              some: { active: true, club_section_id: 7 },
+            },
+            activity_date: { gte: expect.any(Date) },
+          }),
+        }),
+      );
 
       // Verify the explicit assignment ID was used
       expect(
