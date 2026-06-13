@@ -206,6 +206,8 @@
   "RESOURCE_FILE_MIME_INVALID": "The file is not a valid {mime_type}",
   "HONOR_NOT_FOUND": "Honor not found",
   "HONOR_USER_ALREADY_IN_PROGRESS": "User already has this honor in progress",
+  "HONOR_ACTIVE_SECTION_REQUIRED": "An active section is required to register honors",
+  "HONOR_CLUB_TYPE_NOT_ALLOWED": "This honor does not apply to the user active section",
   "HONOR_BULK_DUPLICATE_IDS": "Payload contains duplicate honor IDs: {ids}",
   "HONOR_BULK_NOT_FOUND": "Honors not found or inactive: {ids}",
   "HONOR_FILE_REQUIRED": "At least one file is required: certificate, document or images",

@@ -40,6 +40,9 @@ import { MasterHonorsEvaluatorService } from './master-honors-evaluator.service'
 export const HONOR_DETAIL_URL_LIMITER = pLimit(20);
 const HONOR_MUTATION_BLOCKED_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
 const INITIAL_HONOR_COMPLETION_MODE = HonorCompletionModeDto.UNDECIDED;
+const ADVENTURERS_CLUB_TYPE_ID = 1;
+const PATHFINDERS_CLUB_TYPE_ID = 2;
+const MASTER_GUIDES_CLUB_TYPE_ID = 3;
 
 type UploadedObjectRef = {
   bucketAlias: StorageBucketAlias;
@@ -319,8 +322,12 @@ export class HonorsService {
             honor_id: true,
             name: true,
             honor_image: true,
+            club_type_id: true,
             skill_level: true,
-            honors_categories: { select: { name: true, icon: true } },
+            club_types: { select: { name: true } },
+            honors_categories: {
+              select: { honor_category_id: true, name: true, icon: true },
+            },
           },
         },
       },
@@ -335,9 +342,91 @@ export class HonorsService {
     );
   }
 
+  private async assertHonorMatchesActiveClubSection(
+    userId: string,
+    honor: { honor_id: number; club_type_id: number },
+  ) {
+    await this.assertHonorsMatchActiveClubSection(userId, [honor]);
+  }
+
+  private async assertHonorsMatchActiveClubSection(
+    userId: string,
+    honors: Array<{ honor_id: number; club_type_id: number }>,
+  ) {
+    const activeClubTypeId = await this.resolveUserActiveClubTypeId(userId);
+    if (activeClubTypeId == null) {
+      throw new AppBadRequestException(ErrorCode.HONOR_ACTIVE_SECTION_REQUIRED);
+    }
+
+    const allowedClubTypeIds =
+      this.getHonorClubTypeIdsForActiveSection(activeClubTypeId);
+    const blockedHonorIds = honors
+      .filter((honor) => !allowedClubTypeIds.includes(honor.club_type_id))
+      .map((honor) => honor.honor_id);
+
+    if (blockedHonorIds.length > 0) {
+      throw new AppBadRequestException(ErrorCode.HONOR_CLUB_TYPE_NOT_ALLOWED, {
+        ids: blockedHonorIds.join(', '),
+        active_club_type_id: activeClubTypeId,
+        allowed_club_type_ids: allowedClubTypeIds.join(', '),
+      });
+    }
+  }
+
+  private getHonorClubTypeIdsForActiveSection(activeClubTypeId: number) {
+    if (activeClubTypeId === ADVENTURERS_CLUB_TYPE_ID) {
+      return [ADVENTURERS_CLUB_TYPE_ID];
+    }
+
+    if (
+      activeClubTypeId === PATHFINDERS_CLUB_TYPE_ID ||
+      activeClubTypeId === MASTER_GUIDES_CLUB_TYPE_ID
+    ) {
+      return [PATHFINDERS_CLUB_TYPE_ID, MASTER_GUIDES_CLUB_TYPE_ID];
+    }
+
+    return [activeClubTypeId];
+  }
+
+  private async resolveUserActiveClubTypeId(userId: string) {
+    const userPr = await this.prisma.users_pr.findUnique({
+      where: { user_id: userId },
+      select: { active_club_assignment_id: true },
+    });
+
+    const activeClubTypeSelect = {
+      club_sections: {
+        select: { club_type_id: true },
+      },
+    } satisfies Prisma.club_role_assignmentsSelect;
+
+    const explicitAssignment = userPr?.active_club_assignment_id
+      ? await this.prisma.club_role_assignments.findFirst({
+          where: {
+            assignment_id: userPr.active_club_assignment_id,
+            user_id: userId,
+            active: true,
+            status: 'active',
+          },
+          select: activeClubTypeSelect,
+        })
+      : null;
+
+    const assignment =
+      explicitAssignment ??
+      (await this.prisma.club_role_assignments.findFirst({
+        where: { user_id: userId, active: true, status: 'active' },
+        orderBy: { start_date: 'desc' },
+        select: activeClubTypeSelect,
+      }));
+
+    return assignment?.club_sections?.club_type_id ?? null;
+  }
+
   async startHonor(userId: string, honorId: number, dto?: StartHonorDto) {
     // Verificar que el honor existe y está activo
     const honor = await this.findOne(honorId);
+    await this.assertHonorMatchesActiveClubSection(userId, honor);
 
     // Buscar si existe un registro previo (activo o inactivo)
     const existing = await this.prisma.users_honors.findFirst({
@@ -376,7 +465,12 @@ export class HonorsService {
             select: {
               name: true,
               honor_image: true,
-              honors_categories: { select: { name: true } },
+              club_type_id: true,
+              skill_level: true,
+              club_types: { select: { name: true } },
+              honors_categories: {
+                select: { honor_category_id: true, name: true },
+              },
             },
           },
         },
@@ -420,9 +514,15 @@ export class HonorsService {
       include: {
         honors: {
           select: {
+            honor_id: true,
             name: true,
             honor_image: true,
-            honors_categories: { select: { name: true } },
+            club_type_id: true,
+            skill_level: true,
+            club_types: { select: { name: true } },
+            honors_categories: {
+              select: { honor_category_id: true, name: true },
+            },
           },
         },
       },
@@ -461,7 +561,8 @@ export class HonorsService {
   }
 
   async createUserHonor(userId: string, dto: CreateUserHonorDto) {
-    await this.findOne(dto.honorId);
+    const honor = await this.findOne(dto.honorId);
+    await this.assertHonorMatchesActiveClubSection(userId, honor);
 
     const existing = await this.prisma.users_honors.findFirst({
       where: {
@@ -483,7 +584,12 @@ export class HonorsService {
               honor_id: true,
               name: true,
               honor_image: true,
-              honors_categories: { select: { name: true } },
+              club_type_id: true,
+              skill_level: true,
+              club_types: { select: { name: true } },
+              honors_categories: {
+                select: { honor_category_id: true, name: true },
+              },
             },
           },
         },
@@ -504,7 +610,12 @@ export class HonorsService {
             honor_id: true,
             name: true,
             honor_image: true,
-            honors_categories: { select: { name: true } },
+            club_type_id: true,
+            skill_level: true,
+            club_types: { select: { name: true } },
+            honors_categories: {
+              select: { honor_category_id: true, name: true },
+            },
           },
         },
       },
@@ -534,7 +645,7 @@ export class HonorsService {
         honor_id: { in: honorIds },
         active: true,
       },
-      select: { honor_id: true },
+      select: { honor_id: true, club_type_id: true },
     });
 
     const activeHonorIds = new Set(activeHonors.map((item) => item.honor_id));
@@ -546,6 +657,8 @@ export class HonorsService {
         ids: missingHonorIds.join(', '),
       });
     }
+
+    await this.assertHonorsMatchActiveClubSection(userId, activeHonors);
 
     const existingUserHonors = await this.prisma.users_honors.findMany({
       where: {
@@ -574,7 +687,12 @@ export class HonorsService {
                 honor_id: true,
                 name: true,
                 honor_image: true,
-                honors_categories: { select: { name: true } },
+                club_type_id: true,
+                skill_level: true,
+                club_types: { select: { name: true } },
+                honors_categories: {
+                  select: { honor_category_id: true, name: true },
+                },
               },
             },
           },
@@ -593,7 +711,12 @@ export class HonorsService {
               honor_id: true,
               name: true,
               honor_image: true,
-              honors_categories: { select: { name: true } },
+              club_type_id: true,
+              skill_level: true,
+              club_types: { select: { name: true } },
+              honors_categories: {
+                select: { honor_category_id: true, name: true },
+              },
             },
           },
         },
@@ -788,7 +911,12 @@ export class HonorsService {
                 honor_id: true,
                 name: true,
                 honor_image: true,
-                honors_categories: { select: { name: true } },
+                club_type_id: true,
+                skill_level: true,
+                club_types: { select: { name: true } },
+                honors_categories: {
+                  select: { honor_category_id: true, name: true },
+                },
               },
             },
           },
@@ -908,7 +1036,19 @@ export class HonorsService {
       where: { user_honor_id: userHonor.user_honor_id },
       data: updateData,
       include: {
-        honors: { select: { name: true, honor_image: true } },
+        honors: {
+          select: {
+            honor_id: true,
+            name: true,
+            honor_image: true,
+            club_type_id: true,
+            skill_level: true,
+            club_types: { select: { name: true } },
+            honors_categories: {
+              select: { honor_category_id: true, name: true },
+            },
+          },
+        },
       },
     });
 

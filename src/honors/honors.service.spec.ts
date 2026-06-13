@@ -31,6 +31,12 @@ describe('HonorsService', () => {
       upsert: jest.fn(),
       count: jest.fn(),
     },
+    users_pr: {
+      findUnique: jest.fn(),
+    },
+    club_role_assignments: {
+      findFirst: jest.fn(),
+    },
   };
 
   const masterHonorsEvaluator = {
@@ -68,6 +74,12 @@ describe('HonorsService', () => {
   beforeEach(async () => {
     masterHonorsEvaluator.evaluateUser.mockReset();
     masterHonorsEvaluator.evaluateUser.mockResolvedValue([]);
+    mockPrismaService.users_pr.findUnique.mockResolvedValue({
+      active_club_assignment_id: 'assignment-1',
+    });
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+      club_sections: { club_type_id: 2 },
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -268,7 +280,12 @@ describe('HonorsService', () => {
 
   describe('startHonor', () => {
     it('should create user honor', async () => {
-      const mockHonor = { honor_id: 1, name: 'Nudos' };
+      const mockHonor = {
+        honor_id: 1,
+        name: 'Nudos',
+        honors_category_id: 10,
+        club_type_id: 2,
+      };
       const mockUserHonor = {
         user_honor_id: 1,
         user_id: 'user-123',
@@ -293,7 +310,12 @@ describe('HonorsService', () => {
     });
 
     it('should throw ConflictException if already has honor', async () => {
-      const mockHonor = { honor_id: 1, name: 'Nudos' };
+      const mockHonor = {
+        honor_id: 1,
+        name: 'Nudos',
+        honors_category_id: 10,
+        club_type_id: 2,
+      };
       const existingUserHonor = {
         user_honor_id: 1,
         user_id: 'user-123',
@@ -310,8 +332,30 @@ describe('HonorsService', () => {
       });
     });
 
+    it('should reject honors outside the active club section', async () => {
+      mockPrismaService.honors.findUnique.mockResolvedValue({
+        honor_id: 1,
+        name: 'Arte de acampar',
+        honors_category_id: 10,
+        club_type_id: 2,
+      });
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        club_sections: { club_type_id: 1 },
+      });
+
+      await expect(service.startHonor('user-123', 1)).rejects.toMatchObject({
+        code: ErrorCode.HONOR_CLUB_TYPE_NOT_ALLOWED,
+      });
+      expect(mockPrismaService.users_honors.create).not.toHaveBeenCalled();
+    });
+
     it('should reactivate inactive user honor and evaluate master honors', async () => {
-      const mockHonor = { honor_id: 1, name: 'Nudos' };
+      const mockHonor = {
+        honor_id: 1,
+        name: 'Nudos',
+        honors_category_id: 10,
+        club_type_id: 2,
+      };
       const mockExistingHonor = {
         user_honor_id: 1,
         user_id: 'user-123',
@@ -358,7 +402,12 @@ describe('HonorsService', () => {
     });
 
     it('should keep startHonor flow when master honors evaluation fails', async () => {
-      const mockHonor = { honor_id: 1, name: 'Nudos' };
+      const mockHonor = {
+        honor_id: 1,
+        name: 'Nudos',
+        honors_category_id: 10,
+        club_type_id: 2,
+      };
       const mockExistingHonor = {
         user_honor_id: 1,
         user_id: 'user-123',
@@ -403,6 +452,7 @@ describe('HonorsService', () => {
       mockPrismaService.honors.findUnique.mockResolvedValue({
         honor_id: 5,
         active: true,
+        club_type_id: 2,
       });
       mockPrismaService.users_honors.findFirst.mockResolvedValue(null);
       mockPrismaService.users_honors.create.mockResolvedValue(created);
@@ -437,6 +487,7 @@ describe('HonorsService', () => {
       mockPrismaService.honors.findUnique.mockResolvedValue({
         honor_id: 8,
         active: true,
+        club_type_id: 2,
       });
       mockPrismaService.users_honors.findFirst.mockResolvedValue({
         user_honor_id: 7,
@@ -475,8 +526,8 @@ describe('HonorsService', () => {
 
     it('should create or update honors in bulk', async () => {
       mockPrismaService.honors.findMany.mockResolvedValue([
-        { honor_id: 1 },
-        { honor_id: 2 },
+        { honor_id: 1, club_type_id: 2 },
+        { honor_id: 2, club_type_id: 2 },
       ]);
       mockPrismaService.users_honors.findMany.mockResolvedValue([
         { user_honor_id: 200, honor_id: 1 },
@@ -510,6 +561,24 @@ describe('HonorsService', () => {
           }),
         }),
       );
+    });
+
+    it('should reject bulk honors outside the active club section', async () => {
+      mockPrismaService.honors.findMany.mockResolvedValue([
+        { honor_id: 1, club_type_id: 1 },
+        { honor_id: 2, club_type_id: 2 },
+      ]);
+      mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+        club_sections: { club_type_id: 1 },
+      });
+
+      await expect(
+        service.createUserHonorsBulk('user-123', {
+          honors: [{ honorId: 1 }, { honorId: 2 }],
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.HONOR_CLUB_TYPE_NOT_ALLOWED });
+      expect(mockPrismaService.users_honors.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.users_honors.update).not.toHaveBeenCalled();
     });
   });
 

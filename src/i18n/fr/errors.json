@@ -205,6 +205,8 @@
   "RESOURCE_FILE_MIME_INVALID": "Le fichier n'est pas un {mime_type} valide",
   "HONOR_NOT_FOUND": "Honneur introuvable",
   "HONOR_USER_ALREADY_IN_PROGRESS": "L'utilisateur a déjà cet honneur en cours",
+  "HONOR_ACTIVE_SECTION_REQUIRED": "Une section active est requise pour inscrire des honneurs",
+  "HONOR_CLUB_TYPE_NOT_ALLOWED": "Cet honneur ne s'applique pas à la section active de l'utilisateur",
   "HONOR_BULK_DUPLICATE_IDS": "Le payload contient des IDs d'honneur en double : {ids}",
   "HONOR_BULK_NOT_FOUND": "Honneurs introuvables ou inactifs : {ids}",
   "HONOR_FILE_REQUIRED": "Au moins un fichier est requis : certificat, document ou images",
