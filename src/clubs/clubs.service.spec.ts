@@ -20,6 +20,7 @@ describe('ClubsService', () => {
     },
     club_types: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
     },
     club_sections: {
       findFirst: jest.fn(),
@@ -94,7 +95,9 @@ describe('ClubsService', () => {
         },
         {
           provide: NotificationsService,
-          useValue: { sendSilentToSection: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            sendSilentToSection: jest.fn().mockResolvedValue(undefined),
+          },
         },
         {
           provide: AuditLogsService,
@@ -243,6 +246,48 @@ describe('ClubsService', () => {
           club_types: { name: 'Conquistadores' },
         }),
       ]);
+    });
+  });
+
+  describe('createSection', () => {
+    it('persists the optional section name when creating a club section', async () => {
+      mockPrismaService.clubs.findUnique.mockResolvedValue({
+        club_id: 10,
+        name: 'Club Norte',
+      });
+      mockPrismaService.club_types.findUnique.mockResolvedValue({
+        club_type_id: 1,
+        name: 'Aventureros',
+        active: true,
+      });
+      mockPrismaService.club_sections.create.mockResolvedValue({
+        club_section_id: 7,
+        main_club_id: 10,
+        club_type_id: 1,
+        name: 'Aventureros Central',
+        club_types: { name: 'Aventureros' },
+      });
+
+      await service.createSection(10, {
+        club_type_id: 1,
+        name: 'Aventureros Central',
+        souls_target: 0,
+        fee: 0,
+        meeting_day: [{ day: 'Sunday' }],
+        meeting_time: [{ time: '09:00' }],
+      });
+
+      expect(mockPrismaService.club_sections.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            main_club_id: 10,
+            club_type_id: 1,
+            name: 'Aventureros Central',
+            souls_target: 0,
+            fee: 0,
+          }),
+        }),
+      );
     });
   });
 
@@ -502,8 +547,12 @@ describe('ClubsService', () => {
         code: ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED,
       });
 
-      expect(mockPrismaService.club_role_assignments.update).not.toHaveBeenCalled();
-      expect(mockPrismaService.club_role_assignments.count).toHaveBeenCalledWith(
+      expect(
+        mockPrismaService.club_role_assignments.update,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_role_assignments.count,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             club_section_id: 7,

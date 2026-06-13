@@ -262,8 +262,9 @@ export class ClubsService {
       data: {
         main_club_id: clubId,
         club_type_id: dto.club_type_id,
-        souls_target: dto.souls_target || 1,
-        fee: dto.fee || 0,
+        name: dto.name,
+        souls_target: dto.souls_target ?? 1,
+        fee: dto.fee ?? 0,
         meeting_day: (dto.meeting_day || []) as Prisma.InputJsonValue[],
         meeting_time: (dto.meeting_time || []) as Prisma.InputJsonValue[],
         active: true,
@@ -597,15 +598,14 @@ export class ClubsService {
         },
       });
 
-      const existingActiveDirectorCount =
-        await tx.club_role_assignments.count({
-          where: {
-            club_section_id: sectionId,
-            role_id: directorRole.role_id,
-            active: true,
-            assignment_id: { not: dto.current_assignment_id },
-          },
-        });
+      const existingActiveDirectorCount = await tx.club_role_assignments.count({
+        where: {
+          club_section_id: sectionId,
+          role_id: directorRole.role_id,
+          active: true,
+          assignment_id: { not: dto.current_assignment_id },
+        },
+      });
 
       if (existingActiveDirectorCount > 0) {
         throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);

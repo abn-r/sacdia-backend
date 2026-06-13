@@ -20,6 +20,11 @@ export class CreateClubSectionDto {
   @IsInt()
   declare club_type_id: number;
 
+  @ApiPropertyOptional({ example: 'Aventureros Central' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
   @ApiPropertyOptional({ example: 1 })
   @IsOptional()
   @Type(() => Number)
