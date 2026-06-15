@@ -314,6 +314,7 @@ describe('AdminUsersService', () => {
 
       expect(result.meta.scope.type).toBe('ALL');
       expect(result.data).toHaveLength(1);
+      expect(result.data[0].is_deleted).toBe(false);
       expect(result.data[0].user_image).toBe(
         'https://cdn.example.com/users/u1.jpg',
       );
@@ -322,6 +323,42 @@ describe('AdminUsersService', () => {
           where: {},
         }),
       );
+    });
+
+    it('should flag self-deleted anonymized accounts', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([
+        {
+          user_id: '5b2b8a9a-f2d7-4e8d-a65b-6d9447e0e1bc',
+          email: 'deleted-5b2b8a9a-f2d7-4e8d-a65b-6d9447e0e1bc@sacdia.deleted',
+          name: null,
+          paternal_last_name: null,
+          maternal_last_name: null,
+          user_image: null,
+          active: false,
+          access_app: false,
+          access_panel: false,
+          country_id: null,
+          union_id: null,
+          local_field_id: null,
+          created_at: new Date('2026-01-01'),
+          countries: null,
+          unions: null,
+          local_fields: null,
+          users_roles: [],
+          users_pr: null,
+        },
+      ]);
+      mockPrismaService.users.count.mockResolvedValue(1);
+
+      const result = await service.listUsers('actor-super', buildListQuery());
+
+      expect(result.data[0].is_deleted).toBe(true);
+      expect(result.data[0].full_name).toBe('');
     });
 
     it('should enforce UNION scope for admin with union_id', async () => {
@@ -507,6 +544,7 @@ describe('AdminUsersService', () => {
 
       expect(result.user_id).toBe('user-1');
       expect(result.roles).toEqual(['user']);
+      expect(result.is_deleted).toBe(false);
       expect(result.scope.type).toBe('ALL');
       expect(result.current_operational_enrollment).toBeNull();
       expect(result.trajectory_classes).toEqual([]);

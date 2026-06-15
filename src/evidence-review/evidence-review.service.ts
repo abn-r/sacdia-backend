@@ -14,6 +14,7 @@ import {
 } from './dto/bulk-approve-evidence.dto';
 import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
 import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
+import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
 //
@@ -49,6 +50,7 @@ export type EvidenceItem = {
   type: EvidenceType;
   status: string;
   member_name: string;
+  member_is_deleted: boolean;
   member_id: string;
   section_name: string;
   file_count: number;
@@ -119,6 +121,8 @@ const USER_NAME_SELECT = {
   user_id: true,
   name: true,
   paternal_last_name: true,
+  active: true,
+  email: true,
 } as const;
 
 @Injectable()
@@ -185,6 +189,7 @@ export class EvidenceReviewService {
       type: 'class',
       status: r.status,
       member_name: buildMemberName(r.users),
+      member_is_deleted: isDeletedAccountSnapshot(r.users),
       member_id: r.user_id,
       section_name: `Sección de clase #${r.section_id}`,
       file_count: r.evidence_files.length,
@@ -232,6 +237,7 @@ export class EvidenceReviewService {
         type: 'honor',
         status: r.validation_status,
         member_name: buildMemberName(r.users),
+        member_is_deleted: isDeletedAccountSnapshot(r.users),
         member_id: r.user_id,
         section_name: r.honors?.name ?? `Honor #${r.honor_id}`,
         file_count: fileCount,
@@ -289,6 +295,7 @@ export class EvidenceReviewService {
       type: 'class',
       status: record.status,
       member_name: buildMemberName(record.users),
+      member_is_deleted: isDeletedAccountSnapshot(record.users),
       member_id: record.user_id,
       section_name: `Sección de clase #${record.section_id}`,
       file_count: record.evidence_files.length,
@@ -350,6 +357,7 @@ export class EvidenceReviewService {
       type: 'honor',
       status: record.validation_status,
       member_name: buildMemberName(record.users),
+      member_is_deleted: isDeletedAccountSnapshot(record.users),
       member_id: record.user_id,
       section_name: record.honors?.name ?? `Honor #${record.honor_id}`,
       file_count: files.length,

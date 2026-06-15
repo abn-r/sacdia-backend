@@ -48,6 +48,7 @@ import {
   type CurrentOperationalEnrollmentDto,
   type TrajectoryClassDto,
 } from './mappers/formative-read-model.mapper';
+import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
 
 // ── Bulk upload types ────────────────────────────────────────────────────────
 export type BulkUserRowResult = {
@@ -372,6 +373,7 @@ interface AdminUserListItem {
   paternal_last_name: string | null;
   maternal_last_name: string | null;
   full_name: string;
+  is_deleted: boolean;
   user_image: string | null;
   active: boolean;
   access_app: boolean;
@@ -1214,6 +1216,7 @@ export class AdminUsersService {
     const roles = this.extractRoleNames(user.users_roles).sort((a, b) =>
       a.localeCompare(b),
     );
+    const isDeleted = isDeletedAccountSnapshot(user);
     const postRegistration = user.users_pr
       ? {
           complete: user.users_pr.complete,
@@ -1233,6 +1236,7 @@ export class AdminUsersService {
         .filter(Boolean)
         .join(' ')
         .trim(),
+      is_deleted: isDeleted,
       user_image: await this.resolvePrivateProfileUrl(user.user_image),
       active: user.active,
       access_app: user.access_app ?? false,
