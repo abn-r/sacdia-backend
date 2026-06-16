@@ -322,6 +322,7 @@ model classes {
   club_types             club_types               @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   available_from_year    ecclesiastical_years?    @relation("classes_available_from_year", fields: [available_from_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   available_until_year   ecclesiastical_years?    @relation("classes_available_until_year", fields: [available_until_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  class_honors           class_honors[]
   enrollments            enrollments[]
   translations           classes_translations[]
 
@@ -498,6 +499,7 @@ model club_types {
   club_sections              club_sections[]
   finances                   finances[]
   folders                    folders[]
+  honor_club_types           honor_club_types[]
   honors                     honors[]
   units                      units[]
   folder_templates           folder_templates[]
@@ -1038,7 +1040,8 @@ model evidence_files {
 
 model honors {
   honor_id           Int                   @id @default(autoincrement())
-  name               String                @unique @db.VarChar(100)
+  name               String                @db.VarChar(100)
+  code               String?               @unique @db.VarChar(120)
   description        String?
   honor_image        String
   honors_category_id Int
@@ -1057,8 +1060,41 @@ model honors {
   certificate_bulk_import_items certificate_bulk_import_items[]
   users_honors       users_honors[]
   honor_requirements honor_requirements[]
+  honor_club_types   honor_club_types[]
+  class_honors       class_honors[]
   master_honor_requirement_option_honors master_honor_requirement_option_honors[]
   translations       honors_translations[]
+}
+
+model honor_club_types {
+  honor_club_type_id Int      @id @default(autoincrement())
+  honor_id           Int
+  club_type_id       Int
+  active             Boolean  @default(true)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  honor     honors     @relation(fields: [honor_id], references: [honor_id], onDelete: Cascade, onUpdate: NoAction)
+  club_type club_types @relation(fields: [club_type_id], references: [club_type_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([honor_id, club_type_id])
+  @@index([club_type_id])
+}
+
+model class_honors {
+  class_honor_id Int                            @id @default(autoincrement())
+  class_id       Int
+  honor_id       Int
+  relation_type  class_honor_relation_type_enum @default(RECOMMENDED)
+  active         Boolean                        @default(true)
+  created_at     DateTime                       @default(now()) @db.Timestamptz(6)
+  modified_at    DateTime                       @default(now()) @db.Timestamptz(6)
+
+  class classes @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction)
+  honor honors  @relation(fields: [honor_id], references: [honor_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([class_id, honor_id, relation_type])
+  @@index([honor_id])
 }
 
 model honors_translations {
@@ -2450,6 +2486,12 @@ enum gender {
 enum master_honor_applicability_scope_enum {
   ALL
   SELECTED_DIVISIONS
+}
+
+enum class_honor_relation_type_enum {
+  REQUIRED
+  RECOMMENDED
+  ELECTIVE
 }
 
 enum master_honor_requirement_group_type_enum {
