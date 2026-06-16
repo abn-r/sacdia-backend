@@ -32,12 +32,14 @@ describe('ClassesService', () => {
     classes: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
     ecclesiastical_years: { findFirst: jest.fn(), findUnique: jest.fn() },
     enrollments: { findMany: jest.fn(), findUnique: jest.fn() },
-    class_sections: { findFirst: jest.fn() },
+    class_sections: { findFirst: jest.fn(), groupBy: jest.fn() },
+    class_modules: { findMany: jest.fn() },
     class_section_progress: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      groupBy: jest.fn(),
     },
     evidence_files: {
       create: jest.fn(),
@@ -83,6 +85,9 @@ describe('ClassesService', () => {
       section_id: 101,
       module_id: 11,
     });
+    mockPrismaService.class_sections.groupBy.mockResolvedValue([]);
+    mockPrismaService.class_modules.findMany.mockResolvedValue([]);
+    mockPrismaService.class_section_progress.groupBy.mockResolvedValue([]);
     mockPrismaService.class_section_progress.findFirst.mockResolvedValue(null);
     mockPrismaService.class_section_progress.create.mockResolvedValue({
       section_progress_id: 123,
@@ -201,6 +206,73 @@ describe('ClassesService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('getUserEnrollments', () => {
+    it('counts VALIDATED sections in summary progress even when score is zero', async () => {
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          user_id: 'user-1',
+          class_id: 7,
+          ecclesiastical_year_id: 2026,
+          enrollment_date: new Date('2026-01-01T00:00:00.000Z'),
+          investiture_status: 'SUBMITTED_FOR_VALIDATION',
+          submitted_for_validation: true,
+          submitted_at: null,
+          validated_by: null,
+          validated_at: null,
+          locked_for_validation: true,
+          cross_type_enrollment: false,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+          modified_at: new Date('2026-01-01T00:00:00.000Z'),
+          classes: {
+            class_id: 7,
+            name: 'Guía',
+            description: null,
+            asset_code: 'CQ-06',
+            club_types: { name: 'Conquistadores' },
+          },
+          ecclesiastical_year: {
+            start_date: new Date('2026-01-01T00:00:00.000Z'),
+            end_date: new Date('2026-12-31T00:00:00.000Z'),
+          },
+        },
+      ]);
+      mockPrismaService.class_section_progress.groupBy.mockResolvedValue([
+        {
+          enrollment_id: 501,
+          _count: { section_progress_id: 2 },
+        },
+      ]);
+      mockPrismaService.class_sections.groupBy.mockResolvedValue([
+        {
+          module_id: 11,
+          _count: { section_id: 2 },
+        },
+      ]);
+      mockPrismaService.class_modules.findMany.mockResolvedValue([
+        { module_id: 11, class_id: 7 },
+      ]);
+
+      const result = await service.getUserEnrollments('user-1');
+
+      expect(
+        mockPrismaService.class_section_progress.groupBy,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            enrollment_id: { in: [501] },
+            active: true,
+            OR: [{ status: 'VALIDATED' }, { score: { gte: 70 } }],
+          }),
+        }),
+      );
+      expect(result[0]).toMatchObject({
+        enrollment_id: 501,
+        overall_progress: 100,
+      });
     });
   });
 

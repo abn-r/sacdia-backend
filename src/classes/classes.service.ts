@@ -586,14 +586,19 @@ export class ClassesService {
     const enrollmentIds = enrollments.map((e) => e.enrollment_id);
     const classIds = [...new Set(enrollments.map((e) => e.class_id))];
 
-    // Batch: completed sections per enrollment (score >= 70, active = true)
+    // Batch: completed sections per enrollment.
+    // Keep this aligned with getUserProgress(): a section is complete when it
+    // was institutionally validated, even if legacy score remains 0.
     const completedByEnrollment =
       await this.prisma.class_section_progress.groupBy({
         by: ['enrollment_id'],
         where: {
           enrollment_id: { in: enrollmentIds },
           active: true,
-          score: { gte: 70 },
+          OR: [
+            { status: evidence_validation_enum.VALIDATED },
+            { score: { gte: 70 } },
+          ],
         },
         _count: { section_progress_id: true },
       });
