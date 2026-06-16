@@ -215,6 +215,7 @@ describe('ClassesService', () => {
           user_id: 'user-1',
           class_id: 7,
           ecclesiastical_year_id: 2026,
+          investiture_status: 'SUBMITTED_FOR_VALIDATION',
         },
       ]);
       mockPrismaService.class_section_progress.findMany.mockResolvedValue([
@@ -224,6 +225,29 @@ describe('ClassesService', () => {
           section_id: 101,
           score: 90,
           evidences: null,
+          submitted_by: {
+            name: 'Consejero',
+            paternal_last_name: 'Uno',
+            maternal_last_name: null,
+          },
+          submitted_at: new Date('2026-05-10T00:00:00.000Z'),
+          validated_by_user: {
+            name: 'Director',
+            paternal_last_name: 'Local',
+            maternal_last_name: null,
+          },
+          validated_at: new Date('2026-05-11T00:00:00.000Z'),
+          evidence_files: [],
+        },
+        {
+          enrollment_id: 501,
+          module_id: 11,
+          section_id: 102,
+          score: 0,
+          evidences: null,
+          status: 'VALIDATED',
+          submitted_by: null,
+          validated_by_user: null,
           evidence_files: [],
         },
       ]);
@@ -231,6 +255,7 @@ describe('ClassesService', () => {
       const result = await service.getUserProgress('user-1', 7);
 
       expect(result.enrollment_id).toBe(501);
+      expect(result.investiture_status).toBe('SUBMITTED_FOR_VALIDATION');
       expect(
         mockPrismaService.class_section_progress.findMany,
       ).toHaveBeenCalledWith({
@@ -239,6 +264,20 @@ describe('ClassesService', () => {
           active: true,
         },
         include: {
+          submitted_by: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
+          validated_by_user: {
+            select: {
+              name: true,
+              paternal_last_name: true,
+              maternal_last_name: true,
+            },
+          },
           evidence_files: {
             where: { active: true },
             select: {
@@ -259,6 +298,24 @@ describe('ClassesService', () => {
           },
         },
       });
+      expect(result.modules[0].sections[0]).toMatchObject({
+        submitted_by_name: 'Consejero Uno',
+        validated_by_name: 'Director Local',
+        submitted_at: '2026-05-10T00:00:00.000Z',
+        validated_at: '2026-05-11T00:00:00.000Z',
+      });
+      expect(result).toMatchObject({
+        completed_sections: 2,
+        overall_progress: 100,
+      });
+      expect(result.modules[0]).toMatchObject({
+        completed_sections: 2,
+        progress_percentage: 100,
+      });
+      expect(result.modules[0].sections[1]).toMatchObject({
+        completed: true,
+        status: 'VALIDATED',
+      });
     });
 
     it('accepts an explicit enrollment override when ownership matches', async () => {
@@ -267,12 +324,14 @@ describe('ClassesService', () => {
         user_id: 'user-1',
         class_id: 7,
         ecclesiastical_year_id: 2025,
+        investiture_status: 'CLUB_APPROVED',
       });
       mockPrismaService.class_section_progress.findMany.mockResolvedValue([]);
 
       const result = await service.getUserProgress('user-1', 7, 777);
 
       expect(result.enrollment_id).toBe(777);
+      expect(result.investiture_status).toBe('CLUB_APPROVED');
       expect(
         mockPrismaService.ecclesiastical_years.findFirst,
       ).not.toHaveBeenCalled();
@@ -1071,6 +1130,7 @@ describe('ClassesService', () => {
           user_id: 'user-1',
           class_id: 7,
           ecclesiastical_year_id: 2026,
+          investiture_status: 'SUBMITTED_FOR_VALIDATION',
         },
       ]);
       mockPrismaService.class_section_progress.findMany.mockResolvedValue(
@@ -1118,6 +1178,7 @@ describe('ClassesService', () => {
           user_id: 'user-1',
           class_id: 7,
           ecclesiastical_year_id: 2026,
+          investiture_status: 'SUBMITTED_FOR_VALIDATION',
         },
       ]);
       mockPrismaService.class_section_progress.findMany.mockResolvedValue(

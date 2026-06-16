@@ -77,6 +77,7 @@ export class ClassesService {
   }): Promise<{
     enrollmentId: number;
     ecclesiasticalYearId: number;
+    investitureStatus: string;
   }> {
     if (params.enrollmentId !== undefined) {
       const enrollment = await this.prisma.enrollments.findUnique({
@@ -88,6 +89,7 @@ export class ClassesService {
           user_id: true,
           class_id: true,
           ecclesiastical_year_id: true,
+          investiture_status: true,
         },
       });
 
@@ -102,6 +104,7 @@ export class ClassesService {
       return {
         enrollmentId: enrollment.enrollment_id,
         ecclesiasticalYearId: enrollment.ecclesiastical_year_id,
+        investitureStatus: enrollment.investiture_status,
       };
     }
 
@@ -129,6 +132,7 @@ export class ClassesService {
       select: {
         enrollment_id: true,
         ecclesiastical_year_id: true,
+        investiture_status: true,
       },
     });
 
@@ -143,6 +147,7 @@ export class ClassesService {
     return {
       enrollmentId: enrollments[0].enrollment_id,
       ecclesiasticalYearId: enrollments[0].ecclesiastical_year_id,
+      investitureStatus: enrollments[0].investiture_status,
     };
   }
 
@@ -669,6 +674,20 @@ export class ClassesService {
         active: true,
       },
       include: {
+        submitted_by: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+        validated_by_user: {
+          select: {
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
         evidence_files: {
           where: { active: true },
           select: {
@@ -724,8 +743,17 @@ export class ClassesService {
       const sectionsInModule = module.class_sections.length;
       totalSections += sectionsInModule;
 
+      const isCompletedProgress = (
+        progress: (typeof sectionProgress)[number] | undefined,
+      ) =>
+        Boolean(
+          progress &&
+          (progress.status === evidence_validation_enum.VALIDATED ||
+            progress.score >= 70),
+        );
+
       const completedInModule = sectionProgress.filter(
-        (sp) => sp.module_id === module.module_id && sp.score >= 70,
+        (sp) => sp.module_id === module.module_id && isCompletedProgress(sp),
       ).length;
       completedSections += completedInModule;
 
@@ -754,14 +782,18 @@ export class ClassesService {
           return {
             section_id: section.section_id,
             section_name: section.name,
-            completed: progress ? progress.score >= 70 : false,
+            completed: isCompletedProgress(progress),
             score: progress?.score || 0,
             evidences: progress?.evidences || null,
             evidence_files: evidenceFiles,
             status: progress?.status ?? evidence_validation_enum.PENDING,
-            submitted_by_name: null,
+            submitted_by_name: this.formatUserName(
+              progress?.submitted_by ?? null,
+            ),
             submitted_at: progress?.submitted_at?.toISOString() || null,
-            validated_by_name: null,
+            validated_by_name: this.formatUserName(
+              progress?.validated_by_user ?? null,
+            ),
             validated_at: progress?.validated_at?.toISOString() || null,
             rejection_reason: progress?.rejection_reason || null,
           };
@@ -772,6 +804,7 @@ export class ClassesService {
     return {
       enrollment_id: resolvedEnrollment.enrollmentId,
       ecclesiastical_year_id: resolvedEnrollment.ecclesiasticalYearId,
+      investiture_status: resolvedEnrollment.investitureStatus,
       class_id: classId,
       class_name: classData.name,
       total_sections: totalSections,

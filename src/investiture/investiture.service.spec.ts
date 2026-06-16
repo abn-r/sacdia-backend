@@ -898,6 +898,160 @@ describe('InvestitureService', () => {
         in: ['CLUB_APPROVED'],
       });
     });
+
+    it('TC37 - enriches pending rows with member club and submitter role', async () => {
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 5,
+          user_id: 'member-1',
+          class_id: 12,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'SUBMITTED_FOR_VALIDATION',
+          submitted_at: new Date('2026-06-15T20:00:00.000Z'),
+          users: {
+            user_id: 'member-1',
+            name: 'Maria',
+            paternal_last_name: 'Lopez',
+            maternal_last_name: 'Perez',
+            email: 'maria@example.com',
+            user_image: null,
+          },
+          classes: {
+            class_id: 12,
+            name: 'Guia',
+            club_type_id: 2,
+          },
+          ecclesiastical_year: {
+            year_id: 2026,
+            start_date: new Date('2026-01-01'),
+            end_date: new Date('2026-12-31'),
+            active: true,
+          },
+          investiture_history: [
+            {
+              history_id: 77,
+              performed_by: 'counselor-1',
+              comments: 'Lista',
+              created_at: new Date('2026-06-15T20:00:00.000Z'),
+              users: {
+                user_id: 'counselor-1',
+                name: 'Ana',
+                paternal_last_name: 'Garcia',
+                maternal_last_name: null,
+                email: 'ana@example.com',
+                user_image: null,
+              },
+            },
+          ],
+        },
+      ]);
+      mockPrismaService.enrollments.count.mockResolvedValue(1);
+      mockPrismaService.club_role_assignments.findMany
+        .mockResolvedValueOnce([
+          {
+            user_id: 'member-1',
+            ecclesiastical_year_id: 2026,
+            club_section_id: 9,
+            club_sections: {
+              club_section_id: 9,
+              name: 'Conquistadores',
+              main_club_id: 3,
+              club_type_id: 2,
+              club_types: { name: 'Conquistadores' },
+              clubs: { club_id: 3, name: 'Central' },
+            },
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            user_id: 'counselor-1',
+            ecclesiastical_year_id: 2026,
+            club_section_id: 9,
+            roles: {
+              role_name: 'counselor',
+              description: 'Consejero',
+            },
+          },
+        ]);
+
+      const result = await service.getPending('admin-xyz', 3);
+
+      expect(result.data[0]).toMatchObject({
+        enrollment_id: 5,
+        user: {
+          first_name: 'Maria',
+          last_name: 'Lopez Perez',
+          email: 'maria@example.com',
+        },
+        class: { class_id: 12, name: 'Guia' },
+        club: { club_id: 3, name: 'Central' },
+        section: { section_id: 9, name: 'Conquistadores' },
+        submitted_by: {
+          first_name: 'Ana',
+          last_name: 'Garcia',
+          email: 'ana@example.com',
+          role_name: 'counselor',
+          role_label: 'Consejero',
+        },
+        submitted_comment: 'Lista',
+      });
+    });
+
+    it('uses club type name when assigned section has no custom name', async () => {
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          enrollment_id: 5,
+          user_id: 'member-1',
+          class_id: 12,
+          ecclesiastical_year_id: 2026,
+          investiture_status: 'SUBMITTED_FOR_VALIDATION',
+          submitted_at: new Date('2026-06-15T20:00:00.000Z'),
+          users: {
+            user_id: 'member-1',
+            name: 'Maria',
+            paternal_last_name: 'Lopez',
+            maternal_last_name: 'Perez',
+            email: 'maria@example.com',
+            user_image: null,
+          },
+          classes: {
+            class_id: 12,
+            name: 'Guia',
+            club_type_id: 2,
+          },
+          ecclesiastical_year: {
+            year_id: 2026,
+            start_date: new Date('2026-01-01'),
+            end_date: new Date('2026-12-31'),
+            active: true,
+          },
+          investiture_history: [],
+        },
+      ]);
+      mockPrismaService.enrollments.count.mockResolvedValue(1);
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValueOnce([
+        {
+          user_id: 'member-1',
+          ecclesiastical_year_id: 2026,
+          club_section_id: 9,
+          club_sections: {
+            club_section_id: 9,
+            name: null,
+            main_club_id: 3,
+            club_type_id: 2,
+            club_types: { name: 'Conquistadores' },
+            clubs: { club_id: 3, name: 'Central' },
+          },
+        },
+      ]);
+
+      const result = await service.getPending('admin-xyz', 3);
+
+      expect(result.data[0].section).toEqual({
+        section_id: 9,
+        name: 'Conquistadores',
+      });
+    });
   });
 
   // ============================================================

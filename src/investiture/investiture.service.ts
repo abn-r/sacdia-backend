@@ -77,6 +77,73 @@ type ApprovalResult = {
   approved_at: Date;
 };
 
+type PendingEnrollmentUser = {
+  user_id?: string;
+  name: string | null;
+  paternal_last_name: string | null;
+  maternal_last_name?: string | null;
+  email: string | null;
+  user_image?: string | null;
+};
+
+type PendingEnrollmentClass = {
+  class_id?: number;
+  name: string;
+  club_type_id?: number;
+};
+
+type PendingEnrollmentYear = {
+  year_id?: number;
+  start_date: Date;
+  end_date: Date;
+  active?: boolean;
+};
+
+type PendingEnrollmentHistory = {
+  history_id: number;
+  performed_by: string;
+  comments: string | null;
+  created_at: Date;
+  users: PendingEnrollmentUser | null;
+};
+
+type PendingEnrollmentRow = {
+  enrollment_id: number;
+  user_id?: string;
+  class_id?: number;
+  ecclesiastical_year_id?: number;
+  investiture_status: investiture_status_enum;
+  submitted_at: Date | null;
+  validated_at?: Date | null;
+  rejection_reason?: string | null;
+  locked_for_validation?: boolean;
+  users: PendingEnrollmentUser | null;
+  classes: PendingEnrollmentClass | null;
+  ecclesiastical_year: PendingEnrollmentYear | null;
+  investiture_history?: PendingEnrollmentHistory[];
+};
+
+type PendingMemberAssignment = {
+  user_id: string;
+  ecclesiastical_year_id: number;
+  club_section_id: number | null;
+  club_sections: {
+    club_section_id: number;
+    name: string | null;
+    main_club_id: number | null;
+    club_type_id: number;
+    club_types: { name: string } | null;
+    clubs: { club_id: number; name: string } | null;
+  } | null;
+};
+
+type PendingSubmitterRoleAssignment = {
+  user_id: string;
+  ecclesiastical_year_id: number;
+  club_section_id: number | null;
+  roles: { role_name: string; description: string } | null;
+};
+
 @Injectable()
 export class InvestitureService {
   private readonly logger = new Logger(InvestitureService.name);
@@ -606,14 +673,46 @@ export class InvestitureService {
         include: {
           users: {
             select: {
+              user_id: true,
               name: true,
               paternal_last_name: true,
               maternal_last_name: true,
               email: true,
+              user_image: true,
             },
           },
-          classes: { select: { name: true } },
-          ecclesiastical_year: { select: { start_date: true, end_date: true } },
+          classes: {
+            select: { class_id: true, name: true, club_type_id: true },
+          },
+          ecclesiastical_year: {
+            select: {
+              year_id: true,
+              start_date: true,
+              end_date: true,
+              active: true,
+            },
+          },
+          investiture_history: {
+            where: { action: investiture_action_enum.SUBMITTED },
+            orderBy: { created_at: 'desc' },
+            take: 1,
+            select: {
+              history_id: true,
+              performed_by: true,
+              comments: true,
+              created_at: true,
+              users: {
+                select: {
+                  user_id: true,
+                  name: true,
+                  paternal_last_name: true,
+                  maternal_last_name: true,
+                  email: true,
+                  user_image: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { submitted_at: 'asc' },
         skip: pagination.skip,
@@ -622,7 +721,279 @@ export class InvestitureService {
       this.prisma.enrollments.count({ where }),
     ]);
 
-    return createPaginatedResult(data, total, pagination);
+    const enrichedData = await this.enrichPendingEnrollments(data);
+
+    return createPaginatedResult(enrichedData, total, pagination);
+  }
+
+  private async enrichPendingEnrollments(rows: PendingEnrollmentRow[]) {
+    if (rows.length === 0) return rows;
+
+    const userIds = [
+      ...new Set(
+        rows
+          .map((row) => row.user_id ?? row.users?.user_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const yearIds = [
+      ...new Set(
+        rows
+          .map((row) => row.ecclesiastical_year_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    ];
+    const clubTypeIds = [
+      ...new Set(
+        rows
+          .map((row) => row.classes?.club_type_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    ];
+
+    const memberAssignments: PendingMemberAssignment[] =
+      userIds.length > 0 && yearIds.length > 0 && clubTypeIds.length > 0
+        ? await this.prisma.club_role_assignments.findMany({
+            where: {
+              user_id: { in: userIds },
+              active: true,
+              status: 'active',
+              ecclesiastical_year_id: { in: yearIds },
+              club_sections: {
+                club_type_id: { in: clubTypeIds },
+              },
+            },
+            select: {
+              user_id: true,
+              ecclesiastical_year_id: true,
+              club_section_id: true,
+              club_sections: {
+                select: {
+                  club_section_id: true,
+                  name: true,
+                  main_club_id: true,
+                  club_type_id: true,
+                  club_types: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                  clubs: {
+                    select: {
+                      club_id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: { start_date: 'desc' },
+          })
+        : [];
+
+    const memberAssignmentByContext = new Map<
+      string,
+      PendingMemberAssignment
+    >();
+    for (const assignment of memberAssignments) {
+      const section = assignment.club_sections;
+      if (!section) continue;
+
+      const key = this.pendingContextKey(
+        assignment.user_id,
+        assignment.ecclesiastical_year_id,
+        section.club_type_id,
+      );
+      if (!memberAssignmentByContext.has(key)) {
+        memberAssignmentByContext.set(key, assignment);
+      }
+    }
+
+    const submittedByIds = [
+      ...new Set(
+        rows
+          .map((row) => row.investiture_history?.[0]?.performed_by)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const sectionIds = [
+      ...new Set(
+        rows
+          .map(
+            (row) =>
+              this.getMemberAssignment(row, memberAssignmentByContext)
+                ?.club_section_id,
+          )
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    ];
+
+    const submitterAssignments: PendingSubmitterRoleAssignment[] =
+      submittedByIds.length > 0 && yearIds.length > 0 && sectionIds.length > 0
+        ? await this.prisma.club_role_assignments.findMany({
+            where: {
+              user_id: { in: submittedByIds },
+              active: true,
+              status: 'active',
+              ecclesiastical_year_id: { in: yearIds },
+              club_section_id: { in: sectionIds },
+            },
+            select: {
+              user_id: true,
+              ecclesiastical_year_id: true,
+              club_section_id: true,
+              roles: {
+                select: {
+                  role_name: true,
+                  description: true,
+                },
+              },
+            },
+            orderBy: { start_date: 'desc' },
+          })
+        : [];
+
+    const submitterRoleByContext = new Map<
+      string,
+      PendingSubmitterRoleAssignment
+    >();
+    for (const assignment of submitterAssignments) {
+      if (!assignment.club_section_id) continue;
+
+      const key = this.submitterRoleContextKey(
+        assignment.user_id,
+        assignment.ecclesiastical_year_id,
+        assignment.club_section_id,
+      );
+      if (!submitterRoleByContext.has(key)) {
+        submitterRoleByContext.set(key, assignment);
+      }
+    }
+
+    return rows.map((row) => {
+      const memberAssignment = this.getMemberAssignment(
+        row,
+        memberAssignmentByContext,
+      );
+      const memberSection = memberAssignment?.club_sections ?? null;
+      const submittedEntry = row.investiture_history?.[0] ?? null;
+      const submitterRole =
+        submittedEntry && memberSection
+          ? submitterRoleByContext.get(
+              this.submitterRoleContextKey(
+                submittedEntry.performed_by,
+                row.ecclesiastical_year_id ?? 0,
+                memberSection.club_section_id,
+              ),
+            )
+          : null;
+
+      return {
+        ...row,
+        user: this.toPendingUser(row.users, row.user_id),
+        class: row.classes
+          ? {
+              class_id: row.classes.class_id ?? row.class_id,
+              name: row.classes.name,
+            }
+          : null,
+        club: memberSection?.clubs
+          ? {
+              club_id: memberSection.clubs.club_id,
+              name: memberSection.clubs.name,
+            }
+          : null,
+        section: memberSection
+          ? {
+              section_id: memberSection.club_section_id,
+              name:
+                memberSection.name ?? memberSection.club_types?.name ?? null,
+            }
+          : null,
+        ecclesiastical_year: row.ecclesiastical_year
+          ? {
+              ecclesiastical_year_id:
+                row.ecclesiastical_year.year_id ?? row.ecclesiastical_year_id,
+              name: this.deriveEcclesiasticalYearName(row.ecclesiastical_year),
+              start_date: row.ecclesiastical_year.start_date,
+              end_date: row.ecclesiastical_year.end_date,
+              active: row.ecclesiastical_year.active ?? false,
+            }
+          : null,
+        submitted_by: submittedEntry?.users
+          ? {
+              ...this.toPendingUser(
+                submittedEntry.users,
+                submittedEntry.performed_by,
+              ),
+              role_name: submitterRole?.roles?.role_name ?? null,
+              role_label: submitterRole?.roles?.description ?? null,
+            }
+          : null,
+        submitted_comment: submittedEntry?.comments ?? null,
+      };
+    });
+  }
+
+  private getMemberAssignment(
+    row: PendingEnrollmentRow,
+    assignments: Map<string, PendingMemberAssignment>,
+  ) {
+    const userId = row.user_id ?? row.users?.user_id;
+    const yearId = row.ecclesiastical_year_id;
+    const clubTypeId = row.classes?.club_type_id;
+
+    if (!userId || !yearId || !clubTypeId) return null;
+
+    return (
+      assignments.get(this.pendingContextKey(userId, yearId, clubTypeId)) ??
+      null
+    );
+  }
+
+  private pendingContextKey(
+    userId: string,
+    yearId: number,
+    clubTypeId: number,
+  ) {
+    return `${userId}:${yearId}:${clubTypeId}`;
+  }
+
+  private submitterRoleContextKey(
+    userId: string,
+    yearId: number,
+    sectionId: number,
+  ) {
+    return `${userId}:${yearId}:${sectionId}`;
+  }
+
+  private toPendingUser(
+    user: PendingEnrollmentUser | null,
+    fallbackId?: string,
+  ) {
+    if (!user && !fallbackId) return null;
+
+    return {
+      user_id: user?.user_id ?? fallbackId,
+      first_name: user?.name ?? null,
+      last_name:
+        [user?.paternal_last_name, user?.maternal_last_name]
+          .filter(Boolean)
+          .join(' ') || null,
+      email: user?.email ?? null,
+      photo: user?.user_image ?? null,
+    };
+  }
+
+  private deriveEcclesiasticalYearName(year: PendingEnrollmentYear) {
+    const startYear = year.start_date?.getUTCFullYear();
+    const endYear = year.end_date?.getUTCFullYear();
+
+    if (startYear && endYear && startYear !== endYear) {
+      return `${startYear}–${endYear}`;
+    }
+
+    return String(startYear ?? endYear ?? year.year_id ?? '');
   }
 
   // ========================================
@@ -1475,7 +1846,9 @@ export class InvestitureService {
       await this.resolveAccessibleInvestitureConfigLocalFieldIds(actorId);
 
     if (allowedLocalFieldIds === null) {
-      return requestedLocalFieldId ? { local_field_id: requestedLocalFieldId } : {};
+      return requestedLocalFieldId
+        ? { local_field_id: requestedLocalFieldId }
+        : {};
     }
 
     if (requestedLocalFieldId) {
@@ -1507,7 +1880,8 @@ export class InvestitureService {
   private async resolveAccessibleInvestitureConfigLocalFieldIds(
     actorId: string,
   ): Promise<number[] | null> {
-    const resolved = await this.authorizationContext.resolveUserAuthorization(actorId);
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorId);
     const roleNames = new Set(
       resolved.authorization.grants.global_roles.map((grant) =>
         grant.role_name.toLowerCase(),
