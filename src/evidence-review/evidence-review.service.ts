@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -14,6 +14,11 @@ import {
 } from './dto/bulk-approve-evidence.dto';
 import { BulkRejectEvidenceDto } from './dto/bulk-reject-evidence.dto';
 import { HonorValidationWorkflowService } from '../honors/honor-validation-workflow.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
@@ -127,9 +132,14 @@ const USER_NAME_SELECT = {
 
 @Injectable()
 export class EvidenceReviewService {
+  private readonly logger = new Logger(EvidenceReviewService.name);
+  private static readonly SIGNED_FILE_URL_TTL_SECONDS = 300;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly honorValidationWorkflow: HonorValidationWorkflowService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   // ============================================================
@@ -290,6 +300,20 @@ export class EvidenceReviewService {
       );
     }
 
+    const files = await Promise.all(
+      record.evidence_files.map(async (f) => ({
+        evidence_file_id: f.evidence_file_id,
+        file_url: await this.resolveEvidenceFileUrl(
+          f.evidence_file_id,
+          StorageBucketAlias.CLASS_EVIDENCE,
+          f.file_url,
+        ),
+        file_name: f.file_name,
+        file_type: f.file_type,
+        uploaded_at: f.uploaded_at,
+      })),
+    );
+
     return {
       id: record.section_progress_id,
       type: 'class',
@@ -302,13 +326,7 @@ export class EvidenceReviewService {
       submitted_at: record.submitted_at,
       validated_at: record.validated_at,
       rejection_reason: record.rejection_reason,
-      files: record.evidence_files.map((f) => ({
-        evidence_file_id: f.evidence_file_id,
-        file_url: f.file_url,
-        file_name: f.file_name,
-        file_type: f.file_type,
-        uploaded_at: f.uploaded_at,
-      })),
+      files,
       validated_by_name: record.validated_by_user
         ? buildMemberName(record.validated_by_user)
         : null,
@@ -418,16 +436,17 @@ export class EvidenceReviewService {
       progressRows.map((progress) => [progress.requirement_id, progress]),
     );
 
-    const requirementsPacket: HonorRequirementReviewItem[] = requirements.map(
-      (requirement) => {
+    const requirementsPacket: HonorRequirementReviewItem[] = await Promise.all(
+      requirements.map(async (requirement) => {
         const progress = progressByRequirement.get(requirement.requirement_id);
-        const evidences = (progress?.requirement_evidence ?? []).map(
-          (evidence, index) =>
+        const evidences = await Promise.all(
+          (progress?.requirement_evidence ?? []).map((evidence, index) =>
             this.mapRequirementEvidenceFile(
               evidence,
               requirement.requirement_id,
               index,
             ),
+          ),
         );
 
         return {
@@ -442,7 +461,7 @@ export class EvidenceReviewService {
           evidence_count: evidences.length,
           evidences,
         };
-      },
+      }),
     );
 
     const parentIds = new Set(
@@ -459,15 +478,13 @@ export class EvidenceReviewService {
     ).length;
     const totalRequirements = leafRequirementIds.length;
 
-    const normalizedFiles = record.evidence_files.map((file) => ({
-      evidence_file_id: file.evidence_file_id,
-      file_url: file.file_url,
-      file_name: file.file_name,
-      file_type: file.file_type,
-      uploaded_at: file.uploaded_at,
-    }));
-    const completedFormatFile = this.buildCompletedFormatFile(record);
-    const legacyFiles = this.buildLegacyHonorFiles(record);
+    const normalizedFiles = await Promise.all(
+      record.evidence_files.map((file) =>
+        this.mapStoredHonorEvidenceFile(file),
+      ),
+    );
+    const completedFormatFile = await this.buildCompletedFormatFile(record);
+    const legacyFiles = await this.buildLegacyHonorFiles(record);
     const generalFiles = this.dedupeFiles([...normalizedFiles, ...legacyFiles]);
     const requirementFiles = this.dedupeFiles(
       requirementsPacket.flatMap((requirement) => requirement.evidences),
@@ -494,37 +511,50 @@ export class EvidenceReviewService {
     };
   }
 
-  private buildCompletedFormatFile(record: {
+  private async buildCompletedFormatFile(record: {
     document?: unknown;
     created_at?: Date | null;
-  }): EvidenceFile | null {
+  }): Promise<EvidenceFile | null> {
     if (typeof record.document !== 'string' || record.document.length === 0) {
       return null;
     }
 
+    const signedUrl = await this.resolveEvidenceFileUrl(
+      -2,
+      StorageBucketAlias.USERS_HONORS,
+      record.document,
+    );
+
     return this.buildSyntheticFile(
       -2,
-      record.document,
+      signedUrl,
       record.created_at ?? new Date(0),
       'formato-completado',
+      record.document,
     );
   }
 
-  private buildLegacyHonorFiles(record: {
+  private async buildLegacyHonorFiles(record: {
     certificate?: string | null;
     images?: unknown;
     created_at?: Date | null;
-  }): EvidenceFile[] {
+  }): Promise<EvidenceFile[]> {
     const uploadedAt = record.created_at ?? new Date(0);
     const files: EvidenceFile[] = [];
 
     if (record.certificate) {
+      const signedCertificateUrl = await this.resolveEvidenceFileUrl(
+        -1,
+        StorageBucketAlias.USERS_HONORS_CERT,
+        record.certificate,
+      );
       files.push(
         this.buildSyntheticFile(
           -1,
-          record.certificate,
+          signedCertificateUrl,
           uploadedAt,
           'certificado',
+          record.certificate,
         ),
       );
     }
@@ -532,28 +562,61 @@ export class EvidenceReviewService {
     const images = Array.isArray(record.images)
       ? (record.images as unknown[])
       : [];
-    images.forEach((image, index) => {
-      const url =
-        typeof image === 'string'
-          ? image
-          : ((image as { url?: string }).url ?? '');
-      if (url.length === 0) return;
-      files.push(
-        this.buildSyntheticFile(
+    const imageFiles = await Promise.all(
+      images.map(async (image, index) => {
+        const url =
+          typeof image === 'string'
+            ? image
+            : ((image as { url?: string }).url ?? '');
+        if (url.length === 0) return null;
+        const signedImageUrl = await this.resolveEvidenceFileUrl(
           -1000 - index,
+          StorageBucketAlias.USERS_HONORS,
           url,
+        );
+        return this.buildSyntheticFile(
+          -1000 - index,
+          signedImageUrl,
           uploadedAt,
           `imagen-${index + 1}`,
-        ),
-      );
-    });
+          url,
+        );
+      }),
+    );
+
+    files.push(
+      ...imageFiles.filter(
+        (file): file is EvidenceFile => file !== null,
+      ),
+    );
 
     return files;
   }
 
-  private mapRequirementEvidenceFile(
+  private async mapStoredHonorEvidenceFile(file: {
+    evidence_file_id: number;
+    file_url: string;
+    file_name: string;
+    file_type: string;
+    uploaded_at: Date;
+  }): Promise<EvidenceFile> {
+    return {
+      evidence_file_id: file.evidence_file_id,
+      file_url: await this.resolveEvidenceFileUrl(
+        file.evidence_file_id,
+        StorageBucketAlias.EVIDENCE_FILES,
+        file.file_url,
+      ),
+      file_name: file.file_name,
+      file_type: file.file_type,
+      uploaded_at: file.uploaded_at,
+    };
+  }
+
+  private async mapRequirementEvidenceFile(
     evidence: {
       evidence_id: number;
+      evidence_type?: string | null;
       url: string;
       filename: string | null;
       mime_type: string | null;
@@ -561,14 +624,22 @@ export class EvidenceReviewService {
     },
     requirementId: number,
     index: number,
-  ): EvidenceFile {
+  ): Promise<EvidenceFile> {
     const fallbackName = `requisito-${requirementId}-evidencia-${index + 1}`;
     const fileName =
       evidence.filename ?? this.fileNameFromUrl(evidence.url) ?? fallbackName;
+    const fileUrl =
+      evidence.evidence_type === 'LINK'
+        ? evidence.url
+        : await this.resolveEvidenceFileUrl(
+            -100000 - evidence.evidence_id,
+            StorageBucketAlias.EVIDENCE_FILES,
+            evidence.url,
+          );
 
     return {
       evidence_file_id: -100000 - evidence.evidence_id,
-      file_url: evidence.url,
+      file_url: fileUrl,
       file_name: fileName,
       file_type: this.inferFileType(fileName, evidence.url, evidence.mime_type),
       uploaded_at: evidence.created_at,
@@ -580,8 +651,9 @@ export class EvidenceReviewService {
     url: string,
     uploadedAt: Date,
     fallbackName: string,
+    originalUrl = url,
   ): EvidenceFile {
-    const fileName = this.fileNameFromUrl(url) ?? fallbackName;
+    const fileName = this.fileNameFromUrl(originalUrl) ?? fallbackName;
     return {
       evidence_file_id: evidenceFileId,
       file_url: url,
@@ -609,6 +681,25 @@ export class EvidenceReviewService {
     if (/\.webp(\?|$|\s)/i.test(value)) return 'image/webp';
     if (/\.pdf(\?|$|\s)/i.test(value)) return 'application/pdf';
     return 'application/octet-stream';
+  }
+
+  private async resolveEvidenceFileUrl(
+    evidenceFileId: number,
+    bucketAlias: StorageBucketAlias,
+    fileUrl: string,
+  ): Promise<string> {
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(bucketAlias, fileUrl, {
+        expiresInSeconds: EvidenceReviewService.SIGNED_FILE_URL_TTL_SECONDS,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to presign evidence URL for evidenceFileId=${evidenceFileId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return fileUrl;
+    }
   }
 
   private dedupeFiles(files: EvidenceFile[]): EvidenceFile[] {
