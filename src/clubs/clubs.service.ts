@@ -312,6 +312,52 @@ export class ClubsService {
   // ========================================
 
   async getMembers(sectionId: number) {
+    const now = new Date();
+    const [section, activeYear] = await Promise.all([
+      this.prisma.club_sections.findUnique({
+        where: { club_section_id: sectionId },
+        select: { club_type_id: true },
+      }),
+      this.prisma.ecclesiastical_years.findFirst({
+        where: {
+          start_date: { lte: now },
+          end_date: { gte: now },
+        },
+        select: { year_id: true },
+        orderBy: { start_date: 'desc' },
+      }),
+    ]);
+
+    const currentEnrollmentSelect =
+      activeYear?.year_id && section?.club_type_id
+        ? {
+            enrollments: {
+              where: {
+                ecclesiastical_year_id: activeYear.year_id,
+                active: true,
+                classes: {
+                  club_type_id: section.club_type_id,
+                },
+              },
+              orderBy: { enrollment_date: 'desc' as const },
+              take: 1,
+              select: {
+                enrollment_id: true,
+                class_id: true,
+                ecclesiastical_year_id: true,
+                investiture_status: true,
+                classes: {
+                  select: {
+                    class_id: true,
+                    name: true,
+                    club_type_id: true,
+                  },
+                },
+              },
+            },
+          }
+        : {};
+
     const members = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: sectionId,
@@ -325,6 +371,7 @@ export class ClubsService {
             paternal_last_name: true,
             maternal_last_name: true,
             user_image: true,
+            ...currentEnrollmentSelect,
           },
         },
         roles: {
@@ -339,18 +386,59 @@ export class ClubsService {
     });
 
     return Promise.all(
-      members.map(async (member) => ({
-        ...member,
-        users: member.users
+      members.map(async (member) => {
+        type MemberEnrollmentProjection = {
+          enrollment_id: number;
+          class_id: number;
+          ecclesiastical_year_id: number;
+          investiture_status: string;
+          classes: {
+            class_id: number;
+            name: string;
+            club_type_id: number;
+          } | null;
+        };
+
+        const user = member.users as
+          | (typeof member.users & {
+              enrollments?: MemberEnrollmentProjection[];
+            })
+          | null;
+        const currentEnrollment = user?.enrollments?.[0] ?? null;
+        const currentClass = currentEnrollment?.classes
           ? {
-              ...member.users,
-              user_image:
-                typeof member.users.user_image === 'string'
-                  ? await this.resolvePrivateProfileUrl(member.users.user_image)
-                  : member.users.user_image,
+              id: currentEnrollment.classes.class_id,
+              class_id: currentEnrollment.classes.class_id,
+              name: currentEnrollment.classes.name,
+              club_type_id: currentEnrollment.classes.club_type_id,
+              enrollment_id: currentEnrollment.enrollment_id,
+              ecclesiastical_year_id: currentEnrollment.ecclesiastical_year_id,
+              investiture_status: currentEnrollment.investiture_status,
             }
-          : member.users,
-      })),
+          : null;
+        const userFields = { ...(user ?? {}) };
+        delete (userFields as { enrollments?: unknown }).enrollments;
+        const resolvedUserImage =
+          typeof userFields.user_image === 'string'
+            ? await this.resolvePrivateProfileUrl(userFields.user_image)
+            : userFields.user_image;
+
+        return {
+          ...member,
+          is_enrolled: member.active,
+          current_class: currentClass,
+          current_class_id: currentClass?.class_id ?? null,
+          current_class_name: currentClass?.name ?? null,
+          enrollment_id: currentClass?.enrollment_id ?? null,
+          users: member.users
+            ? {
+                ...userFields,
+                user_image: resolvedUserImage,
+                current_class: currentClass,
+              }
+            : member.users,
+        };
+      }),
     );
   }
 

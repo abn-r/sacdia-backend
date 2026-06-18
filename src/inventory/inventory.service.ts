@@ -1,16 +1,56 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import 'multer';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
-import { AppNotFoundException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { TranslationService } from '../common/services/translation.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
+
+type InventoryEvidenceRow = {
+  inventory_evidence_file_id: number;
+  inventory_id: number;
+  file_url: string;
+  file_name: string;
+  file_type: string;
+  file_size: number | null;
+  uploaded_by_id: string;
+  uploaded_at: Date;
+  active: boolean;
+};
+
+type InventoryEvidenceResponse = {
+  evidence_id: number;
+  inventory_id: number;
+  url: string;
+  file_name: string;
+  file_type: string;
+  file_size: number | null;
+  uploaded_by_id: string;
+  uploaded_at: Date;
+  active: boolean;
+};
 
 @Injectable()
 export class InventoryService {
+  private readonly logger = new Logger(InventoryService.name);
+  private static readonly MAX_EVIDENCE_FILES = 3;
+  private static readonly EVIDENCE_URL_TTL_SECONDS = 15 * 60;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly translationService: TranslationService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   // ========================================
@@ -90,6 +130,9 @@ export class InventoryService {
     const categoryMap = new Map(
       translatedCategories.map((c) => [c.inventory_category_id, c]),
     );
+    const evidencesByInventoryId = await this.getEvidenceMap(
+      items.map((item) => item.club_inventory_id),
+    );
 
     return {
       data: items.map((item) => {
@@ -112,6 +155,7 @@ export class InventoryService {
           active: item.active,
           created_at: item.created_at,
           updated_at: item.modified_at,
+          evidences: evidencesByInventoryId.get(item.club_inventory_id) ?? [],
         };
       }),
       meta: {
@@ -169,6 +213,8 @@ export class InventoryService {
       }
     }
 
+    const evidences = await this.getEvidenceForInventory(inventoryId);
+
     return {
       inventory_id: item.club_inventory_id,
       name: item.name,
@@ -180,6 +226,8 @@ export class InventoryService {
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
+      evidences,
+      photo_url: evidences[0]?.url ?? null,
       history: await this.getInventoryHistory(item.club_inventory_id),
     };
   }
@@ -242,6 +290,8 @@ export class InventoryService {
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
+      evidences: [],
+      photo_url: null,
     };
   }
 
@@ -357,7 +407,76 @@ export class InventoryService {
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
+      evidences: await this.getEvidenceForInventory(item.club_inventory_id),
     };
+  }
+
+  async uploadEvidence(
+    inventoryId: number,
+    performedBy: string,
+    file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer) {
+      throw new AppBadRequestException(
+        ErrorCode.INVENTORY_EVIDENCE_FILE_REQUIRED,
+      );
+    }
+
+    const item = await this.prisma.club_inventory.findUnique({
+      where: { club_inventory_id: inventoryId },
+      select: { club_inventory_id: true },
+    });
+
+    if (!item) {
+      throw new AppNotFoundException(ErrorCode.INVENTORY_NOT_FOUND);
+    }
+
+    const evidenceClient = this.inventoryEvidenceClient();
+    const activeCount = await evidenceClient.count({
+      where: { inventory_id: inventoryId, active: true },
+    });
+
+    if (activeCount >= InventoryService.MAX_EVIDENCE_FILES) {
+      throw new AppBadRequestException(
+        ErrorCode.INVENTORY_EVIDENCE_LIMIT_EXCEEDED,
+      );
+    }
+
+    const extension = this.resolveFileExtension(file);
+    const objectKey = `inventory/${inventoryId}/evidence-${Date.now()}.${extension}`;
+    const uploaded = await this.fileStorage.upload(
+      StorageBucketAlias.EVIDENCE_FILES,
+      objectKey,
+      file.buffer,
+      { contentType: file.mimetype },
+    );
+
+    try {
+      const created = (await evidenceClient.create({
+        data: {
+          inventory_id: inventoryId,
+          file_url: uploaded.url,
+          file_name: file.originalname || objectKey,
+          file_type: file.mimetype,
+          file_size: file.size,
+          uploaded_by_id: performedBy,
+          active: true,
+        },
+      })) as InventoryEvidenceRow;
+
+      return this.mapEvidenceRow(created);
+    } catch (error) {
+      await this.fileStorage
+        .deleteMany(StorageBucketAlias.EVIDENCE_FILES, [uploaded.key])
+        .catch((deleteError) =>
+          this.logger.warn(
+            'Failed to cleanup inventory evidence after DB error',
+            deleteError,
+          ),
+        );
+      this.logger.error('Inventory evidence DB create failed', error);
+      throw new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED);
+    }
   }
 
   /**
@@ -387,6 +506,95 @@ export class InventoryService {
     return {
       message: 'Inventory item deleted successfully',
     };
+  }
+
+  private inventoryEvidenceClient() {
+    return (
+      this.prisma as unknown as {
+        inventory_evidence_files: {
+          count(args: unknown): Promise<number>;
+          create(args: unknown): Promise<InventoryEvidenceRow>;
+          findMany(args: unknown): Promise<InventoryEvidenceRow[]>;
+        };
+      }
+    ).inventory_evidence_files;
+  }
+
+  private async getEvidenceMap(inventoryIds: number[]) {
+    const map = new Map<number, InventoryEvidenceResponse[]>();
+    const uniqueIds = [...new Set(inventoryIds)].filter((id) => id > 0);
+    if (uniqueIds.length === 0) return map;
+
+    const rows = await this.inventoryEvidenceClient().findMany({
+      where: {
+        inventory_id: { in: uniqueIds },
+        active: true,
+      },
+      orderBy: { uploaded_at: 'asc' },
+    });
+
+    for (const row of rows) {
+      const mapped = await this.mapEvidenceRow(row);
+      const current = map.get(row.inventory_id) ?? [];
+      current.push(mapped);
+      map.set(row.inventory_id, current);
+    }
+
+    return map;
+  }
+
+  private async getEvidenceForInventory(inventoryId: number) {
+    const rows = await this.inventoryEvidenceClient().findMany({
+      where: { inventory_id: inventoryId, active: true },
+      orderBy: { uploaded_at: 'asc' },
+    });
+
+    return Promise.all(rows.map((row) => this.mapEvidenceRow(row)));
+  }
+
+  private async mapEvidenceRow(
+    row: InventoryEvidenceRow,
+  ): Promise<InventoryEvidenceResponse> {
+    return {
+      evidence_id: row.inventory_evidence_file_id,
+      inventory_id: row.inventory_id,
+      url: await this.resolveEvidenceUrl(row.file_url),
+      file_name: row.file_name,
+      file_type: row.file_type,
+      file_size: row.file_size,
+      uploaded_by_id: row.uploaded_by_id,
+      uploaded_at: row.uploaded_at,
+      active: row.active,
+    };
+  }
+
+  private async resolveEvidenceUrl(value: string) {
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.EVIDENCE_FILES,
+        value,
+        {
+          expiresInSeconds: InventoryService.EVIDENCE_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to resolve signed inventory evidence URL; returning stored value',
+        error,
+      );
+      return value;
+    }
+  }
+
+  private resolveFileExtension(file: Express.Multer.File) {
+    const mimeToExt: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+    };
+
+    return mimeToExt[file.mimetype] ?? 'jpg';
   }
 
   // ========================================

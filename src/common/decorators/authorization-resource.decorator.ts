@@ -16,6 +16,7 @@ export type AuthorizationResourceType =
   | 'inventory_instance'
   | 'inventory_item'
   | 'club_assignment'
+  | 'class_counselor_assignment'
   | 'investiture_enrollment'
   | 'monthly_report'
   | 'insurance_member'

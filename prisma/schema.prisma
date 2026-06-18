@@ -316,6 +316,7 @@ model classes {
   modified_at            DateTime                 @default(now()) @db.Timestamptz(6)
   material_url           String?                  @db.VarChar
   class_module_progress  class_module_progress[]
+  class_counselor_assignments class_counselor_assignments[]
   class_modules          class_modules[]
   class_section_progress class_section_progress[]
   certificate_bulk_import_items certificate_bulk_import_items[]
@@ -439,6 +440,35 @@ model classes_translations {
   @@index([class_id])
 }
 
+model class_counselor_assignments {
+  assignment_id           String                 @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  user_id                 String                 @db.Uuid
+  club_section_id         Int
+  class_id                Int
+  ecclesiastical_year_id  Int
+  club_role_assignment_id String?                @db.Uuid
+  responsibility_type     String                 @default("primary") @db.VarChar(20)
+  active                  Boolean                @default(true)
+  exceptional             Boolean                @default(false)
+  exception_reason        String?                @db.VarChar(500)
+  assigned_by_id          String?                @db.Uuid
+  start_date              DateTime               @default(now()) @db.Date
+  end_date                DateTime?              @db.Date
+  created_at              DateTime               @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+  users                   users                  @relation("class_counselor_assignee", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  assigned_by             users?                 @relation("class_counselor_assigned_by", fields: [assigned_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  club_sections           club_sections          @relation(fields: [club_section_id], references: [club_section_id], onDelete: Cascade, onUpdate: NoAction)
+  classes                 classes                @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction)
+  ecclesiastical_year     ecclesiastical_years   @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Cascade, onUpdate: NoAction)
+  club_role_assignments   club_role_assignments? @relation(fields: [club_role_assignment_id], references: [assignment_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([user_id, active, ecclesiastical_year_id], map: "idx_class_counselor_user_active_year")
+  @@index([club_section_id, class_id, active, ecclesiastical_year_id], map: "idx_class_counselor_section_class_active_year")
+  @@index([club_role_assignment_id], map: "idx_class_counselor_role_assignment")
+  @@index([assigned_by_id], map: "idx_class_counselor_assigned_by")
+}
+
 model club_ideals {
   club_ideal_id Int                        @id @default(autoincrement())
   name          String                     @db.VarChar(50)
@@ -464,10 +494,28 @@ model club_inventory {
   club_section_id       Int?
   club_sections         club_sections?        @relation(fields: [club_section_id], references: [club_section_id], onDelete: SetNull, onUpdate: NoAction)
   inventory_categories  inventory_categories? @relation(fields: [inventory_category_id], references: [inventory_category_id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_evidence_files inventory_evidence_files[]
   inventory_history     inventory_history[]
 
   @@index([club_section_id], map: "idx_club_inventory_club_section_id")
   @@index([inventory_category_id], map: "idx_club_inventory_inventory_category_id")
+}
+
+model inventory_evidence_files {
+  inventory_evidence_file_id Int            @id @default(autoincrement())
+  inventory_id               Int
+  file_url                   String         @db.VarChar(500)
+  file_name                  String         @db.VarChar(255)
+  file_type                  String         @db.VarChar(50)
+  file_size                  Int?
+  uploaded_by_id             String         @db.Uuid
+  uploaded_at                DateTime       @default(now()) @db.Timestamptz(6)
+  active                     Boolean        @default(true)
+  club_inventory             club_inventory @relation(fields: [inventory_id], references: [club_inventory_id], onDelete: Cascade, onUpdate: NoAction)
+  uploaded_by                users          @relation("inventory_evidence_uploaded_by", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([inventory_id], map: "idx_inventory_evidence_files_inventory")
+  @@index([uploaded_by_id], map: "idx_inventory_evidence_files_uploaded_by")
 }
 
 model inventory_history {
@@ -566,6 +614,7 @@ model club_sections {
   activity_instances       activity_instances[]
   camporee_clubs           camporee_clubs[]
   club_inventory           club_inventory[]
+  class_counselor_assignments class_counselor_assignments[]
   club_role_assignments    club_role_assignments[]
   club_types               club_types                 @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   clubs                    clubs?                     @relation(fields: [main_club_id], references: [club_id], onDelete: Cascade, onUpdate: NoAction)
@@ -664,6 +713,7 @@ model club_role_assignments {
   modified_at            DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
   club_section_id        Int?
   club_sections          club_sections?       @relation(fields: [club_section_id], references: [club_section_id], onDelete: Cascade, onUpdate: NoAction)
+  class_counselor_assignments class_counselor_assignments[]
   ecclesiastical_year    ecclesiastical_years @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Cascade, onUpdate: NoAction)
   roles                  roles                @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
   users                  users                @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
@@ -781,6 +831,7 @@ model ecclesiastical_years {
   created_at               DateTime?               @default(now()) @db.Timestamptz(6)
   modified_at              DateTime?               @default(now()) @db.Timestamptz(6)
   club_role_assignments    club_role_assignments[]
+  class_counselor_assignments class_counselor_assignments[]
   classes_available_from   classes[]                @relation("classes_available_from_year")
   classes_available_until  classes[]                @relation("classes_available_until_year")
   enrollments_relation     enrollments[]
@@ -1848,6 +1899,8 @@ model users {
   certification_section_progress    certification_section_progress[]
   class_module_progress             class_module_progress[]
   class_section_progress            class_section_progress[]
+  class_counselor_assignments       class_counselor_assignments[]      @relation("class_counselor_assignee")
+  class_counselor_assignments_assigned class_counselor_assignments[]   @relation("class_counselor_assigned_by")
   certificate_bulk_import_batches   certificate_bulk_import_batches[]        @relation("certificate_import_batch_user")
   certificate_bulk_import_files     certificate_bulk_import_files[]          @relation("certificate_import_file_uploader")
   certificate_bulk_import_events    certificate_bulk_import_item_events[]    @relation("certificate_import_event_performer")
@@ -1864,6 +1917,7 @@ model users {
   evidence_files_submitted          folders_section_records[]           @relation("evidence_files_submitted_by")
   evidence_files_validated          folders_section_records[]           @relation("evidence_files_validated_by")
   investiture_validation_history    investiture_validation_history[]
+  inventory_evidence_uploaded       inventory_evidence_files[]          @relation("inventory_evidence_uploaded_by")
   inventory_history_performed       inventory_history[]                 @relation("inventory_history_performer")
   as_legal_representative           legal_representatives[]             @relation("representative")
   legal_representative              legal_representatives?              @relation("user_legal_rep")

@@ -291,6 +291,90 @@ describe('ClubsService', () => {
     });
   });
 
+  describe('getMembers', () => {
+    it('includes the active yearly class for the requested section type', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_type_id: 2,
+      });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 2026,
+      });
+      mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
+        {
+          assignment_id: 'assignment-1',
+          user_id: 'user-1',
+          club_section_id: 7,
+          active: true,
+          start_date: new Date('2026-01-01'),
+          users: {
+            user_id: 'user-1',
+            name: 'Cley Rey',
+            paternal_last_name: 'Ramírez',
+            maternal_last_name: null,
+            user_image: null,
+            enrollments: [
+              {
+                enrollment_id: 55,
+                class_id: 6,
+                ecclesiastical_year_id: 2026,
+                investiture_status: 'IN_PROGRESS',
+                classes: {
+                  class_id: 6,
+                  name: 'Guía',
+                  club_type_id: 2,
+                },
+              },
+            ],
+          },
+          roles: {
+            role_id: 'role-member',
+            role_name: 'member',
+            role_category: 'CLUB',
+          },
+        },
+      ]);
+
+      const result = await service.getMembers(7);
+
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            users: expect.objectContaining({
+              select: expect.objectContaining({
+                enrollments: expect.objectContaining({
+                  where: expect.objectContaining({
+                    ecclesiastical_year_id: 2026,
+                    active: true,
+                    classes: { club_type_id: 2 },
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      );
+      expect(result[0]).toMatchObject({
+        current_class: {
+          class_id: 6,
+          name: 'Guía',
+          enrollment_id: 55,
+          ecclesiastical_year_id: 2026,
+        },
+        current_class_name: 'Guía',
+        current_class_id: 6,
+        enrollment_id: 55,
+        users: {
+          current_class: {
+            name: 'Guía',
+          },
+        },
+      });
+      expect(result[0].users).not.toHaveProperty('enrollments');
+    });
+  });
+
   // ========================================
   // getClubLeadership
   // ========================================

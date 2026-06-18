@@ -16,6 +16,22 @@ import {
 import { FinancePeriodService } from './finance-period.service';
 import { TranslationService } from '../common/services/translation.service';
 
+type FinanceSectionFilter =
+  | { club_section_id: { in: number[] } }
+  | { club_section_id: number };
+
+type FinancePeriodTotals = {
+  totalIncome: number;
+  totalExpense: number;
+  balance: number;
+  movementCount: number;
+};
+
+type FinancePeriod = {
+  year: number;
+  month: number;
+};
+
 @Injectable()
 export class FinancesService {
   constructor(
@@ -87,9 +103,7 @@ export class FinancesService {
     // - Admin bypass (userSectionId === null): show all sections of the club,
     //   optionally narrowed by clubTypeId filter — preserves original broad behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter:
-      | { club_section_id: { in: number[] } }
-      | { club_section_id: number };
+    let sectionFilter: FinanceSectionFilter;
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
@@ -158,9 +172,7 @@ export class FinancesService {
     // - Admin bypass (userSectionId === null): show all sections of the club,
     //   preserving original broad behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter:
-      | { club_section_id: { in: number[] } }
-      | { club_section_id: number };
+    let sectionFilter: FinanceSectionFilter;
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
@@ -332,9 +344,7 @@ export class FinancesService {
     // Build section filter.
     // - Admin bypass (userSectionId === null): show all sections — original behaviour.
     // - Regular member (userSectionId is a number): strict filter to their section only.
-    let sectionFilter:
-      | { club_section_id: { in: number[] } }
-      | { club_section_id: number };
+    let sectionFilter: FinanceSectionFilter;
 
     if (userSectionId == null) {
       const sectionIds = club.club_sections.map((s) => s.club_section_id);
@@ -343,6 +353,16 @@ export class FinancesService {
       };
     } else {
       sectionFilter = { club_section_id: userSectionId };
+    }
+
+    if (year && month) {
+      return this.getEcclesiasticalYearToDateSummary(
+        clubId,
+        year,
+        month,
+        sectionFilter,
+        userSectionId,
+      );
     }
 
     const where = {
@@ -382,6 +402,252 @@ export class FinancesService {
       balance: totalIncome - totalExpense,
       movement_count: movements.length,
     };
+  }
+
+  /**
+   * Returns the carried balance for the ecclesiastical year containing
+   * [year]/[month], from the ecclesiastical-year start through the selected
+   * month. Closed months use the immutable FinancePeriodClosing snapshot; open
+   * months are computed from live movements.
+   */
+  private async getEcclesiasticalYearToDateSummary(
+    clubId: number,
+    year: number,
+    month: number,
+    sectionFilter: FinanceSectionFilter,
+    userSectionId?: number | null,
+  ) {
+    const targetMonthStart = this.startOfMonthUtc(year, month);
+    const targetMonthEnd = this.endOfMonthUtc(year, month);
+
+    const ecclesiasticalYear = await this.prisma.ecclesiastical_years.findFirst(
+      {
+        where: {
+          start_date: { lte: targetMonthStart },
+          end_date: { gte: targetMonthStart },
+        },
+        select: {
+          start_date: true,
+          end_date: true,
+        },
+        orderBy: { start_date: 'desc' },
+      },
+    );
+
+    const rangeStart =
+      ecclesiasticalYear?.start_date ?? this.startOfMonthUtc(year, 1);
+    const rangeEnd = ecclesiasticalYear
+      ? this.minDate(targetMonthEnd, ecclesiasticalYear.end_date)
+      : targetMonthEnd;
+
+    const periods = this.buildMonthRange(rangeStart, rangeEnd);
+    const closedTotals = await this.getClosedPeriodTotals(
+      clubId,
+      periods,
+      userSectionId,
+    );
+
+    const closedKeys = new Set(
+      closedTotals.closedPeriods.map((p) => this.periodKey(p.year, p.month)),
+    );
+    const openPeriods = periods.filter(
+      (p) => !closedKeys.has(this.periodKey(p.year, p.month)),
+    );
+    const liveTotals = await this.getLivePeriodTotals(
+      openPeriods,
+      sectionFilter,
+    );
+
+    const totalIncome =
+      closedTotals.totals.totalIncome + liveTotals.totalIncome;
+    const totalExpense =
+      closedTotals.totals.totalExpense + liveTotals.totalExpense;
+
+    return {
+      club_id: clubId,
+      period: `${year}-${String(month).padStart(2, '0')}`,
+      total_income: totalIncome,
+      total_expense: totalExpense,
+      balance: totalIncome - totalExpense,
+      movement_count:
+        closedTotals.totals.movementCount + liveTotals.movementCount,
+    };
+  }
+
+  private async getClosedPeriodTotals(
+    clubId: number,
+    periods: FinancePeriod[],
+    userSectionId?: number | null,
+  ): Promise<{ totals: FinancePeriodTotals; closedPeriods: FinancePeriod[] }> {
+    const totals: FinancePeriodTotals = {
+      totalIncome: 0,
+      totalExpense: 0,
+      balance: 0,
+      movementCount: 0,
+    };
+
+    if (periods.length === 0) {
+      return { totals, closedPeriods: [] };
+    }
+
+    const closings = await this.prisma.financePeriodClosing.findMany({
+      where: {
+        club_id: clubId,
+        OR: periods.map((p) => ({ year: p.year, month: p.month })),
+      },
+      select: {
+        year: true,
+        month: true,
+        total_income: true,
+        total_expense: true,
+        balance: true,
+        movement_count: true,
+        breakdown: true,
+      },
+    });
+
+    for (const closing of closings) {
+      if (userSectionId == null) {
+        totals.totalIncome += closing.total_income;
+        totals.totalExpense += closing.total_expense;
+        totals.balance += closing.balance;
+        totals.movementCount += closing.movement_count;
+        continue;
+      }
+
+      const sectionTotals = this.getSectionTotalsFromClosing(
+        closing.breakdown,
+        userSectionId,
+      );
+      totals.totalIncome += sectionTotals.totalIncome;
+      totals.totalExpense += sectionTotals.totalExpense;
+      totals.balance += sectionTotals.balance;
+    }
+
+    return {
+      totals,
+      closedPeriods: closings.map((c) => ({ year: c.year, month: c.month })),
+    };
+  }
+
+  private async getLivePeriodTotals(
+    periods: FinancePeriod[],
+    sectionFilter: FinanceSectionFilter,
+  ): Promise<FinancePeriodTotals> {
+    const totals: FinancePeriodTotals = {
+      totalIncome: 0,
+      totalExpense: 0,
+      balance: 0,
+      movementCount: 0,
+    };
+
+    if (periods.length === 0) return totals;
+
+    const movements = await this.prisma.finances.findMany({
+      where: {
+        active: true,
+        ...sectionFilter,
+        OR: periods.map((p) => ({ year: p.year, month: p.month })),
+      },
+      include: {
+        finances_categories: { select: { type: true } },
+      },
+    });
+
+    for (const movement of movements) {
+      if (movement.finances_categories.type === 0) {
+        totals.totalIncome += movement.amount;
+      } else {
+        totals.totalExpense += movement.amount;
+      }
+    }
+
+    totals.balance = totals.totalIncome - totals.totalExpense;
+    totals.movementCount = movements.length;
+    return totals;
+  }
+
+  private getSectionTotalsFromClosing(
+    breakdown: unknown,
+    sectionId: number,
+  ): FinancePeriodTotals {
+    const empty: FinancePeriodTotals = {
+      totalIncome: 0,
+      totalExpense: 0,
+      balance: 0,
+      movementCount: 0,
+    };
+
+    if (!breakdown || typeof breakdown !== 'object') return empty;
+
+    const bySection = (breakdown as { by_section?: unknown }).by_section;
+    if (!Array.isArray(bySection)) return empty;
+
+    const section = bySection.find((item) => {
+      if (!item || typeof item !== 'object') return false;
+      return (
+        (item as { club_section_id?: unknown }).club_section_id === sectionId
+      );
+    });
+
+    if (!section || typeof section !== 'object') return empty;
+
+    const data = section as {
+      income?: unknown;
+      expense?: unknown;
+      balance?: unknown;
+    };
+
+    return {
+      totalIncome: this.toNumber(data.income),
+      totalExpense: this.toNumber(data.expense),
+      balance: this.toNumber(data.balance),
+      movementCount: 0,
+    };
+  }
+
+  private buildMonthRange(startDate: Date, endDate: Date): FinancePeriod[] {
+    const periods: FinancePeriod[] = [];
+    const cursor = this.startOfMonthUtc(
+      startDate.getUTCFullYear(),
+      startDate.getUTCMonth() + 1,
+    );
+    const end = this.startOfMonthUtc(
+      endDate.getUTCFullYear(),
+      endDate.getUTCMonth() + 1,
+    );
+
+    while (cursor <= end) {
+      periods.push({
+        year: cursor.getUTCFullYear(),
+        month: cursor.getUTCMonth() + 1,
+      });
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+
+    return periods;
+  }
+
+  private startOfMonthUtc(year: number, month: number): Date {
+    return new Date(Date.UTC(year, month - 1, 1));
+  }
+
+  private endOfMonthUtc(year: number, month: number): Date {
+    return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  }
+
+  private minDate(a: Date, b: Date): Date {
+    return a.getTime() <= b.getTime() ? a : b;
+  }
+
+  private periodKey(year: number, month: number): string {
+    return `${year}-${month}`;
+  }
+
+  private toNumber(value: unknown): number {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return Number(value) || 0;
+    return 0;
   }
 
   async findOne(financeId: number) {

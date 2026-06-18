@@ -39,6 +39,7 @@ describe('PermissionsGuard', () => {
       findFirst: jest.fn(),
       findMany: jest.fn(),
     },
+    class_counselor_assignments: { findUnique: jest.fn() },
     club_sections: { findUnique: jest.fn() },
   };
 
@@ -731,6 +732,44 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND });
+  });
+
+  it('rejects class counselor assignment mutation when actor scope is another club section', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['club_roles:assign'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return {
+          type: 'class_counselor_assignment',
+          idParam: 'assignmentId',
+        };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['club_roles:assign'],
+        clubId: 10,
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.class_counselor_assignments.findUnique.mockResolvedValue({
+      club_sections: {
+        club_section_id: 44,
+        main_club_id: 99,
+        club_type_id: 2,
+      },
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-a-actor' },
+          params: { assignmentId: '44444444-4444-4444-4444-444444444444' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
   });
 
   it('rejects investiture enrollment mutation when actor permission is scoped to another club section', async () => {

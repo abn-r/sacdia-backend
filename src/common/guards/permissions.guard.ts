@@ -205,6 +205,12 @@ export class PermissionsGuard implements CanActivate {
           resolved,
           await this.resolveClubAssignmentScope(request, resource),
         );
+      case 'class_counselor_assignment':
+        return this.validateInstanceScope(
+          userId,
+          resolved,
+          await this.resolveClassCounselorAssignmentScope(request, resource),
+        );
       case 'investiture_enrollment':
         return this.validateInstanceScope(
           userId,
@@ -1082,6 +1088,46 @@ export class PermissionsGuard implements CanActivate {
 
     if (!assignment) {
       throw new AppNotFoundException(ErrorCode.GUARD_ASSIGNMENT_NOT_FOUND);
+    }
+
+    return this.buildInstanceScopeFromSection(assignment.club_sections);
+  }
+
+  private async resolveClassCounselorAssignmentScope(
+    request: any,
+    resource: AuthorizationResourceMetadata,
+  ): Promise<ResolvedInstanceScope> {
+    const assignmentId = String(
+      this.getRequestValue(
+        request,
+        'param',
+        resource.idParam ?? 'assignmentId',
+      ),
+    );
+
+    if (!assignmentId) {
+      throw new AppForbiddenException(ErrorCode.GUARD_ASSIGNMENT_SCOPE_INVALID);
+    }
+
+    const assignment = await (
+      this.prisma as any
+    ).class_counselor_assignments.findUnique({
+      where: { assignment_id: assignmentId },
+      select: {
+        club_sections: {
+          select: {
+            club_section_id: true,
+            main_club_id: true,
+            club_type_id: true,
+          },
+        },
+      },
+    });
+
+    if (!assignment) {
+      throw new AppNotFoundException(
+        ErrorCode.CLASS_COUNSELOR_ASSIGNMENT_NOT_FOUND,
+      );
     }
 
     return this.buildInstanceScopeFromSection(assignment.club_sections);

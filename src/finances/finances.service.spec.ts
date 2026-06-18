@@ -26,6 +26,12 @@ describe('FinancesService', () => {
     club_sections: {
       findUnique: jest.fn(),
     },
+    ecclesiastical_years: {
+      findFirst: jest.fn(),
+    },
+    financePeriodClosing: {
+      findMany: jest.fn(),
+    },
   };
 
   const mockFinancePeriodService = {
@@ -141,6 +147,109 @@ describe('FinancesService', () => {
       expect(result.total_income).toBe(1500);
       expect(result.total_expense).toBe(300);
       expect(result.balance).toBe(1200);
+    });
+
+    it('should return carried ecclesiastical-year balance through selected month', async () => {
+      const mockClub = {
+        club_id: 1,
+        club_sections: [{ club_section_id: 10 }],
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        start_date: new Date('2025-10-01T00:00:00.000Z'),
+        end_date: new Date('2026-09-30T00:00:00.000Z'),
+      });
+      mockPrismaService.financePeriodClosing.findMany.mockResolvedValue([
+        {
+          year: 2026,
+          month: 1,
+          total_income: 100,
+          total_expense: 0,
+          balance: 100,
+          movement_count: 1,
+          breakdown: {},
+        },
+        {
+          year: 2026,
+          month: 2,
+          total_income: 0,
+          total_expense: 500,
+          balance: -500,
+          movement_count: 1,
+          breakdown: {},
+        },
+      ]);
+      mockPrismaService.finances.findMany.mockResolvedValue([
+        { amount: 1000, finances_categories: { type: 0 } },
+        { amount: 1000, finances_categories: { type: 0 } },
+      ]);
+
+      const result = await service.getSummary(1, 2026, 4);
+
+      expect(result.total_income).toBe(2100);
+      expect(result.total_expense).toBe(500);
+      expect(result.balance).toBe(1600);
+      expect(
+        mockPrismaService.financePeriodClosing.findMany,
+      ).toHaveBeenCalled();
+      expect(mockPrismaService.finances.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { year: 2025, month: 10 },
+              { year: 2026, month: 3 },
+              { year: 2026, month: 4 },
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('should use closed-period section breakdown when summary is section-scoped', async () => {
+      const mockClub = {
+        club_id: 1,
+        club_sections: [{ club_section_id: 10 }, { club_section_id: 11 }],
+      };
+
+      mockPrismaService.clubs.findUnique.mockResolvedValue(mockClub);
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        start_date: new Date('2026-01-01T00:00:00.000Z'),
+        end_date: new Date('2026-12-31T00:00:00.000Z'),
+      });
+      mockPrismaService.financePeriodClosing.findMany.mockResolvedValue([
+        {
+          year: 2026,
+          month: 1,
+          total_income: 999,
+          total_expense: 999,
+          balance: 0,
+          movement_count: 10,
+          breakdown: {
+            by_section: [
+              {
+                club_section_id: 10,
+                income: 300,
+                expense: 100,
+                balance: 200,
+              },
+              {
+                club_section_id: 11,
+                income: 200,
+                expense: 50,
+                balance: 150,
+              },
+            ],
+          },
+        },
+      ]);
+      mockPrismaService.finances.findMany.mockResolvedValue([]);
+
+      const result = await service.getSummary(1, 2026, 1, 10);
+
+      expect(result.total_income).toBe(300);
+      expect(result.total_expense).toBe(100);
+      expect(result.balance).toBe(200);
     });
   });
 

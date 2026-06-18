@@ -10,6 +10,8 @@ import {
   ParseIntPipe,
   UseGuards,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,7 +20,11 @@ import {
   ApiBearerAuth,
   ApiQuery,
   ApiParam,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import 'multer';
 import { InventoryService } from './inventory.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
@@ -27,6 +33,10 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
+import {
+  ALLOWED_MIME_TYPES,
+  FileValidationPipe,
+} from '../common/pipes/file-validation.pipe';
 
 @ApiTags('inventory')
 @ApiBearerAuth()
@@ -217,6 +227,63 @@ export class InventoryController {
     @Req() req: any,
   ) {
     const data = await this.inventoryService.update(id, dto, req.user.sub);
+    return {
+      status: 'success',
+      data,
+    };
+  }
+
+  @Post('inventory/:id/evidences')
+  @RequirePermissions('inventory:update')
+  @AuthorizationResource({ type: 'inventory_item', idParam: 'id' })
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Subir foto de evidencia de un item de inventario',
+    description:
+      'Agrega una foto de evidencia al item. Máximo 3 fotos activas por item.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID del item de inventario',
+    example: 1,
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Foto del artículo (JPEG, PNG o WebP, máximo 5MB)',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Evidencia subida exitosamente' })
+  @ApiResponse({
+    status: 400,
+    description: 'Archivo inválido o límite excedido',
+  })
+  @ApiResponse({ status: 404, description: 'Item no encontrado' })
+  async uploadEvidence(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES,
+      }),
+    )
+    file: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    const data = await this.inventoryService.uploadEvidence(
+      id,
+      req.user.sub,
+      file,
+    );
     return {
       status: 'success',
       data,

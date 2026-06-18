@@ -206,7 +206,8 @@ export class FinancesController {
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Resumen financiero del club',
-    description: 'Obtiene el resumen de ingresos, egresos y balance',
+    description:
+      'Obtiene ingresos, egresos y balance. Con year + month, balance es acumulado del año eclesiástico hasta ese mes.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiQuery({ name: 'year', required: false, type: Number })
