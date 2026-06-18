@@ -5,7 +5,8 @@
  * Do NOT use raw strings for role comparisons; import from here instead.
  *
  * Global roles (role_category = 'GLOBAL'):
- *   super-admin, admin, assistant-admin, coordinator, pastor, user
+ *   super-admin, admin, assistant-admin, coordinator, zone-coordinator,
+ *   general-coordinator, pastor, user
  *
  * Club roles (role_category = 'CLUB'):
  *   director, deputy-director, secretary, treasurer, counselor, instructor, member
@@ -16,6 +17,8 @@ export const GLOBAL_ROLE = {
   ADMIN: 'admin',
   ASSISTANT_ADMIN: 'assistant-admin',
   COORDINATOR: 'coordinator',
+  ZONE_COORDINATOR: 'zone-coordinator',
+  GENERAL_COORDINATOR: 'general-coordinator',
   PASTOR: 'pastor',
   USER: 'user',
 } as const;

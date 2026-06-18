@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CommonModule } from '../common/common.module';
+import { CoordinationModule } from '../coordination/coordination.module';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { JobsOverviewService } from './jobs-overview.service';
@@ -29,6 +30,7 @@ const redisAvailable = isRedisConfigured();
   imports: [
     PrismaModule,
     CommonModule,
+    CoordinationModule,
     ...(redisAvailable
       ? [
           BullModule.registerQueue(

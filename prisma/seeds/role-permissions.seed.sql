@@ -1536,7 +1536,12 @@ WHERE r.role_name = 'assistant-lf'
     -- director-dia via the JOIN-based copy blocks below.
     -- admin and super-admin pick this up automatically via wildcard grants.
     'users:create',
-    'users:bulk_create'
+    'users:bulk_create',
+
+    -- ===== Coordination administration =====
+    -- Field-level and higher institutional roles can administer zones and
+    -- coordinator assignments. Coordinators themselves do not manage this panel.
+    'coordination:manage'
   )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 

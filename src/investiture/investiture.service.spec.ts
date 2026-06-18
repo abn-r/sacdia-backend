@@ -9,6 +9,7 @@ import { InvestitureService } from './investiture.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import {
   ValidateEnrollmentDto,
@@ -71,6 +72,12 @@ describe('InvestitureService', () => {
 
   const mockAuthorizationContext = {
     hasAnyGlobalRole: jest.fn(),
+    resolveUserAuthorization: jest.fn(),
+    canManageClub: jest.fn(),
+  };
+
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
   };
 
   const mockNotificationsService = {
@@ -108,6 +115,25 @@ describe('InvestitureService', () => {
     jest.clearAllMocks();
 
     txMock = createTxMock();
+
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+      authorization: {
+        grants: {
+          global_roles: [{ role_name: 'admin' }],
+        },
+        effective: { scope: { club: null } },
+      },
+    });
+    mockAuthorizationContext.canManageClub.mockResolvedValue(true);
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
+      club_sections: {
+        club_section_id: 9,
+        main_club_id: 3,
+      },
+    });
 
     // Default: interactive $transaction calls the callback with txMock
     // Array form: resolve each element (Prisma query builders behave like thenables)
@@ -147,6 +173,10 @@ describe('InvestitureService', () => {
               .fn()
               .mockResolvedValue({ eventLogId: 1, queued: true }),
           },
+        },
+        {
+          provide: CoordinationService,
+          useValue: mockCoordinationService,
         },
       ],
     }).compile();
@@ -358,6 +388,8 @@ describe('InvestitureService', () => {
         enrollment_id: 1,
         investiture_status: 'SUBMITTED_FOR_VALIDATION',
         user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
         users: { local_field_id: 3 },
       });
       txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
@@ -411,6 +443,8 @@ describe('InvestitureService', () => {
         enrollment_id: 1,
         investiture_status: 'CLUB_APPROVED',
         user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
         users: { local_field_id: 3 },
       });
       txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
@@ -428,6 +462,69 @@ describe('InvestitureService', () => {
 
       expect(result.investiture_status).toBe('COORDINATOR_APPROVED');
       expect(result.approved_by).toBe('coordinator-456');
+    });
+
+    it('allows coordinator approval only inside assigned club section scope', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+        authorization: {
+          grants: {
+            global_roles: [{ role_name: 'coordinator' }],
+          },
+          effective: { scope: { club: null } },
+        },
+      });
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [9],
+      );
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'CLUB_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
+        users: { local_field_id: 3 },
+      });
+      txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
+      txMock.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'COORDINATOR_APPROVED',
+      });
+      txMock.investiture_validation_history.create.mockResolvedValue({});
+
+      await expect(
+        service.coordinatorApprove(1, 'coordinator-456', dto),
+      ).resolves.toMatchObject({
+        investiture_status: 'COORDINATOR_APPROVED',
+      });
+    });
+
+    it('blocks coordinator approval outside assigned club section scope', async () => {
+      mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+        authorization: {
+          grants: {
+            global_roles: [{ role_name: 'coordinator' }],
+          },
+          effective: { scope: { club: null } },
+        },
+      });
+      mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+        [99],
+      );
+      mockPrismaService.enrollments.findFirst.mockResolvedValue({
+        enrollment_id: 1,
+        investiture_status: 'CLUB_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
+        users: { local_field_id: 3 },
+      });
+
+      await expect(
+        service.coordinatorApprove(1, 'coordinator-456', dto),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_ACCESS_DENIED,
+      });
+      expect(txMock.enrollments.updateMany).not.toHaveBeenCalled();
     });
 
     it('TC12 - error: wrong state (SUBMITTED_FOR_VALIDATION) -> ConflictException', async () => {
@@ -458,6 +555,8 @@ describe('InvestitureService', () => {
         enrollment_id: 1,
         investiture_status: 'COORDINATOR_APPROVED',
         user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
         users: { local_field_id: 3 },
       });
       txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
@@ -500,6 +599,9 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
       });
       txMock.enrollments.update.mockResolvedValue({
         enrollment_id: 1,
@@ -518,6 +620,9 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'CLUB_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
       });
       txMock.enrollments.update.mockResolvedValue({
         enrollment_id: 1,
@@ -535,6 +640,9 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'COORDINATOR_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
       });
       txMock.enrollments.update.mockResolvedValue({
         enrollment_id: 1,
@@ -552,6 +660,9 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'FIELD_APPROVED',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
       });
       txMock.enrollments.update.mockResolvedValue({
         enrollment_id: 1,
@@ -599,6 +710,9 @@ describe('InvestitureService', () => {
       mockPrismaService.enrollments.findFirst.mockResolvedValue({
         enrollment_id: 1,
         investiture_status: 'SUBMITTED_FOR_VALIDATION',
+        user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
       });
       txMock.enrollments.update.mockResolvedValue({
         enrollment_id: 1,
@@ -1322,6 +1436,8 @@ describe('InvestitureService', () => {
         enrollment_id: 1,
         investiture_status: 'SUBMITTED_FOR_VALIDATION',
         user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
         users: { local_field_id: 3 },
       });
       txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
@@ -1339,6 +1455,8 @@ describe('InvestitureService', () => {
         enrollment_id: 1,
         investiture_status: 'CLUB_APPROVED',
         user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
         users: { local_field_id: 3 },
       });
       txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });
@@ -1359,6 +1477,8 @@ describe('InvestitureService', () => {
         enrollment_id: 1,
         investiture_status: 'COORDINATOR_APPROVED',
         user_id: 'user-abc',
+        ecclesiastical_year_id: 2026,
+        classes: { club_type_id: 2 },
         users: { local_field_id: 3 },
       });
       txMock.enrollments.updateMany.mockResolvedValue({ count: 1 });

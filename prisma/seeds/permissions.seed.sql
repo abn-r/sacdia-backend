@@ -49,6 +49,16 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
+-- Coordination
+-- ============================
+INSERT INTO permissions (permission_name, description, active) VALUES
+  ('coordination:manage', 'Manage coordination zones and coordinator assignments', true)
+ON CONFLICT (permission_name) DO UPDATE SET
+  description = EXCLUDED.description,
+  active = EXCLUDED.active,
+  modified_at = now();
+
+-- ============================
 -- Users
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES

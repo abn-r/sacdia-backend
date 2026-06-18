@@ -5,8 +5,18 @@ import { StorageBucketAlias } from '../common/services/file-storage.service';
 describe('EvidenceReviewService', () => {
   const mockPrisma = {
     folders_section_records: { findMany: jest.fn() },
-    class_section_progress: { findMany: jest.fn(), findUnique: jest.fn() },
-    users_honors: { findMany: jest.fn(), findUnique: jest.fn() },
+    class_section_progress: {
+      count: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    users_honors: {
+      count: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+    },
     honor_requirements: { findMany: jest.fn() },
     user_honor_requirement_progress: { findMany: jest.fn() },
     validation_logs: { findMany: jest.fn() },
@@ -17,6 +27,14 @@ describe('EvidenceReviewService', () => {
     reject: jest.fn(),
   };
 
+  const mockAuthorizationContext = {
+    resolveUserAuthorization: jest.fn(),
+  };
+
+  const mockCoordinationService = {
+    getEffectiveCoordinatorSectionIds: jest.fn(),
+  };
+
   const mockFileStorage = {
     getSignedDownloadUrl: jest.fn(),
   };
@@ -24,14 +42,28 @@ describe('EvidenceReviewService', () => {
   const service = new EvidenceReviewService(
     mockPrisma as any,
     mockHonorWorkflow as any,
+    mockAuthorizationContext as any,
+    mockCoordinationService as any,
     mockFileStorage as any,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+      authorization: {
+        grants: { global_roles: [{ role_name: 'admin' }] },
+      },
+    });
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
+    mockPrisma.class_section_progress.count.mockResolvedValue(1);
     mockPrisma.class_section_progress.findMany.mockResolvedValue([]);
+    mockPrisma.class_section_progress.findFirst.mockResolvedValue(null);
     mockPrisma.class_section_progress.findUnique.mockResolvedValue(null);
+    mockPrisma.users_honors.count.mockResolvedValue(1);
     mockPrisma.users_honors.findMany.mockResolvedValue([]);
+    mockPrisma.users_honors.findFirst.mockResolvedValue(null);
     mockPrisma.users_honors.findUnique.mockResolvedValue(null);
     mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
     mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
@@ -43,7 +75,7 @@ describe('EvidenceReviewService', () => {
   });
 
   it('lists pending class and honor evidence without querying legacy folder records', async () => {
-    await service.getPending();
+    await service.getPending('admin-user');
 
     expect(mockPrisma.folders_section_records.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.class_section_progress.findMany).toHaveBeenCalled();
@@ -57,7 +89,9 @@ describe('EvidenceReviewService', () => {
   });
 
   it('rejects folder as an evidence-review type', async () => {
-    await expect(service.getDetail('folder' as any, 1)).rejects.toMatchObject({
+    await expect(
+      service.getDetail('admin-user', 'folder' as any, 1),
+    ).rejects.toMatchObject({
       code: ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
     });
   });
@@ -67,7 +101,7 @@ describe('EvidenceReviewService', () => {
     const uploadedAt = new Date('2026-06-01T10:05:00.000Z');
     const fileUrl = 'https://priv.r2.dev/class-evidence/img.jpg';
 
-    mockPrisma.class_section_progress.findUnique.mockResolvedValue({
+    mockPrisma.class_section_progress.findFirst.mockResolvedValue({
       section_progress_id: 42,
       status: 'SUBMITTED',
       user_id: 'user-1',
@@ -88,7 +122,7 @@ describe('EvidenceReviewService', () => {
       ],
     });
 
-    const detail = await service.getDetail('class', 42);
+    const detail = await service.getDetail('admin-user', 'class', 42);
 
     expect(detail.files).toEqual([
       expect.objectContaining({
@@ -108,7 +142,7 @@ describe('EvidenceReviewService', () => {
     const uploadedAt = new Date('2026-06-01T10:05:00.000Z');
     const completedAt = new Date('2026-06-01T10:10:00.000Z');
 
-    mockPrisma.users_honors.findUnique.mockResolvedValue({
+    mockPrisma.users_honors.findFirst.mockResolvedValue({
       user_honor_id: 10,
       user_id: 'user-1',
       honor_id: 20,
@@ -163,7 +197,7 @@ describe('EvidenceReviewService', () => {
       },
     ]);
 
-    const detail = await service.getDetail('honor', 10);
+    const detail = await service.getDetail('admin-user', 'honor', 10);
 
     expect(detail.file_count).toBe(4);
     expect(detail.files).toHaveLength(4);
@@ -207,12 +241,11 @@ describe('EvidenceReviewService', () => {
       'https://priv.r2.dev/users-honors-cert/certificado.pdf';
     const documentUrl = 'https://priv.r2.dev/users-honors/formato.pdf';
     const imageUrl = 'https://priv.r2.dev/users-honors/foto.png';
-    const generalEvidenceUrl =
-      'https://priv.r2.dev/evidence-files/general.pdf';
+    const generalEvidenceUrl = 'https://priv.r2.dev/evidence-files/general.pdf';
     const requirementEvidenceUrl =
       'https://priv.r2.dev/evidence-files/requisito.jpg';
 
-    mockPrisma.users_honors.findUnique.mockResolvedValue({
+    mockPrisma.users_honors.findFirst.mockResolvedValue({
       user_honor_id: 12,
       user_id: 'user-1',
       honor_id: 22,
@@ -267,7 +300,7 @@ describe('EvidenceReviewService', () => {
       },
     ]);
 
-    const detail = await service.getDetail('honor', 12);
+    const detail = await service.getDetail('admin-user', 'honor', 12);
 
     expect(detail.honor_review_packet?.completed_format_file).toMatchObject({
       file_url: 'signed://users-honors/formato.pdf',
@@ -319,7 +352,7 @@ describe('EvidenceReviewService', () => {
   it('keeps legacy honor packets reviewable when completion mode is missing', async () => {
     const submittedAt = new Date('2026-06-01T10:00:00.000Z');
 
-    mockPrisma.users_honors.findUnique.mockResolvedValue({
+    mockPrisma.users_honors.findFirst.mockResolvedValue({
       user_honor_id: 11,
       user_id: 'user-1',
       honor_id: 21,
@@ -338,7 +371,7 @@ describe('EvidenceReviewService', () => {
       evidence_files: [],
     });
 
-    const detail = await service.getDetail('honor', 11);
+    const detail = await service.getDetail('admin-user', 'honor', 11);
 
     expect(detail.honor_review_packet).toMatchObject({
       completion_mode: 'UNDECIDED',
@@ -357,6 +390,8 @@ describe('EvidenceReviewService', () => {
     const serviceWithWorkflow = new EvidenceReviewService(
       mockPrisma as any,
       workflow as any,
+      mockAuthorizationContext as any,
+      mockCoordinationService as any,
       mockFileStorage as any,
     );
 
@@ -382,6 +417,8 @@ describe('EvidenceReviewService', () => {
     const serviceWithWorkflow = new EvidenceReviewService(
       mockPrisma as any,
       workflow as any,
+      mockAuthorizationContext as any,
+      mockCoordinationService as any,
       mockFileStorage as any,
     );
 
