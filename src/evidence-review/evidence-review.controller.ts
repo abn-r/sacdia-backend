@@ -71,11 +71,17 @@ export class EvidenceReviewController {
   })
   @ApiResponse({ status: 403, description: 'Sin rol de admin o coordinador' })
   async getPending(
+    @Request() req: { user: { sub: string } },
     @Query('type') type?: EvidenceType,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    const data = await this.evidenceReviewService.getPending(type, page, limit);
+    const data = await this.evidenceReviewService.getPending(
+      req.user.sub,
+      type,
+      page,
+      limit,
+    );
     return { status: 'success', data };
   }
 
@@ -171,8 +177,13 @@ export class EvidenceReviewController {
   async getDetail(
     @Param('type') type: EvidenceType,
     @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: { sub: string } },
   ) {
-    const data = await this.evidenceReviewService.getDetail(type, id);
+    const data = await this.evidenceReviewService.getDetail(
+      req.user.sub,
+      type,
+      id,
+    );
     return { status: 'success', data };
   }
 
@@ -254,8 +265,13 @@ export class EvidenceReviewController {
   async getHistory(
     @Param('type') type: EvidenceType,
     @Param('id', ParseIntPipe) id: number,
+    @Request() req: { user: { sub: string } },
   ) {
-    const data = await this.evidenceReviewService.getHistory(type, id);
+    const data = await this.evidenceReviewService.getHistory(
+      req.user.sub,
+      type,
+      id,
+    );
     return { status: 'success', data };
   }
 }

@@ -512,6 +512,7 @@ model club_types {
   enrollment_ranking_weights EnrollmentRankingWeight[]
   translations               club_types_translations[]
   material_products          MaterialProduct[]
+  coordinator_assignments    coordinator_assignments[]
 }
 
 model clubs {
@@ -581,8 +582,71 @@ model club_sections {
   enrollment_rankings      EnrollmentRanking[]
   section_rankings         SectionRanking[]
   material_orders          MaterialOrder[]
+  coordinator_assignments  coordinator_assignments[]
 
   @@unique([main_club_id, club_type_id])
+}
+
+model coordination_zones {
+  zone_id                 Int                           @id @default(autoincrement())
+  local_field_id          Int
+  name                    String                        @db.VarChar(100)
+  description             String?
+  active                  Boolean                       @default(true)
+  created_at              DateTime                      @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+  local_fields            local_fields                  @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+  districts               coordination_zone_districts[]
+  coordinator_assignments coordinator_assignments[]
+
+  @@unique([local_field_id, name], map: "uq_coordination_zones_lf_name")
+  @@index([local_field_id, active], map: "idx_coordination_zones_lf_active")
+  @@map("coordination_zones")
+}
+
+model coordination_zone_districts {
+  zone_district_id  Int                @id @default(autoincrement())
+  zone_id           Int
+  districlub_type_id Int
+  active            Boolean            @default(true)
+  created_at        DateTime           @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  zone              coordination_zones @relation(fields: [zone_id], references: [zone_id], onDelete: Cascade, onUpdate: NoAction)
+  districts         districts          @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([zone_id, districlub_type_id], map: "uq_coordination_zone_district_pair")
+  @@index([districlub_type_id, active], map: "idx_coordination_zone_district_active")
+  @@index([zone_id, active], map: "idx_coordination_zone_district_zone_active")
+  @@map("coordination_zone_districts")
+}
+
+model coordinator_assignments {
+  assignment_id       String                       @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  user_id             String                       @db.Uuid
+  local_field_id      Int
+  assignment_type     coordinator_assignment_type
+  zone_id             Int?
+  club_type_id        Int?
+  club_section_id     Int?
+  active              Boolean                      @default(true)
+  start_date          DateTime                     @default(now()) @db.Date
+  end_date            DateTime?                    @db.Date
+  created_by          String?                      @db.Uuid
+  created_at          DateTime                     @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+  users               users                        @relation("coordinator_assignment_user", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  creator             users?                       @relation("coordinator_assignment_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  local_fields        local_fields                 @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
+  coordination_zones  coordination_zones?          @relation(fields: [zone_id], references: [zone_id], onDelete: Cascade, onUpdate: NoAction)
+  club_types          club_types?                  @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
+  club_sections       club_sections?               @relation(fields: [club_section_id], references: [club_section_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, active], map: "idx_coordinator_assignments_user_active")
+  @@index([local_field_id, active], map: "idx_coordinator_assignments_lf_active")
+  @@index([assignment_type, active], map: "idx_coordinator_assignments_type_active")
+  @@index([zone_id, club_type_id, active], map: "idx_coordinator_assignments_zone_type_active")
+  @@index([club_section_id, active], map: "idx_coordinator_assignments_section_active")
+  @@map("coordinator_assignments")
 }
 
 model club_role_assignments {
@@ -691,6 +755,7 @@ model districts {
   church_district_history      church_district_history[]      @relation("church_district_history_district")
   club_institutional_history   club_institutional_history[]   @relation("club_institutional_history_district")
   hierarchy_contexts           hierarchy_contexts[]           @relation("hierarchy_contexts_district")
+  coordination_zone_districts  coordination_zone_districts[]
   translations       districts_translations[]
 }
 
@@ -1293,6 +1358,8 @@ model local_fields {
   material_config              MaterialConfig?
   camporee_event_templates     camporee_event_templates[]
   camporee_venues              camporee_venues[]
+  coordination_zones           coordination_zones[]
+  coordinator_assignments      coordinator_assignments[]
 }
 
 model local_fields_translations {
@@ -1870,6 +1937,8 @@ model users {
   material_comprobantes_uploaded    MaterialComprobante[]       @relation("material_comprobante_uploader")
   material_comprobantes_validated   MaterialComprobante[]       @relation("material_comprobante_validator")
   material_config_updated                 MaterialConfig[]              @relation("material_config_updater")
+  coordinator_assignments           coordinator_assignments[]           @relation("coordinator_assignment_user")
+  coordinator_assignments_created   coordinator_assignments[]           @relation("coordinator_assignment_creator")
   // camporee events relations
   camporee_event_templates_created        camporee_event_templates[]    @relation("camporee_event_template_creator")
   camporee_event_templates_modified       camporee_event_templates[]    @relation("camporee_event_template_modifier")
@@ -2525,6 +2594,12 @@ enum user_approval_status {
   pending
   approved
   rejected
+}
+
+enum coordinator_assignment_type {
+  GENERAL
+  ZONE
+  SECTION
 }
 
 enum investiture_status_enum {

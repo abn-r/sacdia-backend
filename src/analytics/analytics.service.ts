@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  Prisma,
   investiture_status_enum,
   investiture_action_enum,
 } from '@prisma/client';
@@ -78,15 +79,19 @@ export class AnalyticsService {
   // PUBLIC API
   // ──────────────────────────────────────────────────────────────────────────
 
-  async getSlaDashboard(localFieldId?: number): Promise<SlaDashboardDto> {
-    const cacheKey = `sla:${localFieldId ?? 'global'}`;
+  async getSlaDashboard(
+    scopedClubSectionIds?: number[],
+  ): Promise<SlaDashboardDto> {
+    const cacheKey = scopedClubSectionIds
+      ? `sla:sections:${scopedClubSectionIds.sort((a, b) => a - b).join(',')}`
+      : 'sla:global';
 
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       return { ...cached, cached: true };
     }
 
-    const result = await this.computeSlaDashboard(localFieldId);
+    const result = await this.computeSlaDashboard(scopedClubSectionIds);
     this.cache.set(cacheKey, {
       data: result,
       expiresAt: Date.now() + this.CACHE_TTL_MS,
@@ -100,31 +105,13 @@ export class AnalyticsService {
   // ──────────────────────────────────────────────────────────────────────────
 
   private async computeSlaDashboard(
-    localFieldId?: number,
+    scopedClubSectionIds?: number[],
   ): Promise<SlaDashboardDto> {
     const now = new Date();
     // 90-day window for approval rate and overdue detection
     const cutoff90d = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     // 12-week window for throughput chart (week 0 = current incomplete week)
     const cutoff12w = new Date(now.getTime() - 84 * 24 * 60 * 60 * 1000);
-
-    // ── Scope filter for coordinator (optional) ───────────────────────────
-    // enrollments → users → club_section → club → local_field
-    // We filter at the enrollment level by joining through users clubs if localFieldId provided.
-    // Simpler approach: filter clubs by local_field_id, then filter club_section_ids from those clubs.
-    let scopedClubSectionIds: number[] | undefined;
-    if (localFieldId !== undefined) {
-      const clubSections = await this.prisma.club_sections.findMany({
-        where: {
-          clubs: {
-            local_field_id: localFieldId,
-          },
-          active: true,
-        },
-        select: { club_section_id: true },
-      });
-      scopedClubSectionIds = clubSections.map((c) => c.club_section_id);
-    }
 
     // Build enrollment filter
     const enrollmentUserFilter = scopedClubSectionIds
@@ -206,48 +193,45 @@ export class AnalyticsService {
       }),
 
       // 3a. Camporee clubs pending approval
-      this.prisma.camporee_clubs.count({
-        where: {
-          status: 'registered',
-          active: true,
-          ...(localFieldId ? { local_field_id: localFieldId } : {}),
-        },
-      }),
+      scopedClubSectionIds
+        ? Promise.resolve(0)
+        : this.prisma.camporee_clubs.count({
+            where: {
+              status: 'registered',
+              active: true,
+            },
+          }),
 
       // 3b. Camporee members pending approval
-      this.prisma.camporee_members.count({
-        where: {
-          status: 'registered',
-          active: true,
-          ...(localFieldId ? { local_field_id: localFieldId } : {}),
-        },
-      }),
+      scopedClubSectionIds
+        ? Promise.resolve(0)
+        : this.prisma.camporee_members.count({
+            where: {
+              status: 'registered',
+              active: true,
+            },
+          }),
 
       // 3c. Camporee payments pending approval
-      this.prisma.camporee_payments.count({
-        where: {
-          status: 'registered',
-          ...(localFieldId
-            ? {
-                camporee_member: {
-                  local_field_id: localFieldId,
-                },
-              }
-            : {}),
-        },
-      }),
+      scopedClubSectionIds
+        ? Promise.resolve(0)
+        : this.prisma.camporee_payments.count({
+            where: {
+              status: 'registered',
+            },
+          }),
 
       // 4. Timing: avg days per stage using raw SQL for date math
-      this.computeTimingMetrics(localFieldId, scopedClubSectionIds),
+      this.computeTimingMetrics(scopedClubSectionIds),
 
       // 5. Throughput: 12-week approved/rejected counts
-      this.computeThroughput(cutoff12w, localFieldId, scopedClubSectionIds),
+      this.computeThroughput(cutoff12w, scopedClubSectionIds),
 
       // 6. Approval rate last 90 days
-      this.computeApprovalRate(cutoff90d, localFieldId, scopedClubSectionIds),
+      this.computeApprovalRate(cutoff90d, scopedClubSectionIds),
 
       // 7. Overdue: enrollments submitted >30 days ago still not field_approved
-      this.countOverdue(localFieldId, scopedClubSectionIds),
+      this.countOverdue(scopedClubSectionIds),
     ]);
 
     // ── Build pipeline array ──────────────────────────────────────────────
@@ -299,11 +283,18 @@ export class AnalyticsService {
   // TIMING METRICS (raw SQL for date arithmetic)
   // ──────────────────────────────────────────────────────────────────────────
 
-  private async computeTimingMetrics(
-    localFieldId?: number,
-    _scopedClubSectionIds?: number[],
-  ) {
+  private async computeTimingMetrics(scopedClubSectionIds?: number[]) {
     try {
+      if (scopedClubSectionIds?.length === 0) {
+        return {
+          avg_days_to_submit: null,
+          avg_days_club_approval: null,
+          avg_days_coordinator_approval: null,
+          avg_days_field_approval: null,
+          avg_days_total: null,
+        };
+      }
+
       // We use the investiture_validation_history table to compute stage durations.
       // LAG() window function measures days between consecutive stage transitions.
       // avg_days_total uses MIN/MAX per enrollment that reached INVESTIDO — not the last stage gap.
@@ -321,8 +312,8 @@ export class AnalyticsService {
       const toNum = (v: string | null) =>
         v != null ? Math.round(parseFloat(v) * 10) / 10 : null;
 
-      if (localFieldId !== undefined) {
-        // Parameterized path with localFieldId
+      if (scopedClubSectionIds !== undefined) {
+        const scopedSectionSql = Prisma.join(scopedClubSectionIds);
         const [stageRows, totalRows] = await Promise.all([
           this.prisma.$queryRaw<StageRow[]>`
             WITH enrollment_actions AS (
@@ -336,9 +327,8 @@ export class AnalyticsService {
               WHERE e.active = true
                 AND e.user_id IN (
                   SELECT DISTINCT cra.user_id FROM club_role_assignments cra
-                  JOIN club_sections cs ON cs.club_section_id = cra.club_section_id
-                  JOIN clubs c ON c.club_id = cs.main_club_id
-                  WHERE c.local_field_id = ${localFieldId} AND cra.active = true
+                  WHERE cra.club_section_id IN (${scopedSectionSql})
+                    AND cra.active = true
                 )
             )
             SELECT
@@ -368,9 +358,8 @@ export class AnalyticsService {
                 AND e.active = true
                 AND e.user_id IN (
                   SELECT DISTINCT cra.user_id FROM club_role_assignments cra
-                  JOIN club_sections cs ON cs.club_section_id = cra.club_section_id
-                  JOIN clubs c ON c.club_id = cs.main_club_id
-                  WHERE c.local_field_id = ${localFieldId} AND cra.active = true
+                  WHERE cra.club_section_id IN (${scopedSectionSql})
+                    AND cra.active = true
                 )
               GROUP BY h.enrollment_id
             )
@@ -468,10 +457,13 @@ export class AnalyticsService {
 
   private async computeThroughput(
     since: Date,
-    localFieldId?: number,
-    _scopedClubSectionIds?: number[],
+    scopedClubSectionIds?: number[],
   ) {
     try {
+      if (scopedClubSectionIds?.length === 0) {
+        return [];
+      }
+
       type ThroughputRow = {
         week: string;
         approved: string;
@@ -480,7 +472,8 @@ export class AnalyticsService {
 
       let rows: ThroughputRow[];
 
-      if (localFieldId !== undefined) {
+      if (scopedClubSectionIds !== undefined) {
+        const scopedSectionSql = Prisma.join(scopedClubSectionIds);
         rows = await this.prisma.$queryRaw<ThroughputRow[]>`
           SELECT
             TO_CHAR(DATE_TRUNC('week', h.created_at), 'IYYY-"W"IW') AS week,
@@ -492,9 +485,8 @@ export class AnalyticsService {
             AND h.enrollment_id IN (
               SELECT e.enrollment_id FROM enrollments e
               JOIN club_role_assignments cra ON cra.user_id = e.user_id
-              JOIN club_sections cs ON cs.club_section_id = cra.club_section_id
-              JOIN clubs c ON c.club_id = cs.main_club_id
-              WHERE c.local_field_id = ${localFieldId} AND cra.active = true
+              WHERE cra.club_section_id IN (${scopedSectionSql})
+                AND cra.active = true
             )
           GROUP BY DATE_TRUNC('week', h.created_at)
           ORDER BY DATE_TRUNC('week', h.created_at) ASC
@@ -530,25 +522,26 @@ export class AnalyticsService {
 
   private async computeApprovalRate(
     since: Date,
-    localFieldId?: number,
-    _scopedClubSectionIds?: number[],
+    scopedClubSectionIds?: number[],
   ) {
     try {
+      if (scopedClubSectionIds?.length === 0) {
+        return { resolved: 0, approved: 0, rate: 0 };
+      }
+
       const [approvedCount, rejectedCount] = await Promise.all([
         this.prisma.investiture_validation_history.count({
           where: {
             action: investiture_action_enum.FIELD_APPROVED,
             created_at: { gte: since },
-            ...(localFieldId
+            ...(scopedClubSectionIds
               ? {
                   enrollments: {
                     users: {
                       club_role_assignments: {
                         some: {
                           active: true,
-                          club_sections: {
-                            clubs: { local_field_id: localFieldId },
-                          },
+                          club_section_id: { in: scopedClubSectionIds },
                         },
                       },
                     },
@@ -561,16 +554,14 @@ export class AnalyticsService {
           where: {
             action: investiture_action_enum.REJECTED,
             created_at: { gte: since },
-            ...(localFieldId
+            ...(scopedClubSectionIds
               ? {
                   enrollments: {
                     users: {
                       club_role_assignments: {
                         some: {
                           active: true,
-                          club_sections: {
-                            clubs: { local_field_id: localFieldId },
-                          },
+                          club_section_id: { in: scopedClubSectionIds },
                         },
                       },
                     },
@@ -596,10 +587,7 @@ export class AnalyticsService {
   // OVERDUE DETECTION
   // ──────────────────────────────────────────────────────────────────────────
 
-  private async countOverdue(
-    localFieldId?: number,
-    scopedClubSectionIds?: number[],
-  ): Promise<number> {
+  private async countOverdue(scopedClubSectionIds?: number[]): Promise<number> {
     try {
       // Overdue = submitted for validation >30 days ago and still not field_approved
       const overdueDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

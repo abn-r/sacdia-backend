@@ -125,6 +125,46 @@ describe('GlobalRolesGuard', () => {
     );
   });
 
+  it('should expand coordinator alias to include zone and general coordinators', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(['coordinator']);
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
+    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(true);
+
+    await expect(
+      guard.canActivate(
+        createContext({ user: { sub: 'zone-coordinator-user' } }),
+      ),
+    ).resolves.toBe(true);
+
+    const firstRoleCall =
+      mockAuthorizationContext.hasAnyGlobalRole.mock.calls[0];
+    expect(firstRoleCall[1]).toEqual(
+      expect.arrayContaining([
+        'coordinator',
+        'zone-coordinator',
+        'general-coordinator',
+      ]),
+    );
+  });
+
+  it('should let general coordinator satisfy zone-coordinator requirement', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(['zone-coordinator']);
+    mockAuthorizationContext.isSuperAdmin.mockResolvedValueOnce(false);
+    mockAuthorizationContext.hasAnyGlobalRole.mockResolvedValueOnce(true);
+
+    await expect(
+      guard.canActivate(
+        createContext({ user: { sub: 'general-coordinator-user' } }),
+      ),
+    ).resolves.toBe(true);
+
+    const firstRoleCall =
+      mockAuthorizationContext.hasAnyGlobalRole.mock.calls[0];
+    expect(firstRoleCall[1]).toEqual(
+      expect.arrayContaining(['zone-coordinator', 'general-coordinator']),
+    );
+  });
+
   it('should throw ForbiddenException when user has no matching role', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(['admin']);
     // isSuperAdmin → false, role check → false

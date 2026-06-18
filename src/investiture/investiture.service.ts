@@ -20,6 +20,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AchievementsService } from '../achievements/achievements.service';
+import { CoordinationService } from '../coordination/coordination.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import { ApproveInvestitureDto } from './dto/approve-investiture.dto';
 import { RejectInvestitureDto } from './dto/reject-investiture.dto';
@@ -153,6 +154,7 @@ export class InvestitureService {
     private readonly authorizationContext: AuthorizationContextService,
     private readonly notifications: NotificationsService,
     private readonly achievementsService: AchievementsService,
+    private readonly coordinationService: CoordinationService,
   ) {}
 
   // ========================================
@@ -385,7 +387,9 @@ export class InvestitureService {
       select: {
         enrollment_id: true,
         user_id: true,
+        ecclesiastical_year_id: true,
         investiture_status: true,
+        classes: { select: { club_type_id: true } },
       },
     });
 
@@ -401,6 +405,12 @@ export class InvestitureService {
         ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
         { status: enrollment.investiture_status },
       );
+    }
+
+    if (
+      !(await this.canActorManageInvestitureEnrollment(actorId, enrollment))
+    ) {
+      throw new AppForbiddenException(ErrorCode.INVESTITURE_ACCESS_DENIED);
     }
 
     // 3. Transaction: update status + create history
@@ -633,9 +643,12 @@ export class InvestitureService {
     if (page !== undefined) pagination.page = page;
     if (limit !== undefined) pagination.limit = limit;
 
-    // Resolve effective localFieldId: use provided value or fall back to actor's own field
+    const scopedClubSectionIds =
+      await this.resolveCoordinatorSectionScopeForGlobalEndpoint(actorId);
+
+    // Resolve effective localFieldId for admin/global views only.
     let effectiveLocalFieldId = localFieldId;
-    if (!effectiveLocalFieldId) {
+    if (scopedClubSectionIds === undefined && !effectiveLocalFieldId) {
       const actor = await this.prisma.users.findUnique({
         where: { user_id: actorId },
         select: { local_field_id: true },
@@ -659,7 +672,17 @@ export class InvestitureService {
       active: true,
     };
 
-    if (effectiveLocalFieldId) {
+    if (scopedClubSectionIds !== undefined) {
+      where.users = {
+        club_role_assignments: {
+          some: {
+            club_section_id: { in: scopedClubSectionIds },
+            active: true,
+            status: 'active',
+          },
+        },
+      };
+    } else if (effectiveLocalFieldId) {
       where.users = { local_field_id: effectiveLocalFieldId };
     }
 
@@ -2213,23 +2236,99 @@ export class InvestitureService {
       return false;
     }
 
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorId);
+    const roleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+    const hasCoordinatorRole =
+      roleNames.has('coordinator') ||
+      roleNames.has('zone-coordinator') ||
+      roleNames.has('general-coordinator');
+    const hasInstitutionalAdminRole = [
+      'super-admin',
+      'admin',
+      'assistant-admin',
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+    ].some((roleName) => roleNames.has(roleName));
+
+    if (hasCoordinatorRole) {
+      const coordinatorSectionIds =
+        await this.coordinationService.getEffectiveCoordinatorSectionIds(
+          actorId,
+        );
+
+      if (coordinatorSectionIds.includes(section.club_section_id)) {
+        return true;
+      }
+
+      if (!hasInstitutionalAdminRole) {
+        return false;
+      }
+    }
+
     if (
-      await this.authorizationContext.canManageClub(
+      hasInstitutionalAdminRole &&
+      (await this.authorizationContext.canManageClub(
         actorId,
         section.main_club_id,
-      )
+      ))
     ) {
       return true;
     }
 
-    const resolved =
-      await this.authorizationContext.resolveUserAuthorization(actorId);
     const activeClubScope = resolved.authorization.effective.scope.club;
 
     return (
       activeClubScope?.club.club_id === section.main_club_id &&
       activeClubScope.section.club_section_id === section.club_section_id
     );
+  }
+
+  private async resolveCoordinatorSectionScopeForGlobalEndpoint(
+    actorId: string,
+  ): Promise<number[] | undefined> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorId);
+    const roleNames = new Set(
+      resolved.authorization.grants.global_roles.map((grant) =>
+        grant.role_name.toLowerCase(),
+      ),
+    );
+
+    const hasAdminRole = [
+      'super-admin',
+      'admin',
+      'assistant-admin',
+      'director-lf',
+      'assistant-lf',
+      'director-union',
+      'assistant-union',
+      'director-dia',
+      'assistant-dia',
+    ].some((roleName) => roleNames.has(roleName));
+
+    if (hasAdminRole) {
+      return undefined;
+    }
+
+    const hasCoordinatorRole =
+      roleNames.has('coordinator') ||
+      roleNames.has('zone-coordinator') ||
+      roleNames.has('general-coordinator');
+
+    if (!hasCoordinatorRole) {
+      return undefined;
+    }
+
+    return this.coordinationService.getEffectiveCoordinatorSectionIds(actorId);
   }
 
   /**
@@ -2249,7 +2348,9 @@ export class InvestitureService {
       select: {
         enrollment_id: true,
         user_id: true,
+        ecclesiastical_year_id: true,
         investiture_status: true,
+        classes: { select: { club_type_id: true } },
         users: {
           select: { local_field_id: true },
         },
@@ -2268,6 +2369,12 @@ export class InvestitureService {
         ErrorCode.INVESTITURE_INVALID_STATE_TRANSITION,
         { status: enrollment.investiture_status },
       );
+    }
+
+    if (
+      !(await this.canActorManageInvestitureEnrollment(actorId, enrollment))
+    ) {
+      throw new AppForbiddenException(ErrorCode.INVESTITURE_ACCESS_DENIED);
     }
 
     // 3. Look up the transition

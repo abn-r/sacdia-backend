@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   AppBadRequestException,
   AppConflictException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -20,6 +21,8 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { isDeletedAccountSnapshot } from '../common/utils/deleted-account';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CoordinationService } from '../coordination/coordination.service';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
 //
@@ -138,6 +141,8 @@ export class EvidenceReviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly honorValidationWorkflow: HonorValidationWorkflowService,
+    private readonly authorizationContext: AuthorizationContextService,
+    private readonly coordinationService: CoordinationService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -147,6 +152,7 @@ export class EvidenceReviewService {
   // ============================================================
 
   async getPending(
+    actorId: string,
     type?: EvidenceType,
     page = 1,
     limit = 20,
@@ -157,10 +163,16 @@ export class EvidenceReviewService {
     limit: number;
   }> {
     const skip = (page - 1) * limit;
+    const scopedClubSectionIds =
+      await this.resolveCoordinatorSectionScope(actorId);
 
     const [classItems, honorItems] = await Promise.all([
-      !type || type === 'class' ? this.getClassPending() : Promise.resolve([]),
-      !type || type === 'honor' ? this.getHonorPending() : Promise.resolve([]),
+      !type || type === 'class'
+        ? this.getClassPending(scopedClubSectionIds)
+        : Promise.resolve([]),
+      !type || type === 'honor'
+        ? this.getHonorPending(scopedClubSectionIds)
+        : Promise.resolve([]),
     ]);
 
     const all: EvidenceItem[] = [...classItems, ...honorItems].sort((a, b) => {
@@ -175,12 +187,17 @@ export class EvidenceReviewService {
     return { data, total, page, limit };
   }
 
-  private async getClassPending(): Promise<EvidenceItem[]> {
+  private async getClassPending(
+    scopedClubSectionIds?: number[],
+  ): Promise<EvidenceItem[]> {
+    if (scopedClubSectionIds?.length === 0) return [];
+
     const records = await this.prisma.class_section_progress.findMany({
       where: {
         status: CLASS_STATUS_SUBMITTED,
         active: true,
         submitted_at: { not: null },
+        ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
       },
       include: {
         users: {
@@ -209,12 +226,17 @@ export class EvidenceReviewService {
     }));
   }
 
-  private async getHonorPending(): Promise<EvidenceItem[]> {
+  private async getHonorPending(
+    scopedClubSectionIds?: number[],
+  ): Promise<EvidenceItem[]> {
+    if (scopedClubSectionIds?.length === 0) return [];
+
     const records = await this.prisma.users_honors.findMany({
       where: {
         validation_status: HONOR_STATUS_PENDING,
         active: true,
         submitted_at: { not: null },
+        ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
       },
       include: {
         users: {
@@ -262,12 +284,19 @@ export class EvidenceReviewService {
   // GET /evidence-review/:type/:id  (detail with files)
   // ============================================================
 
-  async getDetail(type: EvidenceType, id: number): Promise<EvidenceDetail> {
+  async getDetail(
+    actorId: string,
+    type: EvidenceType,
+    id: number,
+  ): Promise<EvidenceDetail> {
+    const scopedClubSectionIds =
+      await this.resolveCoordinatorSectionScope(actorId);
+
     switch (type) {
       case 'class':
-        return this.getClassDetail(id);
+        return this.getClassDetail(id, scopedClubSectionIds);
       case 'honor':
-        return this.getHonorDetail(id);
+        return this.getHonorDetail(id, scopedClubSectionIds);
       default:
         throw new AppBadRequestException(
           ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID,
@@ -276,9 +305,22 @@ export class EvidenceReviewService {
     }
   }
 
-  private async getClassDetail(id: number): Promise<EvidenceDetail> {
-    const record = await this.prisma.class_section_progress.findUnique({
-      where: { section_progress_id: id },
+  private async getClassDetail(
+    id: number,
+    scopedClubSectionIds?: number[],
+  ): Promise<EvidenceDetail> {
+    if (scopedClubSectionIds?.length === 0) {
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
+      );
+    }
+
+    const record = await this.prisma.class_section_progress.findFirst({
+      where: {
+        section_progress_id: id,
+        ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
+      },
       include: {
         users: {
           select: USER_NAME_SELECT,
@@ -333,9 +375,22 @@ export class EvidenceReviewService {
     };
   }
 
-  private async getHonorDetail(id: number): Promise<EvidenceDetail> {
-    const record = await this.prisma.users_honors.findUnique({
-      where: { user_honor_id: id },
+  private async getHonorDetail(
+    id: number,
+    scopedClubSectionIds?: number[],
+  ): Promise<EvidenceDetail> {
+    if (scopedClubSectionIds?.length === 0) {
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
+    }
+
+    const record = await this.prisma.users_honors.findFirst({
+      where: {
+        user_honor_id: id,
+        ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
+      },
       include: {
         users: {
           select: USER_NAME_SELECT,
@@ -585,9 +640,7 @@ export class EvidenceReviewService {
     );
 
     files.push(
-      ...imageFiles.filter(
-        (file): file is EvidenceFile => file !== null,
-      ),
+      ...imageFiles.filter((file): file is EvidenceFile => file !== null),
     );
 
     return files;
@@ -723,6 +776,8 @@ export class EvidenceReviewService {
     actorId: string,
     dto: ApproveEvidenceDto,
   ): Promise<{ id: number; type: EvidenceType; status: string }> {
+    await this.assertEvidenceInScope(actorId, type, id);
+
     switch (type) {
       case 'class':
         return this.approveClass(id, actorId, dto.comments);
@@ -798,6 +853,8 @@ export class EvidenceReviewService {
     actorId: string,
     dto: RejectEvidenceDto,
   ): Promise<{ id: number; type: EvidenceType; status: string }> {
+    await this.assertEvidenceInScope(actorId, type, id);
+
     switch (type) {
       case 'class':
         return this.rejectClass(id, actorId, dto.reason);
@@ -922,13 +979,19 @@ export class EvidenceReviewService {
   // GET /evidence-review/:type/:id/history
   // ============================================================
 
-  async getHistory(type: EvidenceType, id: number): Promise<HistoryEntry[]> {
+  async getHistory(
+    actorId: string,
+    type: EvidenceType,
+    id: number,
+  ): Promise<HistoryEntry[]> {
     const validTypes: EvidenceType[] = ['class', 'honor'];
     if (!validTypes.includes(type)) {
       throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, {
         type,
       });
     }
+
+    await this.assertEvidenceInScope(actorId, type, id);
 
     const logs = await this.prisma.validation_logs.findMany({
       where: {
@@ -949,5 +1012,100 @@ export class EvidenceReviewService {
       comment: log.comment,
       created_at: log.created_at,
     }));
+  }
+
+  private async resolveCoordinatorSectionScope(
+    actorId: string,
+  ): Promise<number[] | undefined> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorId);
+    const roleNames = resolved.authorization.grants.global_roles.map((grant) =>
+      grant.role_name.toLowerCase(),
+    );
+
+    const isAdmin = roleNames.some((roleName) =>
+      ['admin', 'assistant-admin', 'super-admin'].includes(roleName),
+    );
+
+    if (isAdmin) {
+      return undefined;
+    }
+
+    const isCoordinator = roleNames.some((roleName) =>
+      ['coordinator', 'zone-coordinator', 'general-coordinator'].includes(
+        roleName,
+      ),
+    );
+
+    if (!isCoordinator) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
+
+    return this.coordinationService.getEffectiveCoordinatorSectionIds(actorId);
+  }
+
+  private buildUserSectionScopeWhere(scopedClubSectionIds?: number[]) {
+    if (scopedClubSectionIds === undefined) return {};
+
+    return {
+      users: {
+        club_role_assignments: {
+          some: {
+            club_section_id: { in: scopedClubSectionIds },
+            active: true,
+            status: 'active',
+          },
+        },
+      },
+    };
+  }
+
+  private async assertEvidenceInScope(
+    actorId: string,
+    type: EvidenceType,
+    id: number,
+  ): Promise<void> {
+    const scopedClubSectionIds =
+      await this.resolveCoordinatorSectionScope(actorId);
+
+    if (scopedClubSectionIds === undefined) return;
+
+    if (scopedClubSectionIds.length === 0) {
+      this.throwEvidenceNotFound(type, id);
+    }
+
+    const where = this.buildUserSectionScopeWhere(scopedClubSectionIds);
+    const count =
+      type === 'class'
+        ? await this.prisma.class_section_progress.count({
+            where: { section_progress_id: id, ...where },
+          })
+        : await this.prisma.users_honors.count({
+            where: { user_honor_id: id, ...where },
+          });
+
+    if (count === 0) {
+      this.throwEvidenceNotFound(type, id);
+    }
+  }
+
+  private throwEvidenceNotFound(type: EvidenceType, id: number): never {
+    if (type === 'class') {
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_CLASS_RECORD_NOT_FOUND,
+        { id },
+      );
+    }
+
+    if (type === 'honor') {
+      throw new AppNotFoundException(
+        ErrorCode.EVIDENCE_REVIEW_USER_HONOR_NOT_FOUND,
+        { id },
+      );
+    }
+
+    throw new AppBadRequestException(ErrorCode.EVIDENCE_REVIEW_TYPE_INVALID, {
+      type,
+    });
   }
 }

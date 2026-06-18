@@ -7,6 +7,8 @@ export type GlobalRoleType =
   | 'admin'
   | 'assistant-admin'
   | 'coordinator'
+  | 'zone-coordinator'
+  | 'general-coordinator'
   | 'pastor'
   | 'user'
   | 'director-lf'
