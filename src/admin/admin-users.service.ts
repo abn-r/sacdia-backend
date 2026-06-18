@@ -149,6 +149,22 @@ const adminUserListSelect = Prisma.validator<Prisma.usersSelect>()({
       },
     },
   },
+  club_role_assignments: {
+    where: {
+      active: true,
+      roles: {
+        active: true,
+        role_category: role_category.CLUB,
+      },
+    },
+    select: {
+      roles: {
+        select: {
+          role_name: true,
+        },
+      },
+    },
+  },
   users_pr: {
     select: {
       complete: true,
@@ -253,6 +269,28 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
             select: {
               club_id: true,
               name: true,
+              local_field_id: true,
+              church_id: true,
+              districlub_type_id: true,
+              churches: {
+                select: {
+                  church_id: true,
+                  name: true,
+                },
+              },
+              districts: {
+                select: {
+                  districlub_type_id: true,
+                  name: true,
+                },
+              },
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  union_id: true,
+                },
+              },
             },
           },
         },
@@ -268,6 +306,11 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
       phone: true,
       primary: true,
       relationship_type_id: true,
+      relationship_types: {
+        select: {
+          name: true,
+        },
+      },
     },
   },
   legal_representative: {
@@ -279,6 +322,11 @@ const adminUserDetailSelect = Prisma.validator<Prisma.usersSelect>()({
       paternal_last_name: true,
       maternal_last_name: true,
       phone: true,
+      relationship_types: {
+        select: {
+          name: true,
+        },
+      },
     },
   },
   users_allergies: {
@@ -408,6 +456,12 @@ interface AdminUserDetail extends AdminUserListItem {
   club_assignments: Array<{
     assignment_id: string;
     role_name: string;
+    club_name: string | null;
+    section_name: string | null;
+    district_id: number | null;
+    district_name: string | null;
+    church_id: number | null;
+    church_name: string | null;
     start_date: Date;
     end_date: Date | null;
     ecclesiastical_year: ClubAssignmentRecord['ecclesiastical_year'];
@@ -552,6 +606,15 @@ export class AdminUsersService {
       club_assignments: user.club_role_assignments.map((assignment) => ({
         assignment_id: assignment.assignment_id,
         role_name: assignment.roles.role_name,
+        club_name: assignment.club_sections?.clubs?.name ?? null,
+        section_name: assignment.club_sections?.club_types?.name ?? null,
+        district_id:
+          assignment.club_sections?.clubs?.districlub_type_id ?? null,
+        district_name:
+          assignment.club_sections?.clubs?.districts?.name ?? null,
+        church_id: assignment.club_sections?.clubs?.church_id ?? null,
+        church_name:
+          assignment.club_sections?.clubs?.churches?.name ?? null,
         start_date: assignment.start_date,
         end_date: assignment.end_date,
         ecclesiastical_year: assignment.ecclesiastical_year,
@@ -1124,19 +1187,38 @@ export class AdminUsersService {
     const role = query.role?.trim();
     if (role) {
       filters.push({
-        users_roles: {
-          some: {
-            active: true,
-            roles: {
-              active: true,
-              role_category: role_category.GLOBAL,
-              role_name: {
-                equals: role,
-                mode: 'insensitive',
+        OR: [
+          {
+            users_roles: {
+              some: {
+                active: true,
+                roles: {
+                  active: true,
+                  role_category: role_category.GLOBAL,
+                  role_name: {
+                    equals: role,
+                    mode: 'insensitive',
+                  },
+                },
               },
             },
           },
-        },
+          {
+            club_role_assignments: {
+              some: {
+                active: true,
+                roles: {
+                  active: true,
+                  role_category: role_category.CLUB,
+                  role_name: {
+                    equals: role,
+                    mode: 'insensitive',
+                  },
+                },
+              },
+            },
+          },
+        ],
       });
     }
 
@@ -1213,9 +1295,12 @@ export class AdminUsersService {
   private async toListItem(
     user: AdminUserListRecord,
   ): Promise<AdminUserListItem> {
-    const roles = this.extractRoleNames(user.users_roles).sort((a, b) =>
-      a.localeCompare(b),
-    );
+    const roles = [
+      ...new Set([
+        ...this.extractRoleNames(user.users_roles),
+        ...this.extractRoleNames(user.club_role_assignments ?? []),
+      ]),
+    ].sort((a, b) => a.localeCompare(b));
     const isDeleted = isDeletedAccountSnapshot(user);
     const postRegistration = user.users_pr
       ? {

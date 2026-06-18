@@ -1,7 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ErrorCode } from '../common/errors/error-codes';
-import { user_approval_status } from '@prisma/client';
+import { role_category, user_approval_status } from '@prisma/client';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { BetterAuthService } from '../better-auth/better-auth.service';
@@ -188,6 +188,9 @@ describe('AdminUsersService', () => {
         phone: '555-1111',
         primary: true,
         relationship_type_id: 4,
+        relationship_types: {
+          name: 'Madre',
+        },
       },
     ],
     legal_representative: {
@@ -198,6 +201,9 @@ describe('AdminUsersService', () => {
       paternal_last_name: 'Tutor',
       maternal_last_name: 'Perez',
       phone: '555-2222',
+      relationship_types: {
+        name: 'Padre',
+      },
     },
     users_allergies: [
       {
@@ -359,6 +365,104 @@ describe('AdminUsersService', () => {
 
       expect(result.data[0].is_deleted).toBe(true);
       expect(result.data[0].full_name).toBe('');
+    });
+
+    it('should include active club roles in list role badges', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([
+        {
+          user_id: 'club-user',
+          email: 'club-user@example.com',
+          name: 'Abner',
+          paternal_last_name: 'Reyes',
+          maternal_last_name: 'Ramírez',
+          user_image: null,
+          active: true,
+          access_app: true,
+          access_panel: true,
+          country_id: 1,
+          union_id: 20,
+          local_field_id: 4,
+          created_at: new Date('2026-03-25'),
+          countries: { country_id: 1, name: 'México' },
+          unions: { union_id: 20, name: 'Unión Mexicana Interoceánica' },
+          local_fields: {
+            local_field_id: 4,
+            union_id: 20,
+            name: 'Asociación Centro de Veracruz',
+          },
+          users_roles: [],
+          club_role_assignments: [
+            { roles: { role_name: 'director' } },
+            { roles: { role_name: 'member' } },
+          ],
+          users_pr: {
+            complete: true,
+            profile_picture_complete: true,
+            personal_info_complete: true,
+            club_selection_complete: true,
+          },
+        },
+      ]);
+      mockPrismaService.users.count.mockResolvedValue(1);
+
+      const result = await service.listUsers('actor-super', buildListQuery());
+
+      expect(result.data[0].roles).toEqual(['director', 'member']);
+    });
+
+    it('should filter users by either global or club role', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+        }),
+      );
+      mockPrismaService.users.findMany.mockResolvedValue([]);
+      mockPrismaService.users.count.mockResolvedValue(0);
+
+      await service.listUsers(
+        'actor-super',
+        buildListQuery({ role: 'director' }),
+      );
+
+      expect(mockPrismaService.users.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              {
+                users_roles: {
+                  some: expect.objectContaining({
+                    roles: expect.objectContaining({
+                      role_category: role_category.GLOBAL,
+                      role_name: {
+                        equals: 'director',
+                        mode: 'insensitive',
+                      },
+                    }),
+                  }),
+                },
+              },
+              {
+                club_role_assignments: {
+                  some: expect.objectContaining({
+                    roles: expect.objectContaining({
+                      role_category: role_category.CLUB,
+                      role_name: {
+                        equals: 'director',
+                        mode: 'insensitive',
+                      },
+                    }),
+                  }),
+                },
+              },
+            ],
+          },
+        }),
+      );
     });
 
     it('should enforce UNION scope for admin with union_id', async () => {
@@ -549,6 +653,76 @@ describe('AdminUsersService', () => {
       expect(result.current_operational_enrollment).toBeNull();
       expect(result.trajectory_classes).toEqual([]);
       expect(result.classes).toEqual([]);
+    });
+
+    it('should expose club assignment labels and emergency contact relationship names', async () => {
+      mockAuthorizationContextService.resolveUserAuthorization.mockResolvedValue(
+        buildResolvedAuthorization({
+          roles: ['super-admin'],
+          permissions: ['users:read_detail'],
+        }),
+      );
+
+      const userRecord = buildAdminDetailRecord();
+      userRecord.club_role_assignments = [
+        {
+          assignment_id: 'assignment-director',
+          role_id: 'role-director',
+          club_section_id: 10,
+          ecclesiastical_year_id: 2026,
+          start_date: new Date('2026-01-01'),
+          end_date: null,
+          roles: { role_name: 'director' },
+          ecclesiastical_year: {
+            year_id: 2026,
+            start_date: new Date('2026-01-01'),
+            end_date: new Date('2026-12-31'),
+          },
+          club_sections: {
+            club_section_id: 10,
+            club_type_id: 2,
+            club_types: { name: 'Conquistadores' },
+            clubs: {
+              club_id: 7,
+              name: 'ACV',
+              local_field_id: 3,
+              church_id: 44,
+              districlub_type_id: 12,
+              churches: { church_id: 44, name: 'Iglesia Central' },
+              districts: {
+                districlub_type_id: 12,
+                name: 'Distrito Veracruz Centro',
+              },
+              local_fields: {
+                local_field_id: 3,
+                union_id: 2,
+                name: 'Campo Sur',
+              },
+            },
+          },
+        },
+      ];
+      mockPrismaService.users.findFirst.mockResolvedValue(userRecord);
+
+      const result = await service.getUserById('actor-super', 'user-1');
+
+      expect(result.club_assignments[0]).toEqual(
+        expect.objectContaining({
+          assignment_id: 'assignment-director',
+          role_name: 'director',
+          club_name: 'ACV',
+          section_name: 'Conquistadores',
+          district_id: 12,
+          district_name: 'Distrito Veracruz Centro',
+          church_id: 44,
+          church_name: 'Iglesia Central',
+        }),
+      );
+      expect(result.emergency_contacts?.[0]).toEqual(
+        expect.objectContaining({
+          relationship_types: { name: 'Madre' },
+        }),
+      );
     });
 
     it('should apply DIVISION scope for director-dia detail access', async () => {
