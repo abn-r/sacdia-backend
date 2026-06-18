@@ -7,7 +7,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
-import type { folder_templates } from '@prisma/client';
+import type { folder_templates, Prisma } from '@prisma/client';
 import { annual_folder_section_status_enum } from '@prisma/client';
 import {
   CreateTemplateDto,
@@ -36,6 +36,18 @@ import {
 // Cap is 20, matching the pattern used by PROFILE_URL_LIMITER in
 // camporees.service.ts and EVIDENCE_URL_LIMITER in classes.service.ts.
 export const EVIDENCE_FILES_URL_LIMITER = pLimit(20);
+
+const FOLDER_QUEUE_STATUSES = [
+  annual_folder_section_status_enum.SUBMITTED,
+  annual_folder_section_status_enum.PREAPPROVED_LF,
+];
+
+type EvaluationQueueStatus =
+  | 'needs_review'
+  | 'submitted'
+  | 'preapproved'
+  | 'evaluated'
+  | 'all';
 
 @Injectable()
 export class AnnualFoldersService {
@@ -333,6 +345,82 @@ export class AnnualFoldersService {
   }
 
   /**
+   * Lists annual evidence folders using human-readable context so evaluators
+   * do not need to know internal UUIDs. The UUID remains an API identifier only.
+   */
+  async getEvaluationQueue(
+    userId: string,
+    options: {
+      search?: string;
+      status?: EvaluationQueueStatus;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) {
+    const page = Math.max(1, options.page ?? 1);
+    const limit = Math.min(Math.max(1, options.limit ?? 25), 100);
+    const skip = (page - 1) * limit;
+    const search = options.search?.trim();
+    const status = options.status ?? 'needs_review';
+
+    const where = this.composeEvaluationQueueWhere([
+      await this.buildEvaluationQueueAccessWhere(userId),
+      this.buildEvaluationQueueStatusWhere(status),
+      search ? this.buildEvaluationQueueSearchWhere(search) : {},
+    ]);
+
+    const [folders, total] = await Promise.all([
+      this.prisma.annual_folders.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ modified_at: 'desc' }, { created_at: 'desc' }],
+        include: {
+          _count: { select: { evidences: true } },
+          club_enrollment: {
+            select: this.clubEnrollmentHumanSelect(),
+          },
+          folder_template: {
+            select: {
+              folder_template_id: true,
+              name: true,
+              club_type: { select: { name: true } },
+              ecclesiastical_year: {
+                select: { start_date: true, end_date: true },
+              },
+              sections: {
+                select: { section_id: true },
+              },
+            },
+          },
+          evaluations: {
+            select: {
+              status: true,
+              section_id: true,
+              section: { select: { name: true } },
+            },
+          },
+          section_submissions: {
+            select: {
+              section_id: true,
+              submitted_at: true,
+            },
+            orderBy: { submitted_at: 'desc' },
+          },
+        },
+      }),
+      this.prisma.annual_folders.count({ where }),
+    ]);
+
+    return {
+      data: folders.map((folder) => this.formatEvaluationQueueItem(folder)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /**
    * Get an annual evidence folder by ID with its template sections, evidences, and evaluations.
    */
   async getFolder(folderId: string, userId: string) {
@@ -353,12 +441,7 @@ export class AnnualFoldersService {
       where: { annual_folder_id: folderId },
       include: {
         club_enrollment: {
-          select: {
-            club_enrollment_id: true,
-            club_section_id: true,
-            ecclesiastical_year_id: true,
-            status: true,
-          },
+          select: this.clubEnrollmentHumanSelect(),
         },
         folder_template: {
           include: {
@@ -461,12 +544,7 @@ export class AnnualFoldersService {
       where: { club_enrollment_id: enrollmentId },
       include: {
         club_enrollment: {
-          select: {
-            club_enrollment_id: true,
-            club_section_id: true,
-            ecclesiastical_year_id: true,
-            status: true,
-          },
+          select: this.clubEnrollmentHumanSelect(),
         },
         folder_template: {
           include: {
@@ -1948,7 +2026,7 @@ export class AnnualFoldersService {
       local_camporee_id: folder.local_camporee_id ?? null,
       union_camporee_id: folder.union_camporee_id ?? null,
       requires_union_confirmation: folder.requires_union_confirmation ?? false,
-      club_enrollment: folder.club_enrollment,
+      club_enrollment: this.formatClubEnrollment(folder.club_enrollment),
       template: {
         folder_template_id: folder.folder_template.folder_template_id,
         name: folder.folder_template.name,
@@ -1967,5 +2045,373 @@ export class AnnualFoldersService {
       .map((part: string | null | undefined) => part?.trim())
       .filter((part): part is string => Boolean(part));
     return parts.join(' ').trim() || null;
+  }
+
+  private clubEnrollmentHumanSelect() {
+    return {
+      club_enrollment_id: true,
+      club_section_id: true,
+      ecclesiastical_year_id: true,
+      status: true,
+      club_section: {
+        select: {
+          club_section_id: true,
+          name: true,
+          club_types: { select: { name: true } },
+          clubs: {
+            select: {
+              club_id: true,
+              name: true,
+              local_fields: {
+                select: {
+                  local_field_id: true,
+                  name: true,
+                  unions: {
+                    select: {
+                      union_id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      ecclesiastical_year: {
+        select: {
+          year_id: true,
+          start_date: true,
+          end_date: true,
+        },
+      },
+    } satisfies Prisma.club_enrollmentsSelect;
+  }
+
+  private async buildEvaluationQueueAccessWhere(
+    userId: string,
+  ): Promise<Prisma.annual_foldersWhereInput> {
+    const superAdminGrant = await this.prisma.users_roles.findFirst({
+      where: {
+        user_id: userId,
+        active: true,
+        roles: {
+          active: true,
+          role_category: 'GLOBAL',
+          role_name: 'super-admin',
+        },
+      },
+      select: { user_role_id: true },
+    });
+
+    if (superAdminGrant) {
+      return {};
+    }
+
+    const reviewer = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: { local_field_id: true, union_id: true },
+    });
+
+    const scopedWhere: Prisma.annual_foldersWhereInput[] = [
+      {
+        club_enrollment: {
+          club_section: {
+            clubs: {
+              club_sections: {
+                some: {
+                  club_role_assignments: {
+                    some: {
+                      user_id: userId,
+                      active: true,
+                      status: 'active',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    if (reviewer?.local_field_id != null) {
+      scopedWhere.push({
+        club_enrollment: {
+          club_section: {
+            clubs: {
+              local_field_id: reviewer.local_field_id,
+            },
+          },
+        },
+      });
+    }
+
+    if (reviewer?.union_id != null) {
+      scopedWhere.push({
+        club_enrollment: {
+          club_section: {
+            clubs: {
+              local_fields: {
+                union_id: reviewer.union_id,
+              },
+            },
+          },
+        },
+      });
+    }
+
+    return { OR: scopedWhere };
+  }
+
+  private buildEvaluationQueueStatusWhere(
+    status: EvaluationQueueStatus,
+  ): Prisma.annual_foldersWhereInput {
+    switch (status) {
+      case 'submitted':
+        return {
+          evaluations: {
+            some: { status: annual_folder_section_status_enum.SUBMITTED },
+          },
+        };
+      case 'preapproved':
+        return {
+          evaluations: {
+            some: { status: annual_folder_section_status_enum.PREAPPROVED_LF },
+          },
+        };
+      case 'evaluated':
+        return {
+          evaluations: {
+            some: {
+              status: {
+                in: [
+                  annual_folder_section_status_enum.VALIDATED,
+                  annual_folder_section_status_enum.REJECTED,
+                ],
+              },
+            },
+          },
+        };
+      case 'all':
+        return {};
+      case 'needs_review':
+      default:
+        return {
+          evaluations: {
+            some: { status: { in: FOLDER_QUEUE_STATUSES } },
+          },
+        };
+    }
+  }
+
+  private buildEvaluationQueueSearchWhere(
+    search: string,
+  ): Prisma.annual_foldersWhereInput {
+    return {
+      OR: [
+        {
+          folder_template: { name: { contains: search, mode: 'insensitive' } },
+        },
+        {
+          folder_template: {
+            club_type: { name: { contains: search, mode: 'insensitive' } },
+          },
+        },
+        {
+          club_enrollment: {
+            club_section: {
+              name: { contains: search, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          club_enrollment: {
+            club_section: {
+              club_types: {
+                name: { contains: search, mode: 'insensitive' },
+              },
+            },
+          },
+        },
+        {
+          club_enrollment: {
+            club_section: {
+              clubs: { name: { contains: search, mode: 'insensitive' } },
+            },
+          },
+        },
+        {
+          club_enrollment: {
+            club_section: {
+              clubs: {
+                local_fields: {
+                  name: { contains: search, mode: 'insensitive' },
+                },
+              },
+            },
+          },
+        },
+        {
+          club_enrollment: {
+            club_section: {
+              clubs: {
+                local_fields: {
+                  unions: {
+                    name: { contains: search, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  private composeEvaluationQueueWhere(
+    filters: Prisma.annual_foldersWhereInput[],
+  ): Prisma.annual_foldersWhereInput {
+    const activeFilters = filters.filter(
+      (filter) => Object.keys(filter).length > 0,
+    );
+
+    if (activeFilters.length === 0) {
+      return {};
+    }
+
+    if (activeFilters.length === 1) {
+      return activeFilters[0];
+    }
+
+    return { AND: activeFilters };
+  }
+
+  private formatEvaluationQueueItem(folder: any) {
+    const enrollment = this.formatClubEnrollment(folder.club_enrollment);
+    const clubName = enrollment?.club_section?.club?.name ?? 'Club sin nombre';
+    const sectionName =
+      enrollment?.club_section?.name ??
+      enrollment?.club_section?.club_type?.name ??
+      'Sección sin nombre';
+    const yearLabel =
+      enrollment?.ecclesiastical_year?.label ??
+      this.formatYearLabel(folder.folder_template?.ecclesiastical_year);
+    const templateName = folder.folder_template?.name ?? 'Carpeta anual';
+    const submittedSections = folder.evaluations.filter(
+      (evaluation: any) =>
+        evaluation.status === annual_folder_section_status_enum.SUBMITTED,
+    );
+    const preapprovedSections = folder.evaluations.filter(
+      (evaluation: any) =>
+        evaluation.status === annual_folder_section_status_enum.PREAPPROVED_LF,
+    );
+    const validatedSections = folder.evaluations.filter(
+      (evaluation: any) =>
+        evaluation.status === annual_folder_section_status_enum.VALIDATED,
+    );
+    const rejectedSections = folder.evaluations.filter(
+      (evaluation: any) =>
+        evaluation.status === annual_folder_section_status_enum.REJECTED,
+    );
+    const queueSections = [...submittedSections, ...preapprovedSections]
+      .map((evaluation: any) => evaluation.section?.name)
+      .filter(Boolean);
+
+    return {
+      annual_folder_id: folder.annual_folder_id,
+      display_name: `${clubName} · ${sectionName} · ${yearLabel}`,
+      club_name: clubName,
+      club_section_name: sectionName,
+      club_type_name:
+        enrollment?.club_section?.club_type?.name ??
+        folder.folder_template?.club_type?.name ??
+        null,
+      local_field_name:
+        enrollment?.club_section?.club?.local_field?.name ?? null,
+      union_name:
+        enrollment?.club_section?.club?.local_field?.union?.name ?? null,
+      template_name: templateName,
+      year_label: yearLabel,
+      folder_status: folder.status,
+      total_sections: folder.folder_template?.sections?.length ?? 0,
+      total_evidences: folder._count?.evidences ?? 0,
+      submitted_sections_count: submittedSections.length,
+      preapproved_sections_count: preapprovedSections.length,
+      validated_sections_count: validatedSections.length,
+      rejected_sections_count: rejectedSections.length,
+      pending_section_names: queueSections.slice(0, 4),
+      latest_submitted_at:
+        folder.section_submissions?.[0]?.submitted_at ?? null,
+      created_at: folder.created_at,
+    };
+  }
+
+  private formatClubEnrollment(enrollment: any) {
+    if (!enrollment) return null;
+    const clubSection = enrollment.club_section;
+    const club = clubSection?.clubs;
+    const localField = club?.local_fields;
+
+    return {
+      club_enrollment_id: enrollment.club_enrollment_id,
+      club_section_id: enrollment.club_section_id,
+      ecclesiastical_year_id: enrollment.ecclesiastical_year_id,
+      status: enrollment.status,
+      club_section: clubSection
+        ? {
+            club_section_id: clubSection.club_section_id,
+            name: clubSection.name,
+            club_type: clubSection.club_types
+              ? { name: clubSection.club_types.name }
+              : null,
+            club: club
+              ? {
+                  club_id: club.club_id,
+                  name: club.name,
+                  local_field: localField
+                    ? {
+                        local_field_id: localField.local_field_id,
+                        name: localField.name,
+                        union: localField.unions
+                          ? {
+                              union_id: localField.unions.union_id,
+                              name: localField.unions.name,
+                            }
+                          : null,
+                      }
+                    : null,
+                }
+              : null,
+          }
+        : null,
+      ecclesiastical_year: enrollment.ecclesiastical_year
+        ? {
+            year_id: enrollment.ecclesiastical_year.year_id,
+            start_date: enrollment.ecclesiastical_year.start_date,
+            end_date: enrollment.ecclesiastical_year.end_date,
+            label: this.formatYearLabel(enrollment.ecclesiastical_year),
+          }
+        : null,
+    };
+  }
+
+  private formatYearLabel(
+    year:
+      | { start_date?: Date | string | null; end_date?: Date | string | null }
+      | null
+      | undefined,
+  ): string {
+    const start = year?.start_date ? new Date(year.start_date) : null;
+    const end = year?.end_date ? new Date(year.end_date) : null;
+    if (
+      !start ||
+      !end ||
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime())
+    ) {
+      return 'Año eclesiástico';
+    }
+    return `${start.getUTCFullYear()}-${end.getUTCFullYear()}`;
   }
 }

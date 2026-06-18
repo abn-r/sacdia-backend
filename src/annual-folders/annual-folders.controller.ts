@@ -167,7 +167,9 @@ export class AnnualFoldersController {
 
   @Post('enrollments/:enrollmentId')
   @RequirePermissions('evidence_folders:update')
-  @ApiOperation({ summary: 'Create annual evidence folder for a club enrollment' })
+  @ApiOperation({
+    summary: 'Create annual evidence folder for a club enrollment',
+  })
   @ApiParam({ name: 'enrollmentId', description: 'Club enrollment UUID' })
   @ApiResponse({ status: 201, description: 'Annual Evidence Folder created' })
   @ApiResponse({ status: 404, description: 'Enrollment or template not found' })
@@ -182,9 +184,65 @@ export class AnnualFoldersController {
     return { status: 'success', data };
   }
 
+  @Get('evaluation/queue')
+  @RequirePermissions('annual_folders:evaluate')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'List annual evidence folders available for evaluation',
+    description:
+      'Returns a paginated, human-readable queue so evaluators can find folders by club, section, field, template, or year instead of by UUID.',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description:
+      'Search by club, section, local field, union, template, or type',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['needs_review', 'submitted', 'preapproved', 'evaluated', 'all'],
+    description: 'Queue filter. Default: needs_review',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number. Default: 1',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Results per page. Default: 25, max: 100',
+  })
+  @ApiResponse({ status: 200, description: 'Evaluation queue' })
+  @ApiResponse({
+    status: 403,
+    description: 'Missing annual_folders:evaluate permission',
+  })
+  async getEvaluationQueue(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('search') search?: string,
+    @Query('status')
+    status?: 'needs_review' | 'submitted' | 'preapproved' | 'evaluated' | 'all',
+    @Query('page', new ParseIntPipe({ optional: true })) page?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    const data = await this.service.getEvaluationQueue(user.sub, {
+      search,
+      status,
+      page,
+      limit,
+    });
+    return { status: 'success', data };
+  }
+
   @Get(':folderId')
   @RequirePermissions('evidence_folders:read')
-  @ApiOperation({ summary: 'Get annual evidence folder with sections and evidences' })
+  @ApiOperation({
+    summary: 'Get annual evidence folder with sections and evidences',
+  })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiResponse({
     status: 200,
