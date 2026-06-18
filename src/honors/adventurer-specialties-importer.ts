@@ -137,8 +137,7 @@ export interface AdventurerSpecialtiesPrismaTransaction {
   };
 }
 
-export interface AdventurerSpecialtiesDryRunResult {
-  mode: 'dry-run';
+export interface AdventurerSpecialtiesImportAnalysis {
   rowsRead: number;
   newHonors: number;
   existingHonorsByCode: number;
@@ -150,8 +149,13 @@ export interface AdventurerSpecialtiesDryRunResult {
   errors: AdventurerSpecialtyImportIssue[];
 }
 
+export interface AdventurerSpecialtiesDryRunResult
+  extends AdventurerSpecialtiesImportAnalysis {
+  mode: 'dry-run';
+}
+
 export interface AdventurerSpecialtiesApplyResult
-  extends AdventurerSpecialtiesDryRunResult {
+  extends AdventurerSpecialtiesImportAnalysis {
   mode: 'apply';
   honorsCreated: number;
   honorsUpdated: number;
