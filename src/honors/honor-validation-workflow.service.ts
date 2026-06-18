@@ -596,8 +596,8 @@ export class HonorValidationWorkflowService {
         void this.notifications.sendToSectionRole(
           memberSection.club_section_id,
           ['coordinator', 'director'],
-          'Nuevo honor enviado a revisión',
-          'Un miembro ha enviado un honor para validación',
+          'Nueva especialidad enviada a revisión',
+          'Un miembro ha enviado una especialidad para validación',
           {
             type: 'validation',
             entity_type: 'honor',
@@ -623,11 +623,13 @@ export class HonorValidationWorkflowService {
   ) {
     try {
       const title =
-        action === 'approved' ? 'Honor aprobado' : 'Honor rechazado';
+        action === 'approved'
+          ? 'Especialidad aprobada'
+          : 'Especialidad rechazada';
       const body =
         action === 'approved'
-          ? 'Tu honor ha sido aprobado por el revisor'
-          : `Tu honor ha sido rechazado: ${reason}`;
+          ? 'Tu especialidad ha sido aprobada por el revisor'
+          : `Tu especialidad ha sido rechazada: ${reason}`;
 
       void this.notifications.notifySafe(
         userId,

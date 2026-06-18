@@ -135,7 +135,7 @@ describe('AchievementsProcessor', () => {
 
     const mockAchievement = {
       achievement_id: 1,
-      name: 'Participante Frecuente',
+      name: 'Primer Honor',
       type: 'THRESHOLD',
       active: true,
       repeatable: false,
@@ -281,7 +281,7 @@ describe('AchievementsProcessor', () => {
       expect(mockNotificationsService.notifySafe).toHaveBeenCalledWith(
         'user-1',
         '¡Logro desbloqueado!',
-        `Completaste: ${mockAchievement.name}`,
+        'Completaste: Primera Especialidad',
         expect.objectContaining({
           achievement_id: '1',
           achievement_name: mockAchievement.name,
@@ -460,7 +460,7 @@ describe('AchievementsProcessor', () => {
 
     const mockAchievement = {
       achievement_id: 10,
-      name: 'Retro Achievement',
+      name: 'Coleccionista de Honores',
       type: 'THRESHOLD',
       active: true,
       tier: 'SILVER',
@@ -595,7 +595,7 @@ describe('AchievementsProcessor', () => {
       expect(mockNotificationsService.notifySafe).toHaveBeenCalledWith(
         'user-1',
         '¡Logro desbloqueado!',
-        `Completaste: ${mockAchievement.name}`,
+        'Completaste: Coleccionista de Especialidades',
         expect.objectContaining({
           achievement_id: '10',
           achievement_name: mockAchievement.name,

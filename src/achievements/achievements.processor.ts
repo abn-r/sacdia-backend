@@ -199,10 +199,11 @@ export class AchievementsProcessor
 
     // Send notification for newly completed achievements (unless skip requested)
     if (isComplete && !existingRecord?.completed && !skipNotification) {
+      const displayName = this.toNotificationAchievementName(achievement.name);
       await this.notificationsService.notifySafe(
         userId,
         '¡Logro desbloqueado!',
-        `Completaste: ${achievement.name}`,
+        `Completaste: ${displayName}`,
         {
           achievement_id: String(achievementId),
           achievement_name: achievement.name,
@@ -395,10 +396,11 @@ export class AchievementsProcessor
     userId: string,
     achievement: achievements,
   ): Promise<void> {
+    const displayName = this.toNotificationAchievementName(achievement.name);
     await this.notificationsService.notifySafe(
       userId,
       '¡Logro desbloqueado!',
-      `Completaste: ${achievement.name}`,
+      `Completaste: ${displayName}`,
       {
         achievement_id: String(achievement.achievement_id),
         achievement_name: achievement.name,
@@ -408,5 +410,15 @@ export class AchievementsProcessor
       },
       'achievements:unlock',
     );
+  }
+
+  private toNotificationAchievementName(name: string): string {
+    return name
+      .replace(/\bPrimer Honor\b/g, 'Primera Especialidad')
+      .replace(/\bprimer honor\b/g, 'primera especialidad')
+      .replace(/\bHonores\b/g, 'Especialidades')
+      .replace(/\bhonores\b/g, 'especialidades')
+      .replace(/\bHonor\b/g, 'Especialidad')
+      .replace(/\bhonor\b/g, 'especialidad');
   }
 }

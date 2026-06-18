@@ -157,6 +157,9 @@ describe('HonorValidationWorkflowService', () => {
   });
 
   it('submits eligible honor for review', async () => {
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+      club_section_id: 99,
+    });
     mockPrisma.users_honors.findUnique.mockResolvedValue(
       honorRecord({
         validation_status: 'IN_PROGRESS',
@@ -184,6 +187,18 @@ describe('HonorValidationWorkflowService', () => {
       }),
     );
     expect(masterHonorsEvaluator.evaluateUser).not.toHaveBeenCalled();
+    expect(notifications.sendToSectionRole).toHaveBeenCalledWith(
+      99,
+      ['coordinator', 'director'],
+      'Nueva especialidad enviada a revisión',
+      'Un miembro ha enviado una especialidad para validación',
+      {
+        type: 'validation',
+        entity_type: 'honor',
+        entity_id: '10',
+      },
+      'validation:honor_submitted',
+    );
   });
 
   it('respects in-app choice groups when enough child requirements are completed', async () => {
@@ -323,6 +338,18 @@ describe('HonorValidationWorkflowService', () => {
       }),
     );
     expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
+    expect(notifications.notifySafe).toHaveBeenCalledWith(
+      'user-1',
+      'Especialidad aprobada',
+      'Tu especialidad ha sido aprobada por el revisor',
+      {
+        type: 'validation',
+        entity_type: 'honor',
+        entity_id: '10',
+        action: 'approved',
+      },
+      'validation:honor_approved',
+    );
   });
 
   it('rejects only pending honors and clears validate', async () => {
@@ -349,6 +376,18 @@ describe('HonorValidationWorkflowService', () => {
       }),
     );
     expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
+    expect(notifications.notifySafe).toHaveBeenCalledWith(
+      'user-1',
+      'Especialidad rechazada',
+      'Tu especialidad ha sido rechazada: Falta evidencia',
+      {
+        type: 'validation',
+        entity_type: 'honor',
+        entity_id: '10',
+        action: 'rejected',
+      },
+      'validation:honor_rejected',
+    );
   });
 
   it('does not fail validation workflow when master honors evaluation fails on approve', async () => {

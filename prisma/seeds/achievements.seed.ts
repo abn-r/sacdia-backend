@@ -204,8 +204,8 @@ const ACHIEVEMENTS: AchievementSeed[] = [
 
   // ── THRESHOLD: Especialidades ─────────────────────────────────────────────
   {
-    name: 'Primer Honor',
-    description: 'Valida tu primer honor o especialidad en el club.',
+    name: 'Primera Especialidad',
+    description: 'Valida tu primera especialidad en el club.',
     categoryName: 'Especialidades',
     type: 'THRESHOLD',
     tier: 'BRONZE',
@@ -214,7 +214,7 @@ const ACHIEVEMENTS: AchievementSeed[] = [
   },
   {
     name: 'Coleccionista',
-    description: 'Valida 15 honores o especialidades.',
+    description: 'Valida 15 especialidades.',
     categoryName: 'Especialidades',
     type: 'THRESHOLD',
     tier: 'SILVER',
