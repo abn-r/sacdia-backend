@@ -34,7 +34,7 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Neon).
 ## Stack
 
 - NestJS 11
-- Prisma 7 (`@prisma/adapter-pg`)
+- Prisma 7.8 (`@prisma/adapter-pg`)
 - PostgreSQL (Neon)
 - Auth JWT con Better Auth (self-hosted)
 - Cache con Redis (fallback a in-memory)
@@ -63,7 +63,7 @@ src/
 
 ## Requisitos
 
-- Node.js 20+
+- Node.js 24.x (`>=24 <25`)
 - pnpm
 - Acceso a PostgreSQL (Neon)
 

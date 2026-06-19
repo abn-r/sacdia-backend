@@ -327,7 +327,7 @@ describe('QrService', () => {
   });
 
   // TODO(qr-pdf-test): pdfkit zlib decoder rejects the inline 1x1 PNG fixture
-  // with "invalid stored block lengths" under Node 22 + pdfkit current. The
+  // with "invalid stored block lengths" under modern Node + pdfkit current. The
   // companion test "generates a PDF buffer even when avatar fetch fails"
   // already exercises the failure path, and the no-avatar test covers the
   // happy path without PNG embedding. Skipped pending a valid embeddable

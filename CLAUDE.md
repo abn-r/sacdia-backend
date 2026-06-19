@@ -49,7 +49,7 @@ src/
 ## Stack
 
 - NestJS 11 + TypeScript
-- Prisma 7 + PostgreSQL (Neon)
+- Prisma 7.8 + PostgreSQL (Neon)
 - JWT via HS256 usando `BETTER_AUTH_SECRET` (Option C: BA handles auth, SACDIA signs JWT)
 - Redis — cache-aside para 14 catálogos (TTL 1h; año eclesiástico 24h). Auto-invalidación en mutaciones admin. Endpoint manual: `POST /api/v1/admin/catalogs/cache/invalidate` (`catalogs:update`). Graceful fallback a DB si Redis no disponible. Reconexión: retry 1x en dev, backoff exponencial en prod.
 - Firebase FCM
@@ -86,8 +86,8 @@ src/
 
 ## CI/CD
 
-- Runtime: Node 22.x + pnpm 10 + `actions/setup-node@v4`
-- `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` habilitado en el pipeline
+- Runtime: Node 24.x (`engines.node: >=24 <25`) + pnpm 10 + `actions/setup-node@v4`
+- `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` sigue habilitado para que las acciones JavaScript corran alineadas con Node 24.
 - Deploy: Render.com (los pasos de Vercel fueron removidos)
 - ESLint: reglas `no-unsafe-*` deshabilitadas para compatibilidad con Prisma (8328 → 0 errores)
 - Jest: `transformIgnorePatterns: []` para paquetes ESM; `prisma generate` corre antes de los tests
