@@ -31,6 +31,12 @@ type ListAssignmentParams = {
 const ASSIGNABLE_ROLE_NAMES = new Set(['counselor', 'secretary']);
 const MAX_ASSIGNMENTS_PER_CLASS = 3;
 const MAX_ASSIGNMENTS_PER_USER = 2;
+const GUIDE_MAJOR_CLASS_NAME_FILTERS = [
+  { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
+  { name: { contains: 'Guia Mayor', mode: 'insensitive' as const } },
+];
+const GUIDE_MAJOR_FINISHED_STATUSES = ['APPROVED', 'INVESTIDO'] as const;
+const GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES = ['REJECTED', 'EXPIRED'] as const;
 
 @Injectable()
 export class ClassCounselorAssignmentsService {
@@ -63,7 +69,8 @@ export class ClassCounselorAssignmentsService {
   async createAssignment(params: CreateAssignmentParams) {
     const { clubId, sectionId, actorUserId, dto } = params;
     const ecclesiasticalYearId =
-      dto.ecclesiastical_year_id ?? (await this.getActiveEcclesiasticalYearId());
+      dto.ecclesiastical_year_id ??
+      (await this.getActiveEcclesiasticalYearId());
     const responsibilityType = this.resolveResponsibilityType(
       dto.responsibility_type,
     );
@@ -122,6 +129,8 @@ export class ClassCounselorAssignmentsService {
         ErrorCode.CLASS_COUNSELOR_ROLE_NOT_ASSIGNABLE,
       );
     }
+
+    await this.assertGuideMajorEligibility(dto.user_id);
 
     const existingSameAssignment = await (
       this.prisma as any
@@ -406,6 +415,37 @@ export class ClassCounselorAssignmentsService {
     }
 
     return year.year_id;
+  }
+
+  private async assertGuideMajorEligibility(userId: string): Promise<void> {
+    const guideMajorEnrollment = await this.prisma.enrollments.findFirst({
+      where: {
+        user_id: userId,
+        classes: {
+          OR: GUIDE_MAJOR_CLASS_NAME_FILTERS,
+        },
+        OR: [
+          {
+            active: true,
+            investiture_status: {
+              notIn: [...GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES],
+            },
+          },
+          {
+            investiture_status: {
+              in: [...GUIDE_MAJOR_FINISHED_STATUSES],
+            },
+          },
+        ],
+      },
+      select: { enrollment_id: true },
+    });
+
+    if (!guideMajorEnrollment) {
+      throw new AppBadRequestException(
+        ErrorCode.CLASS_COUNSELOR_GUIDE_MAJOR_REQUIRED,
+      );
+    }
   }
 
   private assignmentSelect() {

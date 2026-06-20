@@ -62,6 +62,7 @@ describe('ClubsService', () => {
     },
     enrollments: {
       count: jest.fn(),
+      findMany: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -333,6 +334,19 @@ describe('ClubsService', () => {
           },
         },
       ]);
+      mockPrismaService.enrollments.findMany.mockResolvedValue([
+        {
+          user_id: 'user-1',
+          enrollment_id: 99,
+          class_id: 12,
+          investiture_status: 'IN_PROGRESS',
+          active: true,
+          classes: {
+            class_id: 12,
+            name: 'Guía Mayor',
+          },
+        },
+      ]);
 
       const result = await service.getMembers(7);
 
@@ -365,7 +379,16 @@ describe('ClubsService', () => {
         current_class_name: 'Guía',
         current_class_id: 6,
         enrollment_id: 55,
+        class_counselor_eligible: true,
+        guide_major_class: {
+          class_id: 12,
+          name: 'Guía Mayor',
+          enrollment_id: 99,
+          investiture_status: 'IN_PROGRESS',
+          active: true,
+        },
         users: {
+          class_counselor_eligible: true,
           current_class: {
             name: 'Guía',
           },

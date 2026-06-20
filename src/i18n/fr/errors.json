@@ -304,6 +304,7 @@
   "CLASS_COUNSELOR_EXCEPTION_REQUIRED": "Une deuxième classe affectée requiert une exception et une justification",
   "CLASS_COUNSELOR_USER_LIMIT_REACHED": "L'utilisateur a déjà atteint le maximum de 2 classes actives affectées",
   "CLASS_COUNSELOR_INVALID_RESPONSIBILITY_TYPE": "Type de responsabilité de classe invalide",
+  "CLASS_COUNSELOR_GUIDE_MAJOR_REQUIRED": "Le responsable doit suivre ou avoir terminé Guide majeur",
   "UNIT_CLUB_NOT_FOUND": "Club introuvable",
   "UNIT_NOT_FOUND": "Unité introuvable",
   "UNIT_SECTION_NOT_FOUND": "Section introuvable",

@@ -304,6 +304,7 @@
   "CLASS_COUNSELOR_EXCEPTION_REQUIRED": "Uma segunda classe atribuída requer marcação de exceção e justificativa",
   "CLASS_COUNSELOR_USER_LIMIT_REACHED": "O usuário já atingiu o máximo de 2 classes ativas atribuídas",
   "CLASS_COUNSELOR_INVALID_RESPONSIBILITY_TYPE": "Tipo de responsabilidade de classe inválido",
+  "CLASS_COUNSELOR_GUIDE_MAJOR_REQUIRED": "O responsável deve estar cursando ou ter concluído Guia Maior",
   "UNIT_CLUB_NOT_FOUND": "Clube não encontrado",
   "UNIT_NOT_FOUND": "Unidade não encontrada",
   "UNIT_SECTION_NOT_FOUND": "Seção não encontrada",

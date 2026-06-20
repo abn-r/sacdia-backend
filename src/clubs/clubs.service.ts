@@ -32,6 +32,19 @@ import {
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
+const CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS = [
+  { name: { contains: 'Guía Mayor', mode: 'insensitive' as const } },
+  { name: { contains: 'Guia Mayor', mode: 'insensitive' as const } },
+];
+const CLASS_COUNSELOR_GUIDE_MAJOR_FINISHED_STATUSES = [
+  'APPROVED',
+  'INVESTIDO',
+] as const;
+const CLASS_COUNSELOR_GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES = [
+  'REJECTED',
+  'EXPIRED',
+] as const;
+
 @Injectable()
 export class ClubsService {
   private readonly logger = new Logger(ClubsService.name);
@@ -385,6 +398,66 @@ export class ClubsService {
       orderBy: { start_date: 'desc' },
     });
 
+    const memberUserIds = [
+      ...new Set(
+        members
+          .map((member) => member.user_id)
+          .filter((userId): userId is string => Boolean(userId)),
+      ),
+    ];
+
+    const guideMajorEnrollments =
+      memberUserIds.length > 0
+        ? await this.prisma.enrollments.findMany({
+            where: {
+              user_id: { in: memberUserIds },
+              classes: {
+                OR: CLASS_COUNSELOR_GUIDE_MAJOR_CLASS_FILTERS,
+              },
+              OR: [
+                {
+                  active: true,
+                  investiture_status: {
+                    notIn: [
+                      ...CLASS_COUNSELOR_GUIDE_MAJOR_INELIGIBLE_ACTIVE_STATUSES,
+                    ],
+                  },
+                },
+                {
+                  investiture_status: {
+                    in: [...CLASS_COUNSELOR_GUIDE_MAJOR_FINISHED_STATUSES],
+                  },
+                },
+              ],
+            },
+            select: {
+              user_id: true,
+              enrollment_id: true,
+              class_id: true,
+              investiture_status: true,
+              active: true,
+              classes: {
+                select: {
+                  class_id: true,
+                  name: true,
+                },
+              },
+            },
+          })
+        : [];
+    const guideMajorEligibilityByUserId = new Map(
+      guideMajorEnrollments.map((enrollment) => [
+        enrollment.user_id,
+        {
+          enrollment_id: enrollment.enrollment_id,
+          class_id: enrollment.class_id,
+          name: enrollment.classes?.name ?? 'Guía Mayor',
+          investiture_status: enrollment.investiture_status,
+          active: enrollment.active,
+        },
+      ]),
+    );
+
     return Promise.all(
       members.map(async (member) => {
         type MemberEnrollmentProjection = {
@@ -416,6 +489,8 @@ export class ClubsService {
               investiture_status: currentEnrollment.investiture_status,
             }
           : null;
+        const guideMajorEligibility =
+          guideMajorEligibilityByUserId.get(member.user_id) ?? null;
         const userFields = { ...(user ?? {}) };
         delete (userFields as { enrollments?: unknown }).enrollments;
         const resolvedUserImage =
@@ -426,6 +501,8 @@ export class ClubsService {
         return {
           ...member,
           is_enrolled: member.active,
+          class_counselor_eligible: guideMajorEligibility !== null,
+          guide_major_class: guideMajorEligibility,
           current_class: currentClass,
           current_class_id: currentClass?.class_id ?? null,
           current_class_name: currentClass?.name ?? null,
@@ -434,6 +511,8 @@ export class ClubsService {
             ? {
                 ...userFields,
                 user_image: resolvedUserImage,
+                class_counselor_eligible: guideMajorEligibility !== null,
+                guide_major_class: guideMajorEligibility,
                 current_class: currentClass,
               }
             : member.users,

@@ -175,7 +175,7 @@ export class UserClassesController {
 
   @Get(':classId/progress')
   @RequirePermissions('classes:read')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Obtener progreso del usuario en una clase',
     description:
@@ -204,13 +204,19 @@ export class UserClassesController {
     @Param('classId', ParseIntPipe) classId: number,
     @Query('enrollmentId', new ParseIntPipe({ optional: true }))
     enrollmentId?: number,
+    @CurrentUser() currentUser?: CurrentUserPayload,
   ) {
-    return this.classesService.getUserProgress(userId, classId, enrollmentId);
+    return this.classesService.getUserProgress(
+      userId,
+      classId,
+      enrollmentId,
+      currentUser?.sub ?? userId,
+    );
   }
 
   @Patch(':classId/progress')
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Actualizar progreso de sección',
     description:
@@ -231,6 +237,7 @@ export class UserClassesController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Param('classId', ParseIntPipe) classId: number,
     @Body() dto: UpdateProgressDto,
+    @CurrentUser() currentUser?: CurrentUserPayload,
   ) {
     return this.classesService.updateSectionProgress(
       userId,
@@ -240,6 +247,7 @@ export class UserClassesController {
       dto.score,
       dto.evidences,
       dto.enrollment_id,
+      currentUser?.sub ?? userId,
     );
   }
 
@@ -250,7 +258,7 @@ export class UserClassesController {
   @Post(':classId/sections/:sectionId/submit')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Submit a class section for validation',
     description:
@@ -278,6 +286,7 @@ export class UserClassesController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.submitSection(
+      userId,
       currentUser.sub,
       classId,
       sectionId,
@@ -293,7 +302,7 @@ export class UserClassesController {
   @Post(':classId/sections/:sectionId/files')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @AuthorizationResource({ type: 'active_assignment' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
@@ -337,6 +346,7 @@ export class UserClassesController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.uploadSectionFile(
+      userId,
       currentUser.sub,
       classId,
       sectionId,
@@ -349,7 +359,7 @@ export class UserClassesController {
   @Delete(':classId/sections/:sectionId/files/:fileId')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'user', ownerParam: 'userId' })
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary: 'Delete evidence file for a class section',
     description: 'Soft-deletes an evidence file and removes it from R2 storage',
@@ -377,6 +387,7 @@ export class UserClassesController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     const data = await this.classesService.deleteSectionFile(
+      userId,
       currentUser.sub,
       classId,
       sectionId,

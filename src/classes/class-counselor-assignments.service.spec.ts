@@ -17,6 +17,9 @@ describe('ClassCounselorAssignmentsService', () => {
     club_role_assignments: {
       findFirst: jest.fn(),
     },
+    enrollments: {
+      findFirst: jest.fn(),
+    },
     class_counselor_assignments: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -58,6 +61,11 @@ describe('ClassCounselorAssignmentsService', () => {
     mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
       assignment_id: '33333333-3333-3333-3333-333333333333',
       roles: { role_name: 'counselor' },
+    });
+    mockPrisma.enrollments.findFirst.mockResolvedValue({
+      enrollment_id: 55,
+      investiture_status: 'IN_PROGRESS',
+      classes: { name: 'Guía Mayor' },
     });
     mockPrisma.class_counselor_assignments.count.mockImplementation(
       ({ where }: { where: Record<string, unknown> }) => {
@@ -168,6 +176,25 @@ describe('ClassCounselorAssignmentsService', () => {
     });
   });
 
+  it('rejects assigning a responsible person who is not studying or invested as Guía Mayor', async () => {
+    mockPrisma.enrollments.findFirst.mockResolvedValue(null);
+
+    await expect(service.createAssignment(baseParams)).rejects.toMatchObject({
+      code: 'CLASS_COUNSELOR_GUIDE_MAJOR_REQUIRED',
+    });
+
+    expect(mockPrisma.enrollments.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          user_id: baseParams.dto.user_id,
+        }),
+      }),
+    );
+    expect(
+      mockPrisma.class_counselor_assignments.create,
+    ).not.toHaveBeenCalled();
+  });
+
   it('lists class counselor assignments for a club section and year', async () => {
     mockPrisma.class_counselor_assignments.findMany.mockResolvedValue([
       {
@@ -189,7 +216,9 @@ describe('ClassCounselorAssignmentsService', () => {
       }),
     ).resolves.toHaveLength(1);
 
-    expect(mockPrisma.class_counselor_assignments.findMany).toHaveBeenCalledWith(
+    expect(
+      mockPrisma.class_counselor_assignments.findMany,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           club_section_id: 20,
@@ -210,7 +239,9 @@ describe('ClassCounselorAssignmentsService', () => {
       responsibility_type: 'primary',
     });
 
-    expect(mockPrisma.class_counselor_assignments.findFirst).toHaveBeenCalledWith(
+    expect(
+      mockPrisma.class_counselor_assignments.findFirst,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           club_section_id: 20,

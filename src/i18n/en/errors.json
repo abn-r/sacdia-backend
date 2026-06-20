@@ -305,6 +305,7 @@
   "CLASS_COUNSELOR_EXCEPTION_REQUIRED": "A second assigned class requires an exception flag and reason",
   "CLASS_COUNSELOR_USER_LIMIT_REACHED": "The user already reached the maximum of 2 active assigned classes",
   "CLASS_COUNSELOR_INVALID_RESPONSIBILITY_TYPE": "Invalid class responsibility type",
+  "CLASS_COUNSELOR_GUIDE_MAJOR_REQUIRED": "The responsible person must be studying or have completed Master Guide",
   "UNIT_CLUB_NOT_FOUND": "Club not found",
   "UNIT_NOT_FOUND": "Unit not found",
   "UNIT_SECTION_NOT_FOUND": "Section not found",

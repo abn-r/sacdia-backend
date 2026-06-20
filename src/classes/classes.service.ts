@@ -25,6 +25,7 @@ import {
   buildEvidenceDisplayNameForFile,
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
+import { ClassProgressAccessService } from './class-progress-access.service';
 import pLimit from 'p-limit';
 
 // Concurrency cap for the evidence URL presign fan-out in getUserProgress.
@@ -51,6 +52,7 @@ export class ClassesService {
     private readonly fileStorage: FileStorageService,
     private readonly achievementsService: AchievementsService,
     private readonly translationService: TranslationService,
+    private readonly classProgressAccess: ClassProgressAccessService,
   ) {}
 
   private getSiblingClubTypeIds(): Promise<number[]> {
@@ -659,14 +661,21 @@ export class ClassesService {
   // ========================================
 
   async getUserProgress(
-    userId: string,
+    targetUserId: string,
     classId: number,
     enrollmentId?: number,
+    actorUserId = targetUserId,
   ) {
     const resolvedEnrollment = await this.resolveProgressEnrollment({
-      userId,
+      userId: targetUserId,
       classId,
       enrollmentId,
+    });
+    await this.classProgressAccess.assertCanAccessProgress({
+      actorUserId,
+      targetUserId,
+      classId,
+      ecclesiasticalYearId: resolvedEnrollment.ecclesiasticalYearId,
     });
 
     // Get all sections for this class
@@ -732,7 +741,7 @@ export class ClassesService {
             signedUrlMap.set(ef.evidence_file_id, signedUrl);
           } catch (err) {
             this.logger.warn(
-              `Failed to presign evidence URL for file ${ef.evidence_file_id} (class ${classId}, user ${userId}): ${(err as Error).message}`,
+              `Failed to presign evidence URL for file ${ef.evidence_file_id} (class ${classId}, user ${targetUserId}): ${(err as Error).message}`,
             );
             signedUrlMap.set(ef.evidence_file_id, ef.file_url);
           }
@@ -823,18 +832,25 @@ export class ClassesService {
   }
 
   async updateSectionProgress(
-    userId: string,
+    targetUserId: string,
     classId: number,
     moduleId: number,
     sectionId: number,
     score: number,
     evidences?: Record<string, unknown>,
     enrollmentId?: number,
+    actorUserId = targetUserId,
   ) {
     const resolvedEnrollment = await this.resolveProgressEnrollment({
-      userId,
+      userId: targetUserId,
       classId,
       enrollmentId,
+    });
+    await this.classProgressAccess.assertCanAccessProgress({
+      actorUserId,
+      targetUserId,
+      classId,
+      ecclesiasticalYearId: resolvedEnrollment.ecclesiasticalYearId,
     });
 
     return this.prisma.$transaction(async (tx) => {
@@ -864,7 +880,7 @@ export class ClassesService {
           })
         : await tx.class_section_progress.create({
             data: {
-              user_id: userId,
+              user_id: targetUserId,
               class_id: classId,
               enrollment_id: resolvedEnrollment.enrollmentId,
               module_id: moduleId,
@@ -915,7 +931,7 @@ export class ClassesService {
       } else {
         await tx.class_module_progress.create({
           data: {
-            user_id: userId,
+            user_id: targetUserId,
             class_id: classId,
             enrollment_id: resolvedEnrollment.enrollmentId,
             module_id: moduleId,
@@ -937,7 +953,8 @@ export class ClassesService {
   // ========================================
 
   async uploadSectionFile(
-    userId: string,
+    targetUserId: string,
+    actorUserId: string,
     classId: number,
     sectionId: number,
     file: Express.Multer.File,
@@ -966,9 +983,15 @@ export class ClassesService {
     }
 
     const resolved = await this.resolveProgressEnrollment({
-      userId,
+      userId: targetUserId,
       classId,
       enrollmentId,
+    });
+    await this.classProgressAccess.assertCanAccessProgress({
+      actorUserId,
+      targetUserId,
+      classId,
+      ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
 
     // Find or create section progress using the annual enrollment owner.
@@ -983,7 +1006,7 @@ export class ClassesService {
     if (!sectionProgress) {
       sectionProgress = await this.prisma.class_section_progress.create({
         data: {
-          user_id: userId,
+          user_id: targetUserId,
           class_id: classId,
           enrollment_id: resolved.enrollmentId,
           module_id: section.module_id,
@@ -1020,7 +1043,7 @@ export class ClassesService {
         file_url: uploaded.url,
         file_name: displayName,
         file_type: this.resolveEvidenceFileType(file),
-        uploaded_by_id: userId,
+        uploaded_by_id: actorUserId,
         active: true,
       },
       include: {
@@ -1043,15 +1066,22 @@ export class ClassesService {
   }
 
   async submitSection(
-    userId: string,
+    targetUserId: string,
+    actorUserId: string,
     classId: number,
     sectionId: number,
     enrollmentId?: number,
   ) {
     const resolved = await this.resolveProgressEnrollment({
-      userId,
+      userId: targetUserId,
       classId,
       enrollmentId,
+    });
+    await this.classProgressAccess.assertCanAccessProgress({
+      actorUserId,
+      targetUserId,
+      classId,
+      ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
 
     // Find the section progress by annual enrollment owner.
@@ -1099,7 +1129,7 @@ export class ClassesService {
       },
       data: {
         status: evidence_validation_enum.SUBMITTED,
-        submitted_by_id: userId,
+        submitted_by_id: actorUserId,
         submitted_at: new Date(),
         modified_at: new Date(),
       },
@@ -1114,16 +1144,23 @@ export class ClassesService {
   }
 
   async deleteSectionFile(
-    userId: string,
+    targetUserId: string,
+    actorUserId: string,
     classId: number,
     sectionId: number,
     fileId: number,
     enrollmentId?: number,
   ) {
     const resolved = await this.resolveProgressEnrollment({
-      userId,
+      userId: targetUserId,
       classId,
       enrollmentId,
+    });
+    await this.classProgressAccess.assertCanAccessProgress({
+      actorUserId,
+      targetUserId,
+      classId,
+      ecclesiasticalYearId: resolved.ecclesiasticalYearId,
     });
 
     // Resolve the section progress from the annual enrollment owner.

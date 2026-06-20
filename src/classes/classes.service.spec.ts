@@ -7,6 +7,7 @@ import { TranslationService } from '../common/services/translation.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { EVIDENCE_URL_LIMITER } from './classes.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { ClassProgressAccessService } from './class-progress-access.service';
 
 describe('ClassesService', () => {
   let service: ClassesService;
@@ -53,9 +54,15 @@ describe('ClassesService', () => {
         .mockResolvedValue([{ club_type_id: 1 }, { club_type_id: 2 }]),
     },
   };
+  const mockClassProgressAccessService = {
+    assertCanAccessProgress: jest.fn(),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockClassProgressAccessService.assertCanAccessProgress.mockResolvedValue(
+      undefined,
+    );
 
     transactionMock = createTransactionMock();
 
@@ -137,6 +144,10 @@ describe('ClassesService', () => {
           },
         },
         { provide: TranslationService, useValue: mockTranslationService },
+        {
+          provide: ClassProgressAccessService,
+          useValue: mockClassProgressAccessService,
+        },
       ],
     }).compile();
 
@@ -499,6 +510,101 @@ describe('ClassesService', () => {
   });
 
   describe('class evidence files', () => {
+    it('uploads delegated evidence under the target enrollment and records the actor as uploader', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'member-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'EN_PROGRESO',
+      });
+      const fileStorage = (service as any).fileStorage;
+      fileStorage.upload.mockResolvedValue({
+        url: 'https://r2.example/class/123.pdf',
+      });
+      fileStorage.getSignedDownloadUrl.mockResolvedValue(
+        'https://signed.example/class/123.pdf',
+      );
+
+      await (service as any).uploadSectionFile(
+        'member-1',
+        'counselor-1',
+        7,
+        101,
+        {
+          buffer: Buffer.from('pdf'),
+          mimetype: 'application/pdf',
+          originalname: 'evidence.pdf',
+        },
+        901,
+      );
+
+      expect(mockPrismaService.class_section_progress.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_id: 'member-1',
+            class_id: 7,
+            enrollment_id: 901,
+          }),
+        }),
+      );
+      expect(mockPrismaService.evidence_files.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            uploaded_by_id: 'counselor-1',
+          }),
+        }),
+      );
+      expect(
+        mockClassProgressAccessService.assertCanAccessProgress,
+      ).toHaveBeenCalledWith({
+        actorUserId: 'counselor-1',
+        targetUserId: 'member-1',
+        classId: 7,
+        ecclesiasticalYearId: 2026,
+      });
+    });
+
+    it('submits delegated evidence under the target enrollment and records the actor as submitter', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        enrollment_id: 901,
+        user_id: 'member-1',
+        class_id: 7,
+        ecclesiastical_year_id: 2026,
+        investiture_status: 'EN_PROGRESO',
+      });
+      mockPrismaService.class_section_progress.findFirst.mockResolvedValue({
+        section_progress_id: 123,
+        section_id: 101,
+        status: 'PENDING',
+        evidence_files: [{ evidence_file_id: 55 }],
+      });
+
+      await (service as any).submitSection(
+        'member-1',
+        'counselor-1',
+        7,
+        101,
+        901,
+      );
+
+      expect(mockPrismaService.class_section_progress.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            submitted_by_id: 'counselor-1',
+          }),
+        }),
+      );
+      expect(
+        mockClassProgressAccessService.assertCanAccessProgress,
+      ).toHaveBeenCalledWith({
+        actorUserId: 'counselor-1',
+        targetUserId: 'member-1',
+        classId: 7,
+        ecclesiasticalYearId: 2026,
+      });
+    });
+
     it('uploads evidence against an explicit enrollment-owned section progress', async () => {
       mockPrismaService.enrollments.findUnique.mockResolvedValue({
         enrollment_id: 901,
@@ -515,6 +621,7 @@ describe('ClassesService', () => {
       );
 
       await (service as any).uploadSectionFile(
+        'user-1',
         'user-1',
         7,
         101,
@@ -564,7 +671,7 @@ describe('ClassesService', () => {
         evidence_files: [{ evidence_file_id: 55 }],
       });
 
-      await (service as any).submitSection('user-1', 7, 101, 901);
+      await (service as any).submitSection('user-1', 'user-1', 7, 101, 901);
 
       expect(
         mockPrismaService.class_section_progress.findFirst,
