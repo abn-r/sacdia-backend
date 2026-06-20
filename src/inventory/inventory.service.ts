@@ -45,6 +45,7 @@ export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
   private static readonly MAX_EVIDENCE_FILES = 3;
   private static readonly EVIDENCE_URL_TTL_SECONDS = 15 * 60;
+  private static readonly PROFILE_IMAGE_URL_TTL_SECONDS = 15 * 60;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -58,44 +59,26 @@ export class InventoryService {
   // ========================================
 
   /**
-   * Listar items del inventario de un club.
+   * Listar items del inventario de una instancia/sección de club.
    *
-   * @param clubId       ID del club (clubs.club_id). Los items se agrupan en
-   *                     secciones cuyo main_club_id apunta a este club.
-   * @param categoryId   Filtro opcional por categoría.
-   * @param userSectionId
-   *   - `null`    → admin / bypass: devuelve items de TODAS las secciones del club.
-   *   - `number`  → miembro: filtra estrictamente a esa sección (RBAC).
+   * @param clubSectionId ID de la sección operativa (`club_sections.club_section_id`).
+   *                      El nombre legacy del path param es `clubId`, pero el
+   *                      guard de permisos resuelve ese segmento como sección.
+   * @param categoryId    Filtro opcional por categoría.
    */
-  async findAllByClub(
-    clubId: number,
-    categoryId?: number,
-    userSectionId?: number | null,
-  ) {
-    // Construir el filtro de sección según el perfil del usuario.
-    // club_inventory → club_sections (via club_section_id) → clubs (via main_club_id)
-    let sectionFilter: any;
+  async findAllByClub(clubSectionId: number, categoryId?: number) {
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: clubSectionId },
+      select: { club_section_id: true, main_club_id: true },
+    });
 
-    if (userSectionId == null) {
-      // Admin / bypass: todos los items de las secciones que pertenecen a este club.
-      sectionFilter = {
-        club_sections: {
-          main_club_id: clubId,
-        },
-      };
-    } else {
-      // Miembro con sección asignada: solo items de su sección (y que ésta sea del club correcto).
-      sectionFilter = {
-        club_section_id: userSectionId,
-        club_sections: {
-          main_club_id: clubId,
-        },
-      };
+    if (!section) {
+      throw new AppNotFoundException(ErrorCode.INVENTORY_SECTION_NOT_FOUND);
     }
 
     const whereClause: any = {
       active: true,
-      ...sectionFilter,
+      club_section_id: clubSectionId,
       ...(categoryId && { inventory_category_id: categoryId }),
     };
 
@@ -161,8 +144,8 @@ export class InventoryService {
       meta: {
         total_items: items.length,
         total_value_estimated: null,
-        club_id: clubId,
-        ...(userSectionId != null && { club_section_id: userSectionId }),
+        club_id: section.main_club_id,
+        club_section_id: section.club_section_id,
       },
     };
   }
@@ -214,6 +197,9 @@ export class InventoryService {
     }
 
     const evidences = await this.getEvidenceForInventory(inventoryId);
+    const history = await this.getInventoryHistory(item.club_inventory_id);
+    const createdBy = this.getHistoryActor(history, 'CREATE');
+    const modifiedBy = this.getHistoryActor(history, 'UPDATE');
 
     return {
       inventory_id: item.club_inventory_id,
@@ -226,9 +212,13 @@ export class InventoryService {
       active: item.active,
       created_at: item.created_at,
       updated_at: item.modified_at,
+      created_by: createdBy,
+      created_by_name: this.formatHistoryActorName(createdBy),
+      modified_by: modifiedBy,
+      modified_by_name: this.formatHistoryActorName(modifiedBy),
       evidences,
       photo_url: evidences[0]?.url ?? null,
-      history: await this.getInventoryHistory(item.club_inventory_id),
+      history,
     };
   }
 
@@ -452,7 +442,7 @@ export class InventoryService {
     );
 
     try {
-      const created = (await evidenceClient.create({
+      const created = await evidenceClient.create({
         data: {
           inventory_id: inventoryId,
           file_url: uploaded.url,
@@ -462,7 +452,7 @@ export class InventoryService {
           uploaded_by_id: performedBy,
           active: true,
         },
-      })) as InventoryEvidenceRow;
+      });
 
       return this.mapEvidenceRow(created);
     } catch (error) {
@@ -649,24 +639,79 @@ export class InventoryService {
             user_id: true,
             name: true,
             paternal_last_name: true,
+            user_image: true,
           },
         },
       },
     });
 
-    return records.map((r) => ({
-      history_id: r.history_id,
-      action: r.action,
-      field_changed: r.field_changed,
-      old_value: r.old_value,
-      new_value: r.new_value,
+    return Promise.all(
+      records.map(async (r) => ({
+        history_id: r.history_id,
+        action: r.action,
+        field_changed: r.field_changed,
+        old_value: r.old_value,
+        new_value: r.new_value,
+        performed_by: {
+          user_id: r.users.user_id,
+          name: r.users.name,
+          paternal_last_name: r.users.paternal_last_name,
+          avatar_url: await this.resolveProfileImageUrl(r.users.user_image),
+        },
+        created_at: r.created_at,
+      })),
+    );
+  }
+
+  private getHistoryActor(
+    history: Array<{
+      action: string;
       performed_by: {
-        user_id: r.users.user_id,
-        name: r.users.name,
-        paternal_last_name: r.users.paternal_last_name,
-      },
-      created_at: r.created_at,
-    }));
+        user_id: string;
+        name: string | null;
+        paternal_last_name: string | null;
+        avatar_url?: string | null;
+      } | null;
+    }>,
+    action: 'CREATE' | 'UPDATE' | 'DELETE',
+  ) {
+    return (
+      history.find((record) => record.action === action)?.performed_by ?? null
+    );
+  }
+
+  private formatHistoryActorName(
+    actor: {
+      name: string | null;
+      paternal_last_name: string | null;
+    } | null,
+  ) {
+    if (!actor) return null;
+    const fullName = [actor.name, actor.paternal_last_name]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .join(' ')
+      .trim();
+    return fullName || null;
+  }
+
+  private async resolveProfileImageUrl(userImage: string | null | undefined) {
+    if (!userImage) return null;
+
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.USER_PROFILES,
+        userImage,
+        {
+          expiresInSeconds: InventoryService.PROFILE_IMAGE_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to resolve signed inventory actor avatar URL; returning stored value',
+        error,
+      );
+      return userImage;
+    }
   }
 
   // ========================================

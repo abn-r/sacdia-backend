@@ -60,6 +60,8 @@ describe('InventoryService', () => {
 
   const baseSection = {
     club_section_id: 10,
+    main_club_id: 5,
+    club_type_id: 2,
     name: 'Conquistadores',
     active: true,
   };
@@ -100,6 +102,7 @@ describe('InventoryService', () => {
     jest
       .spyOn(service as any, 'logInventoryChange')
       .mockResolvedValue(undefined);
+    mockPrismaService.club_sections.findUnique.mockResolvedValue(baseSection);
     mockPrismaService.inventory_evidence_files.findMany.mockResolvedValue([]);
   });
 
@@ -146,32 +149,42 @@ describe('InventoryService', () => {
   // ============================================================
 
   describe('findAllByClub', () => {
-    it('TC03 - happy path (admin/null): returns items with category info, meta has club_id', async () => {
+    it('TC03 - happy path: returns items for the requested club section', async () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([baseItem]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([
         baseCategory,
       ]);
 
-      const result = await service.findAllByClub(5, undefined, null);
+      const result = await service.findAllByClub(10);
 
       expect(result.data).toHaveLength(1);
       expect(result.data[0].inventory_id).toBe(100);
       expect(result.data[0].category?.name).toBe('Camping');
       expect(result.meta.total_items).toBe(1);
       expect(result.meta.club_id).toBe(5);
-      // admin path: no club_section_id in meta
-      expect((result.meta as any).club_section_id).toBeUndefined();
+      expect(result.meta.club_section_id).toBe(10);
+      expect(mockPrismaService.club_inventory.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            club_section_id: 10,
+          }),
+        }),
+      );
     });
 
     it('TC04 - filters by categoryId when provided', async () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      await service.findAllByClub(5, 1, null);
+      await service.findAllByClub(10, 1);
 
       expect(mockPrismaService.club_inventory.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ inventory_category_id: 1 }),
+          where: expect.objectContaining({
+            club_section_id: 10,
+            inventory_category_id: 1,
+          }),
         }),
       );
     });
@@ -183,7 +196,7 @@ describe('InventoryService', () => {
       ]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      const result = await service.findAllByClub(5, undefined, null);
+      const result = await service.findAllByClub(10);
 
       expect(result.data[0].category).toBeNull();
     });
@@ -192,44 +205,41 @@ describe('InventoryService', () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
 
-      const result = await service.findAllByClub(5, undefined, null);
+      const result = await service.findAllByClub(10);
 
       expect(result.data).toHaveLength(0);
       expect(result.meta.total_items).toBe(0);
     });
 
-    it('TC07-rbac - member path: where clause filters by club_section_id + main_club_id', async () => {
+    it('TC07 - does not reinterpret the requested section as main_club_id', async () => {
       mockPrismaService.club_inventory.findMany.mockResolvedValue([baseItem]);
       mockPrismaService.inventory_categories.findMany.mockResolvedValue([
         baseCategory,
       ]);
 
-      const result = await service.findAllByClub(5, undefined, 10);
+      const result = await service.findAllByClub(10);
 
       expect(mockPrismaService.club_inventory.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             club_section_id: 10,
-            club_sections: { main_club_id: 5 },
           }),
         }),
       );
-      expect(result.meta.club_id).toBe(5);
-      expect((result.meta as any).club_section_id).toBe(10);
-    });
-
-    it('TC08-rbac - admin path (null): where clause filters only by main_club_id, no club_section_id', async () => {
-      mockPrismaService.club_inventory.findMany.mockResolvedValue([]);
-      mockPrismaService.inventory_categories.findMany.mockResolvedValue([]);
-
-      await service.findAllByClub(5, undefined, null);
-
       const calledWith =
         mockPrismaService.club_inventory.findMany.mock.calls[0][0];
-      expect(calledWith.where).toMatchObject({
-        club_sections: { main_club_id: 5 },
+      expect(calledWith.where.club_sections).toBeUndefined();
+      expect(result.meta.club_id).toBe(5);
+      expect(result.meta.club_section_id).toBe(10);
+    });
+
+    it('TC08 - error: club section not found → NotFoundException', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue(null);
+
+      await expect(service.findAllByClub(999)).rejects.toMatchObject({
+        code: ErrorCode.INVENTORY_SECTION_NOT_FOUND,
       });
-      expect(calledWith.where.club_section_id).toBeUndefined();
+      expect(mockPrismaService.club_inventory.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -250,6 +260,39 @@ describe('InventoryService', () => {
       expect(result.category?.category_id).toBe(1);
       expect(result.category?.name).toBe('Camping');
       expect(result.history).toEqual([]);
+    });
+
+    it('TC07b - maps CREATE history performer as created_by for detail audit', async () => {
+      mockPrismaService.club_inventory.findUnique.mockResolvedValue(baseItem);
+      mockPrismaService.inventory_categories.findUnique.mockResolvedValue(
+        baseCategory,
+      );
+      (service as any).getInventoryHistory.mockResolvedValue([
+        {
+          history_id: 1,
+          action: 'CREATE',
+          field_changed: 'name',
+          old_value: null,
+          new_value: 'Carpas 4 personas',
+          performed_by: {
+            user_id: 'user-abc',
+            name: 'Ana',
+            paternal_last_name: 'López',
+            avatar_url: 'https://signed.example/ana.jpg',
+          },
+          created_at: new Date('2026-01-01'),
+        },
+      ]);
+
+      const result = await service.findOne(100);
+
+      expect(result.created_by).toEqual({
+        user_id: 'user-abc',
+        name: 'Ana',
+        paternal_last_name: 'López',
+        avatar_url: 'https://signed.example/ana.jpg',
+      });
+      expect(result.created_by_name).toBe('Ana López');
     });
 
     it('TC08 - happy path: returns item with null category when no inventory_category_id', async () => {
@@ -281,6 +324,64 @@ describe('InventoryService', () => {
       const result = await service.findOne(100);
 
       expect(result.category).toBeNull();
+    });
+  });
+
+  // ============================================================
+  // getInventoryHistory
+  // ============================================================
+
+  describe('getInventoryHistory', () => {
+    it('maps performer profile picture to signed avatar_url when available', async () => {
+      ((service as any).getInventoryHistory as jest.Mock).mockRestore();
+      mockPrismaService.club_inventory.findUnique.mockResolvedValue(baseItem);
+      mockPrismaService.inventory_history.findMany.mockResolvedValue([
+        {
+          history_id: 1,
+          action: 'CREATE',
+          field_changed: 'name',
+          old_value: null,
+          new_value: 'Carpas 4 personas',
+          users: {
+            user_id: 'user-abc',
+            name: 'Ana',
+            paternal_last_name: 'López',
+            user_image: 'user-profiles/ana.jpg',
+          },
+          created_at: new Date('2026-01-01'),
+        },
+      ]);
+      mockFileStorageService.getSignedDownloadUrl.mockResolvedValueOnce(
+        'https://signed.example/ana.jpg',
+      );
+
+      const result = await service.getInventoryHistory(100);
+
+      expect(mockPrismaService.inventory_history.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            users: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+                user_image: true,
+              },
+            },
+          },
+        }),
+      );
+      expect(mockFileStorageService.getSignedDownloadUrl).toHaveBeenCalledWith(
+        StorageBucketAlias.USER_PROFILES,
+        'user-profiles/ana.jpg',
+        { expiresInSeconds: expect.any(Number) },
+      );
+      expect(result[0].performed_by).toEqual({
+        user_id: 'user-abc',
+        name: 'Ana',
+        paternal_last_name: 'López',
+        avatar_url: 'https://signed.example/ana.jpg',
+      });
     });
   });
 

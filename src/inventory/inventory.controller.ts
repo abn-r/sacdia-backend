@@ -58,14 +58,15 @@ export class InventoryController {
     instanceTypeField: 'instanceType',
   })
   @ApiOperation({
-    summary: 'Listar items del inventario de un club',
+    summary: 'Listar items del inventario de una instancia de club',
     description:
       'Obtiene todos los items de inventario de una instancia específica de club (Aventureros, Conquistadores, o Guías Mayores)',
   })
   @ApiParam({
     name: 'clubId',
-    description: 'ID de la instancia del club',
-    example: 5,
+    description:
+      'ID de la instancia/sección del club (`club_sections.club_section_id`). El nombre del parámetro se conserva por compatibilidad.',
+    example: 10,
   })
   @ApiQuery({
     name: 'instanceType',
@@ -87,25 +88,15 @@ export class InventoryController {
   @ApiResponse({ status: 400, description: 'Tipo de instancia inválido' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
   async findAllByClub(
-    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('clubId', ParseIntPipe) clubSectionId: number,
     @Query('instanceType') instanceType: 'adv' | 'pathf' | 'mg',
     @Query('category', new ParseIntPipe({ optional: true }))
     categoryId?: number,
-    @Req() req?: any,
   ) {
-    // PermissionsGuard sets req.authorization after resolving the user profile.
-    // For regular club members, effective.scope.club holds their active section.
-    // For admins / club-managers (canManageClub bypass), scope.club may be null —
-    // in that case we pass null so the service falls back to the broad club filter.
-    const userSectionId: number | null =
-      (req?.authorization?.effective?.scope?.club?.section?.club_section_id as
-        | number
-        | undefined) ?? null;
-
+    void instanceType;
     const result = await this.inventoryService.findAllByClub(
-      clubId,
+      clubSectionId,
       categoryId,
-      userSectionId,
     );
     return {
       status: 'success',
@@ -180,8 +171,9 @@ export class InventoryController {
   })
   @ApiParam({
     name: 'clubId',
-    description: 'ID de la instancia del club',
-    example: 5,
+    description:
+      'ID de la instancia/sección del club (`club_sections.club_section_id`). El nombre del parámetro se conserva por compatibilidad.',
+    example: 10,
   })
   @ApiResponse({ status: 201, description: 'Item creado exitosamente' })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
@@ -191,11 +183,15 @@ export class InventoryController {
     description: 'No tiene permisos para agregar items',
   })
   async create(
-    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('clubId', ParseIntPipe) clubSectionId: number,
     @Body() dto: CreateItemDto,
     @Req() req: any,
   ) {
-    const data = await this.inventoryService.create(clubId, dto, req.user.sub);
+    const data = await this.inventoryService.create(
+      clubSectionId,
+      dto,
+      req.user.sub,
+    );
     return {
       status: 'success',
       data,
