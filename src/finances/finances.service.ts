@@ -1,5 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { AppNotFoundException } from '../common/errors/app.exception';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import 'multer';
+import {
+  AppBadRequestException,
+  AppInternalServerErrorException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -15,6 +20,11 @@ import {
 } from '../common/dto/pagination.dto';
 import { FinancePeriodService } from './finance-period.service';
 import { TranslationService } from '../common/services/translation.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
+import type { FileStorageService } from '../common/services/file-storage.service';
 
 type FinanceSectionFilter =
   | { club_section_id: { in: number[] } }
@@ -32,12 +42,42 @@ type FinancePeriod = {
   month: number;
 };
 
+type FinanceEvidenceRow = {
+  finance_evidence_file_id: number;
+  finance_id: number;
+  file_url: string;
+  file_name: string;
+  file_type: string;
+  file_size: number | null;
+  uploaded_by_id: string;
+  uploaded_at: Date;
+  active: boolean;
+};
+
+type FinanceEvidenceResponse = {
+  evidence_id: number;
+  finance_id: number;
+  url: string;
+  file_name: string;
+  file_type: string;
+  file_size: number | null;
+  uploaded_by_id: string;
+  uploaded_at: Date;
+  active: boolean;
+};
+
 @Injectable()
 export class FinancesService {
+  private readonly logger = new Logger(FinancesService.name);
+  private static readonly MAX_EVIDENCE_FILES = 3;
+  private static readonly EVIDENCE_URL_TTL_SECONDS = 15 * 60;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly financePeriodService: FinancePeriodService,
     private readonly translationService: TranslationService,
+    @Inject(FILE_STORAGE_SERVICE)
+    private readonly fileStorage: FileStorageService,
   ) {}
 
   // ========================================
@@ -139,9 +179,16 @@ export class FinancesService {
       }),
       this.prisma.finances.count({ where }),
     ]);
+    const evidencesByFinanceId = await this.getEvidenceMap(
+      data.map((record) => record.finance_id),
+    );
+    const dataWithEvidences = data.map((record) => ({
+      ...record,
+      evidences: evidencesByFinanceId.get(record.finance_id) ?? [],
+    }));
 
     return createPaginatedResult(
-      data,
+      dataWithEvidences,
       total,
       pagination ?? new PaginationDto(),
     );
@@ -278,6 +325,9 @@ export class FinancesService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const totalPages = Math.ceil(total / limit);
+    const evidencesByFinanceId = await this.getEvidenceMap(
+      data.map((record) => record.finance_id),
+    );
 
     // Map to response shape defined in spec
     const mapped = data.map((record) => ({
@@ -303,6 +353,7 @@ export class FinancesService {
         ? `${record.modified_by.name} ${record.modified_by.paternal_last_name}`.trim()
         : null,
       modifiedAt: record.modified_at ?? null,
+      evidences: evidencesByFinanceId.get(record.finance_id) ?? [],
     }));
 
     return {
@@ -650,6 +701,163 @@ export class FinancesService {
     return 0;
   }
 
+  async uploadEvidence(
+    financeId: number,
+    performedBy: string,
+    file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer) {
+      throw new AppBadRequestException(
+        ErrorCode.FINANCE_EVIDENCE_FILE_REQUIRED,
+      );
+    }
+
+    const finance = await this.prisma.finances.findUnique({
+      where: { finance_id: financeId },
+      select: { finance_id: true },
+    });
+
+    if (!finance) {
+      throw new AppNotFoundException(ErrorCode.FINANCE_TRANSACTION_NOT_FOUND);
+    }
+
+    const evidenceClient = this.financeEvidenceClient();
+    const activeCount = await evidenceClient.count({
+      where: { finance_id: financeId, active: true },
+    });
+
+    if (activeCount >= FinancesService.MAX_EVIDENCE_FILES) {
+      throw new AppBadRequestException(
+        ErrorCode.FINANCE_EVIDENCE_LIMIT_EXCEEDED,
+      );
+    }
+
+    const extension = this.resolveFileExtension(file);
+    const objectKey = `finances/${financeId}/evidence-${Date.now()}.${extension}`;
+    const uploaded = await this.fileStorage.upload(
+      StorageBucketAlias.EVIDENCE_FILES,
+      objectKey,
+      file.buffer,
+      { contentType: file.mimetype },
+    );
+
+    try {
+      const created = await evidenceClient.create({
+        data: {
+          finance_id: financeId,
+          file_url: uploaded.url,
+          file_name: file.originalname || objectKey,
+          file_type: file.mimetype,
+          file_size: file.size,
+          uploaded_by_id: performedBy,
+          active: true,
+        },
+      });
+
+      return this.mapEvidenceRow(created);
+    } catch (error) {
+      await this.fileStorage
+        .deleteMany(StorageBucketAlias.EVIDENCE_FILES, [uploaded.key])
+        .catch((deleteError) =>
+          this.logger.warn(
+            'Failed to cleanup finance evidence after DB error',
+            deleteError,
+          ),
+        );
+      this.logger.error('Finance evidence DB create failed', error);
+      throw new AppInternalServerErrorException(ErrorCode.R2_UPLOAD_FAILED);
+    }
+  }
+
+  private financeEvidenceClient() {
+    return (
+      this.prisma as unknown as {
+        finance_evidence_files: {
+          count(args: unknown): Promise<number>;
+          create(args: unknown): Promise<FinanceEvidenceRow>;
+          findMany(args: unknown): Promise<FinanceEvidenceRow[]>;
+        };
+      }
+    ).finance_evidence_files;
+  }
+
+  private async getEvidenceMap(financeIds: number[]) {
+    const map = new Map<number, FinanceEvidenceResponse[]>();
+    const uniqueIds = [...new Set(financeIds)].filter((id) => id > 0);
+    if (uniqueIds.length === 0) return map;
+
+    const rows = await this.financeEvidenceClient().findMany({
+      where: {
+        finance_id: { in: uniqueIds },
+        active: true,
+      },
+      orderBy: { uploaded_at: 'asc' },
+    });
+
+    for (const row of rows) {
+      const mapped = await this.mapEvidenceRow(row);
+      const current = map.get(row.finance_id) ?? [];
+      current.push(mapped);
+      map.set(row.finance_id, current);
+    }
+
+    return map;
+  }
+
+  private async getEvidenceForFinance(financeId: number) {
+    const rows = await this.financeEvidenceClient().findMany({
+      where: { finance_id: financeId, active: true },
+      orderBy: { uploaded_at: 'asc' },
+    });
+
+    return Promise.all(rows.map((row) => this.mapEvidenceRow(row)));
+  }
+
+  private async mapEvidenceRow(
+    row: FinanceEvidenceRow,
+  ): Promise<FinanceEvidenceResponse> {
+    return {
+      evidence_id: row.finance_evidence_file_id,
+      finance_id: row.finance_id,
+      url: await this.resolveEvidenceUrl(row.file_url),
+      file_name: row.file_name,
+      file_type: row.file_type,
+      file_size: row.file_size,
+      uploaded_by_id: row.uploaded_by_id,
+      uploaded_at: row.uploaded_at,
+      active: row.active,
+    };
+  }
+
+  private async resolveEvidenceUrl(value: string) {
+    try {
+      return await this.fileStorage.getSignedDownloadUrl(
+        StorageBucketAlias.EVIDENCE_FILES,
+        value,
+        {
+          expiresInSeconds: FinancesService.EVIDENCE_URL_TTL_SECONDS,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        'Failed to resolve signed finance evidence URL; returning stored value',
+        error,
+      );
+      return value;
+    }
+  }
+
+  private resolveFileExtension(file: Express.Multer.File) {
+    const mimeToExt: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+    };
+
+    return mimeToExt[file.mimetype] ?? 'jpg';
+  }
+
   async findOne(financeId: number) {
     const finance = await this.prisma.finances.findUnique({
       where: { finance_id: financeId },
@@ -666,7 +874,10 @@ export class FinancesService {
       throw new AppNotFoundException(ErrorCode.FINANCE_TRANSACTION_NOT_FOUND);
     }
 
-    return finance;
+    return {
+      ...finance,
+      evidences: await this.getEvidenceForFinance(financeId),
+    };
   }
 
   async create(dto: CreateFinanceDto, createdBy: string, clubId?: number) {
@@ -679,7 +890,7 @@ export class FinancesService {
       );
     }
 
-    return this.prisma.finances.create({
+    const created = await this.prisma.finances.create({
       data: {
         year: dto.year,
         month: dto.month,
@@ -699,6 +910,11 @@ export class FinancesService {
         finances_categories: { select: { name: true, type: true } },
       },
     });
+
+    return {
+      ...created,
+      evidences: [],
+    };
   }
 
   async update(financeId: number, dto: UpdateFinanceDto, modifiedBy?: string) {
@@ -734,13 +950,18 @@ export class FinancesService {
     if (dto.post_closing_note !== undefined)
       updateData.post_closing_note = dto.post_closing_note;
 
-    return this.prisma.finances.update({
+    const updated = await this.prisma.finances.update({
       where: { finance_id: financeId },
       data: updateData,
       include: {
         finances_categories: { select: { name: true, type: true } },
       },
     });
+
+    return {
+      ...updated,
+      evidences: await this.getEvidenceForFinance(financeId),
+    };
   }
 
   async remove(financeId: number, modifiedBy?: string, reason?: string) {

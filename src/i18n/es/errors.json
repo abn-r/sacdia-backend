@@ -415,6 +415,8 @@
   "INVENTORY_SECTION_NOT_FOUND": "Sección del club no encontrada",
   "INVENTORY_EVIDENCE_FILE_REQUIRED": "Se requiere una foto de evidencia para el artículo de inventario",
   "INVENTORY_EVIDENCE_LIMIT_EXCEEDED": "El artículo de inventario permite un máximo de 3 fotos de evidencia",
+  "FINANCE_EVIDENCE_FILE_REQUIRED": "Se requiere una foto de evidencia para el movimiento financiero",
+  "FINANCE_EVIDENCE_LIMIT_EXCEEDED": "El movimiento financiero permite un máximo de 3 fotos de evidencia",
   "EC_INVALID_RELATIONSHIP_TYPE": "Tipo de relación no válido",
   "EC_MAX_CONTACTS_REACHED": "Límite de contactos de emergencia alcanzado (máximo 5)",
   "EC_ALREADY_EXISTS": "Este contacto de emergencia ya existe",

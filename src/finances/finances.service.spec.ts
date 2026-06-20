@@ -5,6 +5,10 @@ import { ForbiddenException } from '@nestjs/common';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FinancePeriodService } from './finance-period.service';
 import { TranslationService } from '../common/services/translation.service';
+import {
+  FILE_STORAGE_SERVICE,
+  StorageBucketAlias,
+} from '../common/services/file-storage.service';
 
 describe('FinancesService', () => {
   let service: FinancesService;
@@ -32,6 +36,11 @@ describe('FinancesService', () => {
     financePeriodClosing: {
       findMany: jest.fn(),
     },
+    finance_evidence_files: {
+      count: jest.fn(),
+      create: jest.fn(),
+      findMany: jest.fn(),
+    },
   };
 
   const mockFinancePeriodService = {
@@ -43,6 +52,12 @@ describe('FinancesService', () => {
     translateMany: jest.fn().mockImplementation((records) => records),
   };
 
+  const mockFileStorageService = {
+    upload: jest.fn(),
+    deleteMany: jest.fn(),
+    getSignedDownloadUrl: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,10 +65,15 @@ describe('FinancesService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FinancePeriodService, useValue: mockFinancePeriodService },
         { provide: TranslationService, useValue: mockTranslationService },
+        { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
       ],
     }).compile();
 
     service = module.get<FinancesService>(FinancesService);
+    mockPrismaService.finance_evidence_files.findMany.mockResolvedValue([]);
+    mockFileStorageService.getSignedDownloadUrl.mockImplementation(
+      async (_bucket, value) => value,
+    );
   });
 
   afterEach(() => {
@@ -113,7 +133,9 @@ describe('FinancesService', () => {
 
       const result = await service.findByClub(1);
 
-      expect(result.data).toEqual(mockFinances);
+      expect(result.data).toEqual(
+        mockFinances.map((finance) => ({ ...finance, evidences: [] })),
+      );
       expect(result.meta.total).toBe(1);
     });
 
@@ -253,6 +275,65 @@ describe('FinancesService', () => {
     });
   });
 
+  describe('uploadEvidence', () => {
+    const imageFile = {
+      buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+      mimetype: 'image/jpeg',
+      originalname: 'recibo.jpg',
+      size: 4,
+    } as Express.Multer.File;
+
+    it('uploads an image evidence while the movement has fewer than 3 active evidences', async () => {
+      mockPrismaService.finances.findUnique.mockResolvedValue({
+        finance_id: 100,
+      });
+      mockPrismaService.finance_evidence_files.count.mockResolvedValue(2);
+      mockFileStorageService.upload.mockResolvedValue({
+        key: 'finances/100/evidence-1.jpg',
+        url: 'finances/100/evidence-1.jpg',
+      });
+      mockPrismaService.finance_evidence_files.create.mockResolvedValue({
+        finance_evidence_file_id: 12,
+        finance_id: 100,
+        file_url: 'finances/100/evidence-1.jpg',
+        file_name: 'recibo.jpg',
+        file_type: 'image/jpeg',
+        file_size: 4,
+        uploaded_by_id: 'user-abc',
+        uploaded_at: new Date('2026-06-19T00:00:00.000Z'),
+        active: true,
+      });
+
+      const result = await service.uploadEvidence(100, 'user-abc', imageFile);
+
+      expect(mockFileStorageService.upload).toHaveBeenCalledWith(
+        StorageBucketAlias.EVIDENCE_FILES,
+        expect.stringMatching(/^finances\/100\/evidence-/),
+        imageFile.buffer,
+        { contentType: 'image/jpeg' },
+      );
+      expect(result).toMatchObject({
+        evidence_id: 12,
+        finance_id: 100,
+        file_name: 'recibo.jpg',
+      });
+    });
+
+    it('rejects evidence upload when the movement already has 3 active evidences', async () => {
+      mockPrismaService.finances.findUnique.mockResolvedValue({
+        finance_id: 100,
+      });
+      mockPrismaService.finance_evidence_files.count.mockResolvedValue(3);
+
+      await expect(
+        service.uploadEvidence(100, 'user-abc', imageFile),
+      ).rejects.toMatchObject({
+        code: ErrorCode.FINANCE_EVIDENCE_LIMIT_EXCEEDED,
+      });
+      expect(mockFileStorageService.upload).not.toHaveBeenCalled();
+    });
+  });
+
   describe('create', () => {
     it('should create a finance record', async () => {
       const createDto = {
@@ -271,7 +352,7 @@ describe('FinancesService', () => {
 
       const result = await service.create(createDto, 'user-123', 1);
 
-      expect(result).toEqual(mockFinance);
+      expect(result).toEqual({ ...mockFinance, evidences: [] });
     });
   });
 
@@ -282,7 +363,7 @@ describe('FinancesService', () => {
 
       const result = await service.findOne(1);
 
-      expect(result).toEqual(mockFinance);
+      expect(result).toEqual({ ...mockFinance, evidences: [] });
     });
 
     it('should throw NotFoundException when not found', async () => {

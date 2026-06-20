@@ -924,12 +924,30 @@ model finances {
   users               users               @relation(fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   modified_by         users?              @relation("finances_modified_by", fields: [modified_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   finances_categories finances_categories @relation(fields: [finance_category_id], references: [finance_category_id], onDelete: NoAction, onUpdate: NoAction)
+  evidence_files      finance_evidence_files[]
 
   @@index([club_section_id], map: "idx_finances_club_section_id")
   @@index([club_section_id, year, month, active])
   @@index([created_by], map: "idx_finances_created_by")
   @@index([finance_category_id], map: "idx_finances_finance_category_id")
   @@index([modified_by_id], map: "idx_finances_modified_by_id")
+}
+
+model finance_evidence_files {
+  finance_evidence_file_id Int      @id @default(autoincrement())
+  finance_id               Int
+  file_url                 String   @db.VarChar(500)
+  file_name                String   @db.VarChar(255)
+  file_type                String   @db.VarChar(50)
+  file_size                Int?
+  uploaded_by_id           String   @db.Uuid
+  uploaded_at              DateTime @default(now()) @db.Timestamptz(6)
+  active                   Boolean  @default(true)
+  finance                  finances @relation(fields: [finance_id], references: [finance_id], onDelete: Cascade, onUpdate: NoAction)
+  uploaded_by              users    @relation("finance_evidence_uploaded_by", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([finance_id], map: "idx_finance_evidence_files_finance")
+  @@index([uploaded_by_id], map: "idx_finance_evidence_files_uploaded_by")
 }
 
 model finances_categories {
@@ -1913,6 +1931,7 @@ model users {
   evidence_files_uploaded           evidence_files[]
   finances                          finances[]
   finances_modified                 finances[]                          @relation("finances_modified_by")
+  finance_evidence_uploaded         finance_evidence_files[]             @relation("finance_evidence_uploaded_by")
   assignments_folders               folder_assignments[]
   evidence_files_submitted          folders_section_records[]           @relation("evidence_files_submitted_by")
   evidence_files_validated          folders_section_records[]           @relation("evidence_files_validated_by")

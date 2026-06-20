@@ -10,6 +10,8 @@ import {
   ParseIntPipe,
   UseGuards,
   Request,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,7 +20,11 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import 'multer';
 import { FinancesService } from './finances.service';
 import {
   CreateFinanceDto,
@@ -36,6 +42,10 @@ import {
   RequirePermissions,
 } from '../common/decorators';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import {
+  ALLOWED_MIME_TYPES,
+  FileValidationPipe,
+} from '../common/pipes/file-validation.pipe';
 
 @ApiTags('finances')
 @Controller()
@@ -270,6 +280,51 @@ export class FinancesController {
   @ApiResponse({ status: 404, description: 'Movimiento no encontrado' })
   async findOne(@Param('financeId', ParseIntPipe) financeId: number) {
     return this.financesService.findOne(financeId);
+  }
+
+  @Post('finances/:financeId/evidences')
+  @RequirePermissions('finances:update')
+  @AuthorizationResource({ type: 'finance', idParam: 'financeId' })
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Subir foto de evidencia de un movimiento financiero',
+    description:
+      'Agrega una foto de evidencia al ingreso o egreso. Máximo 3 fotos activas por movimiento.',
+  })
+  @ApiParam({ name: 'financeId', type: Number })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Foto del comprobante (JPEG, PNG o WebP, máximo 5MB)',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Evidencia subida exitosamente' })
+  @ApiResponse({
+    status: 400,
+    description: 'Archivo inválido o límite excedido',
+  })
+  @ApiResponse({ status: 404, description: 'Movimiento no encontrado' })
+  async uploadEvidence(
+    @Param('financeId', ParseIntPipe) financeId: number,
+    @UploadedFile(
+      new FileValidationPipe({
+        allowedMimeTypes: ALLOWED_MIME_TYPES.IMAGES,
+      }),
+    )
+    file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    return this.financesService.uploadEvidence(financeId, req.user.sub, file);
   }
 
   @Patch('finances/:financeId')
