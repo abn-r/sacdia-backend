@@ -38,6 +38,15 @@ import { CronRunLogger } from '../common/services/cron-run-logger.service';
 
 const PRESIGNED_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 const EXPORT_COOLDOWN_HOURS = 24;
+const CLEANUP_BATCH_SIZE = 100;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
 
 @Injectable()
 export class DataExportService {
@@ -532,8 +541,10 @@ export class DataExportService {
       };
 
       // Step 5: Serialize and checksum
-      const jsonString = JSON.stringify(exportPayload, null, 2);
-      const buffer = Buffer.from(jsonString, 'utf-8');
+      const buffer = Buffer.from(
+        JSON.stringify(exportPayload, null, 2),
+        'utf-8',
+      );
       const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
 
       // Step 6: Upload to R2
@@ -636,29 +647,33 @@ export class DataExportService {
       let markedExpiredCount = 0;
       let r2DeletedCount = 0;
 
-      for (const row of expiredReady) {
-        // Delete R2 object first (best effort)
-        if (row.r2_key) {
-          await this.fileStorage
-            .deleteMany(StorageBucketAlias.DATA_EXPORTS, [row.r2_key])
-            .then(() => r2DeletedCount++)
-            .catch((err: Error) => {
-              this.logger.warn(
-                `Failed to delete R2 object for exportId=${row.export_id}: ${err.message}`,
-              );
-            });
-        }
-
-        // Mark as expired
-        await this.prisma.data_export_requests
-          .update({
-            where: { export_id: row.export_id },
-            data: { status: 'expired' },
-          })
-          .then(() => markedExpiredCount++)
+      const r2Keys = expiredReady.flatMap((row) =>
+        row.r2_key ? [row.r2_key] : [],
+      );
+      for (const keys of chunk(r2Keys, CLEANUP_BATCH_SIZE)) {
+        await this.fileStorage
+          .deleteMany(StorageBucketAlias.DATA_EXPORTS, keys)
+          .then(() => (r2DeletedCount += keys.length))
           .catch((err: Error) => {
             this.logger.warn(
-              `Failed to mark exportId=${row.export_id} as expired: ${err.message}`,
+              `Failed to delete ${keys.length} R2 data export objects: ${err.message}`,
+            );
+          });
+      }
+
+      for (const exportIds of chunk(
+        expiredReady.map((row) => row.export_id),
+        CLEANUP_BATCH_SIZE,
+      )) {
+        await this.prisma.data_export_requests
+          .updateMany({
+            where: { export_id: { in: exportIds }, status: 'ready' },
+            data: { status: 'expired' },
+          })
+          .then(({ count }) => (markedExpiredCount += count))
+          .catch((err: Error) => {
+            this.logger.warn(
+              `Failed to mark ${exportIds.length} data exports as expired: ${err.message}`,
             );
           });
       }

@@ -635,9 +635,7 @@ export class NotificationsService {
     club_type_id: number | null;
     club_types?: { name: string | null } | null;
   }): NotificationClubInstanceType | null {
-    const byName = this.mapClubTypeNameToInstanceType(
-      section.club_types?.name,
-    );
+    const byName = this.mapClubTypeNameToInstanceType(section.club_types?.name);
     if (byName) {
       return byName;
     }
@@ -1176,15 +1174,18 @@ export class NotificationsService {
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
 
-    const batchResults = await Promise.allSettled(
-      batches.map((batch) =>
-        this.sendMulticastDirect(batch, title, body, data),
-      ),
-    );
+    const { successCount, failureCount } =
+      await this.sendMulticastDirectBatches(
+        batches,
+        title,
+        body,
+        data,
+        `sendToSectionRoleSync section ${clubSectionId}`,
+      );
     await this.updateNotificationLogTokenCounts(
       logId,
-      this.sumFulfilledCounts(batchResults, 'successCount'),
-      this.sumFulfilledCounts(batchResults, 'failureCount'),
+      successCount,
+      failureCount,
       `sendToSectionRoleSync section ${clubSectionId}`,
     );
   }
@@ -1287,15 +1288,18 @@ export class NotificationsService {
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
 
-    const batchResults = await Promise.allSettled(
-      batches.map((batch) =>
-        this.sendMulticastDirect(batch, title, body, data),
-      ),
-    );
+    const { successCount, failureCount } =
+      await this.sendMulticastDirectBatches(
+        batches,
+        title,
+        body,
+        data,
+        `sendToGlobalRoleSync roles ${roleNames.join(',')}`,
+      );
     await this.updateNotificationLogTokenCounts(
       logId,
-      this.sumFulfilledCounts(batchResults, 'successCount'),
-      this.sumFulfilledCounts(batchResults, 'failureCount'),
+      successCount,
+      failureCount,
       `sendToGlobalRoleSync roles ${roleNames.join(',')}`,
     );
   }
@@ -1304,19 +1308,29 @@ export class NotificationsService {
   // Core FCM helper (synchronous path)
   // ---------------------------------------------------------------------------
 
-  private sumFulfilledCounts(
-    results: PromiseSettledResult<{
-      successCount: number;
-      failureCount: number;
-    }>[],
-    key: 'successCount' | 'failureCount',
-  ): number {
-    return results.reduce((total, result) => {
-      if (result.status !== 'fulfilled') {
-        return total;
+  private async sendMulticastDirectBatches(
+    batches: string[][],
+    title: string,
+    body: string,
+    data: Record<string, string> | undefined,
+    context: string,
+  ): Promise<{ successCount: number; failureCount: number }> {
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const batch of batches) {
+      try {
+        const result = await this.sendMulticastDirect(batch, title, body, data);
+        successCount += result.successCount;
+        failureCount += result.failureCount;
+      } catch (err) {
+        this.logger.warn(
+          `${context} batch failed: ${(err as Error).message ?? String(err)}`,
+        );
       }
-      return total + result.value[key];
-    }, 0);
+    }
+
+    return { successCount, failureCount };
   }
 
   private async updateNotificationLogTokenCounts(

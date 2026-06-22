@@ -614,120 +614,38 @@ describe('RankingsService', () => {
       expect(result.updated).toBe(1);
     });
 
-    it('should assign dense rank positions using composite_score_pct (ties get same rank)', async () => {
+    it('should assign dense rank positions in SQL instead of loading all ranking rows', async () => {
       mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
         mockActiveYear,
       );
       mockPrismaService.annual_folders.findMany.mockResolvedValue([
         buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
-        buildFolder('folder-2', 'enroll-2', 90, 100, 90, 2), // tied with folder-1
+        buildFolder('folder-2', 'enroll-2', 90, 100, 90, 2),
         buildFolder('folder-3', 'enroll-3', 70, 100, 70, 2),
       ]);
       mockPrismaService.award_categories.findMany.mockResolvedValue([]);
       mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
 
-      // assignRankPositions now fetches composite_score_pct, ordered desc
-      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([
-        {
-          ranking_id: 'r-1',
-          club_type_id: 2,
-          award_category_id: GENERAL_CATEGORY_ID,
-          composite_score_pct: 90,
-        },
-        {
-          ranking_id: 'r-2',
-          club_type_id: 2,
-          award_category_id: GENERAL_CATEGORY_ID,
-          composite_score_pct: 90,
-        },
-        {
-          ranking_id: 'r-3',
-          club_type_id: 2,
-          award_category_id: GENERAL_CATEGORY_ID,
-          composite_score_pct: 70,
-        },
-      ]);
-      mockPrismaService.club_annual_rankings.update.mockResolvedValue({});
-
       await service.recalculateRankings();
 
-      // All three ranking records should be updated with rank positions
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_annual_rankings.findMany,
+      ).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { ecclesiastical_year_id: 2026 } }),
+      );
       expect(
         mockPrismaService.club_annual_rankings.update,
-      ).toHaveBeenCalledTimes(3);
+      ).not.toHaveBeenCalled();
 
-      const updateCalls =
-        mockPrismaService.club_annual_rankings.update.mock.calls.map(
-          ([call]) => ({
-            ranking_id: call.where.ranking_id,
-            rank_position: call.data.rank_position,
-          }),
-        );
-
-      // Dense ranking: r-1 and r-2 tied → both rank 1; r-3 is next → rank 2 (not 3)
-      const r1 = updateCalls.find((c) => c.ranking_id === 'r-1');
-      const r2 = updateCalls.find((c) => c.ranking_id === 'r-2');
-      const r3 = updateCalls.find((c) => c.ranking_id === 'r-3');
-
-      expect(r1?.rank_position).toBe(1);
-      expect(r2?.rank_position).toBe(1);
-      expect(r3?.rank_position).toBe(2); // dense: 2, not 3
-    });
-
-    it('should assign dense rank positions independently per local field', async () => {
-      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(
-        mockActiveYear,
-      );
-      mockPrismaService.annual_folders.findMany.mockResolvedValue([
-        buildFolder('folder-1', 'enroll-1', 90, 100, 90, 2),
-      ]);
-      mockPrismaService.award_categories.findMany.mockResolvedValue([]);
-      mockPrismaService.club_annual_rankings.upsert.mockResolvedValue({});
-
-      mockPrismaService.club_annual_rankings.findMany.mockResolvedValue([
-        {
-          ranking_id: 'r-lf1-top',
-          club_type_id: 2,
-          award_category_id: GENERAL_CATEGORY_ID,
-          composite_score_pct: 90,
-          hierarchy_context: { local_field_id: 10 },
-        },
-        {
-          ranking_id: 'r-lf2-top',
-          club_type_id: 2,
-          award_category_id: GENERAL_CATEGORY_ID,
-          composite_score_pct: 80,
-          hierarchy_context: { local_field_id: 20 },
-        },
-        {
-          ranking_id: 'r-lf1-second',
-          club_type_id: 2,
-          award_category_id: GENERAL_CATEGORY_ID,
-          composite_score_pct: 70,
-          hierarchy_context: { local_field_id: 10 },
-        },
-      ]);
-      mockPrismaService.club_annual_rankings.update.mockResolvedValue({});
-
-      await service.recalculateRankings();
-
-      const updateCalls =
-        mockPrismaService.club_annual_rankings.update.mock.calls.map(
-          ([call]) => ({
-            ranking_id: call.where.ranking_id,
-            rank_position: call.data.rank_position,
-          }),
-        );
-
-      expect(
-        updateCalls.find((c) => c.ranking_id === 'r-lf1-top')?.rank_position,
-      ).toBe(1);
-      expect(
-        updateCalls.find((c) => c.ranking_id === 'r-lf1-second')?.rank_position,
-      ).toBe(2);
-      expect(
-        updateCalls.find((c) => c.ranking_id === 'r-lf2-top')?.rank_position,
-      ).toBe(1);
+      const [sqlParts, yearId] =
+        mockPrismaService.$executeRaw.mock.calls.at(-1)!;
+      const sql = Array.from(sqlParts as TemplateStringsArray).join(' ');
+      expect(yearId).toBe(2026);
+      expect(sql).toContain('DENSE_RANK() OVER');
+      expect(sql).toContain('PARTITION BY');
+      expect(sql).toContain('local_field_id');
+      expect(sql).toContain('composite_score_pct DESC');
     });
 
     it('should handle max_points boundary (points equal to max_points still qualify) for legacy categories', async () => {

@@ -1619,69 +1619,27 @@ export class RankingsService {
   ): Promise<void> {
     const client = tx ?? this.prisma;
 
-    // Fetch all ranking records for this year, ordered by composite_score_pct DESC
-    const allRecords = await client.club_annual_rankings.findMany({
-      where: { ecclesiastical_year_id: yearId },
-      select: {
-        ranking_id: true,
-        club_type_id: true,
-        award_category_id: true,
-        composite_score_pct: true,
-        hierarchy_context: {
-          select: { local_field_id: true },
-        },
-      },
-      orderBy: { composite_score_pct: 'desc' },
-    });
-
-    if (allRecords.length === 0) return;
-
-    // Group by (club_type_id, award_category_id)
-    const groups = new Map<string, typeof allRecords>();
-    for (const record of allRecords) {
-      const localFieldKey =
-        record.hierarchy_context?.local_field_id ?? 'unscoped';
-      const key = `${localFieldKey}::${record.club_type_id}::${record.award_category_id ?? 'null'}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(record);
-    }
-
-    // Compute dense ranks per group and collect updates.
-    // Dense ranking: after a tie group the next rank is prevRank + 1,
-    // NOT i + 1 (which would produce competition/standard ranking).
-    // Example with scores [90, 90, 70]: ranks → [1, 1, 2] (dense)
-    //                                             not [1, 1, 3] (competition)
-    const updates: { ranking_id: string; rank_position: number }[] = [];
-
-    for (const group of groups.values()) {
-      // group is already sorted desc by composite_score_pct (from the query orderBy)
-      let rank = 1;
-      let prevScore: number | null = null;
-      let prevRank = 1;
-
-      for (let i = 0; i < group.length; i++) {
-        const record = group[i];
-        const score = Number(record.composite_score_pct);
-        if (prevScore !== null && score !== prevScore) {
-          rank = prevRank + 1; // dense ranking: next sequential rank after a tie group
-        } else if (prevScore !== null) {
-          rank = prevRank; // tie — same rank as previous
-        }
-        // else: prevScore === null → first iteration, rank stays = 1
-        prevScore = score;
-        prevRank = rank;
-        updates.push({ ranking_id: record.ranking_id, rank_position: rank });
-      }
-    }
-
-    // Batch update rank positions
-    await Promise.all(
-      updates.map(({ ranking_id, rank_position }) =>
-        client.club_annual_rankings.update({
-          where: { ranking_id },
-          data: { rank_position, calculated_at: new Date() },
-        }),
-      ),
-    );
+    await client.$executeRaw`
+      UPDATE club_annual_rankings car
+      SET
+        rank_position = ranked.rnk,
+        calculated_at = NOW()
+      FROM (
+        SELECT
+          car_inner.ranking_id,
+          DENSE_RANK() OVER (
+            PARTITION BY
+              COALESCE(hc.local_field_id::text, 'unscoped'),
+              car_inner.club_type_id,
+              car_inner.award_category_id
+            ORDER BY car_inner.composite_score_pct DESC
+          ) AS rnk
+        FROM club_annual_rankings car_inner
+        LEFT JOIN hierarchy_contexts hc
+          ON hc.hierarchy_context_id = car_inner.hierarchy_context_id
+        WHERE car_inner.ecclesiastical_year_id = ${yearId}
+      ) ranked
+      WHERE car.ranking_id = ranked.ranking_id
+    `;
   }
 }

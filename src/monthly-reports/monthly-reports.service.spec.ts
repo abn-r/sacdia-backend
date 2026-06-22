@@ -185,9 +185,7 @@ describe('MonthlyReportsService admin list authorization', () => {
 
 describe('MonthlyReportsService auto-calculated finances', () => {
   const mockPrisma = {
-    finances: {
-      findMany: jest.fn(),
-    },
+    $queryRaw: jest.fn(),
   };
 
   let service: MonthlyReportsService;
@@ -198,44 +196,23 @@ describe('MonthlyReportsService auto-calculated finances', () => {
   });
 
   it('includes both monthly movement balance and accumulated club total balance', async () => {
-    mockPrisma.finances.findMany
-      .mockResolvedValueOnce([
-        { amount: 1000, finances_categories: { type: 0 } },
-        { amount: 250, finances_categories: { type: 1 } },
-      ])
-      .mockResolvedValueOnce([
-        { amount: 5000, finances_categories: { type: 0 } },
-        { amount: 1200, finances_categories: { type: 1 } },
-        { amount: 300, finances_categories: { type: 1 } },
-      ]);
+    mockPrisma.$queryRaw.mockResolvedValueOnce([
+      {
+        income: 1000n,
+        expenses: 250n,
+        total_balance: 3500n,
+        transactions: 2n,
+      },
+    ]);
 
     const result = await (service as any).getFinancesData(2, 4, 2026);
 
-    expect(mockPrisma.finances.findMany).toHaveBeenNthCalledWith(1, {
-      where: {
-        club_section_id: 2,
-        month: 4,
-        year: 2026,
-        active: true,
-      },
-      include: {
-        finances_categories: {
-          select: { name: true, type: true },
-        },
-      },
-    });
-    expect(mockPrisma.finances.findMany).toHaveBeenNthCalledWith(2, {
-      where: {
-        club_section_id: 2,
-        active: true,
-        OR: [{ year: { lt: 2026 } }, { year: 2026, month: { lte: 4 } }],
-      },
-      include: {
-        finances_categories: {
-          select: { type: true },
-        },
-      },
-    });
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const [sqlParts, ...params] = mockPrisma.$queryRaw.mock.calls[0];
+    const sql = Array.from(sqlParts as TemplateStringsArray).join(' ');
+    expect(sql).toContain('SUM(CASE WHEN fc.type = 0');
+    expect(sql).toContain('total_balance');
+    expect(params).toEqual([2026, 4, 2026, 4, 2026, 4, 2, 2026, 2026, 4]);
     expect(result).toEqual({
       income: 1000,
       expenses: 250,

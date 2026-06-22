@@ -348,22 +348,14 @@ export class NotificationsProcessor
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
 
-    const batchResults = await Promise.allSettled(
-      batches.map((batch) => this.sendMulticast(batch, title, body, data)),
-    );
-
-    let totalSuccess = 0;
-    let totalFailure = 0;
-    for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
-        totalSuccess += result.value.successCount;
-        totalFailure += result.value.failureCount;
-      } else {
-        this.logger.warn(
-          `handleSendToSectionRole batch failed: ${result.reason?.message ?? result.reason}`,
-        );
-      }
-    }
+    const { successCount: totalSuccess, failureCount: totalFailure } =
+      await this.sendMulticastBatches(
+        batches,
+        title,
+        body,
+        data,
+        'handleSendToSectionRole',
+      );
     await this.updateNotificationLogTokenCounts(
       logId,
       totalSuccess,
@@ -477,22 +469,14 @@ export class NotificationsProcessor
     const tokenStrings = tokens.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
 
-    const batchResults = await Promise.allSettled(
-      batches.map((batch) => this.sendMulticast(batch, title, body, data)),
-    );
-
-    let totalSuccess = 0;
-    let totalFailure = 0;
-    for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
-        totalSuccess += result.value.successCount;
-        totalFailure += result.value.failureCount;
-      } else {
-        this.logger.warn(
-          `handleSendToGlobalRole batch failed: ${result.reason?.message ?? result.reason}`,
-        );
-      }
-    }
+    const { successCount: totalSuccess, failureCount: totalFailure } =
+      await this.sendMulticastBatches(
+        batches,
+        title,
+        body,
+        data,
+        'handleSendToGlobalRole',
+      );
     await this.updateNotificationLogTokenCounts(
       logId,
       totalSuccess,
@@ -599,22 +583,14 @@ export class NotificationsProcessor
     const tokenStrings = tokenRows.map((t) => t.token);
     const batches = chunkArray(tokenStrings, 500);
 
-    const batchResults = await Promise.allSettled(
-      batches.map((batch) => this.sendMulticast(batch, title, body, data)),
-    );
-
-    let totalSuccess = 0;
-    let totalFailure = 0;
-    for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
-        totalSuccess += result.value.successCount;
-        totalFailure += result.value.failureCount;
-      } else {
-        this.logger.warn(
-          `handleSendToClubMembers batch failed: ${result.reason?.message ?? result.reason}`,
-        );
-      }
-    }
+    const { successCount: totalSuccess, failureCount: totalFailure } =
+      await this.sendMulticastBatches(
+        batches,
+        title,
+        body,
+        data,
+        'handleSendToClubMembers',
+      );
     await this.updateNotificationLogTokenCounts(
       logId,
       totalSuccess,
@@ -917,6 +893,31 @@ export class NotificationsProcessor
    * Transient errors (rate limits, server errors) are logged but do not deactivate the token.
    * Returns success/failure counts.
    */
+  private async sendMulticastBatches(
+    batches: string[][],
+    title: string,
+    body: string,
+    data: Record<string, string> | undefined,
+    context: string,
+  ): Promise<{ successCount: number; failureCount: number }> {
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const batch of batches) {
+      try {
+        const result = await this.sendMulticast(batch, title, body, data);
+        successCount += result.successCount;
+        failureCount += result.failureCount;
+      } catch (err) {
+        this.logger.warn(
+          `${context} batch failed: ${(err as Error).message ?? String(err)}`,
+        );
+      }
+    }
+
+    return { successCount, failureCount };
+  }
+
   async sendMulticast(
     tokens: string[],
     title: string,

@@ -1008,58 +1008,38 @@ export class MonthlyReportsService {
     month: number,
     year: number,
   ) {
-    const finances = await this.prisma.finances.findMany({
-      where: {
-        club_section_id: clubSectionId,
-        month,
-        year,
-        active: true,
-      },
-      include: {
-        finances_categories: {
-          select: { name: true, type: true },
-        },
-      },
-    });
+    const [summary] = await this.prisma.$queryRaw<
+      {
+        income: bigint | number | null;
+        expenses: bigint | number | null;
+        transactions: bigint | number | null;
+        total_balance: bigint | number | null;
+      }[]
+    >`
+      SELECT
+        COALESCE(SUM(CASE WHEN fc.type = 0 AND f.year = ${year} AND f.month = ${month} THEN f.amount ELSE 0 END), 0)::bigint AS income,
+        COALESCE(SUM(CASE WHEN fc.type <> 0 AND f.year = ${year} AND f.month = ${month} THEN f.amount ELSE 0 END), 0)::bigint AS expenses,
+        COUNT(*) FILTER (WHERE f.year = ${year} AND f.month = ${month})::bigint AS transactions,
+        COALESCE(SUM(CASE WHEN fc.type = 0 THEN f.amount ELSE -f.amount END), 0)::bigint AS total_balance
+      FROM finances f
+      JOIN finances_categories fc
+        ON fc.finance_category_id = f.finance_category_id
+      WHERE f.club_section_id = ${clubSectionId}
+        AND f.active = true
+        AND (f.year < ${year} OR (f.year = ${year} AND f.month <= ${month}))
+    `;
 
-    const accumulatedFinances = await this.prisma.finances.findMany({
-      where: {
-        club_section_id: clubSectionId,
-        active: true,
-        OR: [{ year: { lt: year } }, { year, month: { lte: month } }],
-      },
-      include: {
-        finances_categories: {
-          select: { type: true },
-        },
-      },
-    });
-
-    let totalIncome = 0;
-    let totalExpenses = 0;
-
-    for (const f of finances) {
-      // type 0 = income, type 1 = expense
-      if (f.finances_categories.type === 0) {
-        totalIncome += f.amount;
-      } else {
-        totalExpenses += f.amount;
-      }
-    }
-
-    let totalBalance = 0;
-
-    for (const f of accumulatedFinances) {
-      // type 0 = income, type 1 = expense
-      totalBalance += f.finances_categories.type === 0 ? f.amount : -f.amount;
-    }
+    const totalIncome = Number(summary?.income ?? 0);
+    const totalExpenses = Number(summary?.expenses ?? 0);
+    const totalBalance = Number(summary?.total_balance ?? 0);
+    const transactions = Number(summary?.transactions ?? 0);
 
     return {
       income: totalIncome,
       expenses: totalExpenses,
       balance: totalIncome - totalExpenses,
       total_balance: totalBalance,
-      transactions: finances.length,
+      transactions,
     };
   }
 

@@ -13,6 +13,7 @@ const mockPrisma = {
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     deleteMany: jest.fn(),
   },
 };
@@ -194,6 +195,50 @@ describe('DataExportService', () => {
 
       const result = await service.listExports('user-uuid');
       expect(result.exports[0].file_size_bytes).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // cleanupExpiredExports
+  // -------------------------------------------------------------------------
+
+  describe('cleanupExpiredExports', () => {
+    it('deletes expired R2 objects and marks rows as expired in batches', async () => {
+      mockCronLogger.track.mockImplementationOnce(async (_key, callback) =>
+        callback(),
+      );
+      mockPrisma.data_export_requests.findMany.mockResolvedValueOnce([
+        { export_id: 'exp-1', r2_key: 'user/exp-1.json' },
+        { export_id: 'exp-2', r2_key: 'user/exp-2.json' },
+        { export_id: 'exp-3', r2_key: null },
+      ]);
+      mockFileStorage.deleteMany.mockResolvedValueOnce(undefined);
+      mockPrisma.data_export_requests.updateMany.mockResolvedValueOnce({
+        count: 3,
+      });
+      mockPrisma.data_export_requests.deleteMany.mockResolvedValueOnce({
+        count: 0,
+      });
+
+      await service.cleanupExpiredExports();
+
+      expect(mockFileStorage.deleteMany).toHaveBeenCalledWith('DATA_EXPORTS', [
+        'user/exp-1.json',
+        'user/exp-2.json',
+      ]);
+      expect(mockPrisma.data_export_requests.updateMany).toHaveBeenCalledWith({
+        where: {
+          export_id: { in: ['exp-1', 'exp-2', 'exp-3'] },
+          status: 'ready',
+        },
+        data: { status: 'expired' },
+      });
+      expect(mockPrisma.data_export_requests.deleteMany).toHaveBeenCalledWith({
+        where: {
+          status: 'expired',
+          completed_at: { lt: expect.any(Date) },
+        },
+      });
     });
   });
 
