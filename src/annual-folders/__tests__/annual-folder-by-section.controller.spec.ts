@@ -7,6 +7,7 @@ describe('AnnualFolderBySectionController', () => {
 
   const annualFoldersService = {
     getFolderByEnrollment: jest.fn(),
+    createFolderForEnrollment: jest.fn(),
   };
 
   const clubEnrollmentsService = {
@@ -58,5 +59,39 @@ describe('AnnualFolderBySectionController', () => {
       enrollmentId,
       'user-1',
     );
+  });
+
+  it('creates the current annual evidence folder by section without requiring enrollment UUID input', async () => {
+    annualFoldersService.createFolderForEnrollment.mockResolvedValue({
+      annual_folder_id: 'folder-1',
+      club_enrollment_id: enrollmentId,
+    });
+
+    await expect(
+      controller.createFolderBySection(2, { sub: 'user-1' }),
+    ).resolves.toEqual({
+      status: 'success',
+      data: {
+        annual_folder_id: 'folder-1',
+        club_enrollment_id: enrollmentId,
+      },
+    });
+    expect(annualFoldersService.createFolderForEnrollment).toHaveBeenCalledWith(
+      enrollmentId,
+      'user-1',
+    );
+  });
+
+  it('throws not found when creating by section without a current enrollment', async () => {
+    clubEnrollmentsService.findCurrentBySectionId.mockResolvedValue(null);
+
+    await expect(
+      controller.createFolderBySection(2, { sub: 'user-1' }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+    });
+    expect(
+      annualFoldersService.createFolderForEnrollment,
+    ).not.toHaveBeenCalled();
   });
 });

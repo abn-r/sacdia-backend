@@ -260,19 +260,6 @@ describe('EvaluationService', () => {
       );
     });
 
-    it('should reject if folder status is "open"', async () => {
-      txMock.annual_folders.findUnique.mockResolvedValue({
-        ...baseFolder,
-        status: 'open',
-      });
-
-      await expect(
-        service.evaluateSection(folderId, sectionId, dto, evaluatorId),
-      ).rejects.toMatchObject({
-        code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_EVALUATE,
-      });
-    });
-
     it('should reject if folder status is "closed"', async () => {
       txMock.annual_folders.findUnique.mockResolvedValue({
         ...baseFolder,
@@ -462,6 +449,46 @@ describe('EvaluationService', () => {
         }),
       );
       expect(result.folder_summary.status).toBe('under_evaluation');
+    });
+
+    it('evaluates a submitted section while the folder remains open for other sections', async () => {
+      txMock.annual_folders.findUnique
+        .mockResolvedValueOnce({ ...baseFolder, status: 'open' })
+        .mockResolvedValueOnce({ folder_template_id: 'tmpl-1' });
+
+      txMock.annual_folder_section_evaluations.findUnique.mockResolvedValue(
+        existingEvalRow,
+      );
+      txMock.annual_folder_section_evaluations.update.mockResolvedValue(
+        mockEvaluation,
+      );
+      txMock.annual_folder_section_evaluations.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      txMock.folder_template_sections.findMany.mockResolvedValue([
+        { max_points: 100 },
+        { max_points: 50 },
+      ]);
+      txMock.annual_folders.update.mockResolvedValue({
+        ...updatedFolder,
+        status: 'open',
+      });
+
+      const result = await service.evaluateSection(
+        folderId,
+        sectionId,
+        dto,
+        evaluatorId,
+      );
+
+      const finalUpdateCall =
+        txMock.annual_folders.update.mock.calls.at(-1)?.[0];
+      expect(finalUpdateCall).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'open' }),
+        }),
+      );
+      expect(result.folder_summary.status).toBe('open');
     });
 
     it('does not store hierarchy snapshot while folder remains under_evaluation', async () => {
@@ -1259,17 +1286,21 @@ describe('EvaluationService', () => {
       });
     });
 
-    it('should reject if folder status is "open"', async () => {
-      txMock.annual_folders.findUnique.mockResolvedValue({
-        annual_folder_id: folderId,
-        status: 'open',
-      });
+    it('reopens an evaluated section while the folder remains open', async () => {
+      setupHappyPath('open', 'VALIDATED');
 
-      await expect(
-        service.reopenSection(folderId, sectionId, evaluatorId),
-      ).rejects.toMatchObject({
-        code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_REOPEN,
-      });
+      const result = await service.reopenSection(
+        folderId,
+        sectionId,
+        evaluatorId,
+      );
+
+      const lastUpdateCall =
+        txMock.annual_folders.update.mock.calls[
+          txMock.annual_folders.update.mock.calls.length - 1
+        ][0];
+      expect(lastUpdateCall.data.status).toBe('open');
+      expect(result.folder_summary.status).toBe('open');
     });
 
     it('should reject if folder status is "submitted"', async () => {

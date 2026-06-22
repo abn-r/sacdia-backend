@@ -95,8 +95,11 @@ export class EvaluationService {
         });
       }
 
-      // Validate folder status allows evaluation
+      // Validate folder status allows evaluation.
+      // A folder can remain `open` while clubs submit sections incrementally;
+      // the section evaluation row is the source of truth for review readiness.
       if (
+        folder.status !== 'open' &&
         folder.status !== 'submitted' &&
         folder.status !== 'under_evaluation'
       ) {
@@ -554,8 +557,11 @@ export class EvaluationService {
         });
       }
 
-      // Validate folder status allows reopening
+      // Validate folder status allows reopening.
+      // Sections can be evaluated while the folder remains `open`, so they
+      // must also be reopenable in that same incremental-review state.
       if (
+        folder.status !== 'open' &&
         folder.status !== 'under_evaluation' &&
         folder.status !== 'evaluated'
       ) {

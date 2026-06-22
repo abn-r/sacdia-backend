@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -24,6 +25,7 @@ import { ClubEnrollmentsService } from '../club-enrollments/club-enrollments.ser
 import { CatalogsService } from '../catalogs/catalogs.service';
 import { AnnualFoldersService } from './annual-folders.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AppNotFoundException } from '../common/errors/app.exception';
 
 @ApiTags('Annual Evidence Folders')
 @ApiBearerAuth()
@@ -102,6 +104,51 @@ export class AnnualFolderBySectionController {
       }
       throw err;
     }
+
+    return { status: 'success', data };
+  }
+
+  @Post()
+  @RequirePermissions('evidence_folders:update')
+  @AuthorizationResource({ type: 'club_section', idParam: 'sectionId' })
+  @ApiOperation({
+    summary: 'Create annual evidence folder for a club section',
+    description:
+      'Resolves the current ecclesiastical-year enrollment for the section and creates its annual evidence folder. This is the user-facing creation path; users do not need the enrollment UUID.',
+  })
+  @ApiParam({
+    name: 'sectionId',
+    description: 'Club section ID (integer)',
+    example: 1,
+    type: Number,
+  })
+  @ApiResponse({ status: 201, description: 'Annual Evidence Folder created' })
+  @ApiResponse({
+    status: 404,
+    description: 'No current enrollment or matching template was found',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Folder already exists for the current enrollment',
+  })
+  async createFolderBySection(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
+  ) {
+    const enrollment =
+      await this.clubEnrollmentsService.findCurrentBySectionId(sectionId);
+
+    if (!enrollment) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: sectionId },
+      );
+    }
+
+    const data = await this.annualFoldersService.createFolderForEnrollment(
+      enrollment.club_enrollment_id,
+      user.sub,
+    );
 
     return { status: 'success', data };
   }
