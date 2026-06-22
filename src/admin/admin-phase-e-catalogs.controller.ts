@@ -20,21 +20,6 @@
  *   PATCH  /admin/class-sections/:id
  *   DELETE /admin/class-sections/:id
  *
- *   GET    /admin/folders
- *   POST   /admin/folders
- *   PATCH  /admin/folders/:id
- *   DELETE /admin/folders/:id
- *
- *   GET    /admin/folder-modules
- *   POST   /admin/folder-modules
- *   PATCH  /admin/folder-modules/:id
- *   DELETE /admin/folder-modules/:id
- *
- *   GET    /admin/folder-sections
- *   POST   /admin/folder-sections
- *   PATCH  /admin/folder-sections/:id
- *   DELETE /admin/folder-sections/:id
- *
  *   GET    /admin/finance-categories
  *   POST   /admin/finance-categories
  *   PATCH  /admin/finance-categories/:id
@@ -94,12 +79,6 @@ import {
   UpdateClassModuleDto,
   CreateClassSectionDto,
   UpdateClassSectionDto,
-  CreateFolderDto,
-  UpdateFolderDto,
-  CreateFolderModuleDto,
-  UpdateFolderModuleDto,
-  CreateFolderSectionDto,
-  UpdateFolderSectionDto,
   CreateFinanceCategoryDto,
   UpdateFinanceCategoryDto,
   CreateInventoryCategoryDto,
@@ -317,206 +296,6 @@ export class AdminPhaseECatalogsController {
     @Req() req: ExpressRequest & { user: { sub: string } },
   ) {
     const data = await this.catalogsService.deleteClassSection(
-      id,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  // ==========================================================================
-  // FOLDERS  →  /admin/folders
-  // ==========================================================================
-
-  @Get('folders')
-  @RequirePermissions('catalogs:read')
-  @ApiOperation({
-    summary: 'List all folders with their full translations (admin editor)',
-  })
-  async findAllFolders() {
-    const data = await this.catalogsService.findAllFolders();
-    return { status: 'success', data };
-  }
-
-  @Post('folders')
-  @RequirePermissions('catalogs:create')
-  @ApiOperation({ summary: 'Create a folder with optional translations' })
-  async createFolder(
-    @Body() dto: CreateFolderDto,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.createFolder(
-      dto,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  @Patch('folders/:id')
-  @RequirePermissions('catalogs:update')
-  @ApiOperation({ summary: 'Update a folder and upsert/delete translations' })
-  async updateFolder(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateFolderDto,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.updateFolder(
-      id,
-      dto,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  @Delete('folders/:id')
-  @RequirePermissions('catalogs:delete')
-  @ApiOperation({ summary: 'Soft-delete a folder (active = false)' })
-  async deleteFolder(
-    @Param('id', ParseIntPipe) id: number,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.deleteFolder(
-      id,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  // ==========================================================================
-  // FOLDER MODULES  →  /admin/folder-modules
-  // ==========================================================================
-
-  @Get('folder-modules')
-  @RequirePermissions('catalogs:read')
-  @ApiOperation({
-    summary:
-      'List all folder modules with their full translations (admin editor)',
-  })
-  @ApiQuery({
-    name: 'folderId',
-    required: false,
-    type: Number,
-    description: 'Filter by folder_id',
-  })
-  async findAllFolderModules(@Query('folderId') folderId?: string) {
-    const data = await this.catalogsService.findAllFolderModules(
-      folderId ? Number(folderId) : undefined,
-    );
-    return { status: 'success', data };
-  }
-
-  @Post('folder-modules')
-  @RequirePermissions('catalogs:create')
-  @ApiOperation({
-    summary: 'Create a folder module with optional translations',
-  })
-  async createFolderModule(
-    @Body() dto: CreateFolderModuleDto,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.createFolderModule(
-      dto,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  @Patch('folder-modules/:id')
-  @RequirePermissions('catalogs:update')
-  @ApiOperation({
-    summary: 'Update a folder module and upsert/delete translations',
-  })
-  async updateFolderModule(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateFolderModuleDto,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.updateFolderModule(
-      id,
-      dto,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  @Delete('folder-modules/:id')
-  @RequirePermissions('catalogs:delete')
-  @ApiOperation({ summary: 'Soft-delete a folder module (active = false)' })
-  async deleteFolderModule(
-    @Param('id', ParseIntPipe) id: number,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.deleteFolderModule(
-      id,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  // ==========================================================================
-  // FOLDER SECTIONS  →  /admin/folder-sections
-  // ==========================================================================
-
-  @Get('folder-sections')
-  @RequirePermissions('catalogs:read')
-  @ApiOperation({
-    summary:
-      'List all folder sections with their full translations (admin editor)',
-  })
-  @ApiQuery({
-    name: 'moduleId',
-    required: false,
-    type: Number,
-    description: 'Filter by module_id (folder_module_id)',
-  })
-  async findAllFolderSections(@Query('moduleId') moduleId?: string) {
-    const data = await this.catalogsService.findAllFolderSections(
-      moduleId ? Number(moduleId) : undefined,
-    );
-    return { status: 'success', data };
-  }
-
-  @Post('folder-sections')
-  @RequirePermissions('catalogs:create')
-  @ApiOperation({
-    summary: 'Create a folder section with optional translations',
-  })
-  async createFolderSection(
-    @Body() dto: CreateFolderSectionDto,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.createFolderSection(
-      dto,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  @Patch('folder-sections/:id')
-  @RequirePermissions('catalogs:update')
-  @ApiOperation({
-    summary: 'Update a folder section and upsert/delete translations',
-  })
-  async updateFolderSection(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateFolderSectionDto,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.updateFolderSection(
-      id,
-      dto,
-      this.getActorId(req),
-    );
-    return { status: 'success', data };
-  }
-
-  @Delete('folder-sections/:id')
-  @RequirePermissions('catalogs:delete')
-  @ApiOperation({ summary: 'Soft-delete a folder section (active = false)' })
-  async deleteFolderSection(
-    @Param('id', ParseIntPipe) id: number,
-    @Req() req: ExpressRequest & { user: { sub: string } },
-  ) {
-    const data = await this.catalogsService.deleteFolderSection(
       id,
       this.getActorId(req),
     );
@@ -774,8 +553,7 @@ export class AdminPhaseECatalogsController {
   @Post('master-honors/:id/recalculate')
   @RequirePermissions('honors:update')
   @ApiOperation({
-    summary:
-      'Queue recalculation of affected users for one master honor',
+    summary: 'Queue recalculation of affected users for one master honor',
   })
   async recalculateMasterHonor(
     @Param('id', ParseIntPipe) id: number,

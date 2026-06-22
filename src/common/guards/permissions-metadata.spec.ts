@@ -2,7 +2,6 @@ import { ActivitiesController } from '../../activities/activities.controller';
 import { AdminGeographyController } from '../../admin/admin-geography.controller';
 import { AdminReferenceController } from '../../admin/admin-reference.controller';
 import { UserCertificationsController } from '../../certifications/certifications.controller';
-import { UserFoldersController } from '../../folders/folders.controller';
 import {
   getSensitiveUserSubresourceFallbackPermission,
   type SensitiveUserSubresourceFamily,
@@ -833,50 +832,9 @@ describe('Permissions metadata', () => {
 
   // ==========================================================================
   // Phase 3 cleanup (`permission-scope-cleanup-phase-3`):
-  // folders + certifications enrollment / progress / abandon endpoints MUST
-  // require `users:update_profile` (replaces the retired `users:update`).
+  // certifications enrollment / progress / abandon endpoints MUST require
+  // `user_certifications:manage` instead of retired broad user permissions.
   // ==========================================================================
-
-  it('marks folder enroll/update/delete as user_folders:manage (Phase 3 cleanup)', () => {
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        UserFoldersController.prototype.enrollUser,
-      ),
-    ).toEqual({ permissions: ['user_folders:manage'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        UserFoldersController.prototype.enrollUser,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        UserFoldersController.prototype.updateSectionProgress,
-      ),
-    ).toEqual({ permissions: ['user_folders:manage'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        UserFoldersController.prototype.updateSectionProgress,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-
-    expect(
-      Reflect.getMetadata(
-        PERMISSIONS_KEY,
-        UserFoldersController.prototype.deleteAssignment,
-      ),
-    ).toEqual({ permissions: ['user_folders:manage'], mode: 'all' });
-    expect(
-      Reflect.getMetadata(
-        AUTHORIZATION_RESOURCE_KEY,
-        UserFoldersController.prototype.deleteAssignment,
-      ),
-    ).toEqual({ type: 'user', ownerParam: 'userId' });
-  });
 
   it('marks certification enroll/update/delete as user_certifications:manage (Phase 3 cleanup)', () => {
     expect(

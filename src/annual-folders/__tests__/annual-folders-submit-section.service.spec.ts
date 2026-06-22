@@ -27,6 +27,7 @@ const mockOpenFolder = {
   annual_folder_id: FOLDER_ID,
   folder_template_id: TEMPLATE_ID,
   status: 'open',
+  folder_template: { closing_date: null },
 };
 
 const mockSection = {
@@ -242,6 +243,29 @@ describe('AnnualFoldersService — submitSection', () => {
         service.submitSection(FOLDER_ID, SECTION_ID, USER_ID),
       ).rejects.toMatchObject({
         code: ErrorCode.ANNUAL_FOLDER_STATUS_INVALID_FOR_UPLOAD,
+      });
+
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // 4b. Submission window closed → AppBadRequestException
+  // ---------------------------------------------------------------
+  describe('when the template submission window is closed', () => {
+    it('throws AppBadRequestException before entering the transaction', async () => {
+      mockPrismaService.annual_folders.findUnique.mockReset();
+      mockPrismaService.annual_folders.findUnique
+        .mockResolvedValueOnce(mockFolderClubChain)
+        .mockResolvedValueOnce({
+          ...mockOpenFolder,
+          folder_template: { closing_date: new Date('2020-01-01T00:00:00Z') },
+        });
+
+      await expect(
+        service.submitSection(FOLDER_ID, SECTION_ID, USER_ID),
+      ).rejects.toMatchObject({
+        code: ErrorCode.ANNUAL_FOLDER_SUBMISSION_CLOSED,
       });
 
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();

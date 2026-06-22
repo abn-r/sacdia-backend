@@ -19,6 +19,16 @@ const LEGACY_PERMISSIONS = [
   'user_honors:update',
 ] as const;
 
+const LEGACY_CLEANUP_PERMISSIONS = [
+  ...LEGACY_PERMISSIONS,
+  'classes:validate',
+  'qr:issue_self',
+  'folders:read',
+  'folders:manage',
+  'user_folders:read',
+  'user_folders:manage',
+] as const;
+
 // Resolved relative to repo root (`<rootDir>` = sacdia-backend/src).
 const SEED_DIR = join(__dirname, '..', '..', '..', '..', 'prisma', 'seeds');
 const PERMISSIONS_SEED_PATH = join(SEED_DIR, 'permissions.seed.sql');
@@ -34,7 +44,9 @@ describe('Phase 3 permission cleanup — seed files', () => {
       // a false positive (the cleanup DELETE statement legitimately mentions
       // the legacy strings inside an IN(...) clause that targets the
       // `permissions` table, NOT the role grant lists).
-      const cleaned = permissionsLineFilter(rolePermissionsSeed);
+      const cleaned = permissionsLineFilter(
+        extractAllRoleGrantBlocks(rolePermissionsSeed),
+      );
       for (const legacy of LEGACY_PERMISSIONS) {
         expect(cleaned).not.toMatch(
           new RegExp(`^\\s*'${escapeRegex(legacy)}',?\\s*$`, 'm'),
@@ -49,9 +61,13 @@ describe('Phase 3 permission cleanup — seed files', () => {
       //   WHERE role_permissions.permission_id = p.permission_id
       //     AND p.permission_name IN (...);
       const normalized = rolePermissionsSeed.replace(/\s+/g, ' ');
-      expect(normalized).toMatch(
-        /DELETE FROM role_permissions USING permissions p WHERE role_permissions\.permission_id = p\.permission_id AND p\.permission_name IN \('users:update', 'classes:update', 'user_honors:update'(, 'classes:validate')?(, 'qr:issue_self')?\);/,
+      const cleanupBlock = normalized.match(
+        /DELETE FROM role_permissions USING permissions p WHERE role_permissions\.permission_id = p\.permission_id AND p\.permission_name IN \(([^)]*)\);/,
       );
+      expect(cleanupBlock).not.toBeNull();
+      for (const legacy of LEGACY_CLEANUP_PERMISSIONS) {
+        expect(cleanupBlock?.[1]).toContain(`'${legacy}'`);
+      }
     });
 
     it('grants user_honors:submit to the user and member roles', () => {
@@ -115,6 +131,18 @@ function permissionsLineFilter(sql: string): string {
     .split('\n')
     .map((line) => line.replace(/--.*$/, ''))
     .join('\n');
+}
+
+function extractAllRoleGrantBlocks(sql: string): string {
+  const blocks = sql.match(
+    /WHERE r\.role_name(?:\s+IN\s+\([^)]*\)|\s+=\s+'[^']+')[^]*?ON CONFLICT \(role_id, permission_id\) DO NOTHING;/g,
+  );
+
+  if (!blocks?.length) {
+    throw new Error('Could not locate any role grant blocks');
+  }
+
+  return blocks.join('\n');
 }
 
 function extractRoleBlock(sql: string, roleName: string): string {

@@ -39,12 +39,6 @@ import {
   UpdateClassModuleDto,
   CreateClassSectionDto,
   UpdateClassSectionDto,
-  CreateFolderDto,
-  UpdateFolderDto,
-  CreateFolderModuleDto,
-  UpdateFolderModuleDto,
-  CreateFolderSectionDto,
-  UpdateFolderSectionDto,
   CreateFinanceCategoryDto,
   UpdateFinanceCategoryDto,
   CreateInventoryCategoryDto,
@@ -568,417 +562,6 @@ export class AdminPhaseECatalogsService {
         ErrorCode.ADMIN_CLASS_SECTION_NAME_CONFLICT,
       );
     }
-  }
-
-  // ==========================================================================
-  // FOLDERS
-  // Translation table: folders_translations
-  // PK: folder_id  |  Translation FK: folder_id
-  // Unique index: folder_id_locale
-  // Translatable fields: name, description
-  // ==========================================================================
-
-  async findAllFolders() {
-    return this.prisma.folders.findMany({
-      include: {
-        translations: {
-          select: { locale: true, name: true, description: true },
-        },
-      },
-      orderBy: { name: 'asc' },
-    });
-  }
-
-  async createFolder(dto: CreateFolderDto, actorId: string) {
-    this.translationService.validateTranslations(dto.translations);
-    const name = this.normalizeName(dto.name);
-    await this.ensureFolderUnique(name);
-
-    const { translations, ...mainData } = dto;
-
-    const record = await this.prisma.$transaction(async (tx) => {
-      const folder = await tx.folders.create({
-        data: {
-          name,
-          description: mainData.description ?? null,
-          active: mainData.active ?? false,
-          club_type: mainData.club_type ?? null,
-          ecclesiastical_year_id: mainData.ecclesiastical_year_id ?? null,
-        },
-      });
-
-      await this.translationService.upsertTranslations(
-        tx,
-        'folders_translations',
-        'folder_id',
-        'folder_id_locale',
-        folder.folder_id,
-        translations,
-        ['name', 'description'],
-      );
-
-      return folder;
-    });
-
-    this.logMutation('create', 'folders', record.folder_id, actorId);
-    return record;
-  }
-
-  async updateFolder(id: number, dto: UpdateFolderDto, actorId: string) {
-    this.translationService.validateTranslations(dto.translations);
-    await this.ensureFolderExists(id);
-
-    const name = dto.name ? this.normalizeName(dto.name) : undefined;
-    if (name) {
-      await this.ensureFolderUnique(name, id);
-    }
-
-    const { translations, ...mainDto } = dto;
-
-    const record = await this.prisma.$transaction(async (tx) => {
-      const folder = await tx.folders.update({
-        where: { folder_id: id },
-        data: {
-          ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string'
-            ? { description: mainDto.description }
-            : {}),
-          ...(typeof mainDto.active === 'boolean'
-            ? { active: mainDto.active }
-            : {}),
-          ...(mainDto.club_type !== undefined
-            ? { club_type: mainDto.club_type }
-            : {}),
-          ...(mainDto.ecclesiastical_year_id !== undefined
-            ? { ecclesiastical_year_id: mainDto.ecclesiastical_year_id }
-            : {}),
-          modified_at: new Date(),
-        },
-      });
-
-      await this.translationService.upsertTranslations(
-        tx,
-        'folders_translations',
-        'folder_id',
-        'folder_id_locale',
-        id,
-        translations,
-        ['name', 'description'],
-      );
-
-      return folder;
-    });
-
-    this.logMutation('update', 'folders', id, actorId);
-    return record;
-  }
-
-  async deleteFolder(id: number, actorId: string) {
-    await this.ensureFolderExists(id);
-
-    const record = await this.prisma.folders.update({
-      where: { folder_id: id },
-      data: { active: false, modified_at: new Date() },
-    });
-
-    this.logMutation('delete', 'folders', id, actorId);
-    return record;
-  }
-
-  private async ensureFolderExists(id: number) {
-    const entity = await this.prisma.folders.findUnique({
-      where: { folder_id: id },
-    });
-    if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_NOT_FOUND, { id });
-    }
-    return entity;
-  }
-
-  private async ensureFolderUnique(name: string, excludeId?: number) {
-    const existing = await this.prisma.folders.findFirst({
-      where: {
-        name: { equals: name, mode: 'insensitive' },
-        ...(excludeId ? { NOT: { folder_id: excludeId } } : {}),
-      },
-    });
-    if (existing) {
-      throw new AppConflictException(ErrorCode.ADMIN_FOLDER_NAME_CONFLICT);
-    }
-  }
-
-  // ==========================================================================
-  // FOLDERS MODULES
-  // Translation table: folders_modules_translations
-  // PK: folder_module_id  |  Translation FK: folder_module_id
-  // Unique index: folder_module_id_locale
-  // Translatable fields: name, description
-  // ==========================================================================
-
-  async findAllFolderModules(folderId?: number) {
-    return this.prisma.folders_modules.findMany({
-      where: folderId ? { folder_id: folderId } : undefined,
-      include: {
-        translations: {
-          select: { locale: true, name: true, description: true },
-        },
-      },
-      orderBy: [{ folder_id: 'asc' }, { name: 'asc' }],
-    });
-  }
-
-  async createFolderModule(dto: CreateFolderModuleDto, actorId: string) {
-    this.translationService.validateTranslations(dto.translations);
-    const name = this.normalizeName(dto.name);
-
-    const { translations, ...mainData } = dto;
-
-    const record = await this.prisma.$transaction(async (tx) => {
-      const mod = await tx.folders_modules.create({
-        data: {
-          name,
-          description: mainData.description ?? null,
-          folder_id: mainData.folder_id ?? null,
-          active: mainData.active ?? true,
-          max_points: mainData.max_points ?? 0,
-          minimum_points: mainData.minimum_points ?? 0,
-        },
-      });
-
-      await this.translationService.upsertTranslations(
-        tx,
-        'folders_modules_translations',
-        'folder_module_id',
-        'folder_module_id_locale',
-        mod.folder_module_id,
-        translations,
-        ['name', 'description'],
-      );
-
-      return mod;
-    });
-
-    this.logMutation(
-      'create',
-      'folders_modules',
-      record.folder_module_id,
-      actorId,
-    );
-    return record;
-  }
-
-  async updateFolderModule(
-    id: number,
-    dto: UpdateFolderModuleDto,
-    actorId: string,
-  ) {
-    this.translationService.validateTranslations(dto.translations);
-    await this.ensureFolderModuleExists(id);
-
-    const name = dto.name ? this.normalizeName(dto.name) : undefined;
-
-    const { translations, ...mainDto } = dto;
-
-    const record = await this.prisma.$transaction(async (tx) => {
-      const mod = await tx.folders_modules.update({
-        where: { folder_module_id: id },
-        data: {
-          ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string'
-            ? { description: mainDto.description }
-            : {}),
-          ...(mainDto.folder_id !== undefined
-            ? { folder_id: mainDto.folder_id }
-            : {}),
-          ...(typeof mainDto.active === 'boolean'
-            ? { active: mainDto.active }
-            : {}),
-          ...(mainDto.max_points !== undefined
-            ? { max_points: mainDto.max_points }
-            : {}),
-          ...(mainDto.minimum_points !== undefined
-            ? { minimum_points: mainDto.minimum_points }
-            : {}),
-          modified_at: new Date(),
-        },
-      });
-
-      await this.translationService.upsertTranslations(
-        tx,
-        'folders_modules_translations',
-        'folder_module_id',
-        'folder_module_id_locale',
-        id,
-        translations,
-        ['name', 'description'],
-      );
-
-      return mod;
-    });
-
-    this.logMutation('update', 'folders_modules', id, actorId);
-    return record;
-  }
-
-  async deleteFolderModule(id: number, actorId: string) {
-    await this.ensureFolderModuleExists(id);
-
-    const record = await this.prisma.folders_modules.update({
-      where: { folder_module_id: id },
-      data: { active: false, modified_at: new Date() },
-    });
-
-    this.logMutation('delete', 'folders_modules', id, actorId);
-    return record;
-  }
-
-  private async ensureFolderModuleExists(id: number) {
-    const entity = await this.prisma.folders_modules.findUnique({
-      where: { folder_module_id: id },
-    });
-    if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_MODULE_NOT_FOUND, {
-        id,
-      });
-    }
-    return entity;
-  }
-
-  // ==========================================================================
-  // FOLDERS SECTIONS
-  // Translation table: folders_sections_translations
-  // PK: folder_section_id  |  Translation FK: folder_section_id
-  // Unique index: folder_section_id_locale
-  // Translatable fields: name, description
-  // ==========================================================================
-
-  async findAllFolderSections(moduleId?: number) {
-    return this.prisma.folders_sections.findMany({
-      where: moduleId ? { module_id: moduleId } : undefined,
-      include: {
-        translations: {
-          select: { locale: true, name: true, description: true },
-        },
-      },
-      orderBy: [{ module_id: 'asc' }, { name: 'asc' }],
-    });
-  }
-
-  async createFolderSection(dto: CreateFolderSectionDto, actorId: string) {
-    this.translationService.validateTranslations(dto.translations);
-    const name = this.normalizeName(dto.name);
-
-    const { translations, ...mainData } = dto;
-
-    const record = await this.prisma.$transaction(async (tx) => {
-      const sec = await tx.folders_sections.create({
-        data: {
-          name,
-          description: mainData.description ?? null,
-          module_id: mainData.module_id ?? null,
-          active: mainData.active ?? true,
-          max_points: mainData.max_points ?? 0,
-          minimum_points: mainData.minimum_points ?? 0,
-        },
-      });
-
-      await this.translationService.upsertTranslations(
-        tx,
-        'folders_sections_translations',
-        'folder_section_id',
-        'folder_section_id_locale',
-        sec.folder_section_id,
-        translations,
-        ['name', 'description'],
-      );
-
-      return sec;
-    });
-
-    this.logMutation(
-      'create',
-      'folders_sections',
-      record.folder_section_id,
-      actorId,
-    );
-    return record;
-  }
-
-  async updateFolderSection(
-    id: number,
-    dto: UpdateFolderSectionDto,
-    actorId: string,
-  ) {
-    this.translationService.validateTranslations(dto.translations);
-    await this.ensureFolderSectionExists(id);
-
-    const name = dto.name ? this.normalizeName(dto.name) : undefined;
-
-    const { translations, ...mainDto } = dto;
-
-    const record = await this.prisma.$transaction(async (tx) => {
-      const sec = await tx.folders_sections.update({
-        where: { folder_section_id: id },
-        data: {
-          ...(name ? { name } : {}),
-          ...(typeof mainDto.description === 'string'
-            ? { description: mainDto.description }
-            : {}),
-          ...(mainDto.module_id !== undefined
-            ? { module_id: mainDto.module_id }
-            : {}),
-          ...(typeof mainDto.active === 'boolean'
-            ? { active: mainDto.active }
-            : {}),
-          ...(mainDto.max_points !== undefined
-            ? { max_points: mainDto.max_points }
-            : {}),
-          ...(mainDto.minimum_points !== undefined
-            ? { minimum_points: mainDto.minimum_points }
-            : {}),
-          modified_at: new Date(),
-        },
-      });
-
-      await this.translationService.upsertTranslations(
-        tx,
-        'folders_sections_translations',
-        'folder_section_id',
-        'folder_section_id_locale',
-        id,
-        translations,
-        ['name', 'description'],
-      );
-
-      return sec;
-    });
-
-    this.logMutation('update', 'folders_sections', id, actorId);
-    return record;
-  }
-
-  async deleteFolderSection(id: number, actorId: string) {
-    await this.ensureFolderSectionExists(id);
-
-    const record = await this.prisma.folders_sections.update({
-      where: { folder_section_id: id },
-      data: { active: false, modified_at: new Date() },
-    });
-
-    this.logMutation('delete', 'folders_sections', id, actorId);
-    return record;
-  }
-
-  private async ensureFolderSectionExists(id: number) {
-    const entity = await this.prisma.folders_sections.findUnique({
-      where: { folder_section_id: id },
-    });
-    if (!entity) {
-      throw new AppNotFoundException(ErrorCode.ADMIN_FOLDER_SECTION_NOT_FOUND, {
-        id,
-      });
-    }
-    return entity;
   }
 
   // ==========================================================================
@@ -1510,14 +1093,12 @@ export class AdminPhaseECatalogsService {
     } = dto;
 
     this.validateMasterHonorConfig(
-      mainData.applicability_scope ??
-        master_honor_applicability_scope_enum.ALL,
+      mainData.applicability_scope ?? master_honor_applicability_scope_enum.ALL,
       division_ids,
       requirement_groups,
     );
     await this.validateMasterHonorReferences(
-      mainData.applicability_scope ??
-        master_honor_applicability_scope_enum.ALL,
+      mainData.applicability_scope ?? master_honor_applicability_scope_enum.ALL,
       division_ids,
       requirement_groups,
     );
@@ -1587,12 +1168,7 @@ export class AdminPhaseECatalogsService {
       await this.ensureMasterHonorUnique(name, id);
     }
 
-    const {
-      translations,
-      division_ids,
-      requirement_groups,
-      ...mainDto
-    } = dto;
+    const { translations, division_ids, requirement_groups, ...mainDto } = dto;
 
     const applicabilityScope =
       mainDto.applicability_scope ??
@@ -1741,7 +1317,7 @@ export class AdminPhaseECatalogsService {
     if (
       validateDivisions &&
       applicabilityScope ===
-      master_honor_applicability_scope_enum.SELECTED_DIVISIONS
+        master_honor_applicability_scope_enum.SELECTED_DIVISIONS
     ) {
       if (!divisionIds.length) {
         throw new BadRequestException(
@@ -1751,13 +1327,17 @@ export class AdminPhaseECatalogsService {
     }
 
     for (const group of requirementGroups) {
-      if (!Number.isInteger(group.minimum_required) || group.minimum_required < 1) {
-        throw new BadRequestException(
-          'minimum_required must be at least 1',
-        );
+      if (
+        !Number.isInteger(group.minimum_required) ||
+        group.minimum_required < 1
+      ) {
+        throw new BadRequestException('minimum_required must be at least 1');
       }
 
-      if (group.group_type === master_honor_requirement_group_type_enum.CATEGORY_COUNT) {
+      if (
+        group.group_type ===
+        master_honor_requirement_group_type_enum.CATEGORY_COUNT
+      ) {
         if (!group.honors_category_id) {
           throw new BadRequestException(
             'CATEGORY_COUNT groups require honors_category_id',
@@ -1770,7 +1350,10 @@ export class AdminPhaseECatalogsService {
         }
       }
 
-      if (group.group_type === master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS) {
+      if (
+        group.group_type ===
+        master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS
+      ) {
         if (!group.options || group.options.length === 0) {
           throw new BadRequestException(
             'EXPLICIT_OPTIONS groups require at least one option',
@@ -1804,7 +1387,7 @@ export class AdminPhaseECatalogsService {
     if (
       validateDivisions &&
       applicabilityScope ===
-      master_honor_applicability_scope_enum.SELECTED_DIVISIONS
+        master_honor_applicability_scope_enum.SELECTED_DIVISIONS
     ) {
       await this.ensureDivisionIdsExist(divisionIds);
     }
@@ -1829,7 +1412,7 @@ export class AdminPhaseECatalogsService {
       ...new Set(
         requirementGroups.flatMap((group) =>
           group.group_type ===
-            master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS
+          master_honor_requirement_group_type_enum.EXPLICIT_OPTIONS
             ? (group.options ?? []).flatMap((option) => option.honor_ids)
             : [],
         ),
@@ -1876,9 +1459,7 @@ export class AdminPhaseECatalogsService {
       select: { honor_id: true },
     });
     if (existing.length !== uniqueHonorIds.length) {
-      throw new BadRequestException(
-        'One or more honor_id values do not exist',
-      );
+      throw new BadRequestException('One or more honor_id values do not exist');
     }
   }
 
@@ -1896,10 +1477,10 @@ export class AdminPhaseECatalogsService {
     });
 
     const normalizedScope =
-      applicabilityScope ??
-      master_honor_applicability_scope_enum.ALL;
+      applicabilityScope ?? master_honor_applicability_scope_enum.ALL;
     if (
-      normalizedScope !== master_honor_applicability_scope_enum.SELECTED_DIVISIONS
+      normalizedScope !==
+      master_honor_applicability_scope_enum.SELECTED_DIVISIONS
     ) {
       return;
     }

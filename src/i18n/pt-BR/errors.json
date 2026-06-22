@@ -532,5 +532,7 @@
   "ANNUAL_RANKING_COMPONENT_UNKNOWN": "O componente de ranking anual {componentKey} não é suportado",
   "ANNUAL_RANKING_COMPONENT_DUPLICATE": "O componente de ranking anual {componentKey} está duplicado na configuração",
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "A seção {sectionId} não foi encontrada para calcular o progresso anual",
-  "ANNUAL_RANKING_SECTION_NO_CLUB": "A seção {sectionId} não está vinculada a um clube principal"
+  "ANNUAL_RANKING_SECTION_NO_CLUB": "A seção {sectionId} não está vinculada a um clube principal",
+  "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Os envios da Pasta Anual de Evidências foram encerrados em {closingDate}",
+  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Não é possível enviar a pasta: ainda há seções obrigatórias pendentes ({pendingSections})"
 }

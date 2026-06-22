@@ -36,7 +36,17 @@ BEGIN;
 DELETE FROM role_permissions
 USING permissions p
 WHERE role_permissions.permission_id = p.permission_id
-  AND p.permission_name IN ('users:update', 'classes:update', 'user_honors:update', 'classes:validate', 'qr:issue_self');
+  AND p.permission_name IN (
+    'users:update',
+    'classes:update',
+    'user_honors:update',
+    'classes:validate',
+    'qr:issue_self',
+    'folders:read',
+    'folders:manage',
+    'user_folders:read',
+    'user_folders:manage'
+  );
 
 -- ============================
 -- USER role (GLOBAL)
@@ -81,7 +91,6 @@ WHERE r.role_name = 'user'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Post-registration (club enrollment)
     'post_registration:read',
@@ -139,7 +148,6 @@ WHERE r.role_name = 'member'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -159,8 +167,6 @@ WHERE r.role_name = 'member'
     'attendance:read',
 
     -- Evidence & progress
-    'evidence_folders:read',
-    'evidence_folders:update',
 
     -- Units
     'units:read',
@@ -234,7 +240,6 @@ WHERE r.role_name = 'counselor'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -253,8 +258,6 @@ WHERE r.role_name = 'counselor'
     'qr:validate',
 
     -- Evidence & progress
-    'evidence_folders:read',
-    'evidence_folders:update',
 
     -- Units
     'units:read',
@@ -292,7 +295,6 @@ WHERE r.role_name = 'counselor'
 
     -- User progression (view other users' progression — admin-level)
     'user_certifications:read',
-    'user_folders:read',
 
     -- Requests (own domain)
     'requests:read',
@@ -348,7 +350,6 @@ WHERE r.role_name = 'instructor'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -367,12 +368,9 @@ WHERE r.role_name = 'instructor'
     'qr:validate',
 
     -- Evidence & progress
-    'evidence_folders:read',
-    'evidence_folders:update',
 
     -- User progression (view other users' progression)
     'user_certifications:read',
-    'user_folders:read',
 
     -- Dashboard
     'dashboard:read',
@@ -435,7 +433,6 @@ WHERE r.role_name = 'secretary'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -456,6 +453,7 @@ WHERE r.role_name = 'secretary'
     -- Evidence & progress
     'evidence_folders:read',
     'evidence_folders:update',
+    'annual_folders:submit',
 
     -- Units
     'units:read',
@@ -493,7 +491,6 @@ WHERE r.role_name = 'secretary'
 
     -- User progression (view other users' progression — admin-level)
     'user_certifications:read',
-    'user_folders:read',
 
     -- ===== Additional SECRETARY permissions (13) =====
     -- Club info + section management
@@ -583,7 +580,6 @@ WHERE r.role_name = 'treasurer'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -602,8 +598,6 @@ WHERE r.role_name = 'treasurer'
     'qr:validate',
 
     -- Evidence & progress
-    'evidence_folders:read',
-    'evidence_folders:update',
 
     -- Units
     'units:read',
@@ -641,7 +635,6 @@ WHERE r.role_name = 'treasurer'
 
     -- User progression (view other users' progression — admin-level)
     'user_certifications:read',
-    'user_folders:read',
 
     -- ===== Additional TREASURER permissions (10) =====
     -- Financial records management (section-level)
@@ -716,7 +709,6 @@ WHERE r.role_name = 'secretary-treasurer'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -737,6 +729,7 @@ WHERE r.role_name = 'secretary-treasurer'
     -- Evidence & progress
     'evidence_folders:read',
     'evidence_folders:update',
+    'annual_folders:submit',
 
     -- Units
     'units:read',
@@ -796,7 +789,6 @@ WHERE r.role_name = 'secretary-treasurer'
 
     -- User progression (view other users' progression — admin-level)
     'user_certifications:read',
-    'user_folders:read',
 
     -- ===== From TREASURER (4 unique) =====
     -- Financial records management
@@ -865,7 +857,6 @@ WHERE r.role_name = 'deputy-director'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -918,8 +909,6 @@ WHERE r.role_name = 'deputy-director'
     -- User progression (view + manage other users' progression — admin-level)
     'user_certifications:read',
     'user_certifications:manage',
-    'user_folders:read',
-    'user_folders:manage',
 
     -- ===== Additional DEPUTY-DIRECTOR permissions (9) =====
     -- Read-only access to secretary domains
@@ -1000,7 +989,6 @@ WHERE r.role_name = 'director'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -1021,6 +1009,7 @@ WHERE r.role_name = 'director'
     -- Evidence & progress
     'evidence_folders:read',
     'evidence_folders:update',
+    'annual_folders:submit',
 
     -- Units
     'units:read',
@@ -1089,8 +1078,6 @@ WHERE r.role_name = 'director'
     -- User progression (view + manage other users' progression — admin-level)
     'user_certifications:read',
     'user_certifications:manage',
-    'user_folders:read',
-    'user_folders:manage',
 
     -- ===== From DEPUTY-DIRECTOR (1 unique) =====
     -- Investiture validation (accept/reject from counselors)
@@ -1181,7 +1168,6 @@ WHERE r.role_name = 'coordinator'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Dashboard & tracking (read only)
     'dashboard:read',
@@ -1248,7 +1234,6 @@ WHERE r.role_name = 'zone-coordinator'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Dashboard & tracking (read only)
     'dashboard:read',
@@ -1323,7 +1308,6 @@ WHERE r.role_name = 'general-coordinator'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Dashboard & tracking (read only)
     'dashboard:read',
@@ -1386,7 +1370,6 @@ WHERE r.role_name = 'assistant-lf'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Personal data
     'users:read',
@@ -1409,7 +1392,6 @@ WHERE r.role_name = 'assistant-lf'
 
     -- Evidence & progress
     'evidence_folders:read',
-    'evidence_folders:update',
 
     -- Units
     'units:read',
@@ -1479,8 +1461,6 @@ WHERE r.role_name = 'assistant-lf'
     -- User progression (view + manage other users' progression — admin-level)
     'user_certifications:read',
     'user_certifications:manage',
-    'user_folders:read',
-    'user_folders:manage',
 
     -- ===== Additional ASSISTANT-LF permissions (6) =====
     -- Mark members as invested (field-level authority)
@@ -1498,7 +1478,6 @@ WHERE r.role_name = 'assistant-lf'
     'annual_folder_templates:update',
     'annual_folder_templates:delete',
     'annual_folders:evaluate',
-    'annual_folders:submit',
     'award_categories:create',
     'award_categories:read',
     'award_categories:update',
@@ -1591,7 +1570,6 @@ WHERE r.role_name = 'pastor'
     -- Catalogs (read only)
     'catalogs:read',
     'certifications:read',
-    'folders:read',
 
     -- Dashboard & tracking (read only)
     'dashboard:read',
@@ -1837,6 +1815,24 @@ WHERE r.role_name IN ('director-lf', 'assistant-lf', 'director-union', 'assistan
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================
+-- resources:read + resource_categories:read — club operational read access
+-- ============================
+-- Replaces the retired legacy `folders:read` gate for shared resources.
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE (
+    (r.role_name = 'user' AND r.role_category = 'GLOBAL')
+    OR (r.role_name IN ('member', 'counselor', 'instructor', 'secretary', 'treasurer', 'secretary-treasurer', 'deputy-director', 'director')
+        AND r.role_category = 'CLUB')
+  )
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name IN ('resources:read', 'resource_categories:read')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ============================
 -- resources:* — field/union/dia directors and assistants
 -- ============================
 -- admin and super-admin pick these up automatically via their wildcard grants.
@@ -1880,21 +1876,11 @@ WHERE r.role_name = 'coordinator'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ============================
--- annual_folders:submit — coordinators (folder-level submit, NOT for club users)
+-- annual_folders:submit — club direction/secretariat only
 -- ============================
--- Coordinators can submit the entire folder on behalf of a club.
--- Field-level roles (assistant-lf, director-lf, etc.) already inherit via
--- the assistant-lf permission set above.
-INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
-SELECT gen_random_uuid(), r.role_id, p.permission_id
-FROM roles r
-CROSS JOIN permissions p
-WHERE r.role_name IN ('coordinator', 'zone-coordinator', 'general-coordinator')
-  AND r.role_category = 'GLOBAL'
-  AND r.active = true
-  AND p.active = true
-  AND p.permission_name = 'annual_folders:submit'
-ON CONFLICT (role_id, permission_id) DO NOTHING;
+-- Folder-level submit is granted in the director/secretary role blocks above.
+-- Coordinators and institutional supervisors evaluate/supervise, but they do
+-- not send the club's complete folder on its behalf.
 
 -- ============================
 -- ranking_weights:* — 8.4-C grants

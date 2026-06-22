@@ -4,7 +4,9 @@ import {
   IsOptional,
   IsBoolean,
   IsNumber,
+  IsDateString,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -40,6 +42,27 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Puntaje mínimo sugerido para aprobar la carpeta completa. El puntaje efectivo se calcula por secciones.',
+    default: 0,
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minimum_points?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha límite para envíos de secciones/carpeta. La evaluación sigue permitida después del cierre.',
+    example: '2026-09-30T23:59:59.000Z',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsDateString()
+  closing_date?: string | null;
 
   @ApiPropertyOptional({
     required: false,

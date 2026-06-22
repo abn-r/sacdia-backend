@@ -335,7 +335,7 @@ ON CONFLICT (permission_name) DO UPDATE SET
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('annual_folders:evaluate', 'Evaluate annual folder sections (assign points)', true),
-  ('annual_folders:submit', 'Submit entire annual folder for review (coordinator/field-level only)', true)
+  ('annual_folders:submit', 'Submit entire annual folder for review (club director/secretariat only)', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
@@ -430,21 +430,20 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
--- Folders (catalog browse — broad read grant, original semantics)
+-- Folders legacy permissions
 -- ============================
+-- Legacy /folders runtime and user-folder progression were retired before
+-- production in favor of the canonical annual-folders flow. Rows remain only
+-- for FK/history compatibility; active=false keeps them out of new grants.
 INSERT INTO permissions (permission_name, description, active) VALUES
-  ('folders:read', 'Browse folders catalog', true)
+  ('folders:read', 'DEPRECATED — legacy folders catalog browse retired in favor of annual-folders', false),
+  ('folders:manage', 'DEPRECATED — legacy folders catalog manage retired in favor of annual-folders', false)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
   modified_at = now();
 
--- ============================
 -- Corrective migration (Sprint C collision fix)
--- ============================
--- Soft-remove permissions mistakenly added in Sprint C collision.
--- These were added with wrong semantics (user-progression, not catalog-browse).
--- Rows remain for FK integrity; active=false removes them from grants.
 UPDATE permissions SET active = false, modified_at = now()
 WHERE permission_name IN ('certifications:manage', 'folders:manage');
 
@@ -460,11 +459,11 @@ ON CONFLICT (permission_name) DO UPDATE SET
   modified_at = now();
 
 -- ============================
--- User Folders (own domain, admin-level operations on user folder progression)
+-- User Folders legacy permissions
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
-  ('user_folders:read',   'Read any user folder enrollment and progress (admin-level)', true),
-  ('user_folders:manage', 'Enroll, update/delete user folder assignments (admin-level)', true)
+  ('user_folders:read',   'DEPRECATED — legacy user folder enrollment/progress retired in favor of annual-folders', false),
+  ('user_folders:manage', 'DEPRECATED — legacy user folder enrollment/progress retired in favor of annual-folders', false)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

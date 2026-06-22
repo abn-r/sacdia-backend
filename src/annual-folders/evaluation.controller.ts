@@ -38,10 +38,10 @@ type CurrentUserPayload = {
  *   `annual_folders:evaluate` at `type: 'global'`. Only LF and union-tier
  *   actors with the global permission can mutate evaluation state.
  *
- * - READ operations (`GET /:folderId/evaluations`) require the same permission
- *   at `type: 'active_assignment'`. Any user with an active assignment to the
- *   club can see their own folder's evaluations without being granted global
- *   write access.
+ * - READ operations (`GET /:folderId/evaluations`) accept
+ *   `annual_folders:evaluate` or `evidence_folders:read`, but
+ *   AnnualFoldersService re-validates the real folder club/territory so a
+ *   grant from another club cannot read this folder.
  *
  * Introduced by SDD `annual-folders-ownership-rework` (ADR-6). See
  * `docs/steering/runtime-sacdia.md` for the canon rationale.
@@ -212,7 +212,13 @@ export class EvaluationController {
   @ApiResponse({ status: 404, description: 'Folder not found' })
   async getFolderEvaluations(
     @Param('folderId', ParseUUIDPipe) folderId: string,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
+    await this.annualFoldersService.assertFolderReadAccessForUser(
+      folderId,
+      user.sub,
+      ['annual_folders:evaluate', 'evidence_folders:read'],
+    );
     const data = await this.evaluationService.getFolderEvaluations(folderId);
     return { status: 'success', data };
   }

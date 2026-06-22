@@ -12,6 +12,7 @@ import { annual_folder_section_status_enum } from '@prisma/client';
 import {
   CreateTemplateDto,
   CreateTemplateSectionDto,
+  UpdateTemplateDto,
   UpdateTemplateSectionDto,
   UploadEvidenceDto,
   UpdateEvidenceDto,
@@ -42,12 +43,37 @@ const FOLDER_QUEUE_STATUSES = [
   annual_folder_section_status_enum.PREAPPROVED_LF,
 ];
 
+const TEMPLATE_DETAIL_INCLUDE = {
+  club_type: { select: { club_type_id: true, name: true } },
+  ecclesiastical_year: {
+    select: {
+      year_id: true,
+      start_date: true,
+      end_date: true,
+      active: true,
+    },
+  },
+  owner_union: { select: { union_id: true, name: true } },
+  owner_local_field: {
+    select: { local_field_id: true, name: true, union_id: true },
+  },
+  sections: {
+    orderBy: { order: 'asc' as const },
+  },
+};
+
 type EvaluationQueueStatus =
   | 'needs_review'
   | 'submitted'
   | 'preapproved'
   | 'evaluated'
   | 'all';
+
+type FolderAccessContext = {
+  clubId: number;
+  localFieldId: number | null;
+  unionId: number | null;
+};
 
 @Injectable()
 export class AnnualFoldersService {
@@ -109,15 +135,121 @@ export class AnnualFoldersService {
         club_type_id: dto.club_type_id,
         ecclesiastical_year_id: dto.ecclesiastical_year_id,
         active: dto.active ?? true,
+        minimum_points: dto.minimum_points ?? 0,
+        closing_date: dto.closing_date ? new Date(dto.closing_date) : null,
         owner_union_id: dto.owner_union_id ?? null,
         owner_local_field_id: dto.owner_local_field_id ?? null,
       },
-      include: {
-        club_type: { select: { name: true } },
-        ecclesiastical_year: {
-          select: { start_date: true, end_date: true },
-        },
+      include: TEMPLATE_DETAIL_INCLUDE,
+    });
+  }
+
+  /**
+   * List templates for admin screens. Filters are optional; the legacy lookup
+   * by club type + year still lives in getTemplateByClubTypeAndYear.
+   */
+  async listTemplates(filters: {
+    club_type_id?: number;
+    ecclesiastical_year_id?: number;
+    active?: boolean;
+  }) {
+    return this.prisma.folder_templates.findMany({
+      where: {
+        ...(filters.club_type_id !== undefined && {
+          club_type_id: filters.club_type_id,
+        }),
+        ...(filters.ecclesiastical_year_id !== undefined && {
+          ecclesiastical_year_id: filters.ecclesiastical_year_id,
+        }),
+        ...(filters.active !== undefined && { active: filters.active }),
       },
+      include: TEMPLATE_DETAIL_INCLUDE,
+      orderBy: [
+        { ecclesiastical_year_id: 'desc' },
+        { club_type_id: 'asc' },
+        { name: 'asc' },
+      ],
+    });
+  }
+
+  /**
+   * Update template metadata without touching section definitions.
+   */
+  async updateTemplate(templateId: string, dto: UpdateTemplateDto) {
+    const template = await this.prisma.folder_templates.findUnique({
+      where: { folder_template_id: templateId },
+    });
+
+    if (!template) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+        { id: templateId },
+      );
+    }
+
+    const nextOwnerUnionId =
+      dto.owner_union_id !== undefined
+        ? dto.owner_union_id
+        : template.owner_union_id;
+    const nextOwnerLocalFieldId =
+      dto.owner_local_field_id !== undefined
+        ? dto.owner_local_field_id
+        : template.owner_local_field_id;
+
+    if ((nextOwnerUnionId != null) === (nextOwnerLocalFieldId != null)) {
+      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_OWNER_REQUIRED);
+    }
+
+    if (dto.club_type_id !== undefined) {
+      const clubType = await this.prisma.club_types.findUnique({
+        where: { club_type_id: dto.club_type_id },
+        select: { club_type_id: true },
+      });
+      if (!clubType) {
+        throw new AppNotFoundException(
+          ErrorCode.ANNUAL_FOLDER_CLUB_TYPE_NOT_FOUND,
+          { id: dto.club_type_id },
+        );
+      }
+    }
+
+    if (dto.ecclesiastical_year_id !== undefined) {
+      const year = await this.prisma.ecclesiastical_years.findUnique({
+        where: { year_id: dto.ecclesiastical_year_id },
+        select: { year_id: true },
+      });
+      if (!year) {
+        throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+          id: dto.ecclesiastical_year_id,
+        });
+      }
+    }
+
+    return this.prisma.folder_templates.update({
+      where: { folder_template_id: templateId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.club_type_id !== undefined && {
+          club_type_id: dto.club_type_id,
+        }),
+        ...(dto.ecclesiastical_year_id !== undefined && {
+          ecclesiastical_year_id: dto.ecclesiastical_year_id,
+        }),
+        ...(dto.active !== undefined && { active: dto.active }),
+        ...(dto.minimum_points !== undefined && {
+          minimum_points: dto.minimum_points,
+        }),
+        ...(dto.closing_date !== undefined && {
+          closing_date: dto.closing_date ? new Date(dto.closing_date) : null,
+        }),
+        ...(dto.owner_union_id !== undefined && {
+          owner_union_id: dto.owner_union_id,
+        }),
+        ...(dto.owner_local_field_id !== undefined && {
+          owner_local_field_id: dto.owner_local_field_id,
+        }),
+      },
+      include: TEMPLATE_DETAIL_INCLUDE,
     });
   }
 
@@ -225,15 +357,7 @@ export class AnnualFoldersService {
         ecclesiastical_year_id: yearId,
         active: true,
       },
-      include: {
-        club_type: { select: { name: true } },
-        ecclesiastical_year: {
-          select: { start_date: true, end_date: true },
-        },
-        sections: {
-          orderBy: { order: 'asc' },
-        },
-      },
+      include: TEMPLATE_DETAIL_INCLUDE,
     });
 
     if (!template) {
@@ -252,15 +376,7 @@ export class AnnualFoldersService {
   async getTemplate(templateId: string) {
     const template = await this.prisma.folder_templates.findUnique({
       where: { folder_template_id: templateId },
-      include: {
-        club_type: { select: { name: true } },
-        ecclesiastical_year: {
-          select: { start_date: true, end_date: true },
-        },
-        sections: {
-          orderBy: { order: 'asc' },
-        },
-      },
+      include: TEMPLATE_DETAIL_INCLUDE,
     });
 
     if (!template) {
@@ -281,7 +397,18 @@ export class AnnualFoldersService {
    * Create an annual evidence folder for a club enrollment, based on the matching template.
    * Automatically selects the template matching the enrollment's club type and year.
    */
-  async createFolderForEnrollment(enrollmentId: string) {
+  async createFolderForEnrollment(enrollmentId: string, userId?: string) {
+    // HTTP callers must hold evidence_folders:update in the enrollment's real
+    // club. Internal system calls (e.g. enrollment auto-create) pass no userId
+    // and are authorized by their outer workflow.
+    if (userId) {
+      await this.assertEnrollmentPermissionAccess(
+        enrollmentId,
+        userId,
+        'evidence_folders:update',
+      );
+    }
+
     // Check if folder already exists for this enrollment
     const existingFolder = await this.prisma.annual_folders.findUnique({
       where: { club_enrollment_id: enrollmentId },
@@ -435,7 +562,7 @@ export class AnnualFoldersService {
       });
     }
 
-    await this.assertFolderClubAccess(folderId, userId);
+    await this.assertFolderReadAccess(folderId, userId);
 
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },
@@ -538,7 +665,7 @@ export class AnnualFoldersService {
       });
     }
 
-    await this.assertFolderClubAccess(folderRef.annual_folder_id, userId);
+    await this.assertFolderReadAccess(folderRef.annual_folder_id, userId);
 
     const folder = await this.prisma.annual_folders.findUnique({
       where: { club_enrollment_id: enrollmentId },
@@ -645,7 +772,11 @@ export class AnnualFoldersService {
       throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_FILE_REQUIRED);
     }
 
-    await this.assertFolderClubAccess(folderId, userId);
+    await this.assertFolderPermissionAccess(
+      folderId,
+      userId,
+      'evidence_folders:update',
+    );
 
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },
@@ -725,39 +856,183 @@ export class AnnualFoldersService {
   }
 
   /**
-   * Asserts that `userId` is allowed to mutate evidence in the folder that
-   * owns `evidenceId`. Access is granted when ANY of these is true:
-   *   1. The user holds the `super-admin` global role (god-mode bypass).
-   *   2. The user has at least one active `club_role_assignment` whose
-   *      section belongs to the same club that owns the annual evidence folder.
-   *
-   * Throws `ForbiddenException` when neither condition is met.
-   * Throws `NotFoundException` when the evidence or its parent folder
-   * cannot be resolved (should not happen in normal flow but kept for safety).
-   *
-   * NOTE: This check intentionally does NOT replicate the H-02 pattern from
-   * scoring-categories (which omits the super-admin bypass). Super-admins must
-   * remain unblocked.
+   * Public resource check used by read-only sibling controllers that expose
+   * annual-folder data but do not own the full folder response assembly.
    */
-  private async assertEvidenceClubAccess(
+  async assertFolderReadAccessForUser(
+    folderId: string,
+    userId: string,
+    permissionNames: string[] = ['evidence_folders:read'],
+  ): Promise<void> {
+    await this.assertFolderReadAccess(folderId, userId, permissionNames);
+  }
+
+  private async assertFolderReadAccess(
+    folderId: string,
+    userId: string,
+    permissionNames: string[] = ['evidence_folders:read'],
+  ): Promise<void> {
+    const context = await this.resolveFolderAccessContext(folderId);
+
+    if (await this.hasSystemFolderBypass(userId)) {
+      return;
+    }
+
+    for (const permissionName of permissionNames) {
+      if (
+        await this.hasClubPermissionForClub(
+          userId,
+          context.clubId,
+          permissionName,
+        )
+      ) {
+        return;
+      }
+
+      const hasGlobalPermission = await this.hasGlobalPermission(
+        userId,
+        permissionName,
+      );
+      if (
+        hasGlobalPermission &&
+        (await this.userMatchesFolderTerritory(userId, context))
+      ) {
+        return;
+      }
+    }
+
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
+    );
+  }
+
+  private async assertFolderPermissionAccess(
+    folderId: string,
+    userId: string,
+    permissionName: string,
+  ): Promise<void> {
+    const context = await this.resolveFolderAccessContext(folderId);
+
+    if (await this.hasSystemFolderBypass(userId)) {
+      return;
+    }
+
+    if (
+      await this.hasClubPermissionForClub(
+        userId,
+        context.clubId,
+        permissionName,
+      )
+    ) {
+      return;
+    }
+
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
+    );
+  }
+
+  private async assertEnrollmentPermissionAccess(
+    enrollmentId: string,
+    userId: string,
+    permissionName: string,
+  ): Promise<void> {
+    const context = await this.resolveEnrollmentAccessContext(enrollmentId);
+
+    if (await this.hasSystemFolderBypass(userId)) {
+      return;
+    }
+
+    if (
+      await this.hasClubPermissionForClub(
+        userId,
+        context.clubId,
+        permissionName,
+      )
+    ) {
+      return;
+    }
+
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
+    );
+  }
+
+  private async assertEvidencePermissionAccess(
+    evidenceId: string,
+    userId: string,
+    permissionName: string,
+  ): Promise<void> {
+    const context = await this.resolveEvidenceAccessContext(evidenceId);
+
+    if (await this.hasSystemFolderBypass(userId)) {
+      return;
+    }
+
+    if (
+      await this.hasClubPermissionForClub(
+        userId,
+        context.clubId,
+        permissionName,
+      )
+    ) {
+      return;
+    }
+
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_EVIDENCE_ACCESS_DENIED,
+    );
+  }
+
+  /**
+   * Reviewer note/evaluation reads use territorial supervision: the caller must
+   * be a system bypass or belong to the same local field / union as the folder.
+   * Controller-level permissions still decide which global roles may reach it.
+   */
+  private async assertEvidenceTerritoryAccess(
     evidenceId: string,
     userId: string,
   ): Promise<void> {
-    // Resolve the club that owns this evidence in a single query.
-    // Path: evidence → annual_folder → club_enrollment → club_section (relation)
-    //       → clubs (via main_club_id FK) → club_id
-    const evidence = await this.prisma.annual_folder_evidences.findUnique({
-      where: { evidence_id: evidenceId },
+    const context = await this.resolveEvidenceAccessContext(evidenceId);
+
+    if (await this.hasSystemFolderBypass(userId)) {
+      return;
+    }
+
+    if (
+      await this.hasClubPermissionForClub(
+        userId,
+        context.clubId,
+        'evidence_folders:read',
+      )
+    ) {
+      return;
+    }
+
+    if (await this.userMatchesFolderTerritory(userId, context)) {
+      return;
+    }
+
+    throw new AppForbiddenException(
+      ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
+    );
+  }
+
+  private async resolveFolderAccessContext(
+    folderId: string,
+  ): Promise<FolderAccessContext> {
+    const folder = await this.prisma.annual_folders.findUnique({
+      where: { annual_folder_id: folderId },
       select: {
-        annual_folder: {
+        club_enrollment: {
           select: {
-            club_enrollment: {
+            club_section: {
               select: {
-                club_section: {
+                clubs: {
                   select: {
-                    clubs: {
-                      select: { club_id: true },
-                    },
+                    club_id: true,
+                    local_field_id: true,
+                    local_fields: { select: { union_id: true } },
                   },
                 },
               },
@@ -767,91 +1042,40 @@ export class AnnualFoldersService {
       },
     });
 
-    const clubId =
-      evidence?.annual_folder?.club_enrollment?.club_section?.clubs?.club_id;
+    const club = folder?.club_enrollment?.club_section?.clubs;
+    if (!folder) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
+        id: folderId,
+      });
+    }
 
-    if (clubId == null) {
-      // Evidence exists but its club chain could not be resolved — treat as
-      // not found so an attacker cannot enumerate valid evidence IDs.
+    if (!club?.club_id) {
       throw new AppNotFoundException(
         ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
-        { evidenceId },
+        { evidenceId: folderId },
       );
     }
 
-    // 1. Super-admin bypass — users_roles → roles (GLOBAL category, super-admin name)
-    const superAdminGrant = await this.prisma.users_roles.findFirst({
-      where: {
-        user_id: userId,
-        active: true,
-        roles: {
-          active: true,
-          role_category: 'GLOBAL',
-          role_name: 'super-admin',
-        },
-      },
-      select: { user_role_id: true },
-    });
-
-    if (superAdminGrant) {
-      return;
-    }
-
-    // 2. Club-level check — at least one active assignment in any section of
-    //    the same club (club_sections → clubs via main_club_id).
-    const clubAssignment = await this.prisma.club_role_assignments.findFirst({
-      where: {
-        user_id: userId,
-        active: true,
-        status: 'active',
-        club_sections: {
-          clubs: {
-            club_id: clubId,
-          },
-        },
-      },
-      select: { assignment_id: true },
-    });
-
-    if (!clubAssignment) {
-      throw new AppForbiddenException(
-        ErrorCode.ANNUAL_FOLDER_EVIDENCE_ACCESS_DENIED,
-      );
-    }
+    return {
+      clubId: club.club_id,
+      localFieldId: club.local_field_id ?? null,
+      unionId: club.local_fields?.union_id ?? null,
+    };
   }
 
-  /**
-   * Asserts that `userId` is allowed to submit or close the folder identified
-   * by `folderId`. Access is granted when ANY of these is true:
-   *   1. The user holds the `super-admin` global role (god-mode bypass).
-   *   2. The user has at least one active `club_role_assignment` whose section
-   *      belongs to the same club that owns the annual evidence folder.
-   *
-   * Resolution chain: annual_folder → club_enrollment → club_section → clubs
-   *
-   * Throws `ForbiddenException` when neither condition is met.
-   * Throws `NotFoundException` when the folder's club chain cannot be resolved.
-   *
-   * [H-03 fix] Called at the START of submitFolder / closeFolder, before any
-   * $transaction is opened, so we never hold a connection for an unauthorized
-   * request.
-   */
-  private async assertFolderClubAccess(
-    folderId: string,
-    userId: string,
-  ): Promise<void> {
-    // Resolve the club that owns this folder in a single query.
-    // Path: annual_folder → club_enrollment → club_section → clubs.club_id
-    const folder = await this.prisma.annual_folders.findUnique({
-      where: { annual_folder_id: folderId },
+  private async resolveEnrollmentAccessContext(
+    enrollmentId: string,
+  ): Promise<FolderAccessContext> {
+    const enrollment = await this.prisma.club_enrollments.findUnique({
+      where: { club_enrollment_id: enrollmentId },
       select: {
-        club_enrollment: {
+        club_section: {
           select: {
-            club_section: {
+            clubs: {
               select: {
-                clubs: {
-                  select: { club_id: true },
-                },
+                club_id: true,
+                local_field_id: true,
+                local_fields: { select: { union_id: true } },
               },
             },
           },
@@ -859,86 +1083,30 @@ export class AnnualFoldersService {
       },
     });
 
-    const clubId = folder?.club_enrollment?.club_section?.clubs?.club_id;
-
-    if (clubId == null) {
-      // Folder doesn't exist or its club chain is broken — surface as 404 so
-      // an attacker cannot distinguish missing folder from an access denial.
+    if (!enrollment) {
       throw new AppNotFoundException(
-        ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
-        { evidenceId: folderId },
+        ErrorCode.ANNUAL_FOLDER_ENROLLMENT_NOT_FOUND,
+        { id: enrollmentId },
       );
     }
 
-    // 1. Super-admin bypass
-    const superAdminGrant = await this.prisma.users_roles.findFirst({
-      where: {
-        user_id: userId,
-        active: true,
-        roles: {
-          active: true,
-          role_category: 'GLOBAL',
-          role_name: 'super-admin',
-        },
-      },
-      select: { user_role_id: true },
-    });
-
-    if (superAdminGrant) {
-      return;
+    const club = enrollment.club_section?.clubs;
+    if (!club?.club_id) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_CLUB_NO_PARENT, {
+        enrollmentId,
+      });
     }
 
-    // 2. Club-level check — at least one active assignment in any section of
-    //    the same club.
-    const clubAssignment = await this.prisma.club_role_assignments.findFirst({
-      where: {
-        user_id: userId,
-        active: true,
-        status: 'active',
-        club_sections: {
-          clubs: {
-            club_id: clubId,
-          },
-        },
-      },
-      select: { assignment_id: true },
-    });
-
-    if (!clubAssignment) {
-      throw new AppForbiddenException(
-        ErrorCode.ANNUAL_FOLDER_FOLDER_ACCESS_DENIED,
-      );
-    }
+    return {
+      clubId: club.club_id,
+      localFieldId: club.local_field_id ?? null,
+      unionId: club.local_fields?.union_id ?? null,
+    };
   }
 
-  /**
-   * Asserts that the reviewer (`userId`) may annotate evidence identified by
-   * `evidenceId`. Access is granted when ANY of these is true:
-   *   1. The user holds the `super-admin` global role.
-   *   2. The user has an active club_role_assignment in the evidence's exact
-   *      club (same as the assertEvidenceClubAccess club-level check).
-   *   3. The reviewer's `users.local_field_id` matches the evidence club's
-   *      `clubs.local_field_id` — i.e. the reviewer is an LF-tier actor whose
-   *      territory contains this club.
-   *   4. The reviewer's `users.union_id` matches the evidence club's
-   *      `local_fields.union_id` — i.e. a union-tier reviewer.
-   *
-   * Territory is modeled directly on the `users` row via `local_field_id` and
-   * `union_id` columns (schema lines 1007 & 1012). No separate reviewer-scope
-   * table exists — the canonical pattern used across all LF/union actors in
-   * this codebase (see authorization-context.service.ts canManageClub).
-   *
-   * Throws `ForbiddenException` when no condition is met.
-   * Throws `NotFoundException` when the evidence's club chain cannot be
-   * resolved (prevents ID enumeration).
-   */
-  private async assertEvidenceTerritoryAccess(
+  private async resolveEvidenceAccessContext(
     evidenceId: string,
-    userId: string,
-  ): Promise<void> {
-    // Resolve the club + its territory in one query.
-    // Path: evidence → annual_folder → club_enrollment → club_section
-    //       → clubs → (club_id, local_field_id) → local_fields → union_id
+  ): Promise<FolderAccessContext> {
     const evidence = await this.prisma.annual_folder_evidences.findUnique({
       where: { evidence_id: evidenceId },
       select: {
@@ -952,9 +1120,7 @@ export class AnnualFoldersService {
                       select: {
                         club_id: true,
                         local_field_id: true,
-                        local_fields: {
-                          select: { union_id: true },
-                        },
+                        local_fields: { select: { union_id: true } },
                       },
                     },
                   },
@@ -967,7 +1133,6 @@ export class AnnualFoldersService {
     });
 
     const club = evidence?.annual_folder?.club_enrollment?.club_section?.clubs;
-
     if (!club?.club_id) {
       throw new AppNotFoundException(
         ErrorCode.ANNUAL_FOLDER_EVIDENCE_CLUB_NOT_RESOLVED,
@@ -975,11 +1140,14 @@ export class AnnualFoldersService {
       );
     }
 
-    const evidenceClubId = club.club_id;
-    const evidenceLocalFieldId = club.local_field_id;
-    const evidenceUnionId = club.local_fields?.union_id ?? null;
+    return {
+      clubId: club.club_id,
+      localFieldId: club.local_field_id ?? null,
+      unionId: club.local_fields?.union_id ?? null,
+    };
+  }
 
-    // 1. Super-admin bypass
+  private async hasSystemFolderBypass(userId: string): Promise<boolean> {
     const superAdminGrant = await this.prisma.users_roles.findFirst({
       where: {
         user_id: userId,
@@ -993,60 +1161,91 @@ export class AnnualFoldersService {
       select: { user_role_id: true },
     });
 
-    if (superAdminGrant) {
-      return;
-    }
+    return Boolean(superAdminGrant);
+  }
 
-    // 2. Club-level assignment check (same club)
-    const clubAssignment = await this.prisma.club_role_assignments.findFirst({
+  private async hasClubPermissionForClub(
+    userId: string,
+    clubId: number,
+    permissionName: string,
+  ): Promise<boolean> {
+    const clubGrant = await this.prisma.club_role_assignments.findFirst({
       where: {
         user_id: userId,
         active: true,
         status: 'active',
         club_sections: {
-          clubs: { club_id: evidenceClubId },
+          clubs: { club_id: clubId },
+        },
+        roles: {
+          active: true,
+          role_permissions: {
+            some: {
+              active: true,
+              permissions: {
+                active: true,
+                permission_name: permissionName,
+              },
+            },
+          },
         },
       },
       select: { assignment_id: true },
     });
 
-    if (clubAssignment) {
-      return;
-    }
+    return Boolean(clubGrant);
+  }
 
-    // 3. Territory check via users.local_field_id / users.union_id.
-    // Reviewer territory is the direct columns on the users row — this is the
-    // canonical model for LF and union actors across the entire codebase.
+  private async hasGlobalPermission(
+    userId: string,
+    permissionName: string,
+  ): Promise<boolean> {
+    const globalGrant = await this.prisma.users_roles.findFirst({
+      where: {
+        user_id: userId,
+        active: true,
+        roles: {
+          active: true,
+          role_category: 'GLOBAL',
+          role_permissions: {
+            some: {
+              active: true,
+              permissions: {
+                active: true,
+                permission_name: permissionName,
+              },
+            },
+          },
+        },
+      },
+      select: { user_role_id: true },
+    });
+
+    return Boolean(globalGrant);
+  }
+
+  private async userMatchesFolderTerritory(
+    userId: string,
+    context: FolderAccessContext,
+  ): Promise<boolean> {
     const reviewer = await this.prisma.users.findUnique({
       where: { user_id: userId },
       select: { local_field_id: true, union_id: true },
     });
 
-    if (!reviewer) {
-      throw new AppForbiddenException(
-        ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
-      );
-    }
+    if (!reviewer) return false;
 
-    // LF-tier: reviewer.local_field_id must match the evidence club's local_field_id
     if (
       reviewer.local_field_id != null &&
-      reviewer.local_field_id === evidenceLocalFieldId
+      reviewer.local_field_id === context.localFieldId
     ) {
-      return;
+      return true;
     }
 
-    // Union-tier: reviewer.union_id must match the local_field's union_id
-    if (
+    return (
       reviewer.union_id != null &&
-      evidenceUnionId != null &&
-      reviewer.union_id === evidenceUnionId
-    ) {
-      return;
-    }
-
-    throw new AppForbiddenException(
-      ErrorCode.ANNUAL_FOLDER_EVIDENCE_TERRITORY_DENIED,
+      context.unionId != null &&
+      reviewer.union_id === context.unionId
     );
   }
 
@@ -1074,8 +1273,11 @@ export class AnnualFoldersService {
     dto: UpdateEvidenceDto,
     userId: string,
   ) {
-    // C-02: verify caller belongs to the club that owns this evidence
-    await this.assertEvidenceClubAccess(evidenceId, userId);
+    await this.assertEvidencePermissionAccess(
+      evidenceId,
+      userId,
+      'evidence_folders:update',
+    );
 
     const evidence = await this.prisma.annual_folder_evidences.findUnique({
       where: { evidence_id: evidenceId },
@@ -1124,8 +1326,11 @@ export class AnnualFoldersService {
    * Delete evidence (only if folder status is 'open').
    */
   async deleteEvidence(evidenceId: string, userId: string) {
-    // C-02: verify caller belongs to the club that owns this evidence
-    await this.assertEvidenceClubAccess(evidenceId, userId);
+    await this.assertEvidencePermissionAccess(
+      evidenceId,
+      userId,
+      'evidence_folders:update',
+    );
 
     const evidence = await this.prisma.annual_folder_evidences.findUnique({
       where: { evidence_id: evidenceId },
@@ -1237,7 +1442,9 @@ export class AnnualFoldersService {
    *  - Evaluation record (if any)
    *  - Evaluation record including stored `status`, `lf_approver`, `union_approver`, `union_decision`
    */
-  async getSectionStatus(folderId: string, sectionId: string) {
+  async getSectionStatus(folderId: string, sectionId: string, userId: string) {
+    await this.assertFolderReadAccess(folderId, userId);
+
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },
       select: {
@@ -1362,6 +1569,18 @@ export class AnnualFoldersService {
     };
   }
 
+  private assertSubmissionWindowOpen(closingDate: Date | null | undefined) {
+    if (!closingDate) return;
+
+    const now = new Date();
+    if (now <= closingDate) return;
+
+    throw new AppBadRequestException(
+      ErrorCode.ANNUAL_FOLDER_SUBMISSION_CLOSED,
+      { closingDate: closingDate.toISOString() },
+    );
+  }
+
   // ========================================
   // STATUS TRANSITIONS
   // ========================================
@@ -1377,13 +1596,17 @@ export class AnnualFoldersService {
    * Creates or updates (upsert) a row in annual_folder_section_submissions.
    */
   async submitSection(folderId: string, sectionId: string, userId: string) {
-    // [M-01] Assert caller belongs to the club that owns this folder before
-    // performing any DB mutations. Prevents cross-club section submission by
-    // users whose evidence_folders:update permission was granted in a different club.
-    await this.assertFolderClubAccess(folderId, userId);
+    await this.assertFolderPermissionAccess(
+      folderId,
+      userId,
+      'evidence_folders:update',
+    );
 
     const folder = await this.prisma.annual_folders.findUnique({
       where: { annual_folder_id: folderId },
+      include: {
+        folder_template: { select: { closing_date: true } },
+      },
     });
 
     if (!folder) {
@@ -1398,6 +1621,8 @@ export class AnnualFoldersService {
         { status: folder.status },
       );
     }
+
+    this.assertSubmissionWindowOpen(folder.folder_template?.closing_date);
 
     // Validate that the section belongs to this folder's template
     const section = await this.prisma.folder_template_sections.findFirst({
@@ -1483,32 +1708,98 @@ export class AnnualFoldersService {
   /**
    * Submit a folder (change status from 'open' to 'submitted').
    *
-   * This is a FOLDER-LEVEL operation intended for coordinators and field admins
-   * only (permission: annual_folders:submit). Regular club users submit per
-   * section via POST /annual-folders/:folderId/sections/:sectionId/submit.
+   * This is a FOLDER-LEVEL operation intended for club direction /
+   * secretariat only (permission: annual_folders:submit in the folder's real
+   * club). Operational club users submit per section via
+   * POST /annual-folders/:folderId/sections/:sectionId/submit.
    *
-   * [H-03] Club ownership is verified before the transaction opens: the caller
-   * must have at least one active club_role_assignment in the same club that
-   * owns the folder (super-admin bypass applies).
+   * The real folder club permission is verified before the transaction opens:
+   * a submit permission granted in another club is not enough.
    *
-   * TODO: consider enforcing that ALL required sections have at least one
-   * entry in annual_folder_section_submissions before allowing the transition.
+   * Enforces that all required template sections have been submitted before
+   * allowing the folder-level transition.
    */
   async submitFolder(folderId: string, userId: string) {
-    // H-03: verify caller belongs to the club that owns this folder
-    await this.assertFolderClubAccess(folderId, userId);
+    await this.assertFolderPermissionAccess(
+      folderId,
+      userId,
+      'annual_folders:submit',
+    );
     return this.prisma.$transaction(async (tx) => {
       // Existence check first so callers get a clean NotFoundException when
       // the folder simply does not exist (as opposed to a state conflict).
       const folder = await tx.annual_folders.findUnique({
         where: { annual_folder_id: folderId },
-        select: { annual_folder_id: true },
+        include: {
+          folder_template: {
+            include: {
+              sections: {
+                where: { required: true },
+                select: { section_id: true, name: true },
+                orderBy: { order: 'asc' },
+              },
+            },
+          },
+          section_submissions: {
+            select: { section_id: true },
+          },
+        },
       });
 
       if (!folder) {
         throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_NOT_FOUND, {
           id: folderId,
         });
+      }
+
+      this.assertSubmissionWindowOpen(folder.folder_template.closing_date);
+
+      const submittedSectionIds = new Set(
+        folder.section_submissions.map((submission) => submission.section_id),
+      );
+      const pendingRequiredSections = folder.folder_template.sections.filter(
+        (section) => !submittedSectionIds.has(section.section_id),
+      );
+
+      if (pendingRequiredSections.length > 0) {
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING,
+          {
+            pendingSections: pendingRequiredSections
+              .map((section) => section.name)
+              .join(', '),
+          },
+        );
+      }
+
+      const requiredSectionIds = folder.folder_template.sections.map(
+        (section) => section.section_id,
+      );
+      if (requiredSectionIds.length > 0) {
+        const evidenceCounts = await tx.annual_folder_evidences.groupBy({
+          by: ['section_id'],
+          where: {
+            annual_folder_id: folderId,
+            section_id: { in: requiredSectionIds },
+          },
+          _count: { _all: true },
+        });
+        const sectionsWithEvidence = new Set(
+          evidenceCounts
+            .filter((row) => row._count._all > 0)
+            .map((row) => row.section_id),
+        );
+        const firstSectionWithoutEvidence =
+          folder.folder_template.sections.find(
+            (section) => !sectionsWithEvidence.has(section.section_id),
+          );
+
+        if (firstSectionWithoutEvidence) {
+          throw new AppBadRequestException(
+            ErrorCode.ANNUAL_FOLDER_SECTION_NO_EVIDENCE,
+            { sectionName: firstSectionWithoutEvidence.name },
+          );
+        }
       }
 
       // Atomic transition: only succeeds when status is still 'open'.
@@ -1536,13 +1827,15 @@ export class AnnualFoldersService {
    * Close a folder (change status to 'closed'). Field-level action.
    * Accepts folders in 'submitted' OR 'evaluated' status.
    *
-   * [H-03] Club ownership is verified before the transaction opens: the caller
-   * must have at least one active club_role_assignment in the same club that
-   * owns the folder (super-admin bypass applies).
+   * The real folder club permission is verified before the transaction opens:
+   * an update permission granted in another club is not enough.
    */
   async closeFolder(folderId: string, userId: string) {
-    // H-03: verify caller belongs to the club that owns this folder
-    await this.assertFolderClubAccess(folderId, userId);
+    await this.assertFolderPermissionAccess(
+      folderId,
+      userId,
+      'evidence_folders:update',
+    );
     return this.prisma.$transaction(async (tx) => {
       // Existence check first so callers get a clean NotFoundException when
       // the folder simply does not exist (as opposed to a state conflict).

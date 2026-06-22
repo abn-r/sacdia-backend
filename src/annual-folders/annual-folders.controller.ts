@@ -33,6 +33,7 @@ import { AnnualFoldersService } from './annual-folders.service';
 import {
   CreateTemplateDto,
   CreateTemplateSectionDto,
+  UpdateTemplateDto,
   UpdateTemplateSectionDto,
   UploadEvidenceDto,
   UpdateEvidenceDto,
@@ -47,6 +48,13 @@ import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
 type CurrentUserPayload = {
   sub: string;
 };
+
+function parseOptionalBoolean(value?: string): boolean | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
 
 // ========================================
 // TEMPLATE MANAGEMENT (Admin)
@@ -86,29 +94,75 @@ export class AnnualFolderTemplatesController {
 
   @Get()
   @RequirePermissions('annual_folder_templates:read')
-  @ApiOperation({ summary: 'Get template by club type and year' })
+  @ApiOperation({
+    summary: 'List templates or get template by club type and year',
+    description:
+      'Without query params returns the admin template list. With club_type_id and year_id returns the active matching template for backward compatibility.',
+  })
   @ApiQuery({
     name: 'club_type_id',
-    required: true,
+    required: false,
     description: 'Club type ID',
     example: 2,
   })
   @ApiQuery({
     name: 'year_id',
-    required: true,
+    required: false,
     description: 'Ecclesiastical year ID',
     example: 1,
   })
-  @ApiResponse({ status: 200, description: 'Template with sections' })
-  @ApiResponse({ status: 404, description: 'Template not found' })
-  async getTemplateByClubTypeAndYear(
-    @Query('club_type_id', ParseIntPipe) clubTypeId: number,
-    @Query('year_id', ParseIntPipe) yearId: number,
+  @ApiQuery({
+    name: 'active',
+    required: false,
+    description: 'Filter by active status when listing templates',
+    example: true,
+  })
+  @ApiResponse({ status: 200, description: 'Template list or template detail' })
+  @ApiResponse({
+    status: 404,
+    description: 'Template not found when club_type_id + year_id are provided',
+  })
+  async listTemplatesOrGetByClubTypeAndYear(
+    @Query('club_type_id', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+    @Query('year_id', new ParseIntPipe({ optional: true })) yearId?: number,
+    @Query('active') active?: string,
   ) {
-    const data = await this.service.getTemplateByClubTypeAndYear(
-      clubTypeId,
-      yearId,
-    );
+    const hasLookup = clubTypeId !== undefined || yearId !== undefined;
+    if (hasLookup) {
+      if (clubTypeId === undefined || yearId === undefined) {
+        const data = await this.service.listTemplates({
+          club_type_id: clubTypeId,
+          ecclesiastical_year_id: yearId,
+          active: parseOptionalBoolean(active),
+        });
+        return { status: 'success', data };
+      }
+
+      const data = await this.service.getTemplateByClubTypeAndYear(
+        clubTypeId,
+        yearId,
+      );
+      return { status: 'success', data };
+    }
+
+    const data = await this.service.listTemplates({
+      active: parseOptionalBoolean(active),
+    });
+    return { status: 'success', data };
+  }
+
+  @Patch(':templateId')
+  @RequirePermissions('annual_folder_templates:update')
+  @ApiOperation({ summary: 'Update annual folder template metadata' })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
+  @ApiResponse({ status: 200, description: 'Template updated' })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  async updateTemplate(
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Body() dto: UpdateTemplateDto,
+  ) {
+    const data = await this.service.updateTemplate(templateId, dto);
     return { status: 'success', data };
   }
 
@@ -179,8 +233,12 @@ export class AnnualFoldersController {
   })
   async createFolderForEnrollment(
     @Param('enrollmentId', ParseUUIDPipe) enrollmentId: string,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.service.createFolderForEnrollment(enrollmentId);
+    const data = await this.service.createFolderForEnrollment(
+      enrollmentId,
+      user.sub,
+    );
     return { status: 'success', data };
   }
 
@@ -429,8 +487,13 @@ export class AnnualFoldersController {
   async getSectionStatus(
     @Param('folderId', ParseUUIDPipe) folderId: string,
     @Param('sectionId', ParseUUIDPipe) sectionId: string,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    const data = await this.service.getSectionStatus(folderId, sectionId);
+    const data = await this.service.getSectionStatus(
+      folderId,
+      sectionId,
+      user.sub,
+    );
     return { status: 'success', data };
   }
 
@@ -468,17 +531,17 @@ export class AnnualFoldersController {
   }
 
   /**
-   * Folder-level submit — coordinator / field admin operation only.
+   * Folder-level submit — club direction / secretariat operation only.
    * Permission: annual_folders:submit (NOT evidence_folders:update).
-   * Regular club users must NOT call this endpoint; they use the per-section
-   * submit above and the coordinator closes the loop from the admin panel.
+   * Operational club users submit individual sections; the director or
+   * secretary sends the complete folder for institutional review.
    */
   @Post(':folderId/submit')
   @RequirePermissions('annual_folders:submit')
   @ApiOperation({
-    summary: 'Submit entire folder for review (coordinator/admin only)',
+    summary: 'Submit entire folder for review (director/secretariat only)',
     description:
-      "Changes folder status from 'open' to 'submitted'. Restricted to coordinators and field admins (annual_folders:submit permission). Club users should submit per-section instead.",
+      "Changes folder status from 'open' to 'submitted'. Restricted to club direction/secretariat (annual_folders:submit permission). Club users should submit per-section instead.",
   })
   @ApiParam({ name: 'folderId', description: 'Annual Evidence Folder UUID' })
   @ApiResponse({ status: 200, description: 'Folder submitted' })

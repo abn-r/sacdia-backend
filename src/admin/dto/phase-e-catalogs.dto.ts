@@ -1,8 +1,8 @@
 /**
  * Phase E i18n — Admin CRUD DTOs for 10 catalog tables with translation support.
  *
- * Catalogs: classes, class_modules, class_sections, folders, folders_modules,
- * folders_sections, finances_categories, inventory_categories, honors, master_honors.
+ * Catalogs: classes, class_modules, class_sections, finance_categories,
+ * inventory_categories, honors, master_honors.
  *
  * All DTOs follow the honors_categories pattern:
  *   - Base fields mirror column constraints from schema.prisma.
@@ -193,161 +193,6 @@ export class CreateClassSectionDto {
 }
 
 export class UpdateClassSectionDto extends PartialType(CreateClassSectionDto) {}
-
-// ─── FOLDERS ─────────────────────────────────────────────────────────────────
-
-export class CreateFolderDto {
-  @ApiProperty({ example: 'Carpeta Anual de Evidencias 2025', maxLength: 255 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  name!: string;
-
-  @ApiPropertyOptional({ example: 'Descripción de la carpeta' })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiPropertyOptional({ example: false })
-  @IsOptional()
-  @IsBoolean()
-  active?: boolean;
-
-  @ApiPropertyOptional({ example: 1, description: 'club_type FK' })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  club_type?: number;
-
-  @ApiPropertyOptional({ example: 1, description: 'ecclesiastical_year_id FK' })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  ecclesiastical_year_id?: number;
-
-  @ApiPropertyOptional({
-    description: 'Non-es translations (pt-BR, en, fr).',
-    type: [CatalogTranslationDto],
-  })
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => CatalogTranslationDto)
-  @ArrayMaxSize(3)
-  translations?: CatalogTranslationDto[];
-}
-
-export class UpdateFolderDto extends PartialType(CreateFolderDto) {}
-
-// ─── FOLDERS MODULES ──────────────────────────────────────────────────────────
-
-export class CreateFolderModuleDto {
-  @ApiProperty({ example: 'Módulo de Adoración', maxLength: 255 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  name!: string;
-
-  @ApiPropertyOptional({ example: 'Descripción del módulo de carpeta' })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiPropertyOptional({ example: 1, description: 'folder_id FK' })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  folder_id?: number;
-
-  @ApiPropertyOptional({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  active?: boolean;
-
-  @ApiPropertyOptional({
-    example: 100,
-    description: 'Max points for this module',
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  max_points?: number;
-
-  @ApiPropertyOptional({ example: 60, description: 'Minimum points required' })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  minimum_points?: number;
-
-  @ApiPropertyOptional({
-    description: 'Non-es translations (pt-BR, en, fr).',
-    type: [CatalogTranslationDto],
-  })
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => CatalogTranslationDto)
-  @ArrayMaxSize(3)
-  translations?: CatalogTranslationDto[];
-}
-
-export class UpdateFolderModuleDto extends PartialType(CreateFolderModuleDto) {}
-
-// ─── FOLDERS SECTIONS ─────────────────────────────────────────────────────────
-
-export class CreateFolderSectionDto {
-  @ApiProperty({ example: 'Sección de Música', maxLength: 255 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  name!: string;
-
-  @ApiPropertyOptional({ example: 'Descripción de la sección de carpeta' })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiPropertyOptional({
-    example: 1,
-    description: 'module_id FK (folder_module_id)',
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  module_id?: number;
-
-  @ApiPropertyOptional({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  active?: boolean;
-
-  @ApiPropertyOptional({
-    example: 50,
-    description: 'Max points for this section',
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  max_points?: number;
-
-  @ApiPropertyOptional({ example: 30, description: 'Minimum points required' })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  minimum_points?: number;
-
-  @ApiPropertyOptional({
-    description: 'Non-es translations (pt-BR, en, fr).',
-    type: [CatalogTranslationDto],
-  })
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => CatalogTranslationDto)
-  @ArrayMaxSize(3)
-  translations?: CatalogTranslationDto[];
-}
-
-export class UpdateFolderSectionDto extends PartialType(
-  CreateFolderSectionDto,
-) {}
 
 // ─── FINANCES CATEGORIES ──────────────────────────────────────────────────────
 
@@ -560,7 +405,10 @@ export class MasterHonorRuleOptionDto {
   @Min(0)
   display_order = 0;
 
-  @ApiProperty({ example: [1, 2], description: 'Honor IDs included in this option' })
+  @ApiProperty({
+    example: [1, 2],
+    description: 'Honor IDs included in this option',
+  })
   @IsArray()
   @ArrayMinSize(1)
   @IsInt({ each: true })
@@ -672,14 +520,16 @@ export class CreateMasterHonorDto {
   philosophy?: string | null;
 
   @ApiPropertyOptional({
-    example: 'Requiere aprobación de una comisión local y evidencia de 6 meses.',
+    example:
+      'Requiere aprobación de una comisión local y evidencia de 6 meses.',
   })
   @IsOptional()
   @IsString()
   notes?: string | null;
 
   @ApiPropertyOptional({
-    description: 'IDs de divisiones cuando applicability_scope es SELECTED_DIVISIONS',
+    description:
+      'IDs de divisiones cuando applicability_scope es SELECTED_DIVISIONS',
     type: [Number],
   })
   @IsOptional()

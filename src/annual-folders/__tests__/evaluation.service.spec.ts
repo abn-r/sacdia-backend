@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
 import { AuthorizationContextService } from '../../common/services/authorization-context.service';
+import { annual_folder_section_status_enum } from '@prisma/client';
 
 describe('EvaluationService', () => {
   let service: EvaluationService;
@@ -811,6 +812,7 @@ describe('EvaluationService', () => {
             union_approved_by: unionActorId,
             union_decision: 'REJECTED_OVERRIDE',
             status: 'REJECTED',
+            earned_points: 0,
           }),
         }),
       );
@@ -1439,6 +1441,16 @@ describe('EvaluationService', () => {
 
       const result = await service.recalcFolderTotals(folderId, txMock as any);
 
+      expect(
+        txMock.annual_folder_section_evaluations.findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            annual_folder_id: folderId,
+            status: annual_folder_section_status_enum.VALIDATED,
+          },
+        }),
+      );
       expect(result.total_earned_points).toBe(150);
     });
 

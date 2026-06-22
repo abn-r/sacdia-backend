@@ -537,5 +537,7 @@
   "ANNUAL_RANKING_COMPONENT_UNKNOWN": "Annual ranking component {componentKey} is not supported",
   "ANNUAL_RANKING_COMPONENT_DUPLICATE": "Annual ranking component {componentKey} is duplicated in the configuration",
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "Section {sectionId} was not found for annual progress calculation",
-  "ANNUAL_RANKING_SECTION_NO_CLUB": "Section {sectionId} is not linked to a main club"
+  "ANNUAL_RANKING_SECTION_NO_CLUB": "Section {sectionId} is not linked to a main club",
+  "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Annual evidence folder submissions closed on {closingDate}",
+  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Cannot submit the folder: required sections are still pending ({pendingSections})"
 }

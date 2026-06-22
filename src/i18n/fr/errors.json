@@ -532,5 +532,7 @@
   "ANNUAL_RANKING_COMPONENT_UNKNOWN": "Le composant de classement annuel {componentKey} n'est pas pris en charge",
   "ANNUAL_RANKING_COMPONENT_DUPLICATE": "Le composant de classement annuel {componentKey} est dupliqué dans la configuration",
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "La section {sectionId} est introuvable pour le calcul de la progression annuelle",
-  "ANNUAL_RANKING_SECTION_NO_CLUB": "La section {sectionId} n'est pas liée à un club principal"
+  "ANNUAL_RANKING_SECTION_NO_CLUB": "La section {sectionId} n'est pas liée à un club principal",
+  "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Les soumissions du dossier annuel de preuves sont clôturées depuis le {closingDate}",
+  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Impossible de soumettre le dossier : des sections obligatoires sont encore en attente ({pendingSections})"
 }

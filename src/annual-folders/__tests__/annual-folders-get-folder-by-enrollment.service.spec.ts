@@ -17,6 +17,9 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
     club_role_assignments: {
       findFirst: jest.fn(),
     },
+    users: {
+      findUnique: jest.fn(),
+    },
   };
 
   const mockFileStorageService = {
@@ -73,5 +76,31 @@ describe('AnnualFoldersService — getFolderByEnrollment', () => {
     });
 
     expect(mockFileStorageService.getSignedDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('allows territorial local-field supervision when the caller has global evidence_folders:read', async () => {
+    mockPrismaService.annual_folders.findUnique.mockResolvedValueOnce({
+      club_enrollment: {
+        club_section: {
+          clubs: {
+            club_id: 10,
+            local_field_id: 30,
+            local_fields: { union_id: 20 },
+          },
+        },
+      },
+    });
+    mockPrismaService.users_roles.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ user_role_id: 'global-read-grant' });
+    mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      local_field_id: 30,
+      union_id: null,
+    });
+
+    await expect(
+      service.assertFolderReadAccessForUser('folder-1', 'lf-reviewer'),
+    ).resolves.toBeUndefined();
   });
 });

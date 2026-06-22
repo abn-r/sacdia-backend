@@ -35,7 +35,7 @@ src/
 ├── camporees
 ├── notifications
 ├── certifications
-├── folders
+├── annual-folders    # Carpeta Anual de Evidencias (flujo canónico)
 ├── inventory
 ├── rbac
 ├── admin

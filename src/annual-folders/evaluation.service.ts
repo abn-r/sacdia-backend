@@ -429,6 +429,9 @@ export class EvaluationService {
         union_approved_at: now,
         union_decision: dto.decision,
         status: newStatus,
+        ...(dto.decision === union_evaluation_decision_enum.REJECTED_OVERRIDE
+          ? { earned_points: 0 }
+          : {}),
         // Preserve existing notes when dto.notes is not explicitly provided
         notes: dto.notes !== undefined ? dto.notes : existingEval.notes,
       };
@@ -454,7 +457,8 @@ export class EvaluationService {
         },
       });
 
-      // Recalculate folder totals (VALIDATED/REJECTED now contribute/exclude points)
+      // Recalculate folder totals. Only VALIDATED rows contribute points;
+      // REJECTED rows are terminal for workflow but contribute 0 to score.
       await this.recalcFolderTotals(folderId, tx);
 
       // Determine new folder status (mirror evaluateSection logic)
@@ -782,18 +786,14 @@ export class EvaluationService {
     folderId: string,
     tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
   ) {
-    // Only sum earned_points from terminal-decision rows (VALIDATED or REJECTED).
+    // Only sum earned_points from VALIDATED rows.
+    // REJECTED rows are terminal for workflow, but they must not inflate score.
     // Rows in PENDING / SUBMITTED / PREAPPROVED_LF have no confirmed score yet
     // and must not inflate the earned total once T-B2-1 creates eager PENDING rows.
     const evaluations = await tx.annual_folder_section_evaluations.findMany({
       where: {
         annual_folder_id: folderId,
-        status: {
-          in: [
-            annual_folder_section_status_enum.VALIDATED,
-            annual_folder_section_status_enum.REJECTED,
-          ],
-        },
+        status: annual_folder_section_status_enum.VALIDATED,
       },
       select: { earned_points: true },
     });

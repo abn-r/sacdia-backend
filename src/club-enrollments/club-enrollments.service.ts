@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogsService } from '../catalogs/catalogs.service';
 import { CreateClubEnrollmentDto, UpdateClubEnrollmentDto } from './dto';
+import { AnnualFoldersService } from '../annual-folders/annual-folders.service';
 import {
   AppBadRequestException,
   AppNotFoundException,
@@ -16,6 +18,7 @@ export class ClubEnrollmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly catalogsService: CatalogsService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   // ========================================
@@ -46,7 +49,7 @@ export class ClubEnrollmentsService {
 
     // Wrap the existence check + create in a transaction to prevent duplicate
     // enrollments under concurrent requests (check-then-create race condition).
-    return this.prisma.$transaction(async (tx) => {
+    const enrollment = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.club_enrollments.findUnique({
         where: {
           club_section_id_ecclesiastical_year_id: {
@@ -95,6 +98,12 @@ export class ClubEnrollmentsService {
         },
       });
     });
+
+    await this.createAnnualFolderForEnrollmentIfTemplateExists(
+      enrollment.club_enrollment_id,
+    );
+
+    return enrollment;
   }
 
   // ========================================
@@ -248,6 +257,41 @@ export class ClubEnrollmentsService {
     if (hasIndividualRoles && hasCombinedRole) {
       throw new AppBadRequestException(
         ErrorCode.CE_ECCLESIASTICAL_YEAR_REQUIRED,
+      );
+    }
+  }
+
+  private async createAnnualFolderForEnrollmentIfTemplateExists(
+    enrollmentId: string,
+  ): Promise<void> {
+    let annualFoldersService: AnnualFoldersService;
+    try {
+      annualFoldersService = this.moduleRef.get(AnnualFoldersService, {
+        strict: false,
+      });
+    } catch {
+      // Unit-test/module contexts may load club enrollments without the annual
+      // folders module. Enrollment creation remains the source operation.
+      return;
+    }
+
+    try {
+      await annualFoldersService.createFolderForEnrollment(enrollmentId);
+    } catch (err: unknown) {
+      const code = err instanceof Error && 'code' in err ? err.code : undefined;
+      if (
+        code === ErrorCode.ANNUAL_FOLDER_TEMPLATE_NO_MATCH ||
+        code === ErrorCode.ANNUAL_FOLDER_ALREADY_EXISTS
+      ) {
+        this.logger.warn(
+          `Annual folder not auto-created for enrollment ${enrollmentId}: ${String(code)}`,
+        );
+        return;
+      }
+
+      this.logger.error(
+        `Annual folder auto-creation failed for enrollment ${enrollmentId}`,
+        err instanceof Error ? err.stack : String(err),
       );
     }
   }
