@@ -534,5 +534,7 @@
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "La section {sectionId} est introuvable pour le calcul de la progression annuelle",
   "ANNUAL_RANKING_SECTION_NO_CLUB": "La section {sectionId} n'est pas liée à un club principal",
   "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Les soumissions du dossier annuel de preuves sont clôturées depuis le {closingDate}",
-  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Impossible de soumettre le dossier : des sections obligatoires sont encore en attente ({pendingSections})"
+  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Impossible de soumettre le dossier : des sections obligatoires sont encore en attente ({pendingSections})",
+  "ANNUAL_FOLDER_TEMPLATE_LOCKED": "Le modèle est {status} et ne peut plus être modifié. Copiez-le pour créer un nouveau brouillon.",
+  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Impossible de supprimer le modèle car il contient déjà des dossiers créés"
 }

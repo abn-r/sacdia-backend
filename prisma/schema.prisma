@@ -2742,6 +2742,12 @@ enum evidence_validation_enum {
   REJECTED
 }
 
+enum folder_template_status_enum {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 enum annual_folder_section_status_enum {
   PENDING
   SUBMITTED
@@ -2915,6 +2921,7 @@ model folder_templates {
   owner_union_id         Int?
   owner_local_field_id   Int?
   active                 Boolean   @default(false)
+  status                 folder_template_status_enum @default(DRAFT)
   minimum_points         Int       @default(0)
   closing_date           DateTime? @db.Timestamptz(6)
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
@@ -2933,6 +2940,7 @@ model folder_templates {
   @@index([ecclesiastical_year_id], map: "idx_folder_templates_year")
   @@index([owner_union_id], map: "idx_folder_templates_owner_union")
   @@index([owner_local_field_id], map: "idx_folder_templates_owner_local_field")
+  @@index([status], map: "idx_folder_templates_status")
 }
 
 model folder_template_sections {

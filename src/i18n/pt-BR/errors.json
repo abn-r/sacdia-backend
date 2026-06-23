@@ -534,5 +534,7 @@
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "A seção {sectionId} não foi encontrada para calcular o progresso anual",
   "ANNUAL_RANKING_SECTION_NO_CLUB": "A seção {sectionId} não está vinculada a um clube principal",
   "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Os envios da Pasta Anual de Evidências foram encerrados em {closingDate}",
-  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Não é possível enviar a pasta: ainda há seções obrigatórias pendentes ({pendingSections})"
+  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Não é possível enviar a pasta: ainda há seções obrigatórias pendentes ({pendingSections})",
+  "ANNUAL_FOLDER_TEMPLATE_LOCKED": "O modelo está {status} e não pode mais ser editado. Copie-o para criar um novo rascunho.",
+  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Não é possível excluir o modelo porque ele já possui pastas criadas"
 }

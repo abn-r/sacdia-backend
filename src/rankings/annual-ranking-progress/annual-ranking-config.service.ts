@@ -258,6 +258,34 @@ export class AnnualRankingConfigService {
     });
   }
 
+  async deactivate(id: string, userId?: string) {
+    const current = await this.prisma.annual_ranking_configs.findFirst({
+      where: {
+        annual_ranking_config_id: id,
+        active: true,
+      },
+    });
+
+    if (!current) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_RANKING_CONFIG_NOT_FOUND,
+        {
+          localFieldId: id,
+          ecclesiasticalYearId: id,
+          clubTypeId: id,
+        },
+      );
+    }
+
+    return this.prisma.annual_ranking_configs.update({
+      where: { annual_ranking_config_id: id },
+      data: {
+        active: false,
+        updated_by: userId ?? null,
+      },
+    });
+  }
+
   async getAnnualEvidenceFolderMaxPoints(
     scope: AnnualRankingConfigScope,
   ): Promise<number> {
@@ -780,7 +808,7 @@ export class AnnualRankingConfigService {
     await tx.annual_ranking_component_configs.createMany({ data });
   }
 
-  private configInclude(): Prisma.annual_ranking_configsInclude {
+  private configInclude() {
     return {
       union: {
         select: { union_id: true, name: true },
@@ -799,10 +827,10 @@ export class AnnualRankingConfigService {
       components: {
         orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
       },
-    };
+    } satisfies Prisma.annual_ranking_configsInclude;
   }
 
-  private activeConfigInclude(): Prisma.annual_ranking_configsInclude {
+  private activeConfigInclude() {
     return {
       union: {
         select: { union_id: true, name: true },
@@ -824,14 +852,14 @@ export class AnnualRankingConfigService {
         where: { active: true },
         orderBy: [{ sort_order: 'asc' }, { component_key: 'asc' }],
       },
-    };
+    } satisfies Prisma.annual_ranking_configsInclude;
   }
 
-  private axisOnlyInclude(): Prisma.annual_ranking_configsInclude {
+  private axisOnlyInclude() {
     return {
       axes: {
         orderBy: [{ sort_order: 'asc' }, { axis_key: 'asc' }],
       },
-    };
+    } satisfies Prisma.annual_ranking_configsInclude;
   }
 }

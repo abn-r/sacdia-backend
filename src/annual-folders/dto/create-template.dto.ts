@@ -37,7 +37,7 @@ export class CreateTemplateDto {
 
   @ApiPropertyOptional({
     description:
-      'Si el template está activo. Sólo puede activarse cuando sus secciones suman el máximo annual_evidence_folder del ranking efectivo.',
+      'Legacy flag. New templates are always created as drafts. In PATCH, true publishes a valid draft and false archives a published template.',
     default: false,
   })
   @IsOptional()

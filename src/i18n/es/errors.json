@@ -545,5 +545,7 @@
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "No se encontró la sección {sectionId} para calcular el progreso anual",
   "ANNUAL_RANKING_SECTION_NO_CLUB": "La sección {sectionId} no está vinculada a un club principal",
   "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Los envíos de la Carpeta Anual de Evidencias cerraron el {closingDate}",
-  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "No se puede enviar la carpeta: todavía hay secciones requeridas pendientes ({pendingSections})"
+  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "No se puede enviar la carpeta: todavía hay secciones requeridas pendientes ({pendingSections})",
+  "ANNUAL_FOLDER_TEMPLATE_LOCKED": "La plantilla está {status} y ya no puede editarse. Copiala para crear un nuevo borrador.",
+  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "No se puede eliminar la plantilla porque ya tiene carpetas creadas"
 }

@@ -545,5 +545,7 @@
   "ANNUAL_RANKING_SECTION_NOT_FOUND": "Section {sectionId} was not found for annual progress calculation",
   "ANNUAL_RANKING_SECTION_NO_CLUB": "Section {sectionId} is not linked to a main club",
   "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Annual evidence folder submissions closed on {closingDate}",
-  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Cannot submit the folder: required sections are still pending ({pendingSections})"
+  "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Cannot submit the folder: required sections are still pending ({pendingSections})",
+  "ANNUAL_FOLDER_TEMPLATE_LOCKED": "The template is {status} and can no longer be edited. Copy it to create a new draft.",
+  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Cannot delete the template because it already has folders created"
 }

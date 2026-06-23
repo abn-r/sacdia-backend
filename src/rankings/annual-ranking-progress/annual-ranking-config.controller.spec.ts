@@ -44,7 +44,7 @@ const dto = {
 describe('AnnualRankingConfigController', () => {
   let controller: AnnualRankingConfigController;
   let service: jest.Mocked<
-    Pick<AnnualRankingConfigService, 'list' | 'create' | 'update'>
+    Pick<AnnualRankingConfigService, 'list' | 'create' | 'update' | 'deactivate'>
   >;
 
   beforeEach(async () => {
@@ -52,6 +52,7 @@ describe('AnnualRankingConfigController', () => {
       list: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      deactivate: jest.fn(),
     };
 
     const module = await Test.createTestingModule({
@@ -104,6 +105,27 @@ describe('AnnualRankingConfigController', () => {
     expect(service.update).toHaveBeenCalledWith(
       configRow.annual_ranking_config_id,
       { max_points: 10000, components: dto.components },
+      USER_ID,
+    );
+  });
+
+  it('deactivates an annual ranking config using the authenticated user id', async () => {
+    service.deactivate.mockResolvedValueOnce({
+      ...configRow,
+      active: false,
+    } as never);
+
+    const result = await controller.deactivate(
+      configRow.annual_ranking_config_id,
+      { user: { userId: USER_ID } },
+    );
+
+    expect(result).toEqual({
+      status: 'success',
+      data: { ...configRow, active: false },
+    });
+    expect(service.deactivate).toHaveBeenCalledWith(
+      configRow.annual_ranking_config_id,
       USER_ID,
     );
   });

@@ -31,6 +31,7 @@ import {
 } from '../common/pipes/file-validation.pipe';
 import { AnnualFoldersService } from './annual-folders.service';
 import {
+  CopyTemplateDto,
   CreateTemplateDto,
   CreateTemplateSectionDto,
   UpdateTemplateDto,
@@ -166,6 +167,20 @@ export class AnnualFolderTemplatesController {
     return { status: 'success', data };
   }
 
+  @Post(':templateId/copy')
+  @RequirePermissions('annual_folder_templates:create')
+  @ApiOperation({ summary: 'Copy an annual folder template as a draft' })
+  @ApiParam({ name: 'templateId', description: 'Source template UUID' })
+  @ApiResponse({ status: 201, description: 'Template draft copied' })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  async copyTemplate(
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Body() dto: CopyTemplateDto,
+  ) {
+    const data = await this.service.copyTemplate(templateId, dto);
+    return { status: 'success', data };
+  }
+
   @Post(':templateId/sections')
   @RequirePermissions('annual_folder_templates:update')
   @ApiOperation({ summary: 'Add section to template' })
@@ -203,6 +218,21 @@ export class AnnualFolderTemplatesController {
   @ApiResponse({ status: 409, description: 'Section has evidences' })
   async removeSection(@Param('sectionId', ParseUUIDPipe) sectionId: string) {
     const data = await this.service.removeTemplateSection(sectionId);
+    return { status: 'success', ...data };
+  }
+
+  @Delete(':templateId')
+  @RequirePermissions('annual_folder_templates:delete')
+  @ApiOperation({ summary: 'Delete a draft annual folder template' })
+  @ApiParam({ name: 'templateId', description: 'Template UUID' })
+  @ApiResponse({ status: 200, description: 'Template draft deleted' })
+  @ApiResponse({ status: 400, description: 'Template is not a draft' })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  @ApiResponse({ status: 409, description: 'Template has generated folders' })
+  async removeTemplate(
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+  ) {
+    const data = await this.service.removeTemplate(templateId);
     return { status: 'success', ...data };
   }
 }
@@ -263,6 +293,22 @@ export class AnnualFoldersController {
     description: 'Queue filter. Default: needs_review',
   })
   @ApiQuery({
+    name: 'folder_status',
+    required: false,
+    enum: ['open', 'submitted', 'under_evaluation', 'evaluated', 'closed'],
+    description: 'Actual folder status filter',
+  })
+  @ApiQuery({ name: 'union_id', required: false, type: Number })
+  @ApiQuery({ name: 'local_field_id', required: false, type: Number })
+  @ApiQuery({ name: 'club_type_id', required: false, type: Number })
+  @ApiQuery({ name: 'year_id', required: false, type: Number })
+  @ApiQuery({ name: 'created_from', required: false, type: String })
+  @ApiQuery({ name: 'created_to', required: false, type: String })
+  @ApiQuery({ name: 'submitted_from', required: false, type: String })
+  @ApiQuery({ name: 'submitted_to', required: false, type: String })
+  @ApiQuery({ name: 'progress_min', required: false, type: Number })
+  @ApiQuery({ name: 'progress_max', required: false, type: Number })
+  @ApiQuery({
     name: 'page',
     required: false,
     type: Number,
@@ -284,12 +330,38 @@ export class AnnualFoldersController {
     @Query('search') search?: string,
     @Query('status')
     status?: 'needs_review' | 'submitted' | 'preapproved' | 'evaluated' | 'all',
+    @Query('folder_status') folderStatus?: string,
+    @Query('union_id', new ParseIntPipe({ optional: true })) unionId?: number,
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
+    @Query('club_type_id', new ParseIntPipe({ optional: true }))
+    clubTypeId?: number,
+    @Query('year_id', new ParseIntPipe({ optional: true })) yearId?: number,
+    @Query('created_from') createdFrom?: string,
+    @Query('created_to') createdTo?: string,
+    @Query('submitted_from') submittedFrom?: string,
+    @Query('submitted_to') submittedTo?: string,
+    @Query('progress_min', new ParseIntPipe({ optional: true }))
+    progressMin?: number,
+    @Query('progress_max', new ParseIntPipe({ optional: true }))
+    progressMax?: number,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
     const data = await this.service.getEvaluationQueue(user.sub, {
       search,
       status,
+      folder_status: folderStatus,
+      union_id: unionId,
+      local_field_id: localFieldId,
+      club_type_id: clubTypeId,
+      year_id: yearId,
+      created_from: createdFrom,
+      created_to: createdTo,
+      submitted_from: submittedFrom,
+      submitted_to: submittedTo,
+      progress_min: progressMin,
+      progress_max: progressMax,
       page,
       limit,
     });

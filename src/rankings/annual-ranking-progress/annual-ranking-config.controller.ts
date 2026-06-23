@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -98,6 +99,16 @@ export class AnnualRankingConfigController {
     @Req() req: any,
   ) {
     const data = await this.service.update(id, dto, req?.user?.userId);
+    return { status: 'success' as const, data };
+  }
+
+  @Delete(':id')
+  @RequirePermissions('ranking_weights:write')
+  @ApiOperation({ summary: 'Deactivate an annual ranking point budget' })
+  @ApiResponse({ status: 200, description: 'Annual ranking config deactivated' })
+  @ApiResponse({ status: 404, description: 'Config not found' })
+  async deactivate(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    const data = await this.service.deactivate(id, req?.user?.userId);
     return { status: 'success' as const, data };
   }
 }

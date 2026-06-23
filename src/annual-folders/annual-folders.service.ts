@@ -8,8 +8,12 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import type { folder_templates, Prisma } from '@prisma/client';
-import { annual_folder_section_status_enum } from '@prisma/client';
 import {
+  annual_folder_section_status_enum,
+  folder_template_status_enum,
+} from '@prisma/client';
+import {
+  CopyTemplateDto,
   CreateTemplateDto,
   CreateTemplateSectionDto,
   UpdateTemplateDto,
@@ -147,17 +151,14 @@ export class AnnualFoldersService {
           name: dto.name,
           club_type_id: dto.club_type_id,
           ecclesiastical_year_id: dto.ecclesiastical_year_id,
-          active: dto.active ?? false,
+          active: false,
+          status: folder_template_status_enum.DRAFT,
           minimum_points: dto.minimum_points ?? 0,
           closing_date: dto.closing_date ? new Date(dto.closing_date) : null,
           owner_union_id: dto.owner_union_id ?? null,
           owner_local_field_id: dto.owner_local_field_id ?? null,
         },
       });
-
-      if (created.active) {
-        await this.assertTemplateMatchesRankingBudget(tx, created);
-      }
 
       const hydrated = await tx.folder_templates.findUnique({
         where: { folder_template_id: created.folder_template_id },
@@ -181,6 +182,7 @@ export class AnnualFoldersService {
     club_type_id?: number;
     ecclesiastical_year_id?: number;
     active?: boolean;
+    status?: folder_template_status_enum;
   }) {
     return this.prisma.folder_templates.findMany({
       where: {
@@ -191,6 +193,7 @@ export class AnnualFoldersService {
           ecclesiastical_year_id: filters.ecclesiastical_year_id,
         }),
         ...(filters.active !== undefined && { active: filters.active }),
+        ...(filters.status !== undefined && { status: filters.status }),
       },
       include: TEMPLATE_DETAIL_INCLUDE,
       orderBy: [
@@ -214,6 +217,22 @@ export class AnnualFoldersService {
         ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
         { id: templateId },
       );
+    }
+
+    const currentStatus = this.resolveTemplateLifecycleStatus(template);
+    const mutableKeys = Object.keys(dto).filter((key) => key !== 'active');
+    const archiveRequested =
+      currentStatus === folder_template_status_enum.PUBLISHED &&
+      dto.active === false &&
+      mutableKeys.length === 0;
+
+    if (
+      currentStatus !== folder_template_status_enum.DRAFT &&
+      !archiveRequested
+    ) {
+      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED, {
+        status: currentStatus,
+      });
     }
 
     const nextOwnerUnionId =
@@ -255,6 +274,29 @@ export class AnnualFoldersService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (archiveRequested) {
+        const archived = await tx.folder_templates.update({
+          where: { folder_template_id: templateId },
+          data: {
+            active: false,
+            status: folder_template_status_enum.ARCHIVED,
+          },
+        });
+
+        const hydrated = await tx.folder_templates.findUnique({
+          where: { folder_template_id: archived.folder_template_id },
+          include: TEMPLATE_DETAIL_INCLUDE,
+        });
+        if (!hydrated) {
+          throw new AppNotFoundException(
+            ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+            { id: templateId },
+          );
+        }
+        return hydrated;
+      }
+
+      const publishRequested = dto.active === true;
       const updated = await tx.folder_templates.update({
         where: { folder_template_id: templateId },
         data: {
@@ -265,7 +307,10 @@ export class AnnualFoldersService {
           ...(dto.ecclesiastical_year_id !== undefined && {
             ecclesiastical_year_id: dto.ecclesiastical_year_id,
           }),
-          ...(dto.active !== undefined && { active: dto.active }),
+          active: publishRequested ? true : false,
+          status: publishRequested
+            ? folder_template_status_enum.PUBLISHED
+            : folder_template_status_enum.DRAFT,
           ...(dto.minimum_points !== undefined && {
             minimum_points: dto.minimum_points,
           }),
@@ -300,6 +345,127 @@ export class AnnualFoldersService {
   }
 
   /**
+   * Copy any template into a new draft. This is the supported way to reuse a
+   * published/archived template for a later ecclesiastical year without editing
+   * history.
+   */
+  async copyTemplate(templateId: string, dto: CopyTemplateDto) {
+    const source = await this.prisma.folder_templates.findUnique({
+      where: { folder_template_id: templateId },
+      include: {
+        sections: { orderBy: { order: 'asc' } },
+      },
+    });
+
+    if (!source) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+        { id: templateId },
+      );
+    }
+
+    const targetOwnerUnionId =
+      dto.owner_union_id !== undefined
+        ? dto.owner_union_id
+        : source.owner_union_id;
+    const targetOwnerLocalFieldId =
+      dto.owner_local_field_id !== undefined
+        ? dto.owner_local_field_id
+        : source.owner_local_field_id;
+
+    if ((targetOwnerUnionId != null) === (targetOwnerLocalFieldId != null)) {
+      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_OWNER_REQUIRED);
+    }
+
+    const targetClubTypeId = dto.club_type_id ?? source.club_type_id;
+    const targetYearId =
+      dto.ecclesiastical_year_id ?? source.ecclesiastical_year_id;
+
+    await this.assertTemplateReferencesExist(targetClubTypeId, targetYearId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.folder_templates.create({
+        data: {
+          name: dto.name?.trim() || `Copia de ${source.name}`,
+          club_type_id: targetClubTypeId,
+          ecclesiastical_year_id: targetYearId,
+          active: false,
+          status: folder_template_status_enum.DRAFT,
+          minimum_points: source.minimum_points,
+          closing_date:
+            dto.closing_date !== undefined
+              ? dto.closing_date
+                ? new Date(dto.closing_date)
+                : null
+              : source.closing_date,
+          owner_union_id: targetOwnerUnionId ?? null,
+          owner_local_field_id: targetOwnerLocalFieldId ?? null,
+        },
+      });
+
+      if (source.sections.length > 0) {
+        await tx.folder_template_sections.createMany({
+          data: source.sections.map((section) => ({
+            folder_template_id: created.folder_template_id,
+            name: section.name,
+            description: section.description,
+            order: section.order,
+            required: section.required,
+            max_points: section.max_points,
+            minimum_points: section.minimum_points,
+          })),
+        });
+      }
+
+      const hydrated = await tx.folder_templates.findUnique({
+        where: { folder_template_id: created.folder_template_id },
+        include: TEMPLATE_DETAIL_INCLUDE,
+      });
+      if (!hydrated) {
+        throw new AppNotFoundException(
+          ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+          { id: created.folder_template_id },
+        );
+      }
+      return hydrated;
+    });
+  }
+
+  /**
+   * Delete a template only while it is still a draft and has not generated
+   * annual folders.
+   */
+  async removeTemplate(templateId: string) {
+    const template = await this.prisma.folder_templates.findUnique({
+      where: { folder_template_id: templateId },
+      include: {
+        _count: { select: { annual_folders: true } },
+      },
+    });
+
+    if (!template) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+        { id: templateId },
+      );
+    }
+
+    this.assertTemplateDraft(template);
+
+    if (template._count.annual_folders > 0) {
+      throw new AppConflictException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS,
+      );
+    }
+
+    await this.prisma.folder_templates.delete({
+      where: { folder_template_id: templateId },
+    });
+
+    return { message: 'Template draft deleted successfully' };
+  }
+
+  /**
    * Add a section to an existing template.
    */
   async addTemplateSection(templateId: string, dto: CreateTemplateSectionDto) {
@@ -313,6 +479,8 @@ export class AnnualFoldersService {
         { id: templateId },
       );
     }
+
+    this.assertTemplateDraft(template);
 
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.folder_template_sections.create({
@@ -344,6 +512,7 @@ export class AnnualFoldersService {
   ) {
     const section = await this.prisma.folder_template_sections.findUnique({
       where: { section_id: sectionId },
+      include: { folder_template: true },
     });
 
     if (!section) {
@@ -352,6 +521,8 @@ export class AnnualFoldersService {
         { id: sectionId },
       );
     }
+
+    this.assertTemplateDraft(section.folder_template);
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.folder_template_sections.update({
@@ -388,6 +559,7 @@ export class AnnualFoldersService {
     const section = await this.prisma.folder_template_sections.findUnique({
       where: { section_id: sectionId },
       include: {
+        folder_template: true,
         _count: { select: { evidences: true } },
       },
     });
@@ -398,6 +570,8 @@ export class AnnualFoldersService {
         { id: sectionId },
       );
     }
+
+    this.assertTemplateDraft(section.folder_template);
 
     if (section._count.evidences > 0) {
       throw new AppConflictException(
@@ -558,6 +732,17 @@ export class AnnualFoldersService {
     options: {
       search?: string;
       status?: EvaluationQueueStatus;
+      folder_status?: string;
+      union_id?: number;
+      local_field_id?: number;
+      club_type_id?: number;
+      year_id?: number;
+      created_from?: string;
+      created_to?: string;
+      submitted_from?: string;
+      submitted_to?: string;
+      progress_min?: number;
+      progress_max?: number;
       page?: number;
       limit?: number;
     } = {},
@@ -571,6 +756,7 @@ export class AnnualFoldersService {
     const where = this.composeEvaluationQueueWhere([
       await this.buildEvaluationQueueAccessWhere(userId),
       this.buildEvaluationQueueStatusWhere(status),
+      this.buildEvaluationQueueCatalogWhere(options),
       search ? this.buildEvaluationQueueSearchWhere(search) : {},
     ]);
 
@@ -2052,6 +2238,61 @@ export class AnnualFoldersService {
     return evidence;
   }
 
+  private resolveTemplateLifecycleStatus(
+    template: Pick<folder_templates, 'active'> & {
+      status?: folder_template_status_enum | null;
+    },
+  ): folder_template_status_enum {
+    if (template.status) return template.status;
+    // Backward-compatible fallback for tests/mocks created before the status
+    // column existed.
+    return template.active
+      ? folder_template_status_enum.PUBLISHED
+      : folder_template_status_enum.DRAFT;
+  }
+
+  private assertTemplateDraft(
+    template: Pick<folder_templates, 'active'> & {
+      status?: folder_template_status_enum | null;
+    },
+  ): void {
+    const status = this.resolveTemplateLifecycleStatus(template);
+    if (status !== folder_template_status_enum.DRAFT) {
+      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_TEMPLATE_LOCKED, {
+        status,
+      });
+    }
+  }
+
+  private async assertTemplateReferencesExist(
+    clubTypeId: number,
+    yearId: number,
+  ): Promise<void> {
+    const [clubType, year] = await Promise.all([
+      this.prisma.club_types.findUnique({
+        where: { club_type_id: clubTypeId },
+        select: { club_type_id: true },
+      }),
+      this.prisma.ecclesiastical_years.findUnique({
+        where: { year_id: yearId },
+        select: { year_id: true },
+      }),
+    ]);
+
+    if (!clubType) {
+      throw new AppNotFoundException(
+        ErrorCode.ANNUAL_FOLDER_CLUB_TYPE_NOT_FOUND,
+        { id: clubTypeId },
+      );
+    }
+
+    if (!year) {
+      throw new AppNotFoundException(ErrorCode.ANNUAL_FOLDER_YEAR_NOT_FOUND, {
+        id: yearId,
+      });
+    }
+  }
+
   private async assertTemplateMatchesRankingBudget(
     client: AnnualFolderDbClient,
     template: TemplateBudgetShape,
@@ -2710,6 +2951,106 @@ export class AnnualFoldersService {
           },
         };
     }
+  }
+
+  private buildEvaluationQueueCatalogWhere(options: {
+    folder_status?: string;
+    union_id?: number;
+    local_field_id?: number;
+    club_type_id?: number;
+    year_id?: number;
+    created_from?: string;
+    created_to?: string;
+    submitted_from?: string;
+    submitted_to?: string;
+    progress_min?: number;
+    progress_max?: number;
+  }): Prisma.annual_foldersWhereInput {
+    const filters: Prisma.annual_foldersWhereInput[] = [];
+
+    if (options.folder_status) {
+      filters.push({ status: options.folder_status });
+    }
+
+    if (options.union_id !== undefined) {
+      filters.push({
+        club_enrollment: {
+          club_section: {
+            clubs: {
+              local_fields: { union_id: options.union_id },
+            },
+          },
+        },
+      });
+    }
+
+    if (options.local_field_id !== undefined) {
+      filters.push({
+        club_enrollment: {
+          club_section: {
+            clubs: { local_field_id: options.local_field_id },
+          },
+        },
+      });
+    }
+
+    if (options.club_type_id !== undefined) {
+      filters.push({
+        club_enrollment: {
+          club_section: { club_type_id: options.club_type_id },
+        },
+      });
+    }
+
+    if (options.year_id !== undefined) {
+      filters.push({
+        club_enrollment: { ecclesiastical_year_id: options.year_id },
+      });
+    }
+
+    if (options.created_from || options.created_to) {
+      filters.push({
+        created_at: {
+          ...(options.created_from && { gte: new Date(options.created_from) }),
+          ...(options.created_to && { lte: new Date(options.created_to) }),
+        },
+      });
+    }
+
+    if (options.submitted_from || options.submitted_to) {
+      filters.push({
+        section_submissions: {
+          some: {
+            submitted_at: {
+              ...(options.submitted_from && {
+                gte: new Date(options.submitted_from),
+              }),
+              ...(options.submitted_to && {
+                lte: new Date(options.submitted_to),
+              }),
+            },
+          },
+        },
+      });
+    }
+
+    if (
+      options.progress_min !== undefined ||
+      options.progress_max !== undefined
+    ) {
+      filters.push({
+        progress_percentage: {
+          ...(options.progress_min !== undefined && {
+            gte: options.progress_min,
+          }),
+          ...(options.progress_max !== undefined && {
+            lte: options.progress_max,
+          }),
+        },
+      });
+    }
+
+    return this.composeEvaluationQueueWhere(filters);
   }
 
   private buildEvaluationQueueSearchWhere(
