@@ -360,7 +360,6 @@ describe('AnnualRankingProgressService', () => {
     ]);
   });
 
-
   it('scores expanded annual ranking components through the registry', async () => {
     configService.getByScope.mockResolvedValueOnce({
       max_points: 9000,
@@ -370,10 +369,26 @@ describe('AnnualRankingProgressService', () => {
           label: 'Cumplimiento Administrativo',
           max_points: 4000,
           components: [
-            { component_key: 'annual_evidence_folder', label: 'Carpeta Anual de Evidencias', max_points: 1000 },
-            { component_key: 'monthly_reports_timeliness', label: 'Informes mensuales', max_points: 1000 },
-            { component_key: 'finance_compliance', label: 'Finanzas', max_points: 1000 },
-            { component_key: 'institutional_data_completeness', label: 'Datos institucionales', max_points: 1000 },
+            {
+              component_key: 'annual_evidence_folder',
+              label: 'Carpeta Anual de Evidencias',
+              max_points: 1000,
+            },
+            {
+              component_key: 'monthly_reports_timeliness',
+              label: 'Informes mensuales',
+              max_points: 1000,
+            },
+            {
+              component_key: 'finance_compliance',
+              label: 'Finanzas',
+              max_points: 1000,
+            },
+            {
+              component_key: 'institutional_data_completeness',
+              label: 'Datos institucionales',
+              max_points: 1000,
+            },
           ],
         },
         {
@@ -381,11 +396,31 @@ describe('AnnualRankingProgressService', () => {
           label: 'Vida Operativa del Club',
           max_points: 5000,
           components: [
-            { component_key: 'activities_registered', label: 'Actividades', max_points: 1000 },
-            { component_key: 'attendance_participation', label: 'Asistencia', max_points: 1000 },
-            { component_key: 'camporee_events', label: 'Camporee', max_points: 1000 },
-            { component_key: 'class_investiture_progress', label: 'Clases', max_points: 1000 },
-            { component_key: 'sacdia_operational_usage', label: 'Uso SACDIA', max_points: 1000 },
+            {
+              component_key: 'activities_registered',
+              label: 'Actividades',
+              max_points: 1000,
+            },
+            {
+              component_key: 'attendance_participation',
+              label: 'Asistencia',
+              max_points: 1000,
+            },
+            {
+              component_key: 'camporee_events',
+              label: 'Camporee',
+              max_points: 1000,
+            },
+            {
+              component_key: 'class_investiture_progress',
+              label: 'Clases',
+              max_points: 1000,
+            },
+            {
+              component_key: 'sacdia_operational_usage',
+              label: 'Uso SACDIA',
+              max_points: 1000,
+            },
           ],
         },
       ],
@@ -403,9 +438,18 @@ describe('AnnualRankingProgressService', () => {
     expect(result.axes[1].earned_points).toBe(3508);
     expect(result.components).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: 'monthly_reports_timeliness', earned_points: 750 }),
-        expect.objectContaining({ key: 'activities_registered', earned_points: 667 }),
-        expect.objectContaining({ key: 'sacdia_operational_usage', earned_points: 556 }),
+        expect.objectContaining({
+          key: 'monthly_reports_timeliness',
+          earned_points: 750,
+        }),
+        expect.objectContaining({
+          key: 'activities_registered',
+          earned_points: 667,
+        }),
+        expect.objectContaining({
+          key: 'sacdia_operational_usage',
+          earned_points: 556,
+        }),
       ]),
     );
     expect(scoreRegistry.scoreComponent).toHaveBeenCalledWith(
@@ -419,6 +463,48 @@ describe('AnnualRankingProgressService', () => {
         calendarYear: 2026,
       }),
     );
+  });
+
+  it('returns canonical component keys when config rows still contain legacy aliases', async () => {
+    configService.getByScope.mockResolvedValueOnce({
+      max_points: 6000,
+      axes: [
+        {
+          axis_key: 'administrative',
+          label: 'Cumplimiento Administrativo',
+          max_points: 6000,
+          components: [
+            {
+              component_key: 'annual_folder',
+              label: 'Carpeta Anual de Evidencias',
+              max_points: 6000,
+            },
+          ],
+        },
+      ],
+      components: [],
+    } as any);
+    scoreRegistry.scoreComponent.mockResolvedValueOnce({
+      score_pct: 70,
+      earned_points: 4200,
+      max_points: 6000,
+      source_status: 'available',
+      source: 'annual_folder',
+    });
+
+    const result = await service.getSectionProgress(
+      SECTION_ID,
+      YEAR_ID,
+      makeProfile(),
+    );
+
+    expect(result.components).toEqual([
+      expect.objectContaining({
+        key: 'annual_evidence_folder',
+        earned_points: 4200,
+        max_points: 6000,
+      }),
+    ]);
   });
 
   it('resolves annual config from section local field, year, and club type', async () => {

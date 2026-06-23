@@ -1,11 +1,14 @@
 /**
  * Folder Templates Seed Script — T-B1-1 (annual-folders-ownership-rework)
  *
- * Seeds union-owned folder templates for each club_type × ecclesiastical_year
+ * Seeds union-owned draft folder templates for each club_type × ecclesiastical_year
  * pair using the first active union (IOMU, union_id=20) as owner.
  *
  * Includes the canonical sections for each club type, mirroring the
- * pre-migration data that was truncated during M1.
+ * pre-migration data that was truncated during M1. Templates are intentionally
+ * inactive: annual ranking configuration is now the source of truth for the
+ * annual evidence folder point budget, so these drafts must be adjusted and
+ * published through the admin once their section sum matches the ranking budget.
  *
  * Idempotent: uses upsert logic via findFirst + create guard.
  *
@@ -39,33 +42,159 @@ const SECTIONS_BY_CLUB_TYPE: Record<
 > = {
   // Aventureros (club_type_id = 1)
   1: [
-    { name: 'Actas de reuniones regulares', order: 1, required: true, max_points: 80, minimum_points: 40 },
-    { name: 'Registro de actividades infantiles', order: 2, required: true, max_points: 80, minimum_points: 40 },
-    { name: 'Evidencia de proyectos manuales', order: 3, required: true, max_points: 60, minimum_points: 30 },
-    { name: 'Actividades de desarrollo espiritual', order: 4, required: true, max_points: 60, minimum_points: 30 },
-    { name: 'Registro de especialidades completadas', order: 5, required: false, max_points: 80, minimum_points: 0 },
-    { name: 'Documentación administrativa', order: 6, required: true, max_points: 40, minimum_points: 20 },
-    { name: 'Actividades recreativas y deportivas', order: 7, required: false, max_points: 40, minimum_points: 0 },
+    {
+      name: 'Actas de reuniones regulares',
+      order: 1,
+      required: true,
+      max_points: 80,
+      minimum_points: 40,
+    },
+    {
+      name: 'Registro de actividades infantiles',
+      order: 2,
+      required: true,
+      max_points: 80,
+      minimum_points: 40,
+    },
+    {
+      name: 'Evidencia de proyectos manuales',
+      order: 3,
+      required: true,
+      max_points: 60,
+      minimum_points: 30,
+    },
+    {
+      name: 'Actividades de desarrollo espiritual',
+      order: 4,
+      required: true,
+      max_points: 60,
+      minimum_points: 30,
+    },
+    {
+      name: 'Registro de especialidades completadas',
+      order: 5,
+      required: false,
+      max_points: 80,
+      minimum_points: 0,
+    },
+    {
+      name: 'Documentación administrativa',
+      order: 6,
+      required: true,
+      max_points: 40,
+      minimum_points: 20,
+    },
+    {
+      name: 'Actividades recreativas y deportivas',
+      order: 7,
+      required: false,
+      max_points: 40,
+      minimum_points: 0,
+    },
   ],
   // Conquistadores (club_type_id = 2)
   2: [
-    { name: 'Actas de reuniones regulares', order: 1, required: true, max_points: 80, minimum_points: 40 },
-    { name: 'Registro de campamentos y excursiones', order: 2, required: true, max_points: 100, minimum_points: 50 },
-    { name: 'Evidencia de servicio comunitario', order: 3, required: true, max_points: 80, minimum_points: 40 },
-    { name: 'Actividades de desarrollo espiritual', order: 4, required: true, max_points: 60, minimum_points: 30 },
-    { name: 'Registro de especialidades completadas', order: 5, required: false, max_points: 80, minimum_points: 0 },
-    { name: 'Documentación administrativa', order: 6, required: true, max_points: 50, minimum_points: 25 },
-    { name: 'Actividades recreativas y deportivas', order: 7, required: false, max_points: 50, minimum_points: 0 },
+    {
+      name: 'Actas de reuniones regulares',
+      order: 1,
+      required: true,
+      max_points: 80,
+      minimum_points: 40,
+    },
+    {
+      name: 'Registro de campamentos y excursiones',
+      order: 2,
+      required: true,
+      max_points: 100,
+      minimum_points: 50,
+    },
+    {
+      name: 'Evidencia de servicio comunitario',
+      order: 3,
+      required: true,
+      max_points: 80,
+      minimum_points: 40,
+    },
+    {
+      name: 'Actividades de desarrollo espiritual',
+      order: 4,
+      required: true,
+      max_points: 60,
+      minimum_points: 30,
+    },
+    {
+      name: 'Registro de especialidades completadas',
+      order: 5,
+      required: false,
+      max_points: 80,
+      minimum_points: 0,
+    },
+    {
+      name: 'Documentación administrativa',
+      order: 6,
+      required: true,
+      max_points: 50,
+      minimum_points: 25,
+    },
+    {
+      name: 'Actividades recreativas y deportivas',
+      order: 7,
+      required: false,
+      max_points: 50,
+      minimum_points: 0,
+    },
   ],
   // Guías Mayores (club_type_id = 3) — matches pre-migration data exactly
   3: [
-    { name: 'Actas de reuniones regulares', order: 1, required: true, max_points: 80, minimum_points: 40 },
-    { name: 'Registro de campamentos y excursiones', order: 2, required: true, max_points: 100, minimum_points: 50 },
-    { name: 'Evidencia de servicio comunitario', order: 3, required: true, max_points: 80, minimum_points: 40 },
-    { name: 'Actividades de desarrollo espiritual', order: 4, required: true, max_points: 60, minimum_points: 30 },
-    { name: 'Registro de especialidades completadas', order: 5, required: false, max_points: 80, minimum_points: 0 },
-    { name: 'Documentación administrativa', order: 6, required: true, max_points: 50, minimum_points: 25 },
-    { name: 'Actividades recreativas y deportivas', order: 7, required: false, max_points: 50, minimum_points: 0 },
+    {
+      name: 'Actas de reuniones regulares',
+      order: 1,
+      required: true,
+      max_points: 80,
+      minimum_points: 40,
+    },
+    {
+      name: 'Registro de campamentos y excursiones',
+      order: 2,
+      required: true,
+      max_points: 100,
+      minimum_points: 50,
+    },
+    {
+      name: 'Evidencia de servicio comunitario',
+      order: 3,
+      required: true,
+      max_points: 80,
+      minimum_points: 40,
+    },
+    {
+      name: 'Actividades de desarrollo espiritual',
+      order: 4,
+      required: true,
+      max_points: 60,
+      minimum_points: 30,
+    },
+    {
+      name: 'Registro de especialidades completadas',
+      order: 5,
+      required: false,
+      max_points: 80,
+      minimum_points: 0,
+    },
+    {
+      name: 'Documentación administrativa',
+      order: 6,
+      required: true,
+      max_points: 50,
+      minimum_points: 25,
+    },
+    {
+      name: 'Actividades recreativas y deportivas',
+      order: 7,
+      required: false,
+      max_points: 50,
+      minimum_points: 0,
+    },
   ],
 };
 
@@ -80,14 +209,17 @@ const CLUB_TYPE_NAMES: Record<number, string> = {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log('Seeding folder_templates (union-owned)…');
+  console.log('Seeding folder_templates (union-owned drafts)…');
 
   // Resolve active union (IOMU, union_id=20) — fail fast if missing
   const union = await prisma.unions.findFirst({
     where: { active: true },
     orderBy: { union_id: 'asc' },
   });
-  if (!union) throw new Error('No active union found. Seed requires at least one active union.');
+  if (!union)
+    throw new Error(
+      'No active union found. Seed requires at least one active union.',
+    );
 
   // Resolve all active club types
   const clubTypes = await prisma.club_types.findMany({
@@ -117,11 +249,15 @@ async function main() {
       });
 
       if (exists) {
-        console.log(`  SKIP: template already exists for club_type=${clubType.club_type_id} year=${year.year_id} union=${union.union_id}`);
+        console.log(
+          `  SKIP: template already exists for club_type=${clubType.club_type_id} year=${year.year_id} union=${union.union_id}`,
+        );
         continue;
       }
 
-      const clubTypeName = CLUB_TYPE_NAMES[clubType.club_type_id] ?? `Tipo ${clubType.club_type_id}`;
+      const clubTypeName =
+        CLUB_TYPE_NAMES[clubType.club_type_id] ??
+        `Tipo ${clubType.club_type_id}`;
       const yearLabel = `${year.start_date.getFullYear()}`;
       const templateName = `Carpeta de Evidencias ${clubTypeName} ${yearLabel}`;
 
@@ -133,7 +269,7 @@ async function main() {
           club_type_id: clubType.club_type_id,
           ecclesiastical_year_id: year.year_id,
           owner_union_id: union.union_id,
-          active: true,
+          active: false,
           minimum_points: 250,
           sections: {
             create: sections.map((s) => ({
@@ -151,11 +287,15 @@ async function main() {
 
       templatesCreated++;
       sectionsCreated += template.sections.length;
-      console.log(`  CREATED: ${templateName} (${template.sections.length} sections)`);
+      console.log(
+        `  CREATED DRAFT: ${templateName} (${template.sections.length} sections)`,
+      );
     }
   }
 
-  console.log(`\nSeed complete: ${templatesCreated} templates, ${sectionsCreated} sections created.`);
+  console.log(
+    `\nSeed complete: ${templatesCreated} templates, ${sectionsCreated} sections created.`,
+  );
 }
 
 main()

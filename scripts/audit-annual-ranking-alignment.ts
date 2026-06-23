@@ -18,7 +18,43 @@ const acceptedComponentKeys = [
   ...Object.keys(RANKING_COMPONENT_ALIASES),
 ];
 
+const annualFolderComponentKeys = [
+  'annual_evidence_folder',
+  ...Object.entries(RANKING_COMPONENT_ALIASES)
+    .filter(([, canonical]) => canonical === 'annual_evidence_folder')
+    .map(([alias]) => alias),
+];
+
 const auditChecks: AuditCheck[] = [
+  {
+    name: 'configs have exactly one hierarchy scope',
+    description:
+      'Every annual ranking config must be owned by either a Union or a Local Field, never both or neither.',
+    sql: `
+      SELECT COUNT(*)::int AS failures
+      FROM annual_ranking_configs c
+      WHERE num_nonnulls(c.union_id, c.local_field_id) <> 1
+    `,
+  },
+  {
+    name: 'union configs override local active configs',
+    description:
+      'When an active Union config exists for year + club type, child Local Field configs for the same pair must be inactive.',
+    sql: `
+      SELECT COUNT(*)::int AS failures
+      FROM annual_ranking_configs local_config
+      JOIN local_fields lf
+        ON lf.local_field_id = local_config.local_field_id
+      JOIN annual_ranking_configs union_config
+        ON union_config.union_id = lf.union_id
+       AND union_config.local_field_id IS NULL
+       AND union_config.ecclesiastical_year_id = local_config.ecclesiastical_year_id
+       AND union_config.club_type_id = local_config.club_type_id
+       AND union_config.active = TRUE
+      WHERE local_config.active = TRUE
+        AND local_config.union_id IS NULL
+    `,
+  },
   {
     name: 'active configs have active axes',
     description:
@@ -89,6 +125,24 @@ const auditChecks: AuditCheck[] = [
     params: [acceptedComponentKeys],
   },
   {
+    name: 'active configs define annual folder component',
+    description:
+      'Every active annual ranking config must include the annual_evidence_folder component because it is the source of truth for folder template points.',
+    sql: `
+      SELECT COUNT(*)::int AS failures
+      FROM annual_ranking_configs config
+      WHERE config.active = TRUE
+        AND NOT EXISTS (
+          SELECT 1
+          FROM annual_ranking_component_configs component
+          WHERE component.annual_ranking_config_id = config.annual_ranking_config_id
+            AND component.active = TRUE
+            AND component.component_key = ANY($1::text[])
+        )
+    `,
+    params: [annualFolderComponentKeys],
+  },
+  {
     name: 'folder template max matches evaluation max',
     description:
       'For each annual folder, template section max_points must match eager evaluation-row max_points.',
@@ -110,6 +164,65 @@ const auditChecks: AuditCheck[] = [
       WHERE COALESCE(template_points.template_max_points, 0)
         <> COALESCE(evaluation_points.evaluation_max_points, 0)
     `,
+  },
+  {
+    name: 'active folder templates match effective annual folder budget',
+    description:
+      'Active folder templates must sum exactly to the effective annual_evidence_folder budget resolved through Union-first hierarchy.',
+    sql: `
+      SELECT COUNT(*)::int AS failures
+      FROM folder_templates template
+      LEFT JOIN local_fields owner_lf
+        ON owner_lf.local_field_id = template.owner_local_field_id
+      LEFT JOIN LATERAL (
+        SELECT config.annual_ranking_config_id
+        FROM annual_ranking_configs config
+        WHERE config.active = TRUE
+          AND config.ecclesiastical_year_id = template.ecclesiastical_year_id
+          AND config.club_type_id = template.club_type_id
+          AND (
+            (
+              template.owner_union_id IS NOT NULL
+              AND config.union_id = template.owner_union_id
+              AND config.local_field_id IS NULL
+            )
+            OR (
+              template.owner_local_field_id IS NOT NULL
+              AND (
+                (
+                  config.union_id = owner_lf.union_id
+                  AND config.local_field_id IS NULL
+                )
+                OR (
+                  config.union_id IS NULL
+                  AND config.local_field_id = template.owner_local_field_id
+                )
+              )
+            )
+          )
+        ORDER BY
+          CASE WHEN config.union_id IS NOT NULL THEN 0 ELSE 1 END,
+          config.created_at DESC
+        LIMIT 1
+      ) effective_config ON TRUE
+      LEFT JOIN (
+        SELECT folder_template_id, SUM(max_points)::int AS section_max_points
+        FROM folder_template_sections
+        GROUP BY folder_template_id
+      ) section_points
+        ON section_points.folder_template_id = template.folder_template_id
+      LEFT JOIN annual_ranking_component_configs folder_component
+        ON folder_component.annual_ranking_config_id = effective_config.annual_ranking_config_id
+       AND folder_component.active = TRUE
+       AND folder_component.component_key = ANY($1::text[])
+      WHERE template.active = TRUE
+        AND (
+          effective_config.annual_ranking_config_id IS NULL
+          OR folder_component.annual_ranking_component_config_id IS NULL
+          OR COALESCE(section_points.section_max_points, 0) <> folder_component.max_points
+        )
+    `,
+    params: [annualFolderComponentKeys],
   },
   {
     name: 'active configs have no orphan components',
@@ -206,6 +319,9 @@ async function main(): Promise<void> {
       console.log(`- ${check.name}: ${check.description}`);
     }
     console.log(`Accepted component keys: ${acceptedComponentKeys.join(', ')}`);
+    console.log(
+      `Annual folder component keys: ${annualFolderComponentKeys.join(', ')}`,
+    );
     return;
   }
 

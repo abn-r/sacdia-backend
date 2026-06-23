@@ -72,7 +72,7 @@ describe('AnnualRankingConfigController', () => {
   it('lists configs using optional scope query filters', async () => {
     service.list.mockResolvedValueOnce([configRow] as never);
 
-    const result = await controller.list(4, 1, 2);
+    const result = await controller.list(undefined, 4, 1, 2);
 
     expect(result).toEqual({ status: 'success', data: [configRow], total: 1 });
     expect(service.list).toHaveBeenCalledWith({

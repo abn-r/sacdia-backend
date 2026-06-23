@@ -174,8 +174,9 @@ describe('AnnualRankingsService', () => {
 
         return {
           score_pct:
-            perEnrollment[context.clubEnrollmentId]?.[component.component_key] ??
-            0,
+            perEnrollment[context.clubEnrollmentId]?.[
+              component.component_key
+            ] ?? 0,
           source_status: 'available',
           source: 'annual_folder',
         } as any;
@@ -255,7 +256,6 @@ describe('AnnualRankingsService', () => {
     });
   });
 
-
   it('scores expanded annual ranking components through the registry', async () => {
     configService.getByScope.mockResolvedValueOnce({
       max_points: 9000,
@@ -265,10 +265,26 @@ describe('AnnualRankingsService', () => {
           label: 'Cumplimiento Administrativo',
           max_points: 4000,
           components: [
-            { component_key: 'annual_evidence_folder', label: 'Carpeta Anual de Evidencias', max_points: 1000 },
-            { component_key: 'monthly_reports_timeliness', label: 'Informes mensuales', max_points: 1000 },
-            { component_key: 'finance_compliance', label: 'Finanzas', max_points: 1000 },
-            { component_key: 'institutional_data_completeness', label: 'Datos institucionales', max_points: 1000 },
+            {
+              component_key: 'annual_evidence_folder',
+              label: 'Carpeta Anual de Evidencias',
+              max_points: 1000,
+            },
+            {
+              component_key: 'monthly_reports_timeliness',
+              label: 'Informes mensuales',
+              max_points: 1000,
+            },
+            {
+              component_key: 'finance_compliance',
+              label: 'Finanzas',
+              max_points: 1000,
+            },
+            {
+              component_key: 'institutional_data_completeness',
+              label: 'Datos institucionales',
+              max_points: 1000,
+            },
           ],
         },
         {
@@ -276,11 +292,31 @@ describe('AnnualRankingsService', () => {
           label: 'Vida Operativa del Club',
           max_points: 5000,
           components: [
-            { component_key: 'activities_registered', label: 'Actividades', max_points: 1000 },
-            { component_key: 'attendance_participation', label: 'Asistencia', max_points: 1000 },
-            { component_key: 'camporee_events', label: 'Camporee', max_points: 1000 },
-            { component_key: 'class_investiture_progress', label: 'Clases', max_points: 1000 },
-            { component_key: 'sacdia_operational_usage', label: 'Uso SACDIA', max_points: 1000 },
+            {
+              component_key: 'activities_registered',
+              label: 'Actividades',
+              max_points: 1000,
+            },
+            {
+              component_key: 'attendance_participation',
+              label: 'Asistencia',
+              max_points: 1000,
+            },
+            {
+              component_key: 'camporee_events',
+              label: 'Camporee',
+              max_points: 1000,
+            },
+            {
+              component_key: 'class_investiture_progress',
+              label: 'Clases',
+              max_points: 1000,
+            },
+            {
+              component_key: 'sacdia_operational_usage',
+              label: 'Uso SACDIA',
+              max_points: 1000,
+            },
           ],
         },
       ],
@@ -320,6 +356,48 @@ describe('AnnualRankingsService', () => {
         calendarYear: 2026,
       }),
     );
+  });
+
+  it('returns canonical component keys in leaderboard rows when config rows still contain legacy aliases', async () => {
+    configService.getByScope.mockResolvedValueOnce({
+      max_points: 6000,
+      axes: [
+        {
+          axis_key: 'administrative',
+          label: 'Cumplimiento Administrativo',
+          max_points: 6000,
+          components: [
+            {
+              component_key: 'annual_folder',
+              label: 'Carpeta Anual de Evidencias',
+              max_points: 6000,
+            },
+          ],
+        },
+      ],
+      components: [],
+    } as any);
+    scoreRegistry.scoreComponent.mockResolvedValue({
+      score_pct: 70,
+      earned_points: 4200,
+      max_points: 6000,
+      source_status: 'available',
+      source: 'annual_folder',
+    } as any);
+
+    const result = await service.getLeaderboard({
+      localFieldId: LOCAL_FIELD_ID,
+      yearId: YEAR_ID,
+      clubTypeId: CLUB_TYPE_ID,
+    });
+
+    expect(result.data[0].components).toEqual([
+      expect.objectContaining({
+        key: 'annual_evidence_folder',
+        earned_points: 4200,
+        max_points: 6000,
+      }),
+    ]);
   });
 
   it('filters rankings by local field, year, club type and general category', async () => {

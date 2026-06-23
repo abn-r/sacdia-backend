@@ -15,7 +15,9 @@ import {
 import {
   AnnualRankingScoreRegistryService,
   type AnnualRankingScoreContext,
+  type AnnualRankingScoreResult,
 } from './services/annual-ranking-score-registry.service';
+import { normalizeRankingComponentKey } from './ranking-component-catalog';
 import type {
   AnnualRankingProgressAxisDto,
   AnnualRankingProgressComponentDto,
@@ -36,6 +38,8 @@ interface ConfiguredRankingAxis {
   max_points: number;
   components: ConfiguredRankingComponent[];
 }
+
+type ComponentScoreMap = Record<string, AnnualRankingScoreResult>;
 
 @Injectable()
 export class AnnualRankingProgressService {
@@ -114,7 +118,7 @@ export class AnnualRankingProgressService {
       }),
     ]);
 
-    const scoreMap = enrollment
+    const scoreMap: ComponentScoreMap = enrollment
       ? await this.scoreConfiguredComponents(
           this.getConfiguredComponents(config),
           {
@@ -195,7 +199,7 @@ export class AnnualRankingProgressService {
 
   private buildAxisProgress(
     axes: ConfiguredRankingAxis[],
-    scoreMap: Record<string, number>,
+    scoreMap: ComponentScoreMap,
   ): AnnualRankingProgressAxisDto[] {
     return axes.map((axis) => {
       const components = this.buildComponentProgress(axis.components, scoreMap);
@@ -217,27 +221,44 @@ export class AnnualRankingProgressService {
 
   private buildComponentProgress(
     components: ConfiguredRankingComponent[],
-    scoreMap: Record<string, number>,
+    scoreMap: ComponentScoreMap,
   ): AnnualRankingProgressComponentDto[] {
     return components.map((component) => {
-      const scorePct = this.scorePctFor(component.component_key, scoreMap);
-      const earnedPoints = Math.round((scorePct / 100) * component.max_points);
+      const componentKey = this.canonicalComponentKey(component.component_key);
+      const score = this.scoreFor(componentKey, scoreMap);
+      const scorePct = this.scorePctFor(score);
+      const maxPoints =
+        score.max_points && score.max_points > 0
+          ? score.max_points
+          : component.max_points;
+      const earnedPoints =
+        score.earned_points ?? Math.round((scorePct / 100) * maxPoints);
 
       return {
-        key: component.component_key,
+        key: componentKey,
         label: component.label,
         earned_points: earnedPoints,
-        max_points: component.max_points,
-        progress_percentage: this.percentage(
-          earnedPoints,
-          component.max_points,
-        ),
+        max_points: maxPoints,
+        progress_percentage: this.percentage(earnedPoints, maxPoints),
       };
     });
   }
 
-  private scorePctFor(key: string, scoreMap: Record<string, number>): number {
-    return Math.max(0, Math.min(100, Number(scoreMap[key] ?? 0)));
+  private scoreFor(
+    key: string,
+    scoreMap: ComponentScoreMap,
+  ): AnnualRankingScoreResult {
+    return (
+      scoreMap[key] ?? {
+        score_pct: 0,
+        source_status: 'not_available',
+        source: 'unsupported',
+      }
+    );
+  }
+
+  private scorePctFor(score: AnnualRankingScoreResult): number {
+    return Math.max(0, Math.min(100, Number(score.score_pct ?? 0)));
   }
 
   private getConfiguredComponents(config: {
@@ -255,22 +276,35 @@ export class AnnualRankingProgressService {
   private async scoreConfiguredComponents(
     components: ConfiguredRankingComponent[],
     context: AnnualRankingScoreContext,
-  ): Promise<Record<string, number>> {
+  ): Promise<ComponentScoreMap> {
     const entries = await Promise.all(
       components.map(async (component) => {
+        const componentKey = this.canonicalComponentKey(
+          component.component_key,
+        );
         const result = await this.scoreRegistry.scoreComponent(
           { component_key: component.component_key, active: true },
           context,
         );
 
-        return [component.component_key, result.score_pct] as const;
+        return [componentKey, result] as const;
       }),
     );
 
     return Object.fromEntries(entries);
   }
 
-  private calendarYearFromStartDate(startDate: Date | string | null | undefined) {
+  private canonicalComponentKey(componentKey: string): string {
+    try {
+      return normalizeRankingComponentKey(componentKey);
+    } catch {
+      return componentKey;
+    }
+  }
+
+  private calendarYearFromStartDate(
+    startDate: Date | string | null | undefined,
+  ) {
     if (startDate == null) return new Date().getUTCFullYear();
     return new Date(startDate).getUTCFullYear();
   }

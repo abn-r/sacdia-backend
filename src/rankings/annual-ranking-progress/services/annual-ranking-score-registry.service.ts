@@ -28,6 +28,8 @@ export interface AnnualRankingScoredComponent {
 
 export interface AnnualRankingScoreResult {
   score_pct: number;
+  earned_points?: number;
+  max_points?: number;
   source_status: AnnualRankingScoreSourceStatus;
   source:
     | 'annual_folder'
@@ -71,18 +73,18 @@ export class AnnualRankingScoreRegistryService {
     }
 
     if (componentKey === 'annual_evidence_folder') {
+      const summary = await this.folderScore.getPointSummary(
+        context.clubEnrollmentId,
+        context.ecclesiasticalYearId,
+      );
       return {
-        score_pct: this.normalizeScore(
-          await this.folderScore.calc(
-            context.clubEnrollmentId,
-            context.ecclesiasticalYearId,
-          ),
-        ),
+        score_pct: this.normalizeScore(summary.score_pct),
+        earned_points: summary.earned_points,
+        max_points: summary.max_points,
         source_status: 'available',
         source: 'annual_folder',
       };
     }
-
 
     if (componentKey === 'monthly_reports_timeliness') {
       return {
@@ -116,7 +118,6 @@ export class AnnualRankingScoreRegistryService {
         source: 'finance',
       };
     }
-
 
     if (componentKey === 'activities_registered') {
       return {
@@ -158,7 +159,6 @@ export class AnnualRankingScoreRegistryService {
         source: 'camporee',
       };
     }
-
 
     if (componentKey === 'class_investiture_progress') {
       return {

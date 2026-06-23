@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
+export interface FolderScorePointSummary {
+  score_pct: number;
+  earned_points: number;
+  max_points: number;
+}
+
 @Injectable()
 export class FolderScoreService {
   constructor(private readonly prisma: PrismaService) {}
@@ -9,16 +15,32 @@ export class FolderScoreService {
     enrollmentId: string,
     ecclesiasticalYearId: number,
   ): Promise<number> {
+    return (await this.getPointSummary(enrollmentId, ecclesiasticalYearId))
+      .score_pct;
+  }
+
+  async getPointSummary(
+    enrollmentId: string,
+    ecclesiasticalYearId: number,
+  ): Promise<FolderScorePointSummary> {
     const folder = await this.prisma.annual_folders.findFirst({
       where: {
         club_enrollment_id: enrollmentId,
         folder_template: { ecclesiastical_year_id: ecclesiasticalYearId },
       },
-      select: { progress_percentage: true },
+      select: {
+        total_earned_points: true,
+        total_max_points: true,
+        progress_percentage: true,
+      },
     });
 
     if (folder) {
-      return this.normalizePercentage(Number(folder.progress_percentage));
+      return {
+        score_pct: this.normalizePercentage(Number(folder.progress_percentage)),
+        earned_points: folder.total_earned_points,
+        max_points: folder.total_max_points,
+      };
     }
 
     const rows = await this.prisma.$queryRaw<{ earned: bigint; max: bigint }[]>`
@@ -33,8 +55,11 @@ export class FolderScoreService {
     `;
     const earned = Number(rows[0]?.earned ?? 0n);
     const max = Number(rows[0]?.max ?? 0n);
-    if (max === 0) return 0;
-    return this.normalizePercentage((earned / max) * 100);
+    return {
+      score_pct: max === 0 ? 0 : this.normalizePercentage((earned / max) * 100),
+      earned_points: earned,
+      max_points: max,
+    };
   }
 
   private normalizePercentage(value: number): number {

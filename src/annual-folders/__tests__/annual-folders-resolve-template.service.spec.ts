@@ -99,6 +99,18 @@ const mockLFTemplate = {
   modified_at: new Date(),
 };
 
+function mockRankingConfig(maxPoints = 0) {
+  return {
+    annual_ranking_config_id: 'ranking-config-uuid',
+    components: [
+      {
+        component_key: 'annual_evidence_folder',
+        max_points: maxPoints,
+      },
+    ],
+  };
+}
+
 describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEnrollment)', () => {
   let service: AnnualFoldersService;
 
@@ -110,6 +122,13 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     },
     folder_template_sections: {
       findMany: jest.fn(),
+      aggregate: jest.fn(),
+    },
+    annual_ranking_configs: {
+      findFirst: jest.fn(),
+    },
+    local_fields: {
+      findUnique: jest.fn(),
     },
     annual_folder_section_evaluations: {
       createMany: jest.fn(),
@@ -179,6 +198,13 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     });
     // Default: no template sections (overridden per test)
     mockTx.folder_template_sections.findMany.mockResolvedValue([]);
+    mockTx.folder_template_sections.aggregate.mockResolvedValue({
+      _sum: { max_points: 0 },
+    });
+    mockTx.annual_ranking_configs.findFirst.mockResolvedValue(
+      mockRankingConfig(0),
+    );
+    mockTx.local_fields.findUnique.mockResolvedValue({ union_id: 7 });
     // Default: createMany succeeds
     mockTx.annual_folder_section_evaluations.createMany.mockResolvedValue({
       count: 0,
@@ -313,6 +339,12 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     mockPrismaService.folder_templates.findFirst.mockResolvedValueOnce(
       mockUnionTemplate,
     );
+    mockTx.folder_template_sections.aggregate.mockResolvedValue({
+      _sum: { max_points: 45 },
+    });
+    mockTx.annual_ranking_configs.findFirst.mockResolvedValue(
+      mockRankingConfig(45),
+    );
     mockTx.folder_template_sections.findMany.mockResolvedValue(mockSections);
     mockTx.annual_folder_section_evaluations.createMany.mockResolvedValue({
       count: 3,
@@ -341,6 +373,44 @@ describe('AnnualFoldersService — resolveTemplateForClub (via createFolderForEn
     });
     expect(createManyArg.data[1].max_points).toBe(20);
     expect(createManyArg.data[2].max_points).toBe(15);
+  });
+
+  it('blocks folder creation when template sections do not match ranking annual folder budget', async () => {
+    mockPrismaService.folder_templates.findFirst.mockResolvedValueOnce(
+      mockUnionTemplate,
+    );
+    mockTx.folder_template_sections.aggregate.mockResolvedValue({
+      _sum: { max_points: 45 },
+    });
+    mockTx.annual_ranking_configs.findFirst.mockResolvedValue(
+      mockRankingConfig(60),
+    );
+
+    await expect(
+      service.createFolderForEnrollment(ENROLLMENT_ID),
+    ).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_FOLDER_TEMPLATE_POINTS_MISMATCH,
+    });
+
+    expect(mockTx.annual_folders.create).not.toHaveBeenCalled();
+    expect(
+      mockTx.annual_folder_section_evaluations.createMany,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('blocks folder creation when no effective ranking config exists', async () => {
+    mockPrismaService.folder_templates.findFirst.mockResolvedValueOnce(
+      mockUnionTemplate,
+    );
+    mockTx.annual_ranking_configs.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.createFolderForEnrollment(ENROLLMENT_ID),
+    ).rejects.toMatchObject({
+      code: ErrorCode.ANNUAL_FOLDER_TEMPLATE_RANKING_CONFIG_REQUIRED,
+    });
+
+    expect(mockTx.annual_folders.create).not.toHaveBeenCalled();
   });
 });
 
@@ -413,6 +483,13 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
     },
     folder_template_sections: {
       findMany: jest.fn(),
+      aggregate: jest.fn(),
+    },
+    annual_ranking_configs: {
+      findFirst: jest.fn(),
+    },
+    local_fields: {
+      findUnique: jest.fn(),
     },
     annual_folder_section_evaluations: {
       createMany: jest.fn(),
@@ -489,6 +566,13 @@ describe('AnnualFoldersService — resolveCamporeeLinkageForEnrollment (CAMP-1)'
       mockCampEnrollment,
     );
     mockTxCamp.folder_template_sections.findMany.mockResolvedValue([]);
+    mockTxCamp.folder_template_sections.aggregate.mockResolvedValue({
+      _sum: { max_points: 0 },
+    });
+    mockTxCamp.annual_ranking_configs.findFirst.mockResolvedValue(
+      mockRankingConfig(0),
+    );
+    mockTxCamp.local_fields.findUnique.mockResolvedValue({ union_id: 7 });
     mockTxCamp.annual_folder_section_evaluations.createMany.mockResolvedValue({
       count: 0,
     });

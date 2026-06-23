@@ -30,6 +30,7 @@ import {
   buildEvidenceDisplayNameForFile,
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
+import { normalizeRankingComponentKey } from '../rankings/annual-ranking-progress/ranking-component-catalog';
 
 // Cap concurrent presign calls for EVIDENCE_FILES bucket. A folder can contain
 // many sections × many files each — without the cap, a single getFolder request
@@ -74,6 +75,17 @@ type FolderAccessContext = {
   localFieldId: number | null;
   unionId: number | null;
 };
+
+type AnnualFolderDbClient = Prisma.TransactionClient | PrismaService;
+
+type TemplateBudgetShape = Pick<
+  folder_templates,
+  | 'folder_template_id'
+  | 'owner_union_id'
+  | 'owner_local_field_id'
+  | 'ecclesiastical_year_id'
+  | 'club_type_id'
+>;
 
 @Injectable()
 export class AnnualFoldersService {
@@ -129,18 +141,35 @@ export class AnnualFoldersService {
       });
     }
 
-    return this.prisma.folder_templates.create({
-      data: {
-        name: dto.name,
-        club_type_id: dto.club_type_id,
-        ecclesiastical_year_id: dto.ecclesiastical_year_id,
-        active: dto.active ?? true,
-        minimum_points: dto.minimum_points ?? 0,
-        closing_date: dto.closing_date ? new Date(dto.closing_date) : null,
-        owner_union_id: dto.owner_union_id ?? null,
-        owner_local_field_id: dto.owner_local_field_id ?? null,
-      },
-      include: TEMPLATE_DETAIL_INCLUDE,
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.folder_templates.create({
+        data: {
+          name: dto.name,
+          club_type_id: dto.club_type_id,
+          ecclesiastical_year_id: dto.ecclesiastical_year_id,
+          active: dto.active ?? false,
+          minimum_points: dto.minimum_points ?? 0,
+          closing_date: dto.closing_date ? new Date(dto.closing_date) : null,
+          owner_union_id: dto.owner_union_id ?? null,
+          owner_local_field_id: dto.owner_local_field_id ?? null,
+        },
+      });
+
+      if (created.active) {
+        await this.assertTemplateMatchesRankingBudget(tx, created);
+      }
+
+      const hydrated = await tx.folder_templates.findUnique({
+        where: { folder_template_id: created.folder_template_id },
+        include: TEMPLATE_DETAIL_INCLUDE,
+      });
+      if (!hydrated) {
+        throw new AppNotFoundException(
+          ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+          { id: created.folder_template_id },
+        );
+      }
+      return hydrated;
     });
   }
 
@@ -225,31 +254,48 @@ export class AnnualFoldersService {
       }
     }
 
-    return this.prisma.folder_templates.update({
-      where: { folder_template_id: templateId },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.club_type_id !== undefined && {
-          club_type_id: dto.club_type_id,
-        }),
-        ...(dto.ecclesiastical_year_id !== undefined && {
-          ecclesiastical_year_id: dto.ecclesiastical_year_id,
-        }),
-        ...(dto.active !== undefined && { active: dto.active }),
-        ...(dto.minimum_points !== undefined && {
-          minimum_points: dto.minimum_points,
-        }),
-        ...(dto.closing_date !== undefined && {
-          closing_date: dto.closing_date ? new Date(dto.closing_date) : null,
-        }),
-        ...(dto.owner_union_id !== undefined && {
-          owner_union_id: dto.owner_union_id,
-        }),
-        ...(dto.owner_local_field_id !== undefined && {
-          owner_local_field_id: dto.owner_local_field_id,
-        }),
-      },
-      include: TEMPLATE_DETAIL_INCLUDE,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.folder_templates.update({
+        where: { folder_template_id: templateId },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.club_type_id !== undefined && {
+            club_type_id: dto.club_type_id,
+          }),
+          ...(dto.ecclesiastical_year_id !== undefined && {
+            ecclesiastical_year_id: dto.ecclesiastical_year_id,
+          }),
+          ...(dto.active !== undefined && { active: dto.active }),
+          ...(dto.minimum_points !== undefined && {
+            minimum_points: dto.minimum_points,
+          }),
+          ...(dto.closing_date !== undefined && {
+            closing_date: dto.closing_date ? new Date(dto.closing_date) : null,
+          }),
+          ...(dto.owner_union_id !== undefined && {
+            owner_union_id: dto.owner_union_id,
+          }),
+          ...(dto.owner_local_field_id !== undefined && {
+            owner_local_field_id: dto.owner_local_field_id,
+          }),
+        },
+      });
+
+      if (updated.active) {
+        await this.assertTemplateMatchesRankingBudget(tx, updated);
+      }
+
+      const hydrated = await tx.folder_templates.findUnique({
+        where: { folder_template_id: templateId },
+        include: TEMPLATE_DETAIL_INCLUDE,
+      });
+      if (!hydrated) {
+        throw new AppNotFoundException(
+          ErrorCode.ANNUAL_FOLDER_TEMPLATE_NOT_FOUND,
+          { id: templateId },
+        );
+      }
+      return hydrated;
     });
   }
 
@@ -268,16 +314,24 @@ export class AnnualFoldersService {
       );
     }
 
-    return this.prisma.folder_template_sections.create({
-      data: {
-        folder_template_id: templateId,
-        name: dto.name,
-        description: dto.description,
-        order: dto.order,
-        required: dto.required ?? true,
-        max_points: dto.max_points,
-        minimum_points: dto.minimum_points ?? 0,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.folder_template_sections.create({
+        data: {
+          folder_template_id: templateId,
+          name: dto.name,
+          description: dto.description,
+          order: dto.order,
+          required: dto.required ?? true,
+          max_points: dto.max_points,
+          minimum_points: dto.minimum_points ?? 0,
+        },
+      });
+
+      if (template.active) {
+        await this.assertTemplateMatchesRankingBudget(tx, template);
+      }
+
+      return created;
     });
   }
 
@@ -299,18 +353,31 @@ export class AnnualFoldersService {
       );
     }
 
-    return this.prisma.folder_template_sections.update({
-      where: { section_id: sectionId },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.order !== undefined && { order: dto.order }),
-        ...(dto.required !== undefined && { required: dto.required }),
-        ...(dto.max_points !== undefined && { max_points: dto.max_points }),
-        ...(dto.minimum_points !== undefined && {
-          minimum_points: dto.minimum_points,
-        }),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.folder_template_sections.update({
+        where: { section_id: sectionId },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.description !== undefined && {
+            description: dto.description,
+          }),
+          ...(dto.order !== undefined && { order: dto.order }),
+          ...(dto.required !== undefined && { required: dto.required }),
+          ...(dto.max_points !== undefined && { max_points: dto.max_points }),
+          ...(dto.minimum_points !== undefined && {
+            minimum_points: dto.minimum_points,
+          }),
+        },
+      });
+
+      const template = await tx.folder_templates.findUnique({
+        where: { folder_template_id: updated.folder_template_id },
+      });
+      if (template?.active) {
+        await this.assertTemplateMatchesRankingBudget(tx, template);
+      }
+
+      return updated;
     });
   }
 
@@ -338,8 +405,17 @@ export class AnnualFoldersService {
       );
     }
 
-    await this.prisma.folder_template_sections.delete({
-      where: { section_id: sectionId },
+    await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.folder_template_sections.delete({
+        where: { section_id: sectionId },
+      });
+
+      const template = await tx.folder_templates.findUnique({
+        where: { folder_template_id: deleted.folder_template_id },
+      });
+      if (template?.active) {
+        await this.assertTemplateMatchesRankingBudget(tx, template);
+      }
     });
 
     return { message: 'Section deleted successfully' };
@@ -426,6 +502,8 @@ export class AnnualFoldersService {
     );
 
     return this.prisma.$transaction(async (tx) => {
+      await this.assertTemplateMatchesRankingBudget(tx, template);
+
       // Load template sections once, inside the transaction.
       const sections = await tx.folder_template_sections.findMany({
         where: { folder_template_id: template.folder_template_id },
@@ -1972,6 +2050,142 @@ export class AnnualFoldersService {
       }
     });
     return evidence;
+  }
+
+  private async assertTemplateMatchesRankingBudget(
+    client: AnnualFolderDbClient,
+    template: TemplateBudgetShape,
+  ): Promise<void> {
+    const requiredPoints = await this.resolveTemplateAnnualFolderBudget(
+      client,
+      template,
+    );
+
+    const aggregate = await client.folder_template_sections.aggregate({
+      where: { folder_template_id: template.folder_template_id },
+      _sum: { max_points: true },
+    });
+    const sectionSum = aggregate._sum.max_points ?? 0;
+
+    if (sectionSum !== requiredPoints) {
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_POINTS_MISMATCH,
+        {
+          sectionSum: String(sectionSum),
+          requiredPoints: String(requiredPoints),
+        },
+      );
+    }
+  }
+
+  private async resolveTemplateAnnualFolderBudget(
+    client: AnnualFolderDbClient,
+    template: TemplateBudgetShape,
+  ): Promise<number> {
+    const config = await this.resolveEffectiveRankingConfigForTemplate(
+      client,
+      template,
+    );
+    const component = config.components.find((item) => {
+      try {
+        return (
+          normalizeRankingComponentKey(item.component_key) ===
+          'annual_evidence_folder'
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    if (!component) {
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_RANKING_CONFIG_REQUIRED,
+      );
+    }
+
+    return component.max_points;
+  }
+
+  private async resolveEffectiveRankingConfigForTemplate(
+    client: AnnualFolderDbClient,
+    template: TemplateBudgetShape,
+  ) {
+    const commonWhere = {
+      ecclesiastical_year_id: template.ecclesiastical_year_id,
+      club_type_id: template.club_type_id,
+      active: true,
+    };
+    const include = {
+      components: {
+        where: { active: true },
+        orderBy: [
+          { sort_order: 'asc' as const },
+          { component_key: 'asc' as const },
+        ],
+      },
+    };
+
+    if (template.owner_union_id != null) {
+      const unionConfig = await client.annual_ranking_configs.findFirst({
+        where: {
+          ...commonWhere,
+          union_id: template.owner_union_id,
+          local_field_id: null,
+        },
+        include,
+      });
+
+      if (!unionConfig) {
+        throw new AppBadRequestException(
+          ErrorCode.ANNUAL_FOLDER_TEMPLATE_RANKING_CONFIG_REQUIRED,
+        );
+      }
+
+      return unionConfig;
+    }
+
+    if (template.owner_local_field_id == null) {
+      throw new AppBadRequestException(ErrorCode.ANNUAL_FOLDER_OWNER_REQUIRED);
+    }
+
+    const localField = await client.local_fields.findUnique({
+      where: { local_field_id: template.owner_local_field_id },
+      select: { union_id: true },
+    });
+
+    if (!localField) {
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_RANKING_CONFIG_REQUIRED,
+      );
+    }
+
+    const unionConfig = await client.annual_ranking_configs.findFirst({
+      where: {
+        ...commonWhere,
+        union_id: localField.union_id,
+        local_field_id: null,
+      },
+      include,
+    });
+
+    if (unionConfig) return unionConfig;
+
+    const localConfig = await client.annual_ranking_configs.findFirst({
+      where: {
+        ...commonWhere,
+        union_id: null,
+        local_field_id: template.owner_local_field_id,
+      },
+      include,
+    });
+
+    if (!localConfig) {
+      throw new AppBadRequestException(
+        ErrorCode.ANNUAL_FOLDER_TEMPLATE_RANKING_CONFIG_REQUIRED,
+      );
+    }
+
+    return localConfig;
   }
 
   /**

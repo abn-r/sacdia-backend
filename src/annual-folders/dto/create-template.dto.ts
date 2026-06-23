@@ -36,8 +36,9 @@ export class CreateTemplateDto {
   declare ecclesiastical_year_id: number;
 
   @ApiPropertyOptional({
-    description: 'Si el template está activo',
-    default: true,
+    description:
+      'Si el template está activo. Sólo puede activarse cuando sus secciones suman el máximo annual_evidence_folder del ranking efectivo.',
+    default: false,
   })
   @IsOptional()
   @IsBoolean()

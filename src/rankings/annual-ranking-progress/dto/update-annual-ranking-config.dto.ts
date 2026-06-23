@@ -16,7 +16,7 @@ import {
 export class UpdateAnnualRankingConfigDto {
   @ApiProperty({
     description:
-      'Annual maximum points configured by local field + year + club type',
+      'Annual maximum points configured by hierarchy scope + year + club type',
     example: 12000,
   })
   @IsInt()

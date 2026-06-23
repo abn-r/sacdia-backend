@@ -46,18 +46,21 @@ export class AnnualRankingConfigController {
   @ApiOperation({
     summary: 'List annual ranking point budgets',
     description:
-      'Returns local-field annual ranking configurations and component point budgets, optionally filtered by scope.',
+      'Returns union or local-field annual ranking configurations and component point budgets, optionally filtered by scope.',
   })
+  @ApiQuery({ name: 'union_id', required: false, type: Number })
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
   @ApiQuery({ name: 'year_id', required: false, type: Number })
   @ApiQuery({ name: 'club_type_id', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Annual ranking configs' })
   async list(
+    @Query('union_id') unionId?: number | string,
     @Query('local_field_id') localFieldId?: number | string,
     @Query('year_id') yearId?: number | string,
     @Query('club_type_id') clubTypeId?: number | string,
   ) {
     const data = await this.service.list({
+      unionId: optionalInt(unionId),
       localFieldId: optionalInt(localFieldId),
       ecclesiasticalYearId: optionalInt(yearId),
       clubTypeId: optionalInt(clubTypeId),

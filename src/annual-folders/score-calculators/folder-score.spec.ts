@@ -25,6 +25,8 @@ describe('FolderScoreService.calc', () => {
 
   it('uses persisted annual evidence folder progress percentage when available', async () => {
     prisma.annual_folders.findFirst.mockResolvedValueOnce({
+      total_earned_points: 320,
+      total_max_points: 600,
       progress_percentage: 53.33,
     });
 
@@ -37,7 +39,11 @@ describe('FolderScoreService.calc', () => {
         club_enrollment_id: '11111111-1111-1111-1111-111111111111',
         folder_template: { ecclesiastical_year_id: 5 },
       },
-      select: { progress_percentage: true },
+      select: {
+        total_earned_points: true,
+        total_max_points: true,
+        progress_percentage: true,
+      },
     });
   });
 

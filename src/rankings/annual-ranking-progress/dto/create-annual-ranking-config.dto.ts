@@ -7,6 +7,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -14,8 +15,8 @@ import { Type } from 'class-transformer';
 export class CreateAnnualRankingComponentConfigDto {
   @ApiProperty({
     description:
-      'Stable component key, e.g. annual_folder, finance, camporee, evidence',
-    example: 'annual_folder',
+      'Stable canonical component key, e.g. annual_evidence_folder, finance_compliance, camporee_events',
+    example: 'annual_evidence_folder',
   })
   @IsString()
   @MaxLength(50)
@@ -90,10 +91,27 @@ export class CreateAnnualRankingAxisConfigDto {
 }
 
 export class CreateAnnualRankingConfigDto {
-  @ApiProperty({ example: 4 })
+  @ApiProperty({
+    required: false,
+    description:
+      'Union scope owner. Exclusive with local_field_id. Union scope has precedence over local-field scope.',
+    example: 2,
+  })
+  @IsOptional()
   @IsInt()
   @Min(1)
-  local_field_id!: number;
+  union_id?: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Local field scope owner. Exclusive with union_id and only allowed when no parent union config exists.',
+    example: 4,
+  })
+  @ValidateIf((dto: CreateAnnualRankingConfigDto) => dto.union_id == null)
+  @IsInt()
+  @Min(1)
+  local_field_id?: number;
 
   @ApiProperty({ example: 1 })
   @IsInt()
@@ -107,7 +125,7 @@ export class CreateAnnualRankingConfigDto {
 
   @ApiProperty({
     description:
-      'Annual maximum points configured by local field + year + club type',
+      'Annual maximum points configured by hierarchy scope + year + club type',
     example: 10000,
   })
   @IsInt()
