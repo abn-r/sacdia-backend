@@ -474,6 +474,26 @@ export class RequestsService {
     viewerId: string,
     sectionId: number,
   ) {
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: sectionId },
+      select: { main_club_id: true },
+    });
+
+    if (!section || typeof section.main_club_id !== 'number') {
+      throw new AppNotFoundException(
+        ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND,
+      );
+    }
+
+    if (
+      await this.authorizationContext.canManageClub(
+        viewerId,
+        section.main_club_id,
+      )
+    ) {
+      return;
+    }
+
     const authorization =
       await this.authorizationContext.resolveUserAuthorization(viewerId);
     const canReadSection =

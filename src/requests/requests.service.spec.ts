@@ -103,6 +103,7 @@ describe('RequestsService', () => {
   };
 
   const authorizationContext = {
+    canManageClub: jest.fn().mockResolvedValue(false),
     resolveUserAuthorization: jest.fn(),
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
@@ -111,6 +112,7 @@ describe('RequestsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    authorizationContext.canManageClub.mockResolvedValue(false);
     transactionMock = createTransactionMock();
     prisma.$transaction.mockImplementation(
       (
@@ -138,6 +140,7 @@ describe('RequestsService', () => {
     prisma.club_sections.findUnique.mockResolvedValue({
       club_section_id: 20,
       club_type_id: 2,
+      main_club_id: 12,
     });
     authorizationContext.resolveUserAuthorization.mockResolvedValue({
       authorization: {
@@ -197,6 +200,7 @@ describe('RequestsService', () => {
     });
 
     it('rejects review when the reviewer is not active in the destination section', async () => {
+      authorizationContext.canManageClub.mockResolvedValueOnce(false);
       authorizationContext.resolveUserAuthorization.mockResolvedValueOnce({
         authorization: {
           grants: {
@@ -217,6 +221,21 @@ describe('RequestsService', () => {
       });
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('allows review when the reviewer can manage the destination club', async () => {
+      authorizationContext.canManageClub.mockResolvedValueOnce(true);
+      authorizationContext.resolveUserAuthorization.mockResolvedValueOnce({
+        authorization: {
+          grants: {
+            club_assignments: [],
+          },
+        },
+      });
+
+      await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
+
+      expect(prisma.$transaction).toHaveBeenCalled();
     });
   });
 
