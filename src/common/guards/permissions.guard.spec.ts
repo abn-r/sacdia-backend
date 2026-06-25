@@ -169,6 +169,7 @@ describe('PermissionsGuard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorizationContext.canManageClub.mockResolvedValue(false);
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
     mockAuthorizationContext.canAccessHierarchyScope.mockImplementation(
       (resolved, scope) => {
         const globalScope = resolved.authorization.effective.scope.global ?? {};
@@ -704,6 +705,111 @@ describe('PermissionsGuard', () => {
         createContext({
           user: { sub: 'club-user-1' },
           params: { userId: 'user-123' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+
+  it('allows membership approvers to read a pending requester profile in their active section', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['users:read_detail'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'user', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['club_members:approve'],
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+      assignment_id: 'pending-assignment-1',
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'director-1' },
+          params: { userId: 'pending-user-1' },
+        }),
+      ),
+    ).resolves.toBe(true);
+
+    expect(mockPrisma.club_role_assignments.findFirst).toHaveBeenCalledWith({
+      where: {
+        user_id: 'pending-user-1',
+        club_section_id: 22,
+        active: true,
+        OR: [
+          { status: null },
+          {
+            status: {
+              in: ['active', 'pending'],
+            },
+          },
+        ],
+      },
+      select: { assignment_id: true },
+    });
+  });
+
+  it('allows section member readers to open an active member profile in their active section', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['users:read_detail'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'user', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['club_roles:read'],
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue({
+      assignment_id: 'active-assignment-1',
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'director-1' },
+          params: { userId: 'member-user-1' },
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('rejects membership approvers when the target user has no active or pending assignment in their active section', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['users:read_detail'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'user', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({
+        activeClubPermissions: ['club_members:approve'],
+        instanceId: 22,
+      }),
+    );
+    mockPrisma.club_role_assignments.findFirst.mockResolvedValue(null);
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'director-1' },
+          params: { userId: 'other-user-1' },
         }),
       ),
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });

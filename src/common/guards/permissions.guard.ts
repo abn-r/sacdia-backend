@@ -52,6 +52,18 @@ type ResolvedUnionCamporeeScope = {
   countryId: number | null;
 };
 
+const SECTION_MEMBER_PROFILE_READ_PERMISSIONS = new Set([
+  'users:read_detail',
+  'classes:read',
+  'user_honors:read',
+]);
+
+const SECTION_MEMBER_PROFILE_GATE_PERMISSIONS = new Set([
+  'club_roles:read',
+  'club_members:approve',
+  'users:read_detail',
+]);
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -107,13 +119,23 @@ export class PermissionsGuard implements CanActivate {
     request.authorization = resolved.authorization;
     request.authorizationProfile = resolved;
 
+    const hasRequiredPermissions = this.hasRequiredPermissions(
+      resolved,
+      requirement,
+      resource,
+      sensitiveUserSubresource,
+    );
+
     if (
-      !this.hasRequiredPermissions(
+      !hasRequiredPermissions &&
+      !(await this.canReadSectionMemberProfile(
+        request,
+        userId,
         resolved,
         requirement,
         resource,
         sensitiveUserSubresource,
-      )
+      ))
     ) {
       throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
     }
@@ -323,6 +345,77 @@ export class PermissionsGuard implements CanActivate {
     );
 
     return new Set(activeGrant?.permissions ?? []);
+  }
+
+  private async canReadSectionMemberProfile(
+    request: any,
+    actorUserId: string,
+    resolved: ResolvedAuthorizationProfile,
+    requirement: PermissionRequirement,
+    resource: AuthorizationResourceMetadata,
+    sensitiveUserSubresource?: SensitiveUserSubresourceMetadata,
+  ): Promise<boolean> {
+    if (resource.type !== 'user' || sensitiveUserSubresource) {
+      return false;
+    }
+
+    if (
+      requirement.permissions.length === 0 ||
+      !requirement.permissions.every((permission) =>
+        SECTION_MEMBER_PROFILE_READ_PERMISSIONS.has(permission),
+      )
+    ) {
+      return false;
+    }
+
+    const activeClubPermissions = this.getActiveClubPermissions(resolved);
+    const canReadSectionMemberProfile = [
+      ...SECTION_MEMBER_PROFILE_GATE_PERMISSIONS,
+    ].some((permission) => activeClubPermissions.has(permission));
+    if (!canReadSectionMemberProfile) {
+      return false;
+    }
+
+    const activeClubScope = resolved.authorization.effective.scope.club;
+    const activeSectionId = activeClubScope?.section.club_section_id;
+    if (typeof activeSectionId !== 'number') {
+      return false;
+    }
+
+    const targetUserId = this.getRequestValue(
+      request,
+      'param',
+      resource.ownerParam ?? 'userId',
+    );
+
+    if (
+      typeof targetUserId !== 'string' ||
+      targetUserId.length === 0 ||
+      targetUserId === actorUserId
+    ) {
+      return false;
+    }
+
+    const sectionAssignment = await this.prisma.club_role_assignments.findFirst(
+      {
+        where: {
+          user_id: targetUserId,
+          club_section_id: activeSectionId,
+          active: true,
+          OR: [
+            { status: null },
+            {
+              status: {
+                in: ['active', 'pending'],
+              },
+            },
+          ],
+        },
+        select: { assignment_id: true },
+      },
+    );
+
+    return sectionAssignment != null;
   }
 
   private async validateClubScope(

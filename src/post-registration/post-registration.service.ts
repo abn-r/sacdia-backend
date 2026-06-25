@@ -5,6 +5,7 @@ import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
 import { CompleteClubSelectionDto } from './dto/complete-club-selection.dto';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
   ClassAssignmentResolverService,
   ClassResolutionYear,
@@ -52,6 +53,7 @@ export class PostRegistrationService {
     private legalRepService: LegalRepresentativesService,
     private classAssignmentResolver: ClassAssignmentResolverService,
     private membershipRequestsService: MembershipRequestsService,
+    private authorizationContext: AuthorizationContextService,
   ) {}
 
   async getStatus(
@@ -325,6 +327,8 @@ export class PostRegistrationService {
         };
       });
 
+      await this.authorizationContext.invalidateUserAuthorizationCache(userId);
+
       if (completion.membershipRequest.shouldNotifyReviewers) {
         await this.membershipRequestsService.notifyNewRequestCreated({
           userId,
@@ -580,18 +584,19 @@ export class PostRegistrationService {
         !recoveredAssignment.active ||
         recoveredAssignment.status !== 'pending'
       ) {
-        const updatedRecoveredAssignment = await tx.club_role_assignments.update({
-          where: {
-            assignment_id: recoveredAssignment.assignment_id,
-          },
-          data: {
-            active: true,
-            status: 'pending',
-            expires_at: expiresAt,
-            end_date: null,
-          },
-          select: assignmentSelect,
-        });
+        const updatedRecoveredAssignment =
+          await tx.club_role_assignments.update({
+            where: {
+              assignment_id: recoveredAssignment.assignment_id,
+            },
+            data: {
+              active: true,
+              status: 'pending',
+              expires_at: expiresAt,
+              end_date: null,
+            },
+            select: assignmentSelect,
+          });
 
         return {
           assignment: updatedRecoveredAssignment,

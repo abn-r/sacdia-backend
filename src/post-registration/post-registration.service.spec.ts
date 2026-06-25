@@ -6,6 +6,7 @@ import { UsersService } from '../users/users.service';
 import { LegalRepresentativesService } from '../legal-representatives/legal-representatives.service';
 import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
 import { MembershipRequestsService } from '../membership-requests/membership-requests.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 describe('PostRegistrationService', () => {
   let service: PostRegistrationService;
@@ -114,6 +115,10 @@ describe('PostRegistrationService', () => {
     cancelPendingForUser: jest.fn(),
   };
 
+  const mockAuthorizationContextService = {
+    invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -137,6 +142,10 @@ describe('PostRegistrationService', () => {
         {
           provide: MembershipRequestsService,
           useValue: mockMembershipRequestsService,
+        },
+        {
+          provide: AuthorizationContextService,
+          useValue: mockAuthorizationContextService,
         },
       ],
     }).compile();
@@ -471,6 +480,14 @@ describe('PostRegistrationService', () => {
         clubSectionId: dto.club_section_id,
         assignmentId: 'assignment-1',
       });
+    });
+
+    it('should invalidate authorization cache after completing membership request', async () => {
+      await service.completeStep3(userId, dto, ownerActor);
+
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(userId);
     });
 
     it('should reactivate existing inactive enrollment without resetting metadata', async () => {
