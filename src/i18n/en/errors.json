@@ -327,6 +327,7 @@
   "REQUEST_TRANSFER_SAME_SECTION": "Origin and destination sections must be different",
   "REQUEST_TRANSFER_USER_NOT_IN_SECTION": "User does not belong to the origin section",
   "REQUEST_TRANSFER_SECTION_NOT_FOUND": "Destination section not found",
+  "REQUEST_TRANSFER_TYPE_MISMATCH": "Destination section must have the same club type as your current section",
   "REQUEST_TRANSFER_PENDING_EXISTS": "User already has a pending transfer request",
   "REQUEST_TRANSFER_NOT_FOUND": "Transfer request not found",
   "REQUEST_TRANSFER_ALREADY_REVIEWED": "Transfer request has already been reviewed",

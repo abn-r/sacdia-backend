@@ -324,6 +324,7 @@
   "REQUEST_TRANSFER_SAME_SECTION": "As seções de origem e destino devem ser diferentes",
   "REQUEST_TRANSFER_USER_NOT_IN_SECTION": "O usuário não pertence à seção de origem",
   "REQUEST_TRANSFER_SECTION_NOT_FOUND": "A seção de destino não foi encontrada",
+  "REQUEST_TRANSFER_TYPE_MISMATCH": "A seção de destino deve ser do mesmo tipo de clube da sua seção atual",
   "REQUEST_TRANSFER_PENDING_EXISTS": "O usuário já possui uma solicitação de transferência pendente",
   "REQUEST_TRANSFER_NOT_FOUND": "Solicitação de transferência não encontrada",
   "REQUEST_TRANSFER_ALREADY_REVIEWED": "A solicitação de transferência já foi processada",

@@ -3,13 +3,14 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreateTransferRequestDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'ID de la sección de origen',
     example: 1,
   })
   @Type(() => Number)
+  @IsOptional()
   @IsInt()
-  declare from_section_id: number;
+  from_section_id?: number;
 
   @ApiProperty({
     description: 'ID de la sección de destino',

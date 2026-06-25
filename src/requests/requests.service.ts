@@ -5,10 +5,11 @@ import { NotificationsService } from '../notifications/notifications.service';
 import {
   AppBadRequestException,
   AppConflictException,
+  AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
-import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 
 @Injectable()
 export class RequestsService {
@@ -27,7 +28,7 @@ export class RequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly classAssignmentResolver: ClassAssignmentResolverService,
+    private readonly authorizationContext: AuthorizationContextService,
   ) {}
 
   // ========================================
@@ -36,37 +37,46 @@ export class RequestsService {
 
   async createTransferRequest(
     userId: string,
-    fromSectionId: number,
+    fromSectionId: number | null,
     toSectionId: number,
     reason?: string,
   ) {
-    if (fromSectionId === toSectionId) {
-      throw new AppBadRequestException(ErrorCode.REQUEST_TRANSFER_SAME_SECTION);
-    }
-
-    // Validate user has an active role assignment in from_section
-    const userAssignment = await this.prisma.club_role_assignments.findFirst({
-      where: {
-        user_id: userId,
-        club_section_id: fromSectionId,
-        active: true,
-      },
-    });
-
-    if (!userAssignment) {
+    const userAssignment = await this.resolveTransferSourceAssignment(
+      userId,
+      fromSectionId,
+    );
+    const resolvedFromSectionId = userAssignment.club_section_id;
+    if (resolvedFromSectionId === null) {
       throw new AppBadRequestException(
         ErrorCode.REQUEST_TRANSFER_USER_NOT_IN_SECTION,
       );
     }
 
-    // Validate to_section exists
+    if (resolvedFromSectionId === toSectionId) {
+      throw new AppBadRequestException(ErrorCode.REQUEST_TRANSFER_SAME_SECTION);
+    }
+
     const toSection = await this.prisma.club_sections.findUnique({
       where: { club_section_id: toSectionId },
+      select: {
+        club_section_id: true,
+        club_type_id: true,
+      },
     });
 
     if (!toSection) {
       throw new AppNotFoundException(
         ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND,
+      );
+    }
+
+    if (
+      userAssignment.club_sections?.club_type_id !== null &&
+      userAssignment.club_sections?.club_type_id !== undefined &&
+      userAssignment.club_sections.club_type_id !== toSection.club_type_id
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.REQUEST_TRANSFER_TYPE_MISMATCH,
       );
     }
 
@@ -82,41 +92,40 @@ export class RequestsService {
       throw new AppConflictException(ErrorCode.REQUEST_TRANSFER_PENDING_EXISTS);
     }
 
-    const result = await this.prisma.club_transfer_requests.create({
-      data: {
-        user_id: userId,
-        from_section_id: fromSectionId,
-        to_section_id: toSectionId,
-        reason,
-      },
-      include: {
-        user: {
-          select: {
-            user_id: true,
-            name: true,
-            paternal_last_name: true,
-          },
-        },
-        from_section: {
-          include: { club_types: { select: { name: true } } },
-        },
-        to_section: {
-          include: { club_types: { select: { name: true } } },
-        },
+    const requester = await this.prisma.users.findUnique({
+      where: { user_id: userId },
+      select: {
+        name: true,
+        paternal_last_name: true,
       },
     });
 
-    // Notify director of from_section about the transfer request
+    const result = await this.prisma.club_transfer_requests.create({
+      data: {
+        user_id: userId,
+        from_section_id: resolvedFromSectionId,
+        to_section_id: toSectionId,
+        reason,
+      },
+    });
+
+    // Notify destination directors: they decide whether the member can join.
     try {
+      const requesterName = [requester?.name, requester?.paternal_last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
       void this.notifications.sendToSectionRole(
-        fromSectionId,
+        toSectionId,
         ['director'],
         'Nueva solicitud de traslado',
-        `${result.user.name} ${result.user.paternal_last_name} ha solicitado un traslado`,
+        `${requesterName || 'Un miembro'} ha solicitado integrarse a tu club`,
         {
           type: 'transfer',
           entity_id: result.transfer_request_id,
           status: 'pending',
+          route: `/transfer/${result.transfer_request_id}`,
         },
         'requests:transfer_created',
       );
@@ -127,6 +136,79 @@ export class RequestsService {
     }
 
     return result;
+  }
+
+  private async resolveTransferSourceAssignment(
+    userId: string,
+    fromSectionId: number | null,
+  ) {
+    const activeContext = await this.prisma.users_pr.findUnique({
+      where: { user_id: userId },
+      select: { active_club_assignment_id: true },
+    });
+
+    const baseWhere = {
+      user_id: userId,
+      active: true,
+      status: 'active',
+      club_section_id: { not: null },
+    } satisfies Prisma.club_role_assignmentsWhereInput;
+
+    const select = {
+      assignment_id: true,
+      club_section_id: true,
+      club_sections: {
+        select: {
+          club_type_id: true,
+        },
+      },
+    } satisfies Prisma.club_role_assignmentsSelect;
+
+    const byExplicitSection =
+      fromSectionId !== null
+        ? await this.prisma.club_role_assignments.findFirst({
+            where: {
+              ...baseWhere,
+              club_section_id: fromSectionId,
+            },
+            select,
+          })
+        : null;
+
+    if (fromSectionId !== null) {
+      if (!byExplicitSection?.club_section_id) {
+        throw new AppBadRequestException(
+          ErrorCode.REQUEST_TRANSFER_USER_NOT_IN_SECTION,
+        );
+      }
+      return byExplicitSection;
+    }
+
+    const byActiveContext = activeContext?.active_club_assignment_id
+      ? await this.prisma.club_role_assignments.findFirst({
+          where: {
+            ...baseWhere,
+            assignment_id: activeContext.active_club_assignment_id,
+          },
+          select,
+        })
+      : null;
+
+    const fallback =
+      byActiveContext ??
+      (await this.prisma.club_role_assignments.findFirst({
+        where: baseWhere,
+        orderBy: { start_date: 'desc' },
+        select,
+      }));
+
+    if (!fallback?.club_section_id) {
+      throw new AppBadRequestException(
+        ErrorCode.REQUEST_TRANSFER_USER_NOT_IN_SECTION,
+      );
+    }
+
+    return fallback;
   }
 
   async reviewTransfer(
@@ -152,10 +234,14 @@ export class RequestsService {
       );
     }
 
+    await this.assertCanReadTransferSection(reviewerId, request.to_section_id);
+
     let result;
 
     if (action === 'approved') {
-      // Move user's club_role_assignments from old section to new section in a transaction
+      // Move the section context only. The user's current class/enrollment is
+      // intentionally preserved; a club transfer must not recalculate the
+      // progressive class by age.
       result = await this.prisma.$transaction(async (tx) => {
         // Update all active role assignments from old section to new section
         await tx.club_role_assignments.updateMany({
@@ -163,16 +249,12 @@ export class RequestsService {
             user_id: request.user_id,
             club_section_id: request.from_section_id,
             active: true,
+            status: 'active',
           },
           data: {
             club_section_id: request.to_section_id,
             modified_at: new Date(),
           },
-        });
-
-        await this.resolveTransferOperationalEnrollment(tx, {
-          userId: request.user_id,
-          clubSectionId: request.to_section_id,
         });
 
         // Update the transfer request status
@@ -249,6 +331,12 @@ export class RequestsService {
       });
     }
 
+    if (action === 'approved') {
+      await this.authorizationContext.invalidateUserAuthorizationCache(
+        request.user_id,
+      );
+    }
+
     // Notify the member about the transfer decision
     try {
       const title =
@@ -262,7 +350,12 @@ export class RequestsService {
         request.user_id,
         title,
         body,
-        { type: 'transfer', entity_id: requestId, action },
+        {
+          type: 'transfer',
+          entity_id: requestId,
+          action,
+          route: `/transfer/${requestId}`,
+        },
         `requests:transfer_${action}`,
       );
     } catch (error: unknown) {
@@ -274,95 +367,11 @@ export class RequestsService {
     return result;
   }
 
-  private async resolveTransferOperationalEnrollment(
-    tx: Prisma.TransactionClient,
-    params: {
-      userId: string;
-      clubSectionId: number;
-    },
-  ) {
-    const now = new Date();
-    const currentYear = await tx.ecclesiastical_years.findFirst({
-      where: {
-        start_date: { lte: now },
-        end_date: { gte: now },
-      },
-      select: {
-        year_id: true,
-        start_date: true,
-      },
-    });
-
-    if (!currentYear) {
-      throw new AppBadRequestException(ErrorCode.POST_REG_NO_ACTIVE_YEAR);
-    }
-
-    const targetSection = await tx.club_sections.findUnique({
-      where: { club_section_id: params.clubSectionId },
-      select: { club_type_id: true },
-    });
-
-    if (!targetSection) {
-      throw new AppNotFoundException(
-        ErrorCode.REQUEST_TRANSFER_SECTION_NOT_FOUND,
-      );
-    }
-
-    const expectedClassId =
-      await this.classAssignmentResolver.resolveClassIdForUserClubType(tx, {
-        userId: params.userId,
-        clubTypeId: targetSection.club_type_id,
-        currentYear,
-        userNotFoundExceptionFactory: () =>
-          new AppNotFoundException(ErrorCode.USER_NOT_FOUND),
-      });
-
-    await tx.enrollments.updateMany({
-      where: {
-        user_id: params.userId,
-        ecclesiastical_year_id: currentYear.year_id,
-        active: true,
-        NOT: { class_id: expectedClassId },
-      },
-      data: { active: false },
-    });
-
-    const enrollmentWhere = {
-      user_id_class_id_ecclesiastical_year_id: {
-        user_id: params.userId,
-        class_id: expectedClassId,
-        ecclesiastical_year_id: currentYear.year_id,
-      },
-    };
-
-    const existingEnrollment = await tx.enrollments.findUnique({
-      where: enrollmentWhere,
-      select: {
-        enrollment_id: true,
-        active: true,
-      },
-    });
-
-    if (existingEnrollment) {
-      if (!existingEnrollment.active) {
-        await tx.enrollments.update({
-          where: { enrollment_id: existingEnrollment.enrollment_id },
-          data: { active: true },
-        });
-      }
-      return;
-    }
-
-    await tx.enrollments.create({
-      data: {
-        user_id: params.userId,
-        class_id: expectedClassId,
-        ecclesiastical_year_id: currentYear.year_id,
-      },
-    });
-  }
-
-  async getTransferRequests(filters?: { status?: string; sectionId?: number }) {
+  async getTransferRequests(filters: {
+    userId: string;
+    status?: string;
+    sectionId?: number;
+  }) {
     const where: Record<string, unknown> = {};
 
     if (filters?.status) {
@@ -370,10 +379,16 @@ export class RequestsService {
     }
 
     if (filters?.sectionId) {
+      await this.assertCanReadTransferSection(
+        filters.userId,
+        filters.sectionId,
+      );
       where.OR = [
         { from_section_id: filters.sectionId },
         { to_section_id: filters.sectionId },
       ];
+    } else {
+      where.user_id = filters.userId;
     }
 
     return this.prisma.club_transfer_requests.findMany({
@@ -410,7 +425,7 @@ export class RequestsService {
     });
   }
 
-  async getTransferRequest(requestId: string) {
+  async getTransferRequest(requestId: string, viewerId: string) {
     const request = await this.prisma.club_transfer_requests.findUnique({
       where: { transfer_request_id: requestId },
       include: {
@@ -448,7 +463,29 @@ export class RequestsService {
       throw new AppNotFoundException(ErrorCode.REQUEST_TRANSFER_NOT_FOUND);
     }
 
+    if (request.user_id !== viewerId) {
+      await this.assertCanReadTransferSection(viewerId, request.to_section_id);
+    }
+
     return request;
+  }
+
+  private async assertCanReadTransferSection(
+    viewerId: string,
+    sectionId: number,
+  ) {
+    const authorization =
+      await this.authorizationContext.resolveUserAuthorization(viewerId);
+    const canReadSection =
+      authorization.authorization.grants.club_assignments.some(
+        (assignment) =>
+          assignment.status === 'active' &&
+          assignment.section.club_section_id === sectionId,
+      );
+
+    if (!canReadSection) {
+      throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+    }
   }
 
   // ========================================

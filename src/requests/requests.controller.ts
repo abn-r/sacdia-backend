@@ -65,7 +65,7 @@ export class RequestsController {
   ) {
     return this.requestsService.createTransferRequest(
       user.user_id,
-      dto.from_section_id,
+      dto.from_section_id ?? null,
       dto.to_section_id,
       dto.reason,
     );
@@ -94,11 +94,13 @@ export class RequestsController {
     description: 'Lista de solicitudes de transferencia',
   })
   async getTransferRequests(
+    @CurrentUser() user: { user_id: string },
     @Query('status') status?: string,
     @Query('sectionId', new ParseIntPipe({ optional: true }))
     sectionId?: number,
   ) {
     return this.requestsService.getTransferRequests({
+      userId: user.user_id,
       status,
       sectionId,
     });
@@ -122,8 +124,9 @@ export class RequestsController {
   })
   async getTransferRequest(
     @Param('requestId', ParseUUIDPipe) requestId: string,
+    @CurrentUser() user: { user_id: string },
   ) {
-    return this.requestsService.getTransferRequest(requestId);
+    return this.requestsService.getTransferRequest(requestId, user.user_id);
   }
 
   @Post('transfers/:requestId/review')

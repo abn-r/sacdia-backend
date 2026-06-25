@@ -1,7 +1,7 @@
 import { RequestsService } from './requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ClassAssignmentResolverService } from '../common/services/class-assignment-resolver.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { ErrorCode } from '../common/errors/error-codes';
 
 describe('RequestsService', () => {
@@ -44,11 +44,6 @@ describe('RequestsService', () => {
         birthday: new Date('2016-01-01'),
       }),
     },
-    classes: {
-      findFirst: jest.fn().mockResolvedValue({
-        class_id: 5,
-      }),
-    },
     enrollments: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findUnique: jest.fn().mockResolvedValue(null),
@@ -71,6 +66,9 @@ describe('RequestsService', () => {
     club_role_assignments: {
       findFirst: jest.fn(),
       count: jest.fn(),
+    },
+    users_pr: {
+      findUnique: jest.fn(),
     },
     club_sections: {
       findUnique: jest.fn(),
@@ -104,6 +102,11 @@ describe('RequestsService', () => {
     notifySafe: jest.fn(),
   };
 
+  const authorizationContext = {
+    resolveUserAuthorization: jest.fn(),
+    invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
+  };
+
   let service: RequestsService;
 
   beforeEach(() => {
@@ -124,34 +127,140 @@ describe('RequestsService', () => {
       status: 'pending',
       user: { user_id: 'user-1', name: 'Ana' },
     });
+    prisma.users_pr.findUnique.mockResolvedValue({
+      active_club_assignment_id: 'assignment-1',
+    });
+    prisma.club_role_assignments.findFirst.mockResolvedValue({
+      assignment_id: 'assignment-1',
+      club_section_id: 10,
+      club_sections: { club_type_id: 2 },
+    });
+    prisma.club_sections.findUnique.mockResolvedValue({
+      club_section_id: 20,
+      club_type_id: 2,
+    });
+    authorizationContext.resolveUserAuthorization.mockResolvedValue({
+      authorization: {
+        grants: {
+          club_assignments: [
+            {
+              status: 'active',
+              section: { club_section_id: 20 },
+            },
+          ],
+        },
+      },
+    });
 
     service = new RequestsService(
       prisma as unknown as PrismaService,
       notifications as unknown as NotificationsService,
-      new ClassAssignmentResolverService(),
+      authorizationContext as unknown as AuthorizationContextService,
     );
   });
 
   describe('reviewTransfer', () => {
-    it('should derive and resolve the current-year class enrollment for the destination club type when transfer is approved', async () => {
+    it('keeps current class enrollment unchanged when transfer is approved', async () => {
       await service.reviewTransfer('transfer-1', 'reviewer-1', 'approved');
 
-      expect(transactionMock.enrollments.updateMany).toHaveBeenCalledWith({
+      expect(transactionMock.enrollments.updateMany).not.toHaveBeenCalled();
+      expect(transactionMock.enrollments.create).not.toHaveBeenCalled();
+      expect(
+        transactionMock.club_role_assignments.updateMany,
+      ).toHaveBeenCalledWith({
         where: {
           user_id: 'user-1',
-          ecclesiastical_year_id: 2026,
+          club_section_id: 10,
           active: true,
-          NOT: { class_id: 5 },
+          status: 'active',
         },
-        data: { active: false },
-      });
-      expect(transactionMock.enrollments.create).toHaveBeenCalledWith({
         data: {
-          user_id: 'user-1',
-          class_id: 5,
-          ecclesiastical_year_id: 2026,
+          club_section_id: 20,
+          modified_at: expect.any(Date),
         },
       });
+      expect(
+        authorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith('user-1');
+      expect(notifications.notifySafe).toHaveBeenCalledWith(
+        'user-1',
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({
+          type: 'transfer',
+          entity_id: 'transfer-1',
+          action: 'approved',
+          route: '/transfer/transfer-1',
+        }),
+        'requests:transfer_approved',
+      );
+    });
+
+    it('rejects review when the reviewer is not active in the destination section', async () => {
+      authorizationContext.resolveUserAuthorization.mockResolvedValueOnce({
+        authorization: {
+          grants: {
+            club_assignments: [
+              {
+                status: 'active',
+                section: { club_section_id: 99 },
+              },
+            ],
+          },
+        },
+      });
+
+      await expect(
+        service.reviewTransfer('transfer-1', 'reviewer-1', 'approved'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.GUARD_PERMISSION_DENIED,
+      });
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createTransferRequest', () => {
+    it('includes a deep-link route in transfer-created notifications', async () => {
+      prisma.users.findUnique.mockResolvedValue({
+        name: 'Ana',
+        paternal_last_name: 'López',
+      });
+      prisma.club_transfer_requests.findFirst.mockResolvedValue(null);
+      prisma.club_transfer_requests.create.mockResolvedValue({
+        transfer_request_id: 'transfer-1',
+      });
+
+      await service.createTransferRequest('user-1', 10, 20);
+
+      expect(notifications.sendToSectionRole).toHaveBeenCalledWith(
+        20,
+        ['director'],
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({
+          type: 'transfer',
+          entity_id: 'transfer-1',
+          status: 'pending',
+          route: '/transfer/transfer-1',
+        }),
+        'requests:transfer_created',
+      );
+    });
+
+    it('rejects transfer requests to a different club type so the class remains stable', async () => {
+      prisma.club_sections.findUnique.mockResolvedValue({
+        club_section_id: 30,
+        club_type_id: 3,
+      });
+
+      await expect(
+        service.createTransferRequest('user-1', 10, 30),
+      ).rejects.toMatchObject({
+        code: ErrorCode.REQUEST_TRANSFER_TYPE_MISMATCH,
+      });
+
+      expect(prisma.club_transfer_requests.create).not.toHaveBeenCalled();
     });
   });
 

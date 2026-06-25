@@ -324,6 +324,7 @@
   "REQUEST_TRANSFER_SAME_SECTION": "Les sections d'origine et de destination doivent être différentes",
   "REQUEST_TRANSFER_USER_NOT_IN_SECTION": "L'utilisateur n'appartient pas à la section d'origine",
   "REQUEST_TRANSFER_SECTION_NOT_FOUND": "Section de destination introuvable",
+  "REQUEST_TRANSFER_TYPE_MISMATCH": "La section de destination doit être du même type de club que votre section actuelle",
   "REQUEST_TRANSFER_PENDING_EXISTS": "L'utilisateur a déjà une demande de transfert en attente",
   "REQUEST_TRANSFER_NOT_FOUND": "Demande de transfert introuvable",
   "REQUEST_TRANSFER_ALREADY_REVIEWED": "La demande de transfert a déjà été traitée",
