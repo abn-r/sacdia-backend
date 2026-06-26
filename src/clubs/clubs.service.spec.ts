@@ -672,6 +672,102 @@ describe('ClubsService', () => {
     });
   });
 
+  describe('assignInitialSectionDirector', () => {
+    const actorUserId = '00000000-0000-0000-0000-000000000001';
+    const directorUserId = '00000000-0000-0000-0000-000000000002';
+    const assignmentId = '00000000-0000-0000-0000-000000000003';
+    const directorRoleId = '00000000-0000-0000-0000-000000000004';
+
+    function mockInitialAssignmentTransaction(existingDirectorCount = 0) {
+      const tx = {
+        club_role_assignments: {
+          count: jest.fn().mockResolvedValue(existingDirectorCount),
+          create: jest.fn().mockResolvedValue({
+            assignment_id: assignmentId,
+            user_id: directorUserId,
+            club_section_id: 7,
+          }),
+        },
+      };
+
+      mockPrismaService.$transaction = jest.fn((callback) => callback(tx));
+      return tx;
+    }
+
+    it('creates the initial director when the section has no active director', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      const tx = mockInitialAssignmentTransaction(0);
+
+      const result = await service.assignInitialSectionDirector(7, actorUserId, {
+        user_id: directorUserId,
+        ecclesiastical_year_id: 2026,
+        start_date: new Date('2026-01-15T00:00:00.000Z'),
+      });
+
+      expect(result).toEqual({ assignment_id: assignmentId });
+      expect(tx.club_role_assignments.count).toHaveBeenCalledWith({
+        where: {
+          club_section_id: 7,
+          role_id: directorRoleId,
+          active: true,
+        },
+      });
+      expect(tx.club_role_assignments.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_id: directorUserId,
+            role_id: directorRoleId,
+            club_section_id: 7,
+            ecclesiastical_year_id: 2026,
+            active: true,
+            status: 'active',
+          }),
+        }),
+      );
+      expect(
+        mockAuthorizationContextService.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledWith(directorUserId);
+      expect(
+        mockAuthorizationContextService.hasAnyGlobalRole,
+      ).toHaveBeenCalledWith(actorUserId, [
+        'super-admin',
+        'admin',
+        'director-lf',
+        'assistant-lf',
+      ]);
+    });
+
+    it('rejects initial assignment when the section already has an active director', async () => {
+      mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(true);
+      mockAuthorizationContextService.canManageClub.mockResolvedValue(true);
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        main_club_id: 99,
+      });
+      mockPrismaService.roles.findFirst.mockResolvedValue({
+        role_id: directorRoleId,
+      });
+      const tx = mockInitialAssignmentTransaction(1);
+
+      await expect(
+        service.assignInitialSectionDirector(7, actorUserId, {
+          user_id: directorUserId,
+          ecclesiastical_year_id: 2026,
+        }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED,
+      });
+
+      expect(tx.club_role_assignments.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('succeedSectionDirector', () => {
     const actorUserId = '00000000-0000-0000-0000-000000000001';
     const oldDirectorUserId = '00000000-0000-0000-0000-000000000002';
@@ -759,9 +855,17 @@ describe('ClubsService', () => {
       expect(
         mockAuthorizationContextService.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(successorUserId);
+      expect(
+        mockAuthorizationContextService.hasAnyGlobalRole,
+      ).toHaveBeenCalledWith(actorUserId, [
+        'super-admin',
+        'admin',
+        'director-lf',
+        'assistant-lf',
+      ]);
     });
 
-    it('rejects actors that are not director-lf or assistant-lf before mutating data', async () => {
+    it('rejects actors without director succession roles before mutating data', async () => {
       mockAuthorizationContextService.hasAnyGlobalRole.mockResolvedValue(false);
 
       await expect(

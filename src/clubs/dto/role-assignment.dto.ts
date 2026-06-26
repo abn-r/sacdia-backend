@@ -107,3 +107,20 @@ export class DirectorSuccessionDto {
   @Type(() => Date)
   start_date?: Date;
 }
+
+export class DirectorInitialAssignmentDto {
+  @ApiProperty({ description: 'Usuario que será asignado como director inicial' })
+  @IsUUID()
+  declare user_id: string;
+
+  @ApiProperty({ description: 'ID del año eclesiástico' })
+  @Type(() => Number)
+  @IsInt()
+  declare ecclesiastical_year_id: number;
+
+  @ApiPropertyOptional({ description: 'Fecha de inicio del director' })
+  @IsOptional()
+  @IsDate()
+  @Type(() => Date)
+  start_date?: Date;
+}

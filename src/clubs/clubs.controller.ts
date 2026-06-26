@@ -28,6 +28,7 @@ import {
   CreateClubSectionDto,
   UpdateClubSectionDto,
   AssignRoleDto,
+  DirectorInitialAssignmentDto,
   DirectorSuccessionDto,
   UpdateRoleAssignmentDto,
 } from './dto';
@@ -353,13 +354,38 @@ export class ClubsController {
     });
   }
 
+  @Post(':clubId/sections/:sectionId/director-assignment')
+  @RequirePermissions('club_roles:assign')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Asignación inicial de director de sección',
+    description:
+      'Crea el primer director activo de la sección cuando todavía no existe uno. Solo super-admin, admin, director-lf y assistant-lf pueden ejecutar este flujo.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'sectionId', type: Number })
+  @ApiResponse({ status: 201, description: 'Director asignado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({ status: 409, description: 'La sección ya tiene director activo' })
+  async assignInitialDirector(
+    @Param('sectionId', ParseIntPipe) sectionId: number,
+    @CurrentUser() user: { sub: string },
+    @Body() dto: DirectorInitialAssignmentDto,
+  ) {
+    return this.clubsService.assignInitialSectionDirector(
+      sectionId,
+      user.sub,
+      dto,
+    );
+  }
+
   @Post(':clubId/sections/:sectionId/director-succession')
   @RequirePermissions('club_roles:assign', 'club_roles:revoke')
   @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
   @ApiOperation({
     summary: 'Sucesión anual de director de sección',
     description:
-      'Cierra la asignación activa del director actual y crea la nueva asignación director para el año eclesiástico indicado. Solo director-lf y assistant-lf pueden ejecutar este flujo.',
+      'Cierra la asignación activa del director actual y crea la nueva asignación director para el año eclesiástico indicado. Solo super-admin, admin, director-lf y assistant-lf pueden ejecutar este flujo.',
   })
   @ApiParam({ name: 'clubId', type: Number })
   @ApiParam({ name: 'sectionId', type: Number })

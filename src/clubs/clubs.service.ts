@@ -8,6 +8,7 @@ import {
   UpdateClubSectionDto,
   AssignRoleDto,
   UpdateRoleAssignmentDto,
+  DirectorInitialAssignmentDto,
   DirectorSuccessionDto,
 } from './dto';
 import {
@@ -826,6 +827,73 @@ export class ClubsService {
     };
   }
 
+  async assignInitialSectionDirector(
+    sectionId: number,
+    actorUserId: string,
+    dto: DirectorInitialAssignmentDto,
+  ): Promise<{ assignment_id: string }> {
+    await this.assertCanSucceedSectionDirector(actorUserId, sectionId);
+
+    const directorRole = await this.prisma.roles.findFirst({
+      where: {
+        role_name: 'director',
+        role_category: 'CLUB',
+        active: true,
+      },
+      select: { role_id: true },
+    });
+
+    if (!directorRole) {
+      throw new AppNotFoundException(ErrorCode.CLUB_ROLE_NOT_FOUND);
+    }
+
+    const startDate = dto.start_date ?? new Date();
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const existingActiveDirectorCount = await tx.club_role_assignments.count({
+        where: {
+          club_section_id: sectionId,
+          role_id: directorRole.role_id,
+          active: true,
+        },
+      });
+
+      if (existingActiveDirectorCount > 0) {
+        throw new AppConflictException(ErrorCode.CLUB_ROLE_SLOT_LIMIT_REACHED);
+      }
+
+      return tx.club_role_assignments.create({
+        data: {
+          user_id: dto.user_id,
+          role_id: directorRole.role_id,
+          ecclesiastical_year_id: dto.ecclesiastical_year_id,
+          start_date: startDate,
+          active: true,
+          status: 'active',
+          club_section_id: sectionId,
+        },
+        select: {
+          assignment_id: true,
+          user_id: true,
+          club_section_id: true,
+        },
+      });
+    });
+
+    await this.authorizationContext.invalidateUserAuthorizationCache(
+      created.user_id,
+    );
+
+    this.emitRealtimeInvalidation(
+      sectionId,
+      created.assignment_id,
+      'CREATED',
+      actorUserId,
+    );
+
+    return { assignment_id: created.assignment_id };
+  }
+
   // ========================================
   // AGGREGATIONS
   // ========================================
@@ -1334,6 +1402,8 @@ export class ClubsService {
   ): Promise<void> {
     const hasAllowedGlobalRole =
       await this.authorizationContext.hasAnyGlobalRole(actorUserId, [
+        'super-admin',
+        'admin',
         'director-lf',
         'assistant-lf',
       ]);
