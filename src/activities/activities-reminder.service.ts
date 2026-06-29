@@ -130,8 +130,8 @@ export class ActivitiesReminderService {
             await this.notificationsService.sendToClubMembers(
               sectionId,
               {
-                title: 'Recordatorio de actividad',
-                body: `${activity.name} comienza a las ${activity.activity_time}`,
+                title: 'Tu actividad está por comenzar',
+                body: `${activity.name} empieza a las ${activity.activity_time}`,
                 data: {
                   type: 'activity',
                   entity_id: String(activity.activity_id),

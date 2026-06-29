@@ -264,8 +264,8 @@ describe('MasterHonorsEvaluatorService', () => {
 
     expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
       'user-1',
-      '¡Nueva maestría obtenida!',
-      'Has obtenido la maestría Maestría de Base.',
+      '¡Nueva maestría para tu banda!',
+      'Tu banda suma la maestría Maestría de Base.',
       expect.objectContaining({
         type: 'master_honor_changed',
         transition: 'awarded',
@@ -305,8 +305,8 @@ describe('MasterHonorsEvaluatorService', () => {
 
     expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
       'user-1',
-      'Maestría vigente nuevamente',
-      'La maestría Honores de Base vuelve a estar vigente en tu perfil.',
+      'Maestría nuevamente vigente',
+      'La maestría Honores de Base vuelve a contar en tu camino.',
       expect.objectContaining({
         type: 'master_honor_changed',
         transition: 'recovered',
@@ -350,8 +350,8 @@ describe('MasterHonorsEvaluatorService', () => {
 
     expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
       'user-1',
-      '¡Nuevas maestrías obtenidas!',
-      'Has obtenido nuevas maestrías en tu perfil.',
+      '¡Nuevas maestrías para tu banda!',
+      'Tu banda suma nuevas maestrías.',
       expect.objectContaining({
         type: 'master_honor_changed',
         transition: 'awarded',
@@ -485,8 +485,8 @@ describe('MasterHonorsEvaluatorService', () => {
 
     expect(notificationsServiceMock.notifySafe).toHaveBeenCalledWith(
       'user-1',
-      'Maestría marcada como No vigente',
-      'Las validaciones requeridas para la maestría Honores de Base cambiaron. Actualmente no cumples con los requisitos, por lo que quedó marcada como No vigente.',
+      'Esta maestría necesita revisión',
+      'La maestría Honores de Base necesita ajustes para volver a estar vigente.',
       expect.objectContaining({
         type: 'master_honor_changed',
         transition: 'not_current',

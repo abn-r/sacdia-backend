@@ -239,8 +239,8 @@ describe('MembershipRequestsService', () => {
       expect(mockNotificationsService.sendToSectionRole).toHaveBeenCalledWith(
         10,
         ['director', 'deputy-director', 'secretary', 'secretary-treasurer'],
-        'Nueva solicitud de membresía',
-        'Hay una nueva solicitud pendiente de aprobación para tu sección.',
+        'Nueva persona esperando aprobación',
+        'Hay una solicitud de membresía lista para revisar en tu sección.',
         {
           type: 'membership_request_created',
           userId,

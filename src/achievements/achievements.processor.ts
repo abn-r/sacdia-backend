@@ -202,8 +202,8 @@ export class AchievementsProcessor
       const displayName = this.toNotificationAchievementName(achievement.name);
       await this.notificationsService.notifySafe(
         userId,
-        '¡Logro desbloqueado!',
-        `Completaste: ${displayName}`,
+        '¡Nuevo logro en tu camino!',
+        `Sumaste un nuevo logro: ${displayName}`,
         {
           achievement_id: String(achievementId),
           achievement_name: achievement.name,
@@ -399,8 +399,8 @@ export class AchievementsProcessor
     const displayName = this.toNotificationAchievementName(achievement.name);
     await this.notificationsService.notifySafe(
       userId,
-      '¡Logro desbloqueado!',
-      `Completaste: ${displayName}`,
+      '¡Nuevo logro en tu camino!',
+      `Sumaste un nuevo logro: ${displayName}`,
       {
         achievement_id: String(achievement.achievement_id),
         achievement_name: achievement.name,

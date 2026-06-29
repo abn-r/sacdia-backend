@@ -408,8 +408,8 @@ export class ActivitiesService {
       ? ` - ${activity.activity_date.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`
       : '';
     const title = isJoint
-      ? 'Nueva actividad conjunta'
-      : 'Nueva actividad programada';
+      ? 'Actividad conjunta confirmada'
+      : 'Nueva actividad para tu club';
     this.notificationsService
       .sendToClubMembers(
         sectionId,

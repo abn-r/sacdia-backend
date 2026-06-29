@@ -261,8 +261,8 @@ export class MembershipRequestsService {
     await this.notificationsService.sendToSectionRole(
       input.clubSectionId,
       [...MEMBERSHIP_REQUEST_REVIEWER_ROLES],
-      'Nueva solicitud de membresía',
-      'Hay una nueva solicitud pendiente de aprobación para tu sección.',
+      'Nueva persona esperando aprobación',
+      'Hay una solicitud de membresía lista para revisar en tu sección.',
       {
         type: 'membership_request_created',
         userId: input.userId,

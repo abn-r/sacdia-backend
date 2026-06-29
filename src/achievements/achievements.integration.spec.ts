@@ -211,8 +211,8 @@ describe('Achievements Integration: emitEvent → evaluate → notify', () => {
     // Step 5: Verify notification was sent with the achievement name
     expect(mockNotificationsService.notifySafe).toHaveBeenCalledWith(
       userId,
-      '¡Logro desbloqueado!',
-      `Completaste: ${mockAchievement.name}`,
+      '¡Nuevo logro en tu camino!',
+      `Sumaste un nuevo logro: ${mockAchievement.name}`,
       expect.objectContaining({
         achievement_id: '1',
         achievement_name: mockAchievement.name,

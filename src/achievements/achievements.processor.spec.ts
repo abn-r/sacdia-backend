@@ -280,8 +280,8 @@ describe('AchievementsProcessor', () => {
       );
       expect(mockNotificationsService.notifySafe).toHaveBeenCalledWith(
         'user-1',
-        '¡Logro desbloqueado!',
-        'Completaste: Primera Especialidad',
+        '¡Nuevo logro en tu camino!',
+        'Sumaste un nuevo logro: Primera Especialidad',
         expect.objectContaining({
           achievement_id: '1',
           achievement_name: mockAchievement.name,
@@ -594,8 +594,8 @@ describe('AchievementsProcessor', () => {
 
       expect(mockNotificationsService.notifySafe).toHaveBeenCalledWith(
         'user-1',
-        '¡Logro desbloqueado!',
-        'Completaste: Coleccionista de Especialidades',
+        '¡Nuevo logro en tu camino!',
+        'Sumaste un nuevo logro: Coleccionista de Especialidades',
         expect.objectContaining({
           achievement_id: '10',
           achievement_name: mockAchievement.name,

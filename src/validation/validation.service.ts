@@ -106,8 +106,8 @@ export class ValidationService {
         void this.notifications.sendToSectionRole(
           memberSection.club_section_id,
           ['coordinator', 'director'],
-          'Nueva clase enviada a revisión',
-          'Un miembro ha enviado una clase para validación',
+          'Clase lista para revisar',
+          'Un miembro completó una clase y espera revisión',
           {
             type: 'validation',
             entity_type: 'class',
@@ -230,11 +230,11 @@ export class ValidationService {
     // Notify the member about approval/rejection
     try {
       const title =
-        action === 'approved' ? 'Clase aprobada' : 'Clase rechazada';
+        action === 'approved' ? '¡Tu clase fue aprobada!' : 'Tu clase necesita ajustes';
       const body =
         action === 'approved'
-          ? 'Tu clase ha sido aprobada por el revisor'
-          : `Tu clase ha sido rechazada: ${comment}`;
+          ? 'Tu avance ya quedó validado. ¡Buen trabajo!'
+          : `Tu clase necesita ajustes${comment ? ': ' + comment : '.'}`;
 
       void this.notifications.notifySafe(
         enrollment.user_id,

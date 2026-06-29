@@ -817,28 +817,28 @@ export class MonthlyReportsService {
     switch (schedule.action) {
       case 'capture_reminder':
         return {
-          title: `Registrá avances del informe de ${monthName}`,
-          body: 'Recordatorio para director y secretaría: actualicen los datos manuales del informe mensual.',
+          title: `Actualiza el informe de ${monthName}`,
+          body: 'Tienen datos manuales por revisar antes del cierre del informe mensual.',
         };
       case 'five_days_left':
         return {
-          title: `Quedan 5 días para cerrar el informe de ${monthName}`,
-          body: 'Completá o revisá los datos manuales antes del cierre mensual.',
+          title: `Quedan 5 días para el informe de ${monthName}`,
+          body: 'Todavía hay tiempo para completar o revisar los datos del informe.',
         };
       case 'one_day_left':
         return {
-          title: `Último día para completar el informe de ${monthName}`,
-          body: 'Mañana se cierra el registro del informe mensual. Revisá que los datos estén completos.',
+          title: `Último día para el informe de ${monthName}`,
+          body: 'Revisen que todo esté completo antes del cierre.',
         };
       case 'closed':
         return {
-          title: `Registro cerrado del informe de ${monthName}`,
-          body: 'El periodo de captura del informe mensual ya cerró. El sistema preparará el reporte generado.',
+          title: `El informe de ${monthName} ya cerró`,
+          body: 'El periodo de captura cerró. El sistema preparará el reporte generado.',
         };
       case 'generated':
         return {
-          title: `Informe de ${monthName} generado`,
-          body: 'El informe mensual ya está disponible para revisar en Reportes.',
+          title: `El informe de ${monthName} ya está listo`,
+          body: 'Ya pueden revisar el informe mensual en Reportes.',
         };
     }
   }

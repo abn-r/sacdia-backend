@@ -334,34 +334,31 @@ export class MasterHonorsEvaluatorService {
       case 'awarded':
         return {
           title: isPlural
-            ? '¡Nuevas maestrías obtenidas!'
-            : '¡Nueva maestría obtenida!',
+            ? '¡Nuevas maestrías para tu banda!'
+            : '¡Nueva maestría para tu banda!',
           body: isPlural
-            ? 'Has obtenido nuevas maestrías en tu perfil.'
-            : `Has obtenido la maestría ${singleName}.`,
+            ? 'Tu banda suma nuevas maestrías.'
+            : `Tu banda suma la maestría ${singleName}.`,
           source: 'master_honors:awarded',
         };
       case 'recovered':
         return {
           title: isPlural
-            ? 'Maestrías vigentes nuevamente'
-            : 'Maestría vigente nuevamente',
+            ? 'Maestrías nuevamente vigentes'
+            : 'Maestría nuevamente vigente',
           body: isPlural
-            ? 'Algunas maestrías volvieron a estar vigentes en tu perfil.'
-            : `La maestría ${singleName} vuelve a estar vigente en tu perfil.`,
+            ? 'Algunas maestrías vuelven a contar en tu camino.'
+            : `La maestría ${singleName} vuelve a contar en tu camino.`,
           source: 'master_honors:recovered',
         };
       case 'not_current':
         return {
           title: isPlural
-            ? 'Maestrías marcadas como No vigentes'
-            : 'Maestría marcada como No vigente',
+            ? 'Maestrías para revisar'
+            : 'Esta maestría necesita revisión',
           body: isPlural
-            ? 'Algunas maestrías dejaron de cumplir sus validaciones y ya no están vigentes.'
-            : 'Las validaciones requeridas para la maestría {nombre} cambiaron. Actualmente no cumples con los requisitos, por lo que quedó marcada como No vigente.'.replace(
-                '{nombre}',
-                singleName,
-              ),
+            ? 'Algunas maestrías necesitan ajustes para volver a estar vigentes.'
+            : `La maestría ${singleName} necesita ajustes para volver a estar vigente.`,
           source: 'master_honors:not_current',
         };
       default:

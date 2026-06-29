@@ -272,8 +272,8 @@ export class InvestitureService {
         void this.notifications.sendToSectionRole(
           memberSection.club_section_id,
           ['director'],
-          'Investidura enviada a validación',
-          'Un consejero ha enviado un enrollment para aprobación',
+          'Investidura lista para revisar',
+          'Un consejero envió una investidura y espera aprobación',
           {
             type: 'investiture',
             entity_id: String(enrollmentId),
@@ -460,8 +460,8 @@ export class InvestitureService {
       if (submitterId) {
         void this.notifications.notifySafe(
           submitterId,
-          'Investidura rechazada',
-          `El enrollment ha sido rechazado: ${dto.reason}`,
+          'Tu investidura necesita ajustes',
+          `La investidura enviada necesita ajustes: ${dto.reason}`,
           {
             type: 'investiture',
             entity_id: String(enrollmentId),
@@ -581,8 +581,8 @@ export class InvestitureService {
     try {
       void this.notifications.notifySafe(
         enrollment.user_id,
-        'Felicidades, has sido investido',
-        'Tu investidura ha sido completada oficialmente.',
+        '¡Investidura completada!',
+        'Tu investidura quedó registrada oficialmente. ¡Felicidades!',
         {
           type: 'investiture',
           entity_id: String(enrollmentId),
@@ -1525,8 +1525,8 @@ export class InvestitureService {
         succeededEnrollments.map((enrollment) =>
           this.notifications.notifySafe(
             enrollment.user_id,
-            'Felicidades, has sido investido',
-            'Tu investidura ha sido completada oficialmente.',
+            '¡Investidura completada!',
+            'Tu investidura quedó registrada oficialmente. ¡Felicidades!',
             {
               type: 'investiture',
               entity_id: String(enrollment.enrollment_id),
@@ -1573,8 +1573,8 @@ export class InvestitureService {
             if (!enrollment.users.local_field_id) return Promise.resolve();
             return this.notifications.sendToGlobalRole(
               ['assistant-admin', 'admin'],
-              'Investidura aprobada por coordinador',
-              'Un enrollment ha sido aprobado por el coordinador y requiere aprobación del campo',
+              'Investidura lista para Campo',
+              'Una investidura fue aprobada por coordinación y espera revisión del campo',
               notifData(enrollment.enrollment_id),
               enrollment.users.local_field_id,
               'investiture:coordinator_approved',
@@ -1583,8 +1583,8 @@ export class InvestitureService {
             // field-approve → notify the member
             return this.notifications.notifySafe(
               enrollment.user_id,
-              'Investidura aprobada por el campo',
-              'Tu investidura ha sido aprobada a nivel de campo. Pronto serás investido.',
+              'Tu investidura fue aprobada',
+              'Ya está aprobada por el campo. Pronto podrás ser investido.',
               notifData(enrollment.enrollment_id),
               'investiture:field_approved',
             );
@@ -1719,8 +1719,8 @@ export class InvestitureService {
         const enrollment = enrollmentMap.get(id)!;
         return this.notifications.notifySafe(
           enrollment.user_id,
-          'Tu investidura ha sido rechazada',
-          `El enrollment ha sido rechazado: ${dto.comments}`,
+          'Tu investidura necesita ajustes',
+          `La investidura necesita ajustes: ${dto.comments}`,
           { type: 'investiture', entity_id: String(id), status: 'rejected' },
           'investiture:rejected',
         );
@@ -2443,8 +2443,8 @@ export class InvestitureService {
           if (enrollment.users.local_field_id) {
             void this.notifications.sendToGlobalRole(
               ['coordinator'],
-              'Investidura aprobada por el club',
-              'Un enrollment ha sido aprobado por el director y requiere revisión del coordinador',
+              'Investidura lista para coordinación',
+              'Una investidura fue aprobada por el club y espera revisión de coordinación',
               notifData,
               enrollment.users.local_field_id,
               'investiture:club_approved',
@@ -2457,8 +2457,8 @@ export class InvestitureService {
           if (enrollment.users.local_field_id) {
             void this.notifications.sendToGlobalRole(
               ['assistant-admin', 'admin'],
-              'Investidura aprobada por coordinador',
-              'Un enrollment ha sido aprobado por el coordinador y requiere aprobación del campo',
+              'Investidura lista para Campo',
+              'Una investidura fue aprobada por coordinación y espera revisión del campo',
               notifData,
               enrollment.users.local_field_id,
               'investiture:coordinator_approved',
@@ -2470,8 +2470,8 @@ export class InvestitureService {
           // Field approved → notify the member
           void this.notifications.notifySafe(
             enrollment.user_id,
-            'Investidura aprobada por el campo',
-            'Tu investidura ha sido aprobada a nivel de campo. Pronto serás investido.',
+            'Tu investidura fue aprobada',
+            'Ya está aprobada por el campo. Pronto podrás ser investido.',
             notifData,
             'investiture:field_approved',
           );

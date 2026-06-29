@@ -424,8 +424,8 @@ export class MemberOfMonthService {
         // Notify the elected member
         await this.notificationsService.notifySafe(
           winner.user_id,
-          '¡Felicidades!',
-          `Fuiste elegido Miembro del Mes de ${sectionName} en ${clubName}`,
+          '¡Reconocimiento del mes!',
+          `Tu constancia destacó en ${sectionName} de ${clubName}. ¡Fuiste elegido miembro del mes!`,
           {
             type: 'member_of_month',
             club_id: String(clubId ?? ''),
@@ -484,8 +484,8 @@ export class MemberOfMonthService {
         try {
           await this.notificationsService.notifySafe(
             directorId,
-            'Miembro del Mes',
-            `${winnerNames} fue elegido Miembro del Mes de ${sectionName}${pointsLabel}`,
+            '¡Reconocimiento del mes!',
+            `${winnerNames} destacó en ${sectionName}${pointsLabel}`,
             {
               type: 'member_of_month_director',
               club_id: String(clubId),

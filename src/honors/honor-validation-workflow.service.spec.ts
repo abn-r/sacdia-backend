@@ -190,8 +190,8 @@ describe('HonorValidationWorkflowService', () => {
     expect(notifications.sendToSectionRole).toHaveBeenCalledWith(
       99,
       ['coordinator', 'director'],
-      'Nueva especialidad enviada a revisión',
-      'Un miembro ha enviado una especialidad para validación',
+      'Especialidad lista para revisar',
+      'Un miembro completó una especialidad y espera revisión',
       {
         type: 'validation',
         entity_type: 'honor',
@@ -340,8 +340,8 @@ describe('HonorValidationWorkflowService', () => {
     expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
     expect(notifications.notifySafe).toHaveBeenCalledWith(
       'user-1',
-      'Especialidad aprobada',
-      'Tu especialidad ha sido aprobada por el revisor',
+      '¡Tu especialidad fue aprobada!',
+      'Tu especialidad ya quedó validada. ¡Buen trabajo!',
       {
         type: 'validation',
         entity_type: 'honor',
@@ -378,8 +378,8 @@ describe('HonorValidationWorkflowService', () => {
     expect(masterHonorsEvaluator.evaluateUser).toHaveBeenCalledWith('user-1');
     expect(notifications.notifySafe).toHaveBeenCalledWith(
       'user-1',
-      'Especialidad rechazada',
-      'Tu especialidad ha sido rechazada: Falta evidencia',
+      'Tu especialidad necesita ajustes',
+      'Tu especialidad necesita ajustes: Falta evidencia',
       {
         type: 'validation',
         entity_type: 'honor',

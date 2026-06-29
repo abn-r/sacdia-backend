@@ -119,8 +119,8 @@ export class RequestsService {
       void this.notifications.sendToSectionRole(
         toSectionId,
         ['director'],
-        'Nueva solicitud de traslado',
-        `${requesterName || 'Un miembro'} ha solicitado integrarse a tu club`,
+        'Alguien quiere unirse a tu club',
+        `${requesterName || 'Un miembro'} está esperando revisión para integrarse a tu club`,
         {
           type: 'transfer',
           entity_id: result.transfer_request_id,
@@ -340,11 +340,11 @@ export class RequestsService {
     // Notify the member about the transfer decision
     try {
       const title =
-        action === 'approved' ? 'Traslado aprobado' : 'Traslado rechazado';
+        action === 'approved' ? 'Tu traslado fue aprobado' : 'Tu traslado necesita revisión';
       const body =
         action === 'approved'
-          ? 'Tu solicitud de traslado ha sido aprobada'
-          : `Tu solicitud de traslado ha sido rechazada${comment ? ': ' + comment : ''}`;
+          ? 'Ya puedes continuar tu camino en el nuevo club.'
+          : `Tu solicitud de traslado necesita revisión${comment ? ': ' + comment : '.'}`;
 
       void this.notifications.notifySafe(
         request.user_id,
@@ -605,8 +605,8 @@ export class RequestsService {
       void this.notifications.sendToSectionRole(
         sectionId,
         ['director'],
-        'Nueva solicitud de asignación de rol',
-        `Se ha solicitado asignar el rol ${result.role.role_name} a ${userName}`,
+        'Hay un rol pendiente por revisar',
+        `Revisa la solicitud para asignar ${result.role.role_name} a ${userName}`,
         { type: 'assignment', entity_id: result.request_id, status: 'pending' },
         'requests:assignment_created',
       );
@@ -759,12 +759,12 @@ export class RequestsService {
       const roleName = request.role.role_name;
       const title =
         action === 'approved'
-          ? 'Asignación de rol aprobada'
-          : 'Asignación de rol rechazada';
+          ? 'Rol aprobado'
+          : 'Rol en revisión';
       const body =
         action === 'approved'
-          ? `La asignación del rol ${roleName} ha sido aprobada`
-          : `La asignación del rol ${roleName} ha sido rechazada${comment ? ': ' + comment : ''}`;
+          ? `La asignación del rol ${roleName} fue aprobada`
+          : `La asignación del rol ${roleName} necesita revisión${comment ? ': ' + comment : '.'}`;
       const notifData = { type: 'assignment', entity_id: requestId, action };
 
       const assignmentSource = `requests:assignment_${action}`;

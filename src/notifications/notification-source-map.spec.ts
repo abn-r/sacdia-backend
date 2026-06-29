@@ -52,6 +52,8 @@ describe('notification-source-map', () => {
         'requests:assignment_created',
         'requests:assignment_approved',
         'requests:assignment_rejected',
+        // approvals — membership requests
+        'membership_requests:new_request',
         // achievements — master honors
         'master_honors:awarded',
         'master_honors:recovered',
@@ -62,6 +64,8 @@ describe('notification-source-map', () => {
         // reminders — camporees
         'camporees:late_enrollment',
         'camporees:late_payment',
+        // reminders — monthly reports
+        'monthly_reports:reminder',
         // system alerts
         'system_alert:cron_failure',
       ];
@@ -96,6 +100,7 @@ describe('notification-source-map', () => {
       ['requests:assignment_created', 'approvals'],
       ['requests:assignment_approved', 'approvals'],
       ['requests:assignment_rejected', 'approvals'],
+      ['membership_requests:new_request', 'approvals'],
       ['master_honors:awarded', 'achievements'],
       ['master_honors:recovered', 'achievements'],
       ['master_honors:not_current', 'achievements'],
@@ -103,6 +108,7 @@ describe('notification-source-map', () => {
       ['units:member_of_month_director', 'approvals'],
       ['camporees:late_enrollment', 'reminders'],
       ['camporees:late_payment', 'reminders'],
+      ['monthly_reports:reminder', 'reminders'],
       ['system_alert:cron_failure', 'reminders'],
     ])('"%s" → "%s"', (source, expectedCategory) => {
       expect(getCategoryForSource(source)).toBe(expectedCategory);

@@ -774,8 +774,8 @@ export class CamporeesService {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
           ['director-lf', 'assistant-lf'],
-          'Inscripción tardía de miembro',
-          `Un miembro se inscribió fuera de plazo al camporee y requiere aprobación`,
+          'Inscripción tardía por revisar',
+          `Un miembro se inscribió fuera de plazo al camporee y necesita revisión`,
           { camporeeId: String(camporeeId), type: 'member_enrollment' },
           camporeeLocalFieldId ?? undefined,
           'camporees:late_enrollment',
@@ -1011,8 +1011,8 @@ export class CamporeesService {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
           ['director-lf', 'assistant-lf'],
-          'Inscripción tardía de club',
-          `Un club se inscribió fuera de plazo al camporee y requiere aprobación`,
+          'Inscripción tardía por revisar',
+          `Un club se inscribió fuera de plazo al camporee y necesita revisión`,
           { camporeeId: String(camporeeId), type: 'club_enrollment' },
           camporeeLocalFieldId ?? undefined,
           'camporees:late_enrollment',
@@ -1187,8 +1187,8 @@ export class CamporeesService {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
           ['director-lf', 'assistant-lf'],
-          'Pago tardío de camporee',
-          `Se registró un pago fuera de plazo y requiere aprobación`,
+          'Pago tardío por revisar',
+          `Se registró un pago fuera de plazo y necesita revisión`,
           { camporeeId: String(camporeeId), type: 'payment' },
           camporeeLocalFieldId ?? undefined,
           'camporees:late_payment',
@@ -1717,8 +1717,8 @@ export class CamporeesService {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
           ['director-union', 'assistant-union'],
-          'Inscripción tardía de club (camporee unión)',
-          'Un club se inscribió fuera de plazo al camporee de unión y requiere aprobación',
+          'Inscripción tardía por revisar',
+          'Un club se inscribió fuera de plazo al camporee de unión y necesita revisión',
           { camporeeId: String(unionCamporeeId), type: 'club_enrollment' },
           undefined,
           'camporees:late_enrollment',
@@ -1871,8 +1871,8 @@ export class CamporeesService {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
           ['director-union', 'assistant-union'],
-          'Inscripción tardía de miembro (camporee unión)',
-          'Un miembro se inscribió fuera de plazo al camporee de unión y requiere aprobación',
+          'Inscripción tardía por revisar',
+          'Un miembro se inscribió fuera de plazo al camporee de unión y necesita revisión',
           { camporeeId: String(unionCamporeeId), type: 'member_enrollment' },
           undefined,
           'camporees:late_enrollment',
@@ -1988,8 +1988,8 @@ export class CamporeesService {
       setImmediate(() => {
         void this.notificationsService.sendToGlobalRole(
           ['director-union', 'assistant-union'],
-          'Pago tardío de camporee unión',
-          'Se registró un pago fuera de plazo y requiere aprobación',
+          'Pago tardío por revisar',
+          'Se registró un pago fuera de plazo y necesita revisión',
           { camporeeId: String(unionCamporeeId), type: 'payment' },
           undefined,
           'camporees:late_payment',
