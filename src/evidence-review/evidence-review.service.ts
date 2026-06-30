@@ -111,6 +111,13 @@ export type HonorReviewPacket = {
   requirements: HonorRequirementReviewItem[];
 };
 
+type PendingIdentifierRow = {
+  id: number;
+  item_type: 'class' | 'honor';
+  submitted_at: Date;
+  total_count: string | number | bigint;
+};
+
 export type BulkOperationResult = {
   succeeded: number[];
   failed: { id: number; reason: string }[];
@@ -165,39 +172,111 @@ export class EvidenceReviewService {
     const skip = (page - 1) * limit;
     const scopedClubSectionIds =
       await this.resolveCoordinatorSectionScope(actorId);
+    if (scopedClubSectionIds?.length === 0) {
+      return { data: [], total: 0, page, limit };
+    }
+
+    if (type === 'class') {
+      const where = this.buildClassPendingWhere(scopedClubSectionIds);
+      const [total, data] = await Promise.all([
+        this.prisma.class_section_progress.count({ where }),
+        this.getClassPending(scopedClubSectionIds, {
+          skip,
+          take: limit,
+        }),
+      ]);
+
+      return { data, total, page, limit };
+    }
+
+    if (type === 'honor') {
+      const where = this.buildHonorPendingWhere(scopedClubSectionIds);
+      const [total, data] = await Promise.all([
+        this.prisma.users_honors.count({ where }),
+        this.getHonorPending(scopedClubSectionIds, {
+          skip,
+          take: limit,
+        }),
+      ]);
+
+      return { data, total, page, limit };
+    }
+
+    if (type !== undefined) {
+      return { data: [], total: 0, page, limit };
+    }
+
+    const identifiers = await this.getCombinedPendingIdentifiers(
+      scopedClubSectionIds,
+      skip,
+      limit,
+    );
+
+    if (identifiers.length === 0) {
+      const total = await this.getCombinedPendingCount(scopedClubSectionIds);
+      return { data: [], total, page, limit };
+    }
+
+    const classIds = identifiers
+      .filter((item) => item.item_type === 'class')
+      .map((item) => item.id);
+    const honorIds = identifiers
+      .filter((item) => item.item_type === 'honor')
+      .map((item) => item.id);
 
     const [classItems, honorItems] = await Promise.all([
-      !type || type === 'class'
-        ? this.getClassPending(scopedClubSectionIds)
-        : Promise.resolve([]),
-      !type || type === 'honor'
-        ? this.getHonorPending(scopedClubSectionIds)
-        : Promise.resolve([]),
+      classIds.length > 0
+        ? this.getClassPending(scopedClubSectionIds, {
+            ids: classIds,
+          })
+        : Promise.resolve([] as EvidenceItem[]),
+      honorIds.length > 0
+        ? this.getHonorPending(scopedClubSectionIds, {
+            ids: honorIds,
+          })
+        : Promise.resolve([] as EvidenceItem[]),
     ]);
 
-    const all: EvidenceItem[] = [...classItems, ...honorItems].sort((a, b) => {
-      const aDate = a.submitted_at?.getTime() ?? 0;
-      const bDate = b.submitted_at?.getTime() ?? 0;
-      return aDate - bDate;
-    });
+    const byIdentifier = new Map<string, EvidenceItem>();
+    for (const item of [...classItems, ...honorItems]) {
+      byIdentifier.set(`${item.type}-${item.id}`, item);
+    }
 
-    const total = all.length;
-    const data = all.slice(skip, skip + limit);
+    const data = identifiers
+      .map((item) => byIdentifier.get(`${item.item_type}-${item.id}`))
+      .filter((item): item is EvidenceItem => Boolean(item));
 
-    return { data, total, page, limit };
+    return {
+      data,
+      total: Number(identifiers[0].total_count),
+      page,
+      limit,
+    };
   }
 
   private async getClassPending(
     scopedClubSectionIds?: number[],
+    options?: {
+      skip?: number;
+      take?: number;
+      ids?: number[];
+    },
   ): Promise<EvidenceItem[]> {
     if (scopedClubSectionIds?.length === 0) return [];
+    if (options?.ids?.length === 0) return [];
 
-    const records = await this.prisma.class_section_progress.findMany({
+    const query: Parameters<
+      typeof this.prisma.class_section_progress.findMany
+    >[0] = {
       where: {
-        status: CLASS_STATUS_SUBMITTED,
-        active: true,
-        submitted_at: { not: null },
-        ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
+        ...this.buildClassPendingWhere(scopedClubSectionIds),
+        ...(options?.ids
+          ? {
+              section_progress_id: {
+                in: options.ids,
+              },
+            }
+          : {}),
       },
       include: {
         users: {
@@ -209,7 +288,11 @@ export class EvidenceReviewService {
         },
       },
       orderBy: { submitted_at: 'asc' },
-    });
+      ...(options?.skip !== undefined ? { skip: options.skip } : {}),
+      ...(options?.take !== undefined ? { take: options.take } : {}),
+    };
+
+    const records = await this.prisma.class_section_progress.findMany(query);
 
     return records.map((r) => ({
       id: r.section_progress_id,
@@ -228,15 +311,27 @@ export class EvidenceReviewService {
 
   private async getHonorPending(
     scopedClubSectionIds?: number[],
+    options?: {
+      skip?: number;
+      take?: number;
+      ids?: number[];
+    },
   ): Promise<EvidenceItem[]> {
     if (scopedClubSectionIds?.length === 0) return [];
+    if (options?.ids?.length === 0) return [];
 
-    const records = await this.prisma.users_honors.findMany({
+    const query: Parameters<
+      typeof this.prisma.users_honors.findMany
+    >[0] = {
       where: {
-        validation_status: HONOR_STATUS_PENDING,
-        active: true,
-        submitted_at: { not: null },
-        ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
+        ...this.buildHonorPendingWhere(scopedClubSectionIds),
+        ...(options?.ids
+          ? {
+              user_honor_id: {
+                in: options.ids,
+              },
+            }
+          : {}),
       },
       include: {
         users: {
@@ -252,7 +347,11 @@ export class EvidenceReviewService {
         },
       },
       orderBy: { submitted_at: 'asc' },
-    });
+      ...(options?.skip !== undefined ? { skip: options.skip } : {}),
+      ...(options?.take !== undefined ? { take: options.take } : {}),
+    };
+
+    const records = await this.prisma.users_honors.findMany(query);
 
     return records.map((r) => {
       // Use evidence_files count when available (post-migration); fall back to
@@ -279,6 +378,118 @@ export class EvidenceReviewService {
       };
     });
   }
+
+  private buildClassPendingWhere(scopedClubSectionIds?: number[]) {
+    return {
+      status: CLASS_STATUS_SUBMITTED,
+      active: true,
+      submitted_at: { not: null },
+      ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
+    };
+  }
+
+  private buildHonorPendingWhere(scopedClubSectionIds?: number[]) {
+    return {
+      validation_status: HONOR_STATUS_PENDING,
+      active: true,
+      submitted_at: { not: null },
+      ...this.buildUserSectionScopeWhere(scopedClubSectionIds),
+    };
+  }
+
+  private async getCombinedPendingIdentifiers(
+    scopedClubSectionIds: number[] | undefined,
+    skip: number,
+    limit: number,
+  ): Promise<PendingIdentifierRow[]> {
+    if (scopedClubSectionIds?.length === 0) return [];
+
+    const classScopeFilter = this.buildScopeExistsFilter(
+      scopedClubSectionIds,
+      'csp',
+    );
+    const honorScopeFilter = this.buildScopeExistsFilter(
+      scopedClubSectionIds,
+      'uh',
+    );
+
+    const rows = await this.prisma.$queryRawUnsafe<PendingIdentifierRow[]>(`
+      SELECT
+        ids.id,
+        ids.item_type,
+        ids.submitted_at,
+        COUNT(*) OVER () AS total_count
+      FROM (
+        SELECT
+          csp.section_progress_id AS id,
+          'class'::text AS item_type,
+          csp.submitted_at AS submitted_at
+        FROM class_section_progress csp
+        WHERE csp.status = '${CLASS_STATUS_SUBMITTED}'
+          AND csp.active = true
+          AND csp.submitted_at IS NOT NULL
+          ${classScopeFilter}
+        UNION ALL
+        SELECT
+          uh.user_honor_id AS id,
+          'honor'::text AS item_type,
+          uh.submitted_at AS submitted_at
+        FROM users_honors uh
+        WHERE uh.validation_status = '${HONOR_STATUS_PENDING}'
+          AND uh.active = true
+          AND uh.submitted_at IS NOT NULL
+          ${honorScopeFilter}
+      ) AS ids
+      ORDER BY
+        ids.submitted_at ASC,
+        CASE WHEN ids.item_type = 'class' THEN 0 ELSE 1 END,
+        ids.id ASC
+      LIMIT ${Math.trunc(limit)}
+      OFFSET ${Math.trunc(skip)};
+    `);
+
+    return rows;
+  }
+
+  private async getCombinedPendingCount(
+    scopedClubSectionIds?: number[],
+  ): Promise<number> {
+    const [classCount, honorCount] = await Promise.all([
+      this.prisma.class_section_progress.count({
+        where: this.buildClassPendingWhere(scopedClubSectionIds),
+      }),
+      this.prisma.users_honors.count({
+        where: this.buildHonorPendingWhere(scopedClubSectionIds),
+      }),
+    ]);
+
+    return classCount + honorCount;
+  }
+
+  private buildScopeExistsFilter(
+    scopedClubSectionIds: number[] | undefined,
+    tableAlias: 'csp' | 'uh',
+  ): string {
+    if (scopedClubSectionIds === undefined) return '';
+
+    const normalizedClubSectionIds = scopedClubSectionIds
+      .map((id) => Math.trunc(id))
+      .filter((id) => Number.isFinite(id));
+
+    if (normalizedClubSectionIds.length === 0) return '';
+
+    return `
+      AND EXISTS (
+        SELECT 1
+        FROM club_role_assignments cra
+        WHERE cra.user_id = ${tableAlias}.user_id
+          AND cra.active = true
+          AND cra.status = 'active'
+          AND cra.club_section_id IN (${normalizedClubSectionIds.join(',')})
+      )
+    `;
+  }
+
 
   // ============================================================
   // GET /evidence-review/:type/:id  (detail with files)

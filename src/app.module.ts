@@ -3,10 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import * as path from 'path';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { MulterModule } from '@nestjs/platform-express';
 import { LoggerModule } from 'nestjs-pino';
+import { JwtModule } from '@nestjs/jwt';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -65,6 +66,7 @@ import { CoordinationModule } from './coordination/coordination.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
 import { buildThrottlerOptions } from './config/throttler.config';
+import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
 
 @Module({
   imports: [
@@ -159,6 +161,12 @@ import { buildThrottlerOptions } from './config/throttler.config';
     // ==========================================
     // SEGURIDAD - Rate Limiting
     // ==========================================
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('BETTER_AUTH_SECRET'),
+      }),
+    }),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -243,7 +251,7 @@ import { buildThrottlerOptions } from './config/throttler.config';
     // ==========================================
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: UserAwareThrottlerGuard,
     },
   ],
 })

@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DataExportController } from './data-export.controller';
 import { DataExportService } from './data-export.service';
 import { JwtAuthGuard } from '../common/guards';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { UserAwareThrottlerGuard } from '../config/user-aware-throttler.guard';
 
 const mockDataExportService = {
   requestExport: jest.fn(),
@@ -35,7 +35,7 @@ describe('DataExportController', () => {
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
-      .overrideGuard(ThrottlerGuard)
+      .overrideGuard(UserAwareThrottlerGuard)
       .useValue({ canActivate: () => true })
       .compile();
 

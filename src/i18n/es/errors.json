@@ -457,6 +457,7 @@
   "NOTIF_SEND_FORBIDDEN": "Necesitás una asignación de club activa para esta instancia",
   "NOTIF_NOT_FOUND": "Notificación no encontrada",
   "NOTIF_TARGET_TYPE_MISMATCH": "El tipo de instancia no coincide con la sección de club seleccionada",
+  "NOTIF_BROADCAST_QUEUE_UNAVAILABLE": "La cola de difusión no está disponible en este entorno. Reintentá cuando el servicio de colas esté activo.",
   "EXPORT_NOT_FOUND": "Exportación no encontrada",
   "EXPORT_ALREADY_PROCESSING": "Ya existe una exportación en proceso",
   "MFA_CODE_INVALID": "TOTP no está habilitado para este usuario. Llamá a POST /auth/mfa/enroll primero",

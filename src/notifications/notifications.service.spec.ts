@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getQueueToken } from '@nestjs/bullmq';
 import { ErrorCode } from '../common/errors/error-codes';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,6 +7,7 @@ import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { buildAuthorizationSnapshot } from '../../test/helpers/rbac-test-helpers';
+import { BROADCAST_CHUNK_JOB, NOTIFICATIONS_QUEUE } from './notifications.processor';
 
 // ---------------------------------------------------------------------------
 // Mock firebase-admin module BEFORE importing the service under test.
@@ -41,6 +43,10 @@ describe('NotificationsService', () => {
       .mockImplementation((userIds: string[]) =>
         Promise.resolve(new Set(userIds)),
       ),
+  };
+
+  const mockNotificationsQueue = {
+    add: jest.fn().mockResolvedValue({ id: 'job-broadcast' }),
   };
 
   const mockAuthorizationContextService = {
@@ -80,6 +86,35 @@ describe('NotificationsService', () => {
     },
     // $transaction: callback style — executes the callback with `this` as the tx
     $transaction: jest.fn(),
+  };
+
+  const buildService = async (hasQueue = false) => {
+    const providers: any[] = [
+      NotificationsService,
+      { provide: PrismaService, useValue: mockPrismaService },
+      { provide: FcmTokensService, useValue: mockFcmTokensService },
+      {
+        provide: NotificationPreferencesService,
+        useValue: mockPreferencesService,
+      },
+      {
+        provide: AuthorizationContextService,
+        useValue: mockAuthorizationContextService,
+      },
+    ];
+
+    if (hasQueue) {
+      providers.push({
+        provide: getQueueToken(NOTIFICATIONS_QUEUE),
+        useValue: mockNotificationsQueue,
+      });
+    }
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers,
+    }).compile();
+
+    return module.get<NotificationsService>(NotificationsService);
   };
 
   beforeEach(async () => {
@@ -127,23 +162,7 @@ describe('NotificationsService', () => {
       return Promise.resolve([]);
     });
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        NotificationsService,
-        { provide: PrismaService, useValue: mockPrismaService },
-        { provide: FcmTokensService, useValue: mockFcmTokensService },
-        {
-          provide: NotificationPreferencesService,
-          useValue: mockPreferencesService,
-        },
-        {
-          provide: AuthorizationContextService,
-          useValue: mockAuthorizationContextService,
-        },
-      ],
-    }).compile();
-
-    service = module.get<NotificationsService>(NotificationsService);
+    service = await buildService();
   });
 
   afterEach(() => {
@@ -583,6 +602,99 @@ describe('NotificationsService', () => {
       expect(
         mockPrismaService.notification_deliveries.createMany,
       ).toHaveBeenCalled();
+    });
+
+    it('should create one notification log and enqueue broadcast chunk jobs in queue mode', async () => {
+      mockPrismaService.users.findMany
+        .mockResolvedValueOnce([
+          { user_id: 'user-1' },
+          { user_id: 'user-2' },
+          { user_id: 'user-3' },
+        ])
+        .mockResolvedValueOnce([]);
+
+      mockPrismaService.notification_logs.create.mockResolvedValue({
+        log_id: 321,
+      });
+
+      service = await buildService(true);
+
+      const result = await service.broadcast(dto, SENT_BY, 'admin:broadcast');
+
+      expect(mockPrismaService.notification_logs.create).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.notification_logs.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'BROADCAST',
+            target_type: 'all',
+            sent_by: SENT_BY,
+          }),
+        }),
+      );
+
+      expect(mockNotificationsQueue.add).toHaveBeenCalledTimes(1);
+      expect(mockNotificationsQueue.add).toHaveBeenCalledWith(
+        BROADCAST_CHUNK_JOB,
+        expect.objectContaining({
+          logId: 321,
+          userIds: ['user-1', 'user-2', 'user-3'],
+        }),
+        expect.anything(),
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        queued: true,
+        logId: 321,
+        deliveriesCreated: 3,
+      });
+    });
+
+    it('should chunk large broadcast targets into multiple chunk jobs with the same logId', async () => {
+      const bigUsers = Array.from({ length: 1200 }, (_, i) => ({
+        user_id: `user-${i}`,
+      }));
+
+      mockPrismaService.users.findMany
+        .mockResolvedValueOnce(bigUsers)
+        .mockResolvedValueOnce([]);
+      mockPrismaService.notification_logs.create.mockResolvedValue({
+        log_id: 777,
+      });
+
+      service = await buildService(true);
+      const result = await service.broadcast(dto, SENT_BY, 'admin:broadcast');
+
+      expect(mockNotificationsQueue.add).toHaveBeenCalledTimes(3);
+      for (const call of mockNotificationsQueue.add.mock.calls) {
+        expect(call[0]).toBe(BROADCAST_CHUNK_JOB);
+        expect(call[1].logId).toBe(777);
+      }
+
+      const chunkSizes = mockNotificationsQueue.add.mock.calls.map(
+        (call) => call[1].userIds.length,
+      );
+      expect(chunkSizes).toEqual([500, 500, 200]);
+
+      expect(result.deliveriesCreated).toBe(1200);
+    });
+
+    it('should reject queue-backed broadcast in production when queue is not available', async () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      mockPrismaService.users.findMany.mockResolvedValue([
+        { user_id: 'user-1' },
+        { user_id: 'user-2' },
+      ]);
+
+      await expect(service.broadcast(dto, SENT_BY, 'admin:broadcast')).rejects.toMatchObject(
+        {
+          code: ErrorCode.NOTIF_BROADCAST_QUEUE_UNAVAILABLE,
+        },
+      );
+
+      process.env.NODE_ENV = previousNodeEnv;
     });
   });
 

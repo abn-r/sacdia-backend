@@ -20,6 +20,7 @@ describe('EvidenceReviewService', () => {
     honor_requirements: { findMany: jest.fn() },
     user_honor_requirement_progress: { findMany: jest.fn() },
     validation_logs: { findMany: jest.fn() },
+    $queryRawUnsafe: jest.fn(),
   };
 
   const mockHonorWorkflow = {
@@ -68,25 +69,234 @@ describe('EvidenceReviewService', () => {
     mockPrisma.honor_requirements.findMany.mockResolvedValue([]);
     mockPrisma.user_honor_requirement_progress.findMany.mockResolvedValue([]);
     mockPrisma.validation_logs.findMany.mockResolvedValue([]);
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
     mockFileStorage.getSignedDownloadUrl.mockImplementation(
       (_bucket: StorageBucketAlias, value: string) =>
         Promise.resolve(`signed://${value.split('/').slice(-2).join('/')}`),
     );
   });
 
-  it('lists pending class and honor evidence without querying legacy folder records', async () => {
-    await service.getPending('admin-user');
+  it('paginates class pending with DB-level count + skip/take', async () => {
+    mockPrisma.class_section_progress.count.mockResolvedValue(17);
+    mockPrisma.class_section_progress.findMany.mockResolvedValue([
+      {
+        section_progress_id: 11,
+        status: 'SUBMITTED',
+        user_id: 'user-1',
+        section_id: 99,
+        submitted_at: new Date('2026-06-01T10:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        users: { user_id: 'user-1', name: 'Ana', paternal_last_name: 'Pérez' },
+        evidence_files: [{ evidence_file_id: 101 }],
+      },
+    ]);
 
-    expect(mockPrisma.folders_section_records.findMany).not.toHaveBeenCalled();
-    expect(mockPrisma.class_section_progress.findMany).toHaveBeenCalled();
+    const result = await service.getPending('admin-user', 'class', 2, 5);
+
+    expect(mockPrisma.class_section_progress.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'SUBMITTED',
+          active: true,
+        }),
+      }),
+    );
+    expect(mockPrisma.class_section_progress.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'SUBMITTED',
+          active: true,
+        }),
+        skip: 5,
+        take: 5,
+      }),
+    );
+    expect(mockPrisma.users_honors.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(result.total).toBe(17);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: 11, type: 'class' });
+  });
+
+  it('paginates honor pending with DB-level count + skip/take', async () => {
+    mockPrisma.users_honors.count.mockResolvedValue(22);
+    mockPrisma.users_honors.findMany.mockResolvedValue([
+      {
+        user_honor_id: 21,
+        user_id: 'user-2',
+        honor_id: 7,
+        validation_status: 'PENDING_REVIEW',
+        completion_mode: 'EXTERNAL',
+        submitted_at: new Date('2026-06-01T09:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        certificate: null,
+        document: null,
+        images: null,
+        users: { user_id: 'user-2', name: 'Luis', paternal_last_name: 'Ríos' },
+        honors: { honor_id: 7, name: 'Honor de prueba' },
+        validator: null,
+        evidence_files: [{
+          evidence_file_id: 301,
+        }],
+      },
+    ]);
+
+    const result = await service.getPending('admin-user', 'honor', 3, 2);
+
+    expect(mockPrisma.users_honors.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          validation_status: 'PENDING_REVIEW',
+          active: true,
+        }),
+      }),
+    );
     expect(mockPrisma.users_honors.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           validation_status: 'PENDING_REVIEW',
+          active: true,
+        }),
+        skip: 4,
+        take: 2,
+      }),
+    );
+    expect(mockPrisma.class_section_progress.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(result.total).toBe(22);
+    expect(result.data[0]).toMatchObject({ id: 21, type: 'honor' });
+  });
+
+  it('hydrates omitted-type pending using raw identifier paging and no full scans', async () => {
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([
+      {
+        id: 8,
+        item_type: 'class',
+        submitted_at: new Date('2026-06-01T08:00:00.000Z'),
+        total_count: 4,
+      },
+      {
+        id: 9,
+        item_type: 'honor',
+        submitted_at: new Date('2026-06-01T08:00:00.000Z'),
+        total_count: 4,
+      },
+    ]);
+
+    mockPrisma.class_section_progress.findMany.mockResolvedValue([
+      {
+        section_progress_id: 8,
+        status: 'SUBMITTED',
+        user_id: 'user-8',
+        section_id: 88,
+        submitted_at: new Date('2026-06-01T08:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        users: { user_id: 'user-8', name: 'Ada', paternal_last_name: 'Lovelace' },
+        evidence_files: [{ evidence_file_id: 201 }],
+      },
+    ]);
+
+    mockPrisma.users_honors.findMany.mockResolvedValue([
+      {
+        user_honor_id: 9,
+        user_id: 'user-9',
+        honor_id: 77,
+        validation_status: 'PENDING_REVIEW',
+        completion_mode: 'EXTERNAL',
+        submitted_at: new Date('2026-06-01T08:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        certificate: null,
+        document: null,
+        images: null,
+        users: { user_id: 'user-9', name: 'Alan', paternal_last_name: 'Turing' },
+        honors: { honor_id: 77, name: 'Honor mixto' },
+        validator: null,
+        evidence_files: [{ evidence_file_id: 901 }],
+      },
+    ]);
+
+    const result = await service.getPending('admin-user', undefined, 1, 2);
+
+    expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+    expect(mockPrisma.class_section_progress.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          section_progress_id: { in: [8] },
         }),
       }),
     );
+    expect(mockPrisma.users_honors.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          user_honor_id: { in: [9] },
+        }),
+      }),
+    );
+    expect(result.total).toBe(4);
+    expect(result.data).toEqual([
+      expect.objectContaining({ type: 'class', id: 8 }),
+      expect.objectContaining({ type: 'honor', id: 9 }),
+    ]);
   });
+
+  it('returns empty page and avoids raw query when type is invalid', async () => {
+    const result = await service.getPending('admin-user', 'invalid' as any, 2, 5);
+
+    expect(result).toEqual({ data: [], total: 0, page: 2, limit: 5 });
+    expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(mockPrisma.class_section_progress.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.users_honors.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.class_section_progress.count).not.toHaveBeenCalled();
+    expect(mockPrisma.users_honors.count).not.toHaveBeenCalled();
+  });
+
+  it('keeps honor pending file_count fallback to images when normalized files are empty', async () => {
+    mockPrisma.users_honors.count.mockResolvedValue(1);
+    mockPrisma.users_honors.findMany.mockResolvedValue([
+      {
+        user_honor_id: 31,
+        user_id: 'user-31',
+        honor_id: 44,
+        validation_status: 'PENDING_REVIEW',
+        completion_mode: 'EXTERNAL',
+        submitted_at: new Date('2026-06-01T10:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        certificate: null,
+        document: null,
+        images: ['img1', 'img2', 'img3'],
+        users: { user_id: 'user-31', name: 'María', paternal_last_name: 'López' },
+        honors: { honor_id: 44, name: 'Honor legado' },
+        validator: null,
+        evidence_files: [],
+      },
+    ]);
+
+    const result = await service.getPending('admin-user', 'honor', 1, 20);
+
+    expect(result.data[0].file_count).toBe(3);
+  });
+
+  it('preserves empty coordinator scope fast path for pending lookup', async () => {
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue({
+      authorization: {
+        grants: { global_roles: [{ role_name: 'coordinator' }] },
+      },
+    });
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue([]);
+
+    const result = await service.getPending('coordinator-user');
+
+    expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
+    expect(mockPrisma.class_section_progress.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.users_honors.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
 
   it('rejects folder as an evidence-review type', async () => {
     await expect(

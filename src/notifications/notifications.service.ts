@@ -21,6 +21,7 @@ import {
   AppBadRequestException,
   AppNotFoundException,
   AppForbiddenException,
+  AppInternalServerErrorException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -38,7 +39,8 @@ import {
   SendToClubMembersJobData,
   SendToSectionRoleJobData,
   SendToGlobalRoleJobData,
-  BroadcastJobData,
+  BroadcastChunkJobData,
+  BROADCAST_CHUNK_JOB,
 } from './notifications.processor';
 import { isUuid, chunkArray } from '../common/utils/notification.utils';
 
@@ -96,6 +98,9 @@ const PERMANENT_FCM_ERROR_CODES = new Set([
   'messaging/registration-token-not-registered',
   'messaging/invalid-argument',
 ]);
+
+const BROADCAST_USERS_PAGE_SIZE = 500;
+const BROADCAST_CHUNK_SIZE = 500;
 
 @Injectable()
 export class NotificationsService {
@@ -170,20 +175,114 @@ export class NotificationsService {
     sentBy: string,
     source?: string,
   ) {
-    if (this.isQueueReady() && this.isFcmConfigured()) {
-      const jobData: BroadcastJobData = {
-        title: dto.title,
-        body: dto.body,
-        data: dto.data,
-        sentBy,
-        source,
-      };
-      await this.queue!.add('broadcast', jobData, DEFAULT_JOB_OPTIONS);
-      return { success: true, queued: true };
+    if (!this.isQueueReady()) {
+      if (this.isProductionEnvironment()) {
+        throw new AppInternalServerErrorException(
+          ErrorCode.NOTIF_BROADCAST_QUEUE_UNAVAILABLE,
+          {
+            environment: process.env.NODE_ENV,
+          },
+        );
+      }
+
+      return this.broadcastSync(dto, sentBy, source);
     }
 
-    // Synchronous fallback
-    return this.broadcastSync(dto, sentBy, source);
+    return this.broadcastAsync(dto, sentBy, source);
+  }
+
+  private isProductionEnvironment(): boolean {
+    return process.env.NODE_ENV === 'production';
+  }
+
+  private async broadcastAsync(
+    dto: BroadcastNotificationDto,
+    sentBy: string,
+    source?: string,
+  ) {
+    let logId: number | undefined;
+    let hasActiveUsers = false;
+    let hasAllowedUsers = false;
+    let queuedUsers = 0;
+    let skip = 0;
+
+    while (true) {
+      const users = await this.prisma.users.findMany({
+        where: { active: true },
+        select: { user_id: true },
+        orderBy: { user_id: 'asc' },
+        skip,
+        take: BROADCAST_USERS_PAGE_SIZE,
+      });
+
+      if (users.length === 0) {
+        break;
+      }
+
+      hasActiveUsers = true;
+      skip += users.length;
+
+      const userIds = users.map((u) => u.user_id);
+      const allowedSet = await this.preferencesService.filterAllowedUsers(
+        userIds,
+        source,
+      );
+      const allowedUserIds = [...allowedSet];
+
+      if (allowedUserIds.length === 0) {
+        continue;
+      }
+
+      hasAllowedUsers = true;
+
+      if (typeof logId !== 'number') {
+        const log = await this.prisma.notification_logs.create({
+          data: {
+            title: dto.title,
+            body: dto.body,
+            type: 'BROADCAST',
+            target_type: 'all',
+            target_id: null,
+            sent_by: isUuid(sentBy) ? sentBy : null,
+            source: source ?? null,
+            tokens_sent: 0,
+            tokens_failed: 0,
+          },
+        });
+        logId = log.log_id;
+      }
+
+      for (const userIdChunk of chunkArray(allowedUserIds, BROADCAST_CHUNK_SIZE)) {
+        const jobData: BroadcastChunkJobData = {
+          logId,
+          userIds: userIdChunk,
+          title: dto.title,
+          body: dto.body,
+          data: dto.data,
+          sentBy,
+          source,
+        };
+
+        await this.queue!.add(BROADCAST_CHUNK_JOB, jobData, DEFAULT_JOB_OPTIONS);
+        queuedUsers += userIdChunk.length;
+      }
+    }
+
+    if (!hasActiveUsers) {
+      return { success: false, message: 'No active users' };
+    }
+
+    if (!hasAllowedUsers || typeof logId !== 'number') {
+      return { success: false, message: 'All users opted out' };
+    }
+
+    return {
+      success: true,
+      queued: true,
+      logId,
+      deliveriesCreated: queuedUsers,
+    };
+
   }
 
   // ---------------------------------------------------------------------------

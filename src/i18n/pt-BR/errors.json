@@ -454,6 +454,7 @@
   "NOTIF_SEND_FORBIDDEN": "Você precisa de uma atribuição de clube ativa para esta instância",
   "NOTIF_NOT_FOUND": "Notificação não encontrada",
   "NOTIF_TARGET_TYPE_MISMATCH": "O tipo de instância não corresponde à seção de clube selecionada",
+  "NOTIF_BROADCAST_QUEUE_UNAVAILABLE": "A fila de transmissão está indisponível neste ambiente. Tente novamente quando o serviço de fila estiver em execução.",
   "EXPORT_NOT_FOUND": "Exportação não encontrada",
   "EXPORT_ALREADY_PROCESSING": "Já existe uma exportação em andamento",
   "MFA_CODE_INVALID": "TOTP não está ativado para este usuário. Chame POST /auth/mfa/enroll primeiro",

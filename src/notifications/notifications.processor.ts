@@ -24,6 +24,7 @@ export const NOTIFICATIONS_QUEUE = 'notifications';
 // ---------------------------------------------------------------------------
 
 export const REALTIME_INVALIDATE_JOB = 'realtime.invalidate';
+export const BROADCAST_CHUNK_JOB = 'broadcast-chunk';
 
 export interface RealtimeInvalidatePayload {
   sectionId: number;
@@ -40,6 +41,7 @@ export type NotificationJobType =
   | 'send-to-global-role'
   | 'send-to-club-members'
   | 'broadcast'
+  | 'broadcast-chunk'
   | 'realtime.invalidate';
 
 export interface SendToUserJobData {
@@ -87,11 +89,22 @@ export interface BroadcastJobData {
   source?: string;
 }
 
+export interface BroadcastChunkJobData {
+  logId: number;
+  userIds: string[];
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+  sentBy: string;
+  source?: string;
+}
+
 export type NotificationJobData =
   | SendToUserJobData
   | SendToSectionRoleJobData
   | SendToGlobalRoleJobData
   | SendToClubMembersJobData
+  | BroadcastChunkJobData
   | BroadcastJobData
   | RealtimeInvalidatePayload;
 
@@ -176,6 +189,8 @@ export class NotificationsProcessor
         );
       case 'broadcast':
         return this.handleBroadcast(job as Job<BroadcastJobData>);
+      case BROADCAST_CHUNK_JOB:
+        return this.handleBroadcastChunk(job as Job<BroadcastChunkJobData>);
       case REALTIME_INVALIDATE_JOB:
         return this.handleRealtimeInvalidate(
           job as Job<RealtimeInvalidatePayload>,
@@ -607,6 +622,81 @@ export class NotificationsProcessor
   }
 
   // ---------------------------------------------------------------------------
+  // broadcast-chunk
+  // ---------------------------------------------------------------------------
+
+  private async handleBroadcastChunk(job: Job<BroadcastChunkJobData>) {
+    const { logId, userIds, title, body, data } = job.data;
+
+    const uniqueUserIds = [...new Set(userIds)];
+
+    if (uniqueUserIds.length === 0) {
+      this.logger.debug(
+        `handleBroadcastChunk: no userIds for job ${job.id} — skipping`,
+      );
+      return { skipped: true, reason: 'no-users' };
+    }
+
+    if (typeof logId !== 'number') {
+      this.logger.warn(
+        `handleBroadcastChunk: invalid logId for job ${job.id} — skipping`,
+      );
+      return { skipped: true, reason: 'invalid-log' };
+    }
+
+    // Step 1: Create inbox deliveries for this user chunk.
+    await this.prisma.notification_deliveries.createMany({
+      data: uniqueUserIds.map((uid) => ({
+        log_id: logId,
+        user_id: uid,
+      })),
+      skipDuplicates: true,
+    });
+
+    // Step 2: Resolve active tokens only for this chunk.
+    const tokenRows = await this.prisma.user_fcm_tokens.findMany({
+      where: { user_id: { in: uniqueUserIds }, active: true },
+      select: { token: true },
+    });
+
+    if (tokenRows.length === 0 || !this.isFcmConfigured()) {
+      this.logger.debug(
+        `handleBroadcastChunk: ${tokenRows.length === 0 ? 'no active FCM tokens' : 'FCM not configured'} for log ${logId} — deliveries created, push skipped (job ${job.id})`,
+      );
+      return {
+        successCount: 0,
+        failureCount: 0,
+        deliveriesCreated: uniqueUserIds.length,
+        skippedPush: true,
+      };
+    }
+
+    const tokenStrings = tokenRows.map((t) => t.token);
+    const batches = chunkArray(tokenStrings, 500);
+    const { successCount, failureCount } = await this.sendMulticastBatches(
+      batches,
+      title,
+      body,
+      data,
+      `handleBroadcastChunk job ${job.id}`,
+    );
+
+    await this.incrementNotificationLogTokenCounts(
+      logId,
+      successCount,
+      failureCount,
+      `handleBroadcastChunk job ${job.id}`,
+    );
+
+    return {
+      successCount,
+      failureCount,
+      deliveriesCreated: uniqueUserIds.length,
+      skippedPush: false,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // broadcast
   // ---------------------------------------------------------------------------
 
@@ -883,6 +973,33 @@ export class NotificationsProcessor
       .catch((err: Error) => {
         this.logger.warn(
           `${context}: failed to update notification token counters for log ${logId}: ${err.message}`,
+        );
+      });
+  }
+
+  private async incrementNotificationLogTokenCounts(
+    logId: number | undefined,
+    tokensSent: number,
+    tokensFailed: number,
+    context: string,
+  ): Promise<void> {
+    if (typeof logId !== 'number') return;
+
+    await this.prisma.notification_logs
+      .update({
+        where: { log_id: logId },
+        data: {
+          tokens_sent: {
+            increment: tokensSent,
+          },
+          tokens_failed: {
+            increment: tokensFailed,
+          },
+        },
+      })
+      .catch((err: Error) => {
+        this.logger.warn(
+          `${context}: failed to increment notification token counters for log ${logId}: ${err.message}`,
         );
       });
   }

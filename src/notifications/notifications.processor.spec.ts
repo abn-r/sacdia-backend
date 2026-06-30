@@ -20,9 +20,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Job } from 'bullmq';
 import {
   NotificationsProcessor,
+  BROADCAST_CHUNK_JOB,
   REALTIME_INVALIDATE_JOB,
   RealtimeInvalidatePayload,
   SendToClubMembersJobData,
+  BroadcastChunkJobData,
 } from './notifications.processor';
 import { PrismaService } from '../prisma/prisma.service';
 import { FcmTokensService } from './fcm-tokens.service';
@@ -527,6 +529,159 @@ describe('NotificationsProcessor — send-to-club-members', () => {
     expect(mockPreferencesService.filterAllowedUsers).toHaveBeenCalledWith(
       [MEMBER_ID_A],
       'activities:created',
+    );
+  });
+});
+
+// =============================================================================
+// broadcast-chunk job — worker-level fan-out
+// =============================================================================
+
+function makeBroadcastChunkJob(
+  data: BroadcastChunkJobData,
+  id = 'job-broadcast-chunk-1',
+): Job<BroadcastChunkJobData> {
+  return {
+    id,
+    name: BROADCAST_CHUNK_JOB,
+    data,
+  } as unknown as Job<BroadcastChunkJobData>;
+}
+
+describe('NotificationsProcessor — broadcast-chunk', () => {
+  let processor: NotificationsProcessor;
+  let mockSendEachForMulticast: jest.Mock;
+  let firebaseAdminMock: any;
+
+  beforeEach(async () => {
+    firebaseAdminMock = jest.requireMock(
+      '../config/firebase-admin.module',
+    ).firebaseAdmin;
+    mockSendEachForMulticast = jest.fn();
+    (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
+      sendEachForMulticast: mockSendEachForMulticast,
+    });
+
+    jest.clearAllMocks();
+    firebaseAdminMock.apps = ['mock-app'];
+
+    mockPrismaService.notification_logs.update.mockResolvedValue({});
+    mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
+      count: 1,
+    });
+    mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
+      count: 0,
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        NotificationsProcessor,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: FcmTokensService, useValue: mockFcmTokensService },
+        {
+          provide: NotificationPreferencesService,
+          useValue: mockPreferencesService,
+        },
+      ],
+    }).compile();
+
+    processor = module.get<NotificationsProcessor>(NotificationsProcessor);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    firebaseAdminMock.apps = ['mock-app'];
+  });
+
+  it('creates inbox deliveries for the chunk and sends tokens in FCM batches of 500', async () => {
+    const userIds = Array.from({ length: 600 }, (_, idx) => `u-${idx}`);
+    const tokens = Array.from({ length: 600 }, (_, idx) => `t-${idx}`);
+
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue(
+      tokens.map((token) => ({ token })),
+    );
+    mockSendEachForMulticast
+      .mockResolvedValueOnce({
+        successCount: 500,
+        failureCount: 0,
+        responses: tokens.slice(0, 500).map(() => ({ success: true })),
+      })
+      .mockResolvedValueOnce({
+        successCount: 100,
+        failureCount: 0,
+        responses: tokens.slice(500).map(() => ({ success: true })),
+      });
+
+    const job = makeBroadcastChunkJob({
+      logId: 123,
+      userIds,
+      title: 'Broadcast',
+      body: 'Bulk',
+    });
+
+    const result = await processor.process(job as any);
+
+    expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          { log_id: 123, user_id: 'u-0' },
+          { log_id: 123, user_id: 'u-599' },
+        ]),
+        skipDuplicates: true,
+      }),
+    );
+
+    // 600 tokens should be sent in 500 + 100 batches
+    expect(mockSendEachForMulticast).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      successCount: 600,
+      failureCount: 0,
+      skippedPush: false,
+      deliveriesCreated: 600,
+    });
+
+    expect(mockPrismaService.notification_logs.update).toHaveBeenCalledWith({
+      where: { log_id: 123 },
+      data: {
+        tokens_sent: { increment: 600 },
+        tokens_failed: { increment: 0 },
+      },
+    });
+  });
+
+  it('deduplicates user ids before creating deliveries and resolving tokens', async () => {
+    const userIds = ['u-1', 'u-1', 'u-2'];
+
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
+      { token: 'tok-1' },
+    ]);
+    mockSendEachForMulticast.mockResolvedValue({
+      successCount: 1,
+      failureCount: 0,
+      responses: [{ success: true }],
+    });
+
+    const job = makeBroadcastChunkJob({
+      logId: 456,
+      userIds,
+      title: 'Broadcast',
+      body: 'Bulk',
+    });
+
+    await processor.process(job as any);
+
+    expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          { log_id: 456, user_id: 'u-1' },
+          { log_id: 456, user_id: 'u-2' },
+        ]),
+      }),
+    );
+    expect(mockPrismaService.user_fcm_tokens.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { user_id: { in: ['u-1', 'u-2'] }, active: true },
+      }),
     );
   });
 });

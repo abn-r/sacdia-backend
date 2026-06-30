@@ -454,6 +454,7 @@
   "NOTIF_SEND_FORBIDDEN": "Vous avez besoin d'une affectation de club active pour cette instance précise",
   "NOTIF_NOT_FOUND": "Notification introuvable",
   "NOTIF_TARGET_TYPE_MISMATCH": "Le type d'instance ne correspond pas à la section de club sélectionnée",
+  "NOTIF_BROADCAST_QUEUE_UNAVAILABLE": "La file de diffusion est indisponible dans cet environnement. Réessayez lorsque le service de file d'attente fonctionne.",
   "EXPORT_NOT_FOUND": "Exportation introuvable",
   "EXPORT_ALREADY_PROCESSING": "Une exportation est déjà en cours",
   "MFA_CODE_INVALID": "TOTP n'est pas activé pour cet utilisateur. Appelez d'abord POST /auth/mfa/enroll",

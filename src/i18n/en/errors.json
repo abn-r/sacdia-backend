@@ -457,6 +457,7 @@
   "NOTIF_SEND_FORBIDDEN": "You need an active club assignment for this exact instance",
   "NOTIF_NOT_FOUND": "Notification not found",
   "NOTIF_TARGET_TYPE_MISMATCH": "Instance type does not match the selected club section",
+  "NOTIF_BROADCAST_QUEUE_UNAVAILABLE": "Broadcast queue is unavailable in this environment. Retry when queue service is running.",
   "EXPORT_NOT_FOUND": "Export not found",
   "EXPORT_ALREADY_PROCESSING": "An export is already in progress",
   "MFA_CODE_INVALID": "TOTP is not enrolled for this user. Call POST /auth/mfa/enroll first",
