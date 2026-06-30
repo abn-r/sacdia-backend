@@ -7,6 +7,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 
 describe('UnitsService', () => {
   let service: UnitsService;
+  const currentIsoPeriod = { week: 27, year: 2026 };
 
   const mockPrismaService = {
     clubs: {
@@ -54,6 +55,9 @@ describe('UnitsService', () => {
   };
 
   beforeEach(async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-06-29T12:00:00.000Z'));
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UnitsService,
@@ -76,6 +80,7 @@ describe('UnitsService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
   });
 
   it('should be defined', () => {
@@ -329,11 +334,11 @@ describe('UnitsService', () => {
         active: true,
       });
 
-      await expect(service.update(1, { club_type_id: 1 }, 1)).rejects.toMatchObject(
-        {
-          code: 'UNIT_SECTION_TYPE_MISMATCH',
-        },
-      );
+      await expect(
+        service.update(1, { club_type_id: 1 }, 1),
+      ).rejects.toMatchObject({
+        code: 'UNIT_SECTION_TYPE_MISMATCH',
+      });
       expect(mockPrismaService.units.update).not.toHaveBeenCalled();
     });
   });
@@ -576,6 +581,15 @@ describe('UnitsService', () => {
 
       const result = await service.findWeeklyRecords(1);
 
+      expect(mockPrismaService.weekly_records.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user_id: { in: ['uuid-user-1', 'uuid-user-2'] },
+            active: true,
+            OR: [{ unit_id: 1 }, { unit_id: null }],
+          }),
+        }),
+      );
       // transformWeeklyRecord strips weekly_record_scores and adds scores: []
       expect(result).toEqual([
         {
@@ -585,6 +599,42 @@ describe('UnitsService', () => {
           points: 10,
           scores: [],
         },
+      ]);
+    });
+
+    it('should prefer unit-specific records over legacy records without unit_id', async () => {
+      const mockUnit = {
+        unit_id: 1,
+        unit_members: [{ user_id: 'uuid-user-1', active: true }],
+      };
+      const mockRecords = [
+        {
+          record_id: 1,
+          unit_id: null,
+          user_id: 'uuid-user-1',
+          week: currentIsoPeriod.week,
+          year: currentIsoPeriod.year,
+          points: 5,
+          weekly_record_scores: [],
+        },
+        {
+          record_id: 2,
+          unit_id: 1,
+          user_id: 'uuid-user-1',
+          week: currentIsoPeriod.week,
+          year: currentIsoPeriod.year,
+          points: 10,
+          weekly_record_scores: [],
+        },
+      ];
+
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
+      mockPrismaService.weekly_records.findMany.mockResolvedValue(mockRecords);
+
+      const result = await service.findWeeklyRecords(1);
+
+      expect(result).toEqual([
+        expect.objectContaining({ record_id: 2, unit_id: 1, points: 10 }),
       ]);
     });
 
@@ -614,8 +664,8 @@ describe('UnitsService', () => {
   describe('createWeeklyRecord', () => {
     const dto = {
       user_id: 'uuid-user-1',
-      week: 5,
-      year: 2026,
+      week: currentIsoPeriod.week,
+      year: currentIsoPeriod.year,
       attendance: 10,
       punctuality: 5,
     };
@@ -628,14 +678,25 @@ describe('UnitsService', () => {
       const mockRecord = { record_id: 1, ...dto, points: 0, active: true };
 
       mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
-      mockPrismaService.weekly_records.findUnique
-        .mockResolvedValueOnce(null) // conflict check
-        .mockResolvedValueOnce(mockRecord); // final fetch inside transaction
+      mockPrismaService.weekly_records.findFirst.mockResolvedValueOnce(null);
+      mockPrismaService.weekly_records.findUnique.mockResolvedValueOnce(
+        mockRecord,
+      );
       mockPrismaService.weekly_records.create.mockResolvedValue(mockRecord);
 
       const result = await service.createWeeklyRecord(1, dto, dto.user_id);
 
       expect(result).toBeDefined();
+      expect(mockPrismaService.weekly_records.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ unit_id: 1 }),
+        }),
+      );
+      expect(mockPrismaService.weekly_records.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unit_id: 1 }),
+        }),
+      );
     });
 
     it('should throw BadRequestException when user is not a member of the unit', async () => {
@@ -655,13 +716,240 @@ describe('UnitsService', () => {
       const existingRecord = { record_id: 1, ...dto };
 
       mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
-      mockPrismaService.weekly_records.findUnique.mockResolvedValue(
+      mockPrismaService.weekly_records.findFirst.mockResolvedValue(
         existingRecord,
       );
 
       await expect(
         service.createWeeklyRecord(1, dto, dto.user_id),
       ).rejects.toMatchObject({ code: ErrorCode.UNIT_WEEKLY_RECORD_DUPLICATE });
+    });
+
+    it('should reject records outside the current ISO week', async () => {
+      await expect(
+        service.createWeeklyRecord(
+          1,
+          { ...dto, week: currentIsoPeriod.week - 1 },
+          dto.user_id,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.UNIT_WEEKLY_RECORD_PERIOD_CLOSED,
+      });
+
+      expect(mockPrismaService.units.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========================================
+  // bulkUpsertWeeklyRecords
+  // ========================================
+
+  describe('bulkUpsertWeeklyRecords', () => {
+    const unit = {
+      unit_id: 1,
+      unit_members: [
+        { user_id: 'uuid-user-1', active: true },
+        { user_id: 'uuid-user-2', active: true },
+      ],
+      club_sections: {
+        clubs: {
+          local_field_id: 1,
+        },
+      },
+    };
+
+    it('should upsert all weekly records in one transaction', async () => {
+      const hydratedRecord1 = {
+        record_id: 1,
+        user_id: 'uuid-user-1',
+        week: currentIsoPeriod.week,
+        year: currentIsoPeriod.year,
+        attendance: 1,
+        punctuality: 1,
+        points: 10,
+        active: true,
+        weekly_record_scores: [
+          {
+            category_id: 7,
+            points: 10,
+            scoring_category: {
+              scoring_category_id: 7,
+              name: 'Biblia',
+              max_points: 10,
+              scoring_mode: 'numeric',
+            },
+          },
+        ],
+      };
+      const existingRecord2 = {
+        record_id: 2,
+        user_id: 'uuid-user-2',
+        week: currentIsoPeriod.week,
+        year: currentIsoPeriod.year,
+        attendance: 0,
+        punctuality: 0,
+        points: 0,
+      };
+      const hydratedRecord2 = {
+        ...existingRecord2,
+        attendance: 1,
+        punctuality: 1,
+        points: 5,
+        active: true,
+        weekly_record_scores: [
+          {
+            category_id: 7,
+            points: 5,
+            scoring_category: {
+              scoring_category_id: 7,
+              name: 'Biblia',
+              max_points: 10,
+              scoring_mode: 'numeric',
+            },
+          },
+        ],
+      };
+
+      mockPrismaService.units.findFirst.mockResolvedValue(unit);
+      mockScoringCategoriesService.getActiveCategoriesForLocalField.mockResolvedValue(
+        [
+          {
+            scoring_category_id: 7,
+            name: 'Biblia',
+            max_points: 10,
+            scoring_mode: 'numeric',
+          },
+        ],
+      );
+      mockPrismaService.weekly_records.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existingRecord2);
+      mockPrismaService.weekly_records.findUnique
+        .mockResolvedValueOnce(hydratedRecord1)
+        .mockResolvedValueOnce(hydratedRecord2);
+      mockPrismaService.weekly_records.create.mockResolvedValue({
+        record_id: 1,
+        unit_id: 1,
+        user_id: 'uuid-user-1',
+        week: currentIsoPeriod.week,
+        year: currentIsoPeriod.year,
+      });
+      mockPrismaService.weekly_records.update
+        .mockResolvedValueOnce({ ...hydratedRecord1 })
+        .mockResolvedValueOnce({ ...existingRecord2, attendance: 1 })
+        .mockResolvedValueOnce({ ...hydratedRecord2 });
+      mockPrismaService.weekly_record_scores.findMany
+        .mockResolvedValueOnce([{ points: 10 }])
+        .mockResolvedValueOnce([{ points: 5 }]);
+
+      const result = await service.bulkUpsertWeeklyRecords(
+        1,
+        {
+          week: currentIsoPeriod.week,
+          year: currentIsoPeriod.year,
+          records: [
+            {
+              user_id: 'uuid-user-1',
+              attendance: 1,
+              punctuality: 1,
+              scores: [{ category_id: 7, points: 10 }],
+            },
+            {
+              user_id: 'uuid-user-2',
+              attendance: 1,
+              punctuality: 1,
+              scores: [{ category_id: 7, points: 5 }],
+            },
+          ],
+        },
+        'uuid-creator',
+      );
+
+      expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.weekly_records.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ unit_id: 1 }),
+        }),
+      );
+      expect(
+        mockPrismaService.weekly_record_scores.upsert,
+      ).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({ record_id: 1, points: 10 });
+      expect(result[1]).toMatchObject({ record_id: 2, points: 5 });
+    });
+
+    it('should reject intermediate points for boolean_full categories', async () => {
+      mockPrismaService.units.findFirst.mockResolvedValue(unit);
+      mockScoringCategoriesService.getActiveCategoriesForLocalField.mockResolvedValue(
+        [
+          {
+            scoring_category_id: 7,
+            name: 'Biblia',
+            max_points: 10,
+            scoring_mode: 'boolean_full',
+          },
+        ],
+      );
+
+      await expect(
+        service.bulkUpsertWeeklyRecords(
+          1,
+          {
+            week: currentIsoPeriod.week,
+            year: currentIsoPeriod.year,
+            records: [
+              {
+                user_id: 'uuid-user-1',
+                scores: [{ category_id: 7, points: 5 }],
+              },
+            ],
+          },
+          'uuid-creator',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.UNIT_SCORING_BOOLEAN_POINTS_INVALID,
+      });
+
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject bulk records outside the current ISO week before transaction', async () => {
+      await expect(
+        service.bulkUpsertWeeklyRecords(
+          1,
+          {
+            week: currentIsoPeriod.week - 1,
+            year: currentIsoPeriod.year,
+            records: [{ user_id: 'uuid-user-1' }],
+          },
+          'uuid-creator',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.UNIT_WEEKLY_RECORD_PERIOD_CLOSED,
+      });
+
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject duplicate users in the same bulk payload before transaction', async () => {
+      mockPrismaService.units.findFirst.mockResolvedValue(unit);
+
+      await expect(
+        service.bulkUpsertWeeklyRecords(
+          1,
+          {
+            week: currentIsoPeriod.week,
+            year: currentIsoPeriod.year,
+            records: [{ user_id: 'uuid-user-1' }, { user_id: 'uuid-user-1' }],
+          },
+          'uuid-creator',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.UNIT_WEEKLY_RECORD_DUPLICATE_USER,
+      });
+
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
     });
   });
 
@@ -675,7 +963,8 @@ describe('UnitsService', () => {
       const mockRecord = {
         record_id: 10,
         user_id: 'uuid-user-1',
-        week: 5,
+        week: currentIsoPeriod.week,
+        year: currentIsoPeriod.year,
         attendance: 10,
         punctuality: 5,
         points: 15,
@@ -716,6 +1005,32 @@ describe('UnitsService', () => {
       await expect(
         service.updateWeeklyRecord(999, 10, {}),
       ).rejects.toMatchObject({ code: ErrorCode.UNIT_NOT_FOUND });
+    });
+
+    it('should reject updates to records outside the current ISO week', async () => {
+      const mockUnit = { unit_id: 1, unit_members: [] };
+      const closedRecord = {
+        record_id: 10,
+        user_id: 'uuid-user-1',
+        week: currentIsoPeriod.week - 1,
+        year: currentIsoPeriod.year,
+        attendance: 10,
+        punctuality: 5,
+        points: 15,
+      };
+
+      mockPrismaService.units.findFirst.mockResolvedValue(mockUnit);
+      mockPrismaService.weekly_records.findFirst.mockResolvedValue(
+        closedRecord,
+      );
+
+      await expect(
+        service.updateWeeklyRecord(1, 10, { attendance: 1 }),
+      ).rejects.toMatchObject({
+        code: ErrorCode.UNIT_WEEKLY_RECORD_PERIOD_CLOSED,
+      });
+
+      expect(mockPrismaService.unit_members.findFirst).not.toHaveBeenCalled();
     });
   });
 });

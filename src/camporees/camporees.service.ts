@@ -197,6 +197,8 @@ export class CamporeesService {
         includes_pathfinders: dto.includes_pathfinders,
         includes_master_guides: dto.includes_master_guides,
         local_camporee_place: dto.local_camporee_place,
+        lat: dto.lat,
+        long: dto.long,
         registration_cost: dto.registration_cost,
         ecclesiastical_year: activeYear.year_id,
         active: true,
@@ -458,6 +460,8 @@ export class CamporeesService {
           includes_pathfinders: dto.includes_pathfinders,
           includes_master_guides: dto.includes_master_guides,
           union_camporee_place: dto.union_camporee_place,
+          lat: dto.lat,
+          long: dto.long,
           registration_cost: dto.registration_cost,
           ecclesiastical_year: activeYear.year_id,
           active: true,
@@ -735,7 +739,7 @@ export class CamporeesService {
       const member = await tx.camporee_members.create({
         data: {
           camporee_id: camporeeId,
-          camporee_type: dto.camporee_type,
+          camporee_type: 'local',
           user_id: dto.user_id,
           club_name: dto.club_name,
           insurance_verified: !!dto.insurance_id,

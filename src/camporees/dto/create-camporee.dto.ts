@@ -7,6 +7,7 @@ import {
   IsNotEmpty,
   IsNumber,
   Min,
+  Max,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -84,6 +85,30 @@ export class CreateCamporeeDto {
   @IsNotEmpty()
   @MaxLength(255)
   declare local_camporee_place: string;
+
+  @ApiPropertyOptional({
+    description: 'Latitud del lugar del camporee',
+    example: 19.1738,
+    minimum: -90,
+    maximum: 90,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat?: number;
+
+  @ApiPropertyOptional({
+    description: 'Longitud del lugar del camporee',
+    example: -96.1342,
+    minimum: -180,
+    maximum: 180,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  long?: number;
 
   @ApiPropertyOptional({
     description: 'Costo de inscripción al camporee (en moneda local)',

@@ -17,6 +17,7 @@ describe('UnitsController', () => {
     removeMember: jest.fn(),
     findWeeklyRecords: jest.fn(),
     createWeeklyRecord: jest.fn(),
+    bulkUpsertWeeklyRecords: jest.fn(),
     updateWeeklyRecord: jest.fn(),
   };
 
@@ -215,6 +216,45 @@ describe('UnitsController', () => {
         1,
       );
       expect(result).toEqual(mockRecord);
+    });
+  });
+
+  // ========================================
+  // bulkUpsertWeeklyRecords
+  // ========================================
+
+  describe('bulkUpsertWeeklyRecords', () => {
+    it('should call service.bulkUpsertWeeklyRecords with unitId and dto', async () => {
+      const dto = {
+        week: 27,
+        year: 2026,
+        records: [
+          {
+            user_id: 'uuid-user-1',
+            attendance: 1,
+            punctuality: 1,
+            scores: [{ category_id: 7, points: 10 }],
+          },
+        ],
+      };
+      const mockRecords = [{ record_id: 1, user_id: 'uuid-user-1' }];
+      mockUnitsService.bulkUpsertWeeklyRecords.mockResolvedValue(mockRecords);
+
+      const mockReq = { user: { sub: 'uuid-creator' } };
+      const result = await controller.bulkUpsertWeeklyRecords(
+        1,
+        5,
+        dto as any,
+        mockReq as any,
+      );
+
+      expect(mockUnitsService.bulkUpsertWeeklyRecords).toHaveBeenCalledWith(
+        5,
+        dto,
+        'uuid-creator',
+        1,
+      );
+      expect(result).toEqual(mockRecords);
     });
   });
 

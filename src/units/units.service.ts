@@ -4,6 +4,7 @@ import {
   CreateUnitDto,
   UpdateUnitDto,
   AddUnitMemberDto,
+  BulkUpsertWeeklyRecordsDto,
   CreateWeeklyRecordDto,
   UpdateWeeklyRecordDto,
 } from './dto';
@@ -17,6 +18,50 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+
+interface WeeklyRecordUserResponse {
+  user_id: string;
+  name: string | null;
+  paternal_last_name: string | null;
+  user_image: string | null;
+}
+
+interface WeeklyRecordScoreResponse {
+  category_id: number;
+  category_name: string;
+  scoring_mode: 'numeric' | 'boolean_full';
+  points: number;
+  max_points: number;
+}
+
+export interface WeeklyRecordResponse {
+  record_id: number;
+  unit_id: number | null;
+  user_id: string;
+  week: number;
+  year: number;
+  attendance: number;
+  punctuality: number;
+  points: number;
+  active: boolean;
+  created_at: Date;
+  modified_at: Date;
+  users?: WeeklyRecordUserResponse;
+  scores: WeeklyRecordScoreResponse[];
+}
+
+interface WeeklyRecordRaw extends Omit<WeeklyRecordResponse, 'scores'> {
+  weekly_record_scores?: Array<{
+    category_id: number;
+    points: number;
+    scoring_category: {
+      scoring_category_id: number;
+      name: string;
+      max_points: number;
+      scoring_mode: 'numeric' | 'boolean_full';
+    } | null;
+  }>;
+}
 
 @Injectable()
 export class UnitsService {
@@ -354,39 +399,14 @@ export class UnitsService {
    * Transforms a raw Prisma weekly_records row (with weekly_record_scores included)
    * into the flat response shape expected by the frontend and Flutter clients.
    */
-  private transformWeeklyRecord(record: {
-    record_id: number;
-    user_id: string;
-    week: number;
-    year: number;
-    attendance: number;
-    punctuality: number;
-    points: number;
-    active: boolean;
-    created_at: Date;
-    modified_at: Date;
-    users?: {
-      user_id: string;
-      name: string | null;
-      paternal_last_name: string | null;
-      user_image: string | null;
-    };
-    weekly_record_scores?: Array<{
-      category_id: number;
-      points: number;
-      scoring_category: {
-        scoring_category_id: number;
-        name: string;
-        max_points: number;
-      } | null;
-    }>;
-  }) {
+  private transformWeeklyRecord(record: WeeklyRecordRaw): WeeklyRecordResponse {
     const { weekly_record_scores, ...rest } = record;
     return {
       ...rest,
       scores: (weekly_record_scores ?? []).map((wrs) => ({
         category_id: wrs.category_id,
         category_name: wrs.scoring_category?.name ?? '',
+        scoring_mode: wrs.scoring_category?.scoring_mode ?? 'numeric',
         points: wrs.points,
         max_points: wrs.scoring_category?.max_points ?? 0,
       })),
@@ -409,11 +429,138 @@ export class UnitsService {
             scoring_category_id: true,
             name: true,
             max_points: true,
+            scoring_mode: true,
           },
         },
       },
     },
   } as const;
+
+  private preferUnitSpecificRecords<T extends WeeklyRecordRaw>(
+    records: T[],
+    unitId: number,
+  ): T[] {
+    const byUserWeekYear = new Map<string, T>();
+
+    for (const record of records) {
+      const key = `${record.user_id}:${record.year}:${record.week}`;
+      const existing = byUserWeekYear.get(key);
+      const isUnitSpecific = record.unit_id === unitId;
+
+      if (!existing) {
+        byUserWeekYear.set(key, record);
+        continue;
+      }
+
+      if (existing.unit_id == null && isUnitSpecific) {
+        byUserWeekYear.set(key, record);
+      }
+    }
+
+    return Array.from(byUserWeekYear.values()).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      if (a.week !== b.week) return a.week - b.week;
+      return a.user_id.localeCompare(b.user_id);
+    });
+  }
+
+  private getCurrentIsoPeriod(date = new Date()): {
+    week: number;
+    year: number;
+  } {
+    const target = new Date(date.valueOf());
+    const dayNumber = (target.getDay() + 6) % 7; // Mon=0, Sun=6
+    target.setDate(target.getDate() - dayNumber + 3); // Thursday anchors ISO year
+
+    const firstThursday = new Date(target.getFullYear(), 0, 4);
+    const firstThursdayDayNumber = (firstThursday.getDay() + 6) % 7;
+    firstThursday.setDate(firstThursday.getDate() - firstThursdayDayNumber + 3);
+
+    return {
+      week:
+        1 +
+        Math.round(
+          (target.getTime() - firstThursday.getTime()) /
+            (7 * 24 * 60 * 60 * 1000),
+        ),
+      year: target.getFullYear(),
+    };
+  }
+
+  private assertWeeklyRecordPeriodIsOpen(week: number, year: number): void {
+    const current = this.getCurrentIsoPeriod();
+
+    if (year !== current.year || week !== current.week) {
+      throw new AppBadRequestException(
+        ErrorCode.UNIT_WEEKLY_RECORD_PERIOD_CLOSED,
+      );
+    }
+  }
+
+  private async validateScoreEntries(
+    unit: Awaited<ReturnType<typeof this.findOne>>,
+    scores?: { category_id: number; points: number }[],
+  ): Promise<{
+    calculatedPoints: number;
+    validatedScores: { category_id: number; points: number }[];
+  }> {
+    let calculatedPoints = 0;
+    const validatedScores: { category_id: number; points: number }[] = [];
+
+    if (!scores || scores.length === 0) {
+      return { calculatedPoints, validatedScores };
+    }
+
+    const localFieldId = this.resolveLocalFieldForUnit(unit);
+    const availableCategories =
+      localFieldId !== null
+        ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
+            localFieldId,
+          )
+        : [];
+
+    const categoryMap = new Map(
+      availableCategories.map((c) => [c.scoring_category_id, c]),
+    );
+    const seenCategoryIds = new Set<number>();
+
+    for (const scoreEntry of scores) {
+      if (seenCategoryIds.has(scoreEntry.category_id)) {
+        throw new AppBadRequestException(
+          ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
+        );
+      }
+      seenCategoryIds.add(scoreEntry.category_id);
+
+      const category = categoryMap.get(scoreEntry.category_id);
+      if (!category) {
+        throw new AppBadRequestException(
+          ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
+        );
+      }
+      if (scoreEntry.points < 0 || scoreEntry.points > category.max_points) {
+        throw new AppBadRequestException(
+          ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX,
+        );
+      }
+      if (
+        category.scoring_mode === 'boolean_full' &&
+        scoreEntry.points !== 0 &&
+        scoreEntry.points !== category.max_points
+      ) {
+        throw new AppBadRequestException(
+          ErrorCode.UNIT_SCORING_BOOLEAN_POINTS_INVALID,
+        );
+      }
+      calculatedPoints += scoreEntry.points;
+      validatedScores.push({
+        category_id: scoreEntry.category_id,
+        points: scoreEntry.points,
+      });
+    }
+
+    return { calculatedPoints, validatedScores };
+  }
 
   async findWeeklyRecords(unitId: number, clubId?: number) {
     const unit = await this.findOne(unitId, clubId);
@@ -430,12 +577,15 @@ export class UnitsService {
       where: {
         user_id: { in: memberUserIds },
         active: true,
+        OR: [{ unit_id: unitId }, { unit_id: null }],
       },
       include: this.weeklyRecordInclude,
       orderBy: [{ year: 'desc' }, { week: 'asc' }, { user_id: 'asc' }],
     });
 
-    return records.map((r) => this.transformWeeklyRecord(r));
+    return this.preferUnitSpecificRecords(records, unitId).map((r) =>
+      this.transformWeeklyRecord(r),
+    );
   }
 
   async createWeeklyRecord(
@@ -444,6 +594,8 @@ export class UnitsService {
     userId: string,
     clubId?: number,
   ) {
+    this.assertWeeklyRecordPeriodIsOpen(dto.week, dto.year);
+
     const unit = await this.findOne(unitId, clubId);
 
     const isMember = unit.unit_members.some(
@@ -454,13 +606,12 @@ export class UnitsService {
       throw new AppBadRequestException(ErrorCode.UNIT_MEMBER_NOT_ACTIVE);
     }
 
-    const existing = await this.prisma.weekly_records.findUnique({
+    const existing = await this.prisma.weekly_records.findFirst({
       where: {
-        user_id_week_year: {
-          user_id: dto.user_id,
-          week: dto.week,
-          year: dto.year,
-        },
+        unit_id: unitId,
+        user_id: dto.user_id,
+        week: dto.week,
+        year: dto.year,
       },
     });
 
@@ -468,47 +619,14 @@ export class UnitsService {
       throw new AppConflictException(ErrorCode.UNIT_WEEKLY_RECORD_DUPLICATE);
     }
 
-    // Validate and resolve scores if provided
-    let calculatedPoints = 0;
-    const validatedScores: { category_id: number; points: number }[] = [];
-
-    if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = this.resolveLocalFieldForUnit(unit);
-      const availableCategories =
-        localFieldId !== null
-          ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
-              localFieldId,
-            )
-          : [];
-
-      const categoryMap = new Map(
-        availableCategories.map((c) => [c.scoring_category_id, c]),
-      );
-
-      for (const scoreEntry of dto.scores) {
-        const category = categoryMap.get(scoreEntry.category_id);
-        if (!category) {
-          throw new AppBadRequestException(
-            ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
-          );
-        }
-        if (scoreEntry.points > category.max_points) {
-          throw new AppBadRequestException(
-            ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX,
-          );
-        }
-        calculatedPoints += scoreEntry.points;
-        validatedScores.push({
-          category_id: scoreEntry.category_id,
-          points: scoreEntry.points,
-        });
-      }
-    }
+    const { calculatedPoints, validatedScores } =
+      await this.validateScoreEntries(unit, dto.scores);
 
     // Use transaction for atomic create
     return this.prisma.$transaction(async (tx) => {
       const record = await tx.weekly_records.create({
         data: {
+          unit_id: unitId,
           user_id: dto.user_id,
           week: dto.week,
           year: dto.year,
@@ -546,6 +664,140 @@ export class UnitsService {
     });
   }
 
+  async bulkUpsertWeeklyRecords(
+    unitId: number,
+    dto: BulkUpsertWeeklyRecordsDto,
+    userId: string,
+    clubId?: number,
+  ) {
+    this.assertWeeklyRecordPeriodIsOpen(dto.week, dto.year);
+
+    const unit = await this.findOne(unitId, clubId);
+    const activeMemberUserIds = new Set(
+      unit.unit_members.filter((m) => m.active).map((m) => m.user_id),
+    );
+    const seenUserIds = new Set<string>();
+
+    const preparedRecords: Array<{
+      user_id: string;
+      attendance: number;
+      punctuality: number;
+      calculatedPoints: number;
+      validatedScores: { category_id: number; points: number }[];
+    }> = [];
+
+    for (const entry of dto.records) {
+      if (seenUserIds.has(entry.user_id)) {
+        throw new AppBadRequestException(
+          ErrorCode.UNIT_WEEKLY_RECORD_DUPLICATE_USER,
+        );
+      }
+      seenUserIds.add(entry.user_id);
+
+      if (!activeMemberUserIds.has(entry.user_id)) {
+        throw new AppBadRequestException(ErrorCode.UNIT_MEMBER_NOT_ACTIVE);
+      }
+
+      const { calculatedPoints, validatedScores } =
+        await this.validateScoreEntries(unit, entry.scores);
+
+      preparedRecords.push({
+        user_id: entry.user_id,
+        attendance: entry.attendance ?? 0,
+        punctuality: entry.punctuality ?? 0,
+        calculatedPoints,
+        validatedScores,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const saved: WeeklyRecordResponse[] = [];
+
+      for (const entry of preparedRecords) {
+        let record = await tx.weekly_records.findFirst({
+          where: {
+            unit_id: unitId,
+            user_id: entry.user_id,
+            week: dto.week,
+            year: dto.year,
+          },
+        });
+
+        if (!record) {
+          record = await tx.weekly_records.create({
+            data: {
+              unit_id: unitId,
+              user_id: entry.user_id,
+              week: dto.week,
+              year: dto.year,
+              attendance: entry.attendance,
+              punctuality: entry.punctuality,
+              points: entry.calculatedPoints,
+              active: true,
+              created_by: userId,
+              created_at: new Date(),
+              modified_at: new Date(),
+            },
+          });
+        } else {
+          record = await tx.weekly_records.update({
+            where: { record_id: record.record_id },
+            data: {
+              attendance: entry.attendance,
+              punctuality: entry.punctuality,
+              active: true,
+              modified_at: new Date(),
+            },
+          });
+        }
+
+        for (const scoreEntry of entry.validatedScores) {
+          await tx.weekly_record_scores.upsert({
+            where: {
+              record_id_category_id: {
+                record_id: record.record_id,
+                category_id: scoreEntry.category_id,
+              },
+            },
+            update: { points: scoreEntry.points },
+            create: {
+              record_id: record.record_id,
+              category_id: scoreEntry.category_id,
+              points: scoreEntry.points,
+            },
+          });
+        }
+
+        if (entry.validatedScores.length > 0) {
+          const allScores = await tx.weekly_record_scores.findMany({
+            where: { record_id: record.record_id },
+            select: { points: true },
+          });
+          const points = allScores.reduce((sum, s) => sum + s.points, 0);
+          record = await tx.weekly_records.update({
+            where: { record_id: record.record_id },
+            data: { points, modified_at: new Date() },
+          });
+        }
+
+        const hydrated = await tx.weekly_records.findUnique({
+          where: { record_id: record.record_id },
+          include: this.weeklyRecordInclude,
+        });
+
+        if (!hydrated) {
+          throw new AppInternalServerErrorException(
+            ErrorCode.INTERNAL_SERVER_ERROR,
+          );
+        }
+
+        saved.push(this.transformWeeklyRecord(hydrated));
+      }
+
+      return saved;
+    });
+  }
+
   async updateWeeklyRecord(
     unitId: number,
     recordId: number,
@@ -562,7 +814,16 @@ export class UnitsService {
       throw new AppNotFoundException(ErrorCode.UNIT_WEEKLY_RECORD_NOT_FOUND);
     }
 
-    // C3: Verify the record belongs to an active member of this unit
+    this.assertWeeklyRecordPeriodIsOpen(record.week, record.year);
+
+    const recordUnitId =
+      (record as { unit_id?: number | null }).unit_id ?? null;
+    if (recordUnitId !== null && recordUnitId !== unitId) {
+      throw new AppForbiddenException(ErrorCode.UNIT_WEEKLY_RECORD_WRONG_UNIT);
+    }
+
+    // C3: Verify the record belongs to an active member of this unit.
+    // Legacy records may have unit_id = null, so membership remains the fallback.
     const isMemberOfUnit = await this.prisma.unit_members.findFirst({
       where: { unit_id: unitId, user_id: record.user_id, active: true },
     });
@@ -575,35 +836,8 @@ export class UnitsService {
     const validatedScores: { category_id: number; points: number }[] = [];
 
     if (dto.scores && dto.scores.length > 0) {
-      const localFieldId = this.resolveLocalFieldForUnit(unit);
-      const availableCategories =
-        localFieldId !== null
-          ? await this.scoringCategoriesService.getActiveCategoriesForLocalField(
-              localFieldId,
-            )
-          : [];
-
-      const categoryMap = new Map(
-        availableCategories.map((c) => [c.scoring_category_id, c]),
-      );
-
-      for (const scoreEntry of dto.scores) {
-        const category = categoryMap.get(scoreEntry.category_id);
-        if (!category) {
-          throw new AppBadRequestException(
-            ErrorCode.UNIT_SCORING_CATEGORY_INVALID,
-          );
-        }
-        if (scoreEntry.points > category.max_points) {
-          throw new AppBadRequestException(
-            ErrorCode.UNIT_SCORING_POINTS_EXCEED_MAX,
-          );
-        }
-        validatedScores.push({
-          category_id: scoreEntry.category_id,
-          points: scoreEntry.points,
-        });
-      }
+      const validated = await this.validateScoreEntries(unit, dto.scores);
+      validatedScores.push(...validated.validatedScores);
     }
 
     return this.prisma.$transaction(async (tx) => {

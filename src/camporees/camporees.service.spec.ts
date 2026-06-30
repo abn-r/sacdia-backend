@@ -208,6 +208,8 @@ describe('CamporeesService', () => {
         includes_pathfinders: true,
         includes_master_guides: false,
         local_camporee_place: 'Test Location',
+        lat: 19.1738,
+        long: -96.1342,
         registration_cost: 50.0,
       };
 
@@ -256,6 +258,8 @@ describe('CamporeesService', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             name: createDto.name,
+            lat: createDto.lat,
+            long: createDto.long,
             active: true,
             ecclesiastical_year: 1,
           }),
@@ -384,7 +388,6 @@ describe('CamporeesService', () => {
     it('should register a member with valid insurance', async () => {
       const registerDto = {
         user_id: 'user-uuid',
-        camporee_type: 'local' as const,
         club_name: 'Test Club',
         insurance_id: 1,
       };
@@ -422,8 +425,11 @@ describe('CamporeesService', () => {
         insurance: mockInsurance,
       };
 
+      let createMemberMock: jest.Mock | undefined;
+
       // Mock transaction
       mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        createMemberMock = jest.fn().mockResolvedValue(mockMember);
         const tx = {
           local_camporees: {
             findUnique: jest.fn().mockResolvedValue(mockCamporee),
@@ -433,7 +439,7 @@ describe('CamporeesService', () => {
           },
           camporee_members: {
             findFirst: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockMember),
+            create: createMemberMock,
           },
           member_insurances: {
             findUnique: jest.fn().mockResolvedValue(mockInsurance),
@@ -446,6 +452,15 @@ describe('CamporeesService', () => {
 
       expect(result).toEqual(mockMember);
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(createMemberMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            camporee_type: 'local',
+            user_id: 'user-uuid',
+            insurance_id: 1,
+          }),
+        }),
+      );
     });
 
     it('should throw NotFoundException if camporee not found', async () => {
@@ -1110,7 +1125,6 @@ describe('CamporeesService', () => {
     it('should register member without insurance when insurance_id is not provided', async () => {
       const registerDto = {
         user_id: 'user-uuid',
-        camporee_type: 'local' as const,
         club_name: 'Test Club',
       };
 

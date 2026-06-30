@@ -23,6 +23,7 @@ import {
   UpdateUnitDto,
   AddUnitMemberDto,
   CreateWeeklyRecordDto,
+  BulkUpsertWeeklyRecordsDto,
   UpdateWeeklyRecordDto,
 } from './dto';
 import { JwtAuthGuard, PermissionsGuard } from '../common/guards';
@@ -204,6 +205,35 @@ export class UnitsController {
     @Request() req: any,
   ) {
     return this.unitsService.createWeeklyRecord(
+      unitId,
+      dto,
+      req.user.sub,
+      clubId,
+    );
+  }
+
+  @Post('clubs/:clubId/units/:unitId/weekly-records/bulk')
+  @RequirePermissions('units:update')
+  @AuthorizationResource({ type: 'club', clubIdParam: 'clubId' })
+  @ApiOperation({
+    summary: 'Crear o actualizar registros semanales de forma atómica',
+    description:
+      'Guarda la planilla semanal completa de una unidad en una sola transacción. Si un registro falla, no se persiste ninguno.',
+  })
+  @ApiParam({ name: 'clubId', type: Number })
+  @ApiParam({ name: 'unitId', type: Number })
+  @ApiResponse({ status: 201, description: 'Registros guardados' })
+  @ApiResponse({
+    status: 400,
+    description: 'Miembro/categoría/período inválido',
+  })
+  async bulkUpsertWeeklyRecords(
+    @Param('clubId', ParseIntPipe) clubId: number,
+    @Param('unitId', ParseIntPipe) unitId: number,
+    @Body() dto: BulkUpsertWeeklyRecordsDto,
+    @Request() req: any,
+  ) {
+    return this.unitsService.bulkUpsertWeeklyRecords(
       unitId,
       dto,
       req.user.sub,

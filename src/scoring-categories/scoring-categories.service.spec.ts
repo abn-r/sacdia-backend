@@ -142,6 +142,7 @@ describe('ScoringCategoriesService', () => {
         data: expect.objectContaining({
           origin_level: 'DIVISION',
           origin_id: 1,
+          scoring_mode: 'numeric',
         }),
       });
       expect(mockTx.scoring_categories.create).not.toHaveBeenCalledWith(
@@ -149,6 +150,38 @@ describe('ScoringCategoriesService', () => {
           data: expect.objectContaining({ origin_id: 0 }),
         }),
       );
+    });
+
+    it('creates division categories with explicit boolean_full scoring mode', async () => {
+      const created = {
+        scoring_category_id: 11,
+        name: 'Trajo Biblia',
+        max_points: 10,
+        scoring_mode: 'boolean_full',
+        origin_level: 'DIVISION',
+        origin_id: 1,
+        active: true,
+      };
+
+      mockPrisma.$queryRaw.mockResolvedValue([{ division_id: 1 }]);
+      mockPrisma.system_config.findUnique.mockResolvedValue({
+        config_value: '20',
+      });
+      mockTx.scoring_categories.create.mockResolvedValue(created);
+
+      await expect(
+        service.createDivisionCategory({
+          name: 'Trajo Biblia',
+          max_points: 10,
+          scoring_mode: 'boolean_full',
+        }),
+      ).resolves.toEqual(created);
+
+      expect(mockTx.scoring_categories.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          scoring_mode: 'boolean_full',
+        }),
+      });
     });
   });
 

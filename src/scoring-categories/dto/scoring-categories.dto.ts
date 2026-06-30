@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsBoolean,
+  IsEnum,
   MaxLength,
   Min,
   ValidateNested,
@@ -11,6 +12,11 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
+
+export enum ScoringModeDto {
+  NUMERIC = 'numeric',
+  BOOLEAN_FULL = 'boolean_full',
+}
 
 export class CreateScoringCategoryDto {
   @ApiProperty({ description: 'Nombre de la categoría (máx 100 chars)' })
@@ -20,13 +26,23 @@ export class CreateScoringCategoryDto {
 
   @ApiProperty({
     description:
-      'Puntos máximos por sesión para esta categoría (cap dinámico desde system_config: scoring.category_max_points_cap)',
+      'Puntos máximos semanales para esta categoría (cap dinámico desde system_config: scoring.category_max_points_cap)',
     minimum: 1,
   })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   declare max_points: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Modo de captura: numeric permite puntos intermedios; boolean_full otorga 0 o max_points',
+    enum: ScoringModeDto,
+    default: ScoringModeDto.NUMERIC,
+  })
+  @IsOptional()
+  @IsEnum(ScoringModeDto)
+  scoring_mode?: ScoringModeDto;
 
   @ApiPropertyOptional({
     description:
@@ -49,7 +65,7 @@ export class UpdateScoringCategoryDto {
 
   @ApiPropertyOptional({
     description:
-      'Puntos máximos por sesión (cap dinámico desde system_config: scoring.category_max_points_cap)',
+      'Puntos máximos semanales (cap dinámico desde system_config: scoring.category_max_points_cap)',
     minimum: 1,
   })
   @IsOptional()
@@ -57,6 +73,15 @@ export class UpdateScoringCategoryDto {
   @IsInt()
   @Min(1)
   max_points?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Modo de captura: numeric permite puntos intermedios; boolean_full otorga 0 o max_points',
+    enum: ScoringModeDto,
+  })
+  @IsOptional()
+  @IsEnum(ScoringModeDto)
+  scoring_mode?: ScoringModeDto;
 
   @ApiPropertyOptional({ description: 'Estado activo de la categoría' })
   @IsOptional()

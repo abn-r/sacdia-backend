@@ -1940,3 +1940,22 @@ JOIN roles r ON rp.role_id = r.role_id
 WHERE rp.active = true
 GROUP BY r.role_name, r.role_category
 ORDER BY permission_count, r.role_name;
+
+-- Ensure Camporee event read access for club operational roles (mobile detail).
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id)
+SELECT gen_random_uuid(), r.role_id, p.permission_id
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN (
+    'director',
+    'deputy-director',
+    'secretary',
+    'secretary-treasurer',
+    'treasurer',
+    'counselor'
+  )
+  AND r.role_category = 'CLUB'
+  AND r.active = true
+  AND p.permission_name = 'camporee_events:read'
+  AND p.active = true
+ON CONFLICT (role_id, permission_id) DO NOTHING;

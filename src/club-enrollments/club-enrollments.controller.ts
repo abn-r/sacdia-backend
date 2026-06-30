@@ -61,14 +61,10 @@ export class ClubEnrollmentsController {
     @Param('clubId', ParseIntPipe) clubId: number,
     @Param('sectionId', ParseIntPipe) sectionId: number,
     @Body() dto: CreateClubEnrollmentDto,
-    @CurrentUser() user: { user_id: string },
+    @CurrentUser() user: { user_id?: string; sub?: string },
   ) {
-    return this.clubEnrollmentsService.create(
-      clubId,
-      sectionId,
-      dto,
-      user.user_id,
-    );
+    const actorId = user.user_id ?? user.sub ?? '';
+    return this.clubEnrollmentsService.create(clubId, sectionId, dto, actorId);
   }
 
   @Get()

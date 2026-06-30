@@ -22,15 +22,17 @@ export class RegisterMemberDto {
   @IsNotEmpty()
   declare user_id: string;
 
-  @ApiProperty({
-    description: 'Tipo de camporee (local o unión)',
+  @ApiPropertyOptional({
+    description:
+      'Tipo de camporee (deprecated). El backend lo infiere desde el endpoint local/unión.',
     example: 'local',
     enum: ['local', 'union'],
   })
+  @IsOptional()
   @IsString()
   @IsIn(['local', 'union'])
   @MaxLength(50)
-  declare camporee_type: 'local' | 'union';
+  camporee_type?: 'local' | 'union';
 
   @ApiPropertyOptional({
     description: 'Nombre del club (requerido para registros de nivel unión)',

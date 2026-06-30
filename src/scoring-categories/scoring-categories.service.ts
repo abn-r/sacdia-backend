@@ -19,6 +19,7 @@ export interface CategoryWithReadonly {
   scoring_category_id: number;
   name: string;
   max_points: number;
+  scoring_mode: 'numeric' | 'boolean_full';
   origin_level: origin_level_enum;
   origin_id: number;
   active: boolean;
@@ -178,6 +179,7 @@ export class ScoringCategoriesService {
         data: {
           name: mainData.name,
           max_points: mainData.max_points,
+          scoring_mode: mainData.scoring_mode ?? 'numeric',
           origin_level: 'DIVISION',
           origin_id: divisionId,
           active: true,
@@ -235,6 +237,9 @@ export class ScoringCategoriesService {
           ...(mainDto.name !== undefined && { name: mainDto.name }),
           ...(mainDto.max_points !== undefined && {
             max_points: mainDto.max_points,
+          }),
+          ...(mainDto.scoring_mode !== undefined && {
+            scoring_mode: mainDto.scoring_mode,
           }),
           ...(mainDto.active !== undefined && { active: mainDto.active }),
         },
@@ -428,6 +433,7 @@ export class ScoringCategoriesService {
         data: {
           name: mainData.name,
           max_points: mainData.max_points,
+          scoring_mode: mainData.scoring_mode ?? 'numeric',
           origin_level: 'UNION',
           origin_id: unionId,
           active: true,
@@ -487,6 +493,9 @@ export class ScoringCategoriesService {
           ...(mainDto.name !== undefined && { name: mainDto.name }),
           ...(mainDto.max_points !== undefined && {
             max_points: mainDto.max_points,
+          }),
+          ...(mainDto.scoring_mode !== undefined && {
+            scoring_mode: mainDto.scoring_mode,
           }),
           ...(mainDto.active !== undefined && { active: mainDto.active }),
         },
@@ -615,6 +624,7 @@ export class ScoringCategoriesService {
         data: {
           name: mainData.name,
           max_points: mainData.max_points,
+          scoring_mode: mainData.scoring_mode ?? 'numeric',
           origin_level: 'LOCAL_FIELD',
           origin_id: fieldId,
           active: true,
@@ -677,6 +687,9 @@ export class ScoringCategoriesService {
           ...(mainDto.name !== undefined && { name: mainDto.name }),
           ...(mainDto.max_points !== undefined && {
             max_points: mainDto.max_points,
+          }),
+          ...(mainDto.scoring_mode !== undefined && {
+            scoring_mode: mainDto.scoring_mode,
           }),
           ...(mainDto.active !== undefined && { active: mainDto.active }),
         },

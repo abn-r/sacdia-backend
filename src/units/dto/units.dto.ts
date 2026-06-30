@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsUUID,
   IsArray,
+  ArrayMinSize,
   ValidateNested,
   Min,
   Max,
@@ -132,7 +133,10 @@ export class CreateWeeklyRecordDto {
   @Max(2100)
   declare year: number;
 
-  @ApiPropertyOptional({ description: 'Asistencia (0 o 1)' })
+  @ApiPropertyOptional({
+    description:
+      'Campo legacy de asistencia. Ya no suma puntos; configura asistencia como categoría si debe puntuar.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -140,7 +144,10 @@ export class CreateWeeklyRecordDto {
   @Max(100)
   attendance?: number;
 
-  @ApiPropertyOptional({ description: 'Puntualidad (puntos legacy)' })
+  @ApiPropertyOptional({
+    description:
+      'Campo legacy de puntualidad. Ya no suma puntos; configura puntualidad como categoría si debe puntuar.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -159,8 +166,15 @@ export class CreateWeeklyRecordDto {
   scores?: ScoreEntryDto[];
 }
 
-export class UpdateWeeklyRecordDto {
-  @ApiPropertyOptional({ description: 'Asistencia (puntos)' })
+export class BulkWeeklyRecordEntryDto {
+  @ApiProperty({ description: 'UUID del usuario' })
+  @IsUUID()
+  declare user_id: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Campo legacy de asistencia. Ya no suma puntos; configura asistencia como categoría si debe puntuar.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -168,7 +182,70 @@ export class UpdateWeeklyRecordDto {
   @Max(100)
   attendance?: number;
 
-  @ApiPropertyOptional({ description: 'Puntualidad (puntos)' })
+  @ApiPropertyOptional({
+    description:
+      'Campo legacy de puntualidad. Ya no suma puntos; configura puntualidad como categoría si debe puntuar.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  punctuality?: number;
+
+  @ApiPropertyOptional({
+    description: 'Array de puntos por categoría de puntuación',
+    type: [ScoreEntryDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScoreEntryDto)
+  scores?: ScoreEntryDto[];
+}
+
+export class BulkUpsertWeeklyRecordsDto {
+  @ApiProperty({ description: 'Número de semana ISO' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(53)
+  declare week: number;
+
+  @ApiProperty({ description: 'Año ISO del registro (ej: 2026)' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(2020)
+  @Max(2100)
+  declare year: number;
+
+  @ApiProperty({
+    description: 'Registros por miembro a crear/actualizar atómicamente',
+    type: [BulkWeeklyRecordEntryDto],
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => BulkWeeklyRecordEntryDto)
+  declare records: BulkWeeklyRecordEntryDto[];
+}
+
+export class UpdateWeeklyRecordDto {
+  @ApiPropertyOptional({
+    description:
+      'Campo legacy de asistencia. Ya no suma puntos; configura asistencia como categoría si debe puntuar.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  attendance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Campo legacy de puntualidad. Ya no suma puntos; configura puntualidad como categoría si debe puntuar.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

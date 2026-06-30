@@ -1,3 +1,15 @@
+allowBuilds:
+  '@firebase/util': set this to true or false
+  '@nestjs/core': set this to true or false
+  '@prisma/engines': set this to true or false
+  '@scarf/scarf': set this to true or false
+  '@sentry-internal/node-cpu-profiler': set this to true or false
+  esbuild: set this to true or false
+  msgpackr-extract: set this to true or false
+  prisma: set this to true or false
+  protobufjs: set this to true or false
+  sharp: set this to true or false
+  unrs-resolver: set this to true or false
 onlyBuiltDependencies:
   - '@nestjs/core'
   - '@prisma/engines'

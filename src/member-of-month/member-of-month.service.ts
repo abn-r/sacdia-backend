@@ -327,6 +327,21 @@ export class MemberOfMonthService {
         AND wr.week >= ${weekRange.startWeek}
         AND wr.week <= ${weekRange.endWeek}
         AND wr.active = true
+        AND (
+          wr.unit_id = u.unit_id
+          OR (
+            wr.unit_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM weekly_records wr_specific
+              WHERE wr_specific.user_id = wr.user_id
+                AND wr_specific.unit_id = u.unit_id
+                AND wr_specific.year = wr.year
+                AND wr_specific.week = wr.week
+                AND wr_specific.active = true
+            )
+          )
+        )
       LEFT JOIN weekly_record_scores wrs ON wrs.record_id = wr.record_id
       WHERE um.active = true
       GROUP BY um.user_id
@@ -337,6 +352,9 @@ export class MemberOfMonthService {
       this.logger.log(
         `No scores found for section ${sectionId}, month ${month}/${year}`,
       );
+      await this.prisma.member_of_month.deleteMany({
+        where: { club_section_id: sectionId, month, year },
+      });
       return { winners: [], section_id: sectionId, month, year };
     }
 
