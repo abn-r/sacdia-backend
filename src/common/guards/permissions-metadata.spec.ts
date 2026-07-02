@@ -1,6 +1,7 @@
 import { ActivitiesController } from '../../activities/activities.controller';
 import { AdminGeographyController } from '../../admin/admin-geography.controller';
 import { AdminReferenceController } from '../../admin/admin-reference.controller';
+import { UserClassesController } from '../../classes/classes.controller';
 import { UserCertificationsController } from '../../certifications/certifications.controller';
 import {
   getSensitiveUserSubresourceFallbackPermission,
@@ -93,6 +94,24 @@ describe('Permissions metadata', () => {
         UsersController.prototype.findOne,
       ),
     ).toEqual({ type: 'user', ownerParam: 'userId' });
+  });
+
+  it('marks class progress write routes as owner-aware active assignment resources', () => {
+    for (const handler of [
+      UserClassesController.prototype.updateProgress,
+      UserClassesController.prototype.submitSection,
+      UserClassesController.prototype.uploadSectionFile,
+      UserClassesController.prototype.deleteSectionFile,
+    ]) {
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+        permissions: ['classes:submit_progress'],
+        mode: 'all',
+      });
+      expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
+        type: 'active_assignment',
+        ownerParam: 'userId',
+      });
+    }
   });
 
   it('marks user health read routes as owner-aware health reads', () => {

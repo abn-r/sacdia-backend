@@ -541,5 +541,7 @@
   "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Os envios da Pasta Anual de Evidências foram encerrados em {closingDate}",
   "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Não é possível enviar a pasta: ainda há seções obrigatórias pendentes ({pendingSections})",
   "ANNUAL_FOLDER_TEMPLATE_LOCKED": "O modelo está {status} e não pode mais ser editado. Copie-o para criar um novo rascunho.",
-  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Não é possível excluir o modelo porque ele já possui pastas criadas"
+  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Não é possível excluir o modelo porque ele já possui pastas criadas",
+  "INVESTITURE_REQUIREMENTS_INCOMPLETE": "Ainda há requisitos obrigatórios da classe incompletos para enviar a investidura",
+  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "A configuração da trilha da seção é inválida"
 }

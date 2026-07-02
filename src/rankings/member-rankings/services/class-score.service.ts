@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { ClassRequirementEligibilityService } from '../../../classes/class-requirement-eligibility.service';
 
 @Injectable()
 export class ClassScoreService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly requirementEligibility: ClassRequirementEligibilityService,
+  ) {}
 
   async calculate(
     enrollmentId: number,
@@ -14,18 +18,12 @@ export class ClassScoreService {
     });
     if (!enrollment) return null;
 
-    const completedCount = await this.prisma.class_module_progress.count({
-      where: {
-        enrollment_id: enrollmentId,
-        active: true,
-      },
-    });
+    const eligibility =
+      await this.requirementEligibility.calculateForEnrollment(enrollmentId);
 
-    const requiredCount = await this.prisma.class_modules.count({
-      where: { class_id: enrollment.class_id },
-    });
-
+    const requiredCount = eligibility?.investiture_progress.total ?? 0;
     if (requiredCount === 0) return null;
-    return Math.min((completedCount / requiredCount) * 100, 100);
+
+    return Math.min(eligibility?.overall_progress ?? 0, 100);
   }
 }

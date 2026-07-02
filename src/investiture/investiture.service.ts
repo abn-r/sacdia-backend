@@ -21,6 +21,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { CoordinationService } from '../coordination/coordination.service';
+import { ClassRequirementEligibilityService } from '../classes/class-requirement-eligibility.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import { ApproveInvestitureDto } from './dto/approve-investiture.dto';
 import { RejectInvestitureDto } from './dto/reject-investiture.dto';
@@ -155,6 +156,7 @@ export class InvestitureService {
     private readonly notifications: NotificationsService,
     private readonly achievementsService: AchievementsService,
     private readonly coordinationService: CoordinationService,
+    private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
   // ========================================
@@ -226,6 +228,8 @@ export class InvestitureService {
       enrollmentId,
       actorId,
     );
+
+    await this.ensureRequiredClassRequirementsComplete(enrollmentId);
 
     // Step 4: Resolve investiture_config (throws NotFoundException if not found)
     const config = await this.resolveInvestitureConfig(enrollment);
@@ -2160,6 +2164,29 @@ export class InvestitureService {
         elapsedYears,
         maxDurationYears: enrollment.classes.max_duration_years,
       });
+    }
+  }
+
+  private async ensureRequiredClassRequirementsComplete(
+    enrollmentId: number,
+  ): Promise<void> {
+    const eligibility =
+      await this.requirementEligibility.calculateForEnrollment(enrollmentId);
+
+    if (!eligibility?.investiture_eligibility.eligible) {
+      throw new AppBadRequestException(
+        ErrorCode.INVESTITURE_REQUIREMENTS_INCOMPLETE,
+        {
+          requiredSections:
+            eligibility?.investiture_eligibility.total ?? null,
+          completedSections:
+            eligibility?.investiture_eligibility.completed ?? null,
+          missingRequiredSections:
+            eligibility?.investiture_eligibility.missing_required_sections ??
+            null,
+          reason: eligibility?.investiture_eligibility.reason ?? null,
+        },
+      );
     }
   }
 

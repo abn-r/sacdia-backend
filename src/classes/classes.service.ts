@@ -26,6 +26,10 @@ import {
   resolveEvidenceFileExtension,
 } from '../common/utils/evidence-file-names';
 import { ClassProgressAccessService } from './class-progress-access.service';
+import {
+  ClassRequirementEligibilityService,
+  type ClassRequirementEligibilityResult,
+} from './class-requirement-eligibility.service';
 import pLimit from 'p-limit';
 
 // Concurrency cap for the evidence URL presign fan-out in getUserProgress.
@@ -53,6 +57,7 @@ export class ClassesService {
     private readonly achievementsService: AchievementsService,
     private readonly translationService: TranslationService,
     private readonly classProgressAccess: ClassProgressAccessService,
+    private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
   private getSiblingClubTypeIds(): Promise<number[]> {
@@ -308,7 +313,7 @@ export class ClassesService {
                   select: { locale: true, name: true, description: true },
                 },
               },
-              orderBy: { section_id: 'asc' },
+              orderBy: [{ display_order: 'asc' }, { section_id: 'asc' }],
             },
           },
           orderBy: { module_id: 'asc' },
@@ -573,6 +578,7 @@ export class ClassesService {
             name: true,
             description: true,
             asset_code: true,
+            advanced_enabled: true,
             club_types: { select: { name: true } },
           },
         },
@@ -585,74 +591,43 @@ export class ClassesService {
       return [];
     }
 
-    const enrollmentIds = enrollments.map((e) => e.enrollment_id);
-    const classIds = [...new Set(enrollments.map((e) => e.class_id))];
-
-    // Batch: completed sections per enrollment.
-    // Keep this aligned with getUserProgress(): a section is complete when it
-    // was institutionally validated, even if legacy score remains 0.
-    const completedByEnrollment =
-      await this.prisma.class_section_progress.groupBy({
-        by: ['enrollment_id'],
-        where: {
-          enrollment_id: { in: enrollmentIds },
-          active: true,
-          OR: [
-            { status: evidence_validation_enum.VALIDATED },
-            { score: { gte: 70 } },
-          ],
-        },
-        _count: { section_progress_id: true },
-      });
-
-    // Batch: total active sections per class
-    const totalByClass = await this.prisma.class_sections.groupBy({
-      by: ['module_id'],
-      where: {
-        class_modules: { class_id: { in: classIds } },
-        active: true,
-      },
-      _count: { section_id: true },
-    });
-
-    // To map module_id -> class_id we need the modules
-    const modules = await this.prisma.class_modules.findMany({
-      where: { class_id: { in: classIds }, active: true },
-      select: { module_id: true, class_id: true },
-    });
-
-    const moduleToClass = new Map<number, number>(
-      modules.map((m) => [m.module_id, m.class_id]),
+    const eligibilityEntries = await Promise.all(
+      enrollments.map(
+        async (
+          enrollment,
+        ): Promise<[number, ClassRequirementEligibilityResult | null]> => [
+          enrollment.enrollment_id,
+          await this.requirementEligibility.calculateForEnrollment(
+            enrollment.enrollment_id,
+          ),
+        ],
+      ),
     );
 
-    // Aggregate total sections per class_id
-    const totalSectionsPerClass = new Map<number, number>();
-    for (const row of totalByClass) {
-      const classId = moduleToClass.get(row.module_id);
-      if (classId !== undefined) {
-        totalSectionsPerClass.set(
-          classId,
-          (totalSectionsPerClass.get(classId) ?? 0) + row._count.section_id,
-        );
-      }
-    }
-
-    // Completed sections per enrollment_id
-    const completedPerEnrollment = new Map<number, number>(
-      completedByEnrollment.map((row) => [
-        row.enrollment_id!,
-        row._count.section_progress_id,
-      ]),
+    const eligibilityByEnrollment = new Map<
+      number,
+      ClassRequirementEligibilityResult
+    >(
+      eligibilityEntries.filter(
+        (
+          entry,
+        ): entry is [number, ClassRequirementEligibilityResult] =>
+          entry[1] !== null,
+      ),
     );
 
     return enrollments.map((enrollment) => {
-      const total = totalSectionsPerClass.get(enrollment.class_id) ?? 0;
-      const completed =
-        completedPerEnrollment.get(enrollment.enrollment_id) ?? 0;
-      const overall_progress =
-        total > 0 ? Math.round((completed / total) * 100) : 0;
+      const eligibility = eligibilityByEnrollment.get(enrollment.enrollment_id);
 
-      return { ...enrollment, overall_progress };
+      return {
+        ...enrollment,
+        overall_progress: eligibility?.overall_progress ?? 0,
+        basic_progress: eligibility?.basic_progress,
+        advanced_progress: eligibility?.advanced_progress,
+        extra_progress: eligibility?.extra_progress,
+        investiture_eligibility: eligibility?.investiture_eligibility,
+        advanced_eligibility: eligibility?.advanced_eligibility,
+      };
     });
   }
 
@@ -749,84 +724,134 @@ export class ClassesService {
       ),
     );
 
-    // Calculate completion
-    let totalSections = 0;
-    let completedSections = 0;
+    const eligibility =
+      await this.requirementEligibility.calculateForEnrollment(
+        resolvedEnrollment.enrollmentId,
+      );
+    const applicableSectionIds = new Set(
+      eligibility?.applicable_section_ids ??
+        classData.class_modules.flatMap((module) =>
+          module.class_sections.map((section) => section.section_id),
+        ),
+    );
 
-    const modulesProgress = classData.class_modules.map((module) => {
-      const sectionsInModule = module.class_sections.length;
-      totalSections += sectionsInModule;
-
-      const isCompletedProgress = (
-        progress: (typeof sectionProgress)[number] | undefined,
-      ) =>
-        Boolean(
-          progress &&
+    const isCompletedProgress = (
+      progress: (typeof sectionProgress)[number] | undefined,
+    ) =>
+      Boolean(
+        progress &&
           (progress.status === evidence_validation_enum.VALIDATED ||
             progress.score >= 70),
+      );
+
+    const modulesProgress = classData.class_modules
+      .map((module) => {
+        const applicableSections = module.class_sections.filter((section) =>
+          applicableSectionIds.has(section.section_id),
         );
+        const sectionsInModule = applicableSections.length;
 
-      const completedInModule = sectionProgress.filter(
-        (sp) => sp.module_id === module.module_id && isCompletedProgress(sp),
-      ).length;
-      completedSections += completedInModule;
-
-      return {
-        module_id: module.module_id,
-        module_name: module.name,
-        total_sections: sectionsInModule,
-        completed_sections: completedInModule,
-        progress_percentage:
-          sectionsInModule > 0
-            ? Math.round((completedInModule / sectionsInModule) * 100)
-            : 0,
-        sections: module.class_sections.map((section) => {
+        const completedInModule = applicableSections.filter((section) => {
           const progress = sectionProgress.find(
             (sp) => sp.section_id === section.section_id,
           );
-          const evidenceFiles = (progress?.evidence_files ?? []).map((ef) => ({
-            id: String(ef.evidence_file_id),
-            file_id: ef.evidence_file_id,
-            file_name: ef.file_name,
-            file_type: ef.file_type,
-            file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
-            uploaded_at: ef.uploaded_at.toISOString(),
-            uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
-          }));
-          return {
-            section_id: section.section_id,
-            section_name: section.name,
-            completed: isCompletedProgress(progress),
-            score: progress?.score || 0,
-            evidences: progress?.evidences || null,
-            evidence_files: evidenceFiles,
-            status: progress?.status ?? evidence_validation_enum.PENDING,
-            submitted_by_name: this.formatUserName(
-              progress?.submitted_by ?? null,
-            ),
-            submitted_at: progress?.submitted_at?.toISOString() || null,
-            validated_by_name: this.formatUserName(
-              progress?.validated_by_user ?? null,
-            ),
-            validated_at: progress?.validated_at?.toISOString() || null,
-            rejection_reason: progress?.rejection_reason || null,
-          };
-        }),
-      };
-    });
+          return isCompletedProgress(progress);
+        }).length;
+
+        return {
+          module_id: module.module_id,
+          id: module.module_id,
+          class_id: classId,
+          module_name: module.name,
+          name: module.name,
+          description: module.description ?? null,
+          total_sections: sectionsInModule,
+          completed_sections: completedInModule,
+          progress_percentage:
+            sectionsInModule > 0
+              ? Math.round((completedInModule / sectionsInModule) * 100)
+              : 0,
+          sections: applicableSections.map((section) => {
+            const progress = sectionProgress.find(
+              (sp) => sp.section_id === section.section_id,
+            );
+            const evidenceFiles = (progress?.evidence_files ?? []).map((ef) => ({
+              id: String(ef.evidence_file_id),
+              file_id: ef.evidence_file_id,
+              file_name: ef.file_name,
+              file_type: ef.file_type,
+              file_url: signedUrlMap.get(ef.evidence_file_id) ?? ef.file_url,
+              uploaded_at: ef.uploaded_at.toISOString(),
+              uploaded_by_name: this.formatUserName(ef.uploaded_by ?? null),
+            }));
+            return {
+              section_id: section.section_id,
+              id: section.section_id,
+              section_name: section.name,
+              name: section.name,
+              description: section.description ?? null,
+              module_id: module.module_id,
+              requirement_track: section.requirement_track,
+              required_for_investiture: section.required_for_investiture,
+              display_order: section.display_order,
+              completed: isCompletedProgress(progress),
+              score: progress?.score || 0,
+              evidences: progress?.evidences || null,
+              evidence_files: evidenceFiles,
+              status: progress?.status ?? evidence_validation_enum.PENDING,
+              submitted_by_name: this.formatUserName(
+                progress?.submitted_by ?? null,
+              ),
+              submitted_at: progress?.submitted_at?.toISOString() || null,
+              validated_by_name: this.formatUserName(
+                progress?.validated_by_user ?? null,
+              ),
+              validated_at: progress?.validated_at?.toISOString() || null,
+              rejection_reason: progress?.rejection_reason || null,
+            };
+          }),
+        };
+      })
+      .filter((module) => module.total_sections > 0);
+
+    const totalSections =
+      eligibility?.investiture_progress.total ??
+      modulesProgress.reduce((sum, module) => sum + module.total_sections, 0);
+    const completedSections =
+      eligibility?.investiture_progress.completed ??
+      modulesProgress.reduce(
+        (sum, module) => sum + module.completed_sections,
+        0,
+      );
+    const fallbackOverallProgress =
+      totalSections > 0
+        ? Math.round((completedSections / totalSections) * 100)
+        : 0;
 
     return {
       enrollment_id: resolvedEnrollment.enrollmentId,
       ecclesiastical_year_id: resolvedEnrollment.ecclesiasticalYearId,
       investiture_status: resolvedEnrollment.investitureStatus,
       class_id: classId,
+      id: classId,
       class_name: classData.name,
+      name: classData.name,
+      description: classData.description ?? null,
+      club_type_id: classData.club_type_id,
+      advanced_enabled: classData.advanced_enabled,
+      available_from_year_id: classData.available_from_year_id,
+      available_until_year_id: classData.available_until_year_id,
+      min_duration_years: classData.min_duration_years,
+      max_duration_years: classData.max_duration_years,
       total_sections: totalSections,
       completed_sections: completedSections,
-      overall_progress:
-        totalSections > 0
-          ? Math.round((completedSections / totalSections) * 100)
-          : 0,
+      overall_progress: eligibility?.overall_progress ?? fallbackOverallProgress,
+      percentage: eligibility?.overall_progress ?? fallbackOverallProgress,
+      basic_progress: eligibility?.basic_progress,
+      advanced_progress: eligibility?.advanced_progress,
+      extra_progress: eligibility?.extra_progress,
+      investiture_eligibility: eligibility?.investiture_eligibility,
+      advanced_eligibility: eligibility?.advanced_eligibility,
       modules: modulesProgress,
     };
   }

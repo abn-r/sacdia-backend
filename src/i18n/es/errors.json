@@ -552,5 +552,7 @@
   "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Los envíos de la Carpeta Anual de Evidencias cerraron el {closingDate}",
   "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "No se puede enviar la carpeta: todavía hay secciones requeridas pendientes ({pendingSections})",
   "ANNUAL_FOLDER_TEMPLATE_LOCKED": "La plantilla está {status} y ya no puede editarse. Copiala para crear un nuevo borrador.",
-  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "No se puede eliminar la plantilla porque ya tiene carpetas creadas"
+  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "No se puede eliminar la plantilla porque ya tiene carpetas creadas",
+  "INVESTITURE_REQUIREMENTS_INCOMPLETE": "Todavía faltan requisitos obligatorios de la clase para enviar la investidura",
+  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "La configuración del track de la sección no es válida"
 }

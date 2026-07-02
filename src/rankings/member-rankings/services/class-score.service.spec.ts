@@ -1,10 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { ClassScoreService } from './class-score.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { ClassRequirementEligibilityService } from '../../../classes/class-requirement-eligibility.service';
 
 describe('ClassScoreService', () => {
   let service: ClassScoreService;
   let prisma: jest.Mocked<PrismaService>;
+  let requirementEligibility: {
+    calculateForEnrollment: jest.Mock;
+  };
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
@@ -14,14 +18,17 @@ describe('ClassScoreService', () => {
           provide: PrismaService,
           useValue: {
             enrollments: { findUnique: jest.fn() },
-            class_module_progress: { count: jest.fn() },
-            class_modules: { count: jest.fn() },
           },
+        },
+        {
+          provide: ClassRequirementEligibilityService,
+          useValue: { calculateForEnrollment: jest.fn() },
         },
       ],
     }).compile();
     service = module.get(ClassScoreService);
     prisma = module.get(PrismaService);
+    requirementEligibility = module.get(ClassRequirementEligibilityService);
   });
 
   it('happy path: 3/5 modules completed → 60.00', async () => {
@@ -30,8 +37,10 @@ describe('ClassScoreService', () => {
       class_id: 10,
       ecclesiastical_year_id: 2,
     });
-    (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(3);
-    (prisma.class_modules.count as jest.Mock).mockResolvedValue(5);
+    requirementEligibility.calculateForEnrollment.mockResolvedValue({
+      investiture_progress: { total: 5, completed: 3, percentage: 60 },
+      overall_progress: 60,
+    });
     expect(await service.calculate(1, 2)).toBe(60);
   });
 
@@ -41,8 +50,10 @@ describe('ClassScoreService', () => {
       class_id: 10,
       ecclesiastical_year_id: 2,
     });
-    (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(0);
-    (prisma.class_modules.count as jest.Mock).mockResolvedValue(0);
+    requirementEligibility.calculateForEnrollment.mockResolvedValue({
+      investiture_progress: { total: 0, completed: 0, percentage: 0 },
+      overall_progress: 0,
+    });
     expect(await service.calculate(1, 2)).toBeNull();
   });
 
@@ -52,16 +63,19 @@ describe('ClassScoreService', () => {
       class_id: 10,
       ecclesiastical_year_id: 2,
     });
-    (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(7);
-    (prisma.class_modules.count as jest.Mock).mockResolvedValue(5);
+    requirementEligibility.calculateForEnrollment.mockResolvedValue({
+      investiture_progress: { total: 5, completed: 7, percentage: 140 },
+      overall_progress: 140,
+    });
     expect(await service.calculate(1, 2)).toBe(100);
   });
 
   it('no enrollment → null (short-circuits, no further DB calls)', async () => {
     (prisma.enrollments.findUnique as jest.Mock).mockResolvedValue(null);
     expect(await service.calculate(999, 2)).toBeNull();
-    expect(prisma.class_module_progress.count).not.toHaveBeenCalled();
-    expect(prisma.class_modules.count).not.toHaveBeenCalled();
+    expect(
+      requirementEligibility.calculateForEnrollment,
+    ).not.toHaveBeenCalled();
   });
 
   it('exact 0 completed of 5 required → 0', async () => {
@@ -70,8 +84,10 @@ describe('ClassScoreService', () => {
       class_id: 10,
       ecclesiastical_year_id: 2,
     });
-    (prisma.class_module_progress.count as jest.Mock).mockResolvedValue(0);
-    (prisma.class_modules.count as jest.Mock).mockResolvedValue(5);
+    requirementEligibility.calculateForEnrollment.mockResolvedValue({
+      investiture_progress: { total: 5, completed: 0, percentage: 0 },
+      overall_progress: 0,
+    });
     expect(await service.calculate(1, 2)).toBe(0);
   });
 });

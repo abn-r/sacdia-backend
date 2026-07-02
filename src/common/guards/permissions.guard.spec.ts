@@ -347,6 +347,54 @@ describe('PermissionsGuard', () => {
     expect((request as any).authorizationProfile).toBe(resolved);
   });
 
+  it('allows an explicitly owner-scoped active assignment resource when the actor owns the target user', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['classes:submit_progress'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'active_assignment', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({}),
+    );
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'member-1' },
+          params: { userId: 'member-1' },
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('does not apply the owner bypass to third-party active assignment resources', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['classes:submit_progress'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'active_assignment', ownerParam: 'userId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({}),
+    );
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'member-1' },
+          params: { userId: 'other-member' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.GUARD_PERMISSION_DENIED });
+  });
+
   it('rejects a global resource when the permission only exists on the active club assignment', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {

@@ -5,6 +5,11 @@ import {
   AppForbiddenException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
+import {
+  Prisma,
+  evidence_validation_enum,
+  honor_validation_status_enum,
+} from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApproveEvidenceDto } from './dto/approve-evidence.dto';
@@ -33,11 +38,11 @@ import { CoordinationService } from '../coordination/coordination.service';
 // PENDING_REVIEW / APPROVED / REJECTED) after the 20260328110000_honor_validation_status_enum
 // migration.
 
-const CLASS_STATUS_SUBMITTED = 'SUBMITTED';
-const CLASS_STATUS_VALIDATED = 'VALIDATED';
-const CLASS_STATUS_REJECTED = 'REJECTED';
+const CLASS_STATUS_SUBMITTED = evidence_validation_enum.SUBMITTED;
+const CLASS_STATUS_VALIDATED = evidence_validation_enum.VALIDATED;
+const CLASS_STATUS_REJECTED = evidence_validation_enum.REJECTED;
 
-const HONOR_STATUS_PENDING = 'PENDING_REVIEW';
+const HONOR_STATUS_PENDING = honor_validation_status_enum.PENDING_REVIEW;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -265,9 +270,7 @@ export class EvidenceReviewService {
     if (scopedClubSectionIds?.length === 0) return [];
     if (options?.ids?.length === 0) return [];
 
-    const query: Parameters<
-      typeof this.prisma.class_section_progress.findMany
-    >[0] = {
+    const query = {
       where: {
         ...this.buildClassPendingWhere(scopedClubSectionIds),
         ...(options?.ids
@@ -290,7 +293,7 @@ export class EvidenceReviewService {
       orderBy: { submitted_at: 'asc' },
       ...(options?.skip !== undefined ? { skip: options.skip } : {}),
       ...(options?.take !== undefined ? { take: options.take } : {}),
-    };
+    } satisfies Prisma.class_section_progressFindManyArgs;
 
     const records = await this.prisma.class_section_progress.findMany(query);
 
@@ -320,9 +323,7 @@ export class EvidenceReviewService {
     if (scopedClubSectionIds?.length === 0) return [];
     if (options?.ids?.length === 0) return [];
 
-    const query: Parameters<
-      typeof this.prisma.users_honors.findMany
-    >[0] = {
+    const query = {
       where: {
         ...this.buildHonorPendingWhere(scopedClubSectionIds),
         ...(options?.ids
@@ -349,7 +350,7 @@ export class EvidenceReviewService {
       orderBy: { submitted_at: 'asc' },
       ...(options?.skip !== undefined ? { skip: options.skip } : {}),
       ...(options?.take !== undefined ? { take: options.take } : {}),
-    };
+    } satisfies Prisma.users_honorsFindManyArgs;
 
     const records = await this.prisma.users_honors.findMany(query);
 
@@ -379,7 +380,9 @@ export class EvidenceReviewService {
     });
   }
 
-  private buildClassPendingWhere(scopedClubSectionIds?: number[]) {
+  private buildClassPendingWhere(
+    scopedClubSectionIds?: number[],
+  ): Prisma.class_section_progressWhereInput {
     return {
       status: CLASS_STATUS_SUBMITTED,
       active: true,
@@ -388,7 +391,9 @@ export class EvidenceReviewService {
     };
   }
 
-  private buildHonorPendingWhere(scopedClubSectionIds?: number[]) {
+  private buildHonorPendingWhere(
+    scopedClubSectionIds?: number[],
+  ): Prisma.users_honorsWhereInput {
     return {
       validation_status: HONOR_STATUS_PENDING,
       active: true,
@@ -1255,7 +1260,11 @@ export class EvidenceReviewService {
     return this.coordinationService.getEffectiveCoordinatorSectionIds(actorId);
   }
 
-  private buildUserSectionScopeWhere(scopedClubSectionIds?: number[]) {
+  private buildUserSectionScopeWhere(
+    scopedClubSectionIds?: number[],
+  ):
+    | Pick<Prisma.class_section_progressWhereInput, 'users'>
+    | Pick<Prisma.users_honorsWhereInput, 'users'> {
     if (scopedClubSectionIds === undefined) return {};
 
     return {

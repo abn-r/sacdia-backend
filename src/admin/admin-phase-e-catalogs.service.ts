@@ -19,6 +19,7 @@ import { Queue } from 'bullmq';
 import {
   AppNotFoundException,
   AppConflictException,
+  AppBadRequestException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,6 +30,7 @@ import {
   MasterHonorJobMasterHonorData,
 } from '../honors/master-honors.constants';
 import {
+  class_requirement_track_enum,
   master_honor_applicability_scope_enum,
   master_honor_requirement_group_type_enum,
 } from '@prisma/client';
@@ -48,6 +50,17 @@ import {
   CreateMasterHonorDto,
   UpdateMasterHonorDto,
 } from './dto/phase-e-catalogs.dto';
+
+type ClassSectionRequirementConfig = {
+  requirement_track: class_requirement_track_enum;
+  required_for_investiture: boolean;
+  display_order: number;
+  owner_division_id: number | null;
+  owner_union_id: number | null;
+  owner_local_field_id: number | null;
+  available_from_year_id: number | null;
+  available_until_year_id: number | null;
+};
 
 @Injectable()
 export class AdminPhaseECatalogsService {
@@ -120,6 +133,7 @@ export class AdminPhaseECatalogsService {
           club_type_id: mainData.club_type_id!,
           minimum_age: mainData.minimum_age ?? 0,
           requires_invested_gm: mainData.requires_invested_gm ?? false,
+          advanced_enabled: mainData.advanced_enabled ?? false,
           display_order: mainData.display_order ?? 0,
           available_from_year_id: mainData.available_from_year_id ?? null,
           available_until_year_id: mainData.available_until_year_id ?? null,
@@ -180,6 +194,9 @@ export class AdminPhaseECatalogsService {
             : {}),
           ...(typeof mainDto.requires_invested_gm === 'boolean'
             ? { requires_invested_gm: mainDto.requires_invested_gm }
+            : {}),
+          ...(typeof mainDto.advanced_enabled === 'boolean'
+            ? { advanced_enabled: mainDto.advanced_enabled }
             : {}),
           ...(mainDto.display_order !== undefined
             ? { display_order: mainDto.display_order }
@@ -429,7 +446,11 @@ export class AdminPhaseECatalogsService {
           select: { locale: true, name: true, description: true },
         },
       },
-      orderBy: [{ module_id: 'asc' }, { name: 'asc' }],
+      orderBy: [
+        { module_id: 'asc' },
+        { display_order: 'asc' },
+        { name: 'asc' },
+      ],
     });
   }
 
@@ -439,6 +460,7 @@ export class AdminPhaseECatalogsService {
     await this.ensureClassSectionUnique(name, dto.module_id);
 
     const { translations, ...mainData } = dto;
+    const sectionConfig = this.buildClassSectionConfig(mainData);
 
     const record = await this.prisma.$transaction(async (tx) => {
       const sec = await tx.class_sections.create({
@@ -447,6 +469,7 @@ export class AdminPhaseECatalogsService {
           description: mainData.description ?? null,
           module_id: mainData.module_id,
           active: mainData.active ?? true,
+          ...sectionConfig,
         },
       });
 
@@ -485,6 +508,7 @@ export class AdminPhaseECatalogsService {
     }
 
     const { translations, ...mainDto } = dto;
+    const sectionConfig = this.buildClassSectionConfig(mainDto, existing);
 
     const record = await this.prisma.$transaction(async (tx) => {
       const sec = await tx.class_sections.update({
@@ -500,6 +524,7 @@ export class AdminPhaseECatalogsService {
           ...(typeof mainDto.active === 'boolean'
             ? { active: mainDto.active }
             : {}),
+          ...sectionConfig,
           modified_at: new Date(),
         },
       });
@@ -519,6 +544,94 @@ export class AdminPhaseECatalogsService {
 
     this.logMutation('update', 'class_sections', id, actorId);
     return record;
+  }
+
+  private buildClassSectionConfig(
+    dto: Partial<CreateClassSectionDto>,
+    existing?: {
+      requirement_track: class_requirement_track_enum;
+      required_for_investiture: boolean;
+      display_order: number;
+      owner_division_id: number | null;
+      owner_union_id: number | null;
+      owner_local_field_id: number | null;
+      available_from_year_id: number | null;
+      available_until_year_id: number | null;
+    },
+  ): Partial<ClassSectionRequirementConfig> {
+    const isCreate = !existing;
+    const touchesRequirementConfig =
+      isCreate ||
+      dto.requirement_track !== undefined ||
+      dto.required_for_investiture !== undefined ||
+      dto.display_order !== undefined ||
+      dto.owner_division_id !== undefined ||
+      dto.owner_union_id !== undefined ||
+      dto.owner_local_field_id !== undefined ||
+      dto.available_from_year_id !== undefined ||
+      dto.available_until_year_id !== undefined;
+
+    if (!touchesRequirementConfig) return {};
+
+    const requirementTrack =
+      (dto.requirement_track ??
+        existing?.requirement_track ??
+        class_requirement_track_enum.BASIC) as class_requirement_track_enum;
+    const requiredForInvestiture =
+      requirementTrack === class_requirement_track_enum.ADVANCED
+        ? false
+        : (dto.required_for_investiture ??
+          existing?.required_for_investiture ??
+          true);
+
+    let ownerDivisionId =
+      dto.owner_division_id !== undefined
+        ? dto.owner_division_id
+        : (existing?.owner_division_id ?? null);
+    let ownerUnionId =
+      dto.owner_union_id !== undefined
+        ? dto.owner_union_id
+        : (existing?.owner_union_id ?? null);
+    let ownerLocalFieldId =
+      dto.owner_local_field_id !== undefined
+        ? dto.owner_local_field_id
+        : (existing?.owner_local_field_id ?? null);
+
+    if (requirementTrack !== class_requirement_track_enum.EXTRA) {
+      ownerDivisionId = null;
+      ownerUnionId = null;
+      ownerLocalFieldId = null;
+    } else {
+      const ownerCount = [
+        ownerDivisionId,
+        ownerUnionId,
+        ownerLocalFieldId,
+      ].filter((value) => value !== null && value !== undefined).length;
+
+      if (ownerCount !== 1) {
+        throw new AppBadRequestException(
+          ErrorCode.ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID,
+          { requirementTrack, ownerCount },
+        );
+      }
+    }
+
+    return {
+      requirement_track: requirementTrack,
+      required_for_investiture: requiredForInvestiture,
+      display_order: dto.display_order ?? existing?.display_order ?? 0,
+      owner_division_id: ownerDivisionId,
+      owner_union_id: ownerUnionId,
+      owner_local_field_id: ownerLocalFieldId,
+      available_from_year_id:
+        dto.available_from_year_id !== undefined
+          ? dto.available_from_year_id
+          : (existing?.available_from_year_id ?? null),
+      available_until_year_id:
+        dto.available_until_year_id !== undefined
+          ? dto.available_until_year_id
+          : (existing?.available_until_year_id ?? null),
+    };
   }
 
   async deleteClassSection(id: number, actorId: string) {

@@ -32,6 +32,12 @@ import {
 } from '@prisma/client';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
 
+export enum ClassRequirementTrackDto {
+  BASIC = 'BASIC',
+  ADVANCED = 'ADVANCED',
+  EXTRA = 'EXTRA',
+}
+
 // ─── SHARED: translation field mixin ─────────────────────────────────────────
 
 const translationsField = () => {
@@ -78,6 +84,11 @@ export class CreateClassDto {
   @IsOptional()
   @IsBoolean()
   requires_invested_gm?: boolean;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  advanced_enabled?: boolean;
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
@@ -180,6 +191,53 @@ export class CreateClassSectionDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ClassRequirementTrackDto,
+    example: ClassRequirementTrackDto.BASIC,
+  })
+  @IsOptional()
+  @IsEnum(ClassRequirementTrackDto)
+  requirement_track?: ClassRequirementTrackDto;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  required_for_investiture?: boolean;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  display_order?: number | null;
+
+  @ApiPropertyOptional({ example: 1, nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  owner_division_id?: number | null;
+
+  @ApiPropertyOptional({ example: 1, nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  owner_union_id?: number | null;
+
+  @ApiPropertyOptional({ example: 1, nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  owner_local_field_id?: number | null;
+
+  @ApiPropertyOptional({ example: 2025, nullable: true })
+  @IsOptional()
+  @IsInt()
+  available_from_year_id?: number | null;
+
+  @ApiPropertyOptional({ example: 2026, nullable: true })
+  @IsOptional()
+  @IsInt()
+  available_until_year_id?: number | null;
 
   @ApiPropertyOptional({
     description: 'Non-es translations (pt-BR, en, fr).',

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DashboardService } from './dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
+import { ClassRequirementEligibilityService } from '../classes/class-requirement-eligibility.service';
 
 describe('DashboardService', () => {
   let service: DashboardService;
@@ -25,12 +26,24 @@ describe('DashboardService', () => {
       ),
   };
 
+  const mockRequirementEligibilityService = {
+    calculateForEnrollment: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue({
+      overall_progress: 0,
+    });
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DashboardService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: FILE_STORAGE_SERVICE, useValue: mockFileStorageService },
+        {
+          provide: ClassRequirementEligibilityService,
+          useValue: mockRequirementEligibilityService,
+        },
       ],
     }).compile();
 
@@ -88,8 +101,9 @@ describe('DashboardService', () => {
         roles: { role_name: 'member' },
       });
 
-      mockPrismaService.class_section_progress.count.mockResolvedValue(4);
-      mockPrismaService.class_sections.count.mockResolvedValue(10);
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+        { overall_progress: 40 },
+      );
 
       mockPrismaService.activities.findMany.mockResolvedValue([
         {
@@ -110,7 +124,7 @@ describe('DashboardService', () => {
       expect(result.club_type).toBe('Conquistadores');
       expect(result.user_role).toBe('member');
       expect(result.current_class_name).toBe('Amigo');
-      expect(result.class_progress).toBe(40); // 4/10 * 100
+      expect(result.class_progress).toBe(40);
       expect(result.honors_completed).toBe(2);
       expect(result.honors_in_progress).toBe(1);
       expect(result.upcoming_activities).toHaveLength(1);
@@ -225,11 +239,9 @@ describe('DashboardService', () => {
       expect(result.honors_in_progress).toBe(0);
       expect(result.club_name).toBe('Club Norte');
       expect(result.user_name).toBe('María López');
-      // class_section_progress.count and class_sections.count should NOT be called
       expect(
-        mockPrismaService.class_section_progress.count,
+        mockRequirementEligibilityService.calculateForEnrollment,
       ).not.toHaveBeenCalled();
-      expect(mockPrismaService.class_sections.count).not.toHaveBeenCalled();
     });
   });
 
@@ -261,8 +273,9 @@ describe('DashboardService', () => {
       mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
 
-      mockPrismaService.class_section_progress.count.mockResolvedValue(2);
-      mockPrismaService.class_sections.count.mockResolvedValue(8);
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+        { overall_progress: 25 },
+      );
 
       const result = await service.getSummary(userId);
 
@@ -273,7 +286,7 @@ describe('DashboardService', () => {
       // activities.findMany should NOT be called — no club section
       expect(mockPrismaService.activities.findMany).not.toHaveBeenCalled();
       expect(result.current_class_name).toBe('Conquistador');
-      expect(result.class_progress).toBe(25); // 2/8 * 100
+      expect(result.class_progress).toBe(25);
       expect(result.honors_completed).toBe(1);
       expect(result.honors_in_progress).toBe(0);
     });
@@ -342,8 +355,9 @@ describe('DashboardService', () => {
       mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
 
-      mockPrismaService.class_section_progress.count.mockResolvedValue(0);
-      mockPrismaService.class_sections.count.mockResolvedValue(0);
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+        { overall_progress: 0 },
+      );
 
       const result = await service.getSummary(userId);
 
@@ -375,26 +389,18 @@ describe('DashboardService', () => {
       mockPrismaService.users_pr.findUnique.mockResolvedValue(null);
       mockPrismaService.club_role_assignments.findFirst.mockResolvedValue(null);
 
-      // Simulates the real bug scenario: 1 progress record with score 0,
-      // but the count query with score >= 70 filter returns 0.
-      mockPrismaService.class_section_progress.count.mockResolvedValue(0);
-      mockPrismaService.class_sections.count.mockResolvedValue(71);
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+        { overall_progress: 0 },
+      );
 
       const result = await service.getSummary(userId);
 
       expect(result.current_class_name).toBe('Guía Mayor');
       expect(result.class_progress).toBe(0);
 
-      // Verify the count was called with the score >= 70 filter
       expect(
-        mockPrismaService.class_section_progress.count,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            score: { gte: 70 },
-          }),
-        }),
-      );
+        mockRequirementEligibilityService.calculateForEnrollment,
+      ).toHaveBeenCalledWith(1);
     });
   });
 });

@@ -8,6 +8,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { EVIDENCE_URL_LIMITER } from './classes.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { ClassProgressAccessService } from './class-progress-access.service';
+import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
 
 describe('ClassesService', () => {
   let service: ClassesService;
@@ -57,11 +58,17 @@ describe('ClassesService', () => {
   const mockClassProgressAccessService = {
     assertCanAccessProgress: jest.fn(),
   };
+  const mockRequirementEligibilityService = {
+    calculateForEnrollment: jest.fn(),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockClassProgressAccessService.assertCanAccessProgress.mockResolvedValue(
       undefined,
+    );
+    mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue(
+      null,
     );
 
     transactionMock = createTransactionMock();
@@ -77,13 +84,35 @@ describe('ClassesService', () => {
     mockPrismaService.classes.findUnique.mockResolvedValue({
       class_id: 7,
       name: 'Amigo',
+      description: null,
+      club_type_id: 1,
+      advanced_enabled: false,
+      available_from_year_id: null,
+      available_until_year_id: null,
+      min_duration_years: 1,
+      max_duration_years: 1,
       class_modules: [
         {
           module_id: 11,
           name: 'Modulo 1',
+          description: null,
           class_sections: [
-            { section_id: 101, name: 'Seccion 1' },
-            { section_id: 102, name: 'Seccion 2' },
+            {
+              section_id: 101,
+              name: 'Seccion 1',
+              description: null,
+              requirement_track: 'BASIC',
+              required_for_investiture: true,
+              display_order: 0,
+            },
+            {
+              section_id: 102,
+              name: 'Seccion 2',
+              description: null,
+              requirement_track: 'BASIC',
+              required_for_investiture: true,
+              display_order: 1,
+            },
           ],
         },
       ],
@@ -147,6 +176,10 @@ describe('ClassesService', () => {
         {
           provide: ClassProgressAccessService,
           useValue: mockClassProgressAccessService,
+        },
+        {
+          provide: ClassRequirementEligibilityService,
+          useValue: mockRequirementEligibilityService,
         },
       ],
     }).compile();
@@ -243,6 +276,7 @@ describe('ClassesService', () => {
             name: 'Guía',
             description: null,
             asset_code: 'CQ-06',
+            advanced_enabled: false,
             club_types: { name: 'Conquistadores' },
           },
           ecclesiastical_year: {
@@ -251,38 +285,24 @@ describe('ClassesService', () => {
           },
         },
       ]);
-      mockPrismaService.class_section_progress.groupBy.mockResolvedValue([
-        {
-          enrollment_id: 501,
-          _count: { section_progress_id: 2 },
-        },
-      ]);
-      mockPrismaService.class_sections.groupBy.mockResolvedValue([
-        {
-          module_id: 11,
-          _count: { section_id: 2 },
-        },
-      ]);
-      mockPrismaService.class_modules.findMany.mockResolvedValue([
-        { module_id: 11, class_id: 7 },
-      ]);
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValueOnce({
+        overall_progress: 100,
+        basic_progress: { total: 2, completed: 2, percentage: 100 },
+        advanced_progress: { total: 0, completed: 0, percentage: 0 },
+        extra_progress: { total: 0, completed: 0, percentage: 0 },
+        investiture_eligibility: { eligible: true },
+        advanced_eligibility: { enabled: false, eligible: false },
+      });
 
       const result = await service.getUserEnrollments('user-1');
 
       expect(
-        mockPrismaService.class_section_progress.groupBy,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            enrollment_id: { in: [501] },
-            active: true,
-            OR: [{ status: 'VALIDATED' }, { score: { gte: 70 } }],
-          }),
-        }),
-      );
+        mockRequirementEligibilityService.calculateForEnrollment,
+      ).toHaveBeenCalledWith(501);
       expect(result[0]).toMatchObject({
         enrollment_id: 501,
         overall_progress: 100,
+        investiture_eligibility: expect.objectContaining({ eligible: true }),
       });
     });
   });

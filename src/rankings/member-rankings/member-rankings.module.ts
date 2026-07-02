@@ -9,6 +9,7 @@ import { EnrollmentWeightsResolverService } from './services/enrollment-weights-
 import { MemberCompositeScoreService } from './services/member-composite-score.service';
 import { SystemConfigModule } from '../../system-config/system-config.module';
 import { AnnualFoldersModule } from '../../annual-folders/annual-folders.module';
+import { ClassesModule } from '../../classes/classes.module';
 
 /**
  * Standalone REST module for member-level ranking endpoints.
@@ -30,7 +31,7 @@ import { AnnualFoldersModule } from '../../annual-folders/annual-folders.module'
  * This module is imported from AnnualFoldersModule.imports[] (Task 12 Q2.a).
  */
 @Module({
-  imports: [SystemConfigModule, forwardRef(() => AnnualFoldersModule)],
+  imports: [SystemConfigModule, forwardRef(() => AnnualFoldersModule), ClassesModule],
   controllers: [MemberRankingsController],
   providers: [
     MemberRankingsService,

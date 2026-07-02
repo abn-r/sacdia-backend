@@ -5,6 +5,7 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
+import { ClassRequirementEligibilityService } from '../classes/class-requirement-eligibility.service';
 
 export interface UpcomingActivityDto {
   id: number;
@@ -41,6 +42,7 @@ export class DashboardService {
     private readonly prisma: PrismaService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
+    private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
   async getSummary(userId: string): Promise<DashboardSummaryDto> {
@@ -148,32 +150,12 @@ export class DashboardService {
     if (enrollment) {
       currentClassName = enrollment.classes.name;
 
-      const [completedSections, totalSections] = await Promise.all([
-        // A section is considered complete only when score >= 70,
-        // consistent with the business rule in ClassesService.
-        this.prisma.class_section_progress.count({
-          where: {
-            enrollment_id: enrollment.enrollment_id,
-            user_id: userId,
-            active: true,
-            score: { gte: 70 },
-          },
-        }),
-        this.prisma.class_sections.count({
-          where: {
-            active: true,
-            class_modules: {
-              class_id: enrollment.class_id,
-              active: true,
-            },
-          },
-        }),
-      ]);
-
       classProgress =
-        totalSections > 0
-          ? Math.round((completedSections / totalSections) * 100)
-          : 0;
+        (
+          await this.requirementEligibility.calculateForEnrollment(
+            enrollment.enrollment_id,
+          )
+        )?.overall_progress ?? 0;
     }
 
     // ----------------------------------------

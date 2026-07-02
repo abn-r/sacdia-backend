@@ -541,5 +541,7 @@
   "ANNUAL_FOLDER_SUBMISSION_CLOSED": "Les soumissions du dossier annuel de preuves sont clôturées depuis le {closingDate}",
   "ANNUAL_FOLDER_REQUIRED_SECTIONS_PENDING": "Impossible de soumettre le dossier : des sections obligatoires sont encore en attente ({pendingSections})",
   "ANNUAL_FOLDER_TEMPLATE_LOCKED": "Le modèle est {status} et ne peut plus être modifié. Copiez-le pour créer un nouveau brouillon.",
-  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Impossible de supprimer le modèle car il contient déjà des dossiers créés"
+  "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Impossible de supprimer le modèle car il contient déjà des dossiers créés",
+  "INVESTITURE_REQUIREMENTS_INCOMPLETE": "Des exigences obligatoires de la classe sont encore incomplètes pour soumettre l'investiture",
+  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "La configuration du track de la section est invalide"
 }

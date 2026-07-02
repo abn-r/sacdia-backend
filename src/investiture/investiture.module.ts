@@ -5,6 +5,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { CoordinationModule } from '../coordination/coordination.module';
+import { ClassesModule } from '../classes/classes.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { CoordinationModule } from '../coordination/coordination.module';
     NotificationsModule,
     AchievementsModule,
     CoordinationModule,
+    ClassesModule,
   ],
   controllers: [InvestitureController],
   providers: [InvestitureService],

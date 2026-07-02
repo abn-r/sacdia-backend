@@ -25,6 +25,7 @@ import { EnrollmentClubResolverService } from './services/enrollment-club-resolv
 import { RankingsService } from '../../annual-folders/rankings.service';
 import { ResolvedAuthorizationProfile } from '../../common/services/authorization-context.service';
 import { InstitutionalHierarchyService } from '../../common/services/institutional-hierarchy.service';
+import { ClassRequirementEligibilityService } from '../../classes/class-requirement-eligibility.service';
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -53,6 +54,7 @@ export class MemberRankingsService {
     private readonly weightsResolver: EnrollmentWeightsResolverService,
     private readonly clubResolver: EnrollmentClubResolverService,
     private readonly hierarchy: InstitutionalHierarchyService,
+    private readonly requirementEligibility: ClassRequirementEligibilityService,
   ) {}
 
   // ========================================
@@ -511,18 +513,12 @@ export class MemberRankingsService {
       };
     }
 
-    const [completedCount, requiredCount] = await Promise.all([
-      this.prisma.class_module_progress.count({
-        where: { enrollment_id: enrollmentId, active: true },
-      }),
-      this.prisma.class_modules.count({
-        where: { class_id: enrollment.class_id },
-      }),
-    ]);
+    const eligibility =
+      await this.requirementEligibility.calculateForEnrollment(enrollmentId);
 
     return {
-      completed_sections: completedCount,
-      required_sections: requiredCount,
+      completed_sections: eligibility?.investiture_progress.completed ?? 0,
+      required_sections: eligibility?.investiture_progress.total ?? 0,
       folder_status: null, // annual_folders links via club_enrollment, not per-member enrollment
     };
   }

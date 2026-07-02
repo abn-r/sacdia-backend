@@ -107,10 +107,7 @@ export class PermissionsGuard implements CanActivate {
         [context.getHandler(), context.getClass()],
       );
 
-    if (
-      resource.type === 'user' &&
-      this.isResourceOwner(request, userId, resource)
-    ) {
+    if (this.canBypassForResourceOwner(request, userId, resource)) {
       return true;
     }
 
@@ -585,6 +582,22 @@ export class PermissionsGuard implements CanActivate {
   ): boolean {
     const ownerParam = resource.ownerParam ?? 'userId';
     return request.params?.[ownerParam] === userId;
+  }
+
+  private canBypassForResourceOwner(
+    request: any,
+    userId: string,
+    resource: AuthorizationResourceMetadata,
+  ): boolean {
+    if (resource.type === 'user') {
+      return this.isResourceOwner(request, userId, resource);
+    }
+
+    if (resource.type === 'active_assignment' && resource.ownerParam) {
+      return this.isResourceOwner(request, userId, resource);
+    }
+
+    return false;
   }
 
   private async resolveActivityScope(

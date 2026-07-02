@@ -270,17 +270,37 @@ model class_section_progress {
 }
 
 model class_sections {
-  section_id    Int                           @id @default(autoincrement())
-  name          String                        @db.VarChar(255)
-  description   String?
-  module_id     Int
-  active        Boolean
-  created_at    DateTime                      @default(now()) @db.Timestamptz(6)
-  modified_at   DateTime                      @default(now()) @db.Timestamptz(6)
-  class_modules class_modules                 @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
-  translations  class_sections_translations[]
+  section_id               Int                          @id @default(autoincrement())
+  name                     String                       @db.VarChar(255)
+  description              String?
+  module_id                Int
+  requirement_track         class_requirement_track_enum @default(BASIC)
+  required_for_investiture  Boolean                      @default(true)
+  display_order            Int                          @default(0)
+  owner_division_id        Int?
+  owner_union_id           Int?
+  owner_local_field_id     Int?
+  available_from_year_id   Int?
+  available_until_year_id  Int?
+  active                   Boolean
+  created_at               DateTime                     @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime                     @default(now()) @db.Timestamptz(6)
+  class_modules            class_modules                @relation(fields: [module_id], references: [module_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_division           divisions?                   @relation("class_sections_owner_division", fields: [owner_division_id], references: [division_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_union              unions?                      @relation("class_sections_owner_union", fields: [owner_union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_local_field        local_fields?                @relation("class_sections_owner_local_field", fields: [owner_local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  available_from_year      ecclesiastical_years?        @relation("class_sections_available_from_year", fields: [available_from_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  available_until_year     ecclesiastical_years?        @relation("class_sections_available_until_year", fields: [available_until_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  translations             class_sections_translations[]
 
   @@unique([name, module_id])
+  @@index([requirement_track], map: "idx_class_sections_requirement_track")
+  @@index([module_id, requirement_track], map: "idx_class_sections_module_requirement_track")
+  @@index([owner_division_id], map: "idx_class_sections_owner_division_id")
+  @@index([owner_union_id], map: "idx_class_sections_owner_union_id")
+  @@index([owner_local_field_id], map: "idx_class_sections_owner_local_field_id")
+  @@index([available_from_year_id], map: "idx_class_sections_available_from_year_id")
+  @@index([available_until_year_id], map: "idx_class_sections_available_until_year_id")
 }
 
 model class_sections_translations {
@@ -306,6 +326,7 @@ model classes {
   club_type_id                  Int
   minimum_age                   Int
   requires_invested_gm          Boolean                         @default(false)
+  advanced_enabled              Boolean                         @default(false)
   display_order                 Int                             @default(0)
   asset_code                    String?                         @db.VarChar(10)
   available_from_year_id        Int?
@@ -765,6 +786,7 @@ model divisions {
   modified_at  DateTime? @default(now()) @db.Timestamptz(6)
 
   unions                      unions[]
+  class_sections_owned_by_division class_sections[]           @relation("class_sections_owner_division")
   master_honor_divisions      master_honor_divisions[]
   awarded_users_master_honors users_master_honors[]        @relation("users_master_honors_awarded_division")
   translations                divisions_translations[]
@@ -834,6 +856,8 @@ model ecclesiastical_years {
   class_counselor_assignments class_counselor_assignments[]
   classes_available_from      classes[]                     @relation("classes_available_from_year")
   classes_available_until     classes[]                     @relation("classes_available_until_year")
+  class_sections_available_from  class_sections[]            @relation("class_sections_available_from_year")
+  class_sections_available_until class_sections[]            @relation("class_sections_available_until_year")
   enrollments_relation        enrollments[]
   folders                     folders[]
   investiture_configs         investiture_config[]
@@ -1409,6 +1433,7 @@ model local_fields {
   attending_clubs_camporees       camporee_clubs[]
   attending_members_camporees     camporee_members[]
   clubs                           clubs[]
+  class_sections_owned_by_local_field class_sections[]        @relation("class_sections_owner_local_field")
   districts                       districts[]
   folder_templates                folder_templates[]
   investiture_configs             investiture_config[]
@@ -1688,6 +1713,7 @@ model unions {
   created_at                 DateTime?                    @default(now()) @db.Timestamptz(6)
   modified_at                DateTime?                    @default(now()) @db.Timestamptz(6)
   local_fields               local_fields[]
+  class_sections_owned_by_union class_sections[]           @relation("class_sections_owner_union")
   union_camporees            union_camporees[]
   folder_templates           folder_templates[]
   camporee_event_templates   camporee_event_templates[]
@@ -2649,6 +2675,12 @@ enum class_honor_relation_type_enum {
   REQUIRED
   RECOMMENDED
   ELECTIVE
+}
+
+enum class_requirement_track_enum {
+  BASIC
+  ADVANCED
+  EXTRA
 }
 
 enum master_honor_requirement_group_type_enum {

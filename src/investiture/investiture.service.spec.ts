@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CoordinationService } from '../coordination/coordination.service';
+import { ClassRequirementEligibilityService } from '../classes/class-requirement-eligibility.service';
 import { SubmitForValidationDto } from './dto/submit-for-validation.dto';
 import {
   ValidateEnrollmentDto,
@@ -80,6 +81,10 @@ describe('InvestitureService', () => {
     getEffectiveCoordinatorSectionIds: jest.fn(),
   };
 
+  const mockRequirementEligibilityService = {
+    calculateForEnrollment: jest.fn(),
+  };
+
   const mockNotificationsService = {
     sendToSectionRole: jest.fn().mockResolvedValue(undefined),
     sendToGlobalRole: jest.fn().mockResolvedValue(undefined),
@@ -128,6 +133,15 @@ describe('InvestitureService', () => {
     mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
       [],
     );
+    mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue({
+      investiture_eligibility: {
+        eligible: true,
+        total: 2,
+        completed: 2,
+        missing_required_sections: 0,
+        reason: null,
+      },
+    });
     mockPrismaService.club_role_assignments.findFirst.mockResolvedValue({
       club_sections: {
         club_section_id: 9,
@@ -177,6 +191,10 @@ describe('InvestitureService', () => {
         {
           provide: CoordinationService,
           useValue: mockCoordinationService,
+        },
+        {
+          provide: ClassRequirementEligibilityService,
+          useValue: mockRequirementEligibilityService,
         },
       ],
     }).compile();
@@ -278,6 +296,31 @@ describe('InvestitureService', () => {
       expect(
         txMock.investiture_validation_history.create,
       ).not.toHaveBeenCalled();
+    });
+
+    it('blocks submit when required basic/extra class requirements are incomplete', async () => {
+      mockPrismaService.enrollments.findUnique.mockResolvedValue({
+        ...baseEnrollment,
+        investiture_status: 'IN_PROGRESS',
+      });
+      mockRequirementEligibilityService.calculateForEnrollment.mockResolvedValue({
+        investiture_eligibility: {
+          eligible: false,
+          total: 4,
+          completed: 3,
+          missing_required_sections: 1,
+          reason: 'REQUIRED_SECTIONS_INCOMPLETE',
+        },
+      });
+
+      await expect(
+        service.submitForValidation(1, 'user-abc', dto),
+      ).rejects.toMatchObject({
+        code: ErrorCode.INVESTITURE_REQUIREMENTS_INCOMPLETE,
+      });
+
+      expect(mockPrismaService.investiture_config.findFirst).not.toHaveBeenCalled();
+      expect(mockPrismaService.enrollments.update).not.toHaveBeenCalled();
     });
 
     it('TC01 - happy path: IN_PROGRESS -> SUBMITTED_FOR_VALIDATION', async () => {

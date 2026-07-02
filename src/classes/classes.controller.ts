@@ -216,7 +216,7 @@ export class UserClassesController {
 
   @Patch(':classId/progress')
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Actualizar progreso de sección',
     description:
@@ -258,7 +258,7 @@ export class UserClassesController {
   @Post(':classId/sections/:sectionId/submit')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Submit a class section for validation',
     description:
@@ -302,7 +302,7 @@ export class UserClassesController {
   @Post(':classId/sections/:sectionId/files')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
@@ -359,7 +359,7 @@ export class UserClassesController {
   @Delete(':classId/sections/:sectionId/files/:fileId')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('classes:submit_progress')
-  @AuthorizationResource({ type: 'active_assignment' })
+  @AuthorizationResource({ type: 'active_assignment', ownerParam: 'userId' })
   @ApiOperation({
     summary: 'Delete evidence file for a class section',
     description: 'Soft-deletes an evidence file and removes it from R2 storage',
