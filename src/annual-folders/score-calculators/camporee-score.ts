@@ -2,19 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
- * Computes a 0-100 score representing the percentage of camporees (local +
- * union) that a club attended in a given ecclesiastical year.
+ * Computes a 0-100 score from official camporee event results for one club
+ * section in an ecclesiastical year.
  *
- * Scope rules (all IDs are integers per DB schema):
- *  - local_camporees: ecclesiastical_year = year AND active = true
- *      AND local_field_id = localFieldId  (club's own local field)
- *  - union_camporees: ecclesiastical_year = year AND active = true
- *      AND union_id = unionId  (skipped entirely when unionId is null)
+ * Denominator: sum of max_points for active, scoring-enabled camporee_events
+ * in active local/union camporees inside the section's institutional scope.
+ * Missing section results count as zero because denominator includes every
+ * scoring-enabled event even when no result exists.
  *
- * Attended = camporee_clubs row with club_id = clubId AND status = 'approved'
- *   whose camporee_id (local) or union_camporee_id (union) is in scope.
+ * Numerator: sum of active camporee_event_section_results.total_awarded_points
+ * for the target club_section_id.
  *
- * Returns 0 when no camporees exist in scope (denom = 0).
+ * Attendance/registration rows (camporee_clubs/camporee_members) are NOT used
+ * for annual scoring anymore; they remain operational/historical records.
  */
 @Injectable()
 export class CamporeeScoreService {
@@ -23,73 +23,68 @@ export class CamporeeScoreService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * @param clubId       - clubs.club_id (integer)
-   * @param localFieldId - clubs.local_field_id (integer) — scopes local_camporees
-   * @param unionId      - local_fields.union_id (integer | null) — scopes union_camporees
-   * @param year         - ecclesiastical_years.year_id (integer)
+   * @param clubSectionId - club_sections.club_section_id (integer)
+   * @param localFieldId  - section club's local field id (integer)
+   * @param unionId       - local_fields.union_id (integer | null)
+   * @param year          - ecclesiastical_years.year_id (integer)
    */
   async calc(
-    clubId: number,
+    clubSectionId: number,
     localFieldId: number,
     unionId: number | null,
     year: number,
   ): Promise<number> {
-    // Step 1: count total camporees in scope (denominator)
-    const denomRows = await this.prisma.$queryRaw<{ denom: bigint }[]>`
-      SELECT COUNT(*)::bigint AS denom FROM (
-        SELECT local_camporee_id AS id
-          FROM local_camporees
-          WHERE ecclesiastical_year = ${year}
-            AND active = true
-            AND local_field_id = ${localFieldId}
+    const rows = await this.prisma.$queryRaw<
+      { awarded_points: unknown; max_points: unknown }[]
+    >`
+      WITH scoring_events AS (
+        SELECT e.camporee_event_id,
+               e.max_points::numeric AS max_points
+          FROM camporee_events e
+          JOIN local_camporees lc
+            ON lc.local_camporee_id = e.local_camporee_id
+         WHERE e.active = true
+           AND e.scoring_enabled = true
+           AND lc.active = true
+           AND lc.ecclesiastical_year = ${year}
+           AND lc.local_field_id = ${localFieldId}
         UNION ALL
-        SELECT union_camporee_id AS id
-          FROM union_camporees
-          WHERE ecclesiastical_year = ${year}
-            AND active = true
-            AND ${unionId !== null ? true : false} = true
-            AND union_id = ${unionId ?? 0}
-      ) scope
+        SELECT e.camporee_event_id,
+               e.max_points::numeric AS max_points
+          FROM camporee_events e
+          JOIN union_camporees uc
+            ON uc.union_camporee_id = e.union_camporee_id
+         WHERE e.active = true
+           AND e.scoring_enabled = true
+           AND uc.active = true
+           AND ${unionId !== null ? true : false} = true
+           AND uc.ecclesiastical_year = ${year}
+           AND uc.union_id = ${unionId ?? 0}
+      )
+      SELECT COALESCE(SUM(r.total_awarded_points), 0)::numeric AS awarded_points,
+             COALESCE(SUM(se.max_points), 0)::numeric AS max_points
+        FROM scoring_events se
+        LEFT JOIN camporee_event_section_results r
+          ON r.camporee_event_id = se.camporee_event_id
+         AND r.club_section_id = ${clubSectionId}
+         AND r.active = true
     `;
-    const denom = Number(denomRows[0]?.denom ?? 0n);
-    if (denom === 0) return 0;
 
-    // Step 2: count camporees in scope that the club attended (numerator)
-    const numerRows = await this.prisma.$queryRaw<{ numer: bigint }[]>`
-      SELECT (
-        -- local camporees attended
-        SELECT COUNT(*)::bigint
-        FROM camporee_clubs cc
-        WHERE cc.club_id = ${clubId}
-          AND cc.status = 'approved'
-          AND cc.camporee_id IS NOT NULL
-          AND cc.camporee_id IN (
-            SELECT local_camporee_id
-            FROM local_camporees
-            WHERE ecclesiastical_year = ${year}
-              AND active = true
-              AND local_field_id = ${localFieldId}
-          )
-      ) + (
-        -- union camporees attended (0 when unionId is null)
-        SELECT COUNT(*)::bigint
-        FROM camporee_clubs cc
-        WHERE cc.club_id = ${clubId}
-          AND cc.status = 'approved'
-          AND cc.union_camporee_id IS NOT NULL
-          AND ${unionId !== null ? true : false} = true
-          AND cc.union_camporee_id IN (
-            SELECT union_camporee_id
-            FROM union_camporees
-            WHERE ecclesiastical_year = ${year}
-              AND active = true
-              AND union_id = ${unionId ?? 0}
-          )
-      ) AS numer
-    `;
-    const numer = Number(numerRows[0]?.numer ?? 0n);
+    const awardedPoints = this.toNumber(rows[0]?.awarded_points);
+    const maxPoints = this.toNumber(rows[0]?.max_points);
+    if (maxPoints <= 0) return 0;
 
-    const score = (numer / denom) * 100;
-    return Number(score.toFixed(2));
+    return Number(((awardedPoints / maxPoints) * 100).toFixed(2));
+  }
+
+  private toNumber(value: unknown): number {
+    if (value == null) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'string') return Number(value);
+    if (typeof (value as { toNumber?: () => number }).toNumber === 'function') {
+      return (value as { toNumber: () => number }).toNumber();
+    }
+    return Number(value);
   }
 }

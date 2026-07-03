@@ -10,20 +10,28 @@ import { AuthorizationSnapshot } from '../common/services/authorization-context.
 
 // ─── Mock factories ────────────────────────────────────────────────────────
 
-const makePrismaMock = () => ({
-  camporee_event_templates: {
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-  },
-  camporee_event_types: {
-    findUnique: jest.fn(),
-  },
-  local_fields: {
-    findUnique: jest.fn(),
-  },
-});
+const makePrismaMock = () => {
+  const mock = {
+    camporee_event_templates: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    camporee_event_template_rubrics: {
+      create: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    camporee_event_types: {
+      findUnique: jest.fn(),
+    },
+    local_fields: {
+      findUnique: jest.fn(),
+    },
+    $transaction: jest.fn((callback: any) => callback(mock)),
+  };
+  return mock;
+};
 
 // ─── Auth snapshots ────────────────────────────────────────────────────────
 
@@ -88,6 +96,8 @@ const baseTemplate = {
   materials: null,
   auxiliaries: null,
   max_points: 100,
+  scoring_enabled: false,
+  rubrics: [],
   min_points: 0,
   penalties: [],
   participants_mode: 'count',
@@ -193,6 +203,60 @@ describe('CamporeeEventTemplatesService', () => {
       );
 
       expect(result).toEqual(baseTemplate);
+    });
+
+    it('creates reusable scoring rubrics when template scoring is enabled', async () => {
+      prisma.camporee_event_types.findUnique.mockResolvedValue(activeEventType);
+      prisma.camporee_event_templates.create.mockResolvedValue({
+        ...baseTemplate,
+        scoring_enabled: true,
+      });
+
+      await service.createTemplate(
+        {
+          scope: 'union',
+          union_id: 10,
+          event_type_id: 1,
+          title: 'Orden Cerrado',
+          max_points: 100,
+          scoring_enabled: true,
+          rubrics: [
+            { title: 'Alineación', max_points: 40 },
+            { title: 'Técnica', max_points: 60 },
+          ],
+          participants_mode: 'count',
+          participants_count: 8,
+        },
+        makeSuperAdminAuth(),
+        ACTOR_ID,
+      );
+
+      expect(prisma.camporee_event_template_rubrics.create).toHaveBeenCalledTimes(2);
+      expect(prisma.camporee_event_templates.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ scoring_enabled: true }),
+        }),
+      );
+    });
+
+    it('rejects scoring templates when rubric sum differs from max_points', async () => {
+      await expect(
+        service.createTemplate(
+          {
+            scope: 'union',
+            union_id: 10,
+            event_type_id: 1,
+            title: 'Orden Cerrado',
+            max_points: 100,
+            scoring_enabled: true,
+            rubrics: [{ title: 'Alineación', max_points: 40 }],
+            participants_mode: 'count',
+            participants_count: 8,
+          },
+          makeSuperAdminAuth(),
+          ACTOR_ID,
+        ),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
     });
 
     it('throws bad request when max_points < min_points', async () => {

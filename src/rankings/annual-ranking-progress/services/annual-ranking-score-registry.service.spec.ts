@@ -28,6 +28,7 @@ describe('AnnualRankingScoreRegistryService', () => {
   const context: AnnualRankingScoreContext = {
     clubEnrollmentId: '11111111-1111-4111-8111-111111111111',
     clubId: 42,
+    clubSectionId: 50,
     localFieldId: 4,
     unionId: 2,
     ecclesiasticalYearId: 1,
@@ -35,7 +36,13 @@ describe('AnnualRankingScoreRegistryService', () => {
   };
 
   beforeEach(async () => {
-    folderScore = { calc: jest.fn().mockResolvedValue(83.33) } as any;
+    folderScore = {
+      getPointSummary: jest.fn().mockResolvedValue({
+        score_pct: 83.33,
+        earned_points: 5000,
+        max_points: 6000,
+      }),
+    } as any;
     financeScore = { calc: jest.fn().mockResolvedValue(91.66) } as any;
     camporeeScore = { calc: jest.fn().mockResolvedValue(50) } as any;
     monthlyReportsScore = { calc: jest.fn().mockResolvedValue(75) } as any;
@@ -86,10 +93,12 @@ describe('AnnualRankingScoreRegistryService', () => {
 
     expect(result).toEqual({
       score_pct: 83.33,
+      earned_points: 5000,
+      max_points: 6000,
       source_status: 'available',
       source: 'annual_folder',
     });
-    expect(folderScore.calc).toHaveBeenCalledWith(
+    expect(folderScore.getPointSummary).toHaveBeenCalledWith(
       context.clubEnrollmentId,
       context.ecclesiasticalYearId,
     );
@@ -192,7 +201,7 @@ describe('AnnualRankingScoreRegistryService', () => {
       source: 'camporee',
     });
     expect(camporeeScore.calc).toHaveBeenCalledWith(
-      context.clubId,
+      context.clubSectionId,
       context.localFieldId,
       context.unionId,
       context.ecclesiasticalYearId,

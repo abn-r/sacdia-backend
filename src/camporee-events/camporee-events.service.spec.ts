@@ -10,29 +10,37 @@ import { CamporeeEventStatusDto } from './dto';
 
 // ─── Mock factories ────────────────────────────────────────────────────────
 
-const makePrismaMock = () => ({
-  local_camporees: {
-    findUnique: jest.fn(),
-  },
-  union_camporees: {
-    findUnique: jest.fn(),
-  },
-  camporee_event_types: {
-    findUnique: jest.fn(),
-  },
-  camporee_event_templates: {
-    findUnique: jest.fn(),
-  },
-  camporee_events: {
-    findMany: jest.fn(),
-    findFirst: jest.fn(),
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    count: jest.fn(),
-  },
-  $transaction: jest.fn((calls: Promise<any>[]) => Promise.all(calls)),
-});
+const makePrismaMock = () => {
+  const mock = {
+    local_camporees: {
+      findUnique: jest.fn(),
+    },
+    union_camporees: {
+      findUnique: jest.fn(),
+    },
+    camporee_event_types: {
+      findUnique: jest.fn(),
+    },
+    camporee_event_templates: {
+      findUnique: jest.fn(),
+    },
+    camporee_event_rubrics: {
+      create: jest.fn(),
+    },
+    camporee_events: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
+    $transaction: jest.fn((input: any) =>
+      typeof input === 'function' ? input(mock) : Promise.all(input),
+    ),
+  };
+  return mock;
+};
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────
 
@@ -68,6 +76,8 @@ const baseTemplate = {
   materials: null,
   auxiliaries: null,
   max_points: 100,
+  scoring_enabled: false,
+  rubrics: [],
   min_points: 0,
   penalties: [],
   participants_mode: 'count',
@@ -93,6 +103,7 @@ const baseEvent = {
   materials: null,
   auxiliaries: null,
   max_points: 100,
+  scoring_enabled: false,
   min_points: 0,
   penalties: [],
   participants_mode: 'count',
@@ -314,6 +325,76 @@ describe('CamporeeEventsService', () => {
       expect(createCall.data.day_number).toBe(1);
       expect(createCall.data.status).toBe('programado');
       expect(createCall.data.sections).toEqual([]);
+    });
+
+    it('copies reusable template rubrics into the event when scoring is enabled', async () => {
+      const scoringTemplate = {
+        ...baseTemplate,
+        scoring_enabled: true,
+        rubrics: [
+          {
+            camporee_event_template_rubric_id: 1,
+            event_template_id: 1,
+            title: 'Alineación',
+            description: null,
+            max_points: 40,
+            display_order: 0,
+            active: true,
+          },
+          {
+            camporee_event_template_rubric_id: 2,
+            event_template_id: 1,
+            title: 'Técnica',
+            description: 'Ejecución',
+            max_points: 60,
+            display_order: 1,
+            active: true,
+          },
+        ],
+      };
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      prisma.camporee_event_templates.findUnique.mockResolvedValue(scoringTemplate);
+      prisma.camporee_events.findFirst.mockResolvedValue(null);
+      prisma.camporee_events.create.mockResolvedValue({
+        ...baseEvent,
+        event_template_id: 1,
+        scoring_enabled: true,
+      });
+
+      await service.createFromTemplate(1, 'local', 1, {}, ACTOR_ID);
+
+      const createCall = prisma.camporee_events.create.mock.calls[0][0];
+      expect(createCall.data.scoring_enabled).toBe(true);
+      expect(prisma.camporee_event_rubrics.create).toHaveBeenCalledTimes(2);
+      expect(prisma.camporee_event_rubrics.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            camporee_event_id: 1,
+            title: 'Alineación',
+            max_points: 40,
+          }),
+        }),
+      );
+    });
+
+    it('rejects max_points override when it breaks template rubric total', async () => {
+      prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
+      prisma.camporee_event_templates.findUnique.mockResolvedValue({
+        ...baseTemplate,
+        scoring_enabled: true,
+        rubrics: [{ title: 'Alineación', max_points: 100, display_order: 0 }],
+      });
+      prisma.camporee_events.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createFromTemplate(
+          1,
+          'local',
+          1,
+          { max_points: 90 },
+          ACTOR_ID,
+        ),
+      ).rejects.toBeInstanceOf(AppBadRequestException);
     });
   });
 

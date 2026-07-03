@@ -124,6 +124,7 @@ export class AnnualRankingProgressService {
           {
             clubEnrollmentId: enrollment.club_enrollment_id,
             clubId: section.clubs.club_id,
+            clubSectionId: section.club_section_id,
             localFieldId: section.clubs.local_field_id,
             unionId: section.clubs.local_fields?.union_id ?? null,
             ecclesiasticalYearId: yearId,

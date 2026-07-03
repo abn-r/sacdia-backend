@@ -128,9 +128,12 @@ model camporee_clubs {
   club_sections     club_sections?   @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields      local_fields?    @relation(fields: [local_field_id], references: [local_field_id], onDelete: Cascade, onUpdate: NoAction)
   registrar         users?           @relation("camporee_clubs_registered_by", fields: [registered_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-
+  score_judge_assignments camporee_event_judge_assignments[]
+  score_submissions       camporee_event_score_submissions[]
+  score_section_results   camporee_event_section_results[]
   @@index([club_section_id], map: "idx_camporee_clubs_club_section_id")
   @@index([union_camporee_id], map: "idx_camporee_clubs_union_camporee_id")
+
 }
 
 model camporee_members {
@@ -653,8 +656,11 @@ model club_sections {
   section_rankings            SectionRanking[]
   material_orders             MaterialOrder[]
   coordinator_assignments     coordinator_assignments[]
-
+  camporee_score_judge_assignments camporee_event_judge_assignments[]
+  camporee_score_submissions       camporee_event_score_submissions[]
+  camporee_score_section_results   camporee_event_section_results[]
   @@unique([main_club_id, club_type_id])
+
 }
 
 model coordination_zones {
@@ -1420,6 +1426,7 @@ model local_camporees {
   camporee_events              camporee_events[]
   ecclesiastical_year_relation ecclesiastical_years @relation("local_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields                 local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  camporee_judges              camporee_judges[]
 }
 
 model local_fields {
@@ -1701,6 +1708,7 @@ model union_camporees {
   camporee_events              camporee_events[]
   ecclesiastical_year_relation ecclesiastical_years          @relation("union_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   unions                       unions                        @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
+  camporee_judges              camporee_judges[]
 }
 
 model unions {
@@ -2047,9 +2055,20 @@ model users {
   // camporee events relations
   camporee_event_templates_created     camporee_event_templates[]            @relation("camporee_event_template_creator")
   camporee_event_templates_modified    camporee_event_templates[]            @relation("camporee_event_template_modifier")
+  camporee_event_template_rubrics_created  camporee_event_template_rubrics[]      @relation("camporee_event_template_rubric_creator")
+  camporee_event_template_rubrics_modified camporee_event_template_rubrics[]      @relation("camporee_event_template_rubric_modifier")
   camporee_events_created              camporee_events[]                     @relation("camporee_event_creator")
   camporee_events_modified             camporee_events[]                     @relation("camporee_event_modifier")
   camporee_events_led                  camporee_events[]                     @relation("camporee_event_leader")
+  camporee_judge_profiles                  camporee_judges[]                       @relation("camporee_judge_user")
+  camporee_judges_created                  camporee_judges[]                       @relation("camporee_judge_creator")
+  camporee_judges_modified                 camporee_judges[]                       @relation("camporee_judge_modifier")
+  camporee_event_rubrics_created           camporee_event_rubrics[]                @relation("camporee_event_rubric_creator")
+  camporee_event_rubrics_modified          camporee_event_rubrics[]                @relation("camporee_event_rubric_modifier")
+  camporee_judge_assignments_created       camporee_event_judge_assignments[]      @relation("camporee_event_judge_assignment_creator")
+  camporee_judge_assignments_modified      camporee_event_judge_assignments[]      @relation("camporee_event_judge_assignment_modifier")
+  camporee_score_submissions_submitted     camporee_event_score_submissions[]      @relation("camporee_score_submission_submitter")
+  camporee_event_section_results_finalized camporee_event_section_results[]        @relation("camporee_event_section_result_finalizer")
 }
 
 model notification_preferences {
@@ -3909,6 +3928,7 @@ model camporee_event_templates {
   materials             String?
   auxiliaries           String?
   max_points            Int
+  scoring_enabled       Boolean  @default(false)
   min_points            Int                  @default(0)
   penalties             Json                 @default("[]")
   participants_mode     String               @db.VarChar(20)
@@ -3925,12 +3945,33 @@ model camporee_event_templates {
   local_field           local_fields?        @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
   creator               users?               @relation("camporee_event_template_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
   modifier              users?               @relation("camporee_event_template_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  rubrics               camporee_event_template_rubrics[]
   events                camporee_events[]
 
   @@index([scope, union_id], map: "idx_camporee_event_templates_scope_union")
   @@index([scope, local_field_id], map: "idx_camporee_event_templates_scope_lf")
   @@index([event_type_id], map: "idx_camporee_event_templates_event_type")
   @@index([active], map: "idx_camporee_event_templates_active")
+}
+
+model camporee_event_template_rubrics {
+  camporee_event_template_rubric_id Int      @id @default(autoincrement())
+  event_template_id                 Int
+  title                             String   @db.VarChar(120)
+  description                       String?
+  max_points                        Decimal  @db.Decimal(10, 2)
+  display_order                     Int      @default(0)
+  active                            Boolean  @default(true)
+  created_by                        String?  @db.Uuid
+  modified_by                       String?  @db.Uuid
+  created_at                        DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                       DateTime @default(now()) @db.Timestamptz(6)
+
+  event_template camporee_event_templates @relation(fields: [event_template_id], references: [event_template_id], onDelete: Cascade, onUpdate: NoAction)
+  creator        users?                   @relation("camporee_event_template_rubric_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier       users?                   @relation("camporee_event_template_rubric_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([event_template_id, active, display_order], map: "idx_camporee_event_template_rubrics_template_active")
 }
 
 model camporee_events {
@@ -3947,6 +3988,7 @@ model camporee_events {
   materials             String?
   auxiliaries           String?
   max_points            Int
+  scoring_enabled       Boolean  @default(false)
   min_points            Int      @default(0)
   penalties             Json     @default("[]")
   participants_mode     String   @db.VarChar(20)
@@ -3982,7 +4024,10 @@ model camporee_events {
   modifier       users?                    @relation("camporee_event_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
   venue          camporee_venues?          @relation(fields: [venue_id], references: [camporee_venue_id], onDelete: SetNull, onUpdate: NoAction)
   leader         users?                    @relation("camporee_event_leader", fields: [leader_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
-
+  rubrics               camporee_event_rubrics[]
+  judge_assignments     camporee_event_judge_assignments[]
+  score_submissions     camporee_event_score_submissions[]
+  score_section_results camporee_event_section_results[]
   @@index([local_camporee_id], map: "idx_camporee_events_local_camporee")
   @@index([union_camporee_id], map: "idx_camporee_events_union_camporee")
   @@index([event_template_id], map: "idx_camporee_events_template")
@@ -3993,6 +4038,7 @@ model camporee_events {
   @@index([display_category, active], map: "camporee_events_category_idx")
   @@index([venue_id], map: "camporee_events_venue_idx")
   @@index([leader_user_id], map: "camporee_events_leader_idx")
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4254,4 +4300,140 @@ model MaterialConfig {
   updater     users?       @relation("material_config_updater", fields: [updated_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@map("material_config")
+}
+
+
+model camporee_event_rubrics {
+  camporee_event_rubric_id Int      @id @default(autoincrement())
+  camporee_event_id        Int
+  title                    String   @db.VarChar(120)
+  description              String?
+  max_points               Decimal  @db.Decimal(10, 2)
+  display_order            Int      @default(0)
+  active                   Boolean  @default(true)
+  created_by               String?  @db.Uuid
+  modified_by              String?  @db.Uuid
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime @default(now()) @db.Timestamptz(6)
+
+  camporee_event  camporee_events @relation(fields: [camporee_event_id], references: [camporee_event_id], onDelete: Cascade, onUpdate: NoAction)
+  creator         users?          @relation("camporee_event_rubric_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier        users?          @relation("camporee_event_rubric_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  submission_items camporee_event_score_submission_items[]
+
+  @@index([camporee_event_id, active, display_order], map: "idx_camporee_event_rubrics_event_active")
+}
+
+model camporee_judges {
+  camporee_judge_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  local_camporee_id Int?
+  union_camporee_id Int?
+  user_id           String   @db.Uuid
+  status            String   @default("active") @db.VarChar(20)
+  notes             String?
+  active            Boolean  @default(true)
+  created_by        String?  @db.Uuid
+  modified_by       String?  @db.Uuid
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  modified_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  local_camporee local_camporees? @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  union_camporee union_camporees? @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  user           users            @relation("camporee_judge_user", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  creator        users?           @relation("camporee_judge_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier       users?           @relation("camporee_judge_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  assignments    camporee_event_judge_assignments[]
+
+  @@index([local_camporee_id, user_id], map: "idx_camporee_judges_local_user")
+  @@index([union_camporee_id, user_id], map: "idx_camporee_judges_union_user")
+}
+
+model camporee_event_judge_assignments {
+  camporee_event_judge_assignment_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  camporee_event_id                  Int
+  camporee_judge_id                  String   @db.Uuid
+  camporee_club_id                   Int?
+  club_section_id                    Int
+  judge_role                         String   @db.VarChar(20)
+  active                             Boolean  @default(true)
+  created_by                         String?  @db.Uuid
+  modified_by                        String?  @db.Uuid
+  created_at                         DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                        DateTime @default(now()) @db.Timestamptz(6)
+
+  camporee_event camporee_events @relation(fields: [camporee_event_id], references: [camporee_event_id], onDelete: Cascade, onUpdate: NoAction)
+  camporee_judge camporee_judges @relation(fields: [camporee_judge_id], references: [camporee_judge_id], onDelete: Cascade, onUpdate: NoAction)
+  camporee_club  camporee_clubs? @relation(fields: [camporee_club_id], references: [camporee_club_id], onDelete: SetNull, onUpdate: NoAction)
+  club_section   club_sections   @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  creator        users?          @relation("camporee_event_judge_assignment_creator", fields: [created_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier       users?          @relation("camporee_event_judge_assignment_modifier", fields: [modified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  score_submissions camporee_event_score_submissions[]
+
+  @@index([camporee_judge_id, active], map: "idx_camporee_event_judge_assignments_judge")
+  @@index([camporee_event_id, club_section_id], map: "idx_camporee_event_judge_assignments_event_section")
+}
+
+model camporee_event_score_submissions {
+  camporee_event_score_submission_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  camporee_event_id                  Int
+  camporee_club_id                   Int?
+  club_section_id                    Int
+  judge_assignment_id                String?  @db.Uuid
+  submitted_by                       String   @db.Uuid
+  source                             String   @db.VarChar(30)
+  status                             String   @default("submitted") @db.VarChar(20)
+  total_awarded_points               Decimal  @default(0) @db.Decimal(10, 2)
+  total_max_points                   Decimal  @default(0) @db.Decimal(10, 2)
+  notes                              String?
+  voided_reason                      String?
+  created_at                         DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                        DateTime @default(now()) @db.Timestamptz(6)
+
+  camporee_event  camporee_events                     @relation(fields: [camporee_event_id], references: [camporee_event_id], onDelete: Cascade, onUpdate: NoAction)
+  camporee_club   camporee_clubs?                     @relation(fields: [camporee_club_id], references: [camporee_club_id], onDelete: SetNull, onUpdate: NoAction)
+  club_section    club_sections                       @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  judge_assignment camporee_event_judge_assignments?  @relation(fields: [judge_assignment_id], references: [camporee_event_judge_assignment_id], onDelete: SetNull, onUpdate: NoAction)
+  submitter       users                               @relation("camporee_score_submission_submitter", fields: [submitted_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  items           camporee_event_score_submission_items[]
+  section_results camporee_event_section_results[]
+
+  @@index([camporee_event_id, club_section_id, created_at], map: "idx_camporee_event_score_submissions_event_section")
+}
+
+model camporee_event_score_submission_items {
+  camporee_event_score_submission_item_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  camporee_event_score_submission_id      String   @db.Uuid
+  camporee_event_rubric_id                Int
+  awarded_points                          Decimal  @db.Decimal(10, 2)
+  notes                                   String?
+  created_at                              DateTime @default(now()) @db.Timestamptz(6)
+
+  submission camporee_event_score_submissions @relation(fields: [camporee_event_score_submission_id], references: [camporee_event_score_submission_id], onDelete: Cascade, onUpdate: NoAction)
+  rubric     camporee_event_rubrics           @relation(fields: [camporee_event_rubric_id], references: [camporee_event_rubric_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([camporee_event_score_submission_id, camporee_event_rubric_id], map: "uq_camporee_score_submission_item_rubric")
+}
+
+model camporee_event_section_results {
+  camporee_event_section_result_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  camporee_event_id                Int
+  camporee_club_id                 Int?
+  club_section_id                  Int
+  source_submission_id             String   @db.Uuid
+  total_awarded_points             Decimal  @db.Decimal(10, 2)
+  total_max_points                 Decimal  @db.Decimal(10, 2)
+  percentage                       Decimal  @db.Decimal(5, 2)
+  finalized_by                     String   @db.Uuid
+  finalized_at                     DateTime @default(now()) @db.Timestamptz(6)
+  active                           Boolean  @default(true)
+  created_at                       DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                      DateTime @default(now()) @db.Timestamptz(6)
+
+  camporee_event   camporee_events                   @relation(fields: [camporee_event_id], references: [camporee_event_id], onDelete: Cascade, onUpdate: NoAction)
+  camporee_club    camporee_clubs?                   @relation(fields: [camporee_club_id], references: [camporee_club_id], onDelete: SetNull, onUpdate: NoAction)
+  club_section     club_sections                     @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  source_submission camporee_event_score_submissions @relation(fields: [source_submission_id], references: [camporee_event_score_submission_id], onDelete: NoAction, onUpdate: NoAction)
+  finalizer        users                             @relation("camporee_event_section_result_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([camporee_event_id, club_section_id], map: "idx_camporee_event_section_results_event_section")
 }

@@ -1,15 +1,45 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+
+export class CamporeeEventTemplateRubricDto {
+  @ApiProperty({ example: 'Técnica' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  declare title: string;
+
+  @ApiPropertyOptional({ example: 'Ejecución correcta del procedimiento.' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ example: 30 })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  declare max_points: number;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  display_order?: number;
+}
 
 export class CreateCamporeeEventTemplateDto {
   @ApiProperty({ example: 'union', enum: ['union', 'local_field'] })
@@ -80,6 +110,18 @@ export class CreateCamporeeEventTemplateDto {
   @IsInt()
   @Min(0)
   declare max_points: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  scoring_enabled?: boolean;
+
+  @ApiPropertyOptional({ type: [CamporeeEventTemplateRubricDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CamporeeEventTemplateRubricDto)
+  rubrics?: CamporeeEventTemplateRubricDto[];
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
@@ -181,6 +223,18 @@ export class UpdateCamporeeEventTemplateDto {
   @IsInt()
   @Min(0)
   max_points?: number;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  scoring_enabled?: boolean;
+
+  @ApiPropertyOptional({ type: [CamporeeEventTemplateRubricDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CamporeeEventTemplateRubricDto)
+  rubrics?: CamporeeEventTemplateRubricDto[];
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()

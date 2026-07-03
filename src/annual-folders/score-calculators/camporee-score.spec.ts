@@ -17,41 +17,69 @@ describe('CamporeeScoreService.calc', () => {
     svc = moduleRef.get(CamporeeScoreService);
   });
 
-  it('returns 100 when club attended all camporees in scope', async () => {
-    prisma.$queryRaw
-      .mockResolvedValueOnce([{ denom: 2n }])
-      .mockResolvedValueOnce([{ numer: 2n }]);
-    const result = await svc.calc(1, 1, 2, 2026);
-    expect(result).toBe(100);
+  it('scores section results over all scoring events in scope', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      { awarded_points: '170.00', max_points: '300.00' },
+    ]);
+
+    const result = await svc.calc(50, 1, 2, 2026);
+
+    expect(result).toBe(56.67);
   });
 
-  it('returns 0 when no camporees exist for the year (denom=0)', async () => {
-    prisma.$queryRaw.mockResolvedValueOnce([{ denom: 0n }]);
-    const result = await svc.calc(1, 1, 2, 2026);
+  it('counts missing event result as zero through denominator', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      { awarded_points: '100.00', max_points: '300.00' },
+    ]);
+
+    const result = await svc.calc(50, 1, 2, 2026);
+
+    expect(result).toBe(33.33);
+  });
+
+  it('ignores non-scoring events in denominator by filtering scoring_enabled', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      { awarded_points: '100.00', max_points: '100.00' },
+    ]);
+
+    const result = await svc.calc(50, 1, 2, 2026);
+
+    expect(result).toBe(100);
+    expect(String(prisma.$queryRaw.mock.calls[0][0])).toContain(
+      'e.scoring_enabled = true',
+    );
+  });
+
+  it('returns zero when there are no scoring-enabled camporee events', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      { awarded_points: '0.00', max_points: '0.00' },
+    ]);
+
+    const result = await svc.calc(50, 1, 2, 2026);
+
     expect(result).toBe(0);
   });
 
-  it('returns 50 when 1 of 2 camporees attended', async () => {
-    prisma.$queryRaw
-      .mockResolvedValueOnce([{ denom: 2n }])
-      .mockResolvedValueOnce([{ numer: 1n }]);
-    const result = await svc.calc(1, 1, 2, 2026);
-    expect(result).toBe(50);
+  it('does not use camporee attendance rows as awarded points', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      { awarded_points: '0.00', max_points: '100.00' },
+    ]);
+
+    const result = await svc.calc(50, 1, 2, 2026);
+
+    expect(result).toBe(0);
+    const sql = String(prisma.$queryRaw.mock.calls[0][0]);
+    expect(sql).not.toContain('camporee_members');
+    expect(sql).not.toContain('camporee_clubs');
   });
 
-  it('handles club without union_id (falls back to local camporees only)', async () => {
-    prisma.$queryRaw
-      .mockResolvedValueOnce([{ denom: 1n }])
-      .mockResolvedValueOnce([{ numer: 1n }]);
-    const result = await svc.calc(1, 1, null, 2026);
-    expect(result).toBe(100);
-  });
+  it('handles section without union_id by scoring only local camporees', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      { awarded_points: '80.00', max_points: '100.00' },
+    ]);
 
-  it('returns 25 for 1 of 4 attended (rounded to 2 decimals)', async () => {
-    prisma.$queryRaw
-      .mockResolvedValueOnce([{ denom: 4n }])
-      .mockResolvedValueOnce([{ numer: 1n }]);
-    const result = await svc.calc(1, 1, 2, 2026);
-    expect(result).toBe(25);
+    const result = await svc.calc(50, 1, null, 2026);
+
+    expect(result).toBe(80);
   });
 });

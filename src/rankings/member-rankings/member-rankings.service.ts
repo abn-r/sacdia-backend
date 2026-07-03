@@ -622,7 +622,7 @@ export class MemberRankingsService {
     const participatedCount = await this.prisma.camporee_members.count({
       where: {
         user_id: userId,
-        status: 'approved',
+        status: { in: ['registered', 'approved'] },
         OR: orClauses,
       },
     });

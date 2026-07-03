@@ -47,6 +47,16 @@ export const PROFILE_URL_LIMITER = pLimit(20);
 export class CamporeesService {
   private readonly logger = new Logger(CamporeesService.name);
   private static readonly PRIVATE_ASSET_URL_TTL_SECONDS = 300;
+  private static readonly ELIGIBLE_CAMPOREE_INSURANCE_TYPES = [
+    'CAMPOREE',
+    'GENERAL_ACTIVITIES',
+  ] as const;
+
+  private static isEligibleCamporeeInsuranceType(insuranceType: string) {
+    return (
+      CamporeesService.ELIGIBLE_CAMPOREE_INSURANCE_TYPES as readonly string[]
+    ).includes(insuranceType);
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -192,6 +202,15 @@ export class CamporeesService {
         description: dto.description,
         start_date: new Date(dto.start_date),
         end_date: new Date(dto.end_date),
+        club_registration_deadline: dto.club_registration_deadline
+          ? new Date(dto.club_registration_deadline)
+          : null,
+        member_registration_deadline: dto.member_registration_deadline
+          ? new Date(dto.member_registration_deadline)
+          : null,
+        payment_deadline: dto.payment_deadline
+          ? new Date(dto.payment_deadline)
+          : null,
         local_field_id: dto.local_field_id,
         includes_adventurers: dto.includes_adventurers,
         includes_pathfinders: dto.includes_pathfinders,
@@ -232,7 +251,13 @@ export class CamporeesService {
 
     // Build update object with only defined fields, converting date fields
     const updateData = {
-      ...buildPartialUpdate(dto, ['start_date', 'end_date']),
+      ...buildPartialUpdate(dto, [
+        'start_date',
+        'end_date',
+        'club_registration_deadline',
+        'member_registration_deadline',
+        'payment_deadline',
+      ]),
       modified_at: new Date(),
     };
 
@@ -455,6 +480,15 @@ export class CamporeesService {
           description: dto.description,
           start_date: new Date(dto.start_date),
           end_date: new Date(dto.end_date),
+          club_registration_deadline: dto.club_registration_deadline
+            ? new Date(dto.club_registration_deadline)
+            : null,
+          member_registration_deadline: dto.member_registration_deadline
+            ? new Date(dto.member_registration_deadline)
+            : null,
+          payment_deadline: dto.payment_deadline
+            ? new Date(dto.payment_deadline)
+            : null,
           union_id: dto.union_id,
           includes_adventurers: dto.includes_adventurers,
           includes_pathfinders: dto.includes_pathfinders,
@@ -526,7 +560,13 @@ export class CamporeesService {
 
     // Build update object with only defined fields, converting date fields
     const updateData = {
-      ...buildPartialUpdate(fieldsToUpdate, ['start_date', 'end_date']),
+      ...buildPartialUpdate(fieldsToUpdate, [
+        'start_date',
+        'end_date',
+        'club_registration_deadline',
+        'member_registration_deadline',
+        'payment_deadline',
+      ]),
       modified_at: new Date(),
     };
 
@@ -713,8 +753,12 @@ export class CamporeesService {
           );
         }
 
-        // Validate insurance type is CAMPOREE
-        if (insurance.insurance_type !== 'CAMPOREE') {
+        // Validate insurance type is eligible for camporees
+        if (
+          !CamporeesService.isEligibleCamporeeInsuranceType(
+            insurance.insurance_type,
+          )
+        ) {
           throw new AppBadRequestException(
             ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
           );
@@ -1165,6 +1209,7 @@ export class CamporeesService {
           camporee_member: {
             select: {
               camporee_member_id: true,
+              camporee_id: true,
               user_id: true,
               users: {
                 select: {
@@ -1238,6 +1283,13 @@ export class CamporeesService {
         ...(status ? { status } : { status: { not: 'pending_approval' } }),
       },
       include: {
+        camporee_member: {
+          select: {
+            camporee_member_id: true,
+            camporee_id: true,
+            user_id: true,
+          },
+        },
         registrar: {
           select: {
             user_id: true,
@@ -1274,6 +1326,7 @@ export class CamporeesService {
         camporee_member: {
           select: {
             camporee_member_id: true,
+            camporee_id: true,
             user_id: true,
             club_name: true,
             users: {
@@ -1810,8 +1863,12 @@ export class CamporeesService {
           );
         }
 
-        // Validate insurance type is CAMPOREE
-        if (insurance.insurance_type !== 'CAMPOREE') {
+        // Validate insurance type is eligible for camporees
+        if (
+          !CamporeesService.isEligibleCamporeeInsuranceType(
+            insurance.insurance_type,
+          )
+        ) {
           throw new AppBadRequestException(
             ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
           );

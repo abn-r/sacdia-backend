@@ -15,17 +15,12 @@ export class CamporeeScoreService {
     enrollmentId: number,
     ecclesiasticalYearId: number,
   ): Promise<number | null> {
-    const enrollment = await this.prisma.enrollments.findUnique({
-      where: { enrollment_id: enrollmentId },
-      select: { user_id: true },
-    });
-    if (!enrollment) return null;
-
     const club = await this.clubResolver.resolve(
       enrollmentId,
       ecclesiasticalYearId,
     );
     if (!club) return null;
+
     const ecclesiasticalYear =
       await this.prisma.ecclesiastical_years.findUnique({
         where: { year_id: ecclesiasticalYearId },
@@ -45,51 +40,57 @@ export class CamporeeScoreService {
 
     if (localFieldId == null) return null;
 
-    const [localCamporees, unionCamporees] = await Promise.all([
-      this.prisma.local_camporees.findMany({
-        where: {
-          ecclesiastical_year: ecclesiasticalYearId,
-          active: true,
-          local_field_id: localFieldId,
-        },
-        select: { local_camporee_id: true },
-      }),
-      resolvedUnionId === null
-        ? Promise.resolve([])
-        : this.prisma.union_camporees.findMany({
-            where: {
-              ecclesiastical_year: ecclesiasticalYearId,
-              active: true,
-              union_id: resolvedUnionId,
-              union_camporee_local_fields: {
-                some: { local_field_id: localFieldId },
-              },
-            },
-            select: { union_camporee_id: true },
-          }),
-    ]);
+    const rows = await this.prisma.$queryRaw<
+      { awarded_points: unknown; max_points: unknown }[]
+    >`
+      WITH scoring_events AS (
+        SELECT e.camporee_event_id,
+               e.max_points::numeric AS max_points
+          FROM camporee_events e
+          JOIN local_camporees lc
+            ON lc.local_camporee_id = e.local_camporee_id
+         WHERE e.active = true
+           AND e.scoring_enabled = true
+           AND lc.active = true
+           AND lc.ecclesiastical_year = ${ecclesiasticalYearId}
+           AND lc.local_field_id = ${localFieldId}
+        UNION ALL
+        SELECT e.camporee_event_id,
+               e.max_points::numeric AS max_points
+          FROM camporee_events e
+          JOIN union_camporees uc
+            ON uc.union_camporee_id = e.union_camporee_id
+         WHERE e.active = true
+           AND e.scoring_enabled = true
+           AND uc.active = true
+           AND ${resolvedUnionId !== null ? true : false} = true
+           AND uc.ecclesiastical_year = ${ecclesiasticalYearId}
+           AND uc.union_id = ${resolvedUnionId ?? 0}
+      )
+      SELECT COALESCE(SUM(r.total_awarded_points), 0)::numeric AS awarded_points,
+             COALESCE(SUM(se.max_points), 0)::numeric AS max_points
+        FROM scoring_events se
+        LEFT JOIN camporee_event_section_results r
+          ON r.camporee_event_id = se.camporee_event_id
+         AND r.club_section_id = ${club.clubSectionId}
+         AND r.active = true
+    `;
 
-    const localIds = localCamporees.map((c) => c.local_camporee_id);
-    const unionIds = unionCamporees.map((c) => c.union_camporee_id);
-    const totalCamporees = localIds.length + unionIds.length;
-    if (totalCamporees === 0) return null;
+    const awardedPoints = this.toNumber(rows[0]?.awarded_points);
+    const maxPoints = this.toNumber(rows[0]?.max_points);
+    if (maxPoints <= 0) return null;
 
-    // CRITICAL: scope numerator to in-range camporee IDs only.
-    // Without this filter the count includes lifetime global attendance,
-    // inflating scores (caught in stage 2 review of v1 plan).
-    const orClauses: Array<Record<string, unknown>> = [];
-    if (localIds.length > 0) orClauses.push({ camporee_id: { in: localIds } });
-    if (unionIds.length > 0)
-      orClauses.push({ union_camporee_id: { in: unionIds } });
+    return Math.min((awardedPoints / maxPoints) * 100, 100);
+  }
 
-    const participatedCount = await this.prisma.camporee_members.count({
-      where: {
-        user_id: enrollment.user_id,
-        status: 'approved',
-        OR: orClauses,
-      },
-    });
-
-    return Math.min((participatedCount / totalCamporees) * 100, 100);
+  private toNumber(value: unknown): number {
+    if (value == null) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'string') return Number(value);
+    if (typeof (value as { toNumber?: () => number }).toNumber === 'function') {
+      return (value as { toNumber: () => number }).toNumber();
+    }
+    return Number(value);
   }
 }

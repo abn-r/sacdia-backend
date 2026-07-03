@@ -124,6 +124,8 @@ export class AnnualRankingsService {
           {
             clubEnrollmentId: row.club_enrollment_id,
             clubId: club?.club_id ?? 0,
+            clubSectionId:
+              row.club_enrollment.club_section.club_section_id ?? 0,
             localFieldId:
               row.hierarchy_context?.local_field_id ??
               club?.local_field_id ??

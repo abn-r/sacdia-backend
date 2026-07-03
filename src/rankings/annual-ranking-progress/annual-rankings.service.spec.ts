@@ -91,6 +91,7 @@ function makeRankingRow({
     hierarchy_context: { local_field_id: LOCAL_FIELD_ID, union_id: 2 },
     club_enrollment: {
       club_section: {
+        club_section_id: clubId + 1000,
         clubs: {
           club_id: clubId,
           name: clubName,
@@ -350,6 +351,7 @@ describe('AnnualRankingsService', () => {
       expect.objectContaining({
         clubEnrollmentId: 'enrollment-low',
         clubId: 11,
+        clubSectionId: 1011,
         localFieldId: LOCAL_FIELD_ID,
         unionId: 2,
         ecclesiasticalYearId: YEAR_ID,

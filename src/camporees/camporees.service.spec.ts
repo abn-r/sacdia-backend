@@ -203,6 +203,9 @@ describe('CamporeesService', () => {
         description: 'Description',
         start_date: '2026-06-01',
         end_date: '2026-06-03',
+        club_registration_deadline: '2026-05-10T23:59:59.000Z',
+        member_registration_deadline: '2026-05-20T23:59:59.000Z',
+        payment_deadline: '2026-05-30T23:59:59.000Z',
         local_field_id: 1,
         includes_adventurers: true,
         includes_pathfinders: true,
@@ -260,6 +263,13 @@ describe('CamporeesService', () => {
             name: createDto.name,
             lat: createDto.lat,
             long: createDto.long,
+            club_registration_deadline: new Date(
+              createDto.club_registration_deadline,
+            ),
+            member_registration_deadline: new Date(
+              createDto.member_registration_deadline,
+            ),
+            payment_deadline: new Date(createDto.payment_deadline),
             active: true,
             ecclesiastical_year: 1,
           }),
@@ -463,6 +473,72 @@ describe('CamporeesService', () => {
       );
     });
 
+    it('should register a member with GENERAL_ACTIVITIES insurance', async () => {
+      const registerDto = {
+        user_id: 'user-uuid',
+        club_name: 'Test Club',
+        insurance_id: 1,
+      };
+
+      const mockInsurance = {
+        insurance_id: 1,
+        user_id: 'user-uuid',
+        insurance_type: 'GENERAL_ACTIVITIES',
+        end_date: new Date('2026-12-31'),
+        active: true,
+      };
+
+      const mockMember = {
+        camporee_member_id: 2,
+        camporee_id: 1,
+        camporee_type: 'local',
+        user_id: 'user-uuid',
+        club_name: 'Test Club',
+        insurance_verified: true,
+        insurance_id: 1,
+        active: true,
+      };
+
+      let createMemberMock: jest.Mock | undefined;
+
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        createMemberMock = jest.fn().mockResolvedValue(mockMember);
+        const tx = {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue({
+              local_camporee_id: 1,
+              name: 'Test Camporee',
+              end_date: new Date('2026-06-03'),
+              active: true,
+            }),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue({ user_id: 'user-uuid' }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: createMemberMock,
+          },
+          member_insurances: {
+            findUnique: jest.fn().mockResolvedValue(mockInsurance),
+          },
+        };
+        return callback(tx);
+      });
+
+      const result = await service.registerMember(1, registerDto);
+
+      expect(result).toEqual(mockMember);
+      expect(createMemberMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            insurance_id: 1,
+            insurance_verified: true,
+          }),
+        }),
+      );
+    });
+
     it('should throw NotFoundException if camporee not found', async () => {
       const registerDto = {
         user_id: 'user-uuid',
@@ -508,7 +584,7 @@ describe('CamporeesService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_ACTIVE });
     });
 
-    it('should throw BadRequestException if insurance type is not CAMPOREE', async () => {
+    it('should throw BadRequestException if insurance type is not eligible for camporees', async () => {
       const registerDto = {
         user_id: 'user-uuid',
         camporee_type: 'local' as const,
@@ -535,7 +611,7 @@ describe('CamporeesService', () => {
             findUnique: jest.fn().mockResolvedValue({
               insurance_id: 1,
               user_id: 'user-uuid',
-              insurance_type: 'GENERAL_ACTIVITIES',
+              insurance_type: 'HIGH_RISK',
               end_date: new Date('2026-12-31'),
               active: true,
             }),

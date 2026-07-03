@@ -489,6 +489,15 @@ export class CamporeeEventsService {
 
     const template = await this.prisma.camporee_event_templates.findUnique({
       where: { event_template_id: templateId },
+      include: {
+        rubrics: {
+          where: { active: true },
+          orderBy: [
+            { display_order: 'asc' },
+            { camporee_event_template_rubric_id: 'asc' },
+          ],
+        },
+      },
     });
 
     if (!template || !template.active) {
@@ -500,40 +509,82 @@ export class CamporeeEventsService {
 
     const displayOrder =
       dto.display_order ?? (await this.getNextDisplayOrder(camporeeId, scope));
+    const maxPoints = dto.max_points ?? template.max_points;
+
+    if (template.scoring_enabled) {
+      const rubricSum = template.rubrics.reduce(
+        (total, rubric) => total + Number(rubric.max_points),
+        0,
+      );
+
+      if (template.rubrics.length === 0) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_SCORING_RUBRICS_REQUIRED,
+        );
+      }
+
+      if (Math.abs(rubricSum - maxPoints) > 0.001) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_SCORING_RUBRIC_SUM_MISMATCH,
+          { sum: rubricSum, maxPoints },
+        );
+      }
+    }
 
     // Clone: only competition fields cloned. Agenda fields NOT cloned per design.
-    const event = await this.prisma.camporee_events.create({
-      data: {
-        ...(scope === 'local'
-          ? { local_camporee_id: camporeeId }
-          : { union_camporee_id: camporeeId }),
-        event_template_id: templateId,
-        event_type_id: template.event_type_id,
-        title: dto.title ?? template.title,
-        description: template.description,
-        requirements: template.requirements,
-        development: template.development,
-        prerequisites: template.prerequisites,
-        materials: template.materials,
-        auxiliaries: template.auxiliaries,
-        max_points: dto.max_points ?? template.max_points,
-        min_points: template.min_points,
-        penalties: template.penalties as any,
-        participants_mode: template.participants_mode,
-        participants_count: template.participants_count,
-        participants_by_class: template.participants_by_class as any,
-        duration_seconds: template.duration_seconds,
-        display_order: displayOrder,
-        active: true,
-        // Agenda defaults on clone
-        day_number: 1,
-        sections: [],
-        display_category: 'logistico',
-        status: 'programado',
-        registered_count: 0,
-        created_by: actorId,
-        modified_by: actorId,
-      },
+    const event = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.camporee_events.create({
+        data: {
+          ...(scope === 'local'
+            ? { local_camporee_id: camporeeId }
+            : { union_camporee_id: camporeeId }),
+          event_template_id: templateId,
+          event_type_id: template.event_type_id,
+          title: dto.title ?? template.title,
+          description: template.description,
+          requirements: template.requirements,
+          development: template.development,
+          prerequisites: template.prerequisites,
+          materials: template.materials,
+          auxiliaries: template.auxiliaries,
+          max_points: maxPoints,
+          scoring_enabled: template.scoring_enabled,
+          min_points: template.min_points,
+          penalties: template.penalties as any,
+          participants_mode: template.participants_mode,
+          participants_count: template.participants_count,
+          participants_by_class: template.participants_by_class as any,
+          duration_seconds: template.duration_seconds,
+          display_order: displayOrder,
+          active: true,
+          // Agenda defaults on clone
+          day_number: 1,
+          sections: [],
+          display_category: 'logistico',
+          status: 'programado',
+          registered_count: 0,
+          created_by: actorId,
+          modified_by: actorId,
+        },
+      });
+
+      if (template.scoring_enabled) {
+        for (const rubric of template.rubrics) {
+          await tx.camporee_event_rubrics.create({
+            data: {
+              camporee_event_id: created.camporee_event_id,
+              title: rubric.title,
+              description: rubric.description,
+              max_points: rubric.max_points,
+              display_order: rubric.display_order,
+              created_by: actorId,
+              modified_by: actorId,
+            },
+          });
+        }
+      }
+
+      return created;
     });
 
     this.logMutation('create_from_template', event.camporee_event_id, actorId);

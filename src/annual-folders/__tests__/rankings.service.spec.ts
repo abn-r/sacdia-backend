@@ -135,6 +135,7 @@ describe('RankingsService', () => {
   const clubHierarchy = {
     club_enrollment_id: 'enroll-1',
     club_section: {
+      club_section_id: 20,
       club_type_id: 2,
       main_club_id: 10,
       clubs: {
@@ -385,7 +386,7 @@ describe('RankingsService', () => {
 
       await service.recalculateRankings();
 
-      expect(camporeeScore.calc).toHaveBeenCalledWith(10, 88, 99, 2026);
+      expect(camporeeScore.calc).toHaveBeenCalledWith(20, 88, 99, 2026);
       expect(mockHierarchyService.resolveAsOf).toHaveBeenCalledWith(
         { type: 'club', id: 10 },
         expect.any(Date),
@@ -453,7 +454,7 @@ describe('RankingsService', () => {
         mockPrismaService.hierarchy_contexts.findUnique,
       ).toHaveBeenCalled();
       expect(mockHierarchyService.resolveAsOf).not.toHaveBeenCalled();
-      expect(camporeeScore.calc).toHaveBeenCalledWith(10, 77, 88, 2026);
+      expect(camporeeScore.calc).toHaveBeenCalledWith(20, 77, 88, 2026);
     });
 
     it('skips composite scoring without aborting when historical hierarchy is unavailable', async () => {

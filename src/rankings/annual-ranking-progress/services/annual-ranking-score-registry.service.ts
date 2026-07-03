@@ -15,6 +15,7 @@ export type AnnualRankingScoreSourceStatus = 'available' | 'not_available';
 export interface AnnualRankingScoreContext {
   clubEnrollmentId: string;
   clubId: number;
+  clubSectionId: number;
   localFieldId: number;
   unionId: number | null;
   ecclesiasticalYearId: number;
@@ -149,7 +150,7 @@ export class AnnualRankingScoreRegistryService {
       return {
         score_pct: this.normalizeScore(
           await this.camporeeScore.calc(
-            context.clubId,
+            context.clubSectionId,
             context.localFieldId,
             context.unionId,
             context.ecclesiasticalYearId,

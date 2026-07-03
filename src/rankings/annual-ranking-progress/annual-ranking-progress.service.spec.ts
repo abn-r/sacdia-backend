@@ -457,6 +457,7 @@ describe('AnnualRankingProgressService', () => {
       expect.objectContaining({
         clubEnrollmentId: 'enrollment-1',
         clubId: CLUB_ID,
+        clubSectionId: SECTION_ID,
         localFieldId: LOCAL_FIELD_ID,
         unionId: 2,
         ecclesiasticalYearId: YEAR_ID,

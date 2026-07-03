@@ -268,6 +268,7 @@ export class RankingsService {
             club_enrollment_id: true,
             club_section: {
               select: {
+                club_section_id: true,
                 club_type_id: true,
                 main_club_id: true,
                 clubs: {
@@ -404,7 +405,7 @@ export class RankingsService {
             this.folderScore.calc(enrollmentId, yearIdResolved),
             this.financeScore.calc(clubId, calendarYear),
             this.camporeeScore.calc(
-              clubId,
+              clubSection.club_section_id,
               localFieldId,
               unionId,
               yearIdResolved,
@@ -1139,7 +1140,7 @@ export class RankingsService {
         this.folderScore.calc(enrollmentId, ecclesiasticalYearId),
         this.financeScore.calc(clubId, calendarYear),
         this.camporeeScore.calc(
-          clubId,
+          clubSection.club_section_id,
           localFieldId,
           unionId,
           ecclesiasticalYearId,
@@ -1200,7 +1201,7 @@ export class RankingsService {
       this.prisma.$queryRaw<{ id: number; name: string; attended: boolean }[]>`
           SELECT lc.local_camporee_id AS id,
                  lc.name              AS name,
-                 COALESCE(BOOL_OR(cc.status = 'approved'), false) AS attended
+                 COALESCE(BOOL_OR(cc.status IN ('registered', 'approved')), false) AS attended
           FROM local_camporees lc
           LEFT JOIN camporee_clubs cc
             ON cc.camporee_id = lc.local_camporee_id
@@ -1221,7 +1222,7 @@ export class RankingsService {
           >`
               SELECT uc.union_camporee_id AS id,
                      uc.name              AS name,
-                     COALESCE(BOOL_OR(cc.union_camporee_id = uc.union_camporee_id AND cc.status = 'approved'), false) AS attended
+                     COALESCE(BOOL_OR(cc.union_camporee_id = uc.union_camporee_id AND cc.status IN ('registered', 'approved')), false) AS attended
               FROM union_camporees uc
               LEFT JOIN camporee_clubs cc
                 ON cc.union_camporee_id = uc.union_camporee_id

@@ -8,15 +8,32 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 import {
   CreateCamporeeEventTemplateDto,
+  CamporeeEventTemplateRubricDto,
   ListCamporeeEventTemplatesDto,
   UpdateCamporeeEventTemplateDto,
 } from './dto';
+
+type TemplateRubricInput = Pick<
+  CamporeeEventTemplateRubricDto,
+  'title' | 'description' | 'max_points' | 'display_order'
+>;
 
 @Injectable()
 export class CamporeeEventTemplatesService {
   private readonly logger = new Logger(CamporeeEventTemplatesService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private readonly templateInclude = {
+    event_type: true,
+    rubrics: {
+      where: { active: true },
+      orderBy: [
+        { display_order: 'asc' as const },
+        { camporee_event_template_rubric_id: 'asc' as const },
+      ],
+    },
+  };
 
   /**
    * Determine if the caller is a super-admin or global admin.
@@ -122,16 +139,14 @@ export class CamporeeEventTemplatesService {
       where,
       orderBy: { event_template_id: 'asc' },
       take: 500,
-      include: {
-        event_type: true,
-      },
+      include: this.templateInclude,
     });
   }
 
   async getTemplate(templateId: number, authorization: AuthorizationSnapshot) {
     const template = await this.prisma.camporee_event_templates.findUnique({
       where: { event_template_id: templateId },
-      include: { event_type: true },
+      include: this.templateInclude,
     });
 
     if (!template) {
@@ -155,6 +170,12 @@ export class CamporeeEventTemplatesService {
   ) {
     this.validateScopePayload(dto.scope, dto.union_id, dto.local_field_id);
     this.validatePoints(dto.max_points, dto.min_points ?? 0);
+    const scoringEnabled = dto.scoring_enabled ?? false;
+    this.validateRubricsTotal(
+      scoringEnabled,
+      dto.max_points,
+      dto.rubrics ?? [],
+    );
     this.validateParticipants(
       dto.participants_mode,
       dto.participants_count,
@@ -169,30 +190,49 @@ export class CamporeeEventTemplatesService {
 
     await this.ensureEventTypeExists(dto.event_type_id);
 
-    const template = await this.prisma.camporee_event_templates.create({
-      data: {
-        scope: dto.scope,
-        union_id: dto.union_id ?? null,
-        local_field_id: dto.local_field_id ?? null,
-        event_type_id: dto.event_type_id,
-        title: dto.title,
-        description: dto.description ?? null,
-        requirements: dto.requirements ?? null,
-        development: dto.development ?? null,
-        prerequisites: dto.prerequisites ?? null,
-        materials: dto.materials ?? null,
-        auxiliaries: dto.auxiliaries ?? null,
-        max_points: dto.max_points,
-        min_points: dto.min_points ?? 0,
-        penalties: (dto.penalties ?? []) as any,
-        participants_mode: dto.participants_mode,
-        participants_count: dto.participants_count ?? null,
-        participants_by_class: (dto.participants_by_class ?? null) as any,
-        duration_seconds: dto.duration_seconds ?? null,
-        active: dto.active ?? true,
-        created_by: actorId,
-        modified_by: actorId,
-      },
+    const template = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.camporee_event_templates.create({
+        data: {
+          scope: dto.scope,
+          union_id: dto.union_id ?? null,
+          local_field_id: dto.local_field_id ?? null,
+          event_type_id: dto.event_type_id,
+          title: dto.title,
+          description: dto.description ?? null,
+          requirements: dto.requirements ?? null,
+          development: dto.development ?? null,
+          prerequisites: dto.prerequisites ?? null,
+          materials: dto.materials ?? null,
+          auxiliaries: dto.auxiliaries ?? null,
+          max_points: dto.max_points,
+          scoring_enabled: scoringEnabled,
+          min_points: dto.min_points ?? 0,
+          penalties: (dto.penalties ?? []) as any,
+          participants_mode: dto.participants_mode,
+          participants_count: dto.participants_count ?? null,
+          participants_by_class: (dto.participants_by_class ?? null) as any,
+          duration_seconds: dto.duration_seconds ?? null,
+          active: dto.active ?? true,
+          created_by: actorId,
+          modified_by: actorId,
+        },
+      });
+
+      if (scoringEnabled) {
+        await this.createTemplateRubrics(
+          tx,
+          created.event_template_id,
+          dto.rubrics ?? [],
+          actorId,
+        );
+      }
+
+      return (
+        (await tx.camporee_event_templates.findUnique({
+          where: { event_template_id: created.event_template_id },
+          include: this.templateInclude,
+        })) ?? created
+      );
     });
 
     this.logger.log(
@@ -216,6 +256,15 @@ export class CamporeeEventTemplatesService {
   ) {
     const existing = await this.prisma.camporee_event_templates.findUnique({
       where: { event_template_id: templateId },
+      include: {
+        rubrics: {
+          where: { active: true },
+          orderBy: [
+            { display_order: 'asc' },
+            { camporee_event_template_rubric_id: 'asc' },
+          ],
+        },
+      },
     });
 
     if (!existing) {
@@ -236,6 +285,16 @@ export class CamporeeEventTemplatesService {
     const maxPoints = dto.max_points ?? existing.max_points;
     const minPoints = dto.min_points ?? existing.min_points;
     this.validatePoints(maxPoints, minPoints);
+    const scoringEnabled = dto.scoring_enabled ?? existing.scoring_enabled;
+    const rubricSource =
+      dto.rubrics ??
+      existing.rubrics.map((rubric) => ({
+        title: rubric.title,
+        description: rubric.description ?? undefined,
+        max_points: Number(rubric.max_points),
+        display_order: rubric.display_order,
+      }));
+    this.validateRubricsTotal(scoringEnabled, maxPoints, rubricSource);
 
     const participantsMode =
       dto.participants_mode ?? existing.participants_mode;
@@ -256,50 +315,80 @@ export class CamporeeEventTemplatesService {
       await this.ensureEventTypeExists(dto.event_type_id);
     }
 
-    const updated = await this.prisma.camporee_event_templates.update({
-      where: { event_template_id: templateId },
-      data: {
-        ...(dto.event_type_id ? { event_type_id: dto.event_type_id } : {}),
-        ...(dto.title ? { title: dto.title } : {}),
-        ...(typeof dto.description === 'string'
-          ? { description: dto.description }
-          : {}),
-        ...(typeof dto.requirements === 'string'
-          ? { requirements: dto.requirements }
-          : {}),
-        ...(typeof dto.development === 'string'
-          ? { development: dto.development }
-          : {}),
-        ...(typeof dto.prerequisites === 'string'
-          ? { prerequisites: dto.prerequisites }
-          : {}),
-        ...(typeof dto.materials === 'string'
-          ? { materials: dto.materials }
-          : {}),
-        ...(typeof dto.auxiliaries === 'string'
-          ? { auxiliaries: dto.auxiliaries }
-          : {}),
-        ...(dto.max_points !== undefined ? { max_points: dto.max_points } : {}),
-        ...(dto.min_points !== undefined ? { min_points: dto.min_points } : {}),
-        ...(dto.penalties !== undefined
-          ? { penalties: dto.penalties as any }
-          : {}),
-        ...(dto.participants_mode
-          ? { participants_mode: dto.participants_mode }
-          : {}),
-        ...(dto.participants_count !== undefined
-          ? { participants_count: dto.participants_count }
-          : {}),
-        ...(dto.participants_by_class !== undefined
-          ? { participants_by_class: dto.participants_by_class as any }
-          : {}),
-        ...(dto.duration_seconds !== undefined
-          ? { duration_seconds: dto.duration_seconds }
-          : {}),
-        ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
-        modified_by: actorId,
-        modified_at: new Date(),
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const template = await tx.camporee_event_templates.update({
+        where: { event_template_id: templateId },
+        data: {
+          ...(dto.event_type_id ? { event_type_id: dto.event_type_id } : {}),
+          ...(dto.title ? { title: dto.title } : {}),
+          ...(typeof dto.description === 'string'
+            ? { description: dto.description }
+            : {}),
+          ...(typeof dto.requirements === 'string'
+            ? { requirements: dto.requirements }
+            : {}),
+          ...(typeof dto.development === 'string'
+            ? { development: dto.development }
+            : {}),
+          ...(typeof dto.prerequisites === 'string'
+            ? { prerequisites: dto.prerequisites }
+            : {}),
+          ...(typeof dto.materials === 'string'
+            ? { materials: dto.materials }
+            : {}),
+          ...(typeof dto.auxiliaries === 'string'
+            ? { auxiliaries: dto.auxiliaries }
+            : {}),
+          ...(dto.max_points !== undefined
+            ? { max_points: dto.max_points }
+            : {}),
+          ...(typeof dto.scoring_enabled === 'boolean'
+            ? { scoring_enabled: dto.scoring_enabled }
+            : {}),
+          ...(dto.min_points !== undefined ? { min_points: dto.min_points } : {}),
+          ...(dto.penalties !== undefined
+            ? { penalties: dto.penalties as any }
+            : {}),
+          ...(dto.participants_mode
+            ? { participants_mode: dto.participants_mode }
+            : {}),
+          ...(dto.participants_count !== undefined
+            ? { participants_count: dto.participants_count }
+            : {}),
+          ...(dto.participants_by_class !== undefined
+            ? { participants_by_class: dto.participants_by_class as any }
+            : {}),
+          ...(dto.duration_seconds !== undefined
+            ? { duration_seconds: dto.duration_seconds }
+            : {}),
+          ...(typeof dto.active === 'boolean' ? { active: dto.active } : {}),
+          modified_by: actorId,
+          modified_at: new Date(),
+        },
+      });
+
+      if (dto.rubrics !== undefined || scoringEnabled === false) {
+        await tx.camporee_event_template_rubrics.updateMany({
+          where: { event_template_id: templateId, active: true },
+          data: { active: false, modified_by: actorId, modified_at: new Date() },
+        });
+
+        if (scoringEnabled) {
+          await this.createTemplateRubrics(
+            tx,
+            templateId,
+            dto.rubrics ?? [],
+            actorId,
+          );
+        }
+      }
+
+      return (
+        (await tx.camporee_event_templates.findUnique({
+          where: { event_template_id: templateId },
+          include: this.templateInclude,
+        })) ?? template
+      );
     });
 
     this.logger.log(
@@ -407,6 +496,53 @@ export class CamporeeEventTemplatesService {
       throw new AppBadRequestException(
         ErrorCode.CAMPOREE_EVENT_TEMPLATE_PARTICIPANTS_INVALID,
       );
+    }
+  }
+
+  private validateRubricsTotal(
+    scoringEnabled: boolean,
+    maxPoints: number,
+    rubrics: TemplateRubricInput[],
+  ) {
+    if (!scoringEnabled) return;
+
+    if (rubrics.length === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_SCORING_RUBRICS_REQUIRED,
+      );
+    }
+
+    const sum = rubrics.reduce(
+      (total, rubric) => total + Number(rubric.max_points),
+      0,
+    );
+
+    if (Math.abs(sum - maxPoints) > 0.001) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_SCORING_RUBRIC_SUM_MISMATCH,
+        { sum, maxPoints },
+      );
+    }
+  }
+
+  private async createTemplateRubrics(
+    tx: any,
+    templateId: number,
+    rubrics: TemplateRubricInput[],
+    actorId: string,
+  ) {
+    for (const [index, rubric] of rubrics.entries()) {
+      await tx.camporee_event_template_rubrics.create({
+        data: {
+          event_template_id: templateId,
+          title: rubric.title,
+          description: rubric.description ?? null,
+          max_points: rubric.max_points,
+          display_order: rubric.display_order ?? index,
+          created_by: actorId,
+          modified_by: actorId,
+        },
+      });
     }
   }
 
