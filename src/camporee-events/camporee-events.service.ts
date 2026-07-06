@@ -17,11 +17,21 @@ import {
   ReplaceCamporeeEventScheduleBlocksDto,
   ReorderCamporeeEventDto,
   UpdateCamporeeEventDto,
+  CamporeeEventScheduleBlockDto,
   CamporeeEventStatusDto,
 } from './dto';
 
 type CamporeeScope = 'local' | 'union';
 type CamporeeEventStatusValue = `${CamporeeEventStatusDto}`;
+type ResolvedScheduleBlockAssignment = {
+  camporee_club_id: number | null;
+  club_section_id: number;
+};
+type ScheduleBlockWithAssignments = {
+  block: CamporeeEventScheduleBlockDto;
+  assignments: ResolvedScheduleBlockAssignment[];
+  index: number;
+};
 
 // Status transition table — forward-only machine (Spec C5).
 // `realizado` and `cancelado` are TERMINAL states: no further transitions.
@@ -923,11 +933,8 @@ export class CamporeeEventsService {
     assignments: NonNullable<
       ReplaceCamporeeEventScheduleBlocksDto['blocks'][number]['assignments']
     >,
-  ) {
-    const resolved: Array<{
-      camporee_club_id: number | null;
-      club_section_id: number;
-    }> = [];
+  ): Promise<ResolvedScheduleBlockAssignment[]> {
+    const resolved: ResolvedScheduleBlockAssignment[] = [];
 
     for (const assignment of assignments) {
       const where: any = {
@@ -970,7 +977,7 @@ export class CamporeeEventsService {
   ) {
     const event = await this.ensureEventExists(eventId);
 
-    const blocksWithAssignments = [];
+    const blocksWithAssignments: ScheduleBlockWithAssignments[] = [];
     for (const [index, block] of dto.blocks.entries()) {
       this.validateScheduleBlockTimes(block);
       const assignments = block.assignments?.length
