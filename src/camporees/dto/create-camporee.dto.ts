@@ -142,4 +142,13 @@ export class CreateCamporeeDto {
   @IsOptional()
   @IsDateString()
   payment_deadline?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha/hora desde la cual la agenda completa será visible para clubes. Si se omite, se libera al iniciar el camporee.',
+    example: '2024-05-13T08:00:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  agenda_visible_from?: string | null;
 }

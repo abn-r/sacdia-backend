@@ -131,6 +131,7 @@ model camporee_clubs {
   score_judge_assignments camporee_event_judge_assignments[]
   score_submissions       camporee_event_score_submissions[]
   score_section_results   camporee_event_section_results[]
+  schedule_block_assignments camporee_event_schedule_block_assignments[]
   @@index([club_section_id], map: "idx_camporee_clubs_club_section_id")
   @@index([union_camporee_id], map: "idx_camporee_clubs_union_camporee_id")
 
@@ -659,6 +660,7 @@ model club_sections {
   camporee_score_judge_assignments camporee_event_judge_assignments[]
   camporee_score_submissions       camporee_event_score_submissions[]
   camporee_score_section_results   camporee_event_section_results[]
+  camporee_schedule_block_assignments camporee_event_schedule_block_assignments[]
   @@unique([main_club_id, club_type_id])
 
 }
@@ -1416,6 +1418,7 @@ model local_camporees {
   club_registration_deadline   DateTime?            @db.Timestamptz(6)
   member_registration_deadline DateTime?            @db.Timestamptz(6)
   payment_deadline             DateTime?            @db.Timestamptz(6)
+  agenda_visible_from          DateTime?            @db.Timestamptz(6)
   ecclesiastical_year          Int
   active                       Boolean              @default(true)
   created_at                   DateTime             @default(now()) @db.Timestamptz(6)
@@ -1697,6 +1700,7 @@ model union_camporees {
   club_registration_deadline   DateTime?                     @db.Timestamptz(6)
   member_registration_deadline DateTime?                     @db.Timestamptz(6)
   payment_deadline             DateTime?                     @db.Timestamptz(6)
+  agenda_visible_from          DateTime?                     @db.Timestamptz(6)
   ecclesiastical_year          Int
   active                       Boolean                       @default(true)
   created_at                   DateTime                      @default(now()) @db.Timestamptz(6)
@@ -4028,6 +4032,7 @@ model camporee_events {
   judge_assignments     camporee_event_judge_assignments[]
   score_submissions     camporee_event_score_submissions[]
   score_section_results camporee_event_section_results[]
+  schedule_blocks       camporee_event_schedule_blocks[]
   @@index([local_camporee_id], map: "idx_camporee_events_local_camporee")
   @@index([union_camporee_id], map: "idx_camporee_events_union_camporee")
   @@index([event_template_id], map: "idx_camporee_events_template")
@@ -4072,10 +4077,58 @@ model camporee_venues {
   union       unions?           @relation(fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
   local_field local_fields?     @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
   events      camporee_events[]
+  schedule_blocks camporee_event_schedule_blocks[]
 
   @@index([union_id, active], map: "camporee_venues_union_idx")
   @@index([local_field_id, active], map: "camporee_venues_local_field_idx")
   @@index([scope, active], map: "camporee_venues_scope_idx")
+}
+
+model camporee_event_schedule_blocks {
+  camporee_event_schedule_block_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  camporee_event_id                Int
+  title                            String?  @db.VarChar(150)
+  description                      String?
+  day_number                       Int
+  starts_at                        String?  @db.VarChar(5)
+  ends_at                          String?  @db.VarChar(5)
+  venue_id                         Int?
+  display_order                    Int      @default(0)
+  capacity                         Int?
+  notes                            String?
+  active                           Boolean  @default(true)
+  created_by                       String?  @db.Uuid
+  modified_by                      String?  @db.Uuid
+  created_at                       DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                      DateTime @default(now()) @db.Timestamptz(6)
+
+  camporee_event camporee_events @relation(fields: [camporee_event_id], references: [camporee_event_id], onDelete: Cascade, onUpdate: NoAction)
+  venue          camporee_venues? @relation(fields: [venue_id], references: [camporee_venue_id], onDelete: SetNull, onUpdate: NoAction)
+  assignments    camporee_event_schedule_block_assignments[]
+
+  @@index([camporee_event_id, active, display_order], map: "idx_camporee_event_schedule_blocks_event")
+  @@index([day_number, starts_at], map: "idx_camporee_event_schedule_blocks_day_time")
+  @@index([venue_id], map: "idx_camporee_event_schedule_blocks_venue")
+}
+
+model camporee_event_schedule_block_assignments {
+  camporee_event_schedule_block_assignment_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schedule_block_id                           String   @db.Uuid
+  camporee_club_id                            Int?
+  club_section_id                             Int
+  active                                      Boolean  @default(true)
+  created_by                                  String?  @db.Uuid
+  modified_by                                 String?  @db.Uuid
+  created_at                                  DateTime @default(now()) @db.Timestamptz(6)
+  modified_at                                 DateTime @default(now()) @db.Timestamptz(6)
+
+  schedule_block camporee_event_schedule_blocks @relation(fields: [schedule_block_id], references: [camporee_event_schedule_block_id], onDelete: Cascade, onUpdate: NoAction)
+  camporee_club  camporee_clubs?                @relation(fields: [camporee_club_id], references: [camporee_club_id], onDelete: SetNull, onUpdate: NoAction)
+  club_section   club_sections                  @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([schedule_block_id, active], map: "idx_camporee_schedule_block_assignments_block")
+  @@index([club_section_id, active], map: "idx_camporee_schedule_block_assignments_section")
+  @@index([camporee_club_id], map: "idx_camporee_schedule_block_assignments_camporee_club")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

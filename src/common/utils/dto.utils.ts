@@ -26,7 +26,11 @@ export function buildPartialUpdate<T extends Record<string, any>>(
       .filter(([_, value]) => value !== undefined)
       .map(([key, value]) => [
         key,
-        dateFields.includes(key as keyof T) ? new Date(value as string) : value,
+        dateFields.includes(key as keyof T)
+          ? value === null
+            ? null
+            : new Date(value as string)
+          : value,
       ]),
   ) as Partial<T>;
 }

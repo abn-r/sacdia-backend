@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CamporeeEventsService } from './camporee-events.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import {
   AppNotFoundException,
   AppBadRequestException,
@@ -35,6 +36,14 @@ const makePrismaMock = () => {
       update: jest.fn(),
       count: jest.fn(),
     },
+    camporee_event_schedule_blocks: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      create: jest.fn(),
+    },
+    camporee_clubs: {
+      findFirst: jest.fn(),
+    },
     $transaction: jest.fn((input: any) =>
       typeof input === 'function' ? input(mock) : Promise.all(input),
     ),
@@ -50,6 +59,8 @@ const baseLocalCamporee = {
   local_camporee_id: 1,
   name: 'Camporee Metropolitano 2026',
   active: true,
+  start_date: new Date('2026-07-01T00:00:00.000Z'),
+  agenda_visible_from: new Date('2026-07-01T00:00:00.000Z'),
   includes_adventurers: true,
   includes_pathfinders: true,
   includes_master_guides: false,
@@ -139,11 +150,22 @@ describe('CamporeeEventsService', () => {
 
   beforeEach(async () => {
     prisma = makePrismaMock();
+    prisma.camporee_event_schedule_blocks.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CamporeeEventsService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: AuthorizationContextService,
+          useValue: {
+            resolveUserAuthorization: jest.fn().mockResolvedValue({
+              authorization: {
+                effective: { permissions: [] },
+              },
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -165,7 +187,9 @@ describe('CamporeeEventsService', () => {
       prisma.camporee_events.findMany.mockResolvedValue([baseEvent]);
       prisma.camporee_events.count.mockResolvedValue(1);
       const result = await service.listEvents(1, 'local');
-      expect(result.data).toEqual([baseEvent]);
+      expect(result.data).toEqual([
+        { ...baseEvent, agenda_visible: true, schedule_blocks: [] },
+      ]);
       expect(result.total).toBe(1);
     });
   });
@@ -198,7 +222,11 @@ describe('CamporeeEventsService', () => {
 
       const result = await service.getEvent(1);
 
-      expect(result).toBe(event);
+      expect(result).toEqual({
+        ...event,
+        agenda_visible: true,
+        schedule_blocks: [],
+      });
       expect(prisma.camporee_events.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { camporee_event_id: 1, active: true },
@@ -255,7 +283,14 @@ describe('CamporeeEventsService', () => {
     it('creates event with auto display_order', async () => {
       prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
       prisma.camporee_event_types.findUnique.mockResolvedValue(baseEventType);
-      prisma.camporee_events.findFirst.mockResolvedValue(null);
+      prisma.camporee_events.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...baseEvent,
+          event_type: baseEventType,
+          leader: null,
+          venue: null,
+        });
       prisma.camporee_events.create.mockResolvedValue({
         ...baseEvent,
         event_type: baseEventType,
@@ -353,7 +388,9 @@ describe('CamporeeEventsService', () => {
         ],
       };
       prisma.local_camporees.findUnique.mockResolvedValue(baseLocalCamporee);
-      prisma.camporee_event_templates.findUnique.mockResolvedValue(scoringTemplate);
+      prisma.camporee_event_templates.findUnique.mockResolvedValue(
+        scoringTemplate,
+      );
       prisma.camporee_events.findFirst.mockResolvedValue(null);
       prisma.camporee_events.create.mockResolvedValue({
         ...baseEvent,
@@ -387,13 +424,7 @@ describe('CamporeeEventsService', () => {
       prisma.camporee_events.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.createFromTemplate(
-          1,
-          'local',
-          1,
-          { max_points: 90 },
-          ACTOR_ID,
-        ),
+        service.createFromTemplate(1, 'local', 1, { max_points: 90 }, ACTOR_ID),
       ).rejects.toBeInstanceOf(AppBadRequestException);
     });
   });

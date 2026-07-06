@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -13,6 +14,7 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 
 // Camporee event status enum — mirrors Prisma CamporeeEventStatus
@@ -22,6 +24,93 @@ export enum CamporeeEventStatusDto {
   en_curso = 'en_curso',
   realizado = 'realizado',
   cancelado = 'cancelado',
+}
+
+export class CamporeeEventScheduleBlockAssignmentDto {
+  @ApiPropertyOptional({ example: 123 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  camporee_club_id?: number;
+
+  @ApiProperty({ example: 456 })
+  @IsInt()
+  @Min(1)
+  declare club_section_id: number;
+}
+
+export class CamporeeEventScheduleBlockDto {
+  @ApiPropertyOptional({ example: 'Primer bloque' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ example: 1, minimum: 1 })
+  @IsInt()
+  @Min(1)
+  declare day_number: number;
+
+  @ApiPropertyOptional({ example: '12:00' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'starts_at must be in HH:MM format (e.g. 12:00)',
+  })
+  starts_at?: string;
+
+  @ApiPropertyOptional({ example: '16:00' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'ends_at must be in HH:MM format (e.g. 16:00)',
+  })
+  ends_at?: string;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  venue_id?: number;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  display_order?: number;
+
+  @ApiPropertyOptional({ example: 17 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  capacity?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @ApiPropertyOptional({
+    type: [CamporeeEventScheduleBlockAssignmentDto],
+    description:
+      'Optional club-section assignments. Empty means the block is general for all eligible sections.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CamporeeEventScheduleBlockAssignmentDto)
+  assignments?: CamporeeEventScheduleBlockAssignmentDto[];
+}
+
+export class ReplaceCamporeeEventScheduleBlocksDto {
+  @ApiProperty({ type: [CamporeeEventScheduleBlockDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CamporeeEventScheduleBlockDto)
+  declare blocks: CamporeeEventScheduleBlockDto[];
 }
 
 export class CreateCamporeeEventDto {
@@ -210,6 +299,13 @@ export class CreateCamporeeEventDto {
   @IsInt()
   @Min(0)
   registered_count?: number;
+
+  @ApiPropertyOptional({ type: [CamporeeEventScheduleBlockDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CamporeeEventScheduleBlockDto)
+  schedule_blocks?: CamporeeEventScheduleBlockDto[];
 }
 
 export class CloneFromTemplateDto {
@@ -412,6 +508,13 @@ export class UpdateCamporeeEventDto {
   @IsInt()
   @Min(0)
   registered_count?: number;
+
+  @ApiPropertyOptional({ type: [CamporeeEventScheduleBlockDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CamporeeEventScheduleBlockDto)
+  schedule_blocks?: CamporeeEventScheduleBlockDto[];
 }
 
 export class ReorderCamporeeEventDto {

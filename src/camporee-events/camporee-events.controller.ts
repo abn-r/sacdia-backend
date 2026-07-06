@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   Request,
   UseGuards,
@@ -27,6 +28,7 @@ import {
   CloneFromTemplateDto,
   CreateCamporeeEventDto,
   ListCamporeeEventsFilterDto,
+  ReplaceCamporeeEventScheduleBlocksDto,
   ReorderCamporeeEventDto,
   UpdateCamporeeEventDto,
 } from './dto';
@@ -37,6 +39,15 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class CamporeeEventsController {
   constructor(private readonly service: CamporeeEventsService) {}
+
+  @Get('camporee-event-types')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({ summary: 'List active camporee event types for event forms' })
+  async listEventTypes() {
+    const data = await this.service.listEventTypes();
+    return { status: 'success', data };
+  }
 
   // =========================================================================
   // LOCAL CAMPOREE events
@@ -50,8 +61,31 @@ export class CamporeeEventsController {
   async listLocalEvents(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() filters: ListCamporeeEventsFilterDto,
+    @Request() req: any,
   ) {
-    const result = await this.service.listEvents(camporeeId, 'local', filters);
+    const result = await this.service.listEvents(camporeeId, 'local', filters, {
+      actorId: req.user.sub,
+    });
+    return { status: 'success', ...result };
+  }
+
+  @Get('local-camporees/:camporeeId/events/preview')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary:
+      'List app-safe event preview for a local camporee, hiding agenda until configured release',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  async previewLocalEvents(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Query() filters: ListCamporeeEventsFilterDto,
+    @Request() req: any,
+  ) {
+    const result = await this.service.listEvents(camporeeId, 'local', filters, {
+      actorId: req.user.sub,
+      allowManagerBypass: false,
+    });
     return { status: 'success', ...result };
   }
 
@@ -110,8 +144,31 @@ export class CamporeeEventsController {
   async listUnionEvents(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Query() filters: ListCamporeeEventsFilterDto,
+    @Request() req: any,
   ) {
-    const result = await this.service.listEvents(camporeeId, 'union', filters);
+    const result = await this.service.listEvents(camporeeId, 'union', filters, {
+      actorId: req.user.sub,
+    });
+    return { status: 'success', ...result };
+  }
+
+  @Get('union-camporees/:camporeeId/events/preview')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary:
+      'List app-safe event preview for a union camporee, hiding agenda until configured release',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  async previewUnionEvents(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Query() filters: ListCamporeeEventsFilterDto,
+    @Request() req: any,
+  ) {
+    const result = await this.service.listEvents(camporeeId, 'union', filters, {
+      actorId: req.user.sub,
+      allowManagerBypass: false,
+    });
     return { status: 'success', ...result };
   }
 
@@ -183,6 +240,27 @@ export class CamporeeEventsController {
     @Request() req: any,
   ) {
     const data = await this.service.updateEvent(eventId, dto, req.user.sub);
+    return { status: 'success', data };
+  }
+
+  @Put('camporee-events/:eventId/schedule-blocks')
+  @RequirePermissions('camporee_events:update')
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @ApiOperation({
+    summary:
+      'Replace optional schedule blocks and club-section assignments for a camporee event',
+  })
+  @ApiParam({ name: 'eventId', type: Number })
+  async replaceScheduleBlocks(
+    @Param('eventId', ParseIntPipe) eventId: number,
+    @Body() dto: ReplaceCamporeeEventScheduleBlocksDto,
+    @Request() req: any,
+  ) {
+    const data = await this.service.replaceScheduleBlocks(
+      eventId,
+      dto,
+      req.user.sub,
+    );
     return { status: 'success', data };
   }
 

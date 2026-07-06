@@ -211,6 +211,9 @@ export class CamporeesService {
         payment_deadline: dto.payment_deadline
           ? new Date(dto.payment_deadline)
           : null,
+        agenda_visible_from: dto.agenda_visible_from
+          ? new Date(dto.agenda_visible_from)
+          : null,
         local_field_id: dto.local_field_id,
         includes_adventurers: dto.includes_adventurers,
         includes_pathfinders: dto.includes_pathfinders,
@@ -257,6 +260,7 @@ export class CamporeesService {
         'club_registration_deadline',
         'member_registration_deadline',
         'payment_deadline',
+        'agenda_visible_from',
       ]),
       modified_at: new Date(),
     };
@@ -489,6 +493,9 @@ export class CamporeesService {
           payment_deadline: dto.payment_deadline
             ? new Date(dto.payment_deadline)
             : null,
+          agenda_visible_from: dto.agenda_visible_from
+            ? new Date(dto.agenda_visible_from)
+            : null,
           union_id: dto.union_id,
           includes_adventurers: dto.includes_adventurers,
           includes_pathfinders: dto.includes_pathfinders,
@@ -566,6 +573,7 @@ export class CamporeesService {
         'club_registration_deadline',
         'member_registration_deadline',
         'payment_deadline',
+        'agenda_visible_from',
       ]),
       modified_at: new Date(),
     };

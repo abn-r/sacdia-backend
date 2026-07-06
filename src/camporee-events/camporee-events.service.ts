@@ -5,11 +5,16 @@ import {
   AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import {
+  AuthorizationContextService,
+  type ResolvedAuthorizationProfile,
+} from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CloneFromTemplateDto,
   CreateCamporeeEventDto,
   ListCamporeeEventsFilterDto,
+  ReplaceCamporeeEventScheduleBlocksDto,
   ReorderCamporeeEventDto,
   UpdateCamporeeEventDto,
   CamporeeEventStatusDto,
@@ -44,7 +49,10 @@ const STATUS_TRANSITIONS: Record<
 export class CamporeeEventsService {
   private readonly logger = new Logger(CamporeeEventsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorizationContext: AuthorizationContextService,
+  ) {}
 
   private logMutation(action: string, resourceId: number, actorId: string) {
     this.logger.log(
@@ -256,6 +264,122 @@ export class CamporeeEventsService {
     });
   }
 
+  private hasPermission(
+    resolved: ResolvedAuthorizationProfile,
+    permission: string,
+  ): boolean {
+    return resolved.authorization.effective.permissions.includes(permission);
+  }
+
+  private async canManageAgenda(actorUserId?: string): Promise<boolean> {
+    if (!actorUserId) return false;
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    return (
+      this.hasPermission(resolved, 'camporee_events:create') ||
+      this.hasPermission(resolved, 'camporee_events:update') ||
+      this.hasPermission(resolved, 'camporee_events:delete')
+    );
+  }
+
+  private getAgendaVisibleFrom(camporee: {
+    start_date: Date;
+    agenda_visible_from?: Date | null;
+  }): Date {
+    return camporee.agenda_visible_from ?? camporee.start_date;
+  }
+
+  private async resolveAgendaVisibility(
+    camporeeId: number,
+    scope: CamporeeScope,
+  ): Promise<{ visible: boolean; visibleFrom: Date }> {
+    const camporee = await this.ensureCamporeeExists(camporeeId, scope);
+    const visibleFrom = this.getAgendaVisibleFrom(
+      camporee as { start_date: Date; agenda_visible_from?: Date | null },
+    );
+    return { visible: Date.now() >= visibleFrom.getTime(), visibleFrom };
+  }
+
+  private maskAgendaDetails<T extends Record<string, any>>(event: T): T {
+    return {
+      ...event,
+      agenda_visible: false,
+      day_number: 1,
+      starts_at: null,
+      ends_at: null,
+      venue_id: null,
+      leader_user_id: null,
+      leader_name_override: null,
+      leader_role: null,
+      status: 'programado',
+      capacity: null,
+      registered_count: 0,
+      venue: null,
+      leader: null,
+      schedule_blocks: [],
+    };
+  }
+
+  private async loadScheduleBlocks(eventIds: number[]) {
+    if (!eventIds.length) return new Map<number, any[]>();
+
+    const blocks = await (
+      this.prisma as any
+    ).camporee_event_schedule_blocks.findMany({
+      where: { camporee_event_id: { in: eventIds }, active: true },
+      include: {
+        venue: { select: { camporee_venue_id: true, name: true } },
+        assignments: {
+          where: { active: true },
+          include: {
+            camporee_club: {
+              select: {
+                camporee_club_id: true,
+                club_section_id: true,
+                status: true,
+              },
+            },
+            club_section: {
+              select: {
+                club_section_id: true,
+                name: true,
+                club_type_id: true,
+                main_club_id: true,
+                clubs: { select: { club_id: true, name: true } },
+                club_types: { select: { club_type_id: true, name: true } },
+              },
+            },
+          },
+          orderBy: { created_at: 'asc' },
+        },
+      },
+      orderBy: [
+        { day_number: 'asc' },
+        { starts_at: 'asc' },
+        { display_order: 'asc' },
+      ],
+    });
+
+    const byEvent = new Map<number, any[]>();
+    for (const block of blocks) {
+      const list = byEvent.get(block.camporee_event_id) ?? [];
+      list.push(block);
+      byEvent.set(block.camporee_event_id, list);
+    }
+    return byEvent;
+  }
+
+  private attachScheduleBlocks<T extends Record<string, any>>(
+    events: T[],
+    blocksByEvent: Map<number, any[]>,
+  ): T[] {
+    return events.map((event) => ({
+      ...event,
+      agenda_visible: true,
+      schedule_blocks: blocksByEvent.get(event.camporee_event_id) ?? [],
+    }));
+  }
+
   /**
    * Resolves the parent camporee for an event — used by RBAC.
    */
@@ -281,12 +405,25 @@ export class CamporeeEventsService {
 
   // ─── List events for a camporee ──────────────────────────────────────────
 
+  async listEventTypes() {
+    return this.prisma.camporee_event_types.findMany({
+      where: { active: true },
+      orderBy: [{ display_order: 'asc' }, { name: 'asc' }],
+    });
+  }
+
   async listEvents(
     camporeeId: number,
     scope: CamporeeScope,
     filters?: ListCamporeeEventsFilterDto,
+    options?: { actorId?: string; allowManagerBypass?: boolean },
   ) {
-    await this.ensureCamporeeExists(camporeeId, scope);
+    const agenda = await this.resolveAgendaVisibility(camporeeId, scope);
+    const canManage =
+      options?.allowManagerBypass !== false
+        ? await this.canManageAgenda(options?.actorId)
+        : false;
+    const shouldShowAgenda = agenda.visible || canManage;
 
     const scopeWhere =
       scope === 'local'
@@ -352,7 +489,21 @@ export class CamporeeEventsService {
       this.prisma.camporee_events.count({ where }),
     ]);
 
-    return { data, total };
+    const blocksByEvent = shouldShowAgenda
+      ? await this.loadScheduleBlocks(
+          data.map((event) => event.camporee_event_id),
+        )
+      : new Map<number, any[]>();
+    const events = shouldShowAgenda
+      ? this.attachScheduleBlocks(data, blocksByEvent)
+      : data.map((event) => this.maskAgendaDetails(event));
+
+    return {
+      data: events,
+      total,
+      agenda_visible: shouldShowAgenda,
+      agenda_visible_from: agenda.visibleFrom,
+    };
   }
 
   async getEvent(eventId: number) {
@@ -375,7 +526,10 @@ export class CamporeeEventsService {
       });
     }
 
-    return event;
+    const blocksByEvent = await this.loadScheduleBlocks([
+      event.camporee_event_id,
+    ]);
+    return this.attachScheduleBlocks([event], blocksByEvent)[0];
   }
 
   // ─── Create custom event ─────────────────────────────────────────────────
@@ -472,8 +626,16 @@ export class CamporeeEventsService {
       },
     });
 
+    if (dto.schedule_blocks !== undefined) {
+      await this.replaceScheduleBlocks(
+        event.camporee_event_id,
+        { blocks: dto.schedule_blocks },
+        actorId,
+      );
+    }
+
     this.logMutation('create', event.camporee_event_id, actorId);
-    return event;
+    return this.getEvent(event.camporee_event_id);
   }
 
   // ─── Clone from template ─────────────────────────────────────────────────
@@ -724,7 +886,136 @@ export class CamporeeEventsService {
     });
 
     this.logMutation('update', eventId, actorId);
-    return updated;
+    if (dto.schedule_blocks !== undefined) {
+      await this.replaceScheduleBlocks(
+        eventId,
+        { blocks: dto.schedule_blocks },
+        actorId,
+      );
+      return this.getEvent(eventId);
+    }
+    return this.attachScheduleBlocks(
+      [updated],
+      await this.loadScheduleBlocks([eventId]),
+    )[0];
+  }
+
+  private validateScheduleBlockTimes(block: {
+    starts_at?: string | null;
+    ends_at?: string | null;
+  }) {
+    if (block.starts_at && block.ends_at && block.starts_at >= block.ends_at) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_TEMPLATE_PARTICIPANTS_INVALID,
+        {
+          message:
+            'Schedule block end time must be after schedule block start time.',
+        },
+      );
+    }
+  }
+
+  private async resolveScheduleBlockAssignments(
+    event: {
+      local_camporee_id?: number | null;
+      union_camporee_id?: number | null;
+    },
+    assignments: NonNullable<
+      ReplaceCamporeeEventScheduleBlocksDto['blocks'][number]['assignments']
+    >,
+  ) {
+    const resolved: Array<{
+      camporee_club_id: number | null;
+      club_section_id: number;
+    }> = [];
+
+    for (const assignment of assignments) {
+      const where: any = {
+        active: true,
+        club_section_id: assignment.club_section_id,
+        ...(event.local_camporee_id
+          ? { camporee_id: event.local_camporee_id }
+          : { union_camporee_id: event.union_camporee_id }),
+      };
+
+      if (assignment.camporee_club_id) {
+        where.camporee_club_id = assignment.camporee_club_id;
+      }
+
+      const camporeeClub = await this.prisma.camporee_clubs.findFirst({
+        where,
+        select: { camporee_club_id: true, club_section_id: true },
+      });
+
+      if (!camporeeClub) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_SCORING_SECTION_NOT_ENROLLED,
+          { club_section_id: assignment.club_section_id },
+        );
+      }
+
+      resolved.push({
+        camporee_club_id: camporeeClub.camporee_club_id,
+        club_section_id: camporeeClub.club_section_id!,
+      });
+    }
+
+    return resolved;
+  }
+
+  async replaceScheduleBlocks(
+    eventId: number,
+    dto: ReplaceCamporeeEventScheduleBlocksDto,
+    actorId: string,
+  ) {
+    const event = await this.ensureEventExists(eventId);
+
+    const blocksWithAssignments = [];
+    for (const [index, block] of dto.blocks.entries()) {
+      this.validateScheduleBlockTimes(block);
+      const assignments = block.assignments?.length
+        ? await this.resolveScheduleBlockAssignments(event, block.assignments)
+        : [];
+      blocksWithAssignments.push({ block, assignments, index });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await (tx as any).camporee_event_schedule_blocks.deleteMany({
+        where: { camporee_event_id: eventId },
+      });
+
+      for (const { block, assignments, index } of blocksWithAssignments) {
+        await (tx as any).camporee_event_schedule_blocks.create({
+          data: {
+            camporee_event_id: eventId,
+            title: block.title ?? null,
+            description: block.description ?? null,
+            day_number: block.day_number,
+            starts_at: block.starts_at ?? null,
+            ends_at: block.ends_at ?? null,
+            venue_id: block.venue_id ?? null,
+            display_order: block.display_order ?? index,
+            capacity: block.capacity ?? null,
+            notes: block.notes ?? null,
+            created_by: actorId,
+            modified_by: actorId,
+            assignments: assignments.length
+              ? {
+                  create: assignments.map((assignment) => ({
+                    camporee_club_id: assignment.camporee_club_id,
+                    club_section_id: assignment.club_section_id,
+                    created_by: actorId,
+                    modified_by: actorId,
+                  })),
+                }
+              : undefined,
+          },
+        });
+      }
+    });
+
+    this.logMutation('replace_schedule_blocks', eventId, actorId);
+    return this.getEvent(eventId);
   }
 
   // ─── Delete event instance ───────────────────────────────────────────────
