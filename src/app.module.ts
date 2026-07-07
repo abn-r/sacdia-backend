@@ -63,6 +63,7 @@ import { CamporeeEventTemplatesModule } from './camporee-event-templates/campore
 import { CamporeeEventsModule } from './camporee-events/camporee-events.module';
 import { CamporeeVenuesModule } from './camporee-venues/camporee-venues.module';
 import { CamporeeScoringModule } from './camporee-scoring/camporee-scoring.module';
+import { CamporeeStaffModule } from './camporee-staff/camporee-staff.module';
 import { CoordinationModule } from './coordination/coordination.module';
 import { envValidationSchema } from './config/env.validation';
 import { buildBullRootConfig } from './config/bullmq.config';
@@ -243,6 +244,7 @@ import { UserAwareThrottlerGuard } from './config/user-aware-throttler.guard';
     CamporeeEventsModule,
     CamporeeVenuesModule,
     CamporeeScoringModule,
+    CamporeeStaffModule,
     CoordinationModule,
   ],
   controllers: [AppController, HealthController],

@@ -10,11 +10,13 @@ import {
   type ResolvedAuthorizationProfile,
 } from '../common/services/authorization-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CamporeeStaffService } from '../camporee-staff/camporee-staff.service';
 import {
   CloneFromTemplateDto,
   CreateCamporeeEventDto,
   ListCamporeeEventsFilterDto,
   ReplaceCamporeeEventScheduleBlocksDto,
+  ReplaceCamporeeEventStaffAssignmentsDto,
   ReorderCamporeeEventDto,
   UpdateCamporeeEventDto,
   CamporeeEventScheduleBlockDto,
@@ -62,6 +64,7 @@ export class CamporeeEventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly camporeeStaffService: CamporeeStaffService,
   ) {}
 
   private logMutation(action: string, resourceId: number, actorId: string) {
@@ -304,9 +307,7 @@ export class CamporeeEventsService {
     scope: CamporeeScope,
   ): Promise<{ visible: boolean; visibleFrom: Date }> {
     const camporee = await this.ensureCamporeeExists(camporeeId, scope);
-    const visibleFrom = this.getAgendaVisibleFrom(
-      camporee as { start_date: Date; agenda_visible_from?: Date | null },
-    );
+    const visibleFrom = this.getAgendaVisibleFrom(camporee);
     return { visible: Date.now() >= visibleFrom.getTime(), visibleFrom };
   }
 
@@ -327,7 +328,114 @@ export class CamporeeEventsService {
       venue: null,
       leader: null,
       schedule_blocks: [],
+      staff_assignments: [],
     };
+  }
+
+  private mapEventStaffAssignment(row: any) {
+    const staff = row.camporee_staff_member;
+    const user = staff?.user;
+    return {
+      camporee_event_staff_assignment_id:
+        row.camporee_event_staff_assignment_id,
+      camporee_event_id: row.camporee_event_id,
+      camporee_staff_member_id: row.camporee_staff_member_id,
+      assignment_role: row.assignment_role,
+      title_override: row.title_override ?? null,
+      notes: row.notes ?? null,
+      display_order: row.display_order,
+      active: row.active,
+      staff_member: staff
+        ? {
+            camporee_staff_member_id: staff.camporee_staff_member_id,
+            category: staff.category,
+            role_label: staff.role_label ?? null,
+            user_id: staff.user_id,
+            user: user
+              ? {
+                  user_id: user.user_id,
+                  name: user.name ?? null,
+                  paternal_last_name: user.paternal_last_name ?? null,
+                  maternal_last_name: user.maternal_last_name ?? null,
+                  full_name: [
+                    user.name,
+                    user.paternal_last_name,
+                    user.maternal_last_name,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim(),
+                  user_image: user.user_image ?? null,
+                }
+              : null,
+          }
+        : null,
+    };
+  }
+
+  private async loadEventStaffAssignments(eventIds: number[]) {
+    if (!eventIds.length) return new Map<number, any[]>();
+
+    const rows = await (
+      this.prisma as any
+    ).camporee_event_staff_assignments.findMany({
+      where: { camporee_event_id: { in: eventIds }, active: true },
+      include: {
+        camporee_staff_member: {
+          include: {
+            user: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+                user_image: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ display_order: 'asc' }, { created_at: 'asc' }],
+    });
+
+    const byEvent = new Map<number, any[]>();
+    for (const row of rows) {
+      const list = byEvent.get(row.camporee_event_id) ?? [];
+      list.push(this.mapEventStaffAssignment(row));
+      byEvent.set(row.camporee_event_id, list);
+    }
+    return byEvent;
+  }
+
+  private attachEventStaffAssignments<T extends Record<string, any>>(
+    events: T[],
+    staffByEvent: Map<number, any[]>,
+  ): T[] {
+    return events.map((event) => ({
+      ...event,
+      staff_assignments: staffByEvent.get(event.camporee_event_id) ?? [],
+    }));
+  }
+
+  private async ensureResponsibleAssignmentExists(
+    eventId: number,
+  ): Promise<void> {
+    const responsible = await (
+      this.prisma as any
+    ).camporee_event_staff_assignments.findFirst({
+      where: {
+        camporee_event_id: eventId,
+        assignment_role: 'responsible',
+        active: true,
+      },
+      select: { camporee_event_staff_assignment_id: true },
+    });
+
+    if (!responsible) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_RESPONSIBLE_REQUIRED,
+      );
+    }
   }
 
   private async loadScheduleBlocks(eventIds: number[]) {
@@ -507,9 +615,17 @@ export class CamporeeEventsService {
     const events = shouldShowAgenda
       ? this.attachScheduleBlocks(data, blocksByEvent)
       : data.map((event) => this.maskAgendaDetails(event));
+    const staffByEvent = shouldShowAgenda
+      ? await this.loadEventStaffAssignments(
+          data.map((event) => event.camporee_event_id),
+        )
+      : new Map<number, any[]>();
+    const eventsWithStaff = shouldShowAgenda
+      ? this.attachEventStaffAssignments(events, staffByEvent)
+      : events;
 
     return {
-      data: events,
+      data: eventsWithStaff,
       total,
       agenda_visible: shouldShowAgenda,
       agenda_visible_from: agenda.visibleFrom,
@@ -539,7 +655,13 @@ export class CamporeeEventsService {
     const blocksByEvent = await this.loadScheduleBlocks([
       event.camporee_event_id,
     ]);
-    return this.attachScheduleBlocks([event], blocksByEvent)[0];
+    const staffByEvent = await this.loadEventStaffAssignments([
+      event.camporee_event_id,
+    ]);
+    return this.attachEventStaffAssignments(
+      this.attachScheduleBlocks([event], blocksByEvent),
+      staffByEvent,
+    )[0];
   }
 
   // ─── Create custom event ─────────────────────────────────────────────────
@@ -571,6 +693,12 @@ export class CamporeeEventsService {
 
     if (dto.sections?.length) {
       await this.validateSectionsAgainstCamporee(dto.sections, camporeeCtx);
+    }
+
+    if (dto.status === CamporeeEventStatusDto.publicado) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_RESPONSIBLE_REQUIRED,
+      );
     }
 
     const eventType = dto.event_type_id
@@ -817,6 +945,9 @@ export class CamporeeEventsService {
 
     if (dto.status && dto.status !== existing.status) {
       this.enforceStatusTransition(existing.status, dto.status);
+      if (dto.status === CamporeeEventStatusDto.publicado) {
+        await this.ensureResponsibleAssignmentExists(eventId);
+      }
     }
 
     const updated = await this.prisma.camporee_events.update({
@@ -968,6 +1099,61 @@ export class CamporeeEventsService {
     }
 
     return resolved;
+  }
+
+  async listEventStaffAssignments(eventId: number) {
+    await this.ensureEventExists(eventId);
+    const staffByEvent = await this.loadEventStaffAssignments([eventId]);
+    return staffByEvent.get(eventId) ?? [];
+  }
+
+  async replaceEventStaffAssignments(
+    eventId: number,
+    dto: ReplaceCamporeeEventStaffAssignmentsDto,
+    actorId: string,
+  ) {
+    const event = await this.ensureEventExists(eventId);
+    const hasResponsible = dto.assignments.some(
+      (assignment) => assignment.assignment_role === 'responsible',
+    );
+
+    if (event.status === CamporeeEventStatusDto.publicado && !hasResponsible) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_EVENT_RESPONSIBLE_REQUIRED,
+      );
+    }
+
+    for (const assignment of dto.assignments) {
+      await this.camporeeStaffService.assertStaffBelongsToEventCamporee(
+        event,
+        assignment.camporee_staff_member_id,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await (tx as any).camporee_event_staff_assignments.updateMany({
+        where: { camporee_event_id: eventId, active: true },
+        data: { active: false, modified_by: actorId, modified_at: new Date() },
+      });
+
+      for (const [index, assignment] of dto.assignments.entries()) {
+        await (tx as any).camporee_event_staff_assignments.create({
+          data: {
+            camporee_event_id: eventId,
+            camporee_staff_member_id: assignment.camporee_staff_member_id,
+            assignment_role: assignment.assignment_role,
+            title_override: assignment.title_override ?? null,
+            notes: assignment.notes ?? null,
+            display_order: assignment.display_order ?? index,
+            created_by: actorId,
+            modified_by: actorId,
+          },
+        });
+      }
+    });
+
+    this.logMutation('replace_staff_assignments', eventId, actorId);
+    return this.listEventStaffAssignments(eventId);
   }
 
   async replaceScheduleBlocks(

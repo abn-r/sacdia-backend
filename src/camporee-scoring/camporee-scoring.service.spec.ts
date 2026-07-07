@@ -43,6 +43,7 @@ describe('CamporeeScoringService', () => {
   let prisma: any;
   let auth: any;
   let fileStorage: any;
+  let camporeeStaffService: any;
   let service: CamporeeScoringService;
 
   const noAuthProfile = {
@@ -132,6 +133,14 @@ describe('CamporeeScoringService', () => {
         findUnique: jest.fn().mockResolvedValue({
           local_camporee_id: 10,
           local_field_id: 5,
+          club_registration_closed_at: new Date('2026-07-01T00:00:00.000Z'),
+        }),
+      },
+      union_camporees: {
+        findUnique: jest.fn().mockResolvedValue({
+          union_camporee_id: 20,
+          union_id: 3,
+          club_registration_closed_at: new Date('2026-07-01T00:00:00.000Z'),
         }),
       },
       $transaction: jest.fn(async (callback: any) => callback(prisma)),
@@ -146,7 +155,33 @@ describe('CamporeeScoringService', () => {
         async (_bucket: unknown, value: string) => value,
       ),
     };
-    service = new CamporeeScoringService(prisma, auth, fileStorage);
+    camporeeStaffService = {
+      ensureJudgeStaffMember: jest.fn().mockResolvedValue('staff-member-id'),
+    };
+    service = new CamporeeScoringService(
+      prisma,
+      auth,
+      camporeeStaffService,
+      fileStorage,
+    );
+  });
+
+  it('rejects scoring mutations before club registration is closed', async () => {
+    prisma.local_camporees.findUnique.mockResolvedValueOnce({
+      local_camporee_id: 10,
+      local_field_id: 5,
+      club_registration_closed_at: null,
+    });
+
+    await expect(
+      service.replaceEventRubrics(
+        1,
+        { scoring_enabled: true, items: [] },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED,
+    });
   });
 
   it('rejects scoring event without rubrics', async () => {
@@ -344,6 +379,11 @@ describe('CamporeeScoringService', () => {
           user_id: '88888888-8888-4888-8888-888888888888',
         }),
       }),
+    );
+    expect(camporeeStaffService.ensureJudgeStaffMember).toHaveBeenCalledWith(
+      { type: 'local', camporeeId: 10 },
+      '88888888-8888-4888-8888-888888888888',
+      actorUserId,
     );
     expect(result).toEqual(
       expect.objectContaining({

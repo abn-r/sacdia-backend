@@ -2,11 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CamporeeEventsService } from './camporee-events.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { CamporeeStaffService } from '../camporee-staff/camporee-staff.service';
 import {
   AppNotFoundException,
   AppBadRequestException,
   AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 import { CamporeeEventStatusDto } from './dto';
 
 // ─── Mock factories ────────────────────────────────────────────────────────
@@ -39,6 +41,12 @@ const makePrismaMock = () => {
     camporee_event_schedule_blocks: {
       findMany: jest.fn(),
       deleteMany: jest.fn(),
+      create: jest.fn(),
+    },
+    camporee_event_staff_assignments: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      updateMany: jest.fn(),
       create: jest.fn(),
     },
     camporee_clubs: {
@@ -151,11 +159,19 @@ describe('CamporeeEventsService', () => {
   beforeEach(async () => {
     prisma = makePrismaMock();
     prisma.camporee_event_schedule_blocks.findMany.mockResolvedValue([]);
+    prisma.camporee_event_staff_assignments.findMany.mockResolvedValue([]);
+    prisma.camporee_event_staff_assignments.findFirst.mockResolvedValue({
+      camporee_event_staff_assignment_id: 'staff-assignment-id',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CamporeeEventsService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: CamporeeStaffService,
+          useValue: { assertStaffBelongsToEventCamporee: jest.fn() },
+        },
         {
           provide: AuthorizationContextService,
           useValue: {
@@ -188,7 +204,12 @@ describe('CamporeeEventsService', () => {
       prisma.camporee_events.count.mockResolvedValue(1);
       const result = await service.listEvents(1, 'local');
       expect(result.data).toEqual([
-        { ...baseEvent, agenda_visible: true, schedule_blocks: [] },
+        {
+          ...baseEvent,
+          agenda_visible: true,
+          schedule_blocks: [],
+          staff_assignments: [],
+        },
       ]);
       expect(result.total).toBe(1);
     });
@@ -226,6 +247,7 @@ describe('CamporeeEventsService', () => {
         ...event,
         agenda_visible: true,
         schedule_blocks: [],
+        staff_assignments: [],
       });
       expect(prisma.camporee_events.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -671,6 +693,62 @@ describe('CamporeeEventsService', () => {
       });
       const result = await service.resolveCamporeeForEvent(1);
       expect(result).toEqual({ type: 'union_camporee', id: 3 });
+    });
+  });
+  describe('event staff assignments', () => {
+    it('replaces event staff assignments from camporee roster', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
+      prisma.camporee_event_staff_assignments.findMany.mockResolvedValue([]);
+
+      await service.replaceEventStaffAssignments(
+        1,
+        {
+          assignments: [
+            {
+              camporee_staff_member_id: '33333333-3333-4333-8333-333333333333',
+              assignment_role: 'responsible',
+              display_order: 0,
+            },
+          ],
+        },
+        ACTOR_ID,
+      );
+
+      expect(
+        prisma.camporee_event_staff_assignments.updateMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { camporee_event_id: 1, active: true },
+        }),
+      );
+      expect(
+        prisma.camporee_event_staff_assignments.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            camporee_event_id: 1,
+            camporee_staff_member_id: '33333333-3333-4333-8333-333333333333',
+            assignment_role: 'responsible',
+          }),
+        }),
+      );
+    });
+
+    it('rejects publishing an event without a responsible staff assignment', async () => {
+      prisma.camporee_events.findUnique.mockResolvedValue(baseEvent);
+      prisma.camporee_event_staff_assignments.findFirst.mockResolvedValueOnce(
+        null,
+      );
+
+      await expect(
+        service.updateEvent(
+          1,
+          { status: CamporeeEventStatusDto.publicado },
+          ACTOR_ID,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_EVENT_RESPONSIBLE_REQUIRED,
+      });
     });
   });
 });

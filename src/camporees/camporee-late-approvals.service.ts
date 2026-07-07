@@ -1,11 +1,44 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppNotFoundException } from '../common/errors/app.exception';
+import {
+  AppBadRequestException,
+  AppNotFoundException,
+} from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 
 @Injectable()
 export class CamporeeLateApprovalsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async assertClubRegistrationOpenForPendingClub(
+    record: { camporee_id: number | null; union_camporee_id: number | null },
+    tx: any,
+  ): Promise<void> {
+    if (record.camporee_id) {
+      const camporee = await tx.local_camporees.findUnique({
+        where: { local_camporee_id: record.camporee_id },
+        select: { club_registration_closed_at: true },
+      });
+      if (camporee?.club_registration_closed_at) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+        );
+      }
+      return;
+    }
+
+    if (record.union_camporee_id) {
+      const camporee = await tx.union_camporees.findUnique({
+        where: { union_camporee_id: record.union_camporee_id },
+        select: { club_registration_closed_at: true },
+      });
+      if (camporee?.club_registration_closed_at) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+        );
+      }
+    }
+  }
 
   /**
    * List all pending enrollments for a camporee (clubs, members, payments).
@@ -158,6 +191,8 @@ export class CamporeeLateApprovalsService {
         );
       }
 
+      await this.assertClubRegistrationOpenForPendingClub(record, tx);
+
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
         data: {
@@ -300,6 +335,8 @@ export class CamporeeLateApprovalsService {
           ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
         );
       }
+      await this.assertClubRegistrationOpenForPendingClub(record, tx);
+
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
         data: {
@@ -448,6 +485,8 @@ export class CamporeeLateApprovalsService {
           ErrorCode.CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND,
         );
       }
+      await this.assertClubRegistrationOpenForPendingClub(record, tx);
+
       return tx.camporee_clubs.update({
         where: { camporee_club_id: camporeeClubId },
         data: {

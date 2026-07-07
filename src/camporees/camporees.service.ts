@@ -965,6 +965,173 @@ export class CamporeesService {
     });
   }
 
+  private async countActiveEnrolledClubSections(where: {
+    camporee_id?: number;
+    union_camporee_id?: number;
+  }): Promise<number> {
+    return this.prisma.camporee_clubs.count({
+      where: {
+        ...where,
+        active: true,
+        club_section_id: { not: null },
+        status: { in: ['registered', 'approved'] },
+      },
+    });
+  }
+
+  private async countActiveScoringArtifacts(where: {
+    local_camporee_id?: number;
+    union_camporee_id?: number;
+  }): Promise<number> {
+    const [results, assignments] = await Promise.all([
+      this.prisma.camporee_event_section_results.count({
+        where: {
+          active: true,
+          camporee_event: { ...where, active: true },
+        },
+      }),
+      this.prisma.camporee_event_judge_assignments.count({
+        where: {
+          active: true,
+          camporee_event: { ...where, active: true },
+        },
+      }),
+    ]);
+
+    return results + assignments;
+  }
+
+  async closeLocalCamporeeClubRegistration(
+    camporeeId: number,
+    actorUserId: string,
+  ) {
+    const camporee = await (this.prisma as any).local_camporees.findUnique({
+      where: { local_camporee_id: camporeeId },
+    });
+
+    if (!camporee) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
+        id: camporeeId,
+      });
+    }
+    if (!camporee.active) {
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
+    }
+    if (camporee.club_registration_closed_at) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+      );
+    }
+
+    const enrolledCount = await this.countActiveEnrolledClubSections({
+      camporee_id: camporeeId,
+    });
+    if (enrolledCount === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS,
+      );
+    }
+
+    return (this.prisma as any).local_camporees.update({
+      where: { local_camporee_id: camporeeId },
+      data: {
+        club_registration_closed_at: new Date(),
+        club_registration_closed_by: actorUserId,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  async reopenLocalCamporeeClubRegistration(
+    camporeeId: number,
+    _actorUserId: string,
+  ) {
+    await this.findOne(camporeeId);
+    const scoringArtifacts = await this.countActiveScoringArtifacts({
+      local_camporee_id: camporeeId,
+    });
+    if (scoringArtifacts > 0) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED,
+      );
+    }
+
+    return (this.prisma as any).local_camporees.update({
+      where: { local_camporee_id: camporeeId },
+      data: {
+        club_registration_closed_at: null,
+        club_registration_closed_by: null,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  async closeUnionCamporeeClubRegistration(
+    camporeeId: number,
+    actorUserId: string,
+  ) {
+    const camporee = await (this.prisma as any).union_camporees.findUnique({
+      where: { union_camporee_id: camporeeId },
+    });
+
+    if (!camporee) {
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+        { id: camporeeId },
+      );
+    }
+    if (!camporee.active) {
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
+    }
+    if (camporee.club_registration_closed_at) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+      );
+    }
+
+    const enrolledCount = await this.countActiveEnrolledClubSections({
+      union_camporee_id: camporeeId,
+    });
+    if (enrolledCount === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS,
+      );
+    }
+
+    return (this.prisma as any).union_camporees.update({
+      where: { union_camporee_id: camporeeId },
+      data: {
+        club_registration_closed_at: new Date(),
+        club_registration_closed_by: actorUserId,
+        modified_at: new Date(),
+      },
+    });
+  }
+
+  async reopenUnionCamporeeClubRegistration(
+    camporeeId: number,
+    _actorUserId: string,
+  ) {
+    await this.findOneUnion(camporeeId);
+    const scoringArtifacts = await this.countActiveScoringArtifacts({
+      union_camporee_id: camporeeId,
+    });
+    if (scoringArtifacts > 0) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED,
+      );
+    }
+
+    return (this.prisma as any).union_camporees.update({
+      where: { union_camporee_id: camporeeId },
+      data: {
+        club_registration_closed_at: null,
+        club_registration_closed_by: null,
+        modified_at: new Date(),
+      },
+    });
+  }
+
   // ========================================
   // CLUB ENROLLMENT
   // ========================================
@@ -997,6 +1164,11 @@ export class CamporeesService {
 
       if (!camporee.active) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
+      }
+      if ((camporee as any).club_registration_closed_at) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+        );
       }
 
       isLate = this.isAfterDeadline(camporee.club_registration_deadline);
@@ -1689,6 +1861,11 @@ export class CamporeesService {
       if (!camporee.active) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
+      if ((camporee as any).club_registration_closed_at) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+        );
+      }
 
       isLate = this.isAfterDeadline(camporee.club_registration_deadline);
       camporeeUnionId = camporee.union_id;
@@ -2360,7 +2537,7 @@ export class CamporeesService {
   async registerParticipants(
     camporeeId: number,
     dto: RegisterMemberDto,
-    registeredBy: string,
+    _registeredBy: string,
   ) {
     return this.registerMember(camporeeId, dto);
   }

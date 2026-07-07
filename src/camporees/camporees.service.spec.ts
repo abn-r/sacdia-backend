@@ -5,7 +5,6 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { CamporeeMembersListQueryDto } from './dto/camporee-members-list-query.dto';
 
 describe('CamporeesService', () => {
@@ -30,6 +29,15 @@ describe('CamporeesService', () => {
     camporee_payments: {
       findUnique: jest.fn(),
       update: jest.fn(),
+    },
+    camporee_clubs: {
+      count: jest.fn(),
+    },
+    camporee_event_section_results: {
+      count: jest.fn(),
+    },
+    camporee_event_judge_assignments: {
+      count: jest.fn(),
     },
     member_insurances: {
       findUnique: jest.fn(),
@@ -1444,6 +1452,75 @@ describe('CamporeesService', () => {
         PAYMENT_ID,
       );
       expect(result.voucher_url).toBeNull();
+    });
+  });
+  describe('club registration closure', () => {
+    it('closes local club registration when enrolled sections exist', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        local_camporee_id: 1,
+        active: true,
+        club_registration_closed_at: null,
+      });
+      mockPrismaService.camporee_clubs.count.mockResolvedValue(1);
+      mockPrismaService.local_camporees.update.mockResolvedValue({
+        local_camporee_id: 1,
+        club_registration_closed_at: new Date('2026-07-01T00:00:00.000Z'),
+      });
+
+      await service.closeLocalCamporeeClubRegistration(
+        1,
+        '11111111-1111-4111-8111-111111111111',
+      );
+
+      expect(mockPrismaService.local_camporees.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_camporee_id: 1 },
+          data: expect.objectContaining({
+            club_registration_closed_at: expect.any(Date),
+            club_registration_closed_by: '11111111-1111-4111-8111-111111111111',
+          }),
+        }),
+      );
+    });
+
+    it('refuses to close local club registration without enrolled sections', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        local_camporee_id: 1,
+        active: true,
+        club_registration_closed_at: null,
+      });
+      mockPrismaService.camporee_clubs.count.mockResolvedValue(0);
+
+      await expect(
+        service.closeLocalCamporeeClubRegistration(
+          1,
+          '11111111-1111-4111-8111-111111111111',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS,
+      });
+    });
+
+    it('refuses to reopen local club registration when scoring exists', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        local_camporee_id: 1,
+        name: 'Camporee',
+      });
+      mockPrismaService.camporee_event_section_results.count.mockResolvedValue(
+        1,
+      );
+      mockPrismaService.camporee_event_judge_assignments.count.mockResolvedValue(
+        0,
+      );
+
+      await expect(
+        service.reopenLocalCamporeeClubRegistration(
+          1,
+          '11111111-1111-4111-8111-111111111111',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED,
+      });
     });
   });
 });

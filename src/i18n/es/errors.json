@@ -564,5 +564,13 @@
   "ANNUAL_FOLDER_TEMPLATE_LOCKED": "La plantilla está {status} y ya no puede editarse. Copiala para crear un nuevo borrador.",
   "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "No se puede eliminar la plantilla porque ya tiene carpetas creadas",
   "INVESTITURE_REQUIREMENTS_INCOMPLETE": "Todavía faltan requisitos obligatorios de la clase para enviar la investidura",
-  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "La configuración del track de la sección no es válida"
+  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "La configuración del track de la sección no es válida",
+  "CAMPOREE_STAFF_MEMBER_NOT_FOUND": "Personal del campamento con ID {id} no encontrado",
+  "CAMPOREE_STAFF_DUPLICATE": "Este usuario ya está activo como personal de este campamento",
+  "CAMPOREE_STAFF_SCOPE_MISMATCH": "El personal no pertenece a este campamento",
+  "CAMPOREE_EVENT_RESPONSIBLE_REQUIRED": "Un evento publicado de campamento requiere al menos un responsable asignado",
+  "CAMPOREE_CLUB_REGISTRATION_CLOSED": "La inscripción de clubes ya está cerrada para este campamento",
+  "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Cerrá la inscripción de clubes antes de configurar o enviar puntuación del campamento",
+  "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "No se puede cerrar la inscripción de clubes sin secciones de club inscritas activas",
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "No se puede reabrir la inscripción de clubes si existen resultados o asignaciones activas de jueces"
 }

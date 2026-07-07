@@ -564,5 +564,13 @@
   "ANNUAL_FOLDER_TEMPLATE_LOCKED": "The template is {status} and can no longer be edited. Copy it to create a new draft.",
   "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Cannot delete the template because it already has folders created",
   "INVESTITURE_REQUIREMENTS_INCOMPLETE": "Required class requirements are still incomplete for investiture submission",
-  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "The section track configuration is invalid"
+  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "The section track configuration is invalid",
+  "CAMPOREE_STAFF_MEMBER_NOT_FOUND": "Camporee staff member with ID {id} not found",
+  "CAMPOREE_STAFF_DUPLICATE": "This user is already an active staff member for this camporee",
+  "CAMPOREE_STAFF_SCOPE_MISMATCH": "The staff member does not belong to this camporee",
+  "CAMPOREE_EVENT_RESPONSIBLE_REQUIRED": "A published camporee event requires at least one responsible staff assignment",
+  "CAMPOREE_CLUB_REGISTRATION_CLOSED": "Club registration is already closed for this camporee",
+  "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Close club registration before configuring or submitting camporee scoring",
+  "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Club registration cannot be closed without active enrolled club sections",
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Club registration cannot be reopened after active scoring results or judge assignments exist"
 }

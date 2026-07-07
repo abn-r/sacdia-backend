@@ -553,5 +553,13 @@
   "ANNUAL_FOLDER_TEMPLATE_LOCKED": "O modelo está {status} e não pode mais ser editado. Copie-o para criar um novo rascunho.",
   "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Não é possível excluir o modelo porque ele já possui pastas criadas",
   "INVESTITURE_REQUIREMENTS_INCOMPLETE": "Ainda há requisitos obrigatórios da classe incompletos para enviar a investidura",
-  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "A configuração da trilha da seção é inválida"
+  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "A configuração da trilha da seção é inválida",
+  "CAMPOREE_STAFF_MEMBER_NOT_FOUND": "Membro da equipe do camporee com ID {id} não encontrado",
+  "CAMPOREE_STAFF_DUPLICATE": "Este usuário já está ativo como equipe deste camporee",
+  "CAMPOREE_STAFF_SCOPE_MISMATCH": "O membro da equipe não pertence a este camporee",
+  "CAMPOREE_EVENT_RESPONSIBLE_REQUIRED": "Um evento publicado de camporee requer ao menos uma pessoa responsável atribuída",
+  "CAMPOREE_CLUB_REGISTRATION_CLOSED": "A inscrição de clubes já está encerrada para este camporee",
+  "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Encerre a inscrição de clubes antes de configurar ou enviar pontuação do camporee",
+  "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Não é possível encerrar a inscrição de clubes sem seções de clube inscritas e ativas",
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Não é possível reabrir a inscrição de clubes após resultados ou atribuições ativas de juízes"
 }

@@ -553,5 +553,13 @@
   "ANNUAL_FOLDER_TEMPLATE_LOCKED": "Le modèle est {status} et ne peut plus être modifié. Copiez-le pour créer un nouveau brouillon.",
   "ANNUAL_FOLDER_TEMPLATE_HAS_FOLDERS": "Impossible de supprimer le modèle car il contient déjà des dossiers créés",
   "INVESTITURE_REQUIREMENTS_INCOMPLETE": "Des exigences obligatoires de la classe sont encore incomplètes pour soumettre l'investiture",
-  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "La configuration du track de la section est invalide"
+  "ADMIN_CLASS_SECTION_TRACK_CONFIG_INVALID": "La configuration du track de la section est invalide",
+  "CAMPOREE_STAFF_MEMBER_NOT_FOUND": "Membre du personnel du camporee avec ID {id} introuvable",
+  "CAMPOREE_STAFF_DUPLICATE": "Cet utilisateur est déjà actif comme personnel de ce camporee",
+  "CAMPOREE_STAFF_SCOPE_MISMATCH": "Le membre du personnel n’appartient pas à ce camporee",
+  "CAMPOREE_EVENT_RESPONSIBLE_REQUIRED": "Un événement de camporee publié requiert au moins un responsable assigné",
+  "CAMPOREE_CLUB_REGISTRATION_CLOSED": "L’inscription des clubs est déjà fermée pour ce camporee",
+  "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Fermez l’inscription des clubs avant de configurer ou soumettre la notation du camporee",
+  "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Impossible de fermer l’inscription des clubs sans sections de club inscrites et actives",
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Impossible de rouvrir l’inscription des clubs après des résultats ou assignations de juges actifs"
 }

@@ -26,6 +26,47 @@ export enum CamporeeEventStatusDto {
   cancelado = 'cancelado',
 }
 
+export type CamporeeEventStaffAssignmentRole =
+  | 'responsible'
+  | 'assistant'
+  | 'evaluator'
+  | 'support';
+
+export class CamporeeEventStaffAssignmentDto {
+  @ApiProperty({ example: '0d8901fd-8c8f-4c1c-bd8a-d7c9b51f7777' })
+  @IsUUID()
+  declare camporee_staff_member_id: string;
+
+  @ApiProperty({ enum: ['responsible', 'assistant', 'evaluator', 'support'] })
+  @IsIn(['responsible', 'assistant', 'evaluator', 'support'])
+  declare assignment_role: CamporeeEventStaffAssignmentRole;
+
+  @ApiPropertyOptional({ example: 'Responsable de estación' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  declare title_override?: string;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  declare display_order?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  declare notes?: string;
+}
+
+export class ReplaceCamporeeEventStaffAssignmentsDto {
+  @ApiProperty({ type: [CamporeeEventStaffAssignmentDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CamporeeEventStaffAssignmentDto)
+  declare assignments: CamporeeEventStaffAssignmentDto[];
+}
+
 export class CamporeeEventScheduleBlockAssignmentDto {
   @ApiPropertyOptional({ example: 123 })
   @IsOptional()

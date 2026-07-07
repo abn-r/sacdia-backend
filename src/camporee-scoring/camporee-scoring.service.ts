@@ -17,6 +17,7 @@ import {
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CamporeeStaffService } from '../camporee-staff/camporee-staff.service';
 import {
   AddCamporeeJudgeDto,
   AssignCamporeeEventJudgeDto,
@@ -178,6 +179,7 @@ export class CamporeeScoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly camporeeStaffService: CamporeeStaffService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
   ) {}
@@ -505,6 +507,31 @@ export class CamporeeScoringService {
     return enrollment;
   }
 
+  private async ensureClubRegistrationClosedForEvent(
+    event: CamporeeEventRecord,
+    tx?: PrismaLike,
+  ): Promise<void> {
+    const closedAt = event.local_camporee_id
+      ? (
+          await this.db(tx).local_camporees.findUnique({
+            where: { local_camporee_id: event.local_camporee_id },
+            select: { club_registration_closed_at: true },
+          })
+        )?.club_registration_closed_at
+      : (
+          await this.db(tx).union_camporees.findUnique({
+            where: { union_camporee_id: event.union_camporee_id },
+            select: { club_registration_closed_at: true },
+          })
+        )?.club_registration_closed_at;
+
+    if (!closedAt) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED,
+      );
+    }
+  }
+
   private async getActiveRubrics(
     eventId: number,
     tx?: PrismaLike,
@@ -692,6 +719,7 @@ export class CamporeeScoringService {
     actorUserId: string,
   ): Promise<CamporeeEventRubricResponseDto[]> {
     const event = await this.resolveEvent(eventId);
+    await this.ensureClubRegistrationClosedForEvent(event);
 
     if (dto.scoring_enabled && dto.items.length === 0) {
       throw new AppBadRequestException(
@@ -859,6 +887,11 @@ export class CamporeeScoringService {
 
     const existing = await this.db().camporee_judges.findFirst({ where });
     if (existing) {
+      await this.camporeeStaffService.ensureJudgeStaffMember(
+        scope,
+        dto.user_id,
+        actorUserId,
+      );
       return {
         camporee_judge_id: existing.camporee_judge_id,
         user_id: existing.user_id,
@@ -879,6 +912,12 @@ export class CamporeeScoringService {
         modified_by: actorUserId,
       },
     });
+
+    await this.camporeeStaffService.ensureJudgeStaffMember(
+      scope,
+      dto.user_id,
+      actorUserId,
+    );
 
     return {
       camporee_judge_id: created.camporee_judge_id,
@@ -906,6 +945,7 @@ export class CamporeeScoringService {
     actorUserId: string,
   ): Promise<CamporeeEventJudgeAssignmentResponseDto> {
     const event = await this.resolveEvent(eventId);
+    await this.ensureClubRegistrationClosedForEvent(event);
     const enrollment = await this.ensureSectionEnrollment(
       event,
       dto.club_section_id,
@@ -926,6 +966,12 @@ export class CamporeeScoringService {
     if (!sameScope) {
       throw new AppBadRequestException(ErrorCode.CAMPOREE_EVENT_ACCESS_DENIED);
     }
+
+    await this.camporeeStaffService.ensureJudgeStaffMember(
+      this.getEventScope(event),
+      judge.user_id,
+      actorUserId,
+    );
 
     if (dto.judge_role === 'primary') {
       const existingPrimary =
@@ -975,6 +1021,7 @@ export class CamporeeScoringService {
     }
 
     const event = await this.resolveEvent(assignment.camporee_event_id);
+    await this.ensureClubRegistrationClosedForEvent(event);
     if (!(await this.canManageScoring(event, actorUserId))) {
       throw new AppForbiddenException(ErrorCode.CAMPOREE_SCORING_FORBIDDEN);
     }
@@ -1071,6 +1118,7 @@ export class CamporeeScoringService {
     actorUserId: string,
   ): Promise<CamporeeEventSectionResultResponseDto> {
     const event = await this.resolveEvent(eventId);
+    await this.ensureClubRegistrationClosedForEvent(event);
     if (!event.scoring_enabled) {
       throw new AppBadRequestException(
         ErrorCode.CAMPOREE_SCORING_EVENT_NOT_SCORABLE,

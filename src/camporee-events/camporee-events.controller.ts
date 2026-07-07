@@ -29,6 +29,7 @@ import {
   CreateCamporeeEventDto,
   ListCamporeeEventsFilterDto,
   ReplaceCamporeeEventScheduleBlocksDto,
+  ReplaceCamporeeEventStaffAssignmentsDto,
   ReorderCamporeeEventDto,
   UpdateCamporeeEventDto,
 } from './dto';
@@ -240,6 +241,36 @@ export class CamporeeEventsController {
     @Request() req: any,
   ) {
     const data = await this.service.updateEvent(eventId, dto, req.user.sub);
+    return { status: 'success', data };
+  }
+
+  @Get('camporee-events/:eventId/staff-assignments')
+  @RequirePermissions('camporee_events:read')
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @ApiOperation({ summary: 'List staff assignments for a camporee event' })
+  @ApiParam({ name: 'eventId', type: Number })
+  async listEventStaffAssignments(
+    @Param('eventId', ParseIntPipe) eventId: number,
+  ) {
+    const data = await this.service.listEventStaffAssignments(eventId);
+    return { status: 'success', data };
+  }
+
+  @Put('camporee-events/:eventId/staff-assignments')
+  @RequirePermissions('camporee_events:update')
+  @AuthorizationResource({ type: 'camporee_event', idParam: 'eventId' })
+  @ApiOperation({ summary: 'Replace staff assignments for a camporee event' })
+  @ApiParam({ name: 'eventId', type: Number })
+  async replaceEventStaffAssignments(
+    @Param('eventId', ParseIntPipe) eventId: number,
+    @Body() dto: ReplaceCamporeeEventStaffAssignmentsDto,
+    @Request() req: any,
+  ) {
+    const data = await this.service.replaceEventStaffAssignments(
+      eventId,
+      dto,
+      req.user.sub,
+    );
     return { status: 'success', data };
   }
 
