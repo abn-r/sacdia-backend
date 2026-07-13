@@ -54,25 +54,25 @@ describe('UserClassesController', () => {
         AUTHORIZATION_RESOURCE_KEY,
         UserClassesController.prototype.updateProgress,
       ),
-    ).toEqual({ type: 'active_assignment' });
+    ).toEqual({ type: 'active_assignment', ownerParam: 'userId' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UserClassesController.prototype.submitSection,
       ),
-    ).toEqual({ type: 'active_assignment' });
+    ).toEqual({ type: 'active_assignment', ownerParam: 'userId' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UserClassesController.prototype.uploadSectionFile,
       ),
-    ).toEqual({ type: 'active_assignment' });
+    ).toEqual({ type: 'active_assignment', ownerParam: 'userId' });
     expect(
       Reflect.getMetadata(
         AUTHORIZATION_RESOURCE_KEY,
         UserClassesController.prototype.deleteSectionFile,
       ),
-    ).toEqual({ type: 'active_assignment' });
+    ).toEqual({ type: 'active_assignment', ownerParam: 'userId' });
   });
 
   it('passes target user and actor separately when uploading class evidence', async () => {

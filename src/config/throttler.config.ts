@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ThrottlerModuleOptions } from '@nestjs/throttler';
+import type {
+  ThrottlerModuleOptions,
+  ThrottlerOptions,
+} from '@nestjs/throttler';
 import { isPlaceholderUrl } from './bullmq.config';
 import { RedisThrottlerStorage } from './redis-throttler.storage';
 
@@ -24,6 +27,29 @@ export const THROTTLER_TIERS = [
   },
 ] as const;
 
+/** Relaxed limits for local dev (Next.js fires many parallel server fetches). */
+export const THROTTLER_TIERS_DEV = [
+  {
+    name: 'short',
+    ttl: 1000,
+    limit: 30,
+  },
+  {
+    name: 'medium',
+    ttl: 10000,
+    limit: 200,
+  },
+  {
+    name: 'long',
+    ttl: 60000,
+    limit: 1000,
+  },
+] as const;
+
+export function getThrottlerTiers(nodeEnv: string | undefined) {
+  return nodeEnv === 'development' ? THROTTLER_TIERS_DEV : THROTTLER_TIERS;
+}
+
 type RedisStorageFactory = (redisUrl: string) => RedisThrottlerStorage;
 type ConfigReader = Pick<ConfigService, 'get'>;
 
@@ -34,11 +60,13 @@ export async function buildThrottlerOptions(
 ): Promise<ThrottlerModuleOptions> {
   const nodeEnv = configService.get<string>('NODE_ENV') ?? 'development';
   const isProduction = nodeEnv === 'production';
+  const throttlers = [...getThrottlerTiers(nodeEnv)];
   const redisUrl = configService.get<string>('REDIS_URL')?.trim();
 
   if (!redisUrl || isPlaceholderUrl(redisUrl)) {
     return handleRedisUnavailable(
       isProduction,
+      throttlers,
       'REDIS_URL is required for distributed rate limiting in production.',
     );
   }
@@ -46,6 +74,7 @@ export async function buildThrottlerOptions(
   if (!isValidRedisUrl(redisUrl)) {
     return handleRedisUnavailable(
       isProduction,
+      throttlers,
       'REDIS_URL must be a valid redis:// or rediss:// URL for rate limiting.',
     );
   }
@@ -56,13 +85,14 @@ export async function buildThrottlerOptions(
     await storage.assertReady();
     logger.log('Using Redis-backed distributed throttler storage');
     return {
-      throttlers: [...THROTTLER_TIERS],
+      throttlers,
       storage,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return handleRedisUnavailable(
       isProduction,
+      throttlers,
       `Redis throttler connection failed: ${message}`,
     );
   }
@@ -70,6 +100,7 @@ export async function buildThrottlerOptions(
 
 function handleRedisUnavailable(
   isProduction: boolean,
+  throttlers: ThrottlerOptions[],
   message: string,
 ): ThrottlerModuleOptions {
   if (isProduction) {
@@ -77,7 +108,7 @@ function handleRedisUnavailable(
   }
 
   logger.warn(`${message} Falling back to in-memory throttler storage.`);
-  return [...THROTTLER_TIERS];
+  return throttlers;
 }
 
 function isValidRedisUrl(redisUrl: string): boolean {

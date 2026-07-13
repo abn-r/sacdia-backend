@@ -473,8 +473,8 @@ export class ClubsService {
           } | null;
         };
 
-        const user = member.users as
-          | (typeof member.users & {
+        const user = member.users as unknown as
+          | (Omit<NonNullable<typeof member.users>, 'enrollments'> & {
               enrollments?: MemberEnrollmentProjection[];
             })
           | null;

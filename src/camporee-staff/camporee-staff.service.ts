@@ -396,18 +396,44 @@ export class CamporeeStaffService {
     }
     await this.assertCanManageStaffMember(existing, actorUserId);
 
-    const updated = await this.db().camporee_staff_members.update({
-      where: { camporee_staff_member_id: staffMemberId },
-      data: {
-        ...(dto.category ? { category: dto.category } : {}),
-        ...(dto.role_label !== undefined ? { role_label: dto.role_label } : {}),
-        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
-        ...(dto.status ? { status: dto.status } : {}),
-        ...(dto.active !== undefined ? { active: dto.active } : {}),
-        modified_by: actorUserId,
-        modified_at: new Date(),
-      },
-      include: this.userInclude(),
+    const nextActive = dto.active ?? existing.active;
+    const nextStatus = dto.status ?? existing.status;
+    const shouldDeactivateAssignments =
+      nextActive === false || nextStatus !== 'active';
+    const now = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await this.db(tx).camporee_staff_members.update({
+        where: { camporee_staff_member_id: staffMemberId },
+        data: {
+          ...(dto.category ? { category: dto.category } : {}),
+          ...(dto.role_label !== undefined
+            ? { role_label: dto.role_label }
+            : {}),
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.status ? { status: dto.status } : {}),
+          ...(dto.active !== undefined ? { active: dto.active } : {}),
+          modified_by: actorUserId,
+          modified_at: now,
+        },
+        include: this.userInclude(),
+      });
+
+      if (shouldDeactivateAssignments) {
+        await this.db(tx).camporee_event_staff_assignments.updateMany({
+          where: {
+            camporee_staff_member_id: staffMemberId,
+            active: true,
+          },
+          data: {
+            active: false,
+            modified_by: actorUserId,
+            modified_at: now,
+          },
+        });
+      }
+
+      return row;
     });
 
     return this.mapStaff(updated);
