@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ThrottlerModuleOptions } from '@nestjs/throttler';
+import type {
+  ThrottlerModuleOptions,
+  ThrottlerOptions,
+} from '@nestjs/throttler';
 import { isPlaceholderUrl } from './bullmq.config';
 import { RedisThrottlerStorage } from './redis-throttler.storage';
 
@@ -97,7 +100,7 @@ export async function buildThrottlerOptions(
 
 function handleRedisUnavailable(
   isProduction: boolean,
-  throttlers: ThrottlerModuleOptions['throttlers'],
+  throttlers: ThrottlerOptions[],
   message: string,
 ): ThrottlerModuleOptions {
   if (isProduction) {
