@@ -33,6 +33,8 @@ const LEGACY_CLEANUP_PERMISSIONS = [
 const SEED_DIR = join(__dirname, '..', '..', '..', '..', 'prisma', 'seeds');
 const PERMISSIONS_SEED_PATH = join(SEED_DIR, 'permissions.seed.sql');
 const ROLE_PERMISSIONS_SEED_PATH = join(SEED_DIR, 'role-permissions.seed.sql');
+const ACTIVE_SECTION_REGISTRATION_PERMISSION =
+  'camporees:register_active_section';
 
 describe('Phase 3 permission cleanup — seed files', () => {
   const permissionsSeed = readFileSync(PERMISSIONS_SEED_PATH, 'utf8');
@@ -78,6 +80,33 @@ describe('Phase 3 permission cleanup — seed files', () => {
       const memberBlock = extractRoleBlock(rolePermissionsSeed, 'member');
       expect(userBlock).toContain("'user_honors:submit'");
       expect(memberBlock).toContain("'user_honors:submit'");
+    });
+
+    it('grants active-section camporee registration only to the CLUB director', () => {
+      expect(rolePermissionsSeed).toContain(
+        `'${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
+      );
+
+      const normalized = rolePermissionsSeed.replace(/\s+/g, ' ');
+      expect(normalized).toContain(
+        `p.permission_name = '${ACTIVE_SECTION_REGISTRATION_PERMISSION}' AND NOT ( r.role_name = 'director' AND r.role_category = 'CLUB' )`,
+      );
+
+      const directorBlock = extractRoleBlock(rolePermissionsSeed, 'director');
+      expect(directorBlock).toContain(
+        `'${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
+      );
+
+      for (const roleName of [
+        'deputy-director',
+        'secretary',
+        'treasurer',
+        'secretary-treasurer',
+      ]) {
+        expect(extractRoleBlock(rolePermissionsSeed, roleName)).not.toContain(
+          `'${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
+        );
+      }
     });
   });
 
