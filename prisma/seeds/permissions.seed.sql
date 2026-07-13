@@ -624,7 +624,8 @@ ON CONFLICT (permission_name) DO UPDATE SET
 -- ============================
 INSERT INTO permissions (permission_name, description, active) VALUES
   ('camporees:read', 'View camporees information', true),
-  ('camporees:register', 'Register/enroll club to camporees', true)
+  ('camporees:register', 'Register/enroll club to camporees', true),
+  ('camporees:register_active_section', 'Register the director active club section in a camporee', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,

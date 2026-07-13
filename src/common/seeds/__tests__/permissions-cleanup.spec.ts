@@ -111,6 +111,16 @@ describe('Phase 3 permission cleanup — seed files', () => {
   });
 
   describe('permissions.seed.sql', () => {
+    it('defines active-section camporee registration canonically', () => {
+      const camporeesBlock = permissionsSeed.match(
+        /-- Camporees\s*--[^]*?ON CONFLICT/,
+      )?.[0];
+
+      expect(camporeesBlock).toContain(
+        `('${ACTIVE_SECTION_REGISTRATION_PERMISSION}',`,
+      );
+    });
+
     it('soft-deletes the three legacy permission rows (Req-9)', () => {
       const normalized = permissionsSeed.replace(/\s+/g, ' ');
       expect(normalized).toMatch(
