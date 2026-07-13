@@ -8,6 +8,7 @@ describe('CamporeeScoringService', () => {
     local_camporee_id: 10,
     union_camporee_id: null,
     max_points: 100,
+    min_points: 0,
     scoring_enabled: true,
     active: true,
     local_camporee: { local_field_id: 5, ecclesiastical_year: 2026 },
@@ -70,6 +71,64 @@ describe('CamporeeScoringService', () => {
     },
   };
 
+  const globalRoleProfile = (
+    roleNames: string[],
+    permissions: string[] = [],
+  ) => ({
+    authorization: {
+      grants: {
+        global_roles: roleNames.map((role_name) => ({
+          role_name,
+          permissions,
+        })),
+      },
+      effective: {
+        permissions,
+        scope: { global: {}, club: null },
+      },
+    },
+  });
+
+  const persistedScoreSubmission = (
+    requestHash: string,
+    sectionResults: any[] = [
+      {
+        camporee_event_section_result_id:
+          '33333333-3333-4333-8333-333333333333',
+        camporee_event_id: 1,
+        camporee_club_id: 99,
+        club_section_id: 7,
+        source_submission_id: '22222222-2222-4222-8222-222222222222',
+        score_status: 'scored',
+        is_no_show: false,
+        total_awarded_points: 90,
+        total_max_points: 100,
+        percentage: 90,
+        finalized_by: actorUserId,
+        finalized_at: new Date('2026-07-09T10:00:00.000Z'),
+        active: true,
+      },
+    ],
+  ) => ({
+    camporee_event_score_submission_id: '22222222-2222-4222-8222-222222222222',
+    request_hash: requestHash,
+    submitted_by: actorUserId,
+    source: 'judge_primary',
+    score_status: 'scored',
+    is_no_show: false,
+    raw_awarded_points: 90,
+    minimum_adjustment_points: 0,
+    total_awarded_points: 90,
+    total_max_points: 100,
+    notes: null,
+    created_at: new Date('2026-07-09T10:00:00.000Z'),
+    items: [
+      { camporee_event_rubric_id: 1, awarded_points: 40, notes: null },
+      { camporee_event_rubric_id: 2, awarded_points: 50, notes: null },
+    ],
+    section_results: sectionResults,
+  });
+
   beforeEach(() => {
     prisma = {
       camporee_events: {
@@ -106,6 +165,7 @@ describe('CamporeeScoringService', () => {
         findFirst: jest.fn(),
       },
       camporee_event_score_submissions: {
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({
           camporee_event_score_submission_id:
             '22222222-2222-4222-8222-222222222222',
@@ -115,19 +175,14 @@ describe('CamporeeScoringService', () => {
         create: jest.fn().mockResolvedValue({}),
       },
       camporee_event_section_results: {
+        findFirst: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        create: jest.fn().mockResolvedValue({
+        create: jest.fn(async ({ data }) => ({
           camporee_event_section_result_id:
             '33333333-3333-4333-8333-333333333333',
-          camporee_event_id: 1,
-          camporee_club_id: 99,
-          club_section_id: 7,
-          source_submission_id: '22222222-2222-4222-8222-222222222222',
-          total_awarded_points: 90,
-          total_max_points: 100,
-          percentage: 90,
           active: true,
-        }),
+          ...data,
+        })),
       },
       local_camporees: {
         findUnique: jest.fn().mockResolvedValue({
@@ -145,6 +200,7 @@ describe('CamporeeScoringService', () => {
       },
       $transaction: jest.fn(async (callback: any) => callback(prisma)),
       $queryRaw: jest.fn(),
+      $executeRaw: jest.fn(),
     };
     auth = {
       resolveUserAuthorization: jest.fn().mockResolvedValue(noAuthProfile),
@@ -306,6 +362,435 @@ describe('CamporeeScoringService', () => {
     );
   });
 
+  it('rejects manual scoring for an unassigned actor with only camporee_events:update', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(
+      globalRoleProfile([], ['camporee_events:update']),
+    );
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          source: 'manual_lf',
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 35 },
+            { camporee_event_rubric_id: 2, awarded_points: 55 },
+          ],
+        },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_SCORING_FORBIDDEN });
+    expect(
+      prisma.camporee_event_score_submissions.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('derives manual_lf for an LF manager even when admin_override is requested', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        source: 'admin_override',
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 35 },
+          { camporee_event_rubric_id: 2, awarded_points: 55 },
+        ],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ source: 'manual_lf' }),
+      }),
+    );
+  });
+
+  it('derives admin_override for an unassigned global admin', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(
+      globalRoleProfile(['admin']),
+    );
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        source: 'manual_lf',
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 35 },
+          { camporee_event_rubric_id: 2, awarded_points: 55 },
+        ],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ source: 'admin_override' }),
+      }),
+    );
+  });
+
+  it('derives manual_lf for an in-scope union manager', async () => {
+    prisma.camporee_events.findUnique.mockResolvedValueOnce({
+      ...event,
+      local_camporee_id: null,
+      local_camporee: null,
+      union_camporee_id: 20,
+      union_camporee: { union_id: 3, ecclesiastical_year: 2026 },
+    });
+    auth.resolveUserAuthorization.mockResolvedValue(
+      globalRoleProfile(['assistant-union']),
+    );
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 35 },
+          { camporee_event_rubric_id: 2, awarded_points: 55 },
+        ],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ source: 'manual_lf' }),
+      }),
+    );
+  });
+
+  it('keeps judge_primary for an assigned admin when override was not requested', async () => {
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+    auth.resolveUserAuthorization.mockResolvedValue(
+      globalRoleProfile(['super-admin']),
+    );
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 40 },
+          { camporee_event_rubric_id: 2, awarded_points: 50 },
+        ],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: 'judge_primary',
+          judge_assignment_id: '44444444-4444-4444-8444-444444444444',
+        }),
+      }),
+    );
+  });
+
+  it('clamps submitted score to event minimum when configured', async () => {
+    prisma.camporee_events.findUnique.mockResolvedValueOnce({
+      ...event,
+      min_points: 20,
+    });
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      camporee_event_id: 1,
+      camporee_judge_id: '55555555-5555-4555-8555-555555555555',
+      camporee_club_id: 99,
+      club_section_id: 7,
+      judge_role: 'primary',
+      active: true,
+    });
+
+    const result = await service.submitScore(
+      1,
+      7,
+      {
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 5 },
+          { camporee_event_rubric_id: 2, awarded_points: 5 },
+        ],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          total_awarded_points: 20,
+          total_max_points: 100,
+          score_status: 'scored',
+          is_no_show: false,
+        }),
+      }),
+    );
+    expect(prisma.camporee_event_section_results.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          total_awarded_points: 20,
+          percentage: 20,
+          score_status: 'scored',
+          is_no_show: false,
+        }),
+      }),
+    );
+    expect(result.total_awarded_points).toBe(20);
+  });
+
+  it('keeps submitted score below minimum when event minimum is not configured', async () => {
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      camporee_event_id: 1,
+      camporee_judge_id: '55555555-5555-4555-8555-555555555555',
+      camporee_club_id: 99,
+      club_section_id: 7,
+      judge_role: 'primary',
+      active: true,
+    });
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 5 },
+          { camporee_event_rubric_id: 2, awarded_points: 5 },
+        ],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          total_awarded_points: 10,
+          score_status: 'scored',
+          is_no_show: false,
+        }),
+      }),
+    );
+  });
+
+  it('records no-show as official result and awards event minimum', async () => {
+    prisma.camporee_events.findUnique.mockResolvedValueOnce({
+      ...event,
+      min_points: 20,
+    });
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      camporee_event_id: 1,
+      camporee_judge_id: '55555555-5555-4555-8555-555555555555',
+      camporee_club_id: 99,
+      club_section_id: 7,
+      judge_role: 'primary',
+      active: true,
+    });
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        no_show: true,
+        notes: 'Club no se presentó.',
+        items: [],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          total_awarded_points: 20,
+          total_max_points: 100,
+          score_status: 'no_show',
+          is_no_show: true,
+        }),
+      }),
+    );
+    expect(
+      prisma.camporee_event_score_submission_items.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('records no-show with zero points when event minimum is not configured', async () => {
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      camporee_event_id: 1,
+      camporee_judge_id: '55555555-5555-4555-8555-555555555555',
+      camporee_club_id: 99,
+      club_section_id: 7,
+      judge_role: 'primary',
+      active: true,
+    });
+
+    await service.submitScore(1, 7, { no_show: true, items: [] }, actorUserId);
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          total_awarded_points: 0,
+          score_status: 'no_show',
+          is_no_show: true,
+        }),
+      }),
+    );
+  });
+
+  it('rejects a second primary judge score when an active official result already exists', async () => {
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      camporee_event_id: 1,
+      camporee_judge_id: '55555555-5555-4555-8555-555555555555',
+      camporee_club_id: 99,
+      club_section_id: 7,
+      judge_role: 'primary',
+      active: true,
+    });
+    prisma.camporee_event_section_results.findFirst.mockResolvedValueOnce({
+      camporee_event_section_result_id: '33333333-3333-4333-8333-333333333333',
+      source_submission_id: '22222222-2222-4222-8222-222222222222',
+      active: true,
+    });
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 40 },
+            { camporee_event_rubric_id: 2, awarded_points: 50 },
+          ],
+        },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CAMPOREE_SCORING_RESULT_ALREADY_SUBMITTED',
+    });
+  });
+
+  it('requires the active result id for a manual override', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+    prisma.camporee_event_section_results.findFirst.mockResolvedValueOnce({
+      camporee_event_section_result_id: '33333333-3333-4333-8333-333333333333',
+      source_submission_id: '22222222-2222-4222-8222-222222222222',
+      active: true,
+    });
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          source: 'manual_lf',
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 38 },
+            { camporee_event_rubric_id: 2, awarded_points: 57 },
+          ],
+        },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CAMPOREE_SCORING_RESULT_STALE,
+    });
+    expect(
+      prisma.camporee_event_section_results.updateMany,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('rejects a manual override when its expected active result changed', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+    prisma.camporee_event_section_results.findFirst.mockResolvedValueOnce({
+      camporee_event_section_result_id: '33333333-3333-4333-8333-333333333333',
+      source_submission_id: '22222222-2222-4222-8222-222222222222',
+      active: true,
+    });
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          source: 'manual_lf',
+          expected_active_result_id: '99999999-9999-4999-8999-999999999999',
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 38 },
+            { camporee_event_rubric_id: 2, awarded_points: 57 },
+          ],
+        },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CAMPOREE_SCORING_RESULT_STALE,
+    });
+    expect(
+      prisma.camporee_event_section_results.updateMany,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('allows assistant-lf manual override when expected active result matches', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+    prisma.camporee_event_section_results.findFirst.mockResolvedValueOnce({
+      camporee_event_section_result_id: '33333333-3333-4333-8333-333333333333',
+      source_submission_id: '22222222-2222-4222-8222-222222222222',
+      active: true,
+    });
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        source: 'manual_lf',
+        notes: 'Corrección autorizada por Campo Local.',
+        expected_active_result_id: '33333333-3333-4333-8333-333333333333',
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 38 },
+          { camporee_event_rubric_id: 2, awarded_points: 57 },
+        ],
+      },
+      actorUserId,
+    );
+
+    expect(prisma.camporee_event_score_submissions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: 'manual_lf',
+          override_of_submission_id: '22222222-2222-4222-8222-222222222222',
+        }),
+      }),
+    );
+    expect(
+      prisma.camporee_event_section_results.updateMany,
+    ).toHaveBeenCalledWith({
+      where: { camporee_event_id: 1, club_section_id: 7, active: true },
+      data: { active: false, modified_at: expect.any(Date) },
+    });
+  });
+
   it('rejects camporee judge users without eligibility criteria', async () => {
     prisma.users.findFirst.mockResolvedValue({
       user_id: '99999999-9999-4999-8999-999999999999',
@@ -391,6 +876,505 @@ describe('CamporeeScoringService', () => {
         name: 'Adulto',
       }),
     );
+  });
+
+  it('requires a non-empty reason for a manual override of an active result', async () => {
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+    prisma.camporee_event_section_results.findFirst.mockResolvedValueOnce({
+      camporee_event_section_result_id: '33333333-3333-4333-8333-333333333333',
+      source_submission_id: '22222222-2222-4222-8222-222222222222',
+      active: true,
+    });
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          source: 'manual_lf',
+          notes: '   ',
+          expected_active_result_id: '33333333-3333-4333-8333-333333333333',
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 38 },
+            { camporee_event_rubric_id: 2, awarded_points: 57 },
+          ],
+        },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CAMPOREE_SCORING_OVERRIDE_REASON_REQUIRED',
+    });
+    expect(
+      prisma.camporee_event_score_submissions.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('acquires idempotency then target locks before idempotency and active-result reads', async () => {
+    const order: string[] = [];
+    const lockQueries: any[] = [];
+    prisma.$executeRaw
+      .mockImplementationOnce(async (query) => {
+        lockQueries.push(query);
+        order.push('idempotency-lock');
+      })
+      .mockImplementationOnce(async (query) => {
+        lockQueries.push(query);
+        order.push('target-lock');
+      });
+    prisma.camporee_event_score_submissions.findFirst.mockImplementation(
+      async () => {
+        order.push('idempotency');
+        return null;
+      },
+    );
+    prisma.camporee_event_section_results.findFirst.mockImplementation(
+      async () => {
+        order.push('active-result');
+        return null;
+      },
+    );
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+
+    await service.submitScore(
+      1,
+      7,
+      {
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 40 },
+          { camporee_event_rubric_id: 2, awarded_points: 50 },
+        ],
+      },
+      actorUserId,
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+
+    expect(order).toEqual([
+      'idempotency-lock',
+      'target-lock',
+      'idempotency',
+      'active-result',
+    ]);
+    expect((lockQueries[0].strings ?? []).join('?')).toContain(
+      'pg_advisory_xact_lock(hashtextextended(',
+    );
+    expect(lockQueries[0].values).toEqual([
+      `camporee-score-idempotency:${actorUserId}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
+    ]);
+    expect((lockQueries[1].strings ?? []).join('?')).toBe(
+      'SELECT pg_advisory_xact_lock(?::integer, ?::integer)',
+    );
+    expect(lockQueries[1].values).toEqual([1, 7]);
+  });
+
+  it('serializes the same actor and key across targets before lookup', async () => {
+    const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const lockEvents: string[] = [];
+    let transactionSequence = 0;
+    let idempotencyLockOwner: number | null = null;
+    const idempotencyWaiters: Array<() => void> = [];
+    let unlockedLookupCount = 0;
+    let releaseUnlockedLookups: (() => void) | undefined;
+    const unlockedLookupsReady = new Promise<void>((resolve) => {
+      releaseUnlockedLookups = resolve;
+    });
+    let persistedSubmission: any = null;
+
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValue({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+    prisma.camporee_event_score_submissions.create.mockImplementation(
+      async ({ data }) => {
+        if (persistedSubmission) {
+          throw Object.assign(new Error('Unique constraint failed'), {
+            code: 'P2002',
+          });
+        }
+        persistedSubmission = {
+          camporee_event_score_submission_id:
+            '22222222-2222-4222-8222-222222222222',
+          ...data,
+          items: [],
+          section_results: [],
+        };
+        return persistedSubmission;
+      },
+    );
+    prisma.$transaction.mockImplementation(async (callback: any) => {
+      const transactionId = ++transactionSequence;
+      let holdsIdempotencyLock = false;
+      const tx = {
+        ...prisma,
+        camporee_event_score_submissions: {
+          ...prisma.camporee_event_score_submissions,
+          findFirst: jest.fn(async () => {
+            lockEvents.push(`tx${transactionId}:lookup`);
+            const snapshot = persistedSubmission;
+            if (!holdsIdempotencyLock) {
+              unlockedLookupCount += 1;
+              if (unlockedLookupCount === 2) releaseUnlockedLookups?.();
+              await unlockedLookupsReady;
+            }
+            return snapshot;
+          }),
+        },
+        $executeRaw: jest.fn(async (query: any) => {
+          const sql = (query.strings ?? []).join('?');
+          if (sql.includes('hashtext')) {
+            lockEvents.push(`tx${transactionId}:idempotency-attempt`);
+            if (idempotencyLockOwner !== null) {
+              await new Promise<void>((resolve) => {
+                idempotencyWaiters.push(resolve);
+              });
+            }
+            idempotencyLockOwner = transactionId;
+            holdsIdempotencyLock = true;
+            lockEvents.push(`tx${transactionId}:idempotency-acquired`);
+            return;
+          }
+          lockEvents.push(`tx${transactionId}:target-acquired`);
+        }),
+      };
+
+      try {
+        return await callback(tx);
+      } finally {
+        if (idempotencyLockOwner === transactionId) {
+          idempotencyLockOwner = null;
+          idempotencyWaiters.shift()?.();
+        }
+      }
+    });
+
+    const [first, second] = await Promise.allSettled([
+      service.submitScore(
+        1,
+        7,
+        {
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 40 },
+            { camporee_event_rubric_id: 2, awarded_points: 50 },
+          ],
+        },
+        actorUserId,
+        idempotencyKey,
+      ),
+      service.submitScore(
+        2,
+        8,
+        {
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 40 },
+            { camporee_event_rubric_id: 2, awarded_points: 50 },
+          ],
+        },
+        actorUserId,
+        idempotencyKey,
+      ),
+    ]);
+
+    expect(first.status).toBe('fulfilled');
+    expect(second).toMatchObject({
+      status: 'rejected',
+      reason: { code: ErrorCode.IDEMPOTENCY_KEY_REUSED },
+    });
+    expect(
+      prisma.camporee_event_score_submissions.create,
+    ).toHaveBeenCalledTimes(1);
+    expect(lockEvents.indexOf('tx1:idempotency-acquired')).toBeLessThan(
+      lockEvents.indexOf('tx1:target-acquired'),
+    );
+    expect(lockEvents.indexOf('tx1:target-acquired')).toBeLessThan(
+      lockEvents.indexOf('tx1:lookup'),
+    );
+    expect(lockEvents.indexOf('tx2:idempotency-acquired')).toBeLessThan(
+      lockEvents.indexOf('tx2:target-acquired'),
+    );
+    expect(lockEvents.indexOf('tx2:target-acquired')).toBeLessThan(
+      lockEvents.indexOf('tx2:lookup'),
+    );
+  });
+
+  it('replays the original receipt snapshot after an override inactivates its result', async () => {
+    const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const createdAt = new Date('2026-07-09T10:00:00.000Z');
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValue({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+    prisma.camporee_event_score_submissions.create.mockImplementationOnce(
+      async ({ data }) => ({
+        camporee_event_score_submission_id:
+          '22222222-2222-4222-8222-222222222222',
+        created_at: createdAt,
+        ...data,
+      }),
+    );
+    prisma.camporee_event_section_results.create.mockImplementationOnce(
+      async ({ data }) => ({
+        camporee_event_section_result_id:
+          '33333333-3333-4333-8333-333333333333',
+        active: true,
+        finalized_at: createdAt,
+        ...data,
+      }),
+    );
+    prisma.camporee_event_score_submissions.findFirst
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(async () => ({
+        camporee_event_score_submission_id:
+          '22222222-2222-4222-8222-222222222222',
+        request_hash:
+          prisma.camporee_event_score_submissions.create.mock.calls[0][0].data
+            .request_hash,
+        submitted_by: actorUserId,
+        source: 'judge_primary',
+        score_status: 'scored',
+        is_no_show: false,
+        raw_awarded_points: 90,
+        minimum_adjustment_points: 0,
+        total_awarded_points: 90,
+        total_max_points: 100,
+        notes: 'Carga estable',
+        created_at: createdAt,
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 40, notes: null },
+          { camporee_event_rubric_id: 2, awarded_points: 50, notes: null },
+        ],
+        section_results: [
+          {
+            camporee_event_section_result_id:
+              '33333333-3333-4333-8333-333333333333',
+            camporee_event_id: 1,
+            camporee_club_id: 99,
+            club_section_id: 7,
+            source_submission_id: '22222222-2222-4222-8222-222222222222',
+            score_status: 'scored',
+            is_no_show: false,
+            total_awarded_points: 90,
+            total_max_points: 100,
+            percentage: 90,
+            finalized_by: actorUserId,
+            finalized_at: createdAt,
+            active: false,
+          },
+        ],
+      }));
+    const first = await service.submitScore(
+      1,
+      7,
+      {
+        notes: 'Carga estable',
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 40 },
+          { camporee_event_rubric_id: 2, awarded_points: 50 },
+        ],
+      },
+      actorUserId,
+      idempotencyKey,
+    );
+    const replay = await service.submitScore(
+      1,
+      7,
+      {
+        notes: 'Carga estable',
+        items: [
+          { camporee_event_rubric_id: 2, awarded_points: 50 },
+          { camporee_event_rubric_id: 1, awarded_points: 40 },
+        ],
+      },
+      actorUserId,
+      idempotencyKey,
+    );
+
+    expect(first).toEqual(
+      expect.objectContaining({
+        active: true,
+        camporee_event_section_result_id:
+          '33333333-3333-4333-8333-333333333333',
+        camporee_event_score_submission_id:
+          '22222222-2222-4222-8222-222222222222',
+      }),
+    );
+    expect(replay).toEqual(first);
+    expect(replay.active).toBe(true);
+    expect(
+      prisma.camporee_event_score_submissions.create,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      prisma.camporee_event_section_results.updateMany,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects reuse of an idempotency key with a different canonical payload', async () => {
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+    prisma.camporee_event_score_submissions.findFirst.mockResolvedValueOnce({
+      request_hash: 'a'.repeat(64),
+      section_results: [],
+    });
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 40 },
+            { camporee_event_rubric_id: 2, awarded_points: 50 },
+          ],
+        },
+        actorUserId,
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.IDEMPOTENCY_KEY_REUSED,
+    });
+  });
+
+  it('recovers a complete persisted receipt after a P2002 idempotency race', async () => {
+    const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValue({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+    await service.submitScore(
+      1,
+      7,
+      {
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 40 },
+          { camporee_event_rubric_id: 2, awarded_points: 50 },
+        ],
+      },
+      actorUserId,
+      idempotencyKey,
+    );
+    const requestHash =
+      prisma.camporee_event_score_submissions.create.mock.calls[0][0].data
+        .request_hash;
+    prisma.$transaction.mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }),
+    );
+    prisma.camporee_event_score_submissions.findFirst.mockResolvedValueOnce(
+      persistedScoreSubmission(requestHash),
+    );
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 40 },
+            { camporee_event_rubric_id: 2, awarded_points: 50 },
+          ],
+        },
+        actorUserId,
+        idempotencyKey,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        camporee_event_score_submission_id:
+          '22222222-2222-4222-8222-222222222222',
+        active: true,
+      }),
+    );
+    expect(
+      prisma.camporee_event_score_submissions.create,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('translates a P2002 recovery with a different hash to idempotency reuse', async () => {
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValueOnce({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+    prisma.$transaction.mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }),
+    );
+    prisma.camporee_event_score_submissions.findFirst.mockResolvedValueOnce(
+      persistedScoreSubmission('a'.repeat(64)),
+    );
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 40 },
+            { camporee_event_rubric_id: 2, awarded_points: 50 },
+          ],
+        },
+        actorUserId,
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.IDEMPOTENCY_KEY_REUSED });
+  });
+
+  it('fails safely when an idempotent receipt has no persisted result', async () => {
+    const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    prisma.camporee_event_judge_assignments.findFirst.mockResolvedValue({
+      camporee_event_judge_assignment_id:
+        '44444444-4444-4444-8444-444444444444',
+      judge_role: 'primary',
+      active: true,
+    });
+    await service.submitScore(
+      1,
+      7,
+      {
+        items: [
+          { camporee_event_rubric_id: 1, awarded_points: 40 },
+          { camporee_event_rubric_id: 2, awarded_points: 50 },
+        ],
+      },
+      actorUserId,
+      idempotencyKey,
+    );
+    const requestHash =
+      prisma.camporee_event_score_submissions.create.mock.calls[0][0].data
+        .request_hash;
+    prisma.camporee_event_score_submissions.findFirst.mockResolvedValueOnce(
+      persistedScoreSubmission(requestHash, []),
+    );
+
+    await expect(
+      service.submitScore(
+        1,
+        7,
+        {
+          items: [
+            { camporee_event_rubric_id: 1, awarded_points: 40 },
+            { camporee_event_rubric_id: 2, awarded_points: 50 },
+          ],
+        },
+        actorUserId,
+        idempotencyKey,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CAMPOREE_SCORING_RECEIPT_INCOMPLETE',
+      status: 500,
+    });
   });
 
   it('upserts latest official result for event and section', async () => {

@@ -1415,6 +1415,10 @@ model local_camporees {
   lat                          Float?
   long                         Float?
   registration_cost            Decimal?             @db.Decimal(10, 2)
+  timezone                     String               @default("America/Mexico_City") @db.VarChar(64)
+  timezone_verified_at         DateTime?            @db.Timestamptz(6)
+  timezone_verified_by         String?              @db.Uuid
+  club_registration_opens_at   DateTime?            @db.Timestamptz(6)
   club_registration_deadline   DateTime?            @db.Timestamptz(6)
   club_registration_closed_at  DateTime?            @db.Timestamptz(6)
   club_registration_closed_by  String?              @db.Uuid
@@ -1432,7 +1436,10 @@ model local_camporees {
   camporee_staff_members       camporee_staff_members[]
   ecclesiastical_year_relation ecclesiastical_years @relation("local_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   local_fields                 local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  timezone_verifier            users?               @relation("local_camporee_timezone_verifier", fields: [timezone_verified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_local_camporees_timezone_verified_by")
   camporee_judges              camporee_judges[]
+
+  @@index([timezone_verified_by], map: "idx_local_camporees_timezone_verified_by")
 }
 
 model local_fields {
@@ -1700,6 +1707,10 @@ model union_camporees {
   lat                          Float?
   long                         Float?
   registration_cost            Decimal?                      @db.Decimal(10, 2)
+  timezone                     String                        @default("America/Mexico_City") @db.VarChar(64)
+  timezone_verified_at         DateTime?                     @db.Timestamptz(6)
+  timezone_verified_by         String?                       @db.Uuid
+  club_registration_opens_at   DateTime?                     @db.Timestamptz(6)
   club_registration_deadline   DateTime?                     @db.Timestamptz(6)
   club_registration_closed_at  DateTime?                     @db.Timestamptz(6)
   club_registration_closed_by  String?                       @db.Uuid
@@ -1718,7 +1729,10 @@ model union_camporees {
   camporee_staff_members       camporee_staff_members[]
   ecclesiastical_year_relation ecclesiastical_years          @relation("union_camporees_ecclesiastical_yearToecclesiastical_year", fields: [ecclesiastical_year], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
   unions                       unions                        @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
+  timezone_verifier            users?                        @relation("union_camporee_timezone_verifier", fields: [timezone_verified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_union_camporees_timezone_verified_by")
   camporee_judges              camporee_judges[]
+
+  @@index([timezone_verified_by], map: "idx_union_camporees_timezone_verified_by")
 }
 
 model unions {
@@ -2084,6 +2098,8 @@ model users {
   camporee_judge_assignments_modified      camporee_event_judge_assignments[]      @relation("camporee_event_judge_assignment_modifier")
   camporee_score_submissions_submitted     camporee_event_score_submissions[]      @relation("camporee_score_submission_submitter")
   camporee_event_section_results_finalized camporee_event_section_results[]        @relation("camporee_event_section_result_finalizer")
+  local_camporees_timezone_verified        local_camporees[]                       @relation("local_camporee_timezone_verifier")
+  union_camporees_timezone_verified        union_camporees[]                       @relation("union_camporee_timezone_verifier")
 }
 
 model notification_preferences {
@@ -4497,7 +4513,14 @@ model camporee_event_score_submissions {
   submitted_by                       String   @db.Uuid
   source                             String   @db.VarChar(30)
   status                             String   @default("submitted") @db.VarChar(20)
+  score_status                       String   @default("scored") @db.VarChar(20)
+  is_no_show                         Boolean  @default(false)
+  override_of_submission_id          String?  @db.Uuid
+  idempotency_key                    String?  @db.Uuid
+  request_hash                       String?  @db.VarChar(64)
   total_awarded_points               Decimal  @default(0) @db.Decimal(10, 2)
+  raw_awarded_points                 Decimal  @default(0) @db.Decimal(10, 2)
+  minimum_adjustment_points          Decimal  @default(0) @db.Decimal(10, 2)
   total_max_points                   Decimal  @default(0) @db.Decimal(10, 2)
   notes                              String?
   voided_reason                      String?
@@ -4509,10 +4532,14 @@ model camporee_event_score_submissions {
   club_section    club_sections                       @relation(fields: [club_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
   judge_assignment camporee_event_judge_assignments?  @relation(fields: [judge_assignment_id], references: [camporee_event_judge_assignment_id], onDelete: SetNull, onUpdate: NoAction)
   submitter       users                               @relation("camporee_score_submission_submitter", fields: [submitted_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  overridden_submission camporee_event_score_submissions? @relation("camporee_score_submission_overrides", fields: [override_of_submission_id], references: [camporee_event_score_submission_id], onDelete: SetNull, onUpdate: NoAction)
+  override_submissions camporee_event_score_submissions[] @relation("camporee_score_submission_overrides")
   items           camporee_event_score_submission_items[]
   section_results camporee_event_section_results[]
 
   @@index([camporee_event_id, club_section_id, created_at], map: "idx_camporee_event_score_submissions_event_section")
+  @@index([score_status], map: "idx_camporee_event_score_submissions_score_status")
+  @@index([override_of_submission_id], map: "idx_camporee_event_score_submissions_override_of")
 }
 
 model camporee_event_score_submission_items {
@@ -4535,6 +4562,8 @@ model camporee_event_section_results {
   camporee_club_id                 Int?
   club_section_id                  Int
   source_submission_id             String   @db.Uuid
+  score_status                     String   @default("scored") @db.VarChar(20)
+  is_no_show                       Boolean  @default(false)
   total_awarded_points             Decimal  @db.Decimal(10, 2)
   total_max_points                 Decimal  @db.Decimal(10, 2)
   percentage                       Decimal  @db.Decimal(5, 2)
@@ -4551,4 +4580,5 @@ model camporee_event_section_results {
   finalizer        users                             @relation("camporee_event_section_result_finalizer", fields: [finalized_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([camporee_event_id, club_section_id], map: "idx_camporee_event_section_results_event_section")
+  @@index([camporee_event_id, club_section_id, active, score_status], map: "idx_camporee_event_section_results_active_status")
 }

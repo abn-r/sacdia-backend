@@ -35,6 +35,10 @@ import type {
 } from '../common/services/authorization-context.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import pLimit from 'p-limit';
+import {
+  CamporeeLifecyclePolicy,
+  type CamporeeLifecycleContext,
+} from './policies';
 
 // Module-level concurrency cap for applySignedPrivateUrls fan-out.
 // Phase 1 (USER_PROFILES public bucket) makes the call synchronous, so
@@ -51,6 +55,7 @@ export class CamporeesService {
     'CAMPOREE',
     'GENERAL_ACTIVITIES',
   ] as const;
+  private static readonly DEFAULT_CAMPOREE_TIMEZONE = 'America/Mexico_City';
 
   private static isEligibleCamporeeInsuranceType(insuranceType: string) {
     return (
@@ -64,6 +69,7 @@ export class CamporeesService {
     private readonly fileStorage: FileStorageService,
     private readonly notificationsService: NotificationsService,
     private readonly achievementsService: AchievementsService,
+    private readonly camporeeLifecyclePolicy: CamporeeLifecyclePolicy,
   ) {}
 
   // ========================================
@@ -173,7 +179,10 @@ export class CamporeesService {
     createdBy: string,
     authorization?: AuthorizationSnapshot,
   ) {
+    this.assertTimezoneInput(dto.timezone);
     await this.assertCanManageLocalField(dto.local_field_id, authorization);
+    const lifecycle = this.lifecycleContextFromDto(dto);
+    this.camporeeLifecyclePolicy.assertDateOrder(lifecycle);
 
     // Get the active ecclesiastical year
     const activeYear = await this.prisma.ecclesiastical_years.findFirst({
@@ -202,6 +211,16 @@ export class CamporeesService {
         description: dto.description,
         start_date: new Date(dto.start_date),
         end_date: new Date(dto.end_date),
+        timezone: lifecycle.timezone,
+        ...(typeof dto.timezone === 'string'
+          ? {
+              timezone_verified_at: new Date(),
+              timezone_verified_by: createdBy,
+            }
+          : {}),
+        club_registration_opens_at: dto.club_registration_opens_at
+          ? new Date(dto.club_registration_opens_at)
+          : null,
         club_registration_deadline: dto.club_registration_deadline
           ? new Date(dto.club_registration_deadline)
           : null,
@@ -249,19 +268,34 @@ export class CamporeesService {
    * @param camporeeId - The local_camporee_id
    * @param dto - Update camporee DTO
    */
-  async update(camporeeId: number, dto: UpdateCamporeeDto) {
-    await this.findOne(camporeeId);
+  async update(
+    camporeeId: number,
+    dto: UpdateCamporeeDto,
+    actorUserId?: string,
+  ) {
+    this.assertTimezoneInput(dto.timezone);
+    const existing = await this.findOne(camporeeId);
+    this.camporeeLifecyclePolicy.assertDateOrder(
+      this.lifecycleContextFromDto(dto, existing),
+    );
 
     // Build update object with only defined fields, converting date fields
     const updateData = {
       ...buildPartialUpdate(dto, [
         'start_date',
         'end_date',
+        'club_registration_opens_at',
         'club_registration_deadline',
         'member_registration_deadline',
         'payment_deadline',
         'agenda_visible_from',
       ]),
+      ...(typeof dto.timezone === 'string' && actorUserId
+        ? {
+            timezone_verified_at: new Date(),
+            timezone_verified_by: actorUserId,
+          }
+        : {}),
       modified_at: new Date(),
     };
 
@@ -437,7 +471,10 @@ export class CamporeesService {
     createdBy: string,
     authorization?: AuthorizationSnapshot,
   ) {
+    this.assertTimezoneInput(dto.timezone);
     await this.assertCanManageUnion(dto.union_id, authorization);
+    const lifecycle = this.lifecycleContextFromDto(dto);
+    this.camporeeLifecyclePolicy.assertDateOrder(lifecycle);
 
     // Get the active ecclesiastical year
     const activeYear = await this.prisma.ecclesiastical_years.findFirst({
@@ -484,6 +521,16 @@ export class CamporeesService {
           description: dto.description,
           start_date: new Date(dto.start_date),
           end_date: new Date(dto.end_date),
+          timezone: lifecycle.timezone,
+          ...(typeof dto.timezone === 'string'
+            ? {
+                timezone_verified_at: new Date(),
+                timezone_verified_by: createdBy,
+              }
+            : {}),
+          club_registration_opens_at: dto.club_registration_opens_at
+            ? new Date(dto.club_registration_opens_at)
+            : null,
           club_registration_deadline: dto.club_registration_deadline
             ? new Date(dto.club_registration_deadline)
             : null,
@@ -560,8 +607,16 @@ export class CamporeesService {
    * @param camporeeId - The union_camporee_id
    * @param dto - Update union camporee DTO
    */
-  async updateUnion(camporeeId: number, dto: UpdateUnionCamporeeDto) {
-    await this.findOneUnion(camporeeId);
+  async updateUnion(
+    camporeeId: number,
+    dto: UpdateUnionCamporeeDto,
+    actorUserId?: string,
+  ) {
+    this.assertTimezoneInput(dto.timezone);
+    const existing = await this.findOneUnion(camporeeId);
+    this.camporeeLifecyclePolicy.assertDateOrder(
+      this.lifecycleContextFromDto(dto, existing),
+    );
 
     const { local_field_ids, ...fieldsToUpdate } = dto;
 
@@ -570,11 +625,18 @@ export class CamporeesService {
       ...buildPartialUpdate(fieldsToUpdate, [
         'start_date',
         'end_date',
+        'club_registration_opens_at',
         'club_registration_deadline',
         'member_registration_deadline',
         'payment_deadline',
         'agenda_visible_from',
       ]),
+      ...(typeof dto.timezone === 'string' && actorUserId
+        ? {
+            timezone_verified_at: new Date(),
+            timezone_verified_by: actorUserId,
+          }
+        : {}),
       modified_at: new Date(),
     };
 
@@ -713,7 +775,9 @@ export class CamporeesService {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
 
-      isLate = this.isAfterDeadline(camporee.member_registration_deadline);
+      isLate = this.camporeeLifecyclePolicy.isAfterDeadline(
+        camporee.member_registration_deadline,
+      );
       camporeeLocalFieldId = camporee.local_field_id;
       camporeeName = camporee.name;
 
@@ -1165,13 +1229,18 @@ export class CamporeesService {
       if (!camporee.active) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
-      if ((camporee as any).club_registration_closed_at) {
+      const clubRegistrationDisposition =
+        this.resolveClubRegistrationDisposition(camporee);
+      if (
+        clubRegistrationDisposition === 'manually_frozen' ||
+        clubRegistrationDisposition === 'not_open_yet'
+      ) {
         throw new AppBadRequestException(
           ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
         );
       }
 
-      isLate = this.isAfterDeadline(camporee.club_registration_deadline);
+      isLate = clubRegistrationDisposition === 'late_approval_required';
       camporeeLocalFieldId = camporee.local_field_id;
 
       // 2. Validate club section exists
@@ -1355,7 +1424,9 @@ export class CamporeesService {
         });
       }
 
-      isLate = this.isAfterDeadline(camporee.payment_deadline);
+      isLate = this.camporeeLifecyclePolicy.isAfterDeadline(
+        camporee.payment_deadline,
+      );
       camporeeLocalFieldId = camporee.local_field_id;
 
       // 2. Validate member is registered in this camporee
@@ -1861,13 +1932,18 @@ export class CamporeesService {
       if (!camporee.active) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
-      if ((camporee as any).club_registration_closed_at) {
+      const clubRegistrationDisposition =
+        this.resolveClubRegistrationDisposition(camporee);
+      if (
+        clubRegistrationDisposition === 'manually_frozen' ||
+        clubRegistrationDisposition === 'not_open_yet'
+      ) {
         throw new AppBadRequestException(
           ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
         );
       }
 
-      isLate = this.isAfterDeadline(camporee.club_registration_deadline);
+      isLate = clubRegistrationDisposition === 'late_approval_required';
       camporeeUnionId = camporee.union_id;
 
       // 2. Validate club section exists and get club info
@@ -2000,7 +2076,9 @@ export class CamporeesService {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
 
-      isLate = this.isAfterDeadline(camporee.member_registration_deadline);
+      isLate = this.camporeeLifecyclePolicy.isAfterDeadline(
+        camporee.member_registration_deadline,
+      );
       camporeeUnionId = camporee.union_id;
       camporeeName = camporee.name;
 
@@ -2174,7 +2252,9 @@ export class CamporeesService {
         );
       }
 
-      isLate = this.isAfterDeadline(camporee.payment_deadline);
+      isLate = this.camporeeLifecyclePolicy.isAfterDeadline(
+        camporee.payment_deadline,
+      );
       camporeeUnionId = camporee.union_id;
 
       // 2. Validate member is registered in this union camporee
@@ -2748,8 +2828,98 @@ export class CamporeesService {
     );
   }
 
-  private isAfterDeadline(deadline: Date | null | undefined): boolean {
-    if (!deadline) return false;
-    return new Date() > new Date(deadline);
+  private lifecycleContextFromDto(
+    dto: Partial<
+      | CreateCamporeeDto
+      | UpdateCamporeeDto
+      | CreateUnionCamporeeDto
+      | UpdateUnionCamporeeDto
+    >,
+    existing?: Record<string, unknown>,
+  ): CamporeeLifecycleContext {
+    for (const field of ['start_date', 'end_date'] as const) {
+      const value = dto[field];
+      if (typeof value === 'string') {
+        this.camporeeLifecyclePolicy.assertDateOnly(value);
+      }
+    }
+
+    for (const field of [
+      'club_registration_opens_at',
+      'club_registration_deadline',
+      'member_registration_deadline',
+      'payment_deadline',
+    ] as const) {
+      const value = dto[field];
+      if (typeof value === 'string') {
+        this.camporeeLifecyclePolicy.assertOffsetTimestamp(value);
+      }
+    }
+
+    const startDate =
+      this.calendarDate(dto.start_date ?? existing?.start_date) ?? '1970-01-01';
+    const endDate =
+      this.calendarDate(dto.end_date ?? existing?.end_date) ?? '9999-12-31';
+    return {
+      startDate,
+      endDate,
+      clubRegistrationOpensAt: this.timestamp(
+        dto.club_registration_opens_at !== undefined
+          ? dto.club_registration_opens_at
+          : existing?.club_registration_opens_at,
+      ),
+      clubRegistrationDeadline: this.timestamp(
+        dto.club_registration_deadline ?? existing?.club_registration_deadline,
+      ),
+      memberRegistrationDeadline: this.timestamp(
+        dto.member_registration_deadline ??
+          existing?.member_registration_deadline,
+      ),
+      paymentDeadline: this.timestamp(
+        dto.payment_deadline ?? existing?.payment_deadline,
+      ),
+      clubRegistrationClosedAt: this.timestamp(
+        existing?.club_registration_closed_at,
+      ),
+      timezone:
+        dto.timezone ??
+        (existing?.timezone as string | undefined) ??
+        CamporeesService.DEFAULT_CAMPOREE_TIMEZONE,
+      timezoneVerifiedAt: this.timestamp(existing?.timezone_verified_at),
+    };
+  }
+
+  private resolveClubRegistrationDisposition(
+    camporee: Record<string, unknown>,
+  ) {
+    return this.camporeeLifecyclePolicy.resolveClubRegistrationDisposition(
+      this.lifecycleContextFromDto({}, camporee),
+    );
+  }
+
+  private assertTimezoneInput(timezone: unknown): void {
+    if (timezone !== undefined) {
+      this.camporeeLifecyclePolicy.assertIanaTimezone(timezone);
+    }
+  }
+
+  private calendarDate(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value instanceof Date) {
+      return value.toISOString().slice(0, 10);
+    }
+    return undefined;
+  }
+
+  private timestamp(value: unknown): Date | null {
+    if (value instanceof Date) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      return new Date(value);
+    }
+    return null;
   }
 }

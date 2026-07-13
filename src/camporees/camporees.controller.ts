@@ -182,8 +182,9 @@ export class CamporeesController {
   async updateUnion(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body() dto: UpdateUnionCamporeeDto,
+    @Request() req: any,
   ) {
-    return this.camporeesService.updateUnion(camporeeId, dto);
+    return this.camporeesService.updateUnion(camporeeId, dto, req.user.sub);
   }
 
   @Delete('union/:camporeeId')
@@ -735,8 +736,9 @@ export class CamporeesController {
   async update(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body() dto: UpdateCamporeeDto,
+    @Request() req: any,
   ) {
-    return this.camporeesService.update(camporeeId, dto);
+    return this.camporeesService.update(camporeeId, dto, req.user.sub);
   }
 
   @Delete(':camporeeId')

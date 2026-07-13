@@ -5,10 +5,17 @@ import {
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import {
+  CamporeeLifecyclePolicy,
+  type CamporeeLifecycleContext,
+} from './policies';
 
 @Injectable()
 export class CamporeeLateApprovalsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly camporeeLifecyclePolicy: CamporeeLifecyclePolicy,
+  ) {}
 
   private async assertClubRegistrationOpenForPendingClub(
     record: { camporee_id: number | null; union_camporee_id: number | null },
@@ -17,9 +24,22 @@ export class CamporeeLateApprovalsService {
     if (record.camporee_id) {
       const camporee = await tx.local_camporees.findUnique({
         where: { local_camporee_id: record.camporee_id },
-        select: { club_registration_closed_at: true },
+        select: {
+          start_date: true,
+          end_date: true,
+          club_registration_opens_at: true,
+          club_registration_deadline: true,
+          member_registration_deadline: true,
+          payment_deadline: true,
+          club_registration_closed_at: true,
+          timezone: true,
+          timezone_verified_at: true,
+        },
       });
-      if (camporee?.club_registration_closed_at) {
+      if (
+        camporee &&
+        this.blocksLateApproval(this.lifecycleContextFromCamporee(camporee))
+      ) {
         throw new AppBadRequestException(
           ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
         );
@@ -30,14 +50,70 @@ export class CamporeeLateApprovalsService {
     if (record.union_camporee_id) {
       const camporee = await tx.union_camporees.findUnique({
         where: { union_camporee_id: record.union_camporee_id },
-        select: { club_registration_closed_at: true },
+        select: {
+          start_date: true,
+          end_date: true,
+          club_registration_opens_at: true,
+          club_registration_deadline: true,
+          member_registration_deadline: true,
+          payment_deadline: true,
+          club_registration_closed_at: true,
+          timezone: true,
+          timezone_verified_at: true,
+        },
       });
-      if (camporee?.club_registration_closed_at) {
+      if (
+        camporee &&
+        this.blocksLateApproval(this.lifecycleContextFromCamporee(camporee))
+      ) {
         throw new AppBadRequestException(
           ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
         );
       }
     }
+  }
+
+  private blocksLateApproval(context: CamporeeLifecycleContext): boolean {
+    const disposition =
+      this.camporeeLifecyclePolicy.resolveClubRegistrationDisposition(context);
+    return disposition === 'manually_frozen' || disposition === 'not_open_yet';
+  }
+
+  private lifecycleContextFromCamporee(
+    camporee: Record<string, unknown>,
+  ): CamporeeLifecycleContext {
+    return {
+      startDate: this.calendarDate(camporee.start_date) ?? '1970-01-01',
+      endDate: this.calendarDate(camporee.end_date) ?? '9999-12-31',
+      clubRegistrationOpensAt: this.timestamp(
+        camporee.club_registration_opens_at,
+      ),
+      clubRegistrationDeadline: this.timestamp(
+        camporee.club_registration_deadline,
+      ),
+      memberRegistrationDeadline: this.timestamp(
+        camporee.member_registration_deadline,
+      ),
+      paymentDeadline: this.timestamp(camporee.payment_deadline),
+      clubRegistrationClosedAt: this.timestamp(
+        camporee.club_registration_closed_at,
+      ),
+      timezone:
+        (camporee.timezone as string | undefined) ?? 'America/Mexico_City',
+      timezoneVerifiedAt: this.timestamp(camporee.timezone_verified_at),
+    };
+  }
+
+  private calendarDate(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    return undefined;
+  }
+
+  private timestamp(value: unknown): Date | null {
+    if (value instanceof Date) return value;
+    if (typeof value === 'string') return new Date(value);
+    return null;
   }
 
   /**

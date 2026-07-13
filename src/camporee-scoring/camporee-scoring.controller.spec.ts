@@ -62,12 +62,30 @@ describe('CamporeeScoringController', () => {
     );
   });
 
-  it('submits score for a section', async () => {
+  it('forwards the optional Idempotency-Key header when submitting a score', async () => {
     const dto = {
       items: [{ camporee_event_rubric_id: 1, awarded_points: 100 }],
     };
-    await controller.submitScore(1, 7, dto, req);
-    expect(service.submitScore).toHaveBeenCalledWith(1, 7, dto, req.user.sub);
+    const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    await controller.submitScore(1, 7, dto, req, idempotencyKey);
+    expect(service.submitScore).toHaveBeenCalledWith(
+      1,
+      7,
+      dto,
+      req.user.sub,
+      idempotencyKey,
+    );
+  });
+
+  it('rejects an invalid Idempotency-Key header before calling the service', async () => {
+    const dto = {
+      items: [{ camporee_event_rubric_id: 1, awarded_points: 100 }],
+    };
+
+    await expect(
+      controller.submitScore(1, 7, dto, req, 'not-a-uuid'),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(service.submitScore).not.toHaveBeenCalled();
   });
 
   it('lists eligible local camporee judge candidates', async () => {

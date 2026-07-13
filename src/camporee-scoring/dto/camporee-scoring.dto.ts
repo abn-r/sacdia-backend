@@ -12,6 +12,7 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -21,6 +22,7 @@ export type CamporeeScoreSource =
   | 'judge_primary'
   | 'manual_lf'
   | 'admin_override';
+export type CamporeeScoreStatus = 'scored' | 'no_show';
 export type CamporeeJudgeEligibilityReason =
   | 'adult'
   | 'pastor_role'
@@ -131,18 +133,43 @@ export class SubmitCamporeeEventScoreItemDto {
 export class SubmitCamporeeEventScoreDto {
   @ApiPropertyOptional({
     enum: ['judge_primary', 'manual_lf', 'admin_override'],
+    description:
+      'Intención no confiable del cliente. El backend deriva la fuente efectiva desde asignación, rol y scope.',
   })
   @IsOptional()
   @IsIn(['judge_primary', 'manual_lf', 'admin_override'])
   declare source?: CamporeeScoreSource;
 
-  @ApiPropertyOptional({ example: 'Carga oficial por rúbrica.' })
+  @ApiPropertyOptional({
+    example: 'Carga oficial por rúbrica.',
+    description:
+      'Comentario global. Es obligatorio y no vacío cuando se reemplaza un resultado activo mediante override.',
+  })
   @IsOptional()
   @IsString()
   declare notes?: string;
 
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Marca que el club/sección no se presentó. Si es true, items debe enviarse como arreglo vacío y el backend aplica el mínimo del evento si existe.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  declare no_show?: boolean;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'ID del resultado activo que se espera reemplazar. Es obligatorio para overrides manuales cuando ya existe un resultado activo.',
+  })
+  @IsOptional()
+  @IsUUID()
+  declare expected_active_result_id?: string;
+
   @ApiProperty({ type: [SubmitCamporeeEventScoreItemDto] })
   @IsArray()
+  @ValidateIf((dto: SubmitCamporeeEventScoreDto) => !dto.no_show)
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => SubmitCamporeeEventScoreItemDto)
@@ -205,11 +232,30 @@ export type CamporeeEventSectionResultResponseDto = {
   camporee_club_id: number | null;
   club_section_id: number;
   source_submission_id: string;
+  score_status: CamporeeScoreStatus;
+  is_no_show: boolean;
   total_awarded_points: number;
   total_max_points: number;
   percentage: number;
   active: boolean;
 };
+
+export type CamporeeEventScoreReceiptResponseDto =
+  CamporeeEventSectionResultResponseDto & {
+    camporee_event_score_submission_id: string;
+    raw_awarded_points: number;
+    minimum_adjustment_points: number;
+    submitted_by: string;
+    submitted_at: Date;
+    finalized_by: string;
+    finalized_at: Date;
+    notes: string | null;
+    items: Array<{
+      camporee_event_rubric_id: number;
+      awarded_points: number;
+      notes: string | null;
+    }>;
+  };
 
 export type CamporeeLeaderboardRowDto = {
   rank: number;
