@@ -39,6 +39,9 @@ const ACTIVE_SECTION_REGISTRATION_PERMISSION =
 describe('Phase 3 permission cleanup — seed files', () => {
   const permissionsSeed = readFileSync(PERMISSIONS_SEED_PATH, 'utf8');
   const rolePermissionsSeed = readFileSync(ROLE_PERMISSIONS_SEED_PATH, 'utf8');
+  const permissionsSeedWithoutComments = stripSqlLineComments(permissionsSeed);
+  const rolePermissionsSeedWithoutComments =
+    stripSqlLineComments(rolePermissionsSeed);
 
   describe('role-permissions.seed.sql', () => {
     it('does not list any legacy permission inside a role IN-array (Req-8)', () => {
@@ -46,8 +49,8 @@ describe('Phase 3 permission cleanup — seed files', () => {
       // a false positive (the cleanup DELETE statement legitimately mentions
       // the legacy strings inside an IN(...) clause that targets the
       // `permissions` table, NOT the role grant lists).
-      const cleaned = permissionsLineFilter(
-        extractAllRoleGrantBlocks(rolePermissionsSeed),
+      const cleaned = extractAllRoleGrantBlocks(
+        rolePermissionsSeedWithoutComments,
       );
       for (const legacy of LEGACY_PERMISSIONS) {
         expect(cleaned).not.toMatch(
@@ -62,7 +65,10 @@ describe('Phase 3 permission cleanup — seed files', () => {
       //   USING permissions p
       //   WHERE role_permissions.permission_id = p.permission_id
       //     AND p.permission_name IN (...);
-      const normalized = rolePermissionsSeed.replace(/\s+/g, ' ');
+      const normalized = rolePermissionsSeedWithoutComments.replace(
+        /\s+/g,
+        ' ',
+      );
       const cleanupBlock = normalized.match(
         /DELETE FROM role_permissions USING permissions p WHERE role_permissions\.permission_id = p\.permission_id AND p\.permission_name IN \(([^)]*)\);/,
       );
@@ -76,23 +82,35 @@ describe('Phase 3 permission cleanup — seed files', () => {
       // After Phase 3 these roles must retain a write capability on
       // user_honors — Phase 1+2 added submit to higher roles but missed user
       // and member; Phase 3 closes that gap.
-      const userBlock = extractRoleBlock(rolePermissionsSeed, 'user');
-      const memberBlock = extractRoleBlock(rolePermissionsSeed, 'member');
+      const userBlock = extractRoleBlock(
+        rolePermissionsSeedWithoutComments,
+        'user',
+      );
+      const memberBlock = extractRoleBlock(
+        rolePermissionsSeedWithoutComments,
+        'member',
+      );
       expect(userBlock).toContain("'user_honors:submit'");
       expect(memberBlock).toContain("'user_honors:submit'");
     });
 
     it('grants active-section camporee registration only to the CLUB director', () => {
-      expect(rolePermissionsSeed).toContain(
+      expect(rolePermissionsSeedWithoutComments).toContain(
         `'${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
       );
 
-      const normalized = rolePermissionsSeed.replace(/\s+/g, ' ');
+      const normalized = rolePermissionsSeedWithoutComments.replace(
+        /\s+/g,
+        ' ',
+      );
       expect(normalized).toContain(
         `p.permission_name = '${ACTIVE_SECTION_REGISTRATION_PERMISSION}' AND NOT ( r.role_name = 'director' AND r.role_category = 'CLUB' )`,
       );
 
-      const directorBlock = extractRoleBlock(rolePermissionsSeed, 'director');
+      const directorBlock = extractRoleBlock(
+        rolePermissionsSeedWithoutComments,
+        'director',
+      );
       expect(directorBlock).toContain(
         `'${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
       );
@@ -103,26 +121,54 @@ describe('Phase 3 permission cleanup — seed files', () => {
         'treasurer',
         'secretary-treasurer',
       ]) {
-        expect(extractRoleBlock(rolePermissionsSeed, roleName)).not.toContain(
-          `'${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
-        );
+        expect(
+          extractRoleBlock(rolePermissionsSeedWithoutComments, roleName),
+        ).not.toContain(`'${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`);
       }
+    });
+
+    it('removes non-director grants after broad admin grants and before COMMIT', () => {
+      const adminBlock = extractRoleInsertBlock(
+        rolePermissionsSeedWithoutComments,
+        'admin',
+      );
+      const superAdminBlock = extractRoleInsertBlock(
+        rolePermissionsSeedWithoutComments,
+        'super-admin',
+      );
+      expect(adminBlock).toContain('CROSS JOIN permissions p');
+      expect(adminBlock).toContain("p.permission_name NOT LIKE '%:delete'");
+      expect(superAdminBlock).toContain('CROSS JOIN permissions p');
+      expect(superAdminBlock).not.toContain('p.permission_name IN');
+
+      const adminGrantIndex = rolePermissionsSeedWithoutComments.indexOf(
+        "WHERE r.role_name = 'admin'",
+      );
+      const superAdminGrantIndex = rolePermissionsSeedWithoutComments.indexOf(
+        "WHERE r.role_name = 'super-admin'",
+      );
+      const exclusiveCleanupIndex = rolePermissionsSeedWithoutComments.indexOf(
+        `DELETE FROM role_permissions rp\nUSING permissions p, roles r\nWHERE rp.permission_id = p.permission_id\n  AND rp.role_id = r.role_id\n  AND p.permission_name = '${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
+      );
+      const commitIndex =
+        rolePermissionsSeedWithoutComments.lastIndexOf('COMMIT;');
+
+      expect(adminGrantIndex).toBeGreaterThan(-1);
+      expect(superAdminGrantIndex).toBeGreaterThan(adminGrantIndex);
+      expect(exclusiveCleanupIndex).toBeGreaterThan(superAdminGrantIndex);
+      expect(commitIndex).toBeGreaterThan(exclusiveCleanupIndex);
     });
   });
 
   describe('permissions.seed.sql', () => {
     it('defines active-section camporee registration canonically', () => {
-      const camporeesBlock = permissionsSeed.match(
-        /-- Camporees\s*--[^]*?ON CONFLICT/,
-      )?.[0];
-
-      expect(camporeesBlock).toContain(
-        `('${ACTIVE_SECTION_REGISTRATION_PERMISSION}',`,
+      expect(permissionsSeedWithoutComments).toContain(
+        `('${ACTIVE_SECTION_REGISTRATION_PERMISSION}', 'Register the director active club section in a camporee', true)`,
       );
     });
 
     it('soft-deletes the three legacy permission rows (Req-9)', () => {
-      const normalized = permissionsSeed.replace(/\s+/g, ' ');
+      const normalized = permissionsSeedWithoutComments.replace(/\s+/g, ' ');
       expect(normalized).toMatch(
         /UPDATE permissions SET active = false, modified_at = now\(\) WHERE permission_name IN \('users:update', 'classes:update', 'user_honors:update'\) AND active = true;/,
       );
@@ -131,26 +177,18 @@ describe('Phase 3 permission cleanup — seed files', () => {
     it('still defines the legacy rows so audit FKs survive (Req-9)', () => {
       // Row insertion stays so historical audit references resolve. The
       // active flag is what flips — see the soft-delete assertion above.
-      const usersBlock = permissionsSeed.match(
-        /-- Users\s*--[^]*?ON CONFLICT/,
-      )?.[0];
-      expect(usersBlock).toContain("('users:update',");
-
-      const classesBlock = permissionsSeed.match(
-        /-- Classes\s*--[^]*?ON CONFLICT/,
-      )?.[0];
-      expect(classesBlock).toContain("('classes:update',");
-
-      const userHonorsBlock = permissionsSeed.match(
-        /-- User Honors\s*--[^]*?ON CONFLICT/,
-      )?.[0];
-      expect(userHonorsBlock).toContain("('user_honors:update',");
+      expect(permissionsSeedWithoutComments).toContain("('users:update',");
+      expect(permissionsSeedWithoutComments).toContain("('classes:update',");
+      expect(permissionsSeedWithoutComments).toContain(
+        "('user_honors:update',",
+      );
     });
 
     it('keeps the soft-delete UPDATE inside the BEGIN/COMMIT block', () => {
-      const idxBegin = permissionsSeed.indexOf('BEGIN;');
-      const idxCommit = permissionsSeed.lastIndexOf('COMMIT;');
-      const idxSoftDelete = permissionsSeed.indexOf('UPDATE permissions');
+      const idxBegin = permissionsSeedWithoutComments.indexOf('BEGIN;');
+      const idxCommit = permissionsSeedWithoutComments.lastIndexOf('COMMIT;');
+      const idxSoftDelete =
+        permissionsSeedWithoutComments.indexOf('UPDATE permissions');
       expect(idxBegin).toBeGreaterThan(-1);
       expect(idxCommit).toBeGreaterThan(idxBegin);
       expect(idxSoftDelete).toBeGreaterThan(idxBegin);
@@ -165,7 +203,7 @@ function escapeRegex(value: string): string {
 
 // Drop SQL line comments (-- ...) so legacy mentions inside comments do not
 // poison the IN-array assertion.
-function permissionsLineFilter(sql: string): string {
+function stripSqlLineComments(sql: string): string {
   return sql
     .split('\n')
     .map((line) => line.replace(/--.*$/, ''))
@@ -198,4 +236,30 @@ function extractRoleBlock(sql: string, roleName: string): string {
     throw new Error(`Could not locate end of role block for '${roleName}'`);
   }
   return sql.slice(startIdx, endIdx);
+}
+
+function extractRoleInsertBlock(sql: string, roleName: string): string {
+  const roleWhere = `WHERE r.role_name = '${roleName}'`;
+  const whereIndex = sql.indexOf(roleWhere);
+  if (whereIndex < 0) {
+    throw new Error(`Could not locate INSERT block for role '${roleName}'`);
+  }
+
+  const startIndex = sql.lastIndexOf(
+    'INSERT INTO role_permissions',
+    whereIndex,
+  );
+  if (startIndex < 0) {
+    throw new Error(`Could not locate start of role block for '${roleName}'`);
+  }
+
+  const endIndex = sql.indexOf(
+    'ON CONFLICT (role_id, permission_id) DO NOTHING;',
+    whereIndex,
+  );
+  if (endIndex < 0) {
+    throw new Error(`Could not locate end of role block for '${roleName}'`);
+  }
+
+  return sql.slice(startIndex, endIndex);
 }

@@ -133,6 +133,10 @@ model camporee_clubs {
   score_section_results   camporee_event_section_results[]
   schedule_block_assignments camporee_event_schedule_block_assignments[]
   members                 camporee_members[]
+
+  // Partial unique indexes `uq_camporee_clubs_active_local_section` and
+  // `uq_camporee_clubs_active_union_section` live in migration SQL/DB because
+  // Prisma cannot model partial unique indexes.
   @@index([club_section_id], map: "idx_camporee_clubs_club_section_id")
   @@index([union_camporee_id], map: "idx_camporee_clubs_union_camporee_id")
 
