@@ -72,6 +72,88 @@ CREATE INDEX "idx_camporee_event_staff_event" ON "camporee_event_staff_assignmen
 CREATE INDEX "idx_camporee_event_staff_member" ON "camporee_event_staff_assignments"("camporee_staff_member_id", "active");
 CREATE UNIQUE INDEX "uq_camporee_event_staff_active_member_role" ON "camporee_event_staff_assignments"("camporee_event_id", "camporee_staff_member_id", "assignment_role") WHERE "active" = TRUE;
 
+-- Preserve existing scoring flows after introducing the explicit club-registration
+-- closure gate. Historical camporees that already have active scoring artifacts
+-- are considered operationally closed, using the earliest artifact timestamp as
+-- a deterministic safe closure timestamp. Actor is intentionally left unknown.
+WITH local_scoring_artifacts AS (
+  SELECT
+    ce."local_camporee_id" AS "camporee_id",
+    MIN(artifact."created_at") AS "first_artifact_at"
+  FROM (
+    SELECT
+      cer."camporee_event_id",
+      cer."created_at"
+    FROM "camporee_event_rubrics" cer
+    WHERE cer."active" = TRUE
+
+    UNION ALL
+
+    SELECT
+      ceja."camporee_event_id",
+      ceja."created_at"
+    FROM "camporee_event_judge_assignments" ceja
+    WHERE ceja."active" = TRUE
+
+    UNION ALL
+
+    SELECT
+      cesr."camporee_event_id",
+      cesr."created_at"
+    FROM "camporee_event_section_results" cesr
+    WHERE cesr."active" = TRUE
+  ) artifact
+  JOIN "camporee_events" ce
+    ON ce."camporee_event_id" = artifact."camporee_event_id"
+  WHERE ce."active" = TRUE
+    AND ce."local_camporee_id" IS NOT NULL
+  GROUP BY ce."local_camporee_id"
+)
+UPDATE "local_camporees" lc
+SET "club_registration_closed_at" = local_scoring_artifacts."first_artifact_at"
+FROM local_scoring_artifacts
+WHERE lc."local_camporee_id" = local_scoring_artifacts."camporee_id"
+  AND lc."club_registration_closed_at" IS NULL;
+
+WITH union_scoring_artifacts AS (
+  SELECT
+    ce."union_camporee_id" AS "camporee_id",
+    MIN(artifact."created_at") AS "first_artifact_at"
+  FROM (
+    SELECT
+      cer."camporee_event_id",
+      cer."created_at"
+    FROM "camporee_event_rubrics" cer
+    WHERE cer."active" = TRUE
+
+    UNION ALL
+
+    SELECT
+      ceja."camporee_event_id",
+      ceja."created_at"
+    FROM "camporee_event_judge_assignments" ceja
+    WHERE ceja."active" = TRUE
+
+    UNION ALL
+
+    SELECT
+      cesr."camporee_event_id",
+      cesr."created_at"
+    FROM "camporee_event_section_results" cesr
+    WHERE cesr."active" = TRUE
+  ) artifact
+  JOIN "camporee_events" ce
+    ON ce."camporee_event_id" = artifact."camporee_event_id"
+  WHERE ce."active" = TRUE
+    AND ce."union_camporee_id" IS NOT NULL
+  GROUP BY ce."union_camporee_id"
+)
+UPDATE "union_camporees" uc
+SET "club_registration_closed_at" = union_scoring_artifacts."first_artifact_at"
+FROM union_scoring_artifacts
+WHERE uc."union_camporee_id" = union_scoring_artifacts."camporee_id"
+  AND uc."club_registration_closed_at" IS NULL;
+
 -- Backfill existing scoring judges into the general camporee staff roster.
 INSERT INTO "camporee_staff_members" (
   "local_camporee_id",

@@ -479,6 +479,10 @@ describe('CamporeeEventsService', () => {
         ACTOR_ID,
       );
       expect(result.title).toBe('Updated');
+      expect(result).toMatchObject({
+        schedule_blocks: [],
+        staff_assignments: [],
+      });
     });
   });
 
@@ -749,6 +753,19 @@ describe('CamporeeEventsService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_EVENT_RESPONSIBLE_REQUIRED,
       });
+      expect(
+        prisma.camporee_event_staff_assignments.findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            active: true,
+            assignment_role: 'responsible',
+            camporee_staff_member: {
+              is: { active: true, status: 'active' },
+            },
+          }),
+        }),
+      );
     });
   });
 });

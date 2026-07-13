@@ -32,31 +32,43 @@ const staffRow = {
   user,
 };
 
-const makePrisma = () => ({
-  local_camporees: {
-    findUnique: jest.fn().mockResolvedValue({
-      local_camporee_id: 10,
-      local_field_id: 5,
-    }),
-  },
-  union_camporees: {
-    findUnique: jest.fn().mockResolvedValue({
-      union_camporee_id: 20,
-      union_id: 2,
-    }),
-  },
-  users: {
-    findFirst: jest.fn().mockResolvedValue({ user_id: USER_ID }),
-    findMany: jest.fn().mockResolvedValue([user]),
-  },
-  camporee_staff_members: {
-    findMany: jest.fn().mockResolvedValue([staffRow]),
-    findFirst: jest.fn().mockResolvedValue(null),
-    findUnique: jest.fn().mockResolvedValue(staffRow),
-    create: jest.fn().mockResolvedValue(staffRow),
-    update: jest.fn().mockResolvedValue({ ...staffRow, active: false }),
-  },
-});
+const makePrisma = () => {
+  const mock = {
+    local_camporees: {
+      findUnique: jest.fn().mockResolvedValue({
+        local_camporee_id: 10,
+        local_field_id: 5,
+      }),
+    },
+    union_camporees: {
+      findUnique: jest.fn().mockResolvedValue({
+        union_camporee_id: 20,
+        union_id: 2,
+      }),
+    },
+    users: {
+      findFirst: jest.fn().mockResolvedValue({ user_id: USER_ID }),
+      findMany: jest.fn().mockResolvedValue([user]),
+    },
+    camporee_staff_members: {
+      findMany: jest.fn().mockResolvedValue([staffRow]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(staffRow),
+      create: jest.fn().mockResolvedValue(staffRow),
+      update: jest
+        .fn()
+        .mockResolvedValue({ ...staffRow, active: false, status: 'inactive' }),
+    },
+    camporee_event_staff_assignments: {
+      updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+    },
+    $transaction: jest.fn((input: any) =>
+      typeof input === 'function' ? input(mock) : Promise.all(input),
+    ),
+  };
+
+  return mock;
+};
 
 const makeAuth = () => ({
   resolveUserAuthorization: jest.fn().mockResolvedValue({
@@ -154,6 +166,15 @@ describe('CamporeeStaffService', () => {
         data: expect.objectContaining({ active: false, status: 'inactive' }),
       }),
     );
+    expect(
+      prisma.camporee_event_staff_assignments.updateMany,
+    ).toHaveBeenCalledWith({
+      where: { camporee_staff_member_id: STAFF_ID, active: true },
+      data: expect.objectContaining({
+        active: false,
+        modified_by: ACTOR_ID,
+      }),
+    });
     expect(result.active).toBe(false);
   });
 });

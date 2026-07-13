@@ -379,7 +379,13 @@ export class CamporeeEventsService {
     const rows = await (
       this.prisma as any
     ).camporee_event_staff_assignments.findMany({
-      where: { camporee_event_id: { in: eventIds }, active: true },
+      where: {
+        camporee_event_id: { in: eventIds },
+        active: true,
+        camporee_staff_member: {
+          is: { active: true, status: 'active' },
+        },
+      },
       include: {
         camporee_staff_member: {
           include: {
@@ -427,6 +433,9 @@ export class CamporeeEventsService {
         camporee_event_id: eventId,
         assignment_role: 'responsible',
         active: true,
+        camporee_staff_member: {
+          is: { active: true, status: 'active' },
+        },
       },
       select: { camporee_event_staff_assignment_id: true },
     });
@@ -1035,9 +1044,11 @@ export class CamporeeEventsService {
       );
       return this.getEvent(eventId);
     }
-    return this.attachScheduleBlocks(
-      [updated],
-      await this.loadScheduleBlocks([eventId]),
+    const blocksByEvent = await this.loadScheduleBlocks([eventId]);
+    const staffByEvent = await this.loadEventStaffAssignments([eventId]);
+    return this.attachEventStaffAssignments(
+      this.attachScheduleBlocks([updated], blocksByEvent),
+      staffByEvent,
     )[0];
   }
 

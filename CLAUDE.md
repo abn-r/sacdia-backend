@@ -94,5 +94,6 @@ src/
 - Unit tests: bloqueantes; el job ya no usa `continue-on-error`
 - Rate limiting: `@nestjs/throttler` usa storage Redis distribuido cuando `REDIS_URL` está configurado.
   En producción, Redis es requerido y la app falla al iniciar si falta, es inválido o no conecta.
+  En `NODE_ENV=development` los límites son más altos (30/s, 200/10s, 1000/min) para soportar fetches paralelos del admin.
 - BullMQ: handlers `error`/`failed` en workers para prevenir crashes por desconexión de Redis
 - `process.on('uncaughtException'/'unhandledRejection')` como red de seguridad en producción

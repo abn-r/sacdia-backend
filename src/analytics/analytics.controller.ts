@@ -24,6 +24,8 @@ import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles } from '../common/decorators';
 import { AnalyticsService } from './analytics.service';
 import { SlaDashboardDto } from './dto/sla-dashboard.dto';
+import { LocalFieldDashboardDto } from './dto/local-field-dashboard.dto';
+import { LocalFieldDashboardService } from './local-field-dashboard.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { CoordinationService } from '../coordination/coordination.service';
 import { JobsOverviewService, JobsOverviewDto } from './jobs-overview.service';
@@ -40,6 +42,7 @@ import {
 export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,
+    private readonly localFieldDashboardService: LocalFieldDashboardService,
     private readonly authorizationContext: AuthorizationContextService,
     private readonly coordinationService: CoordinationService,
     @Optional()
@@ -73,6 +76,42 @@ export class AnalyticsController {
     const data =
       await this.analyticsService.getSlaDashboard(scopedClubSectionIds);
 
+    return { status: 'ok', data };
+  }
+
+  @Get('local-field-dashboard')
+  @GlobalRoles(
+    'admin',
+    'super-admin',
+    'coordinator',
+    'director-lf',
+    'assistant-lf',
+    'director-union',
+    'assistant-union',
+    'director-dia',
+    'assistant-dia',
+  )
+  @ApiOperation({
+    summary: 'Dashboard operativo del campo local',
+    description:
+      'Métricas agregadas del campo local: miembros activos, inscripciones anuales, ' +
+      'cobertura de informes mensuales, distribución por clase, especialidades completadas ' +
+      'y actividades registradas. Roles de campo ven su propio local_field; admin puede filtrar.',
+  })
+  @ApiQuery({ name: 'local_field_id', required: false, type: Number })
+  @ApiOkResponse({
+    description: 'Local field dashboard data',
+    type: LocalFieldDashboardDto,
+  })
+  async getLocalFieldDashboard(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Query('local_field_id', new ParseIntPipe({ optional: true }))
+    localFieldId?: number,
+  ): Promise<{ status: string; data: LocalFieldDashboardDto }> {
+    const data = await this.localFieldDashboardService.getDashboard(
+      req.user.sub,
+      localFieldId,
+    );
     return { status: 'ok', data };
   }
 

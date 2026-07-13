@@ -43,7 +43,7 @@ export class CamporeeStaffController {
   }
 
   @Get('local-camporees/:camporeeId/staff-candidates')
-  @RequirePermissions('camporee_events:read')
+  @RequirePermissions('camporee_events:update')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'List active users eligible for a local camporee roster',
@@ -88,7 +88,7 @@ export class CamporeeStaffController {
   }
 
   @Get('union-camporees/:camporeeId/staff-candidates')
-  @RequirePermissions('camporee_events:read')
+  @RequirePermissions('camporee_events:update')
   @AuthorizationResource({ type: 'union_camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'List active users eligible for a union camporee roster',

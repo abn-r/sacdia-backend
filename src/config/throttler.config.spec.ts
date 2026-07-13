@@ -1,4 +1,9 @@
-import { buildThrottlerOptions, THROTTLER_TIERS } from './throttler.config';
+import {
+  buildThrottlerOptions,
+  getThrottlerTiers,
+  THROTTLER_TIERS,
+  THROTTLER_TIERS_DEV,
+} from './throttler.config';
 import { RedisThrottlerStorage } from './redis-throttler.storage';
 
 function config(values: Record<string, string | undefined>) {
@@ -8,7 +13,13 @@ function config(values: Record<string, string | undefined>) {
 }
 
 describe('buildThrottlerOptions', () => {
-  it('uses in-memory tiers outside production when REDIS_URL is missing', async () => {
+  it('uses relaxed in-memory tiers in development when REDIS_URL is missing', async () => {
+    await expect(
+      buildThrottlerOptions(config({ NODE_ENV: 'development' })),
+    ).resolves.toEqual([...THROTTLER_TIERS_DEV]);
+  });
+
+  it('uses production tiers in test when REDIS_URL is missing', async () => {
     await expect(
       buildThrottlerOptions(config({ NODE_ENV: 'test' })),
     ).resolves.toEqual([...THROTTLER_TIERS]);
@@ -44,5 +55,13 @@ describe('buildThrottlerOptions', () => {
     });
 
     expect(storage.assertReady).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getThrottlerTiers', () => {
+  it('returns relaxed tiers only for development', () => {
+    expect(getThrottlerTiers('development')).toEqual(THROTTLER_TIERS_DEV);
+    expect(getThrottlerTiers('production')).toEqual(THROTTLER_TIERS);
+    expect(getThrottlerTiers('test')).toEqual(THROTTLER_TIERS);
   });
 });

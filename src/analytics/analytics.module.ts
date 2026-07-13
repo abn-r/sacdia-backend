@@ -5,6 +5,7 @@ import { CommonModule } from '../common/common.module';
 import { CoordinationModule } from '../coordination/coordination.module';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import { LocalFieldDashboardService } from './local-field-dashboard.service';
 import { JobsOverviewService } from './jobs-overview.service';
 import { CronRunsService } from './cron-runs.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
@@ -45,6 +46,7 @@ const redisAvailable = isRedisConfigured();
   controllers: [AnalyticsController],
   providers: [
     AnalyticsService,
+    LocalFieldDashboardService,
     CronRunsService,
     ...(redisAvailable ? [JobsOverviewService] : []),
   ],
