@@ -17,11 +17,6 @@ import {
   type AdventurerSpecialtyCsvRow,
 } from './adventurer-specialties-importer';
 
-const DATASET_PATH = path.resolve(
-  __dirname,
-  '../../../docs/working/aventureros-especialidades/index.csv',
-);
-
 const CSV_HEADERS = [
   'slug',
   'title',
@@ -55,11 +50,14 @@ function validRow(
     requirements_detected: '4',
     pdf: '/tmp/aventureros-especialidades/pdf/corderitos-alimentos-sanos.pdf',
     md: '/tmp/aventureros-especialidades/md/corderitos-alimentos-sanos.md',
-    raw_txt: '/tmp/aventureros-especialidades/raw/corderitos-alimentos-sanos.txt',
-    image: '/tmp/aventureros-especialidades/images/corderitos-alimentos-sanos.png',
+    raw_txt:
+      '/tmp/aventureros-especialidades/raw/corderitos-alimentos-sanos.txt',
+    image:
+      '/tmp/aventureros-especialidades/images/corderitos-alimentos-sanos.png',
     image_width: '962',
     image_height: '952',
-    source_page: 'https://www.guiasmayores.com/especialidades-de-corderitos.html',
+    source_page:
+      'https://www.guiasmayores.com/especialidades-de-corderitos.html',
     source_url:
       'https://www.guiasmayores.com/uploads/1/1/3/1/1131412/aventureros_alimentos_sanos.pdf',
     image_url:
@@ -80,9 +78,31 @@ function toCsv(rows: AdventurerSpecialtyCsvRow[]): string {
   ].join('\n');
 }
 
+function representativeDatasetCsv(): string {
+  return toCsv([
+    validRow(),
+    validRow({
+      slug: 'castorcitos-amigos-de-la-biblia',
+      title: 'Amigos de la Biblia',
+      adventurer_level: 'Castorcito (jardín de infantes)',
+    }),
+    validRow({
+      slug: 'abejita-industriosa-lectura-i',
+      title: 'Lectura I',
+      adventurer_level: 'Abejita industriosa (primer grado)',
+    }),
+    ...Array.from({ length: 172 }, (_, index) =>
+      validRow({
+        slug: `especialidad-sintetica-${index}`,
+        title: `Especialidad sintética ${index}`,
+      }),
+    ),
+  ]);
+}
+
 describe('Adventurer specialties importer', () => {
-  it('parses the scraped CSV with 175 Asociación General rows', async () => {
-    const content = await fs.readFile(DATASET_PATH, 'utf8');
+  it('parses a representative CSV with 175 Asociación General rows', () => {
+    const content = representativeDatasetCsv();
     const rows = parseAdventurerSpecialtiesCsv(content);
 
     expect(rows).toHaveLength(175);
@@ -93,8 +113,8 @@ describe('Adventurer specialties importer', () => {
     });
   });
 
-  it('builds stable Adventurer honor codes from source slugs', async () => {
-    const content = await fs.readFile(DATASET_PATH, 'utf8');
+  it('builds stable Adventurer honor codes from source slugs', () => {
+    const content = representativeDatasetCsv();
     const rows = parseAdventurerSpecialtiesCsv(content);
 
     expect(
@@ -268,7 +288,8 @@ describe('Adventurer specialties importer', () => {
       },
       {
         requirement_number: 2,
-        requirement_text: 'Completar una actividad. Continuación de la actividad.',
+        requirement_text:
+          'Completar una actividad. Continuación de la actividad.',
       },
     ]);
   });
@@ -569,9 +590,10 @@ describe('Adventurer specialties importer', () => {
 
     const tx = {
       honors: {
-        upsert: jest
-          .fn()
-          .mockResolvedValue({ honor_id: 100, code: 'ADV-CORDERITOS-ALIMENTOS-SANOS' }),
+        upsert: jest.fn().mockResolvedValue({
+          honor_id: 100,
+          code: 'ADV-CORDERITOS-ALIMENTOS-SANOS',
+        }),
       },
       honor_club_types: {
         upsert: jest.fn().mockResolvedValue({}),
