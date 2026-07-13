@@ -6,13 +6,43 @@ import { AchievementsService } from '../achievements/achievements.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { FILE_STORAGE_SERVICE } from '../common/services/file-storage.service';
 import { CamporeeMembersListQueryDto } from './dto/camporee-members-list-query.dto';
+import { CamporeeLifecyclePolicy } from './policies';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import {
+  CreateCamporeeDto,
+  CreateUnionCamporeeDto,
+  UpdateCamporeeDto,
+  UpdateUnionCamporeeDto,
+} from './dto';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
   let _prisma: PrismaService;
 
+  const mockLifecyclePolicy = {
+    assertDateOrder: jest.fn(),
+    assertDateOnly: jest.fn(),
+    assertOffsetTimestamp: jest.fn(),
+    assertIanaTimezone: jest.fn((value: unknown) => {
+      if (typeof value !== 'string')
+        throw new Error('Expected an IANA timezone');
+    }),
+    resolveClubRegistrationDisposition: jest.fn(() => 'open'),
+    isAfterDeadline: jest.fn((deadline: Date | null | undefined) =>
+      deadline ? new Date() > deadline : false,
+    ),
+  };
+
   const mockPrismaService = {
     local_camporees: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
+    union_camporees: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -28,6 +58,7 @@ describe('CamporeesService', () => {
     },
     camporee_payments: {
       findUnique: jest.fn(),
+      create: jest.fn(),
       update: jest.fn(),
     },
     camporee_clubs: {
@@ -47,6 +78,14 @@ describe('CamporeesService', () => {
     },
     local_fields: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+    unions: { findUnique: jest.fn() },
+    union_camporee_local_fields: {
+      createMany: jest.fn(),
+      updateMany: jest.fn(),
+      upsert: jest.fn(),
+      findFirst: jest.fn(),
     },
     ecclesiastical_years: {
       findFirst: jest.fn(),
@@ -102,6 +141,10 @@ describe('CamporeesService', () => {
           provide: AchievementsService,
           useValue: mockAchievementsService,
         },
+        {
+          provide: CamporeeLifecyclePolicy,
+          useValue: mockLifecyclePolicy,
+        },
       ],
     }).compile();
 
@@ -111,6 +154,18 @@ describe('CamporeesService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('timezone DTO validation', () => {
+    it.each([
+      CreateCamporeeDto,
+      UpdateCamporeeDto,
+      CreateUnionCamporeeDto,
+      UpdateUnionCamporeeDto,
+    ])('rejects null timezone in %p', async (Dto) => {
+      const errors = await validate(plainToInstance(Dto, { timezone: null }));
+      expect(errors.some((error) => error.property === 'timezone')).toBe(true);
+    });
   });
 
   it('should be defined', () => {
@@ -330,6 +385,65 @@ describe('CamporeesService', () => {
         code: ErrorCode.CAMPOREE_LOCAL_FIELD_NOT_FOUND,
       });
     });
+
+    it('records timezone verification and explicit registration opening', async () => {
+      const createDto = {
+        name: 'Timezone-aware Camporee',
+        start_date: '2026-07-10',
+        end_date: '2026-07-12',
+        timezone: 'America/Mexico_City',
+        club_registration_opens_at: '2026-07-01T15:00:00.000Z',
+        club_registration_deadline: '2026-07-09T23:59:59.000Z',
+        member_registration_deadline: '2026-07-09T23:59:59.000Z',
+        payment_deadline: '2026-07-09T23:59:59.000Z',
+        local_field_id: 1,
+        includes_adventurers: true,
+        includes_pathfinders: true,
+        includes_master_guides: false,
+        local_camporee_place: 'Test Location',
+      };
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue({
+        year_id: 1,
+      });
+      mockPrismaService.local_fields.findUnique.mockResolvedValue({
+        local_field_id: 1,
+      });
+      mockPrismaService.local_camporees.create.mockResolvedValue({
+        local_camporee_id: 1,
+      });
+
+      await service.create(createDto, 'actor-id');
+
+      expect(mockPrismaService.local_camporees.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            timezone: 'America/Mexico_City',
+            timezone_verified_by: 'actor-id',
+            timezone_verified_at: expect.any(Date),
+            club_registration_opens_at: new Date('2026-07-01T15:00:00.000Z'),
+          }),
+        }),
+      );
+    });
+
+    it('rejects a null local timezone instead of verifying the default', async () => {
+      await expect(
+        service.create(
+          {
+            name: 'Invalid timezone',
+            start_date: '2026-07-10',
+            end_date: '2026-07-12',
+            timezone: null,
+            local_field_id: 1,
+            includes_adventurers: true,
+            includes_pathfinders: true,
+            includes_master_guides: false,
+            local_camporee_place: 'Test Location',
+          } as any,
+          'actor-id',
+        ),
+      ).rejects.toThrow('Expected an IANA timezone');
+    });
   });
 
   describe('update', () => {
@@ -367,6 +481,236 @@ describe('CamporeesService', () => {
 
       await expect(service.update(999, { name: 'Test' })).rejects.toMatchObject(
         { code: ErrorCode.CAMPOREE_NOT_FOUND },
+      );
+    });
+
+    it('preserves timezone verification on a patch that omits timezone', async () => {
+      const verifiedAt = new Date('2026-01-01T00:00:00.000Z');
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        local_camporee_id: 1,
+        start_date: new Date('2026-07-10T00:00:00.000Z'),
+        end_date: new Date('2026-07-12T00:00:00.000Z'),
+        timezone: 'America/Mexico_City',
+        timezone_verified_at: verifiedAt,
+        timezone_verified_by: 'prior-actor',
+        club_registration_opens_at: null,
+        club_registration_deadline: null,
+        member_registration_deadline: null,
+        payment_deadline: null,
+        local_fields: {},
+        ecclesiastical_year_relation: {},
+        attending_members_camporees: [],
+      });
+      mockPrismaService.local_camporees.update.mockResolvedValue({
+        local_camporee_id: 1,
+        name: 'Updated',
+      });
+
+      await service.update(1, { name: 'Updated' }, 'actor-id');
+
+      expect(mockPrismaService.local_camporees.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            timezone_verified_at: expect.anything(),
+            timezone_verified_by: expect.anything(),
+          }),
+        }),
+      );
+    });
+
+    it('rejects a null local timezone instead of rewriting verification metadata', async () => {
+      await expect(
+        service.update(1, { timezone: null } as any, 'actor-id'),
+      ).rejects.toThrow('Expected an IANA timezone');
+    });
+
+    it('uses an explicit null opening when validating a local patch', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        local_camporee_id: 1,
+        start_date: new Date('2026-07-10T00:00:00.000Z'),
+        end_date: new Date('2026-07-12T00:00:00.000Z'),
+        timezone: 'America/Mexico_City',
+        club_registration_opens_at: new Date('2026-07-10T00:00:00.000Z'),
+        club_registration_deadline: new Date('2026-07-09T23:59:59.000Z'),
+        local_fields: {},
+        ecclesiastical_year_relation: {},
+        attending_members_camporees: [],
+      });
+      mockPrismaService.local_camporees.update.mockResolvedValue({
+        local_camporee_id: 1,
+      });
+
+      await service.update(1, { club_registration_opens_at: null }, 'actor-id');
+
+      expect(mockLifecyclePolicy.assertDateOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ clubRegistrationOpensAt: null }),
+      );
+      expect(mockPrismaService.local_camporees.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ club_registration_opens_at: null }),
+        }),
+      );
+    });
+  });
+
+  describe('union timezone handling', () => {
+    it('rejects a null union timezone on create', async () => {
+      await expect(
+        service.createUnion(
+          {
+            name: 'Invalid union timezone',
+            start_date: '2026-07-10',
+            end_date: '2026-07-12',
+            timezone: null,
+            union_id: 1,
+            includes_adventurers: true,
+            includes_pathfinders: true,
+            includes_master_guides: false,
+            union_camporee_place: 'Test Location',
+          } as any,
+          'actor-id',
+        ),
+      ).rejects.toThrow('Expected an IANA timezone');
+    });
+
+    it('rejects a null union timezone on update', async () => {
+      await expect(
+        service.updateUnion(1, { timezone: null } as any, 'actor-id'),
+      ).rejects.toThrow('Expected an IANA timezone');
+    });
+
+    it('preserves union timezone verification when timezone is omitted', async () => {
+      mockPrismaService.union_camporees.findUnique
+        .mockResolvedValueOnce({
+          union_camporee_id: 1,
+          start_date: new Date('2026-07-10T00:00:00.000Z'),
+          end_date: new Date('2026-07-12T00:00:00.000Z'),
+          timezone: 'America/Mexico_City',
+          timezone_verified_at: new Date('2026-01-01T00:00:00.000Z'),
+          timezone_verified_by: 'prior-actor',
+          club_registration_opens_at: null,
+          club_registration_deadline: null,
+          member_registration_deadline: null,
+          payment_deadline: null,
+          union_camporee_local_fields: [],
+        })
+        .mockResolvedValueOnce({ union_camporee_id: 1, name: 'Updated' });
+      mockPrismaService.union_camporees.update.mockResolvedValue({
+        union_camporee_id: 1,
+        union_id: 1,
+      });
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(mockPrismaService),
+      );
+
+      await service.updateUnion(1, { name: 'Updated' }, 'actor-id');
+
+      expect(mockPrismaService.union_camporees.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            timezone_verified_at: expect.anything(),
+            timezone_verified_by: expect.anything(),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('temporal deadline policy', () => {
+    const memberDeadline = new Date('2026-07-09T23:59:59.000Z');
+    const paymentDeadline = new Date('2026-07-10T23:59:59.000Z');
+
+    beforeEach(() => {
+      mockLifecyclePolicy.isAfterDeadline.mockReturnValue(true);
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(mockPrismaService),
+      );
+      mockPrismaService.users.findUnique.mockResolvedValue({
+        user_id: 'user-1',
+      });
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue(null);
+      mockPrismaService.camporee_members.create.mockResolvedValue({
+        camporee_member_id: 1,
+      });
+      mockPrismaService.camporee_payments.create.mockResolvedValue({
+        camporee_payment_id: 'payment-1',
+      });
+    });
+
+    it('uses the policy for a local member deadline', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        active: true,
+        local_field_id: 1,
+        name: 'Local',
+        end_date: new Date('2026-07-12'),
+        member_registration_deadline: memberDeadline,
+      });
+
+      await service.registerMember(1, { user_id: 'user-1', club_name: 'Club' });
+
+      expect(mockLifecyclePolicy.isAfterDeadline).toHaveBeenCalledWith(
+        memberDeadline,
+      );
+    });
+
+    it('uses the policy for a local payment deadline', async () => {
+      mockPrismaService.local_camporees.findUnique.mockResolvedValue({
+        local_field_id: 1,
+        payment_deadline: paymentDeadline,
+      });
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue({
+        camporee_member_id: 1,
+      });
+
+      await service.createPayment(
+        1,
+        1,
+        { amount: 10, payment_type: 'other', paid_at: '2026-07-01T00:00:00Z' },
+        'actor-id',
+      );
+
+      expect(mockLifecyclePolicy.isAfterDeadline).toHaveBeenCalledWith(
+        paymentDeadline,
+      );
+    });
+
+    it('uses the policy for a union member deadline', async () => {
+      mockPrismaService.union_camporees.findUnique.mockResolvedValue({
+        active: true,
+        union_id: 1,
+        name: 'Union',
+        end_date: new Date('2026-07-12'),
+        member_registration_deadline: memberDeadline,
+      });
+
+      await service.registerMemberToUnion(1, {
+        user_id: 'user-1',
+        club_name: 'Club',
+      });
+
+      expect(mockLifecyclePolicy.isAfterDeadline).toHaveBeenCalledWith(
+        memberDeadline,
+      );
+    });
+
+    it('uses the policy for a union payment deadline', async () => {
+      mockPrismaService.union_camporees.findUnique.mockResolvedValue({
+        union_id: 1,
+        payment_deadline: paymentDeadline,
+      });
+      mockPrismaService.camporee_members.findFirst.mockResolvedValue({
+        camporee_member_id: 1,
+      });
+
+      await service.createUnionPayment(
+        1,
+        1,
+        { amount: 10, payment_type: 'other', paid_at: '2026-07-01T00:00:00Z' },
+        'actor-id',
+      );
+
+      expect(mockLifecyclePolicy.isAfterDeadline).toHaveBeenCalledWith(
+        paymentDeadline,
       );
     });
   });

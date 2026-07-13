@@ -1,16 +1,21 @@
 import {
   IsString,
-  IsDateString,
   IsInt,
   IsBoolean,
   IsOptional,
   IsNotEmpty,
   IsNumber,
+  Matches,
+  ValidateIf,
   Min,
   Max,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const OFFSET_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /**
  * DTO for creating a new camporee
@@ -39,14 +44,14 @@ export class CreateCamporeeDto {
     description: 'Fecha de inicio del camporee (formato ISO 8601)',
     example: '2024-05-15',
   })
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN)
   declare start_date: string;
 
   @ApiProperty({
     description: 'Fecha de finalización del camporee (formato ISO 8601)',
     example: '2024-05-17',
   })
-  @IsDateString()
+  @Matches(DATE_ONLY_PATTERN)
   declare end_date: string;
 
   @ApiProperty({
@@ -120,27 +125,43 @@ export class CreateCamporeeDto {
   registration_cost?: number;
 
   @ApiPropertyOptional({
-    description: 'Fecha límite de inscripción de clubes (formato ISO 8601)',
-    example: '2024-05-01',
+    description: 'Zona horaria IANA del camporee',
+    example: 'America/Mexico_City',
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsString()
+  timezone?: string;
+
+  @ApiPropertyOptional({
+    description: 'Apertura de inscripción de clubes con Z u offset explícito',
+    example: '2024-05-01T08:00:00-06:00',
   })
   @IsOptional()
-  @IsDateString()
+  @Matches(OFFSET_TIMESTAMP_PATTERN)
+  club_registration_opens_at?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Fecha límite de inscripción de clubes (formato ISO 8601)',
+    example: '2024-05-01T23:59:59Z',
+  })
+  @IsOptional()
+  @Matches(OFFSET_TIMESTAMP_PATTERN)
   club_registration_deadline?: string;
 
   @ApiPropertyOptional({
     description: 'Fecha límite de inscripción de miembros (formato ISO 8601)',
-    example: '2024-05-05',
+    example: '2024-05-05T23:59:59Z',
   })
   @IsOptional()
-  @IsDateString()
+  @Matches(OFFSET_TIMESTAMP_PATTERN)
   member_registration_deadline?: string;
 
   @ApiPropertyOptional({
     description: 'Fecha límite de pago (formato ISO 8601)',
-    example: '2024-05-10',
+    example: '2024-05-10T23:59:59Z',
   })
   @IsOptional()
-  @IsDateString()
+  @Matches(OFFSET_TIMESTAMP_PATTERN)
   payment_deadline?: string;
 
   @ApiPropertyOptional({
@@ -149,6 +170,6 @@ export class CreateCamporeeDto {
     example: '2024-05-13T08:00:00.000Z',
   })
   @IsOptional()
-  @IsDateString()
+  @Matches(OFFSET_TIMESTAMP_PATTERN)
   agenda_visible_from?: string | null;
 }

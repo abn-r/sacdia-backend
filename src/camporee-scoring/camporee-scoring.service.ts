@@ -3,10 +3,12 @@ import {
   AppBadRequestException,
   AppConflictException,
   AppForbiddenException,
+  AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { Prisma, role_category } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import {
   AuthorizationContextService,
   type ResolvedAuthorizationProfile,
@@ -24,10 +26,12 @@ import {
   CamporeeEventJudgeAssignmentResponseDto,
   CamporeeEventRubricResponseDto,
   CamporeeEventSectionResultResponseDto,
+  CamporeeEventScoreReceiptResponseDto,
   CamporeeJudgeCandidateResponseDto,
   CamporeeJudgeEligibilityReason,
   CamporeeJudgeResponseDto,
   CamporeeLeaderboardResponseDto,
+  CamporeeScoreSource,
   CamporeeScopeType,
   ReplaceCamporeeEventRubricsDto,
   SubmitCamporeeEventScoreDto,
@@ -131,6 +135,7 @@ type CamporeeEventRecord = {
   local_camporee_id: number | null;
   union_camporee_id: number | null;
   max_points: number;
+  min_points?: number | null;
   scoring_enabled?: boolean;
   active?: boolean;
   local_camporee?: {
@@ -371,11 +376,117 @@ export class CamporeeScoringService {
       camporee_club_id: row.camporee_club_id ?? null,
       club_section_id: row.club_section_id,
       source_submission_id: row.source_submission_id,
+      score_status: row.score_status ?? 'scored',
+      is_no_show: row.is_no_show ?? false,
       total_awarded_points: this.toNumber(row.total_awarded_points),
       total_max_points: this.toNumber(row.total_max_points),
       percentage: this.toNumber(row.percentage),
       active: row.active,
     };
+  }
+
+  private mapScoreReceipt(
+    submission: any,
+    result: any,
+  ): CamporeeEventScoreReceiptResponseDto {
+    if (!result) {
+      throw new AppInternalServerErrorException(
+        ErrorCode.CAMPOREE_SCORING_RECEIPT_INCOMPLETE,
+      );
+    }
+    return {
+      ...this.mapResult(result),
+      active: true,
+      camporee_event_score_submission_id:
+        submission.camporee_event_score_submission_id,
+      raw_awarded_points: this.toNumber(submission.raw_awarded_points),
+      minimum_adjustment_points: this.toNumber(
+        submission.minimum_adjustment_points,
+      ),
+      submitted_by: submission.submitted_by,
+      submitted_at: submission.created_at,
+      finalized_by: result.finalized_by,
+      finalized_at: result.finalized_at,
+      notes: submission.notes ?? null,
+      items: (submission.items ?? []).map((item: any) => ({
+        camporee_event_rubric_id: item.camporee_event_rubric_id,
+        awarded_points: this.toNumber(item.awarded_points),
+        notes: item.notes ?? null,
+      })),
+    };
+  }
+
+  private async findScoreSubmissionByIdempotencyKey(
+    db: PrismaLike,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<any | null> {
+    return db.camporee_event_score_submissions.findFirst({
+      where: {
+        submitted_by: actorUserId,
+        idempotency_key: idempotencyKey,
+      },
+      include: {
+        items: {
+          orderBy: { camporee_event_rubric_id: 'asc' },
+        },
+        section_results: {
+          orderBy: { created_at: 'asc' },
+          take: 1,
+        },
+      },
+    });
+  }
+
+  private mapIdempotentScoreReceipt(
+    submission: any,
+    requestHash: string,
+  ): CamporeeEventScoreReceiptResponseDto {
+    if (submission.request_hash !== requestHash) {
+      throw new AppConflictException(ErrorCode.IDEMPOTENCY_KEY_REUSED);
+    }
+    return this.mapScoreReceipt(submission, submission.section_results?.[0]);
+  }
+
+  private isPrismaUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002'
+    );
+  }
+
+  private createScoreRequestHash(
+    eventId: number,
+    clubSectionId: number,
+    dto: SubmitCamporeeEventScoreDto,
+    source: CamporeeScoreSource,
+    scoreStatus: 'scored' | 'no_show',
+  ): string {
+    const canonicalPayload = {
+      target: { event_id: eventId, club_section_id: clubSectionId },
+      source,
+      score_status: scoreStatus,
+      no_show: dto.no_show === true,
+      notes: dto.notes?.normalize('NFC').trim() ?? null,
+      expected_active_result_id:
+        dto.expected_active_result_id?.toLowerCase() ?? null,
+      items: (dto.items ?? [])
+        .map((item) => ({
+          camporee_event_rubric_id: item.camporee_event_rubric_id,
+          awarded_points: this.round2(item.awarded_points),
+          notes: item.notes?.normalize('NFC').trim() ?? null,
+        }))
+        .sort(
+          (left, right) =>
+            left.camporee_event_rubric_id - right.camporee_event_rubric_id,
+        ),
+    };
+
+    return createHash('sha256')
+      .update(JSON.stringify(canonicalPayload))
+      .digest('hex');
   }
 
   private getEventScope(event: CamporeeEventRecord): CamporeeScope {
@@ -664,25 +775,31 @@ export class CamporeeScoringService {
     );
   }
 
-  private async canSubmitManualScore(
+  private async resolveManualScoreSource(
     event: CamporeeEventRecord,
     actorUserId: string,
-  ): Promise<boolean> {
+  ): Promise<'manual_lf' | 'admin_override' | null> {
     const resolved =
       await this.authorizationContext.resolveUserAuthorization(actorUserId);
     const roles = this.roleNames(resolved);
-    const hasManualRole =
+    const hasTerritorialManagerRole =
       roles.has('assistant-lf') ||
       roles.has('director-lf') ||
+      roles.has('assistant-union') ||
+      roles.has('director-union');
+    const hasGlobalAdminRole =
       roles.has('admin') ||
       roles.has('assistant-admin') ||
       roles.has('super-admin');
 
-    return (
-      (hasManualRole ||
-        this.hasPermission(resolved, 'camporee_events:update')) &&
-      this.canAccessEventScope(resolved, event)
-    );
+    if (
+      (!hasTerritorialManagerRole && !hasGlobalAdminRole) ||
+      !this.canAccessEventScope(resolved, event)
+    ) {
+      return null;
+    }
+
+    return hasGlobalAdminRole ? 'admin_override' : 'manual_lf';
   }
 
   async getEventRubrics(
@@ -1111,12 +1228,21 @@ export class CamporeeScoringService {
     }
   }
 
+  private ensureRubricsExist(rubrics: RubricRecord[]): void {
+    if (rubrics.length === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_SCORING_RUBRICS_REQUIRED,
+      );
+    }
+  }
+
   async submitScore(
     eventId: number,
     clubSectionId: number,
     dto: SubmitCamporeeEventScoreDto,
     actorUserId: string,
-  ): Promise<CamporeeEventSectionResultResponseDto> {
+    idempotencyKey?: string,
+  ): Promise<CamporeeEventScoreReceiptResponseDto> {
     const event = await this.resolveEvent(eventId);
     await this.ensureClubRegistrationClosedForEvent(event);
     if (!event.scoring_enabled) {
@@ -1127,27 +1253,39 @@ export class CamporeeScoringService {
 
     const enrollment = await this.ensureSectionEnrollment(event, clubSectionId);
     const rubrics = await this.getActiveRubrics(eventId);
-    this.validateScoreItems(rubrics, dto);
+    const isNoShow = dto.no_show === true;
+    const submittedItems = dto.items ?? [];
+    if (isNoShow) {
+      this.ensureRubricsExist(rubrics);
+      if (submittedItems.length > 0) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_SCORING_RUBRIC_ITEM_MISMATCH,
+        );
+      }
+    } else {
+      this.validateScoreItems(rubrics, { ...dto, items: submittedItems });
+    }
 
     const primaryAssignment = await this.findPrimaryAssignment(
       eventId,
       clubSectionId,
       actorUserId,
     );
-    const canManual = await this.canSubmitManualScore(event, actorUserId);
+    const manualScoreSource = await this.resolveManualScoreSource(
+      event,
+      actorUserId,
+    );
 
-    let source = dto.source;
+    const overrideRequested =
+      dto.source === 'manual_lf' || dto.source === 'admin_override';
+    let source: CamporeeScoreSource;
     let judgeAssignmentId: string | null = null;
 
-    if (source === 'manual_lf' || source === 'admin_override') {
-      if (!canManual) {
-        throw new AppForbiddenException(ErrorCode.CAMPOREE_SCORING_FORBIDDEN);
-      }
-    } else if (primaryAssignment) {
+    if (primaryAssignment && !overrideRequested) {
       source = 'judge_primary';
       judgeAssignmentId = primaryAssignment.camporee_event_judge_assignment_id;
-    } else if (canManual) {
-      source = 'manual_lf';
+    } else if (manualScoreSource) {
+      source = manualScoreSource;
     } else {
       const anyAssignment = await this.findAnyAssignmentForActor(
         eventId,
@@ -1163,8 +1301,13 @@ export class CamporeeScoringService {
     const rubricById = new Map(
       rubrics.map((rubric) => [rubric.camporee_event_rubric_id, rubric]),
     );
-    const totalAwarded = this.round2(
-      dto.items.reduce((total, item) => total + item.awarded_points, 0),
+    const rawAwarded = this.round2(
+      isNoShow
+        ? 0
+        : submittedItems.reduce(
+            (total, item) => total + item.awarded_points,
+            0,
+          ),
     );
     const totalMax = this.round2(
       rubrics.reduce(
@@ -1172,63 +1315,189 @@ export class CamporeeScoringService {
         0,
       ),
     );
+    const minPoints = this.round2(this.toNumber(event.min_points ?? 0));
+    const totalAwarded = this.round2(
+      isNoShow
+        ? minPoints
+        : minPoints > 0 && rawAwarded < minPoints
+          ? minPoints
+          : rawAwarded,
+    );
+    if (totalAwarded > totalMax) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_SCORING_POINTS_EXCEED_MAX,
+        { awardedPoints: totalAwarded, maxPoints: totalMax },
+      );
+    }
     const percentage =
       totalMax === 0 ? 0 : this.round2((totalAwarded / totalMax) * 100);
+    const scoreStatus = isNoShow ? 'no_show' : 'scored';
+    const requestHash = this.createScoreRequestHash(
+      eventId,
+      clubSectionId,
+      { ...dto, items: submittedItems },
+      source,
+      scoreStatus,
+    );
+    const normalizedIdempotencyKey = idempotencyKey?.toLowerCase();
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const db = this.db(tx);
-      const submission = await db.camporee_event_score_submissions.create({
-        data: {
-          camporee_event_id: eventId,
-          camporee_club_id: enrollment.camporee_club_id,
-          club_section_id: clubSectionId,
-          judge_assignment_id: judgeAssignmentId,
-          submitted_by: actorUserId,
-          source,
-          total_awarded_points: totalAwarded,
-          total_max_points: totalMax,
-          notes: dto.notes ?? null,
-        },
-      });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const db = this.db(tx);
+        if (normalizedIdempotencyKey) {
+          const idempotencyLockIdentity = `camporee-score-idempotency:${actorUserId}:${normalizedIdempotencyKey}`;
+          await db.$executeRaw(
+            Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${idempotencyLockIdentity}, 0))`,
+          );
+        }
+        await db.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(${eventId}::integer, ${clubSectionId}::integer)`,
+        );
 
-      for (const item of dto.items) {
-        const rubric = rubricById.get(item.camporee_event_rubric_id);
-        await db.camporee_event_score_submission_items.create({
-          data: {
-            camporee_event_score_submission_id:
-              submission.camporee_event_score_submission_id,
-            camporee_event_rubric_id: item.camporee_event_rubric_id,
-            awarded_points: item.awarded_points,
-            notes: item.notes ?? null,
+        if (normalizedIdempotencyKey) {
+          const existingSubmission =
+            await this.findScoreSubmissionByIdempotencyKey(
+              db,
+              actorUserId,
+              normalizedIdempotencyKey,
+            );
+          if (existingSubmission) {
+            return this.mapIdempotentScoreReceipt(
+              existingSubmission,
+              requestHash,
+            );
+          }
+        }
+
+        const activeResult = await db.camporee_event_section_results.findFirst({
+          where: {
+            camporee_event_id: eventId,
+            club_section_id: clubSectionId,
+            active: true,
+          },
+          select: {
+            camporee_event_section_result_id: true,
+            source_submission_id: true,
           },
         });
-        void rubric;
+        const isManualSource =
+          source === 'manual_lf' || source === 'admin_override';
+
+        if (activeResult && !isManualSource) {
+          throw new AppConflictException(
+            ErrorCode.CAMPOREE_SCORING_RESULT_ALREADY_SUBMITTED,
+          );
+        }
+        if (
+          isManualSource &&
+          (!activeResult
+            ? dto.expected_active_result_id !== undefined
+            : dto.expected_active_result_id !==
+              activeResult.camporee_event_section_result_id)
+        ) {
+          throw new AppConflictException(
+            ErrorCode.CAMPOREE_SCORING_RESULT_STALE,
+          );
+        }
+        if (activeResult && isManualSource && !dto.notes?.trim()) {
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_SCORING_OVERRIDE_REASON_REQUIRED,
+          );
+        }
+
+        const submission = await db.camporee_event_score_submissions.create({
+          data: {
+            camporee_event_id: eventId,
+            camporee_club_id: enrollment.camporee_club_id,
+            club_section_id: clubSectionId,
+            judge_assignment_id: judgeAssignmentId,
+            submitted_by: actorUserId,
+            source,
+            idempotency_key: normalizedIdempotencyKey ?? null,
+            request_hash: normalizedIdempotencyKey ? requestHash : null,
+            score_status: scoreStatus,
+            is_no_show: isNoShow,
+            override_of_submission_id:
+              activeResult && isManualSource
+                ? activeResult.source_submission_id
+                : null,
+            total_awarded_points: totalAwarded,
+            raw_awarded_points: rawAwarded,
+            minimum_adjustment_points: this.round2(totalAwarded - rawAwarded),
+            total_max_points: totalMax,
+            notes: dto.notes ?? null,
+          },
+        });
+
+        for (const item of submittedItems) {
+          const rubric = rubricById.get(item.camporee_event_rubric_id);
+          await db.camporee_event_score_submission_items.create({
+            data: {
+              camporee_event_score_submission_id:
+                submission.camporee_event_score_submission_id,
+              camporee_event_rubric_id: item.camporee_event_rubric_id,
+              awarded_points: item.awarded_points,
+              notes: item.notes ?? null,
+            },
+          });
+          void rubric;
+        }
+
+        await db.camporee_event_section_results.updateMany({
+          where: {
+            camporee_event_id: eventId,
+            club_section_id: clubSectionId,
+            active: true,
+          },
+          data: { active: false, modified_at: new Date() },
+        });
+
+        const createdResult = await db.camporee_event_section_results.create({
+          data: {
+            camporee_event_id: eventId,
+            camporee_club_id: enrollment.camporee_club_id,
+            club_section_id: clubSectionId,
+            source_submission_id: submission.camporee_event_score_submission_id,
+            score_status: scoreStatus,
+            is_no_show: isNoShow,
+            total_awarded_points: totalAwarded,
+            total_max_points: totalMax,
+            percentage,
+            finalized_by: actorUserId,
+          },
+        });
+        return this.mapScoreReceipt(
+          {
+            ...submission,
+            raw_awarded_points: rawAwarded,
+            minimum_adjustment_points: this.round2(totalAwarded - rawAwarded),
+            total_awarded_points: totalAwarded,
+            total_max_points: totalMax,
+            notes: dto.notes ?? null,
+            submitted_by: actorUserId,
+            items: submittedItems,
+          },
+          createdResult,
+        );
+      });
+    } catch (error) {
+      if (
+        !normalizedIdempotencyKey ||
+        !this.isPrismaUniqueConstraintError(error)
+      ) {
+        throw error;
       }
 
-      await db.camporee_event_section_results.updateMany({
-        where: {
-          camporee_event_id: eventId,
-          club_section_id: clubSectionId,
-          active: true,
-        },
-        data: { active: false, modified_at: new Date() },
-      });
-
-      return db.camporee_event_section_results.create({
-        data: {
-          camporee_event_id: eventId,
-          camporee_club_id: enrollment.camporee_club_id,
-          club_section_id: clubSectionId,
-          source_submission_id: submission.camporee_event_score_submission_id,
-          total_awarded_points: totalAwarded,
-          total_max_points: totalMax,
-          percentage,
-          finalized_by: actorUserId,
-        },
-      });
-    });
-
-    return this.mapResult(result);
+      const existingSubmission = await this.findScoreSubmissionByIdempotencyKey(
+        this.db(),
+        actorUserId,
+        normalizedIdempotencyKey,
+      );
+      if (!existingSubmission) {
+        throw error;
+      }
+      return this.mapIdempotentScoreReceipt(existingSubmission, requestHash);
+    }
   }
 
   async getScoringTargets(eventId: number, actorUserId: string) {

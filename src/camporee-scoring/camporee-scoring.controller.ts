@@ -3,8 +3,10 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -13,6 +15,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiOperation,
   ApiParam,
   ApiTags,
@@ -36,6 +39,8 @@ import {
 @Controller()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class CamporeeScoringController {
+  private readonly idempotencyKeyPipe = new ParseUUIDPipe({ optional: true });
+
   constructor(private readonly service: CamporeeScoringService) {}
 
   @Get('camporee-events/:eventId/rubrics')
@@ -211,17 +216,33 @@ export class CamporeeScoringController {
 
   @Post('camporee-events/:eventId/sections/:clubSectionId/scores')
   @ApiOperation({ summary: 'Submit official camporee score by rubric' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    schema: { type: 'string', format: 'uuid' },
+    description:
+      'Optional UUID used to safely replay the same score submission.',
+  })
   async submitScore(
     @Param('eventId', ParseIntPipe) eventId: number,
     @Param('clubSectionId', ParseIntPipe) clubSectionId: number,
     @Body() dto: SubmitCamporeeEventScoreDto,
     @Request() req: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
+    const validatedIdempotencyKey =
+      idempotencyKey === undefined
+        ? undefined
+        : await this.idempotencyKeyPipe.transform(idempotencyKey, {
+            type: 'custom',
+            data: 'idempotency-key',
+          });
     const data = await this.service.submitScore(
       eventId,
       clubSectionId,
       dto,
       req.user.sub,
+      validatedIdempotencyKey,
     );
     return { status: 'success', data };
   }
