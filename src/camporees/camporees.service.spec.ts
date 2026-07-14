@@ -1108,10 +1108,13 @@ describe('CamporeesService', () => {
           return [{ local_camporee_id: camporeeId }];
         }
         if (sql.includes('FROM "club_sections"')) {
-          return [{ club_section_id: 44, main_club_id: 12 }];
+          return [{ club_section_id: 44, main_club_id: 12, club_type_id: 2 }];
         }
         if (sql.includes('FROM "clubs"')) {
           return [{ club_id: 12 }];
+        }
+        if (sql.includes('FROM "club_types"')) {
+          return [{ club_type_id: 2, active: true }];
         }
         throw new Error(`Unexpected lock query: ${sql}`);
       });
@@ -1134,7 +1137,7 @@ describe('CamporeesService', () => {
       return { tx, create, queryRaw };
     };
 
-    it('locks camporee, section, and club in fixed order before rereading', async () => {
+    it('locks camporee, section, club, and eligible type in fixed order before rereading', async () => {
       const { tx, queryRaw } = configureTransaction();
 
       await service.enrollClub(
@@ -1147,15 +1150,17 @@ describe('CamporeesService', () => {
       const lockQueries = queryRaw.mock.calls.map(([query]) =>
         query.strings.join('?'),
       );
-      expect(lockQueries).toHaveLength(3);
+      expect(lockQueries).toHaveLength(4);
       expect(lockQueries[0]).toContain('FROM "local_camporees"');
       expect(lockQueries[1]).toContain('FROM "club_sections"');
       expect(lockQueries[2]).toContain('FROM "clubs"');
-      expect(queryRaw.mock.invocationCallOrder[2]).toBeLessThan(
+      expect(lockQueries[3]).toContain('FROM "club_types"');
+      expect(queryRaw.mock.invocationCallOrder[3]).toBeLessThan(
         tx.local_camporees.findUnique.mock.invocationCallOrder[0],
       );
       expect(queryRaw.mock.calls[0][0].values).toContain(camporeeId);
       expect(queryRaw.mock.calls[1][0].values).toContain(44);
+      expect(queryRaw.mock.calls[3][0].values).toEqual([2]);
     });
 
     it('fails closed when the camporee lock finds no row', async () => {
@@ -1189,7 +1194,76 @@ describe('CamporeesService', () => {
         ),
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_ACTIVE });
 
-      expect(queryRaw).toHaveBeenCalledTimes(3);
+      expect(queryRaw).toHaveBeenCalledTimes(4);
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['missing', []],
+      ['inactive', [{ club_type_id: 2, active: false }]],
+    ])('fails closed when the locked club type is %s', async (_label, rows) => {
+      const { tx, queryRaw } = configureTransaction();
+      queryRaw
+        .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
+        .mockResolvedValueOnce([
+          { club_section_id: 44, main_club_id: 12, club_type_id: 2 },
+        ])
+        .mockResolvedValueOnce([{ club_id: 12 }])
+        .mockResolvedValueOnce(rows);
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
+      });
+      expect(tx.local_camporees.findUnique).not.toHaveBeenCalled();
+      expect(tx.camporee_clubs.create).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the post-lock club type id is stale', async () => {
+      const { create, queryRaw } = configureTransaction();
+      queryRaw
+        .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
+        .mockResolvedValueOnce([
+          { club_section_id: 44, main_club_id: 12, club_type_id: 1 },
+        ])
+        .mockResolvedValueOnce([{ club_id: 12 }])
+        .mockResolvedValueOnce([{ club_type_id: 1, active: true }]);
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the post-lock local club type reread is missing', async () => {
+      const { create } = configureTransaction(
+        camporee(),
+        section({ club_types: null }),
+      );
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
+      });
       expect(create).not.toHaveBeenCalled();
     });
 
@@ -1550,10 +1624,13 @@ describe('CamporeesService', () => {
           return [{ union_camporee_id: unionCamporeeId }];
         }
         if (sql.includes('FROM "club_sections"')) {
-          return [{ club_section_id: 44, main_club_id: 12 }];
+          return [{ club_section_id: 44, main_club_id: 12, club_type_id: 2 }];
         }
         if (sql.includes('FROM "clubs"')) {
           return [{ club_id: 12 }];
+        }
+        if (sql.includes('FROM "club_types"')) {
+          return [{ club_type_id: 2, active: true }];
         }
         throw new Error(`Unexpected lock query: ${sql}`);
       });
@@ -1579,7 +1656,7 @@ describe('CamporeesService', () => {
       return { tx, create, queryRaw };
     };
 
-    it('locks union camporee, section, and club before the post-lock rereads', async () => {
+    it('locks union camporee, section, club, and eligible type before the post-lock rereads', async () => {
       const { tx, queryRaw } = configureUnionTransaction();
 
       await service.enrollClubToUnion(
@@ -1594,7 +1671,8 @@ describe('CamporeesService', () => {
       expect(lockQueries[0]).toContain('FROM "union_camporees"');
       expect(lockQueries[1]).toContain('FROM "club_sections"');
       expect(lockQueries[2]).toContain('FROM "clubs"');
-      expect(queryRaw.mock.invocationCallOrder[2]).toBeLessThan(
+      expect(lockQueries[3]).toContain('FROM "club_types"');
+      expect(queryRaw.mock.invocationCallOrder[3]).toBeLessThan(
         tx.union_camporees.findUnique.mock.invocationCallOrder[0],
       );
     });
@@ -1630,9 +1708,84 @@ describe('CamporeesService', () => {
       ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
       });
-      expect(queryRaw).toHaveBeenCalledTimes(3);
+      expect(queryRaw).toHaveBeenCalledTimes(4);
       expect(create).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['missing', []],
+      ['inactive', [{ club_type_id: 2, active: false }]],
+    ])(
+      'fails closed when the locked union club type is %s',
+      async (_label, rows) => {
+        const { tx, queryRaw } = configureUnionTransaction();
+        queryRaw
+          .mockResolvedValueOnce([{ union_camporee_id: unionCamporeeId }])
+          .mockResolvedValueOnce([
+            { club_section_id: 44, main_club_id: 12, club_type_id: 2 },
+          ])
+          .mockResolvedValueOnce([{ club_id: 12 }])
+          .mockResolvedValueOnce(rows);
+
+        await expect(
+          service.enrollClubToUnion(
+            unionCamporeeId,
+            { club_section_id: 44 },
+            'organizer-id',
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
+        });
+        expect(tx.union_camporees.findUnique).not.toHaveBeenCalled();
+        expect(tx.camporee_clubs.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('fails closed when the post-lock union club type id is stale', async () => {
+      const { create, queryRaw } = configureUnionTransaction();
+      queryRaw
+        .mockResolvedValueOnce([{ union_camporee_id: unionCamporeeId }])
+        .mockResolvedValueOnce([
+          { club_section_id: 44, main_club_id: 12, club_type_id: 1 },
+        ])
+        .mockResolvedValueOnce([{ club_id: 12 }])
+        .mockResolvedValueOnce([{ club_type_id: 1, active: true }]);
+
+      await expect(
+        service.enrollClubToUnion(
+          unionCamporeeId,
+          { club_section_id: 44 },
+          'organizer-id',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['missing', null],
+      ['inactive', { club_type_id: 2, name: 'Conquistadores', active: false }],
+    ])(
+      'fails closed when the post-lock union club type reread is %s',
+      async (_label, clubType) => {
+        const { create } = configureUnionTransaction(
+          camporee(),
+          section({ club_types: clubType }),
+        );
+
+        await expect(
+          service.enrollClubToUnion(
+            unionCamporeeId,
+            { club_section_id: 44 },
+            'organizer-id',
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
+        });
+        expect(create).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       {

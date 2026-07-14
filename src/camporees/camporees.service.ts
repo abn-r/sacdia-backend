@@ -1578,7 +1578,11 @@ export class CamporeesService {
 
     const enrollment = this.prisma.$transaction(async (tx) => {
       await this.lockLegacyCamporeeScope(tx, camporeeId, 'local');
-      await this.lockLegacySectionAndClub(tx, dto.club_section_id);
+      const lockedClubTypeId = await this.lockLegacySectionAndClub(
+        tx,
+        dto.club_section_id,
+      );
+      await this.lockEligibleClubType(tx, lockedClubTypeId);
 
       // 1. Validate camporee exists and is active
       const camporee = await tx.local_camporees.findUnique({
@@ -1645,7 +1649,10 @@ export class CamporeesService {
       }
 
       if (
+        !clubSection.club_types ||
         !clubSection.club_types.active ||
+        clubSection.club_type_id !== lockedClubTypeId ||
+        clubSection.club_types.club_type_id !== lockedClubTypeId ||
         clubSection.club_types.club_type_id !== clubSection.club_type_id ||
         !this.isClubTypeIncludedInCamporee(clubSection.club_type_id, camporee)
       ) {
@@ -2331,7 +2338,11 @@ export class CamporeesService {
 
     const enrollment = this.prisma.$transaction(async (tx) => {
       await this.lockLegacyCamporeeScope(tx, unionCamporeeId, 'union');
-      await this.lockLegacySectionAndClub(tx, dto.club_section_id);
+      const lockedClubTypeId = await this.lockLegacySectionAndClub(
+        tx,
+        dto.club_section_id,
+      );
+      await this.lockEligibleClubType(tx, lockedClubTypeId);
 
       // 1. Validate union camporee exists and is active
       const camporee = await tx.union_camporees.findUnique({
@@ -2394,7 +2405,10 @@ export class CamporeesService {
       }
 
       if (
+        !clubSection.club_types ||
         !clubSection.club_types.active ||
+        clubSection.club_type_id !== lockedClubTypeId ||
+        clubSection.club_types.club_type_id !== lockedClubTypeId ||
         clubSection.club_types.club_type_id !== clubSection.club_type_id ||
         !this.isClubTypeIncludedInCamporee(clubSection.club_type_id, camporee)
       ) {
@@ -3340,16 +3354,21 @@ export class CamporeesService {
   private async lockLegacySectionAndClub(
     db: CamporeeRegistrationDb,
     clubSectionId: number,
-  ): Promise<void> {
+  ): Promise<number> {
     const lockedSections = await db.$queryRaw<
-      Array<{ club_section_id: number; main_club_id: number | null }>
+      Array<{
+        club_section_id: number;
+        main_club_id: number | null;
+        club_type_id: number;
+      }>
     >(Prisma.sql`
-      SELECT "club_section_id", "main_club_id"
+      SELECT "club_section_id", "main_club_id", "club_type_id"
       FROM "club_sections"
       WHERE "club_section_id" = ${clubSectionId}
       FOR UPDATE
     `);
-    const mainClubId = lockedSections[0]?.main_club_id;
+    const lockedSection = lockedSections[0];
+    const mainClubId = lockedSection?.main_club_id;
     if (typeof mainClubId !== 'number') {
       throw new AppNotFoundException(
         ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
@@ -3369,6 +3388,33 @@ export class CamporeesService {
       throw new AppNotFoundException(
         ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
         { id: clubSectionId },
+      );
+    }
+
+    return lockedSection.club_type_id;
+  }
+
+  private async lockEligibleClubType(
+    db: CamporeeRegistrationDb,
+    clubTypeId: number,
+  ): Promise<void> {
+    // Shared legacy lock order: camporee/territory → section → club → type.
+    const lockedClubTypes = await db.$queryRaw<
+      Array<{ club_type_id: number; active: boolean }>
+    >(Prisma.sql`
+      SELECT "club_type_id", "active"
+      FROM "club_types"
+      WHERE "club_type_id" = ${clubTypeId}
+      FOR UPDATE
+    `);
+    const lockedClubType = lockedClubTypes[0];
+    if (
+      !lockedClubType ||
+      lockedClubType.club_type_id !== clubTypeId ||
+      !lockedClubType.active
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
       );
     }
   }
