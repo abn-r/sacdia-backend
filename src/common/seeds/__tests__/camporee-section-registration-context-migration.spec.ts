@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  findSqlStatementPositions,
+  normalizeSql,
+  stripSqlComments,
+} from './sql-contract-test-utils';
 
 const PRISMA_DIR = join(__dirname, '..', '..', '..', '..', 'prisma');
 const MIGRATION_PATH = join(
@@ -17,7 +22,7 @@ const UNION_UNIQUE_INDEX = `CREATE UNIQUE INDEX "uq_camporee_clubs_active_union_
 
 describe('Camporee section registration context migration contract', () => {
   const migration = normalizeSql(
-    stripSqlLineComments(readFileSync(MIGRATION_PATH, 'utf8')),
+    stripSqlComments(readFileSync(MIGRATION_PATH, 'utf8')),
   );
   const schema = readFileSync(SCHEMA_PATH, 'utf8');
 
@@ -36,15 +41,28 @@ describe('Camporee section registration context migration contract', () => {
     const unionGuardIndex = migration.indexOf(UNION_DUPLICATE_GUARD);
     const localUniqueIndex = migration.indexOf(LOCAL_UNIQUE_INDEX);
     const unionUniqueIndex = migration.indexOf(UNION_UNIQUE_INDEX);
-    const commitIndex = migration.lastIndexOf('COMMIT;');
+    const beginPositions = findSqlStatementPositions(migration, 'BEGIN');
+    const commitPositions = findSqlStatementPositions(migration, 'COMMIT');
+    const commitIndex = commitPositions[0] ?? -1;
 
-    expect(migration.startsWith('BEGIN;')).toBe(true);
+    expect(beginPositions).toEqual([0]);
+    expect(commitPositions).toHaveLength(1);
     expect(migration.endsWith('COMMIT;')).toBe(true);
     expect(localGuardIndex).toBeGreaterThan(-1);
     expect(unionGuardIndex).toBeGreaterThan(localGuardIndex);
     expect(localUniqueIndex).toBeGreaterThan(unionGuardIndex);
     expect(unionUniqueIndex).toBeGreaterThan(localUniqueIndex);
     expect(commitIndex).toBeGreaterThan(unionUniqueIndex);
+    expect(hasRollbackSafeProtectedOrder(migration)).toBe(true);
+  });
+
+  it('rejects an intermediate COMMIT before the protected unique indexes', () => {
+    const withIntermediateCommit = migration.replace(
+      LOCAL_UNIQUE_INDEX,
+      `COMMIT; ${LOCAL_UNIQUE_INDEX}`,
+    );
+
+    expect(hasRollbackSafeProtectedOrder(withIntermediateCommit)).toBe(false);
   });
 
   it('documents both database-managed partial unique indexes beside camporee_clubs', () => {
@@ -62,17 +80,6 @@ describe('Camporee section registration context migration contract', () => {
   });
 });
 
-function stripSqlLineComments(sql: string): string {
-  return sql
-    .split('\n')
-    .map((line) => line.replace(/--.*$/, ''))
-    .join('\n');
-}
-
-function normalizeSql(sql: string): string {
-  return sql.replace(/\s+/g, ' ').trim();
-}
-
 function extractPrismaModel(schema: string, modelName: string): string {
   const startMarker = `model ${modelName} {`;
   const startIndex = schema.indexOf(startMarker);
@@ -86,4 +93,27 @@ function extractPrismaModel(schema: string, modelName: string): string {
   }
 
   return schema.slice(startIndex, endIndex);
+}
+
+function hasRollbackSafeProtectedOrder(sql: string): boolean {
+  const localGuardIndex = sql.indexOf(LOCAL_DUPLICATE_GUARD);
+  const unionGuardIndex = sql.indexOf(UNION_DUPLICATE_GUARD);
+  const localUniqueIndex = sql.indexOf(LOCAL_UNIQUE_INDEX);
+  const unionUniqueIndex = sql.indexOf(UNION_UNIQUE_INDEX);
+  const beginPositions = findSqlStatementPositions(sql, 'BEGIN');
+  const commitPositions = findSqlStatementPositions(sql, 'COMMIT');
+  const beginIndex = beginPositions[0] ?? -1;
+  const commitIndex = commitPositions[0] ?? -1;
+
+  return (
+    beginPositions.length === 1 &&
+    commitPositions.length === 1 &&
+    beginIndex === 0 &&
+    sql.endsWith('COMMIT;') &&
+    localGuardIndex > beginIndex &&
+    unionGuardIndex > localGuardIndex &&
+    localUniqueIndex > unionGuardIndex &&
+    unionUniqueIndex > localUniqueIndex &&
+    commitIndex > unionUniqueIndex
+  );
 }

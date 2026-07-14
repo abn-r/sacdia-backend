@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  findSqlStatementPositions,
+  stripSqlComments,
+} from './sql-contract-test-utils';
 
 // Static-analysis spec for the Phase 3 permission cleanup
 // (`permission-scope-cleanup-phase-3`). Verifies the seed files no longer
@@ -39,9 +43,9 @@ const ACTIVE_SECTION_REGISTRATION_PERMISSION =
 describe('Phase 3 permission cleanup — seed files', () => {
   const permissionsSeed = readFileSync(PERMISSIONS_SEED_PATH, 'utf8');
   const rolePermissionsSeed = readFileSync(ROLE_PERMISSIONS_SEED_PATH, 'utf8');
-  const permissionsSeedWithoutComments = stripSqlLineComments(permissionsSeed);
+  const permissionsSeedWithoutComments = stripSqlComments(permissionsSeed);
   const rolePermissionsSeedWithoutComments =
-    stripSqlLineComments(rolePermissionsSeed);
+    stripSqlComments(rolePermissionsSeed);
 
   describe('role-permissions.seed.sql', () => {
     it('does not list any legacy permission inside a role IN-array (Req-8)', () => {
@@ -150,13 +154,35 @@ describe('Phase 3 permission cleanup — seed files', () => {
       const exclusiveCleanupIndex = rolePermissionsSeedWithoutComments.indexOf(
         `DELETE FROM role_permissions rp\nUSING permissions p, roles r\nWHERE rp.permission_id = p.permission_id\n  AND rp.role_id = r.role_id\n  AND p.permission_name = '${ACTIVE_SECTION_REGISTRATION_PERMISSION}'`,
       );
-      const commitIndex =
-        rolePermissionsSeedWithoutComments.lastIndexOf('COMMIT;');
+      const beginPositions = findSqlStatementPositions(
+        rolePermissionsSeedWithoutComments,
+        'BEGIN',
+      );
+      const commitPositions = findSqlStatementPositions(
+        rolePermissionsSeedWithoutComments,
+        'COMMIT',
+      );
+      const commitIndex = commitPositions[0] ?? -1;
 
+      expect(beginPositions).toHaveLength(1);
+      expect(commitPositions).toHaveLength(1);
       expect(adminGrantIndex).toBeGreaterThan(-1);
       expect(superAdminGrantIndex).toBeGreaterThan(adminGrantIndex);
       expect(exclusiveCleanupIndex).toBeGreaterThan(superAdminGrantIndex);
       expect(commitIndex).toBeGreaterThan(exclusiveCleanupIndex);
+      expect(
+        hasProtectedRoleCleanupOrder(rolePermissionsSeedWithoutComments),
+      ).toBe(true);
+    });
+
+    it('rejects a COMMIT inserted between broad grants and exclusive cleanup', () => {
+      const cleanupMarker = 'DELETE FROM role_permissions rp';
+      const withIntermediateCommit = rolePermissionsSeedWithoutComments.replace(
+        cleanupMarker,
+        `COMMIT;\n${cleanupMarker}`,
+      );
+
+      expect(hasProtectedRoleCleanupOrder(withIntermediateCommit)).toBe(false);
     });
   });
 
@@ -185,10 +211,20 @@ describe('Phase 3 permission cleanup — seed files', () => {
     });
 
     it('keeps the soft-delete UPDATE inside the BEGIN/COMMIT block', () => {
-      const idxBegin = permissionsSeedWithoutComments.indexOf('BEGIN;');
-      const idxCommit = permissionsSeedWithoutComments.lastIndexOf('COMMIT;');
+      const beginPositions = findSqlStatementPositions(
+        permissionsSeedWithoutComments,
+        'BEGIN',
+      );
+      const commitPositions = findSqlStatementPositions(
+        permissionsSeedWithoutComments,
+        'COMMIT',
+      );
+      const idxBegin = beginPositions[0] ?? -1;
+      const idxCommit = commitPositions[0] ?? -1;
       const idxSoftDelete =
         permissionsSeedWithoutComments.indexOf('UPDATE permissions');
+      expect(beginPositions).toHaveLength(1);
+      expect(commitPositions).toHaveLength(1);
       expect(idxBegin).toBeGreaterThan(-1);
       expect(idxCommit).toBeGreaterThan(idxBegin);
       expect(idxSoftDelete).toBeGreaterThan(idxBegin);
@@ -197,17 +233,38 @@ describe('Phase 3 permission cleanup — seed files', () => {
   });
 });
 
+describe('SQL comment sanitizer', () => {
+  it('removes line comments', () => {
+    expect(stripSqlComments('SELECT 1; -- remove me\nSELECT 2;')).toBe(
+      'SELECT 1; \nSELECT 2;',
+    );
+  });
+
+  it('removes block comments including multiline content', () => {
+    expect(stripSqlComments('SELECT 1; /* remove\nthis */ SELECT 2;')).toBe(
+      'SELECT 1;  \n SELECT 2;',
+    );
+  });
+
+  it('preserves comment markers inside SQL strings', () => {
+    const sql =
+      "SELECT '-- keep', '/* keep */', 'it''s -- still data'; -- remove";
+
+    expect(stripSqlComments(sql)).toBe(
+      "SELECT '-- keep', '/* keep */', 'it''s -- still data'; ",
+    );
+  });
+
+  it('does not count transaction keywords inside SQL strings', () => {
+    const sql = "BEGIN; SELECT 'COMMIT;', 'BEGIN;'; COMMIT;";
+
+    expect(findSqlStatementPositions(sql, 'BEGIN')).toHaveLength(1);
+    expect(findSqlStatementPositions(sql, 'COMMIT')).toHaveLength(1);
+  });
+});
+
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// Drop SQL line comments (-- ...) so legacy mentions inside comments do not
-// poison the IN-array assertion.
-function stripSqlLineComments(sql: string): string {
-  return sql
-    .split('\n')
-    .map((line) => line.replace(/--.*$/, ''))
-    .join('\n');
 }
 
 function extractAllRoleGrantBlocks(sql: string): string {
@@ -262,4 +319,23 @@ function extractRoleInsertBlock(sql: string, roleName: string): string {
   }
 
   return sql.slice(startIndex, endIndex);
+}
+
+function hasProtectedRoleCleanupOrder(sql: string): boolean {
+  const adminGrantIndex = sql.indexOf("WHERE r.role_name = 'admin'");
+  const superAdminGrantIndex = sql.indexOf("WHERE r.role_name = 'super-admin'");
+  const cleanupIndex = sql.indexOf('DELETE FROM role_permissions rp');
+  const beginPositions = findSqlStatementPositions(sql, 'BEGIN');
+  const commitPositions = findSqlStatementPositions(sql, 'COMMIT');
+  const beginIndex = beginPositions[0] ?? -1;
+  const commitIndex = commitPositions[0] ?? -1;
+
+  return (
+    beginPositions.length === 1 &&
+    commitPositions.length === 1 &&
+    adminGrantIndex > beginIndex &&
+    superAdminGrantIndex > adminGrantIndex &&
+    cleanupIndex > superAdminGrantIndex &&
+    commitIndex > cleanupIndex
+  );
 }
