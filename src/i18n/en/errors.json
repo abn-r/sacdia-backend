@@ -75,6 +75,7 @@
   "CAMPOREE_UNION_ACCESS_DENIED": "You do not have access to manage union camporees",
   "CAMPOREE_LOCAL_FIELD_ACCESS_DENIED": "You do not have access to manage camporees for this local field",
   "CAMPOREE_ACTIVE_SECTION_REQUIRED": "You must select an active club assignment to view this registration",
+  "CAMPOREE_CLUB_ENROLLMENT_STATUS_INVALID": "The camporee club enrollment has an unsupported status",
   "CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND": "Pending club enrollment not found",
   "CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND": "Pending member enrollment not found",
   "CAMPOREE_PAYMENT_PENDING_NOT_FOUND": "Pending payment not found",

@@ -253,6 +253,13 @@ describe('CamporeesService', () => {
       name: 'Conquistadores Orión',
       active: true,
       club_type_id: 2,
+      main_club_id: 12,
+      clubs: {
+        club_id: 12,
+        name: 'Orión',
+        active: true,
+        local_field_id: 5,
+      },
       club_types: {
         club_type_id: 2,
         name: 'Conquistadores',
@@ -343,6 +350,48 @@ describe('CamporeesService', () => {
       expect(result.registeredBy?.userId).not.toBe(actorId);
     });
 
+    it.each([
+      'registered',
+      'pending_approval',
+      'approved',
+      'rejected',
+      'cancelled',
+    ] as const)('maps the supported enrollment status %s', async (status) => {
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue({
+        camporee_club_id: 91,
+        status,
+        created_at: registeredAt,
+        registrar: null,
+      });
+
+      await expect(
+        service.getActiveSectionRegistration(
+          camporeeId,
+          actorId,
+          authorization(),
+        ),
+      ).resolves.toMatchObject({ status });
+    });
+
+    it('fails closed when the persisted enrollment status is unsupported', async () => {
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue({
+        camporee_club_id: 91,
+        status: 'unexpected_status',
+        created_at: registeredAt,
+        registrar: null,
+      });
+
+      await expect(
+        service.getActiveSectionRegistration(
+          camporeeId,
+          actorId,
+          authorization(),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_ENROLLMENT_STATUS_INVALID,
+      });
+    });
+
     it('allows a non-director active grant to read but not enroll', async () => {
       const result = await service.getActiveSectionRegistration(
         camporeeId,
@@ -374,6 +423,74 @@ describe('CamporeesService', () => {
         blockingReason: 'club_type_not_included',
       });
     });
+
+    it.each([
+      [
+        'club ownership',
+        section({
+          main_club_id: 99,
+          clubs: {
+            club_id: 99,
+            name: 'Club ajeno',
+            active: true,
+            local_field_id: 5,
+          },
+        }),
+      ],
+      [
+        'local field lineage',
+        section({
+          clubs: {
+            club_id: 12,
+            name: 'Orión',
+            active: true,
+            local_field_id: 99,
+          },
+        }),
+      ],
+      [
+        'club type lineage',
+        section({
+          club_type_id: 3,
+          club_types: {
+            club_type_id: 3,
+            name: 'Guías Mayores',
+            active: true,
+          },
+        }),
+      ],
+      ['inactive section', section({ active: false })],
+      [
+        'inactive club',
+        section({
+          clubs: {
+            club_id: 12,
+            name: 'Orión',
+            active: false,
+            local_field_id: 5,
+          },
+        }),
+      ],
+    ])(
+      'rejects stale %s without reading enrollment data',
+      async (_label, row) => {
+        mockPrismaService.club_sections.findUnique.mockResolvedValue(row);
+
+        await expect(
+          service.getActiveSectionRegistration(
+            camporeeId,
+            actorId,
+            authorization(),
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+        });
+
+        expect(
+          mockPrismaService.camporee_clubs.findFirst,
+        ).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       [

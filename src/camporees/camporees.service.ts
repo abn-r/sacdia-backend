@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import {
   AppBadRequestException,
   AppForbiddenException,
+  AppInternalServerErrorException,
   AppNotFoundException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -100,6 +101,7 @@ export class CamporeesService {
       },
       select: {
         local_camporee_id: true,
+        local_field_id: true,
         active: true,
         includes_adventurers: true,
         includes_pathfinders: true,
@@ -125,53 +127,74 @@ export class CamporeesService {
       throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
     }
 
-    const [section, enrollment] = await Promise.all([
-      this.prisma.club_sections.findUnique({
-        where: { club_section_id: activeGrant.section.club_section_id },
-        select: {
-          club_section_id: true,
-          name: true,
-          active: true,
-          club_type_id: true,
-          club_types: {
-            select: {
-              club_type_id: true,
-              name: true,
-              active: true,
-            },
+    const section = await this.prisma.club_sections.findUnique({
+      where: { club_section_id: activeGrant.section.club_section_id },
+      select: {
+        club_section_id: true,
+        name: true,
+        active: true,
+        club_type_id: true,
+        main_club_id: true,
+        clubs: {
+          select: {
+            club_id: true,
+            name: true,
+            active: true,
+            local_field_id: true,
           },
         },
-      }),
-      this.prisma.camporee_clubs.findFirst({
-        where: {
-          camporee_id: camporeeId,
-          club_section_id: activeGrant.section.club_section_id,
-          active: true,
-        },
-        select: {
-          camporee_club_id: true,
-          status: true,
-          created_at: true,
-          registrar: {
-            select: {
-              user_id: true,
-              name: true,
-              paternal_last_name: true,
-              maternal_last_name: true,
-            },
+        club_types: {
+          select: {
+            club_type_id: true,
+            name: true,
+            active: true,
           },
         },
-      }),
-    ]);
+      },
+    });
+
+    if (
+      !section ||
+      !section.active ||
+      !section.clubs?.active ||
+      section.main_club_id !== activeGrant.club.club_id ||
+      section.clubs.club_id !== activeGrant.club.club_id ||
+      section.club_type_id !== activeGrant.section.club_type_id ||
+      section.club_types.club_type_id !== activeGrant.section.club_type_id ||
+      section.clubs.local_field_id !== localFieldId ||
+      section.clubs.local_field_id !== camporee.local_field_id
+    ) {
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      );
+    }
+
+    const enrollment = await this.prisma.camporee_clubs.findFirst({
+      where: {
+        camporee_id: camporeeId,
+        club_section_id: section.club_section_id,
+        active: true,
+      },
+      select: {
+        camporee_club_id: true,
+        status: true,
+        created_at: true,
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
 
     const disposition = this.resolveClubRegistrationDisposition(camporee);
     const clubTypeIncluded =
       section?.active === true &&
       section.club_types.active === true &&
-      this.isClubTypeIncludedInCamporee(
-        activeGrant.section.club_type_id,
-        camporee,
-      );
+      this.isClubTypeIncludedInCamporee(section.club_type_id, camporee);
 
     return this.mapActiveSectionRegistration({
       camporeeId,
@@ -2841,15 +2864,23 @@ export class CamporeesService {
     camporeeId: number;
     activeGrant: ClubAuthorizationGrant;
     section: {
+      club_section_id: number;
       name: string | null;
       active: boolean;
       club_type_id: number;
+      main_club_id: number | null;
+      clubs: {
+        club_id: number;
+        name: string;
+        active: boolean;
+        local_field_id: number;
+      };
       club_types: {
         club_type_id: number;
         name: string;
         active: boolean;
       };
-    } | null;
+    };
     enrollment: {
       camporee_club_id: number;
       status: string;
@@ -2893,18 +2924,12 @@ export class CamporeesService {
 
     return {
       camporeeId: input.camporeeId,
-      clubId: activeGrant.club.club_id,
-      clubName: activeGrant.club.club_name,
-      clubSectionId: activeGrant.section.club_section_id,
-      sectionName:
-        input.section?.name?.trim() ||
-        activeGrant.section.club_type_name?.trim() ||
-        '',
-      clubTypeId: activeGrant.section.club_type_id,
-      clubTypeName:
-        input.section?.club_types.name ??
-        activeGrant.section.club_type_name ??
-        '',
+      clubId: input.section.clubs.club_id,
+      clubName: input.section.clubs.name,
+      clubSectionId: input.section.club_section_id,
+      sectionName: input.section.name?.trim() || input.section.club_types.name,
+      clubTypeId: input.section.club_type_id,
+      clubTypeName: input.section.club_types.name,
       status: enrollment
         ? this.mapSectionRegistrationStatus(enrollment.status)
         : 'not_enrolled',
@@ -2937,7 +2962,14 @@ export class CamporeesService {
       cancelled: 'cancelled',
     };
 
-    return statusMap[status] ?? 'registered';
+    const mappedStatus = statusMap[status];
+    if (!mappedStatus) {
+      throw new AppInternalServerErrorException(
+        ErrorCode.CAMPOREE_CLUB_ENROLLMENT_STATUS_INVALID,
+      );
+    }
+
+    return mappedStatus;
   }
 
   private isClubTypeIncludedInCamporee(

@@ -75,6 +75,7 @@
   "CAMPOREE_UNION_ACCESS_DENIED": "No tenés acceso para administrar campamentos de unión",
   "CAMPOREE_LOCAL_FIELD_ACCESS_DENIED": "No tenés acceso para administrar campamentos de este campo local",
   "CAMPOREE_ACTIVE_SECTION_REQUIRED": "Debes seleccionar una asignación activa de club para consultar esta inscripción",
+  "CAMPOREE_CLUB_ENROLLMENT_STATUS_INVALID": "La inscripción de club del campamento tiene un estado no compatible",
   "CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND": "Inscripción de club pendiente de aprobación no encontrada",
   "CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND": "Inscripción de miembro pendiente de aprobación no encontrada",
   "CAMPOREE_PAYMENT_PENDING_NOT_FOUND": "Pago pendiente de aprobación no encontrado",
