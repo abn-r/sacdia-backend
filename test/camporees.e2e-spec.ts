@@ -6,7 +6,6 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PermissionsGuard } from '../src/common/guards';
-import { ThrottlerGuard } from '@nestjs/throttler';
 import {
   buildAuthorizationSnapshot,
   createBearerToken,
@@ -163,6 +162,20 @@ describe('Camporees E2E Tests', () => {
     await app.close();
   });
 
+  beforeEach(() => {
+    jest
+      .spyOn(prisma, '$transaction')
+      .mockImplementation(async (input: any) => {
+        if (Array.isArray(input)) {
+          return Promise.all(input);
+        }
+
+        throw new TypeError(
+          'Callback transactions require an explicit E2E transaction fixture',
+        );
+      });
+  });
+
   afterEach(async () => {
     jest.clearAllMocks();
     currentAuthorization = buildAuthorizationSnapshot({
@@ -269,7 +282,7 @@ describe('Camporees E2E Tests', () => {
         .mockResolvedValue(mockEcclesiasticalYear);
       jest.spyOn(prisma.local_fields, 'findUnique').mockResolvedValue(null);
 
-      await postAsUser('/api/v1/camporees').send(createCamporeeDto).expect(400);
+      await postAsUser('/api/v1/camporees').send(createCamporeeDto).expect(404);
     });
 
     it('should reject with invalid data (missing required fields)', async () => {
@@ -534,13 +547,60 @@ describe('Camporees E2E Tests', () => {
         camporee_club_id: 31,
         status: 'registered',
       },
-      enrollmentFindFirst = jest.fn().mockResolvedValue(enrollment),
     ) => {
       const originalCamporeeFindUnique = tx.local_camporees.findUnique;
       const originalUserFindUnique = tx.users?.findUnique;
+      const sectionEnrollment = enrollment
+        ? {
+            ...enrollment,
+            camporee_id: TEST_CAMPOREE_ID,
+            club_section_id: 1,
+            active: true,
+          }
+        : null;
+
+      const queryRaw = jest.fn(async (query: unknown) => {
+        const sql =
+          typeof query === 'object' &&
+          query !== null &&
+          'strings' in query &&
+          Array.isArray((query as { strings?: unknown }).strings)
+            ? (query as { strings: string[] }).strings.join(' ')
+            : '';
+
+        if (sql.includes('FROM "local_camporees"')) {
+          const camporee = await originalCamporeeFindUnique({});
+          return camporee ? [{ local_camporee_id: TEST_CAMPOREE_ID }] : [];
+        }
+        if (sql.includes('FROM "camporee_clubs"')) {
+          return sectionEnrollment
+            ? [{ camporee_club_id: sectionEnrollment.camporee_club_id }]
+            : [];
+        }
+        if (sql.includes('FROM "users_pr"')) {
+          const user = originalUserFindUnique
+            ? await originalUserFindUnique({})
+            : null;
+          return user ? [{ user_pr_id: 1 }] : [];
+        }
+        if (sql.includes('FROM "users"')) {
+          const user = originalUserFindUnique
+            ? await originalUserFindUnique({})
+            : null;
+          return user ? [{ user_id: user.user_id }] : [];
+        }
+        if (sql.includes('FROM "club_role_assignments"')) {
+          return [{ assignment_id: 'target-assignment' }];
+        }
+
+        throw new Error(
+          `Unexpected Camporee lock query in E2E fixture: ${sql}`,
+        );
+      });
 
       return {
         ...tx,
+        $queryRaw: queryRaw,
         local_camporees: {
           ...tx.local_camporees,
           findFirst: jest.fn(async (args: unknown) => {
@@ -575,7 +635,7 @@ describe('Camporees E2E Tests', () => {
           }),
         },
         camporee_clubs: {
-          findFirst: enrollmentFindFirst,
+          findUnique: jest.fn().mockResolvedValue(sectionEnrollment),
         },
         users: originalUserFindUnique
           ? {
@@ -586,6 +646,7 @@ describe('Camporees E2E Tests', () => {
                   ? {
                       ...found,
                       users_pr: {
+                        user_pr_id: 1,
                         active_club_assignment_id: 'target-assignment',
                       },
                     }
@@ -594,40 +655,41 @@ describe('Camporees E2E Tests', () => {
             }
           : tx.users,
         club_role_assignments: {
-          findFirst: jest.fn().mockResolvedValue({
-            assignment_id: 'target-assignment',
-            club_section_id: 1,
-          }),
+          findMany: jest.fn().mockResolvedValue([
+            {
+              assignment_id: 'target-assignment',
+              club_section_id: 1,
+              active: true,
+              status: 'active',
+            },
+          ]),
         },
       };
     };
 
     it('returns 422 with a stable code when the director section is not enrolled', async () => {
-      const enrollmentFindFirst = jest.fn().mockResolvedValue(null);
+      const transactionFixture = withParticipantGate(
+        {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue(mockCamporee),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue(mockUser),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn(),
+          },
+          member_insurances: {
+            findUnique: jest.fn().mockResolvedValue(mockInsurance),
+          },
+        },
+        null,
+      );
       jest
         .spyOn(prisma, '$transaction')
         .mockImplementation(async (callback: any) =>
-          callback(
-            withParticipantGate(
-              {
-                local_camporees: {
-                  findUnique: jest.fn().mockResolvedValue(mockCamporee),
-                },
-                users: {
-                  findUnique: jest.fn().mockResolvedValue(mockUser),
-                },
-                camporee_members: {
-                  findFirst: jest.fn().mockResolvedValue(null),
-                  create: jest.fn(),
-                },
-                member_insurances: {
-                  findUnique: jest.fn().mockResolvedValue(mockInsurance),
-                },
-              },
-              null,
-              enrollmentFindFirst,
-            ),
-          ),
+          callback(transactionFixture),
         );
 
       const response = await postAsUser(
@@ -640,18 +702,16 @@ describe('Camporees E2E Tests', () => {
         'code',
         'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
       );
-      expect(enrollmentFindFirst).toHaveBeenCalledWith({
-        where: {
-          camporee_id: TEST_CAMPOREE_ID,
-          club_section_id: 1,
-          active: true,
-          status: { in: ['registered', 'approved'] },
-        },
-        select: {
-          camporee_club_id: true,
-          status: true,
-        },
-      });
+      const lockQueries = transactionFixture.$queryRaw.mock.calls.map(
+        ([query]: [unknown]) =>
+          (query as { strings: string[] }).strings.join(' '),
+      );
+      expect(lockQueries).toHaveLength(2);
+      expect(lockQueries[0]).toContain('FROM "local_camporees"');
+      expect(lockQueries[1]).toContain('FROM "camporee_clubs"');
+      expect(
+        transactionFixture.camporee_clubs.findUnique,
+      ).not.toHaveBeenCalled();
     });
 
     it('should register member with valid insurance', async () => {
@@ -987,15 +1047,24 @@ describe('Camporees E2E Tests', () => {
       jest
         .spyOn(prisma.camporee_members, 'findMany')
         .mockResolvedValue(mockMembers as any);
+      jest
+        .spyOn(prisma.camporee_members, 'count')
+        .mockResolvedValue(mockMembers.length);
 
       const response = await getAsUser(
         `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
       ).expect(200);
 
-      expect(response.body).toBeInstanceOf(Array);
-      expect(response.body.length).toBe(2);
-      expect(response.body[0]).toHaveProperty('users');
-      expect(response.body[0]).toHaveProperty('insurance');
+      expect(response.body.data).toHaveLength(2);
+      expect(response.body.meta).toMatchObject({
+        page: 1,
+        limit: 50,
+        total: 2,
+        totalPages: 1,
+      });
+      expect(response.body.data[0]).toHaveProperty('users');
+      expect(response.body.data[0]).toHaveProperty('insurance');
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Array));
     });
 
     it('should return empty array if no members registered', async () => {
@@ -1003,13 +1072,14 @@ describe('Camporees E2E Tests', () => {
         .spyOn(prisma.local_camporees, 'findUnique')
         .mockResolvedValue(mockCamporee as any);
       jest.spyOn(prisma.camporee_members, 'findMany').mockResolvedValue([]);
+      jest.spyOn(prisma.camporee_members, 'count').mockResolvedValue(0);
 
       const response = await getAsUser(
         `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
       ).expect(200);
 
-      expect(response.body).toBeInstanceOf(Array);
-      expect(response.body.length).toBe(0);
+      expect(response.body.data).toEqual([]);
+      expect(response.body.meta.total).toBe(0);
     });
 
     it('should return 404 if camporee not found', async () => {
@@ -1020,11 +1090,6 @@ describe('Camporees E2E Tests', () => {
 
     it('should return only active members', async () => {
       const activeMember = mockCamporeeMember;
-      const inactiveMember = {
-        ...mockCamporeeMember,
-        camporee_member_id: 2,
-        active: false,
-      };
 
       jest
         .spyOn(prisma.local_camporees, 'findUnique')
@@ -1032,13 +1097,14 @@ describe('Camporees E2E Tests', () => {
       jest
         .spyOn(prisma.camporee_members, 'findMany')
         .mockResolvedValue([activeMember] as any);
+      jest.spyOn(prisma.camporee_members, 'count').mockResolvedValue(1);
 
       const response = await getAsUser(
         `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
       ).expect(200);
 
-      expect(response.body.length).toBe(1);
-      expect(response.body[0].active).toBe(true);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0].active).toBe(true);
     });
 
     it('should include user and insurance details', async () => {
@@ -1048,15 +1114,16 @@ describe('Camporees E2E Tests', () => {
       jest
         .spyOn(prisma.camporee_members, 'findMany')
         .mockResolvedValue([mockCamporeeMember] as any);
+      jest.spyOn(prisma.camporee_members, 'count').mockResolvedValue(1);
 
       const response = await getAsUser(
         `/api/v1/camporees/${TEST_CAMPOREE_ID}/members`,
       ).expect(200);
 
-      expect(response.body[0].users).toHaveProperty('name');
-      expect(response.body[0].users).toHaveProperty('email');
-      expect(response.body[0].insurance).toHaveProperty('policy_number');
-      expect(response.body[0].insurance).toHaveProperty('provider');
+      expect(response.body.data[0].users).toHaveProperty('name');
+      expect(response.body.data[0].users).toHaveProperty('email');
+      expect(response.body.data[0].insurance).toHaveProperty('policy_number');
+      expect(response.body.data[0].insurance).toHaveProperty('provider');
     });
   });
 
@@ -1112,8 +1179,6 @@ describe('Camporees E2E Tests', () => {
     });
 
     it('should not remove already inactive member', async () => {
-      const inactiveMember = { ...mockCamporeeMember, active: false };
-
       jest
         .spyOn(prisma.local_camporees, 'findUnique')
         .mockResolvedValue(mockCamporee as any);
