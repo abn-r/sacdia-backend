@@ -66,6 +66,7 @@ describe('CamporeesService', () => {
     camporee_clubs: {
       count: jest.fn(),
       findFirst: jest.fn(),
+      create: jest.fn(),
     },
     club_sections: {
       findUnique: jest.fn(),
@@ -529,6 +530,263 @@ describe('CamporeesService', () => {
           where: { local_camporee_id: camporeeId, local_field_id: 99 },
         }),
       );
+    });
+
+    describe('register active section', () => {
+      const persistedEnrollment = (
+        overrides: Record<string, unknown> = {},
+      ) => ({
+        camporee_club_id: 91,
+        status: 'registered',
+        created_at: registeredAt,
+        registrar: {
+          user_id: actorId,
+          name: 'Directora',
+          paternal_last_name: 'Activa',
+          maternal_last_name: null,
+        },
+        ...overrides,
+      });
+
+      beforeEach(() => {
+        mockPrismaService.$transaction.mockImplementation(
+          async (callback: (tx: typeof mockPrismaService) => unknown) =>
+            callback(mockPrismaService),
+        );
+        mockPrismaService.camporee_clubs.create.mockResolvedValue(
+          persistedEnrollment(),
+        );
+      });
+
+      it('creates only the request actor active director section', async () => {
+        const result = await service.registerActiveSection(
+          camporeeId,
+          actorId,
+          authorization(),
+        );
+
+        expect(mockPrismaService.camporee_clubs.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: {
+              camporee_id: 7,
+              camporee_type: 'local',
+              club_section_id: 44,
+              club_id: 12,
+              registered_by: actorId,
+              status: 'registered',
+              active: true,
+            },
+          }),
+        );
+        expect(result).toMatchObject({
+          camporeeId: 7,
+          clubId: 12,
+          clubSectionId: 44,
+          status: 'registered',
+          enrollmentId: 91,
+          registeredBy: { userId: actorId },
+        });
+      });
+
+      it('rejects a deputy director even with broad permissions', async () => {
+        const snapshot = authorization({ roleName: 'deputy-director' });
+        snapshot.grants.club_assignments[0].permissions = ['*'];
+        snapshot.effective.permissions = ['*'];
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, snapshot),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+        });
+
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+        expect(mockPrismaService.camporee_clubs.create).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [
+          'different club lineage',
+          () =>
+            mockPrismaService.club_sections.findUnique.mockResolvedValue(
+              section({
+                main_club_id: 99,
+                clubs: {
+                  club_id: 99,
+                  name: 'Club ajeno',
+                  active: true,
+                  local_field_id: 5,
+                },
+              }),
+            ),
+        ],
+        [
+          'different local field',
+          () =>
+            mockPrismaService.club_sections.findUnique.mockResolvedValue(
+              section({
+                clubs: {
+                  club_id: 12,
+                  name: 'Orión',
+                  active: true,
+                  local_field_id: 99,
+                },
+              }),
+            ),
+        ],
+        [
+          'camporee-incompatible club type',
+          () =>
+            mockPrismaService.local_camporees.findFirst.mockResolvedValue(
+              camporee({ includes_pathfinders: false }),
+            ),
+        ],
+      ])('rejects %s', async (_label, arrange) => {
+        arrange();
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+        });
+
+        expect(mockPrismaService.camporee_clubs.create).not.toHaveBeenCalled();
+      });
+
+      it('returns an existing active enrollment without creating or notifying', async () => {
+        mockPrismaService.camporee_clubs.findFirst.mockResolvedValue(
+          persistedEnrollment({ status: 'approved' }),
+        );
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).resolves.toMatchObject({
+          status: 'approved',
+          enrollmentId: 91,
+          blockingReason: 'already_enrolled',
+        });
+
+        expect(mockPrismaService.camporee_clubs.create).not.toHaveBeenCalled();
+        expect(
+          mockNotificationsService.sendToGlobalRole,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('creates a pending enrollment and sends one late-approval notification', async () => {
+        mockLifecyclePolicy.resolveClubRegistrationDisposition.mockReturnValue(
+          'late_approval_required',
+        );
+        mockPrismaService.camporee_clubs.create.mockResolvedValue(
+          persistedEnrollment({ status: 'pending_approval' }),
+        );
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).resolves.toMatchObject({
+          status: 'pending_approval',
+          disposition: 'late_approval_required',
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        expect(mockPrismaService.camporee_clubs.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ status: 'pending_approval' }),
+          }),
+        );
+        expect(mockNotificationsService.sendToGlobalRole).toHaveBeenCalledTimes(
+          1,
+        );
+      });
+
+      it.each(['not_open_yet', 'manually_frozen'] as const)(
+        'rejects the %s disposition with the typed registration error',
+        async (disposition) => {
+          mockLifecyclePolicy.resolveClubRegistrationDisposition.mockReturnValue(
+            disposition,
+          );
+
+          await expect(
+            service.registerActiveSection(camporeeId, actorId, authorization()),
+          ).rejects.toMatchObject({
+            code: ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+          });
+
+          expect(
+            mockPrismaService.camporee_clubs.create,
+          ).not.toHaveBeenCalled();
+        },
+      );
+
+      it('recovers the winning active enrollment after a P2002 race without notifying', async () => {
+        const winner = persistedEnrollment({
+          camporee_club_id: 92,
+          registrar: {
+            user_id: 'winning-actor',
+            name: 'Ganadora',
+            paternal_last_name: null,
+            maternal_last_name: null,
+          },
+        });
+        mockPrismaService.camporee_clubs.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(winner);
+        mockPrismaService.camporee_clubs.create.mockRejectedValue(
+          Object.assign(new Error('Unique constraint failed'), {
+            code: 'P2002',
+          }),
+        );
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).resolves.toMatchObject({
+          enrollmentId: 92,
+          registeredBy: { userId: 'winning-actor' },
+        });
+
+        expect(
+          mockPrismaService.camporee_clubs.findFirst,
+        ).toHaveBeenCalledTimes(2);
+        expect(
+          mockNotificationsService.sendToGlobalRole,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('propagates non-P2002 create failures', async () => {
+        const failure = new Error('database unavailable');
+        mockPrismaService.camporee_clubs.create.mockRejectedValue(failure);
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).rejects.toBe(failure);
+      });
+
+      it('maps the response registrar from persistence while creating with the request actor', async () => {
+        mockPrismaService.camporee_clubs.create.mockResolvedValue(
+          persistedEnrollment({
+            registrar: {
+              user_id: 'persisted-registrar',
+              name: 'Persistida',
+              paternal_last_name: null,
+              maternal_last_name: null,
+            },
+          }),
+        );
+
+        const result = await service.registerActiveSection(
+          camporeeId,
+          actorId,
+          authorization(),
+        );
+
+        expect(mockPrismaService.camporee_clubs.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ registered_by: actorId }),
+          }),
+        );
+        expect(result.registeredBy).toEqual({
+          userId: 'persisted-registrar',
+          displayName: 'Persistida',
+        });
+      });
     });
   });
 

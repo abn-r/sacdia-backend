@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import type { Prisma } from '@prisma/client';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -54,6 +55,11 @@ import {
 // same code path.
 export const PROFILE_URL_LIMITER = pLimit(20);
 
+type CamporeeRegistrationDb = Pick<
+  Prisma.TransactionClient,
+  'local_camporees' | 'club_sections' | 'camporee_clubs'
+>;
+
 @Injectable()
 export class CamporeesService {
   private readonly logger = new Logger(CamporeesService.name);
@@ -87,87 +93,12 @@ export class CamporeesService {
   ): Promise<CamporeeSectionRegistrationDto> {
     void actorId;
     const activeGrant = this.resolveActiveClubGrant(authorization);
-    const localFieldId = activeGrant.scope.local_field?.id;
-    if (typeof localFieldId !== 'number') {
-      throw new AppForbiddenException(
-        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+    const { camporee, section } =
+      await this.loadActiveSectionRegistrationContext(
+        this.prisma,
+        camporeeId,
+        activeGrant,
       );
-    }
-
-    const camporee = await this.prisma.local_camporees.findFirst({
-      where: {
-        local_camporee_id: camporeeId,
-        local_field_id: localFieldId,
-      },
-      select: {
-        local_camporee_id: true,
-        local_field_id: true,
-        active: true,
-        includes_adventurers: true,
-        includes_pathfinders: true,
-        includes_master_guides: true,
-        start_date: true,
-        end_date: true,
-        club_registration_opens_at: true,
-        club_registration_deadline: true,
-        club_registration_closed_at: true,
-        member_registration_deadline: true,
-        payment_deadline: true,
-        timezone: true,
-        timezone_verified_at: true,
-      },
-    });
-
-    if (!camporee) {
-      throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
-        id: camporeeId,
-      });
-    }
-    if (!camporee.active) {
-      throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
-    }
-
-    const section = await this.prisma.club_sections.findUnique({
-      where: { club_section_id: activeGrant.section.club_section_id },
-      select: {
-        club_section_id: true,
-        name: true,
-        active: true,
-        club_type_id: true,
-        main_club_id: true,
-        clubs: {
-          select: {
-            club_id: true,
-            name: true,
-            active: true,
-            local_field_id: true,
-          },
-        },
-        club_types: {
-          select: {
-            club_type_id: true,
-            name: true,
-            active: true,
-          },
-        },
-      },
-    });
-
-    if (
-      !section ||
-      !section.active ||
-      !section.clubs?.active ||
-      section.main_club_id !== activeGrant.club.club_id ||
-      section.clubs.club_id !== activeGrant.club.club_id ||
-      section.club_type_id !== activeGrant.section.club_type_id ||
-      section.club_types.club_type_id !== activeGrant.section.club_type_id ||
-      section.clubs.local_field_id !== localFieldId ||
-      section.clubs.local_field_id !== camporee.local_field_id
-    ) {
-      throw new AppForbiddenException(
-        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
-      );
-    }
 
     const enrollment = await this.prisma.camporee_clubs.findFirst({
       where: {
@@ -206,16 +137,156 @@ export class CamporeesService {
     });
   }
 
-  // Task 4 implements the contextual POST contract.
   async registerActiveSection(
     camporeeId: number,
     actorId: string,
     authorization: AuthorizationSnapshot,
   ): Promise<CamporeeSectionRegistrationDto> {
-    void camporeeId;
-    void actorId;
-    void authorization;
-    throw new Error('Task 4 must implement registerActiveSection');
+    const activeGrant = this.resolveActiveClubGrant(authorization);
+
+    // Permissions on the grant are not enough: only the exact active director
+    // role may create an enrollment for its own section.
+    if (activeGrant.role_name !== 'director') {
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      );
+    }
+
+    try {
+      const outcome = await this.prisma.$transaction(async (tx) => {
+        const { camporee, section } =
+          await this.loadActiveSectionRegistrationContext(
+            tx,
+            camporeeId,
+            activeGrant,
+          );
+        const disposition = this.resolveClubRegistrationDisposition(camporee);
+
+        if (
+          !section.club_types.active ||
+          !this.isClubTypeIncludedInCamporee(section.club_type_id, camporee)
+        ) {
+          throw new AppForbiddenException(
+            ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+          );
+        }
+
+        const existingEnrollment = await this.findActiveSectionEnrollment(
+          tx,
+          camporeeId,
+          section.club_section_id,
+        );
+        if (existingEnrollment) {
+          return {
+            camporee,
+            section,
+            enrollment: existingEnrollment,
+            disposition,
+            created: false,
+          };
+        }
+
+        if (
+          disposition === 'not_open_yet' ||
+          disposition === 'manually_frozen'
+        ) {
+          throw new AppBadRequestException(
+            ErrorCode.CAMPOREE_CLUB_REGISTRATION_CLOSED,
+          );
+        }
+
+        const enrollment = await tx.camporee_clubs.create({
+          data: {
+            camporee_id: camporeeId,
+            camporee_type: 'local',
+            club_section_id: section.club_section_id,
+            club_id: section.clubs.club_id,
+            registered_by: actorId,
+            status:
+              disposition === 'late_approval_required'
+                ? 'pending_approval'
+                : 'registered',
+            active: true,
+          },
+          select: {
+            camporee_club_id: true,
+            status: true,
+            created_at: true,
+            registrar: {
+              select: {
+                user_id: true,
+                name: true,
+                paternal_last_name: true,
+                maternal_last_name: true,
+              },
+            },
+          },
+        });
+
+        return {
+          camporee,
+          section,
+          enrollment,
+          disposition,
+          created: true,
+        };
+      });
+
+      if (outcome.created && outcome.disposition === 'late_approval_required') {
+        this.notifyLateActiveSectionRegistration(
+          camporeeId,
+          outcome.camporee.local_field_id,
+        );
+      }
+
+      return this.mapActiveSectionRegistration({
+        camporeeId,
+        activeGrant,
+        section: outcome.section,
+        enrollment: outcome.enrollment,
+        disposition: outcome.disposition,
+        clubTypeIncluded: true,
+      });
+    } catch (error) {
+      if (!this.isPrismaUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      // PostgreSQL aborts a transaction after a unique violation. Recover the
+      // winner through the root client, outside the invalid transaction.
+      const { camporee, section } =
+        await this.loadActiveSectionRegistrationContext(
+          this.prisma,
+          camporeeId,
+          activeGrant,
+        );
+      if (
+        !section.club_types.active ||
+        !this.isClubTypeIncludedInCamporee(section.club_type_id, camporee)
+      ) {
+        throw new AppForbiddenException(
+          ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+        );
+      }
+
+      const winner = await this.findActiveSectionEnrollment(
+        this.prisma,
+        camporeeId,
+        section.club_section_id,
+      );
+      if (!winner) {
+        throw error;
+      }
+
+      return this.mapActiveSectionRegistration({
+        camporeeId,
+        activeGrant,
+        section,
+        enrollment: winner,
+        disposition: this.resolveClubRegistrationDisposition(camporee),
+        clubTypeIncluded: true,
+      });
+    }
   }
 
   // ========================================
@@ -2858,6 +2929,155 @@ export class CamporeesService {
     }
 
     return activeGrant;
+  }
+
+  private async loadActiveSectionRegistrationContext(
+    db: CamporeeRegistrationDb,
+    camporeeId: number,
+    activeGrant: ClubAuthorizationGrant,
+  ) {
+    const localFieldId = activeGrant.scope.local_field?.id;
+    if (typeof localFieldId !== 'number') {
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      );
+    }
+
+    const camporee = await db.local_camporees.findFirst({
+      where: {
+        local_camporee_id: camporeeId,
+        local_field_id: localFieldId,
+      },
+      select: {
+        local_camporee_id: true,
+        local_field_id: true,
+        active: true,
+        includes_adventurers: true,
+        includes_pathfinders: true,
+        includes_master_guides: true,
+        start_date: true,
+        end_date: true,
+        club_registration_opens_at: true,
+        club_registration_deadline: true,
+        club_registration_closed_at: true,
+        member_registration_deadline: true,
+        payment_deadline: true,
+        timezone: true,
+        timezone_verified_at: true,
+      },
+    });
+
+    if (!camporee) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
+        id: camporeeId,
+      });
+    }
+    if (!camporee.active) {
+      throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
+    }
+
+    const section = await db.club_sections.findUnique({
+      where: { club_section_id: activeGrant.section.club_section_id },
+      select: {
+        club_section_id: true,
+        name: true,
+        active: true,
+        club_type_id: true,
+        main_club_id: true,
+        clubs: {
+          select: {
+            club_id: true,
+            name: true,
+            active: true,
+            local_field_id: true,
+          },
+        },
+        club_types: {
+          select: {
+            club_type_id: true,
+            name: true,
+            active: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !section ||
+      !section.active ||
+      !section.clubs ||
+      !section.clubs.active ||
+      section.main_club_id !== activeGrant.club.club_id ||
+      section.clubs.club_id !== activeGrant.club.club_id ||
+      section.club_type_id !== activeGrant.section.club_type_id ||
+      section.club_types.club_type_id !== activeGrant.section.club_type_id ||
+      section.clubs.local_field_id !== localFieldId ||
+      section.clubs.local_field_id !== camporee.local_field_id
+    ) {
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      );
+    }
+
+    return {
+      camporee,
+      section: {
+        ...section,
+        clubs: section.clubs,
+      },
+    };
+  }
+
+  private findActiveSectionEnrollment(
+    db: CamporeeRegistrationDb,
+    camporeeId: number,
+    clubSectionId: number,
+  ) {
+    return db.camporee_clubs.findFirst({
+      where: {
+        camporee_id: camporeeId,
+        club_section_id: clubSectionId,
+        active: true,
+      },
+      select: {
+        camporee_club_id: true,
+        status: true,
+        created_at: true,
+        registrar: {
+          select: {
+            user_id: true,
+            name: true,
+            paternal_last_name: true,
+            maternal_last_name: true,
+          },
+        },
+      },
+    });
+  }
+
+  private isPrismaUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002'
+    );
+  }
+
+  private notifyLateActiveSectionRegistration(
+    camporeeId: number,
+    localFieldId: number,
+  ): void {
+    setImmediate(() => {
+      void this.notificationsService.sendToGlobalRole(
+        ['director-lf', 'assistant-lf'],
+        'Inscripción tardía por revisar',
+        'Un club se inscribió fuera de plazo al camporee y necesita revisión',
+        { camporeeId: String(camporeeId), type: 'club_enrollment' },
+        localFieldId,
+        'camporees:late_enrollment',
+      );
+    });
   }
 
   private mapActiveSectionRegistration(input: {
