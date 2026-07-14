@@ -835,6 +835,30 @@ export class CamporeesController {
     );
   }
 
+  @Post(':camporeeId/participants')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Registrar participante en camporee',
+    description:
+      'Alias contextual para registrar participantes usando la sección activa del director',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({ status: 201, description: 'Participante registrado' })
+  @ApiResponse({ status: 422, description: 'Sección no inscrita' })
+  async registerParticipants(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Body() dto: RegisterMemberDto,
+    @Request() req: any,
+  ) {
+    return this.camporeesService.registerParticipants(
+      camporeeId,
+      dto,
+      req.user.sub,
+      req.authorization,
+    );
+  }
+
   @Get(':camporeeId/members')
   @RequirePermissions('attendance:read')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })

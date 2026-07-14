@@ -16,6 +16,7 @@ describe('CamporeesController', () => {
     getActiveSectionRegistration: jest.fn(),
     registerActiveSection: jest.fn(),
     registerMember: jest.fn(),
+    registerParticipants: jest.fn(),
   };
   const lateApprovalsService = {};
   const controller = new CamporeesController(
@@ -86,6 +87,25 @@ describe('CamporeesController', () => {
     await controller.registerMember(7, dto, req);
 
     expect(camporeesService.registerMember).toHaveBeenCalledWith(
+      7,
+      dto,
+      'director-id',
+      req.authorization,
+    );
+  });
+
+  it('registers a bulk participant using the same authenticated context', async () => {
+    const dto = {
+      user_id: '550e8400-e29b-41d4-a716-446655440002',
+    };
+    const req = {
+      user: { sub: 'director-id' },
+      authorization: { active_assignment: { assignment_id: 'assignment-1' } },
+    };
+
+    await controller.registerParticipants(7, dto, req);
+
+    expect(camporeesService.registerParticipants).toHaveBeenCalledWith(
       7,
       dto,
       'director-id',

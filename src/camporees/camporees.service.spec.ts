@@ -1800,6 +1800,31 @@ describe('CamporeesService', () => {
     });
   });
 
+  describe('bulk participant registration context', () => {
+    it('forwards the same actor and authorization to every delegated registration', async () => {
+      const dto = {
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
+      const registerMember = jest
+        .spyOn(service, 'registerMember')
+        .mockResolvedValue({ camporee_member_id: 9 });
+
+      await service.registerParticipants(
+        7,
+        dto,
+        'director-id',
+        legacyParticipantAuthorization,
+      );
+
+      expect(registerMember).toHaveBeenCalledWith(
+        7,
+        dto,
+        'director-id',
+        legacyParticipantAuthorization,
+      );
+    });
+  });
+
   describe('registerMember', () => {
     it('should register a member with valid insurance', async () => {
       const registerDto = {

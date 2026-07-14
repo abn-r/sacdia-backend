@@ -10,6 +10,7 @@ type AuthorizationFixtureOptions = {
   clubId?: number;
   clubName?: string;
   clubSectionId?: number;
+  clubTypeId?: number;
   clubTypeName?: string | null;
   localFieldId?: number;
   localFieldName?: string;
@@ -82,6 +83,7 @@ export function buildAuthorizationSnapshot(
           },
           section: {
             club_section_id: options.clubSectionId ?? 1,
+            club_type_id: options.clubTypeId ?? 1,
             club_type_name: options.clubTypeName ?? 'Conquistadores',
           },
           scope: globalScope,

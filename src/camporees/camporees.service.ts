@@ -2907,9 +2907,10 @@ export class CamporeesService {
   async registerParticipants(
     camporeeId: number,
     dto: RegisterMemberDto,
-    _registeredBy: string,
+    actorId: string,
+    authorization: AuthorizationSnapshot,
   ) {
-    return this.registerMember(camporeeId, dto);
+    return this.registerMember(camporeeId, dto, actorId, authorization);
   }
 
   /**

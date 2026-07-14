@@ -534,6 +534,7 @@ describe('Camporees E2E Tests', () => {
         camporee_club_id: 31,
         status: 'registered',
       },
+      enrollmentFindFirst = jest.fn().mockResolvedValue(enrollment),
     ) => {
       const originalCamporeeFindUnique = tx.local_camporees.findUnique;
       const originalUserFindUnique = tx.users?.findUnique;
@@ -574,7 +575,7 @@ describe('Camporees E2E Tests', () => {
           }),
         },
         camporee_clubs: {
-          findFirst: jest.fn().mockResolvedValue(enrollment),
+          findFirst: enrollmentFindFirst,
         },
         users: originalUserFindUnique
           ? {
@@ -602,6 +603,7 @@ describe('Camporees E2E Tests', () => {
     };
 
     it('returns 422 with a stable code when the director section is not enrolled', async () => {
+      const enrollmentFindFirst = jest.fn().mockResolvedValue(null);
       jest
         .spyOn(prisma, '$transaction')
         .mockImplementation(async (callback: any) =>
@@ -623,6 +625,7 @@ describe('Camporees E2E Tests', () => {
                 },
               },
               null,
+              enrollmentFindFirst,
             ),
           ),
         );
@@ -637,6 +640,18 @@ describe('Camporees E2E Tests', () => {
         'code',
         'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
       );
+      expect(enrollmentFindFirst).toHaveBeenCalledWith({
+        where: {
+          camporee_id: TEST_CAMPOREE_ID,
+          club_section_id: 1,
+          active: true,
+          status: { in: ['registered', 'approved'] },
+        },
+        select: {
+          camporee_club_id: true,
+          status: true,
+        },
+      });
     });
 
     it('should register member with valid insurance', async () => {
