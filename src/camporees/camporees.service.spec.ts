@@ -157,7 +157,6 @@ describe('CamporeesService', () => {
         .fn()
         .mockResolvedValueOnce([{ local_camporee_id: 1 }])
         .mockResolvedValueOnce([{ camporee_club_id: 31 }])
-        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
         .mockResolvedValueOnce([{ user_id: 'target-user' }])
         .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
         .mockResolvedValueOnce([{ user_pr_id: 81 }]),
@@ -1675,7 +1674,6 @@ describe('CamporeesService', () => {
         .mockResolvedValueOnce(
           enrollment ? [{ camporee_club_id: enrollment.camporee_club_id }] : [],
         )
-        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
         .mockResolvedValueOnce([{ user_id: targetUserId }])
         .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
         .mockResolvedValueOnce([{ user_pr_id: 81 }]);
@@ -1791,7 +1789,6 @@ describe('CamporeesService', () => {
       expect(order).toEqual([
         'camporee',
         'enrollment',
-        'assignments',
         'user',
         'assignments',
         'users_pr',
@@ -1803,11 +1800,10 @@ describe('CamporeesService', () => {
         [targetUserId],
         [targetUserId],
         [targetUserId],
-        [targetUserId],
       ]);
     });
 
-    it('locks pending assignments before the user/profile barrier', async () => {
+    it('locks pending assignments after the user barrier and before users_pr', async () => {
       const { tx, queryRaw } = buildTx({
         camporee_club_id: 31,
         status: 'registered',
@@ -1830,10 +1826,6 @@ describe('CamporeesService', () => {
         .mockReset()
         .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
         .mockResolvedValueOnce([{ camporee_club_id: 31 }])
-        .mockResolvedValueOnce([
-          { assignment_id: 'pending-assignment' },
-          { assignment_id: 'target-assignment' },
-        ])
         .mockResolvedValueOnce([{ user_id: targetUserId }])
         .mockResolvedValueOnce([
           { assignment_id: 'pending-assignment' },
@@ -1851,7 +1843,7 @@ describe('CamporeesService', () => {
         authorization(),
       );
 
-      const assignmentLock = queryRaw.mock.calls[2][0];
+      const assignmentLock = queryRaw.mock.calls[3][0];
       const assignmentSql = assignmentLock.strings.join('?');
       expect(assignmentSql).toContain('ORDER BY "assignment_id" ASC');
       expect(assignmentSql).not.toContain('"active" = true');
@@ -1859,7 +1851,7 @@ describe('CamporeesService', () => {
       expect(assignmentLock.values).toEqual([targetUserId]);
     });
 
-    it('re-reads an assignment activated before the user lock barrier', async () => {
+    it('captures an assignment committed before the user lock barrier', async () => {
       const { tx, create, queryRaw } = buildTx({
         camporee_club_id: 31,
         status: 'registered',
@@ -1883,7 +1875,6 @@ describe('CamporeesService', () => {
         .mockReset()
         .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
         .mockResolvedValueOnce([{ camporee_club_id: 31 }])
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ user_id: targetUserId }])
         .mockResolvedValueOnce([{ assignment_id: 'reactivated-assignment' }])
         .mockResolvedValueOnce([{ user_pr_id: 81 }]);
@@ -1934,10 +1925,6 @@ describe('CamporeesService', () => {
         .mockReset()
         .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
         .mockResolvedValueOnce([{ camporee_club_id: 31 }])
-        .mockResolvedValueOnce([
-          { assignment_id: 'assignment-a' },
-          { assignment_id: 'assignment-b' },
-        ])
         .mockResolvedValueOnce([{ user_id: targetUserId }])
         .mockResolvedValueOnce([
           { assignment_id: 'assignment-a' },

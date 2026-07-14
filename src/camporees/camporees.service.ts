@@ -1022,17 +1022,13 @@ export class CamporeesService {
         );
       }
 
-      // Assignment writers update assignment rows before users_pr. Keep this
-      // lock order stable to avoid deadlocks: assignment pre-scan -> FK parent
-      // user (insert barrier) -> assignment reconciliation -> users_pr.
-      await this.lockParticipantAssignments(tx, dto.user_id);
+      // Match post-registration's global order: FK parent user -> every
+      // assignment -> users_pr. The parent lock waits for in-flight FK inserts
+      // and blocks new ones, so the following assignment lock closes the set.
       const lockedUsers = await this.lockParticipantUser(tx, dto.user_id);
       if (lockedUsers.length !== 1) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_USER_NOT_FOUND);
       }
-      // A concurrent insert may have acquired its FK key-share lock between
-      // the first assignment scan and the user barrier. Lock the complete set
-      // again before users_pr so that window rows are included and immutable.
       const lockedAssignments = await this.lockParticipantAssignments(
         tx,
         dto.user_id,
