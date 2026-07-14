@@ -6,6 +6,7 @@ import {
   AppForbiddenException,
   AppInternalServerErrorException,
   AppNotFoundException,
+  AppUnprocessableEntityException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
@@ -974,27 +975,55 @@ export class CamporeesService {
    * Uses Prisma transactions to ensure data integrity
    * @param camporeeId - The local_camporee_id
    * @param dto - Register member DTO
+   * @param actorId - Authenticated director performing the registration
+   * @param authorization - Resolved authorization snapshot for the request
    */
-  async registerMember(camporeeId: number, dto: RegisterMemberDto) {
+  async registerMember(
+    camporeeId: number,
+    dto: RegisterMemberDto,
+    actorId: string,
+    authorization: AuthorizationSnapshot,
+  ) {
+    void actorId;
+    const activeGrant = this.resolveActiveClubGrant(authorization);
+    if (activeGrant.role_name !== 'director') {
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      );
+    }
+
     let isLate = false;
     let camporeeLocalFieldId: number | null = null;
     let camporeeName: string | null = null;
 
     const member = await this.prisma.$transaction(async (tx) => {
-      // 1. Validate camporee exists
-      const camporee = await tx.local_camporees.findUnique({
-        where: { local_camporee_id: camporeeId },
+      const { camporee, section } =
+        await this.loadActiveSectionRegistrationContext(
+          tx,
+          camporeeId,
+          activeGrant,
+        );
+
+      const sectionEnrollment = await tx.camporee_clubs.findFirst({
+        where: {
+          camporee_id: camporeeId,
+          club_section_id: section.club_section_id,
+          active: true,
+          status: { in: ['registered', 'approved'] },
+        },
+        select: {
+          camporee_club_id: true,
+          status: true,
+        },
       });
 
-      if (!camporee) {
-        throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
-          id: camporeeId,
-        });
-      }
-
-      // Validate camporee is active
-      if (!camporee.active) {
-        throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
+      if (
+        !sectionEnrollment ||
+        !['registered', 'approved'].includes(sectionEnrollment.status)
+      ) {
+        throw new AppUnprocessableEntityException(
+          ErrorCode.CAMPOREE_SECTION_REGISTRATION_REQUIRED,
+        );
       }
 
       isLate = this.camporeeLifecyclePolicy.isAfterDeadline(
@@ -1003,16 +1032,56 @@ export class CamporeesService {
       camporeeLocalFieldId = camporee.local_field_id;
       camporeeName = camporee.name;
 
-      // 2. Validate user exists
+      // Validate the target user and resolve its current active club assignment
+      // using the same persisted-context-first rule as AuthorizationContextService.
       const user = await tx.users.findUnique({
         where: { user_id: dto.user_id },
+        select: {
+          user_id: true,
+          users_pr: { select: { active_club_assignment_id: true } },
+        },
       });
 
       if (!user) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_USER_NOT_FOUND);
       }
 
-      // 3. Check for duplicate registration
+      const persistedAssignmentId =
+        user.users_pr?.active_club_assignment_id ?? null;
+      const targetAssignmentWhere = {
+        user_id: dto.user_id,
+        active: true,
+        status: 'active',
+        club_section_id: { not: null },
+      } as const;
+      const targetAssignmentSelect = {
+        assignment_id: true,
+        club_section_id: true,
+      } as const;
+      let targetAssignment = persistedAssignmentId
+        ? await tx.club_role_assignments.findFirst({
+            where: {
+              ...targetAssignmentWhere,
+              assignment_id: persistedAssignmentId,
+            },
+            select: targetAssignmentSelect,
+          })
+        : null;
+
+      targetAssignment ??= await tx.club_role_assignments.findFirst({
+        where: targetAssignmentWhere,
+        orderBy: { start_date: 'desc' },
+        select: targetAssignmentSelect,
+      });
+
+      if (targetAssignment?.club_section_id !== section.club_section_id) {
+        throw new AppUnprocessableEntityException(
+          ErrorCode.CAMPOREE_SECTION_REGISTRATION_REQUIRED,
+        );
+      }
+
+      // Existing duplicate and insurance validations intentionally remain after
+      // the contextual section gate.
       const existingRegistration = await tx.camporee_members.findFirst({
         where: {
           camporee_id: camporeeId,
@@ -1027,7 +1096,6 @@ export class CamporeesService {
         );
       }
 
-      // 4. If insurance_id is provided, validate insurance
       if (dto.insurance_id) {
         const insurance = await tx.member_insurances.findUnique({
           where: { insurance_id: dto.insurance_id },
@@ -1073,13 +1141,13 @@ export class CamporeesService {
         }
       }
 
-      // 5. Create registration in camporee_members
       const member = await tx.camporee_members.create({
         data: {
+          camporee_club_id: sectionEnrollment.camporee_club_id,
           camporee_id: camporeeId,
           camporee_type: 'local',
           user_id: dto.user_id,
-          club_name: dto.club_name,
+          club_name: section.clubs.name,
           insurance_verified: !!dto.insurance_id,
           insurance_id: dto.insurance_id,
           status: isLate ? 'pending_approval' : 'registered',
@@ -2956,6 +3024,7 @@ export class CamporeesService {
       select: {
         local_camporee_id: true,
         local_field_id: true,
+        name: true,
         active: true,
         includes_adventurers: true,
         includes_pathfinders: true,

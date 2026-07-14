@@ -825,8 +825,14 @@ export class CamporeesController {
   async registerMember(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body() dto: RegisterMemberDto,
+    @Request() req: any,
   ) {
-    return this.camporeesService.registerMember(camporeeId, dto);
+    return this.camporeesService.registerMember(
+      camporeeId,
+      dto,
+      req.user.sub,
+      req.authorization,
+    );
   }
 
   @Get(':camporeeId/members')

@@ -71,6 +71,9 @@ describe('CamporeesService', () => {
     club_sections: {
       findUnique: jest.fn(),
     },
+    club_role_assignments: {
+      findFirst: jest.fn(),
+    },
     camporee_event_section_results: {
       count: jest.fn(),
     },
@@ -116,6 +119,105 @@ describe('CamporeesService', () => {
 
   const mockAchievementsService = {
     emitEvent: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const legacyParticipantAuthorization: AuthorizationSnapshot = {
+    grants: {
+      global_roles: [],
+      club_assignments: [
+        {
+          assignment_id: 'director-assignment',
+          role_name: 'director',
+          permissions: ['attendance:manage'],
+          club: { club_id: 12, club_name: 'Test Club' },
+          section: {
+            club_section_id: 44,
+            club_type_id: 2,
+            club_type_name: 'Conquistadores',
+          },
+          scope: { local_field: { id: 5, name: 'Campo Test' } },
+          status: 'active',
+        },
+      ],
+    },
+    active_assignment: { assignment_id: 'director-assignment' },
+    effective: {
+      permissions: ['attendance:manage'],
+      scope: { global: {}, club: null },
+    },
+  };
+
+  const withParticipantGate = (tx: any) => {
+    const originalCamporeeFindUnique = tx.local_camporees.findUnique;
+    const originalUserFindUnique = tx.users?.findUnique;
+
+    return {
+      ...tx,
+      local_camporees: {
+        ...tx.local_camporees,
+        findFirst: jest.fn(async (args: unknown) => {
+          const found = await originalCamporeeFindUnique(args);
+          return found
+            ? {
+                ...found,
+                local_field_id: 5,
+                name: found.name ?? 'Test Camporee',
+                includes_adventurers: false,
+                includes_pathfinders: true,
+                includes_master_guides: false,
+              }
+            : null;
+        }),
+      },
+      club_sections: {
+        findUnique: jest.fn().mockResolvedValue({
+          club_section_id: 44,
+          name: 'Conquistadores Test Club',
+          active: true,
+          club_type_id: 2,
+          main_club_id: 12,
+          clubs: {
+            club_id: 12,
+            name: 'Test Club',
+            active: true,
+            local_field_id: 5,
+          },
+          club_types: {
+            club_type_id: 2,
+            name: 'Conquistadores',
+            active: true,
+          },
+        }),
+      },
+      camporee_clubs: {
+        findFirst: jest.fn().mockResolvedValue({
+          camporee_club_id: 31,
+          status: 'registered',
+        }),
+      },
+      users: originalUserFindUnique
+        ? {
+            ...tx.users,
+            findUnique: jest.fn(async (args: unknown) => {
+              const found = await originalUserFindUnique(args);
+              return found
+                ? {
+                    ...found,
+                    users_pr: {
+                      active_club_assignment_id: 'target-assignment',
+                    },
+                  }
+                : null;
+            }),
+          }
+        : tx.users,
+      club_role_assignments: {
+        findFirst: jest.fn().mockResolvedValue({
+          assignment_id: 'target-assignment',
+          club_section_id: 44,
+        }),
+      },
+    };
   };
 
   beforeEach(async () => {
@@ -1332,7 +1434,7 @@ describe('CamporeesService', () => {
     beforeEach(() => {
       mockLifecyclePolicy.isAfterDeadline.mockReturnValue(true);
       mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
-        callback(mockPrismaService),
+        callback(withParticipantGate(mockPrismaService)),
       );
       mockPrismaService.users.findUnique.mockResolvedValue({
         user_id: 'user-1',
@@ -1355,7 +1457,12 @@ describe('CamporeesService', () => {
         member_registration_deadline: memberDeadline,
       });
 
-      await service.registerMember(1, { user_id: 'user-1', club_name: 'Club' });
+      await service.registerMember(
+        1,
+        { user_id: 'user-1', club_name: 'Club' },
+        'director-id',
+        legacyParticipantAuthorization,
+      );
 
       expect(mockLifecyclePolicy.isAfterDeadline).toHaveBeenCalledWith(
         memberDeadline,
@@ -1455,6 +1562,244 @@ describe('CamporeesService', () => {
     });
   });
 
+  describe('participant registration section gate', () => {
+    const camporeeId = 7;
+    const actorId = 'director-id';
+    const targetUserId = '550e8400-e29b-41d4-a716-446655440001';
+    const authorization = (roleName = 'director'): AuthorizationSnapshot => ({
+      grants: {
+        global_roles: [],
+        club_assignments: [
+          {
+            assignment_id: 'assignment-1',
+            role_name: roleName,
+            permissions: ['attendance:manage'],
+            club: { club_id: 12, club_name: 'Orión' },
+            section: {
+              club_section_id: 44,
+              club_type_id: 2,
+              club_type_name: 'Conquistadores',
+            },
+            scope: {
+              local_field: { id: 5, name: 'Campo Norte' },
+            },
+            status: 'active',
+          },
+        ],
+      },
+      active_assignment: { assignment_id: 'assignment-1' },
+      effective: {
+        permissions: ['attendance:manage'],
+        scope: { global: {}, club: null },
+      },
+    });
+
+    const camporee = {
+      local_camporee_id: camporeeId,
+      local_field_id: 5,
+      name: 'Camporee local',
+      active: true,
+      includes_adventurers: false,
+      includes_pathfinders: true,
+      includes_master_guides: false,
+      start_date: new Date('2026-08-01T00:00:00.000Z'),
+      end_date: new Date('2026-08-03T00:00:00.000Z'),
+      club_registration_opens_at: null,
+      club_registration_deadline: null,
+      club_registration_closed_at: null,
+      member_registration_deadline: null,
+      payment_deadline: null,
+      timezone: 'America/Mexico_City',
+      timezone_verified_at: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    const section = {
+      club_section_id: 44,
+      name: 'Conquistadores Orión',
+      active: true,
+      club_type_id: 2,
+      main_club_id: 12,
+      clubs: {
+        club_id: 12,
+        name: 'Orión',
+        active: true,
+        local_field_id: 5,
+      },
+      club_types: {
+        club_type_id: 2,
+        name: 'Conquistadores',
+        active: true,
+      },
+    };
+
+    const buildTx = (
+      enrollment: { camporee_club_id: number; status: string } | null,
+    ) => {
+      const create = jest.fn().mockResolvedValue({
+        camporee_member_id: 9,
+        camporee_id: camporeeId,
+        camporee_club_id: enrollment?.camporee_club_id ?? null,
+        user_id: targetUserId,
+        club_name: 'Orión',
+        users: { user_image: null },
+        insurance: null,
+      });
+      const insuranceFindUnique = jest.fn();
+      return {
+        tx: {
+          local_camporees: {
+            findFirst: jest.fn().mockResolvedValue(camporee),
+            findUnique: jest.fn().mockResolvedValue(camporee),
+          },
+          club_sections: {
+            findUnique: jest.fn().mockResolvedValue(section),
+          },
+          camporee_clubs: {
+            findFirst: jest.fn().mockResolvedValue(enrollment),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue({
+              user_id: targetUserId,
+              users_pr: { active_club_assignment_id: 'target-assignment' },
+            }),
+          },
+          club_role_assignments: {
+            findFirst: jest.fn().mockResolvedValue({
+              assignment_id: 'target-assignment',
+              club_section_id: 44,
+            }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create,
+          },
+          member_insurances: { findUnique: insuranceFindUnique },
+        },
+        create,
+        insuranceFindUnique,
+      };
+    };
+
+    it('rejects before insurance when the active section has no enrollment', async () => {
+      const { tx, insuranceFindUnique } = buildTx(null);
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await expect(
+        service.registerMember(
+          camporeeId,
+          { user_id: targetUserId, insurance_id: 3 },
+          actorId,
+          authorization(),
+        ),
+      ).rejects.toMatchObject({
+        code: 'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+        status: 422,
+      });
+      expect(insuranceFindUnique).not.toHaveBeenCalled();
+    });
+
+    it.each(['pending_approval', 'pending', 'rejected', 'cancelled'])(
+      'rejects section enrollment status %s',
+      async (status) => {
+        const { tx, create } = buildTx({ camporee_club_id: 31, status });
+        mockPrismaService.$transaction.mockImplementation(
+          async (callback: any) => callback(tx),
+        );
+
+        await expect(
+          service.registerMember(
+            camporeeId,
+            { user_id: targetUserId },
+            actorId,
+            authorization(),
+          ),
+        ).rejects.toMatchObject({
+          code: 'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+        });
+        expect(create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['registered', 'approved'])(
+      'persists the exact camporee club for %s enrollment',
+      async (status) => {
+        const { tx, create } = buildTx({ camporee_club_id: 31, status });
+        mockPrismaService.$transaction.mockImplementation(
+          async (callback: any) => callback(tx),
+        );
+
+        await service.registerMember(
+          camporeeId,
+          {
+            user_id: targetUserId,
+            club_name: 'Forged payload club',
+          },
+          actorId,
+          authorization(),
+        );
+
+        expect(create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              camporee_club_id: 31,
+              club_name: 'Orión',
+            }),
+          }),
+        );
+      },
+    );
+
+    it('rejects a target user whose current active assignment belongs to another section', async () => {
+      const { tx, create } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      tx.club_role_assignments.findFirst.mockResolvedValue({
+        assignment_id: 'target-assignment',
+        club_section_id: 99,
+      });
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await expect(
+        service.registerMember(
+          camporeeId,
+          { user_id: targetUserId },
+          actorId,
+          authorization(),
+        ),
+      ).rejects.toMatchObject({
+        code: 'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('requires the exact director role even when the grant has attendance permission', async () => {
+      const { tx, create } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await expect(
+        service.registerMember(
+          camporeeId,
+          { user_id: targetUserId },
+          actorId,
+          authorization('deputy-director'),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('registerMember', () => {
     it('should register a member with valid insurance', async () => {
       const registerDto = {
@@ -1516,10 +1861,15 @@ describe('CamporeesService', () => {
             findUnique: jest.fn().mockResolvedValue(mockInsurance),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
-      const result = await service.registerMember(1, registerDto);
+      const result = await service.registerMember(
+        1,
+        registerDto,
+        'director-id',
+        legacyParticipantAuthorization,
+      );
 
       expect(result).toEqual(mockMember);
       expect(mockPrismaService.$transaction).toHaveBeenCalled();
@@ -1584,10 +1934,15 @@ describe('CamporeesService', () => {
             findUnique: jest.fn().mockResolvedValue(mockInsurance),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
-      const result = await service.registerMember(1, registerDto);
+      const result = await service.registerMember(
+        1,
+        registerDto,
+        'director-id',
+        legacyParticipantAuthorization,
+      );
 
       expect(result).toEqual(mockMember);
       expect(createMemberMock).toHaveBeenCalledWith(
@@ -1613,11 +1968,16 @@ describe('CamporeesService', () => {
             findUnique: jest.fn().mockResolvedValue(null),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(999, registerDto),
+        service.registerMember(
+          999,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
     });
 
@@ -1637,11 +1997,16 @@ describe('CamporeesService', () => {
             }),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_ACTIVE });
     });
 
@@ -1678,11 +2043,16 @@ describe('CamporeesService', () => {
             }),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
       });
@@ -1721,11 +2091,16 @@ describe('CamporeesService', () => {
             }),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_EXPIRED });
     });
   });
@@ -2094,11 +2469,16 @@ describe('CamporeesService', () => {
             findUnique: jest.fn().mockResolvedValue(null),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_USER_NOT_FOUND });
     });
 
@@ -2130,11 +2510,16 @@ describe('CamporeesService', () => {
             }),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_MEMBER_ALREADY_REGISTERED,
       });
@@ -2167,11 +2552,16 @@ describe('CamporeesService', () => {
             findUnique: jest.fn().mockResolvedValue(null),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND });
     });
 
@@ -2208,11 +2598,16 @@ describe('CamporeesService', () => {
             }),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER });
     });
 
@@ -2249,11 +2644,16 @@ describe('CamporeesService', () => {
             }),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
       await expect(
-        service.registerMember(1, registerDto),
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
       ).rejects.toMatchObject({
         code: ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE,
       });
@@ -2293,10 +2693,15 @@ describe('CamporeesService', () => {
             create: jest.fn().mockResolvedValue(mockMember),
           },
         };
-        return callback(tx);
+        return callback(withParticipantGate(tx));
       });
 
-      const result = await service.registerMember(1, registerDto);
+      const result = await service.registerMember(
+        1,
+        registerDto,
+        'director-id',
+        legacyParticipantAuthorization,
+      );
 
       expect(result.insurance_verified).toBe(false);
       expect(result.insurance_id).toBeNull();
