@@ -15,6 +15,7 @@ import {
   UpdateCamporeeDto,
   UpdateUnionCamporeeDto,
 } from './dto';
+import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
@@ -37,6 +38,7 @@ describe('CamporeesService', () => {
   const mockPrismaService = {
     local_camporees: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -63,6 +65,10 @@ describe('CamporeesService', () => {
     },
     camporee_clubs: {
       count: jest.fn(),
+      findFirst: jest.fn(),
+    },
+    club_sections: {
+      findUnique: jest.fn(),
     },
     camporee_event_section_results: {
       count: jest.fn(),
@@ -170,6 +176,243 @@ describe('CamporeesService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('active section registration', () => {
+    const camporeeId = 7;
+    const actorId = 'request-actor';
+    const registeredAt = new Date('2026-07-01T12:00:00.000Z');
+
+    const authorization = (
+      overrides: {
+        activeAssignmentId?: string | null;
+        grantAssignmentId?: string;
+        roleName?: string;
+        localFieldId?: number;
+      } = {},
+    ): AuthorizationSnapshot => ({
+      grants: {
+        global_roles: [],
+        club_assignments: [
+          {
+            assignment_id: overrides.grantAssignmentId ?? 'assignment-1',
+            role_name: overrides.roleName ?? 'director',
+            permissions: ['camporees:read'],
+            club: { club_id: 12, club_name: 'Orión' },
+            section: {
+              club_section_id: 44,
+              club_type_id: 2,
+              club_type_name: 'Conquistadores',
+            },
+            scope: {
+              local_field: {
+                id: overrides.localFieldId ?? 5,
+                name: 'Campo Norte',
+              },
+            },
+            status: 'active',
+          },
+        ],
+      },
+      active_assignment: {
+        assignment_id:
+          overrides.activeAssignmentId === undefined
+            ? 'assignment-1'
+            : overrides.activeAssignmentId,
+      },
+      effective: {
+        permissions: ['camporees:read'],
+        scope: {
+          global: {},
+          club: null,
+        },
+      },
+    });
+
+    const camporee = (overrides: Record<string, unknown> = {}) => ({
+      local_camporee_id: camporeeId,
+      local_field_id: 5,
+      active: true,
+      includes_adventurers: false,
+      includes_pathfinders: true,
+      includes_master_guides: false,
+      start_date: new Date('2026-08-01T00:00:00.000Z'),
+      end_date: new Date('2026-08-03T00:00:00.000Z'),
+      club_registration_opens_at: new Date('2026-06-01T00:00:00.000Z'),
+      club_registration_deadline: new Date('2026-07-20T00:00:00.000Z'),
+      club_registration_closed_at: null,
+      member_registration_deadline: null,
+      payment_deadline: null,
+      timezone: 'America/Mexico_City',
+      timezone_verified_at: registeredAt,
+      ...overrides,
+    });
+
+    const section = (overrides: Record<string, unknown> = {}) => ({
+      club_section_id: 44,
+      name: 'Conquistadores Orión',
+      active: true,
+      club_type_id: 2,
+      club_types: {
+        club_type_id: 2,
+        name: 'Conquistadores',
+        active: true,
+      },
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      mockPrismaService.local_camporees.findFirst.mockResolvedValue(camporee());
+      mockPrismaService.club_sections.findUnique.mockResolvedValue(section());
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue(null);
+      mockLifecyclePolicy.resolveClubRegistrationDisposition.mockReturnValue(
+        'open',
+      );
+    });
+
+    it('returns the active director section as not enrolled and enrollable', async () => {
+      await expect(
+        service.getActiveSectionRegistration(
+          camporeeId,
+          actorId,
+          authorization(),
+        ),
+      ).resolves.toEqual({
+        camporeeId,
+        clubId: 12,
+        clubName: 'Orión',
+        clubSectionId: 44,
+        sectionName: 'Conquistadores Orión',
+        clubTypeId: 2,
+        clubTypeName: 'Conquistadores',
+        status: 'not_enrolled',
+        disposition: 'open',
+        canEnroll: true,
+        blockingReason: null,
+        enrollmentId: null,
+        registeredAt: null,
+        registeredBy: null,
+      });
+
+      expect(mockPrismaService.local_camporees.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_camporee_id: camporeeId, local_field_id: 5 },
+        }),
+      );
+      expect(mockPrismaService.camporee_clubs.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            camporee_id: camporeeId,
+            club_section_id: 44,
+            active: true,
+          },
+        }),
+      );
+    });
+
+    it('maps an existing active enrollment and its registrar instead of the request actor', async () => {
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue({
+        camporee_club_id: 91,
+        status: 'approved',
+        created_at: registeredAt,
+        registrar: {
+          user_id: 'registrar-1',
+          name: 'Ana',
+          paternal_last_name: 'Pérez',
+          maternal_last_name: 'López',
+        },
+      });
+
+      const result = await service.getActiveSectionRegistration(
+        camporeeId,
+        actorId,
+        authorization(),
+      );
+
+      expect(result).toMatchObject({
+        status: 'approved',
+        canEnroll: false,
+        blockingReason: 'already_enrolled',
+        enrollmentId: 91,
+        registeredAt,
+        registeredBy: {
+          userId: 'registrar-1',
+          displayName: 'Ana Pérez López',
+        },
+      });
+      expect(result.registeredBy?.userId).not.toBe(actorId);
+    });
+
+    it('allows a non-director active grant to read but not enroll', async () => {
+      const result = await service.getActiveSectionRegistration(
+        camporeeId,
+        actorId,
+        authorization({ roleName: 'secretary' }),
+      );
+
+      expect(result).toMatchObject({
+        status: 'not_enrolled',
+        canEnroll: false,
+        blockingReason: 'director_role_required',
+      });
+    });
+
+    it('blocks enrollment when the active club type is excluded from the camporee', async () => {
+      mockPrismaService.local_camporees.findFirst.mockResolvedValue(
+        camporee({ includes_pathfinders: false }),
+      );
+
+      const result = await service.getActiveSectionRegistration(
+        camporeeId,
+        actorId,
+        authorization(),
+      );
+
+      expect(result).toMatchObject({
+        status: 'not_enrolled',
+        canEnroll: false,
+        blockingReason: 'club_type_not_included',
+      });
+    });
+
+    it.each([
+      [
+        'missing active assignment',
+        authorization({ activeAssignmentId: null }),
+      ],
+      [
+        'active assignment without a matching grant',
+        authorization({ activeAssignmentId: 'assignment-missing' }),
+      ],
+    ])('rejects %s with a typed forbidden error', async (_label, snapshot) => {
+      await expect(
+        service.getActiveSectionRegistration(camporeeId, actorId, snapshot),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      });
+
+      expect(
+        mockPrismaService.local_camporees.findFirst,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('preserves territorial visibility from the active authorization snapshot', async () => {
+      mockPrismaService.local_camporees.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getActiveSectionRegistration(
+          camporeeId,
+          actorId,
+          authorization({ localFieldId: 99 }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
+
+      expect(mockPrismaService.local_camporees.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { local_camporee_id: camporeeId, local_field_id: 99 },
+        }),
+      );
+    });
   });
 
   describe('findAll', () => {

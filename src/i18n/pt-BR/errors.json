@@ -71,6 +71,7 @@
   "CAMPOREE_UNION_CAMPOREE_NOT_FOUND": "Acampamento de união com ID {id} não encontrado",
   "CAMPOREE_UNION_ACCESS_DENIED": "Você não tem acesso para gerenciar acampamentos de união",
   "CAMPOREE_LOCAL_FIELD_ACCESS_DENIED": "Você não tem acesso para gerenciar acampamentos deste campo local",
+  "CAMPOREE_ACTIVE_SECTION_REQUIRED": "Você deve selecionar uma atribuição ativa de clube para consultar esta inscrição",
   "CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND": "Inscrição de clube pendente de aprovação não encontrada",
   "CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND": "Inscrição de membro pendente de aprovação não encontrada",
   "CAMPOREE_PAYMENT_PENDING_NOT_FOUND": "Pagamento pendente de aprovação não encontrado",
