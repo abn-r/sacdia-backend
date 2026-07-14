@@ -949,7 +949,7 @@ export class CamporeesController {
   // ========================================
 
   @Post(':camporeeId/clubs')
-  @RequirePermissions('attendance:manage')
+  @RequirePermissions('camporees:register')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Inscribir club en camporee',
@@ -965,7 +965,12 @@ export class CamporeesController {
     @Body() dto: EnrollClubDto,
     @Request() req: any,
   ) {
-    return this.camporeesService.enrollClub(camporeeId, dto, req.user.sub);
+    return this.camporeesService.enrollClub(
+      camporeeId,
+      dto,
+      req.user.sub,
+      req.authorization,
+    );
   }
 
   @Get(':camporeeId/clubs')

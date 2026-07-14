@@ -828,6 +828,25 @@ describe('Permissions metadata', () => {
     ).toEqual({ type: 'camporee', idParam: 'camporeeId' });
   });
 
+  it('separates legacy organizer enrollment from contextual director registration', () => {
+    const legacyHandler = CamporeesController.prototype.enrollClub;
+    const contextualHandler =
+      CamporeesController.prototype.registerActiveSection;
+
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, legacyHandler)).toEqual({
+      permissions: ['camporees:register'],
+      mode: 'all',
+    });
+    expect(
+      Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, legacyHandler),
+    ).toEqual({ type: 'camporee', idParam: 'camporeeId' });
+
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, contextualHandler)).toEqual({
+      permissions: ['camporees:register_active_section'],
+      mode: 'all',
+    });
+  });
+
   it('marks finance updates as finance-scoped permissions', () => {
     expect(
       Reflect.getMetadata(PERMISSIONS_KEY, FinancesController.prototype.update),

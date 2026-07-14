@@ -67,6 +67,7 @@
   "CAMPOREE_CLUB_ENROLLMENT_NOT_FOUND": "Inscrição de clube com ID {id} não encontrada no acampamento",
   "CAMPOREE_CLUB_LOCAL_FIELD_UNKNOWN": "Não é possível determinar o campo local do clube",
   "CAMPOREE_CLUB_LOCAL_FIELD_NOT_PARTICIPATING": "O campo local do clube não participa deste acampamento de união",
+  "CAMPOREE_CLUB_TYPE_NOT_INCLUDED": "Este tipo de clube está inativo ou não está incluído neste acampamento",
   "CAMPOREE_PAYMENT_NOT_FOUND": "Pagamento com ID {id} não encontrado",
   "CAMPOREE_UNION_CAMPOREE_NOT_FOUND": "Acampamento de união com ID {id} não encontrado",
   "CAMPOREE_UNION_ACCESS_DENIED": "Você não tem acesso para gerenciar acampamentos de união",

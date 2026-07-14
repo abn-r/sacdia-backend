@@ -70,6 +70,7 @@
   "CAMPOREE_CLUB_ENROLLMENT_NOT_FOUND": "Club enrollment with ID {id} not found in camporee",
   "CAMPOREE_CLUB_LOCAL_FIELD_UNKNOWN": "Cannot determine club's local field",
   "CAMPOREE_CLUB_LOCAL_FIELD_NOT_PARTICIPATING": "Club's local field does not participate in this union camporee",
+  "CAMPOREE_CLUB_TYPE_NOT_INCLUDED": "This club type is inactive or is not included in this camporee",
   "CAMPOREE_PAYMENT_NOT_FOUND": "Payment with ID {id} not found",
   "CAMPOREE_UNION_CAMPOREE_NOT_FOUND": "Union camporee with ID {id} not found",
   "CAMPOREE_UNION_ACCESS_DENIED": "You do not have access to manage union camporees",

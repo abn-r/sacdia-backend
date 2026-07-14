@@ -1006,6 +1006,310 @@ describe('CamporeesService', () => {
     });
   });
 
+  describe('legacy organizer club enrollment authorization', () => {
+    const camporeeId = 7;
+    const actorId = 'organizer-id';
+
+    const authorization = (
+      roleName: string,
+      scope: { localFieldId?: number; unionId?: number } = {},
+      options: { category?: 'GLOBAL' | 'CLUB' } = {},
+    ): AuthorizationSnapshot => {
+      const territory = {
+        ...(scope.localFieldId === undefined
+          ? {}
+          : { local_field: { id: scope.localFieldId } }),
+        ...(scope.unionId === undefined
+          ? {}
+          : { union: { id: scope.unionId } }),
+      };
+
+      if (options.category === 'CLUB') {
+        return {
+          grants: {
+            global_roles: [],
+            club_assignments: [
+              {
+                assignment_id: 'assignment-1',
+                role_name: roleName,
+                permissions: ['camporees:register'],
+                club: { club_id: 12, club_name: 'Orión' },
+                section: { club_section_id: 44, club_type_id: 2 },
+                scope: territory,
+                status: 'active',
+              },
+            ],
+          },
+          active_assignment: { assignment_id: 'assignment-1' },
+          effective: {
+            permissions: ['camporees:register'],
+            scope: { global: {}, club: null },
+          },
+        };
+      }
+
+      return {
+        grants: {
+          global_roles: [
+            {
+              role_name: roleName,
+              permissions: ['camporees:register'],
+              scope: territory,
+            },
+          ],
+          club_assignments: [],
+        },
+        active_assignment: { assignment_id: null },
+        effective: {
+          permissions: ['camporees:register'],
+          scope: { global: territory, club: null },
+        },
+      };
+    };
+
+    const camporee = (overrides: Record<string, unknown> = {}) => ({
+      local_camporee_id: camporeeId,
+      local_field_id: 5,
+      active: true,
+      includes_adventurers: false,
+      includes_pathfinders: true,
+      includes_master_guides: false,
+      club_registration_opens_at: null,
+      club_registration_deadline: null,
+      club_registration_closed_at: null,
+      local_fields: { union_id: 20 },
+      ...overrides,
+    });
+
+    const section = (overrides: Record<string, unknown> = {}) => ({
+      club_section_id: 44,
+      main_club_id: 12,
+      club_type_id: 2,
+      active: true,
+      club_types: { club_type_id: 2, name: 'Conquistadores', active: true },
+      clubs: {
+        club_id: 12,
+        name: 'Orión',
+        active: true,
+        local_field_id: 5,
+      },
+      ...overrides,
+    });
+
+    const configureTransaction = (
+      camporeeRecord = camporee(),
+      sectionRecord = section(),
+    ) => {
+      const create = jest.fn().mockResolvedValue({ camporee_club_id: 31 });
+      const tx = {
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(camporeeRecord),
+        },
+        club_sections: {
+          findUnique: jest.fn().mockResolvedValue(sectionRecord),
+        },
+        camporee_clubs: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          create,
+        },
+      };
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+      return { tx, create };
+    };
+
+    it.each([
+      ['assistant-lf', { localFieldId: 5 }],
+      ['director-lf', { localFieldId: 5 }],
+      ['assistant-union', { unionId: 20 }],
+      ['director-union', { unionId: 20 }],
+    ])(
+      'allows territorial organizer %s in its own scope',
+      async (role, scope) => {
+        const { create } = configureTransaction();
+
+        await service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization(role, scope),
+        );
+
+        expect(create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              camporee_id: camporeeId,
+              club_section_id: 44,
+              club_id: 12,
+              registered_by: actorId,
+            }),
+          }),
+        );
+      },
+    );
+
+    it.each([
+      ['admin', { unionId: 20 }, undefined],
+      ['super-admin', {}, undefined],
+      ['director-dia', {}, undefined],
+      ['director', { localFieldId: 5 }, { category: 'CLUB' as const }],
+    ])(
+      'rejects non-territorial role %s even with the permission',
+      async (role, scope, options) => {
+        configureTransaction();
+
+        await expect(
+          service.enrollClub(
+            camporeeId,
+            { club_section_id: 44 },
+            actorId,
+            authorization(role, scope, options),
+          ),
+        ).rejects.toMatchObject({
+          code: ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+        });
+      },
+    );
+
+    it('rejects a local-field organizer from another local field', async () => {
+      configureTransaction();
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('assistant-lf', { localFieldId: 6 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+      });
+    });
+
+    it('rejects a union organizer from another union', async () => {
+      configureTransaction();
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-union', { unionId: 21 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+      });
+    });
+
+    it('rejects a section whose club belongs to another local field', async () => {
+      configureTransaction(
+        camporee(),
+        section({
+          clubs: {
+            club_id: 12,
+            name: 'Orión',
+            active: true,
+            local_field_id: 6,
+          },
+        }),
+      );
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('assistant-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+      });
+    });
+
+    it.each([
+      ['inactive section', section({ active: false })],
+      [
+        'inactive club',
+        section({
+          clubs: {
+            club_id: 12,
+            name: 'Orión',
+            active: false,
+            local_field_id: 5,
+          },
+        }),
+      ],
+    ])('rejects an %s before enrollment', async (_label, sectionRecord) => {
+      configureTransaction(camporee(), sectionRecord);
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('assistant-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
+      });
+    });
+
+    it.each([
+      [
+        'inactive',
+        section({
+          club_type_id: 2,
+          club_types: {
+            club_type_id: 2,
+            name: 'Conquistadores',
+            active: false,
+          },
+        }),
+      ],
+      [
+        'excluded',
+        section({
+          club_type_id: 1,
+          club_types: { club_type_id: 1, name: 'Aventureros', active: true },
+        }),
+      ],
+    ])('rejects an %s club type', async (_label, sectionRecord) => {
+      configureTransaction(camporee(), sectionRecord);
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('assistant-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
+      });
+    });
+
+    it('derives club and type context from the persisted section', async () => {
+      const { create } = configureTransaction();
+
+      await service.enrollClub(
+        camporeeId,
+        { club_section_id: 44, club_id: 999, club_type: 'forged' } as never,
+        actorId,
+        authorization('director-lf', { localFieldId: 5 }),
+      );
+
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            club_section_id: 44,
+            club_id: 12,
+          }),
+        }),
+      );
+    });
+  });
+
   describe('findAll', () => {
     it('should return paginated local camporees', async () => {
       const mockCamporees = [

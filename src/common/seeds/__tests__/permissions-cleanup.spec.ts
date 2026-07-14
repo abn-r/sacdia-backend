@@ -39,6 +39,13 @@ const PERMISSIONS_SEED_PATH = join(SEED_DIR, 'permissions.seed.sql');
 const ROLE_PERMISSIONS_SEED_PATH = join(SEED_DIR, 'role-permissions.seed.sql');
 const ACTIVE_SECTION_REGISTRATION_PERMISSION =
   'camporees:register_active_section';
+const LEGACY_ORGANIZER_REGISTRATION_PERMISSION = 'camporees:register';
+const TERRITORIAL_ORGANIZER_ROLES = [
+  'assistant-lf',
+  'director-lf',
+  'assistant-union',
+  'director-union',
+] as const;
 
 describe('Phase 3 permission cleanup — seed files', () => {
   const permissionsSeed = readFileSync(PERMISSIONS_SEED_PATH, 'utf8');
@@ -183,6 +190,69 @@ describe('Phase 3 permission cleanup — seed files', () => {
       );
 
       expect(hasProtectedRoleCleanupOrder(withIntermediateCommit)).toBe(false);
+    });
+
+    it('grants legacy camporee registration to exactly four territorial roles', () => {
+      const grantRoles = extractExactPermissionGrantRoles(
+        rolePermissionsSeedWithoutComments,
+        LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
+      );
+
+      expect(grantRoles).toEqual([...TERRITORIAL_ORGANIZER_ROLES].sort());
+      expect(
+        extractRoleBlock(rolePermissionsSeedWithoutComments, 'assistant-lf'),
+      ).toContain(`'${LEGACY_ORGANIZER_REGISTRATION_PERMISSION}'`);
+      for (const roleName of [
+        'secretary',
+        'treasurer',
+        'secretary-treasurer',
+        'deputy-director',
+        'director',
+        'assistant-dia',
+        'director-dia',
+        'admin',
+        'super-admin',
+      ]) {
+        expect(
+          extractRoleBlock(rolePermissionsSeedWithoutComments, roleName),
+        ).not.toMatch(
+          new RegExp(
+            `^\\s*'${escapeRegex(LEGACY_ORGANIZER_REGISTRATION_PERMISSION)}',?\\s*$`,
+            'm',
+          ),
+        );
+      }
+    });
+
+    it('cleans legacy registration after inherited and wildcard grants, then idempotently grants the exact roles', () => {
+      expect(
+        hasProtectedExactPermissionGrantOrder(
+          rolePermissionsSeedWithoutComments,
+          LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects cleanup placed before the super-admin wildcard', () => {
+      const cleanup = extractExactPermissionCleanup(
+        rolePermissionsSeedWithoutComments,
+        LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
+      );
+      const withoutCleanup = rolePermissionsSeedWithoutComments.replace(
+        cleanup,
+        '',
+      );
+      const beforeWildcard = withoutCleanup.replace(
+        "WHERE r.role_name = 'super-admin'",
+        `${cleanup}\nWHERE r.role_name = 'super-admin'`,
+      );
+
+      expect(
+        hasProtectedExactPermissionGrantOrder(
+          beforeWildcard,
+          LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
+        ),
+      ).toBe(false);
     });
   });
 
@@ -362,5 +432,68 @@ function hasProtectedRoleCleanupOrder(sql: string): boolean {
     superAdminGrantIndex > adminGrantIndex &&
     cleanupIndex > superAdminGrantIndex &&
     commitIndex > cleanupIndex
+  );
+}
+
+function extractExactPermissionCleanup(
+  sql: string,
+  permission: string,
+): string {
+  const escaped = escapeRegex(permission);
+  const cleanup = sql.match(
+    new RegExp(
+      `DELETE FROM role_permissions rp\\s+USING permissions p, roles r\\s+WHERE rp\\.permission_id = p\\.permission_id\\s+AND rp\\.role_id = r\\.role_id\\s+AND p\\.permission_name = '${escaped}'\\s+AND NOT \\(\\s*r\\.role_name IN \\([^)]+\\)\\s+AND r\\.role_category = 'GLOBAL'\\s*\\);`,
+    ),
+  )?.[0];
+
+  if (!cleanup) {
+    throw new Error(`Could not locate exact cleanup for '${permission}'`);
+  }
+  return cleanup;
+}
+
+function extractExactPermissionGrantRoles(
+  sql: string,
+  permission: string,
+): string[] {
+  const escaped = escapeRegex(permission);
+  const grant = sql.match(
+    new RegExp(
+      `INSERT INTO role_permissions \\([^;]+?WHERE r\\.role_name IN \\(([^)]+)\\)\\s+AND r\\.role_category = 'GLOBAL'[^;]+?AND p\\.permission_name = '${escaped}'[^;]+?ON CONFLICT \\(role_id, permission_id\\) DO UPDATE SET\\s+active = true,\\s+modified_at = now\\(\\);`,
+    ),
+  );
+
+  if (!grant) {
+    throw new Error(
+      `Could not locate idempotent exact grant for '${permission}'`,
+    );
+  }
+
+  return [...grant[1].matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+}
+
+function hasProtectedExactPermissionGrantOrder(
+  sql: string,
+  permission: string,
+): boolean {
+  const cleanup = extractExactPermissionCleanup(sql, permission);
+  extractExactPermissionGrantRoles(sql, permission);
+  const assistantLfInheritance = sql.indexOf(
+    "WHERE src.role_name = 'assistant-lf'",
+  );
+  const superAdminWildcard = sql.indexOf("WHERE r.role_name = 'super-admin'");
+  const cleanupIndex = sql.indexOf(cleanup);
+  const exactGrantIndex = sql.indexOf(
+    'INSERT INTO role_permissions',
+    cleanupIndex + cleanup.length,
+  );
+  const commitIndex = findSqlStatementPositions(sql, 'COMMIT')[0] ?? -1;
+
+  return (
+    assistantLfInheritance > -1 &&
+    superAdminWildcard > assistantLfInheritance &&
+    cleanupIndex > superAdminWildcard &&
+    exactGrantIndex > cleanupIndex &&
+    commitIndex > exactGrantIndex
   );
 }

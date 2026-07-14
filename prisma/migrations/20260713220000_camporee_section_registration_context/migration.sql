@@ -72,6 +72,17 @@ ON CONFLICT ("permission_name") DO UPDATE SET
   "active" = TRUE,
   "modified_at" = NOW();
 
+INSERT INTO "permissions" ("permission_name", "description", "active")
+VALUES (
+  'camporees:register',
+  'Register/enroll club to camporees',
+  TRUE
+)
+ON CONFLICT ("permission_name") DO UPDATE SET
+  "description" = EXCLUDED."description",
+  "active" = TRUE,
+  "modified_at" = NOW();
+
 -- Enforce least privilege even if a previous manual grant or a broad role seed
 -- assigned the permission elsewhere.
 DELETE FROM "role_permissions" rp
@@ -101,6 +112,41 @@ WHERE r."role_name" = 'director'
   AND r."role_category" = 'CLUB'
   AND r."active" = TRUE
   AND p."permission_name" = 'camporees:register_active_section'
+  AND p."active" = TRUE
+ON CONFLICT ("role_id", "permission_id") DO UPDATE SET
+  "active" = TRUE,
+  "modified_at" = NOW();
+
+-- Legacy body-based enrollment remains available only to the four territorial
+-- Camporee organizer roles. Run this after every grant block in this migration
+-- so stale CLUB/division/admin/wildcard grants cannot survive.
+DELETE FROM "role_permissions" rp
+USING "permissions" p, "roles" r
+WHERE rp."permission_id" = p."permission_id"
+  AND rp."role_id" = r."role_id"
+  AND p."permission_name" = 'camporees:register'
+  AND NOT (
+    r."role_name" IN ('assistant-lf', 'director-lf', 'assistant-union', 'director-union')
+    AND r."role_category" = 'GLOBAL'
+  );
+
+INSERT INTO "role_permissions" (
+  "role_permission_id",
+  "role_id",
+  "permission_id",
+  "active"
+)
+SELECT
+  gen_random_uuid(),
+  r."role_id",
+  p."permission_id",
+  TRUE
+FROM "roles" r
+CROSS JOIN "permissions" p
+WHERE r."role_name" IN ('assistant-lf', 'director-lf', 'assistant-union', 'director-union')
+  AND r."role_category" = 'GLOBAL'
+  AND r."active" = TRUE
+  AND p."permission_name" = 'camporees:register'
   AND p."active" = TRUE
 ON CONFLICT ("role_id", "permission_id") DO UPDATE SET
   "active" = TRUE,

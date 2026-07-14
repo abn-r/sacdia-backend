@@ -1567,6 +1567,7 @@ export class CamporeesService {
     camporeeId: number,
     dto: EnrollClubDto,
     registeredBy: string,
+    authorization: AuthorizationSnapshot,
   ) {
     let isLate = false;
     let camporeeLocalFieldId: number | null = null;
@@ -1575,6 +1576,9 @@ export class CamporeesService {
       // 1. Validate camporee exists and is active
       const camporee = await tx.local_camporees.findUnique({
         where: { local_camporee_id: camporeeId },
+        include: {
+          local_fields: { select: { union_id: true } },
+        },
       });
 
       if (!camporee) {
@@ -1586,6 +1590,8 @@ export class CamporeesService {
       if (!camporee.active) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_NOT_ACTIVE);
       }
+      this.assertLegacyEnrollmentOrganizer(camporee, authorization);
+
       const clubRegistrationDisposition =
         this.resolveClubRegistrationDisposition(camporee);
       if (
@@ -1604,15 +1610,40 @@ export class CamporeesService {
       const clubSection = await tx.club_sections.findUnique({
         where: { club_section_id: dto.club_section_id },
         include: {
-          club_types: { select: { club_type_id: true, name: true } },
-          clubs: { select: { club_id: true, name: true } },
+          club_types: {
+            select: { club_type_id: true, name: true, active: true },
+          },
+          clubs: {
+            select: {
+              club_id: true,
+              name: true,
+              active: true,
+              local_field_id: true,
+            },
+          },
         },
       });
 
-      if (!clubSection) {
+      if (!clubSection || !clubSection.active || !clubSection.clubs?.active) {
         throw new AppNotFoundException(
           ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
           { id: dto.club_section_id },
+        );
+      }
+
+      if (clubSection.clubs.local_field_id !== camporee.local_field_id) {
+        throw new AppForbiddenException(
+          ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+        );
+      }
+
+      if (
+        !clubSection.club_types.active ||
+        clubSection.club_types.club_type_id !== clubSection.club_type_id ||
+        !this.isClubTypeIncludedInCamporee(clubSection.club_type_id, camporee)
+      ) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_CLUB_TYPE_NOT_INCLUDED,
         );
       }
 
@@ -1636,8 +1667,8 @@ export class CamporeesService {
         data: {
           camporee_id: camporeeId,
           camporee_type: 'local',
-          club_section_id: dto.club_section_id,
-          club_id: clubSection.main_club_id,
+          club_section_id: clubSection.club_section_id,
+          club_id: clubSection.clubs.club_id,
           status: isLate ? 'pending_approval' : 'registered',
           registered_by: registeredBy,
           active: true,
@@ -3476,6 +3507,39 @@ export class CamporeesService {
     if (clubTypeId === 2) return camporee.includes_pathfinders === true;
     if (clubTypeId === 3) return camporee.includes_master_guides === true;
     return false;
+  }
+
+  private assertLegacyEnrollmentOrganizer(
+    camporee: {
+      local_field_id: number;
+      local_fields?: { union_id: number | null } | null;
+    },
+    authorization: AuthorizationSnapshot,
+  ): void {
+    const allowed = authorization?.grants?.global_roles?.some((grant) => {
+      if (!grant.permissions.includes('camporees:register')) return false;
+
+      const roleName = grant.role_name.toLowerCase();
+      if (roleName === 'assistant-lf' || roleName === 'director-lf') {
+        return grant.scope.local_field?.id === camporee.local_field_id;
+      }
+
+      if (roleName === 'assistant-union' || roleName === 'director-union') {
+        const camporeeUnionId = camporee.local_fields?.union_id;
+        return (
+          typeof camporeeUnionId === 'number' &&
+          grant.scope.union?.id === camporeeUnionId
+        );
+      }
+
+      return false;
+    });
+
+    if (!allowed) {
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_LOCAL_FIELD_ACCESS_DENIED,
+      );
+    }
   }
 
   private applyUnionCamporeeScope(

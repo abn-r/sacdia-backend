@@ -17,6 +17,7 @@ describe('CamporeesController', () => {
     registerActiveSection: jest.fn(),
     registerMember: jest.fn(),
     registerParticipants: jest.fn(),
+    enrollClub: jest.fn(),
   };
   const lateApprovalsService = {};
   const controller = new CamporeesController(
@@ -109,6 +110,25 @@ describe('CamporeesController', () => {
       7,
       dto,
       'director-id',
+      req.authorization,
+    );
+  });
+
+  it('enrolls a legacy club using the authenticated actor and authorization snapshot', async () => {
+    const dto = { club_section_id: 44 };
+    const req = {
+      user: { sub: 'organizer-id' },
+      authorization: {
+        grants: { global_roles: [], club_assignments: [] },
+      },
+    };
+
+    await controller.enrollClub(7, dto, req);
+
+    expect(camporeesService.enrollClub).toHaveBeenCalledWith(
+      7,
+      dto,
+      'organizer-id',
       req.authorization,
     );
   });

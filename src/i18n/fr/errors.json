@@ -67,6 +67,7 @@
   "CAMPOREE_CLUB_ENROLLMENT_NOT_FOUND": "Inscription de club avec l’ID {id} introuvable dans le camporee",
   "CAMPOREE_CLUB_LOCAL_FIELD_UNKNOWN": "Impossible de déterminer le champ local du club",
   "CAMPOREE_CLUB_LOCAL_FIELD_NOT_PARTICIPATING": "Le champ local du club ne participe pas à ce camporee d’union",
+  "CAMPOREE_CLUB_TYPE_NOT_INCLUDED": "Ce type de club est inactif ou n’est pas inclus dans ce camporee",
   "CAMPOREE_PAYMENT_NOT_FOUND": "Paiement avec l’ID {id} introuvable",
   "CAMPOREE_UNION_CAMPOREE_NOT_FOUND": "Camporee d’union avec l’ID {id} introuvable",
   "CAMPOREE_UNION_ACCESS_DENIED": "Vous n’avez pas accès pour gérer les camporees d’union",
