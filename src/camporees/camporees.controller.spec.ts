@@ -1,4 +1,6 @@
 import { CamporeesController } from './camporees.controller';
+import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
 
 describe('CamporeesController', () => {
   const camporeesService = {
@@ -6,6 +8,8 @@ describe('CamporeesController', () => {
     update: jest.fn(),
     createUnion: jest.fn(),
     updateUnion: jest.fn(),
+    getActiveSectionRegistration: jest.fn(),
+    registerActiveSection: jest.fn(),
   };
   const lateApprovalsService = {};
   const controller = new CamporeesController(
@@ -31,5 +35,50 @@ describe('CamporeesController', () => {
       dto,
       'actor-id',
     );
+  });
+
+  it('gets the active section registration using the authenticated context', async () => {
+    const req = {
+      user: { sub: 'actor-id' },
+      authorization: { clubId: 11, clubSectionId: 22 },
+    };
+
+    await (controller as any).getActiveSectionRegistration(7, req);
+
+    expect(camporeesService.getActiveSectionRegistration).toHaveBeenCalledWith(
+      7,
+      'actor-id',
+      req.authorization,
+    );
+  });
+
+  it('registers the active section using only the authenticated context', async () => {
+    const req = {
+      user: { sub: 'actor-id' },
+      authorization: { clubId: 11, clubSectionId: 22 },
+    };
+
+    await (controller as any).registerActiveSection(7, req);
+
+    expect(camporeesService.registerActiveSection).toHaveBeenCalledWith(
+      7,
+      'actor-id',
+      req.authorization,
+    );
+  });
+
+  it('does not bind a request body for active section registration', () => {
+    const routeArguments =
+      Reflect.getMetadata(
+        ROUTE_ARGS_METADATA,
+        CamporeesController,
+        'registerActiveSection',
+      ) ?? {};
+
+    expect(
+      Object.keys(routeArguments).some((key) =>
+        key.startsWith(`${RouteParamtypes.BODY}:`),
+      ),
+    ).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ import {
 } from '../common/dto/pagination.dto';
 import { UnionMembersListQueryDto } from './dto/union-members-list-query.dto';
 import { CamporeeMembersListQueryDto } from './dto/camporee-members-list-query.dto';
+import { CamporeeSectionRegistrationDto } from './dto/camporee-section-registration.dto';
 import { CreateCamporeeDto } from './dto/create-camporee.dto';
 import { UpdateCamporeeDto } from './dto/update-camporee.dto';
 import { CreateUnionCamporeeDto } from './dto/create-union-camporee.dto';
@@ -71,6 +72,30 @@ export class CamporeesService {
     private readonly achievementsService: AchievementsService,
     private readonly camporeeLifecyclePolicy: CamporeeLifecyclePolicy,
   ) {}
+
+  // Task 3 implements the contextual GET contract.
+  async getActiveSectionRegistration(
+    camporeeId: number,
+    actorId: string,
+    authorization: AuthorizationSnapshot,
+  ): Promise<CamporeeSectionRegistrationDto> {
+    void camporeeId;
+    void actorId;
+    void authorization;
+    throw new Error('Task 3 must implement getActiveSectionRegistration');
+  }
+
+  // Task 4 implements the contextual POST contract.
+  async registerActiveSection(
+    camporeeId: number,
+    actorId: string,
+    authorization: AuthorizationSnapshot,
+  ): Promise<CamporeeSectionRegistrationDto> {
+    void camporeeId;
+    void actorId;
+    void authorization;
+    throw new Error('Task 4 must implement registerActiveSection');
+  }
 
   // ========================================
   // CRUD FOR LOCAL_CAMPOREES

@@ -801,6 +801,33 @@ describe('Permissions metadata', () => {
     ).toEqual({ type: 'active_assignment' });
   });
 
+  it('marks active section registration routes with camporee-scoped permissions', () => {
+    const getHandler = (
+      CamporeesController.prototype as unknown as Record<string, object>
+    ).getActiveSectionRegistration;
+    const postHandler = (
+      CamporeesController.prototype as unknown as Record<string, object>
+    ).registerActiveSection;
+
+    expect(getHandler).toBeDefined();
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, getHandler)).toEqual({
+      permissions: ['camporees:read'],
+      mode: 'all',
+    });
+    expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, getHandler)).toEqual(
+      { type: 'camporee', idParam: 'camporeeId' },
+    );
+
+    expect(postHandler).toBeDefined();
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, postHandler)).toEqual({
+      permissions: ['camporees:register_active_section'],
+      mode: 'all',
+    });
+    expect(
+      Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, postHandler),
+    ).toEqual({ type: 'camporee', idParam: 'camporeeId' });
+  });
+
   it('marks finance updates as finance-scoped permissions', () => {
     expect(
       Reflect.getMetadata(PERMISSIONS_KEY, FinancesController.prototype.update),

@@ -47,6 +47,7 @@ import {
   UnionMembersListQueryDto,
   CamporeeMembersListQueryDto,
 } from './dto';
+import { CamporeeSectionRegistrationDto } from './dto/camporee-section-registration.dto';
 
 @ApiTags('camporees')
 @Controller('camporees')
@@ -700,6 +701,60 @@ export class CamporeesController {
   // ========================================
   // LOCAL CAMPOREES (detail)
   // ========================================
+
+  @Get(':camporeeId/section-registration')
+  @RequirePermissions('camporees:read')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Consultar inscripción de la sección activa',
+    description:
+      'Obtiene el estado contextual de inscripción al camporee para la sección activa del actor autenticado.',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Estado contextual de inscripción de la sección activa',
+    type: CamporeeSectionRegistrationDto,
+  })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async getActiveSectionRegistration(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
+  ): Promise<CamporeeSectionRegistrationDto> {
+    return this.camporeesService.getActiveSectionRegistration(
+      camporeeId,
+      req.user.sub,
+      req.authorization,
+    );
+  }
+
+  @Post(':camporeeId/section-registration')
+  @RequirePermissions('camporees:register_active_section')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Inscribir la sección activa',
+    description:
+      'Inscribe al camporee la sección activa del actor autenticado; no acepta un ID de sección enviado por el cliente.',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({
+    status: 201,
+    description: 'Sección activa inscrita en el camporee',
+    type: CamporeeSectionRegistrationDto,
+  })
+  @ApiResponse({ status: 400, description: 'Inscripción no disponible' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async registerActiveSection(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
+  ): Promise<CamporeeSectionRegistrationDto> {
+    return this.camporeesService.registerActiveSection(
+      camporeeId,
+      req.user.sub,
+      req.authorization,
+    );
+  }
 
   @Get(':camporeeId')
   @ApiOperation({ summary: 'Obtener camporee por ID' })
