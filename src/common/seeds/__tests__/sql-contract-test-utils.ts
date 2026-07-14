@@ -29,6 +29,7 @@ function transformSql(sql: string, maskQuotedContent: boolean): string {
   let mode: SqlMode = 'normal';
   let blockDepth = 0;
   let dollarDelimiter = '';
+  let singleQuoteBackslashEscapes = false;
 
   const appendQuoted = (value: string): void => {
     output += maskQuotedContent ? value.replace(/[^\n]/g, ' ') : value;
@@ -65,11 +66,16 @@ function transformSql(sql: string, maskQuotedContent: boolean): string {
       if (current === "'" && next === "'") {
         appendQuoted(next);
         index += 1;
-      } else if (current === '\\' && next !== undefined) {
+      } else if (
+        singleQuoteBackslashEscapes &&
+        current === '\\' &&
+        next !== undefined
+      ) {
         appendQuoted(next);
         index += 1;
       } else if (current === "'") {
         mode = 'normal';
+        singleQuoteBackslashEscapes = false;
       }
       continue;
     }
@@ -99,6 +105,7 @@ function transformSql(sql: string, maskQuotedContent: boolean): string {
     const detectedDollarDelimiter = readDollarDelimiter(sql, index);
     if (current === "'") {
       appendQuoted(current);
+      singleQuoteBackslashEscapes = opensEscapeString(sql, index);
       mode = 'single-quote';
     } else if (current === '"') {
       appendQuoted(current);
@@ -125,7 +132,22 @@ function transformSql(sql: string, maskQuotedContent: boolean): string {
 }
 
 function readDollarDelimiter(sql: string, index: number): string {
-  if (sql[index] !== '$') return '';
+  if (sql[index] !== '$' || isIdentifierCharacter(sql[index - 1])) return '';
 
-  return sql.slice(index).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0] ?? '';
+  return (
+    sql.slice(index).match(/^\$(?:[\p{L}_][\p{L}\p{M}\p{N}_]*)?\$/u)?.[0] ?? ''
+  );
+}
+
+function opensEscapeString(sql: string, quoteIndex: number): boolean {
+  const prefix = sql[quoteIndex - 1];
+
+  return (
+    (prefix === 'E' || prefix === 'e') &&
+    !isIdentifierCharacter(sql[quoteIndex - 2])
+  );
+}
+
+function isIdentifierCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{M}\p{N}_$]/u.test(character);
 }

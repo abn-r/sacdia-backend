@@ -261,6 +261,31 @@ describe('SQL comment sanitizer', () => {
     expect(findSqlStatementPositions(sql, 'BEGIN')).toHaveLength(1);
     expect(findSqlStatementPositions(sql, 'COMMIT')).toHaveLength(1);
   });
+
+  it('treats backslashes as ordinary characters in standard strings', () => {
+    const sql = "BEGIN; SELECT 'C:\\'; COMMIT; CREATE TABLE x(id int); COMMIT;";
+
+    expect(findSqlStatementPositions(sql, 'COMMIT')).toHaveLength(2);
+  });
+
+  it('honors backslash escapes only in PostgreSQL E strings', () => {
+    const sql = "BEGIN; SELECT E'C:\\''; COMMIT;";
+
+    expect(findSqlStatementPositions(sql, 'BEGIN')).toHaveLength(1);
+    expect(findSqlStatementPositions(sql, 'COMMIT')).toHaveLength(1);
+  });
+
+  it('does not open a dollar quote inside an unquoted identifier', () => {
+    const sql = 'BEGIN; SELECT foo$tag$bar; COMMIT;';
+
+    expect(findSqlStatementPositions(sql, 'COMMIT')).toHaveLength(1);
+  });
+
+  it('hides transaction keywords inside a valid dollar-quoted string', () => {
+    const sql = 'BEGIN; SELECT $tag$COMMIT;$tag$; COMMIT;';
+
+    expect(findSqlStatementPositions(sql, 'COMMIT')).toHaveLength(1);
+  });
 });
 
 function escapeRegex(value: string): string {
