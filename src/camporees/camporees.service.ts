@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   AppBadRequestException,
   AppForbiddenException,
@@ -57,7 +57,7 @@ export const PROFILE_URL_LIMITER = pLimit(20);
 
 type CamporeeRegistrationDb = Pick<
   Prisma.TransactionClient,
-  'local_camporees' | 'club_sections' | 'camporee_clubs'
+  'local_camporees' | 'club_sections' | 'camporee_clubs' | '$queryRaw'
 >;
 
 @Injectable()
@@ -154,6 +154,11 @@ export class CamporeesService {
 
     try {
       const outcome = await this.prisma.$transaction(async (tx) => {
+        await this.lockLocalCamporeeRegistrationGate(
+          tx,
+          camporeeId,
+          activeGrant,
+        );
         const { camporee, section } =
           await this.loadActiveSectionRegistrationContext(
             tx,
@@ -248,7 +253,7 @@ export class CamporeesService {
         clubTypeIncluded: true,
       });
     } catch (error) {
-      if (!this.isPrismaUniqueConstraintError(error)) {
+      if (!this.isLocalActiveSectionUniqueConstraintError(error)) {
         throw error;
       }
 
@@ -3028,6 +3033,35 @@ export class CamporeesService {
     };
   }
 
+  private async lockLocalCamporeeRegistrationGate(
+    db: CamporeeRegistrationDb,
+    camporeeId: number,
+    activeGrant: ClubAuthorizationGrant,
+  ): Promise<void> {
+    const localFieldId = activeGrant.scope.local_field?.id;
+    if (typeof localFieldId !== 'number') {
+      throw new AppForbiddenException(
+        ErrorCode.CAMPOREE_ACTIVE_SECTION_REQUIRED,
+      );
+    }
+
+    const lockedRows = await db.$queryRaw<
+      Array<{ local_camporee_id: number }>
+    >(Prisma.sql`
+      SELECT "local_camporee_id"
+      FROM "local_camporees"
+      WHERE "local_camporee_id" = ${camporeeId}
+        AND "local_field_id" = ${localFieldId}
+      FOR UPDATE
+    `);
+
+    if (lockedRows.length === 0) {
+      throw new AppNotFoundException(ErrorCode.CAMPOREE_NOT_FOUND, {
+        id: camporeeId,
+      });
+    }
+  }
+
   private findActiveSectionEnrollment(
     db: CamporeeRegistrationDb,
     camporeeId: number,
@@ -3055,13 +3089,66 @@ export class CamporeesService {
     });
   }
 
-  private isPrismaUniqueConstraintError(error: unknown): boolean {
+  private isLocalActiveSectionUniqueConstraintError(error: unknown): boolean {
+    const errorRecord = this.asRecord(error);
+    if (errorRecord?.code !== 'P2002') {
+      return false;
+    }
+
+    const meta = this.asRecord(errorRecord.meta);
+    const adapterError = this.asRecord(meta?.driverAdapterError);
+    const adapterCause = this.asRecord(adapterError?.cause);
+    const directCause = this.asRecord(errorRecord.cause);
+    const explicitConstraint = [
+      meta?.target,
+      meta?.constraint,
+      adapterCause?.constraint,
+      directCause?.constraint,
+    ].find((value) => value !== undefined && value !== null);
+
+    // Prisma 7's pg adapter normally reports { fields: [...] }. Some Prisma
+    // paths omit target metadata; those may continue only to the exact-winner
+    // lookup in the catch block, which must succeed before a replay is returned.
+    if (explicitConstraint === undefined) {
+      return true;
+    }
+
+    return this.matchesLocalActiveSectionConstraint(explicitConstraint);
+  }
+
+  private matchesLocalActiveSectionConstraint(value: unknown): boolean {
+    const constraint = this.asRecord(value);
+    const index =
+      typeof value === 'string'
+        ? value
+        : typeof constraint?.index === 'string'
+          ? constraint.index
+          : null;
+    if (index !== null) {
+      return index === 'uq_camporee_clubs_active_local_section';
+    }
+
+    const fields = Array.isArray(value)
+      ? value
+      : Array.isArray(constraint?.fields)
+        ? constraint.fields
+        : null;
+    if (!fields || !fields.every((field) => typeof field === 'string')) {
+      return false;
+    }
+
+    const normalizedFields = fields.map((field) => field.replaceAll('"', ''));
     return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      (error as { code?: unknown }).code === 'P2002'
+      normalizedFields.length === 2 &&
+      normalizedFields.includes('camporee_id') &&
+      normalizedFields.includes('club_section_id')
     );
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : null;
   }
 
   private notifyLateActiveSectionRegistration(

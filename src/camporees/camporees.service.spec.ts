@@ -97,6 +97,7 @@ describe('CamporeesService', () => {
     ecclesiastical_years: {
       findFirst: jest.fn(),
     },
+    $queryRaw: jest.fn(),
     $transaction: jest.fn(),
   };
 
@@ -553,9 +554,57 @@ describe('CamporeesService', () => {
           async (callback: (tx: typeof mockPrismaService) => unknown) =>
             callback(mockPrismaService),
         );
+        mockPrismaService.$queryRaw.mockResolvedValue([
+          { local_camporee_id: camporeeId },
+        ]);
         mockPrismaService.camporee_clubs.create.mockResolvedValue(
           persistedEnrollment(),
         );
+      });
+
+      it('locks the scoped camporee before reading lifecycle state and creating', async () => {
+        const order: string[] = [];
+        mockPrismaService.$queryRaw.mockImplementation(async () => {
+          order.push('lock');
+          return [{ local_camporee_id: camporeeId }];
+        });
+        mockPrismaService.local_camporees.findFirst.mockImplementation(
+          async () => {
+            order.push('read');
+            return camporee();
+          },
+        );
+        mockPrismaService.camporee_clubs.create.mockImplementation(async () => {
+          order.push('create');
+          return persistedEnrollment();
+        });
+
+        await service.registerActiveSection(
+          camporeeId,
+          actorId,
+          authorization(),
+        );
+
+        expect(order).toEqual(['lock', 'read', 'create']);
+        const lockQuery = mockPrismaService.$queryRaw.mock.calls[0][0] as {
+          strings: string[];
+          values: unknown[];
+        };
+        expect(lockQuery.strings.join('?')).toContain('FOR UPDATE');
+        expect(lockQuery.values).toEqual([camporeeId, 5]);
+      });
+
+      it('fails closed when the scoped camporee row cannot be locked', async () => {
+        mockPrismaService.$queryRaw.mockResolvedValue([]);
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
+
+        expect(
+          mockPrismaService.local_camporees.findFirst,
+        ).not.toHaveBeenCalled();
+        expect(mockPrismaService.camporee_clubs.create).not.toHaveBeenCalled();
       });
 
       it('creates only the request actor active director section', async () => {
@@ -716,7 +765,7 @@ describe('CamporeesService', () => {
         },
       );
 
-      it('recovers the winning active enrollment after a P2002 race without notifying', async () => {
+      it('recovers the winning active enrollment after the exact Prisma 7 P2002 target without notifying', async () => {
         const winner = persistedEnrollment({
           camporee_club_id: 92,
           registrar: {
@@ -732,6 +781,16 @@ describe('CamporeesService', () => {
         mockPrismaService.camporee_clubs.create.mockRejectedValue(
           Object.assign(new Error('Unique constraint failed'), {
             code: 'P2002',
+            meta: {
+              driverAdapterError: {
+                cause: {
+                  kind: 'UniqueConstraintViolation',
+                  constraint: {
+                    fields: ['camporee_id', 'club_section_id'],
+                  },
+                },
+              },
+            },
           }),
         );
 
@@ -748,6 +807,38 @@ describe('CamporeesService', () => {
         expect(
           mockNotificationsService.sendToGlobalRole,
         ).not.toHaveBeenCalled();
+      });
+
+      it('propagates a P2002 with an explicitly different target', async () => {
+        const failure = Object.assign(new Error('Unique constraint failed'), {
+          code: 'P2002',
+          meta: { target: ['registered_by'] },
+        });
+        mockPrismaService.camporee_clubs.create.mockRejectedValue(failure);
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).rejects.toBe(failure);
+
+        expect(
+          mockPrismaService.camporee_clubs.findFirst,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('uses winner-existence as the safe fallback when P2002 omits target metadata', async () => {
+        const winner = persistedEnrollment({ camporee_club_id: 93 });
+        mockPrismaService.camporee_clubs.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(winner);
+        mockPrismaService.camporee_clubs.create.mockRejectedValue(
+          Object.assign(new Error('Unique constraint failed'), {
+            code: 'P2002',
+          }),
+        );
+
+        await expect(
+          service.registerActiveSection(camporeeId, actorId, authorization()),
+        ).resolves.toMatchObject({ enrollmentId: 93 });
       });
 
       it('propagates non-P2002 create failures', async () => {
