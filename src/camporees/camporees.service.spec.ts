@@ -16,6 +16,7 @@ import {
   UpdateUnionCamporeeDto,
 } from './dto';
 import type { AuthorizationSnapshot } from '../common/services/authorization-context.service';
+import { AppConflictException } from '../common/errors/app.exception';
 
 describe('CamporeesService', () => {
   let service: CamporeesService;
@@ -1101,7 +1102,21 @@ describe('CamporeesService', () => {
       sectionRecord = section(),
     ) => {
       const create = jest.fn().mockResolvedValue({ camporee_club_id: 31 });
+      const queryRaw = jest.fn().mockImplementation(async (query: any) => {
+        const sql = query.strings.join('?');
+        if (sql.includes('FROM "local_camporees"')) {
+          return [{ local_camporee_id: camporeeId }];
+        }
+        if (sql.includes('FROM "club_sections"')) {
+          return [{ club_section_id: 44, main_club_id: 12 }];
+        }
+        if (sql.includes('FROM "clubs"')) {
+          return [{ club_id: 12 }];
+        }
+        throw new Error(`Unexpected lock query: ${sql}`);
+      });
       const tx = {
+        $queryRaw: queryRaw,
         local_camporees: {
           findUnique: jest.fn().mockResolvedValue(camporeeRecord),
         },
@@ -1116,8 +1131,194 @@ describe('CamporeesService', () => {
       mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
         callback(tx),
       );
-      return { tx, create };
+      return { tx, create, queryRaw };
     };
+
+    it('locks camporee, section, and club in fixed order before rereading', async () => {
+      const { tx, queryRaw } = configureTransaction();
+
+      await service.enrollClub(
+        camporeeId,
+        { club_section_id: 44 },
+        actorId,
+        authorization('director-lf', { localFieldId: 5 }),
+      );
+
+      const lockQueries = queryRaw.mock.calls.map(([query]) =>
+        query.strings.join('?'),
+      );
+      expect(lockQueries).toHaveLength(3);
+      expect(lockQueries[0]).toContain('FROM "local_camporees"');
+      expect(lockQueries[1]).toContain('FROM "club_sections"');
+      expect(lockQueries[2]).toContain('FROM "clubs"');
+      expect(queryRaw.mock.invocationCallOrder[2]).toBeLessThan(
+        tx.local_camporees.findUnique.mock.invocationCallOrder[0],
+      );
+      expect(queryRaw.mock.calls[0][0].values).toContain(camporeeId);
+      expect(queryRaw.mock.calls[1][0].values).toContain(44);
+    });
+
+    it('fails closed when the camporee lock finds no row', async () => {
+      const { tx, queryRaw } = configureTransaction();
+      queryRaw.mockResolvedValueOnce([]);
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_FOUND });
+
+      expect(tx.local_camporees.findUnique).not.toHaveBeenCalled();
+      expect(tx.camporee_clubs.create).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the post-lock camporee reread is stale', async () => {
+      const { create, queryRaw } = configureTransaction(
+        camporee({ active: false }),
+      );
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toMatchObject({ code: ErrorCode.CAMPOREE_NOT_ACTIVE });
+
+      expect(queryRaw).toHaveBeenCalledTimes(3);
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        target: 'uq_camporee_clubs_active_local_section',
+      },
+      {
+        target: { fields: ['camporee_id', 'club_section_id'] },
+      },
+      {
+        driverAdapterError: {
+          cause: { constraint: 'uq_camporee_clubs_active_local_section' },
+        },
+      },
+    ])('maps the exact local unique race to a conflict (%p)', async (meta) => {
+      const { create } = configureTransaction();
+      const p2002 = Object.assign(new Error('duplicate'), {
+        code: 'P2002',
+        meta,
+      });
+      create.mockRejectedValue(p2002);
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue({
+        camporee_club_id: 99,
+      });
+
+      const error = await service
+        .enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        )
+        .catch((caught) => caught);
+      expect(error).toBeInstanceOf(AppConflictException);
+      expect(error).toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_ALREADY_ENROLLED,
+      });
+
+      expect(mockPrismaService.camporee_clubs.findFirst).toHaveBeenCalledWith({
+        where: {
+          camporee_id: camporeeId,
+          club_section_id: 44,
+          active: true,
+        },
+      });
+    });
+
+    it('propagates a P2002 for a foreign target without querying a winner', async () => {
+      const { create } = configureTransaction();
+      const p2002 = Object.assign(new Error('foreign duplicate'), {
+        code: 'P2002',
+        meta: { target: ['registered_by'] },
+      });
+      create.mockRejectedValue(p2002);
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toBe(p2002);
+      expect(mockPrismaService.camporee_clubs.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('propagates metadata-free P2002 when no exact winner exists', async () => {
+      const { create } = configureTransaction();
+      const p2002 = Object.assign(new Error('ambiguous duplicate'), {
+        code: 'P2002',
+      });
+      create.mockRejectedValue(p2002);
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        ),
+      ).rejects.toBe(p2002);
+    });
+
+    it('maps metadata-free P2002 only when the exact active winner exists', async () => {
+      const { create } = configureTransaction();
+      const p2002 = Object.assign(new Error('ambiguous duplicate'), {
+        code: 'P2002',
+      });
+      create.mockRejectedValue(p2002);
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue({
+        camporee_club_id: 99,
+      });
+
+      const error = await service
+        .enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        )
+        .catch((caught) => caught);
+
+      expect(error).toBeInstanceOf(AppConflictException);
+      expect(error).toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_ALREADY_ENROLLED,
+      });
+    });
+
+    it('uses the same conflict semantics for the duplicate precheck', async () => {
+      const { tx, create } = configureTransaction();
+      tx.camporee_clubs.findFirst.mockResolvedValue({ camporee_club_id: 31 });
+
+      const error = await service
+        .enrollClub(
+          camporeeId,
+          { club_section_id: 44 },
+          actorId,
+          authorization('director-lf', { localFieldId: 5 }),
+        )
+        .catch((caught) => caught);
+
+      expect(error).toBeInstanceOf(AppConflictException);
+      expect(error).toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_ALREADY_ENROLLED,
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
 
     it.each([
       ['assistant-lf', { localFieldId: 5 }],
@@ -1307,6 +1508,168 @@ describe('CamporeesService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('legacy union club enrollment serialization', () => {
+    const unionCamporeeId = 17;
+    const camporee = (overrides: Record<string, unknown> = {}) => ({
+      union_camporee_id: unionCamporeeId,
+      union_id: 20,
+      active: true,
+      includes_adventurers: false,
+      includes_pathfinders: true,
+      includes_master_guides: false,
+      club_registration_opens_at: null,
+      club_registration_deadline: null,
+      club_registration_closed_at: null,
+      ...overrides,
+    });
+    const section = (overrides: Record<string, unknown> = {}) => ({
+      club_section_id: 44,
+      main_club_id: 12,
+      club_type_id: 2,
+      active: true,
+      club_types: { club_type_id: 2, name: 'Conquistadores', active: true },
+      clubs: {
+        club_id: 12,
+        active: true,
+        local_field_id: 5,
+      },
+      ...overrides,
+    });
+
+    const configureUnionTransaction = (
+      camporeeRecord = camporee(),
+      sectionRecord = section(),
+    ) => {
+      const create = jest.fn().mockResolvedValue({ camporee_club_id: 51 });
+      const queryRaw = jest.fn().mockImplementation(async (query: any) => {
+        const sql = query.strings.join('?');
+        if (sql.includes('FROM "union_camporees"')) {
+          return [{ union_camporee_id: unionCamporeeId }];
+        }
+        if (sql.includes('FROM "club_sections"')) {
+          return [{ club_section_id: 44, main_club_id: 12 }];
+        }
+        if (sql.includes('FROM "clubs"')) {
+          return [{ club_id: 12 }];
+        }
+        throw new Error(`Unexpected lock query: ${sql}`);
+      });
+      const tx = {
+        $queryRaw: queryRaw,
+        union_camporees: {
+          findUnique: jest.fn().mockResolvedValue(camporeeRecord),
+        },
+        club_sections: {
+          findUnique: jest.fn().mockResolvedValue(sectionRecord),
+        },
+        union_camporee_local_fields: {
+          findFirst: jest.fn().mockResolvedValue({ active: true }),
+        },
+        camporee_clubs: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          create,
+        },
+      };
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+      return { tx, create, queryRaw };
+    };
+
+    it('locks union camporee, section, and club before the post-lock rereads', async () => {
+      const { tx, queryRaw } = configureUnionTransaction();
+
+      await service.enrollClubToUnion(
+        unionCamporeeId,
+        { club_section_id: 44 },
+        'organizer-id',
+      );
+
+      const lockQueries = queryRaw.mock.calls.map(([query]) =>
+        query.strings.join('?'),
+      );
+      expect(lockQueries[0]).toContain('FROM "union_camporees"');
+      expect(lockQueries[1]).toContain('FROM "club_sections"');
+      expect(lockQueries[2]).toContain('FROM "clubs"');
+      expect(queryRaw.mock.invocationCallOrder[2]).toBeLessThan(
+        tx.union_camporees.findUnique.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('fails closed when the union camporee lock is empty', async () => {
+      const { tx, queryRaw } = configureUnionTransaction();
+      queryRaw.mockResolvedValueOnce([]);
+
+      await expect(
+        service.enrollClubToUnion(
+          unionCamporeeId,
+          { club_section_id: 44 },
+          'organizer-id',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_UNION_CAMPOREE_NOT_FOUND,
+      });
+      expect(tx.union_camporees.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when section state changes before its post-lock reread', async () => {
+      const { create, queryRaw } = configureUnionTransaction(
+        camporee(),
+        section({ active: false }),
+      );
+
+      await expect(
+        service.enrollClubToUnion(
+          unionCamporeeId,
+          { club_section_id: 44 },
+          'organizer-id',
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_SECTION_NOT_FOUND,
+      });
+      expect(queryRaw).toHaveBeenCalledTimes(3);
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        target: 'uq_camporee_clubs_active_union_section',
+      },
+      {
+        target: { fields: ['union_camporee_id', 'club_section_id'] },
+      },
+    ])('maps the exact union unique race to a conflict (%p)', async (meta) => {
+      const { create } = configureUnionTransaction();
+      const p2002 = Object.assign(new Error('duplicate'), {
+        code: 'P2002',
+        meta,
+      });
+      create.mockRejectedValue(p2002);
+      mockPrismaService.camporee_clubs.findFirst.mockResolvedValue({
+        camporee_club_id: 88,
+      });
+
+      const error = await service
+        .enrollClubToUnion(
+          unionCamporeeId,
+          { club_section_id: 44 },
+          'organizer-id',
+        )
+        .catch((caught) => caught);
+      expect(error).toBeInstanceOf(AppConflictException);
+      expect(error).toMatchObject({
+        code: ErrorCode.CAMPOREE_CLUB_ALREADY_ENROLLED,
+      });
+      expect(mockPrismaService.camporee_clubs.findFirst).toHaveBeenCalledWith({
+        where: {
+          union_camporee_id: unionCamporeeId,
+          club_section_id: 44,
+          active: true,
+        },
+      });
     });
   });
 
