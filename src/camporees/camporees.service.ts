@@ -58,7 +58,12 @@ export const PROFILE_URL_LIMITER = pLimit(20);
 
 type CamporeeRegistrationDb = Pick<
   Prisma.TransactionClient,
-  'local_camporees' | 'club_sections' | 'camporee_clubs' | '$queryRaw'
+  | 'local_camporees'
+  | 'club_sections'
+  | 'camporee_clubs'
+  | 'users'
+  | 'club_role_assignments'
+  | '$queryRaw'
 >;
 
 @Injectable()
@@ -997,6 +1002,7 @@ export class CamporeesService {
     let camporeeName: string | null = null;
 
     const member = await this.prisma.$transaction(async (tx) => {
+      await this.lockLocalCamporeeRegistrationGate(tx, camporeeId, activeGrant);
       const { camporee, section } =
         await this.loadActiveSectionRegistrationContext(
           tx,
@@ -1004,21 +1010,41 @@ export class CamporeesService {
           activeGrant,
         );
 
-      const sectionEnrollment = await tx.camporee_clubs.findFirst({
+      const lockedEnrollments = await this.lockParticipantSectionEnrollment(
+        tx,
+        camporeeId,
+        section.club_section_id,
+      );
+      if (lockedEnrollments.length !== 1) {
+        throw new AppUnprocessableEntityException(
+          ErrorCode.CAMPOREE_SECTION_REGISTRATION_REQUIRED,
+        );
+      }
+
+      const lockedProfiles = await this.lockParticipantProfile(tx, dto.user_id);
+      const lockedAssignments = await this.lockParticipantAssignments(
+        tx,
+        dto.user_id,
+      );
+
+      const sectionEnrollment = await tx.camporee_clubs.findUnique({
         where: {
-          camporee_id: camporeeId,
-          club_section_id: section.club_section_id,
-          active: true,
-          status: { in: ['registered', 'approved'] },
+          camporee_club_id: lockedEnrollments[0].camporee_club_id,
         },
         select: {
           camporee_club_id: true,
+          camporee_id: true,
+          club_section_id: true,
+          active: true,
           status: true,
         },
       });
 
       if (
         !sectionEnrollment ||
+        sectionEnrollment.camporee_id !== camporeeId ||
+        sectionEnrollment.club_section_id !== section.club_section_id ||
+        !sectionEnrollment.active ||
         !['registered', 'approved'].includes(sectionEnrollment.status)
       ) {
         throw new AppUnprocessableEntityException(
@@ -1038,12 +1064,27 @@ export class CamporeesService {
         where: { user_id: dto.user_id },
         select: {
           user_id: true,
-          users_pr: { select: { active_club_assignment_id: true } },
+          users_pr: {
+            select: {
+              user_pr_id: true,
+              active_club_assignment_id: true,
+            },
+          },
         },
       });
 
       if (!user) {
         throw new AppBadRequestException(ErrorCode.CAMPOREE_USER_NOT_FOUND);
+      }
+
+      const lockedProfileId = lockedProfiles[0]?.user_pr_id ?? null;
+      if (
+        lockedProfiles.length > 1 ||
+        (user.users_pr?.user_pr_id ?? null) !== lockedProfileId
+      ) {
+        throw new AppUnprocessableEntityException(
+          ErrorCode.CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION,
+        );
       }
 
       const persistedAssignmentId =
@@ -1058,25 +1099,40 @@ export class CamporeesService {
         assignment_id: true,
         club_section_id: true,
       } as const;
-      let targetAssignment = persistedAssignmentId
-        ? await tx.club_role_assignments.findFirst({
-            where: {
-              ...targetAssignmentWhere,
-              assignment_id: persistedAssignmentId,
-            },
-            select: targetAssignmentSelect,
-          })
-        : null;
 
-      targetAssignment ??= await tx.club_role_assignments.findFirst({
+      const targetAssignments = await tx.club_role_assignments.findMany({
         where: targetAssignmentWhere,
-        orderBy: { start_date: 'desc' },
+        orderBy: [{ start_date: 'desc' }, { assignment_id: 'asc' }],
         select: targetAssignmentSelect,
       });
 
+      const lockedAssignmentIds = lockedAssignments
+        .map(({ assignment_id }) => assignment_id)
+        .sort();
+      const currentAssignmentIds = targetAssignments
+        .map(({ assignment_id }) => assignment_id)
+        .sort();
+      if (
+        lockedAssignmentIds.length !== currentAssignmentIds.length ||
+        lockedAssignmentIds.some(
+          (assignmentId, index) => assignmentId !== currentAssignmentIds[index],
+        )
+      ) {
+        throw new AppUnprocessableEntityException(
+          ErrorCode.CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION,
+        );
+      }
+
+      const targetAssignment =
+        targetAssignments.find(
+          ({ assignment_id }) => assignment_id === persistedAssignmentId,
+        ) ??
+        targetAssignments[0] ??
+        null;
+
       if (targetAssignment?.club_section_id !== section.club_section_id) {
         throw new AppUnprocessableEntityException(
-          ErrorCode.CAMPOREE_SECTION_REGISTRATION_REQUIRED,
+          ErrorCode.CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION,
         );
       }
 
@@ -3130,6 +3186,48 @@ export class CamporeesService {
         id: camporeeId,
       });
     }
+  }
+
+  private lockParticipantSectionEnrollment(
+    db: CamporeeRegistrationDb,
+    camporeeId: number,
+    clubSectionId: number,
+  ) {
+    return db.$queryRaw<Array<{ camporee_club_id: number }>>(Prisma.sql`
+      SELECT "camporee_club_id"
+      FROM "camporee_clubs"
+      WHERE "camporee_id" = ${camporeeId}
+        AND "club_section_id" = ${clubSectionId}
+        AND "active" = true
+        AND "status" IN ('registered', 'approved')
+      ORDER BY "camporee_club_id" ASC
+      FOR UPDATE
+    `);
+  }
+
+  private lockParticipantProfile(db: CamporeeRegistrationDb, userId: string) {
+    return db.$queryRaw<Array<{ user_pr_id: number }>>(Prisma.sql`
+      SELECT "user_pr_id"
+      FROM "users_pr"
+      WHERE "user_id" = ${userId}
+      FOR UPDATE
+    `);
+  }
+
+  private lockParticipantAssignments(
+    db: CamporeeRegistrationDb,
+    userId: string,
+  ) {
+    return db.$queryRaw<Array<{ assignment_id: string }>>(Prisma.sql`
+      SELECT "assignment_id"
+      FROM "club_role_assignments"
+      WHERE "user_id" = ${userId}
+        AND "active" = true
+        AND "status" = 'active'
+        AND "club_section_id" IS NOT NULL
+      ORDER BY "start_date" DESC, "assignment_id" ASC
+      FOR UPDATE
+    `);
   }
 
   private findActiveSectionEnrollment(

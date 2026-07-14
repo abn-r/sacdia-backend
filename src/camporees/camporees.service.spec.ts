@@ -153,6 +153,12 @@ describe('CamporeesService', () => {
 
     return {
       ...tx,
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([{ local_camporee_id: 1 }])
+        .mockResolvedValueOnce([{ camporee_club_id: 31 }])
+        .mockResolvedValueOnce([{ user_pr_id: 81 }])
+        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }]),
       local_camporees: {
         ...tx.local_camporees,
         findFirst: jest.fn(async (args: unknown) => {
@@ -194,6 +200,13 @@ describe('CamporeesService', () => {
           camporee_club_id: 31,
           status: 'registered',
         }),
+        findUnique: jest.fn().mockResolvedValue({
+          camporee_club_id: 31,
+          camporee_id: 1,
+          club_section_id: 44,
+          active: true,
+          status: 'registered',
+        }),
       },
       users: originalUserFindUnique
         ? {
@@ -204,6 +217,7 @@ describe('CamporeesService', () => {
                 ? {
                     ...found,
                     users_pr: {
+                      user_pr_id: 81,
                       active_club_assignment_id: 'target-assignment',
                     },
                   }
@@ -216,6 +230,12 @@ describe('CamporeesService', () => {
           assignment_id: 'target-assignment',
           club_section_id: 44,
         }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            assignment_id: 'target-assignment',
+            club_section_id: 44,
+          },
+        ]),
       },
     };
   };
@@ -1645,8 +1665,17 @@ describe('CamporeesService', () => {
         insurance: null,
       });
       const insuranceFindUnique = jest.fn();
+      const queryRaw = jest
+        .fn()
+        .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
+        .mockResolvedValueOnce(
+          enrollment ? [{ camporee_club_id: enrollment.camporee_club_id }] : [],
+        )
+        .mockResolvedValueOnce([{ user_pr_id: 81 }])
+        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }]);
       return {
         tx: {
+          $queryRaw: queryRaw,
           local_camporees: {
             findFirst: jest.fn().mockResolvedValue(camporee),
             findUnique: jest.fn().mockResolvedValue(camporee),
@@ -1656,11 +1685,24 @@ describe('CamporeesService', () => {
           },
           camporee_clubs: {
             findFirst: jest.fn().mockResolvedValue(enrollment),
+            findUnique: jest.fn().mockResolvedValue(
+              enrollment
+                ? {
+                    ...enrollment,
+                    active: true,
+                    camporee_id: camporeeId,
+                    club_section_id: 44,
+                  }
+                : null,
+            ),
           },
           users: {
             findUnique: jest.fn().mockResolvedValue({
               user_id: targetUserId,
-              users_pr: { active_club_assignment_id: 'target-assignment' },
+              users_pr: {
+                user_pr_id: 81,
+                active_club_assignment_id: 'target-assignment',
+              },
             }),
           },
           club_role_assignments: {
@@ -1668,6 +1710,12 @@ describe('CamporeesService', () => {
               assignment_id: 'target-assignment',
               club_section_id: 44,
             }),
+            findMany: jest.fn().mockResolvedValue([
+              {
+                assignment_id: 'target-assignment',
+                club_section_id: 44,
+              },
+            ]),
           },
           camporee_members: {
             findFirst: jest.fn().mockResolvedValue(null),
@@ -1677,8 +1725,117 @@ describe('CamporeesService', () => {
         },
         create,
         insuranceFindUnique,
+        queryRaw,
       };
     };
+
+    it('locks participant eligibility in a fixed order before create', async () => {
+      const { tx, create, queryRaw } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      const order: string[] = [];
+      queryRaw
+        .mockReset()
+        .mockImplementation(async (query: { strings: string[] }) => {
+          const sql = query.strings.join('?');
+          if (sql.includes('FROM "local_camporees"')) {
+            order.push('camporee');
+            return [{ local_camporee_id: camporeeId }];
+          }
+          if (sql.includes('FROM "camporee_clubs"')) {
+            order.push('enrollment');
+            return [{ camporee_club_id: 31 }];
+          }
+          if (sql.includes('FROM "users_pr"')) {
+            order.push('users_pr');
+            return [{ user_pr_id: 81 }];
+          }
+          order.push('assignments');
+          return [{ assignment_id: 'target-assignment' }];
+        });
+      create.mockImplementation(async () => {
+        order.push('create');
+        return {
+          camporee_member_id: 9,
+          users: { user_image: null },
+          insurance: null,
+        };
+      });
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await service.registerMember(
+        camporeeId,
+        { user_id: targetUserId },
+        actorId,
+        authorization(),
+      );
+
+      expect(order).toEqual([
+        'camporee',
+        'enrollment',
+        'users_pr',
+        'assignments',
+        'create',
+      ]);
+      expect(queryRaw.mock.calls.map(([query]) => query.values)).toEqual([
+        [camporeeId, 5],
+        [camporeeId, 44],
+        [targetUserId],
+        [targetUserId],
+      ]);
+    });
+
+    it('fails closed when the active enrollment row cannot be locked', async () => {
+      const { tx, create, queryRaw } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      queryRaw
+        .mockReset()
+        .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
+        .mockResolvedValueOnce([]);
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await expect(
+        service.registerMember(
+          camporeeId,
+          { user_id: targetUserId },
+          actorId,
+          authorization(),
+        ),
+      ).rejects.toMatchObject({
+        code: 'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when a locked assignment is stale on re-read', async () => {
+      const { tx, create } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      tx.club_role_assignments.findMany.mockResolvedValue([]);
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await expect(
+        service.registerMember(
+          camporeeId,
+          { user_id: targetUserId },
+          actorId,
+          authorization(),
+        ),
+      ).rejects.toMatchObject({
+        code: 'CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION',
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
 
     it('rejects before insurance when the active section has no enrollment', async () => {
       const { tx, insuranceFindUnique } = buildTx(null);
@@ -1760,6 +1917,12 @@ describe('CamporeesService', () => {
         assignment_id: 'target-assignment',
         club_section_id: 99,
       });
+      tx.club_role_assignments.findMany.mockResolvedValue([
+        {
+          assignment_id: 'target-assignment',
+          club_section_id: 99,
+        },
+      ]);
       mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
         callback(tx),
       );
@@ -1772,7 +1935,7 @@ describe('CamporeesService', () => {
           authorization(),
         ),
       ).rejects.toMatchObject({
-        code: 'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+        code: 'CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION',
       });
       expect(create).not.toHaveBeenCalled();
     });

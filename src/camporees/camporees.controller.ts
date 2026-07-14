@@ -821,6 +821,22 @@ export class CamporeesController {
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({ status: 201, description: 'Miembro registrado exitosamente' })
   @ApiResponse({ status: 400, description: 'Error de validación' })
+  @ApiResponse({
+    status: 422,
+    description: 'La sección o el miembro no son elegibles para el registro',
+    schema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          enum: [
+            'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+            'CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION',
+          ],
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async registerMember(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
@@ -845,7 +861,22 @@ export class CamporeesController {
   })
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({ status: 201, description: 'Participante registrado' })
-  @ApiResponse({ status: 422, description: 'Sección no inscrita' })
+  @ApiResponse({
+    status: 422,
+    description: 'La sección o el miembro no son elegibles para el registro',
+    schema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          enum: [
+            'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+            'CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION',
+          ],
+        },
+      },
+    },
+  })
   async registerParticipants(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body() dto: RegisterMemberDto,

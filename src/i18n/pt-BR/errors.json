@@ -73,6 +73,7 @@
   "CAMPOREE_LOCAL_FIELD_ACCESS_DENIED": "Você não tem acesso para gerenciar acampamentos deste campo local",
   "CAMPOREE_ACTIVE_SECTION_REQUIRED": "Você deve selecionar uma atribuição ativa de clube para consultar esta inscrição",
   "CAMPOREE_SECTION_REGISTRATION_REQUIRED": "A seção ativa do clube deve ter uma inscrição registrada ou aprovada no campori antes de adicionar participantes",
+  "CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION": "O membro selecionado não pertence à seção ativa do seu clube",
   "CAMPOREE_CLUB_ENROLLMENT_STATUS_INVALID": "A inscrição do clube no acampamento possui um status não compatível",
   "CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND": "Inscrição de clube pendente de aprovação não encontrada",
   "CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND": "Inscrição de membro pendente de aprovação não encontrada",

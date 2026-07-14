@@ -149,4 +149,27 @@ describe('CamporeesController', () => {
       ':camporeeId/section-registration',
     );
   });
+
+  it.each(['registerMember', 'registerParticipants'])(
+    'documents participant eligibility 422 codes on %s',
+    (methodName) => {
+      const handler = (CamporeesController.prototype as any)[methodName];
+      const responses = Reflect.getMetadata('swagger/apiResponse', handler);
+
+      expect(responses['422']).toEqual(
+        expect.objectContaining({
+          schema: expect.objectContaining({
+            properties: expect.objectContaining({
+              code: expect.objectContaining({
+                enum: [
+                  'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+                  'CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION',
+                ],
+              }),
+            }),
+          }),
+        }),
+      );
+    },
+  );
 });

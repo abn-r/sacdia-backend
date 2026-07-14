@@ -76,6 +76,7 @@
   "CAMPOREE_LOCAL_FIELD_ACCESS_DENIED": "No tenés acceso para administrar campamentos de este campo local",
   "CAMPOREE_ACTIVE_SECTION_REQUIRED": "Debes seleccionar una asignación activa de club para consultar esta inscripción",
   "CAMPOREE_SECTION_REGISTRATION_REQUIRED": "Tu sección de club activa debe tener una inscripción registrada o aprobada en el campamento antes de agregar participantes",
+  "CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION": "El miembro seleccionado no pertenece a tu sección de club activa",
   "CAMPOREE_CLUB_ENROLLMENT_STATUS_INVALID": "La inscripción de club del campamento tiene un estado no compatible",
   "CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND": "Inscripción de club pendiente de aprobación no encontrada",
   "CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND": "Inscripción de miembro pendiente de aprobación no encontrada",

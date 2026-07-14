@@ -73,6 +73,7 @@
   "CAMPOREE_LOCAL_FIELD_ACCESS_DENIED": "Vous n’avez pas accès pour gérer les camporees de ce champ local",
   "CAMPOREE_ACTIVE_SECTION_REQUIRED": "Vous devez sélectionner une affectation de club active pour consulter cette inscription",
   "CAMPOREE_SECTION_REGISTRATION_REQUIRED": "Votre section de club active doit disposer d’une inscription au camporee enregistrée ou approuvée avant d’ajouter des participants",
+  "CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION": "Le membre sélectionné n’appartient pas à votre section de club active",
   "CAMPOREE_CLUB_ENROLLMENT_STATUS_INVALID": "L’inscription du club au camporee présente un statut non pris en charge",
   "CAMPOREE_CLUB_ENROLLMENT_PENDING_NOT_FOUND": "Inscription de club en attente d’approbation introuvable",
   "CAMPOREE_MEMBER_ENROLLMENT_PENDING_NOT_FOUND": "Inscription de membre en attente d’approbation introuvable",
