@@ -233,18 +233,49 @@ describe('Phase 3 permission cleanup — seed files', () => {
       ).toBe(true);
     });
 
+    it('uses exactly the four territorial roles in the legacy registration cleanup allowlist', () => {
+      const cleanup = extractExactPermissionCleanup(
+        rolePermissionsSeedWithoutComments,
+        LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
+      );
+
+      expect(cleanup.roles).toEqual([...TERRITORIAL_ORGANIZER_ROLES].sort());
+    });
+
+    it('rejects admin and super-admin added to the cleanup allowlist', () => {
+      const cleanup = extractExactPermissionCleanup(
+        rolePermissionsSeedWithoutComments,
+        LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
+      );
+      const expandedCleanup = cleanup.statement.replace(
+        "'director-union')",
+        "'director-union', 'admin', 'super-admin')",
+      );
+      const withExpandedAllowlist = rolePermissionsSeedWithoutComments.replace(
+        cleanup.statement,
+        expandedCleanup,
+      );
+
+      expect(
+        hasProtectedExactPermissionGrantOrder(
+          withExpandedAllowlist,
+          LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
+        ),
+      ).toBe(false);
+    });
+
     it('rejects cleanup placed before the super-admin wildcard', () => {
       const cleanup = extractExactPermissionCleanup(
         rolePermissionsSeedWithoutComments,
         LEGACY_ORGANIZER_REGISTRATION_PERMISSION,
       );
       const withoutCleanup = rolePermissionsSeedWithoutComments.replace(
-        cleanup,
+        cleanup.statement,
         '',
       );
       const beforeWildcard = withoutCleanup.replace(
         "WHERE r.role_name = 'super-admin'",
-        `${cleanup}\nWHERE r.role_name = 'super-admin'`,
+        `${cleanup.statement}\nWHERE r.role_name = 'super-admin'`,
       );
 
       expect(
@@ -438,18 +469,23 @@ function hasProtectedRoleCleanupOrder(sql: string): boolean {
 function extractExactPermissionCleanup(
   sql: string,
   permission: string,
-): string {
+): { statement: string; roles: string[] } {
   const escaped = escapeRegex(permission);
   const cleanup = sql.match(
     new RegExp(
-      `DELETE FROM role_permissions rp\\s+USING permissions p, roles r\\s+WHERE rp\\.permission_id = p\\.permission_id\\s+AND rp\\.role_id = r\\.role_id\\s+AND p\\.permission_name = '${escaped}'\\s+AND NOT \\(\\s*r\\.role_name IN \\([^)]+\\)\\s+AND r\\.role_category = 'GLOBAL'\\s*\\);`,
+      `DELETE FROM role_permissions rp\\s+USING permissions p, roles r\\s+WHERE rp\\.permission_id = p\\.permission_id\\s+AND rp\\.role_id = r\\.role_id\\s+AND p\\.permission_name = '${escaped}'\\s+AND NOT \\(\\s*r\\.role_name IN \\(([^)]+)\\)\\s+AND r\\.role_category = 'GLOBAL'\\s*\\);`,
     ),
-  )?.[0];
+  );
 
   if (!cleanup) {
     throw new Error(`Could not locate exact cleanup for '${permission}'`);
   }
-  return cleanup;
+  return {
+    statement: cleanup[0],
+    roles: [...cleanup[1].matchAll(/'([^']+)'/g)]
+      .map((match) => match[1])
+      .sort(),
+  };
 }
 
 function extractExactPermissionGrantRoles(
@@ -477,21 +513,26 @@ function hasProtectedExactPermissionGrantOrder(
   permission: string,
 ): boolean {
   const cleanup = extractExactPermissionCleanup(sql, permission);
+  const expectedCleanupRoles = [...TERRITORIAL_ORGANIZER_ROLES].sort();
   extractExactPermissionGrantRoles(sql, permission);
   const assistantLfInheritance = sql.indexOf(
     "WHERE src.role_name = 'assistant-lf'",
   );
   const superAdminWildcard = sql.indexOf("WHERE r.role_name = 'super-admin'");
-  const cleanupIndex = sql.indexOf(cleanup);
+  const cleanupIndex = sql.indexOf(cleanup.statement);
   const exactGrantIndex = sql.indexOf(
     'INSERT INTO role_permissions',
-    cleanupIndex + cleanup.length,
+    cleanupIndex + cleanup.statement.length,
   );
   const commitIndex = findSqlStatementPositions(sql, 'COMMIT')[0] ?? -1;
 
   return (
     assistantLfInheritance > -1 &&
     superAdminWildcard > assistantLfInheritance &&
+    cleanup.roles.length === expectedCleanupRoles.length &&
+    cleanup.roles.every(
+      (role, index) => role === expectedCleanupRoles[index],
+    ) &&
     cleanupIndex > superAdminWildcard &&
     exactGrantIndex > cleanupIndex &&
     commitIndex > exactGrantIndex

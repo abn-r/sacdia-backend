@@ -91,7 +91,7 @@ describe('Camporee section registration context migration contract', () => {
       `INSERT INTO "permissions" ("permission_name", "description", "active") VALUES ( '${LEGACY_REGISTRATION_PERMISSION}',`,
     );
     const cleanup = extractLegacyPermissionCleanup(migration);
-    const cleanupIndex = migration.indexOf(cleanup);
+    const cleanupIndex = migration.indexOf(cleanup.statement);
     const grant = extractLegacyPermissionGrant(migration);
     const grantIndex = migration.indexOf(grant.statement);
     const commitIndex = findSqlStatementPositions(migration, 'COMMIT')[0] ?? -1;
@@ -100,9 +100,26 @@ describe('Camporee section registration context migration contract', () => {
     expect(cleanupIndex).toBeGreaterThan(permissionUpsert);
     expect(grantIndex).toBeGreaterThan(cleanupIndex);
     expect(commitIndex).toBeGreaterThan(grantIndex);
+    expect(cleanup.roles).toEqual([...TERRITORIAL_ORGANIZER_ROLES].sort());
     expect(grant.roles).toEqual([...TERRITORIAL_ORGANIZER_ROLES].sort());
     expect(grant.statement).toContain(
       'ON CONFLICT ("role_id", "permission_id") DO UPDATE SET "active" = TRUE, "modified_at" = NOW();',
+    );
+  });
+
+  it('rejects admin and super-admin added to the migration cleanup allowlist', () => {
+    const cleanup = extractLegacyPermissionCleanup(migration);
+    const expandedCleanup = cleanup.statement.replace(
+      "'director-union')",
+      "'director-union', 'admin', 'super-admin')",
+    );
+    const mutatedMigration = migration.replace(
+      cleanup.statement,
+      expandedCleanup,
+    );
+
+    expect(hasExactLegacyPermissionCleanupAllowlist(mutatedMigration)).toBe(
+      false,
     );
   });
 });
@@ -145,12 +162,28 @@ function hasRollbackSafeProtectedOrder(sql: string): boolean {
   );
 }
 
-function extractLegacyPermissionCleanup(sql: string): string {
+function extractLegacyPermissionCleanup(sql: string): {
+  statement: string;
+  roles: string[];
+} {
   const cleanup = sql.match(
-    /DELETE FROM "role_permissions" rp USING "permissions" p, "roles" r WHERE rp\."permission_id" = p\."permission_id" AND rp\."role_id" = r\."role_id" AND p\."permission_name" = 'camporees:register' AND NOT \( r\."role_name" IN \([^)]+\) AND r\."role_category" = 'GLOBAL' \);/,
-  )?.[0];
+    /DELETE FROM "role_permissions" rp USING "permissions" p, "roles" r WHERE rp\."permission_id" = p\."permission_id" AND rp\."role_id" = r\."role_id" AND p\."permission_name" = 'camporees:register' AND NOT \( r\."role_name" IN \(([^)]+)\) AND r\."role_category" = 'GLOBAL' \);/,
+  );
   if (!cleanup) throw new Error('Could not locate legacy permission cleanup');
-  return cleanup;
+  return {
+    statement: cleanup[0],
+    roles: [...cleanup[1].matchAll(/'([^']+)'/g)].map((role) => role[1]).sort(),
+  };
+}
+
+function hasExactLegacyPermissionCleanupAllowlist(sql: string): boolean {
+  const actual = extractLegacyPermissionCleanup(sql).roles;
+  const expected = [...TERRITORIAL_ORGANIZER_ROLES].sort();
+
+  return (
+    actual.length === expected.length &&
+    actual.every((role, index) => role === expected[index])
+  );
 }
 
 function extractLegacyPermissionGrant(sql: string): {
