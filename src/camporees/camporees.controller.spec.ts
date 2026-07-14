@@ -1,5 +1,10 @@
 import { CamporeesController } from './camporees.controller';
-import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { RequestMethod } from '@nestjs/common';
+import {
+  METHOD_METADATA,
+  PATH_METADATA,
+  ROUTE_ARGS_METADATA,
+} from '@nestjs/common/constants';
 import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
 
 describe('CamporeesController', () => {
@@ -80,5 +85,27 @@ describe('CamporeesController', () => {
         key.startsWith(`${RouteParamtypes.BODY}:`),
       ),
     ).toBe(false);
+  });
+
+  it('exposes active section registration status as GET on the contextual route', () => {
+    const handler = CamporeesController.prototype.getActiveSectionRegistration;
+
+    expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(
+      RequestMethod.GET,
+    );
+    expect(Reflect.getMetadata(PATH_METADATA, handler)).toBe(
+      ':camporeeId/section-registration',
+    );
+  });
+
+  it('exposes active section registration as POST on the contextual route', () => {
+    const handler = CamporeesController.prototype.registerActiveSection;
+
+    expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(
+      RequestMethod.POST,
+    );
+    expect(Reflect.getMetadata(PATH_METADATA, handler)).toBe(
+      ':camporeeId/section-registration',
+    );
   });
 });
