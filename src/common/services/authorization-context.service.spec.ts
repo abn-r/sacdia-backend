@@ -400,4 +400,72 @@ describe('AuthorizationContextService', () => {
       },
     });
   });
+
+  it('uses assignment id to resolve equal-date fallback ties deterministically', async () => {
+    const assignment = (
+      assignmentId: string,
+      clubSectionId: number,
+      clubTypeId: number,
+    ) => ({
+      assignment_id: assignmentId,
+      status: 'active',
+      start_date: new Date('2026-01-01'),
+      end_date: null,
+      expires_at: null,
+      roles: { role_name: 'director', role_permissions: [] },
+      club_sections: {
+        club_section_id: clubSectionId,
+        club_type_id: clubTypeId,
+        club_types: { name: 'Conquistadores' },
+        clubs: {
+          club_id: 12,
+          name: 'Orión',
+          local_fields: null,
+        },
+      },
+    });
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'target-user',
+      email: 'target@example.com',
+      name: 'Target',
+      paternal_last_name: null,
+      maternal_last_name: null,
+      gender: null,
+      birthday: null,
+      baptism: false,
+      baptism_date: null,
+      user_image: null,
+      country_id: null,
+      union_id: null,
+      local_field_id: null,
+      created_at: new Date('2026-01-01'),
+      countries: null,
+      unions: null,
+      local_fields: null,
+      users_pr: { complete: true, active_club_assignment_id: null },
+      users_roles: [],
+      club_role_assignments: [
+        assignment('assignment-a', 44, 2),
+        assignment('assignment-b', 99, 3),
+      ],
+    });
+
+    const result = await service.resolveUserAuthorization('target-user');
+
+    expect(mockPrismaService.users.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          club_role_assignments: expect.objectContaining({
+            orderBy: [{ start_date: 'desc' }, { assignment_id: 'asc' }],
+          }),
+        }),
+      }),
+    );
+    expect(result.authorization.active_assignment.assignment_id).toBe(
+      'assignment-a',
+    );
+    expect(
+      result.authorization.effective.scope.club?.section.club_section_id,
+    ).toBe(44);
+  });
 });

@@ -157,8 +157,10 @@ describe('CamporeesService', () => {
         .fn()
         .mockResolvedValueOnce([{ local_camporee_id: 1 }])
         .mockResolvedValueOnce([{ camporee_club_id: 31 }])
-        .mockResolvedValueOnce([{ user_pr_id: 81 }])
-        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }]),
+        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
+        .mockResolvedValueOnce([{ user_id: 'target-user' }])
+        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
+        .mockResolvedValueOnce([{ user_pr_id: 81 }]),
       local_camporees: {
         ...tx.local_camporees,
         findFirst: jest.fn(async (args: unknown) => {
@@ -234,6 +236,8 @@ describe('CamporeesService', () => {
           {
             assignment_id: 'target-assignment',
             club_section_id: 44,
+            active: true,
+            status: 'active',
           },
         ]),
       },
@@ -1671,8 +1675,10 @@ describe('CamporeesService', () => {
         .mockResolvedValueOnce(
           enrollment ? [{ camporee_club_id: enrollment.camporee_club_id }] : [],
         )
-        .mockResolvedValueOnce([{ user_pr_id: 81 }])
-        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }]);
+        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
+        .mockResolvedValueOnce([{ user_id: targetUserId }])
+        .mockResolvedValueOnce([{ assignment_id: 'target-assignment' }])
+        .mockResolvedValueOnce([{ user_pr_id: 81 }]);
       return {
         tx: {
           $queryRaw: queryRaw,
@@ -1714,6 +1720,8 @@ describe('CamporeesService', () => {
               {
                 assignment_id: 'target-assignment',
                 club_section_id: 44,
+                active: true,
+                status: 'active',
               },
             ]),
           },
@@ -1747,12 +1755,19 @@ describe('CamporeesService', () => {
             order.push('enrollment');
             return [{ camporee_club_id: 31 }];
           }
+          if (sql.includes('FROM "club_role_assignments"')) {
+            order.push('assignments');
+            return [{ assignment_id: 'target-assignment' }];
+          }
+          if (sql.includes('FROM "users"')) {
+            order.push('user');
+            return [{ user_id: targetUserId }];
+          }
           if (sql.includes('FROM "users_pr"')) {
             order.push('users_pr');
             return [{ user_pr_id: 81 }];
           }
-          order.push('assignments');
-          return [{ assignment_id: 'target-assignment' }];
+          throw new Error(`Unexpected lock query: ${sql}`);
         });
       create.mockImplementation(async () => {
         order.push('create');
@@ -1776,8 +1791,10 @@ describe('CamporeesService', () => {
       expect(order).toEqual([
         'camporee',
         'enrollment',
-        'users_pr',
         'assignments',
+        'user',
+        'assignments',
+        'users_pr',
         'create',
       ]);
       expect(queryRaw.mock.calls.map(([query]) => query.values)).toEqual([
@@ -1785,7 +1802,165 @@ describe('CamporeesService', () => {
         [camporeeId, 44],
         [targetUserId],
         [targetUserId],
+        [targetUserId],
+        [targetUserId],
       ]);
+    });
+
+    it('locks pending assignments before the user/profile barrier', async () => {
+      const { tx, queryRaw } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      tx.club_role_assignments.findMany.mockResolvedValue([
+        {
+          assignment_id: 'target-assignment',
+          club_section_id: 44,
+          active: true,
+          status: 'active',
+        },
+        {
+          assignment_id: 'pending-assignment',
+          club_section_id: 99,
+          active: true,
+          status: 'pending',
+        },
+      ]);
+      queryRaw
+        .mockReset()
+        .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
+        .mockResolvedValueOnce([{ camporee_club_id: 31 }])
+        .mockResolvedValueOnce([
+          { assignment_id: 'pending-assignment' },
+          { assignment_id: 'target-assignment' },
+        ])
+        .mockResolvedValueOnce([{ user_id: targetUserId }])
+        .mockResolvedValueOnce([
+          { assignment_id: 'pending-assignment' },
+          { assignment_id: 'target-assignment' },
+        ])
+        .mockResolvedValueOnce([{ user_pr_id: 81 }]);
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await service.registerMember(
+        camporeeId,
+        { user_id: targetUserId },
+        actorId,
+        authorization(),
+      );
+
+      const assignmentLock = queryRaw.mock.calls[2][0];
+      const assignmentSql = assignmentLock.strings.join('?');
+      expect(assignmentSql).toContain('ORDER BY "assignment_id" ASC');
+      expect(assignmentSql).not.toContain('"active" = true');
+      expect(assignmentSql).not.toContain('"status" =');
+      expect(assignmentLock.values).toEqual([targetUserId]);
+    });
+
+    it('re-reads an assignment activated before the user lock barrier', async () => {
+      const { tx, create, queryRaw } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      tx.users.findUnique.mockResolvedValue({
+        user_id: targetUserId,
+        users_pr: {
+          user_pr_id: 81,
+          active_club_assignment_id: 'reactivated-assignment',
+        },
+      });
+      tx.club_role_assignments.findMany.mockResolvedValue([
+        {
+          assignment_id: 'reactivated-assignment',
+          club_section_id: 44,
+          active: true,
+          status: 'active',
+        },
+      ]);
+      queryRaw
+        .mockReset()
+        .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
+        .mockResolvedValueOnce([{ camporee_club_id: 31 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ user_id: targetUserId }])
+        .mockResolvedValueOnce([{ assignment_id: 'reactivated-assignment' }])
+        .mockResolvedValueOnce([{ user_pr_id: 81 }]);
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await service.registerMember(
+        camporeeId,
+        { user_id: targetUserId },
+        actorId,
+        authorization(),
+      );
+
+      expect(tx.club_role_assignments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user_id: targetUserId },
+          orderBy: [{ start_date: 'desc' }, { assignment_id: 'asc' }],
+        }),
+      );
+      expect(create).toHaveBeenCalled();
+    });
+
+    it('uses the canonical assignment tie-breaker for participant fallback', async () => {
+      const { tx, create, queryRaw } = buildTx({
+        camporee_club_id: 31,
+        status: 'registered',
+      });
+      tx.users.findUnique.mockResolvedValue({
+        user_id: targetUserId,
+        users_pr: { user_pr_id: 81, active_club_assignment_id: null },
+      });
+      tx.club_role_assignments.findMany.mockResolvedValue([
+        {
+          assignment_id: 'assignment-a',
+          club_section_id: 44,
+          active: true,
+          status: 'active',
+        },
+        {
+          assignment_id: 'assignment-b',
+          club_section_id: 99,
+          active: true,
+          status: 'active',
+        },
+      ]);
+      queryRaw
+        .mockReset()
+        .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
+        .mockResolvedValueOnce([{ camporee_club_id: 31 }])
+        .mockResolvedValueOnce([
+          { assignment_id: 'assignment-a' },
+          { assignment_id: 'assignment-b' },
+        ])
+        .mockResolvedValueOnce([{ user_id: targetUserId }])
+        .mockResolvedValueOnce([
+          { assignment_id: 'assignment-a' },
+          { assignment_id: 'assignment-b' },
+        ])
+        .mockResolvedValueOnce([{ user_pr_id: 81 }]);
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) =>
+        callback(tx),
+      );
+
+      await service.registerMember(
+        camporeeId,
+        { user_id: targetUserId },
+        actorId,
+        authorization(),
+      );
+
+      expect(create).toHaveBeenCalled();
+      expect(tx.club_role_assignments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ start_date: 'desc' }, { assignment_id: 'asc' }],
+        }),
+      );
     });
 
     it('fails closed when the active enrollment row cannot be locked', async () => {
@@ -1921,6 +2096,8 @@ describe('CamporeesService', () => {
         {
           assignment_id: 'target-assignment',
           club_section_id: 99,
+          active: true,
+          status: 'active',
         },
       ]);
       mockPrismaService.$transaction.mockImplementation(async (callback: any) =>

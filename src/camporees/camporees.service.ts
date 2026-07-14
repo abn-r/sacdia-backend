@@ -37,10 +37,11 @@ import {
   StorageBucketAlias,
 } from '../common/services/file-storage.service';
 import type { FileStorageService } from '../common/services/file-storage.service';
-import type {
-  AuthorizationSnapshot,
-  ClubAuthorizationGrant,
-  GlobalAuthorizationGrant,
+import {
+  CANONICAL_CLUB_ASSIGNMENT_ORDER,
+  type AuthorizationSnapshot,
+  type ClubAuthorizationGrant,
+  type GlobalAuthorizationGrant,
 } from '../common/services/authorization-context.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import pLimit from 'p-limit';
@@ -1021,11 +1022,22 @@ export class CamporeesService {
         );
       }
 
-      const lockedProfiles = await this.lockParticipantProfile(tx, dto.user_id);
+      // Assignment writers update assignment rows before users_pr. Keep this
+      // lock order stable to avoid deadlocks: assignment pre-scan -> FK parent
+      // user (insert barrier) -> assignment reconciliation -> users_pr.
+      await this.lockParticipantAssignments(tx, dto.user_id);
+      const lockedUsers = await this.lockParticipantUser(tx, dto.user_id);
+      if (lockedUsers.length !== 1) {
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_USER_NOT_FOUND);
+      }
+      // A concurrent insert may have acquired its FK key-share lock between
+      // the first assignment scan and the user barrier. Lock the complete set
+      // again before users_pr so that window rows are included and immutable.
       const lockedAssignments = await this.lockParticipantAssignments(
         tx,
         dto.user_id,
       );
+      const lockedProfiles = await this.lockParticipantProfile(tx, dto.user_id);
 
       const sectionEnrollment = await tx.camporee_clubs.findUnique({
         where: {
@@ -1089,27 +1101,23 @@ export class CamporeesService {
 
       const persistedAssignmentId =
         user.users_pr?.active_club_assignment_id ?? null;
-      const targetAssignmentWhere = {
-        user_id: dto.user_id,
-        active: true,
-        status: 'active',
-        club_section_id: { not: null },
-      } as const;
       const targetAssignmentSelect = {
         assignment_id: true,
         club_section_id: true,
+        active: true,
+        status: true,
       } as const;
 
-      const targetAssignments = await tx.club_role_assignments.findMany({
-        where: targetAssignmentWhere,
-        orderBy: [{ start_date: 'desc' }, { assignment_id: 'asc' }],
+      const currentAssignments = await tx.club_role_assignments.findMany({
+        where: { user_id: dto.user_id },
+        orderBy: CANONICAL_CLUB_ASSIGNMENT_ORDER,
         select: targetAssignmentSelect,
       });
 
       const lockedAssignmentIds = lockedAssignments
         .map(({ assignment_id }) => assignment_id)
         .sort();
-      const currentAssignmentIds = targetAssignments
+      const currentAssignmentIds = currentAssignments
         .map(({ assignment_id }) => assignment_id)
         .sort();
       if (
@@ -1122,6 +1130,13 @@ export class CamporeesService {
           ErrorCode.CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION,
         );
       }
+
+      const targetAssignments = currentAssignments.filter(
+        (assignment) =>
+          assignment.active &&
+          assignment.status === 'active' &&
+          assignment.club_section_id !== null,
+      );
 
       const targetAssignment =
         targetAssignments.find(
@@ -3214,6 +3229,15 @@ export class CamporeesService {
     `);
   }
 
+  private lockParticipantUser(db: CamporeeRegistrationDb, userId: string) {
+    return db.$queryRaw<Array<{ user_id: string }>>(Prisma.sql`
+      SELECT "user_id"
+      FROM "users"
+      WHERE "user_id" = ${userId}
+      FOR UPDATE
+    `);
+  }
+
   private lockParticipantAssignments(
     db: CamporeeRegistrationDb,
     userId: string,
@@ -3222,10 +3246,7 @@ export class CamporeesService {
       SELECT "assignment_id"
       FROM "club_role_assignments"
       WHERE "user_id" = ${userId}
-        AND "active" = true
-        AND "status" = 'active'
-        AND "club_section_id" IS NOT NULL
-      ORDER BY "start_date" DESC, "assignment_id" ASC
+      ORDER BY "assignment_id" ASC
       FOR UPDATE
     `);
   }
