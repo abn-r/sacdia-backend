@@ -534,6 +534,26 @@ describe('Camporees E2E Tests', () => {
   // POST /camporees/:id/register - Register member
   // ========================================
   describe('POST /api/v1/camporees/:camporeeId/register', () => {
+    type ParticipantLockName =
+      | 'camporee'
+      | 'enrollment'
+      | 'user'
+      | 'assignments'
+      | 'profile';
+
+    type ParticipantGateOptions = {
+      camporeeId?: number;
+      userId?: string;
+      through?: ParticipantLockName;
+    };
+
+    type LockExpectation = {
+      name: ParticipantLockName;
+      sql: RegExp;
+      values: unknown[];
+      rows: () => Promise<unknown[]>;
+    };
+
     const registerDto = {
       user_id: TEST_USER_ID,
       camporee_type: 'local',
@@ -547,63 +567,178 @@ describe('Camporees E2E Tests', () => {
         camporee_club_id: 31,
         status: 'registered',
       },
+      options: ParticipantGateOptions = {},
     ) => {
+      const camporeeId = options.camporeeId ?? TEST_CAMPOREE_ID;
+      const userId = options.userId ?? TEST_USER_ID;
       const originalCamporeeFindUnique = tx.local_camporees.findUnique;
       const originalUserFindUnique = tx.users?.findUnique;
+      const trace: string[] = [];
       const sectionEnrollment = enrollment
         ? {
             ...enrollment,
-            camporee_id: TEST_CAMPOREE_ID,
+            camporee_id: camporeeId,
             club_section_id: 1,
             active: true,
           }
         : null;
 
+      const allLockExpectations: LockExpectation[] = [
+        {
+          name: 'camporee',
+          sql: /^SELECT "local_camporee_id" FROM "local_camporees" WHERE "local_camporee_id" = \? AND "local_field_id" = \? FOR UPDATE$/,
+          values: [camporeeId, TEST_LOCAL_FIELD_ID],
+          rows: async () => {
+            const camporee = await originalCamporeeFindUnique({});
+            return camporee ? [{ local_camporee_id: camporeeId }] : [];
+          },
+        },
+        {
+          name: 'enrollment',
+          sql: /^SELECT "camporee_club_id" FROM "camporee_clubs" WHERE "camporee_id" = \? AND "club_section_id" = \? AND "active" = true AND "status" IN \('registered', 'approved'\) ORDER BY "camporee_club_id" ASC FOR UPDATE$/,
+          values: [camporeeId, 1],
+          rows: async () =>
+            sectionEnrollment
+              ? [{ camporee_club_id: sectionEnrollment.camporee_club_id }]
+              : [],
+        },
+        {
+          name: 'user',
+          sql: /^SELECT "user_id" FROM "users" WHERE "user_id" = \? FOR UPDATE$/,
+          values: [userId],
+          rows: async () => {
+            const user = originalUserFindUnique
+              ? await originalUserFindUnique({})
+              : null;
+            return user ? [{ user_id: user.user_id }] : [];
+          },
+        },
+        {
+          name: 'assignments',
+          sql: /^SELECT "assignment_id" FROM "club_role_assignments" WHERE "user_id" = \? ORDER BY "assignment_id" ASC FOR UPDATE$/,
+          values: [userId],
+          rows: async () => [{ assignment_id: 'target-assignment' }],
+        },
+        {
+          name: 'profile',
+          sql: /^SELECT "user_pr_id" FROM "users_pr" WHERE "user_id" = \? FOR UPDATE$/,
+          values: [userId],
+          rows: async () => {
+            const user = originalUserFindUnique
+              ? await originalUserFindUnique({})
+              : null;
+            return user ? [{ user_pr_id: 1 }] : [];
+          },
+        },
+      ];
+      const through =
+        options.through ?? (enrollment === null ? 'enrollment' : 'profile');
+      const throughIndex = allLockExpectations.findIndex(
+        ({ name }) => name === through,
+      );
+      const lockExpectations = allLockExpectations.slice(0, throughIndex + 1);
+
       const queryRaw = jest.fn(async (query: unknown) => {
-        const sql =
-          typeof query === 'object' &&
-          query !== null &&
-          'strings' in query &&
-          Array.isArray((query as { strings?: unknown }).strings)
-            ? (query as { strings: string[] }).strings.join(' ')
-            : '';
-
-        if (sql.includes('FROM "local_camporees"')) {
-          const camporee = await originalCamporeeFindUnique({});
-          return camporee ? [{ local_camporee_id: TEST_CAMPOREE_ID }] : [];
-        }
-        if (sql.includes('FROM "camporee_clubs"')) {
-          return sectionEnrollment
-            ? [{ camporee_club_id: sectionEnrollment.camporee_club_id }]
-            : [];
-        }
-        if (sql.includes('FROM "users_pr"')) {
-          const user = originalUserFindUnique
-            ? await originalUserFindUnique({})
-            : null;
-          return user ? [{ user_pr_id: 1 }] : [];
-        }
-        if (sql.includes('FROM "users"')) {
-          const user = originalUserFindUnique
-            ? await originalUserFindUnique({})
-            : null;
-          return user ? [{ user_id: user.user_id }] : [];
-        }
-        if (sql.includes('FROM "club_role_assignments"')) {
-          return [{ assignment_id: 'target-assignment' }];
+        if (
+          typeof query !== 'object' ||
+          query === null ||
+          !('strings' in query) ||
+          !Array.isArray((query as { strings?: unknown }).strings) ||
+          !('values' in query) ||
+          !Array.isArray((query as { values?: unknown }).values)
+        ) {
+          throw new Error('Malformed Camporee lock query in E2E fixture');
         }
 
-        throw new Error(
-          `Unexpected Camporee lock query in E2E fixture: ${sql}`,
-        );
+        const strings = (query as { strings: string[] }).strings;
+        const values = (query as { values: unknown[] }).values;
+        const sql = strings
+          .map((part, index) => `${part}${index < values.length ? '?' : ''}`)
+          .join('')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const expectation = lockExpectations.shift();
+        if (!expectation) {
+          throw new Error(
+            'Unexpected Camporee lock query after expectation queue was exhausted',
+          );
+        }
+        if (!expectation.sql.test(sql)) {
+          throw new Error(
+            `Camporee E2E SQL contract mismatch at ${expectation.name} lock`,
+          );
+        }
+        if (
+          values.length !== expectation.values.length ||
+          values.some(
+            (value, index) => !Object.is(value, expectation.values[index]),
+          )
+        ) {
+          throw new Error(
+            `Camporee E2E parameter contract mismatch at ${expectation.name} lock`,
+          );
+        }
+
+        trace.push(`lock:${expectation.name}`);
+        return expectation.rows();
+      });
+
+      const assertLockExpectationsConsumed = () => {
+        if (lockExpectations.length > 0) {
+          throw new Error(
+            `Unconsumed Camporee E2E lock expectations: ${lockExpectations
+              .map(({ name }) => name)
+              .join(', ')}`,
+          );
+        }
+      };
+
+      const sectionFindUnique = jest.fn(async () => {
+        trace.push('reread:section');
+        return {
+          club_section_id: 1,
+          name: 'Conquistadores Central',
+          active: true,
+          club_type_id: 1,
+          main_club_id: 1,
+          clubs: {
+            club_id: 1,
+            name: 'Club Conquistadores Central',
+            active: true,
+            local_field_id: TEST_LOCAL_FIELD_ID,
+          },
+          club_types: {
+            club_type_id: 1,
+            name: 'Conquistadores',
+            active: true,
+          },
+        };
+      });
+      const enrollmentFindUnique = jest.fn(async () => {
+        trace.push('reread:enrollment');
+        return sectionEnrollment;
+      });
+      const assignmentFindMany = jest.fn(async () => {
+        trace.push('reread:assignments');
+        return [
+          {
+            assignment_id: 'target-assignment',
+            club_section_id: 1,
+            active: true,
+            status: 'active',
+          },
+        ];
       });
 
       return {
         ...tx,
         $queryRaw: queryRaw,
+        $lockTrace: trace,
+        $assertLockExpectationsConsumed: assertLockExpectationsConsumed,
         local_camporees: {
           ...tx.local_camporees,
           findFirst: jest.fn(async (args: unknown) => {
+            trace.push('reread:camporee');
             const found = await originalCamporeeFindUnique(args);
             return found
               ? {
@@ -615,32 +750,16 @@ describe('Camporees E2E Tests', () => {
           }),
         },
         club_sections: {
-          findUnique: jest.fn().mockResolvedValue({
-            club_section_id: 1,
-            name: 'Conquistadores Central',
-            active: true,
-            club_type_id: 1,
-            main_club_id: 1,
-            clubs: {
-              club_id: 1,
-              name: 'Club Conquistadores Central',
-              active: true,
-              local_field_id: TEST_LOCAL_FIELD_ID,
-            },
-            club_types: {
-              club_type_id: 1,
-              name: 'Conquistadores',
-              active: true,
-            },
-          }),
+          findUnique: sectionFindUnique,
         },
         camporee_clubs: {
-          findUnique: jest.fn().mockResolvedValue(sectionEnrollment),
+          findUnique: enrollmentFindUnique,
         },
         users: originalUserFindUnique
           ? {
               ...tx.users,
               findUnique: jest.fn(async (args: unknown) => {
+                trace.push('reread:user');
                 const found = await originalUserFindUnique(args);
                 return found
                   ? {
@@ -655,20 +774,30 @@ describe('Camporees E2E Tests', () => {
             }
           : tx.users,
         club_role_assignments: {
-          findMany: jest.fn().mockResolvedValue([
-            {
-              assignment_id: 'target-assignment',
-              club_section_id: 1,
-              active: true,
-              status: 'active',
-            },
-          ]),
+          findMany: assignmentFindMany,
         },
       };
     };
 
+    const installParticipantGate = (
+      tx: any,
+      enrollment: { camporee_club_id: number; status: string } | null = {
+        camporee_club_id: 31,
+        status: 'registered',
+      },
+      options: ParticipantGateOptions = {},
+    ) => {
+      const transactionFixture = withParticipantGate(tx, enrollment, options);
+      jest
+        .spyOn(prisma, '$transaction')
+        .mockImplementation(async (callback: any) =>
+          callback(transactionFixture),
+        );
+      return transactionFixture;
+    };
+
     it('returns 422 with a stable code when the director section is not enrolled', async () => {
-      const transactionFixture = withParticipantGate(
+      const transactionFixture = installParticipantGate(
         {
           local_camporees: {
             findUnique: jest.fn().mockResolvedValue(mockCamporee),
@@ -686,11 +815,6 @@ describe('Camporees E2E Tests', () => {
         },
         null,
       );
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) =>
-          callback(transactionFixture),
-        );
 
       const response = await postAsUser(
         `/api/v1/camporees/${TEST_CAMPOREE_ID}/register`,
@@ -702,40 +826,34 @@ describe('Camporees E2E Tests', () => {
         'code',
         'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
       );
-      const lockQueries = transactionFixture.$queryRaw.mock.calls.map(
-        ([query]: [unknown]) =>
-          (query as { strings: string[] }).strings.join(' '),
-      );
-      expect(lockQueries).toHaveLength(2);
-      expect(lockQueries[0]).toContain('FROM "local_camporees"');
-      expect(lockQueries[1]).toContain('FROM "camporee_clubs"');
+      transactionFixture.$assertLockExpectationsConsumed();
+      expect(transactionFixture.$lockTrace).toEqual([
+        'lock:camporee',
+        'reread:camporee',
+        'reread:section',
+        'lock:enrollment',
+      ]);
       expect(
         transactionFixture.camporee_clubs.findUnique,
       ).not.toHaveBeenCalled();
     });
 
     it('should register member with valid insurance', async () => {
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(mockUser),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(null),
-                create: jest.fn().mockResolvedValue(mockCamporeeMember),
-              },
-              member_insurances: {
-                findUnique: jest.fn().mockResolvedValue(mockInsurance),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate({
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(mockCamporee),
+        },
+        users: {
+          findUnique: jest.fn().mockResolvedValue(mockUser),
+        },
+        camporee_members: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockResolvedValue(mockCamporeeMember),
+        },
+        member_insurances: {
+          findUnique: jest.fn().mockResolvedValue(mockInsurance),
+        },
+      });
 
       const response = await postAsUser(
         `/api/v1/camporees/${TEST_CAMPOREE_ID}/register`,
@@ -749,6 +867,19 @@ describe('Camporees E2E Tests', () => {
       expect(response.body.insurance_verified).toBe(true);
       expect(response.body).toHaveProperty('users');
       expect(response.body).toHaveProperty('insurance');
+      transactionFixture.$assertLockExpectationsConsumed();
+      expect(transactionFixture.$lockTrace).toEqual([
+        'lock:camporee',
+        'reread:camporee',
+        'reread:section',
+        'lock:enrollment',
+        'lock:user',
+        'lock:assignments',
+        'lock:profile',
+        'reread:enrollment',
+        'reread:user',
+        'reread:assignments',
+      ]);
     });
 
     it('should register member without insurance', async () => {
@@ -766,26 +897,24 @@ describe('Camporees E2E Tests', () => {
         insurance: null,
       };
 
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest
-                  .fn()
-                  .mockResolvedValue({ ...mockUser, user_id: TEST_USER_ID_2 }),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(null),
-                create: jest.fn().mockResolvedValue(memberWithoutInsurance),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate(
+        {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue(mockCamporee),
+          },
+          users: {
+            findUnique: jest
+              .fn()
+              .mockResolvedValue({ ...mockUser, user_id: TEST_USER_ID_2 }),
+          },
+          camporee_members: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue(memberWithoutInsurance),
+          },
+        },
+        undefined,
+        { userId: TEST_USER_ID_2 },
+      );
 
       const response = await postAsUser(
         `/api/v1/camporees/${TEST_CAMPOREE_ID}/register`,
@@ -795,35 +924,31 @@ describe('Camporees E2E Tests', () => {
 
       expect(response.body.insurance_verified).toBe(false);
       expect(response.body.insurance_id).toBeNull();
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if insurance type is wrong (not CAMPOREE)', async () => {
       const wrongTypeInsurance = { ...mockInsurance, insurance_type: 'ANNUAL' };
 
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(mockUser),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(null),
-              },
-              member_insurances: {
-                findUnique: jest.fn().mockResolvedValue(wrongTypeInsurance),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate({
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(mockCamporee),
+        },
+        users: {
+          findUnique: jest.fn().mockResolvedValue(mockUser),
+        },
+        camporee_members: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        member_insurances: {
+          findUnique: jest.fn().mockResolvedValue(wrongTypeInsurance),
+        },
+      });
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if insurance expired before camporee ends', async () => {
@@ -832,198 +957,170 @@ describe('Camporees E2E Tests', () => {
         end_date: new Date('2024-05-16'), // Before camporee ends on 2024-05-17
       };
 
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(mockUser),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(null),
-              },
-              member_insurances: {
-                findUnique: jest.fn().mockResolvedValue(expiredInsurance),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate({
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(mockCamporee),
+        },
+        users: {
+          findUnique: jest.fn().mockResolvedValue(mockUser),
+        },
+        camporee_members: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        member_insurances: {
+          findUnique: jest.fn().mockResolvedValue(expiredInsurance),
+        },
+      });
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if insurance is not active', async () => {
       const inactiveInsurance = { ...mockInsurance, active: false };
 
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(mockUser),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(null),
-              },
-              member_insurances: {
-                findUnique: jest.fn().mockResolvedValue(inactiveInsurance),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate({
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(mockCamporee),
+        },
+        users: {
+          findUnique: jest.fn().mockResolvedValue(mockUser),
+        },
+        camporee_members: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        member_insurances: {
+          findUnique: jest.fn().mockResolvedValue(inactiveInsurance),
+        },
+      });
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if camporee not found', async () => {
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(null),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate(
+        {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue(null),
+          },
+        },
+        undefined,
+        { camporeeId: 9999, through: 'camporee' },
+      );
 
       await postAsUser('/api/v1/camporees/9999/register')
         .send(registerDto)
         .expect(404);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if camporee is not active', async () => {
       const inactiveCamporee = { ...mockCamporee, active: false };
 
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(inactiveCamporee),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate(
+        {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue(inactiveCamporee),
+          },
+        },
+        undefined,
+        { through: 'camporee' },
+      );
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if user not found', async () => {
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(null),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate(
+        {
+          local_camporees: {
+            findUnique: jest.fn().mockResolvedValue(mockCamporee),
+          },
+          users: {
+            findUnique: jest.fn().mockResolvedValue(null),
+          },
+        },
+        undefined,
+        { through: 'user' },
+      );
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if user already registered', async () => {
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(mockUser),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(mockCamporeeMember),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate({
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(mockCamporee),
+        },
+        users: {
+          findUnique: jest.fn().mockResolvedValue(mockUser),
+        },
+        camporee_members: {
+          findFirst: jest.fn().mockResolvedValue(mockCamporeeMember),
+        },
+      });
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if insurance does not belong to user', async () => {
       const otherUserInsurance = { ...mockInsurance, user_id: TEST_USER_ID_2 };
 
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(mockUser),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(null),
-              },
-              member_insurances: {
-                findUnique: jest.fn().mockResolvedValue(otherUserInsurance),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate({
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(mockCamporee),
+        },
+        users: {
+          findUnique: jest.fn().mockResolvedValue(mockUser),
+        },
+        camporee_members: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        member_insurances: {
+          findUnique: jest.fn().mockResolvedValue(otherUserInsurance),
+        },
+      });
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
 
     it('should reject if insurance not found', async () => {
-      jest
-        .spyOn(prisma, '$transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(
-            withParticipantGate({
-              local_camporees: {
-                findUnique: jest.fn().mockResolvedValue(mockCamporee),
-              },
-              users: {
-                findUnique: jest.fn().mockResolvedValue(mockUser),
-              },
-              camporee_members: {
-                findFirst: jest.fn().mockResolvedValue(null),
-              },
-              member_insurances: {
-                findUnique: jest.fn().mockResolvedValue(null),
-              },
-            }),
-          );
-        });
+      const transactionFixture = installParticipantGate({
+        local_camporees: {
+          findUnique: jest.fn().mockResolvedValue(mockCamporee),
+        },
+        users: {
+          findUnique: jest.fn().mockResolvedValue(mockUser),
+        },
+        camporee_members: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        member_insurances: {
+          findUnique: jest.fn().mockResolvedValue(null),
+        },
+      });
 
       await postAsUser(`/api/v1/camporees/${TEST_CAMPOREE_ID}/register`)
         .send(registerDto)
         .expect(400);
+      transactionFixture.$assertLockExpectationsConsumed();
     });
   });
 
