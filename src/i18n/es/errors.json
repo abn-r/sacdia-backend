@@ -374,6 +374,8 @@
   "MONTHLY_REPORT_NOT_FOUND": "Informe mensual no encontrado",
   "MONTHLY_REPORT_NOT_DRAFT": "Solo los informes en estado borrador pueden ser editados o generados",
   "MONTHLY_REPORT_NOT_GENERATED": "Solo los informes generados pueden ser enviados",
+  "MONTHLY_REPORT_MANUAL_DATA_REQUIRED": "Debe enviar al menos un dato manual definido para actualizar el informe mensual",
+  "MONTHLY_REPORT_INVALID_MANUAL_DATA": "Uno o más campos manuales del informe mensual tienen un valor inválido",
   "MONTHLY_REPORT_INVALID_MONTH": "El mes debe estar entre 1 y 12",
   "MONTHLY_REPORT_INVALID_YEAR": "El año debe estar entre 2020 y 2100",
   "VALIDATION_ENROLLMENT_NOT_FOUND": "Inscripción no encontrada",

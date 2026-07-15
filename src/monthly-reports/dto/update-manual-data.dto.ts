@@ -5,6 +5,7 @@ import {
   IsString,
   Min,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -13,7 +14,7 @@ export class UpdateManualDataDto {
     description: 'Reuniones de planificación realizadas',
     example: 2,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   planning_meetings?: number;
@@ -22,7 +23,7 @@ export class UpdateManualDataDto {
     description: 'Reuniones de padres realizadas',
     example: 1,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   parent_meetings?: number;
@@ -31,7 +32,7 @@ export class UpdateManualDataDto {
     description: 'Asistencia al consejo de jóvenes',
     example: 3,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   youth_council_attendance?: number;
@@ -40,7 +41,7 @@ export class UpdateManualDataDto {
     description: 'Asistencia a la junta de iglesia',
     example: 1,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   church_board_attendance?: number;
@@ -49,7 +50,7 @@ export class UpdateManualDataDto {
     description: 'Meta de almas',
     example: 5,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   soul_target?: number;
@@ -58,7 +59,7 @@ export class UpdateManualDataDto {
     description: 'Miembros no bautizados',
     example: 3,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   unbaptized_members?: number;
@@ -67,7 +68,7 @@ export class UpdateManualDataDto {
     description: 'Cantidad recibiendo estudios bíblicos',
     example: 4,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   bible_studies_receiving?: number;
@@ -76,7 +77,7 @@ export class UpdateManualDataDto {
     description: '¿Tiene instrucción bíblica semanal?',
     example: true,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsBoolean()
   has_weekly_bible_instruction?: boolean;
 
@@ -84,7 +85,7 @@ export class UpdateManualDataDto {
     description: '¿Se dieron estudios bíblicos?',
     example: true,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsBoolean()
   bible_studies_given?: boolean;
 
@@ -92,7 +93,7 @@ export class UpdateManualDataDto {
     description: '¿Se distribuyó literatura?',
     example: false,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsBoolean()
   literature_distributed?: boolean;
 
@@ -100,7 +101,7 @@ export class UpdateManualDataDto {
     description: 'Bautizados este mes',
     example: 1,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   baptized_this_month?: number;
@@ -109,7 +110,7 @@ export class UpdateManualDataDto {
     description: 'Total de bautizados acumulado',
     example: 3,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsInt()
   @Min(0)
   total_baptized?: number;
@@ -138,7 +139,7 @@ export class UpdateManualDataDto {
     description: '¿Se entregaron certificados?',
     example: false,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsBoolean()
   certificates_delivered?: boolean;
 
@@ -146,7 +147,7 @@ export class UpdateManualDataDto {
     description: '¿Los miembros tienen libreta?',
     example: true,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsBoolean()
   members_have_booklet?: boolean;
 
@@ -154,7 +155,7 @@ export class UpdateManualDataDto {
     description: '¿Requisitos de libreta firmados?',
     example: false,
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsBoolean()
   booklet_requirements_signed?: boolean;
 }

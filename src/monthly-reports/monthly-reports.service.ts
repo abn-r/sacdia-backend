@@ -15,6 +15,7 @@ import {
 } from '../reports/report-visibility-scope';
 
 const MONTHLY_REPORT_REMINDER_SOURCE = 'monthly_reports:reminder';
+const AUTO_GENERATION_STATUS_BATCH_SIZE = 500;
 const MONTHLY_REPORT_REMINDER_ROLES = [
   'director',
   'secretary',
@@ -35,6 +36,37 @@ interface MonthlyReportReminderSchedule {
   year: number;
 }
 
+const NON_NULLABLE_MANUAL_DATA_FIELDS: readonly (keyof UpdateManualDataDto)[] =
+  [
+    'planning_meetings',
+    'parent_meetings',
+    'youth_council_attendance',
+    'church_board_attendance',
+    'soul_target',
+    'unbaptized_members',
+    'bible_studies_receiving',
+    'has_weekly_bible_instruction',
+    'bible_studies_given',
+    'literature_distributed',
+    'baptized_this_month',
+    'total_baptized',
+    'certificates_delivered',
+    'members_have_booklet',
+    'booklet_requirements_signed',
+  ];
+
+const NULLABLE_MANUAL_DATA_TEXT_FIELDS: readonly (keyof UpdateManualDataDto)[] =
+  ['club_participation_description', 'community_service_description'];
+
+const NULLABLE_MANUAL_DATA_TEXT_FIELD_SET = new Set<string>(
+  NULLABLE_MANUAL_DATA_TEXT_FIELDS,
+);
+
+const MANUAL_DATA_FIELDS: readonly (keyof UpdateManualDataDto)[] = [
+  ...NON_NULLABLE_MANUAL_DATA_FIELDS,
+  ...NULLABLE_MANUAL_DATA_TEXT_FIELDS,
+];
+
 @Injectable()
 export class MonthlyReportsService {
   private readonly logger = new Logger(MonthlyReportsService.name);
@@ -51,14 +83,14 @@ export class MonthlyReportsService {
   // ========================================
 
   /**
-   * Gets an existing report or creates a new draft for the given enrollment/month/year.
+   * Atomically gets an existing report or creates a draft for the given enrollment/month/year.
    */
   async getOrCreateDraft(enrollmentId: string, month: number, year: number) {
     this.validateMonthYear(month, year);
 
     await this.validateEnrollmentExists(enrollmentId);
 
-    const existing = await this.prisma.monthly_reports.findUnique({
+    return this.prisma.monthly_reports.upsert({
       where: {
         club_enrollment_id_month_year: {
           club_enrollment_id: enrollmentId,
@@ -66,20 +98,13 @@ export class MonthlyReportsService {
           year,
         },
       },
-      include: { manual_data: true },
-    });
-
-    if (existing) {
-      return existing;
-    }
-
-    return this.prisma.monthly_reports.create({
-      data: {
+      create: {
         club_enrollment_id: enrollmentId,
         month,
         year,
         status: 'draft',
       },
+      update: {},
       include: { manual_data: true },
     });
   }
@@ -159,37 +184,68 @@ export class MonthlyReportsService {
    * Updates the manual fields of a report. Only allowed if status is 'draft'.
    */
   async updateManualData(reportId: string, dto: UpdateManualDataDto) {
-    const report = await this.prisma.monthly_reports.findUnique({
-      where: { monthly_report_id: reportId },
-      include: { manual_data: true },
-    });
-
-    if (!report) {
-      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
-    }
-
-    if (report.status !== 'draft') {
-      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
+    if (NON_NULLABLE_MANUAL_DATA_FIELDS.some((field) => dto[field] === null)) {
+      throw new AppBadRequestException(
+        ErrorCode.MONTHLY_REPORT_INVALID_MANUAL_DATA,
+      );
     }
 
     // Build update data, filtering out undefined values
     const updateData = this.buildManualDataPayload(dto);
 
-    if (report.manual_data) {
-      // Update existing manual data
-      return this.prisma.monthly_report_manual_data.update({
+    if (Object.keys(updateData).length === 0) {
+      throw new AppBadRequestException(
+        ErrorCode.MONTHLY_REPORT_MANUAL_DATA_REQUIRED,
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const [report] = await tx.$queryRaw<
+        Array<{ monthly_report_id: string; status: string }>
+      >(Prisma.sql`
+        SELECT monthly_report_id, status
+        FROM monthly_reports
+        WHERE monthly_report_id = ${reportId}::uuid
+        FOR UPDATE
+      `);
+
+      if (!report) {
+        throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+      }
+
+      if (report.status !== 'draft') {
+        throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
+      }
+
+      const existingManualData = await tx.monthly_report_manual_data.findUnique(
+        {
+          where: { monthly_report_id: reportId },
+          select: { manual_data_id: true },
+        },
+      );
+
+      if (
+        !existingManualData &&
+        !Object.entries(updateData).some(([field, value]) =>
+          NULLABLE_MANUAL_DATA_TEXT_FIELD_SET.has(field)
+            ? typeof value === 'string' && value.trim().length > 0
+            : true,
+        )
+      ) {
+        throw new AppBadRequestException(
+          ErrorCode.MONTHLY_REPORT_MANUAL_DATA_REQUIRED,
+        );
+      }
+
+      return tx.monthly_report_manual_data.upsert({
         where: { monthly_report_id: reportId },
-        data: updateData,
-      });
-    } else {
-      // Create new manual data
-      return this.prisma.monthly_report_manual_data.create({
-        data: {
+        create: {
           monthly_report_id: reportId,
           ...updateData,
         },
+        update: updateData,
       });
-    }
+    });
   }
 
   // ========================================
@@ -219,15 +275,32 @@ export class MonthlyReportsService {
       report.year,
     );
 
-    return this.prisma.monthly_reports.update({
-      where: { monthly_report_id: reportId },
+    const transition = await this.prisma.monthly_reports.updateMany({
+      where: {
+        monthly_report_id: reportId,
+        status: 'draft',
+      },
       data: {
         status: 'generated',
         snapshot_data: previewData.auto_calculated as any,
         generated_at: new Date(),
       },
+    });
+
+    if (transition.count !== 1) {
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_NOT_DRAFT);
+    }
+
+    const generated = await this.prisma.monthly_reports.findUnique({
+      where: { monthly_report_id: reportId },
       include: { manual_data: true },
     });
+
+    if (!generated) {
+      throw new AppNotFoundException(ErrorCode.MONTHLY_REPORT_NOT_FOUND);
+    }
+
+    return generated;
   }
 
   // ========================================
@@ -470,24 +543,21 @@ export class MonthlyReportsService {
   // ========================================
 
   /**
-   * Runs the full auto-generation loop for the given month/year (or the
-   * previous month if no arguments are supplied).
+   * Reconciles every overdue monthly report for active club enrollments.
    *
    * This method:
    * 1. Reads system_config to check whether auto-generation is enabled and
    *    to determine the configured day-of-month.
-   * 2. Checks that today is the configured day (when called from the cron
-   *    trigger, this will be true; when called from a BullMQ retry it will
-   *    also be true because the job was enqueued on that day).
-   * 3. Iterates over all active club enrollments, calling getOrCreateDraft()
-   *    and generate() for each one that is still in draft status.
+   * 2. Enumerates the enrollment's ecclesiastical-year months through the
+   *    month before now.
+   * 3. Loads existing report states in bounded batches.
+   * 4. Generates only missing reports and existing drafts whose next-month
+   *    UTC cutoff has passed.
    *
-   * Idempotency is guaranteed by the draft status check — a report that has
-   * already been generated or submitted is skipped silently. BullMQ retries
-   * are therefore safe.
+   * Idempotency is guaranteed by the preloaded status check plus the atomic
+   * draft transition in generate(). BullMQ retries are therefore safe.
    *
-   * @param forceDate - Optional date to use instead of today (useful for
-   *                    testing and manual back-fills).
+   * @param forceDate - Optional date to use instead of now (useful for tests).
    */
   async runAutoGeneration(
     forceDate?: Date,
@@ -507,44 +577,29 @@ export class MonthlyReportsService {
       where: { config_key: 'reports.auto_generate_day' },
     });
 
-    const configuredDay = dayConfig ? parseInt(dayConfig.config_value, 10) : 5;
+    const parsedConfiguredDay = dayConfig ? Number(dayConfig.config_value) : 5;
+    const hasValidConfiguredDay =
+      Number.isInteger(parsedConfiguredDay) &&
+      parsedConfiguredDay >= 1 &&
+      parsedConfiguredDay <= 28;
+    const configuredDay = hasValidConfiguredDay ? parsedConfiguredDay : 5;
 
-    if (isNaN(configuredDay) || configuredDay < 1 || configuredDay > 28) {
+    if (dayConfig && !hasValidConfiguredDay) {
       this.logger.warn(
-        `Invalid auto_generate_day value: "${dayConfig?.config_value}". Must be 1-28. Skipping.`,
+        `Invalid reports.auto_generate_day value "${dayConfig.config_value}"; using fallback day 5.`,
       );
-      return { itemsProcessed: 0 };
     }
 
-    // 3. Check if today is the configured day
-    const today = forceDate ?? new Date();
-    const currentDay = today.getDate();
+    const now = forceDate ?? new Date();
 
-    if (currentDay !== configuredDay) {
-      this.logger.debug(
-        `Today is day ${currentDay}, configured day is ${configuredDay}. Skipping.`,
-      );
-      return { itemsProcessed: 0 };
-    }
-
-    this.logger.log(
-      `Today is the configured auto-generation day (${configuredDay}). Starting report generation...`,
-    );
-
-    // 4. Calculate the PREVIOUS month and year
-    const prevMonth = today.getMonth() === 0 ? 12 : today.getMonth();
-    const prevYear =
-      today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
-
-    this.logger.log(
-      `Generating reports for ${prevYear}-${String(prevMonth).padStart(2, '0')}`,
-    );
-
-    // 5. Get all active club enrollments
+    // 3. Get all active club enrollments and their reportable date ranges
     const activeEnrollments = await this.prisma.club_enrollments.findMany({
       where: { status: 'active' },
       select: {
         club_enrollment_id: true,
+        ecclesiastical_year: {
+          select: { start_date: true, end_date: true },
+        },
         club_section: {
           select: {
             clubs: { select: { name: true } },
@@ -563,12 +618,20 @@ export class MonthlyReportsService {
       `Found ${activeEnrollments.length} active enrollment(s). Processing...`,
     );
 
-    // 6. For each enrollment, get or create draft and then generate
-    let successCount = 0;
-    let skipCount = 0;
-    let errorCount = 0;
-    const errors: { enrollmentId: string; clubName: string; error: string }[] =
-      [];
+    // 4. Enumerate every overdue period before loading existing states in
+    // bounded batches. This avoids a get-or-create query for every historical
+    // report that has already been closed.
+    const overduePeriods: Array<{
+      enrollmentId: string;
+      clubName: string;
+      periodLabel: string;
+      month: number;
+      year: number;
+    }> = [];
+
+    const previousMonth = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+    );
 
     for (const enrollment of activeEnrollments) {
       const clubName = enrollment.club_section?.clubs?.name ?? 'Unknown club';
@@ -576,53 +639,178 @@ export class MonthlyReportsService {
         enrollment.club_section?.club_types?.name ?? 'Unknown type';
       const label = `${clubName} (${clubType})`;
 
-      try {
-        const draft = await this.getOrCreateDraft(
-          enrollment.club_enrollment_id,
-          prevMonth,
-          prevYear,
+      const startMonth = new Date(
+        Date.UTC(
+          enrollment.ecclesiastical_year.start_date.getUTCFullYear(),
+          enrollment.ecclesiastical_year.start_date.getUTCMonth(),
+          1,
+        ),
+      );
+      const enrollmentEndMonth = new Date(
+        Date.UTC(
+          enrollment.ecclesiastical_year.end_date.getUTCFullYear(),
+          enrollment.ecclesiastical_year.end_date.getUTCMonth(),
+          1,
+        ),
+      );
+      const lastReportableMonth =
+        enrollmentEndMonth.getTime() < previousMonth.getTime()
+          ? enrollmentEndMonth
+          : previousMonth;
+
+      for (
+        let period = startMonth;
+        period.getTime() <= lastReportableMonth.getTime();
+        period = new Date(
+          Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + 1, 1),
+        )
+      ) {
+        const periodMonth = period.getUTCMonth() + 1;
+        const periodYear = period.getUTCFullYear();
+        const cutoff = new Date(
+          Date.UTC(
+            periodYear,
+            period.getUTCMonth() + 1,
+            configuredDay,
+            23,
+            0,
+            0,
+            0,
+          ),
         );
+
+        if (now.getTime() < cutoff.getTime()) {
+          continue;
+        }
+
+        overduePeriods.push({
+          enrollmentId: enrollment.club_enrollment_id,
+          clubName: label,
+          periodLabel: `${periodYear}-${String(periodMonth).padStart(2, '0')}`,
+          month: periodMonth,
+          year: periodYear,
+        });
+      }
+    }
+
+    const reportKey = (enrollmentId: string, month: number, year: number) =>
+      `${enrollmentId}:${year}:${month}`;
+    const existingReports = new Map<
+      string,
+      { monthly_report_id: string; status: string }
+    >();
+
+    for (
+      let index = 0;
+      index < overduePeriods.length;
+      index += AUTO_GENERATION_STATUS_BATCH_SIZE
+    ) {
+      const batch = overduePeriods.slice(
+        index,
+        index + AUTO_GENERATION_STATUS_BATCH_SIZE,
+      );
+
+      try {
+        const reports = await this.prisma.monthly_reports.findMany({
+          where: {
+            OR: batch.map((period) => ({
+              club_enrollment_id: period.enrollmentId,
+              month: period.month,
+              year: period.year,
+            })),
+          },
+          select: {
+            monthly_report_id: true,
+            club_enrollment_id: true,
+            month: true,
+            year: true,
+            status: true,
+          },
+        });
+
+        for (const report of reports) {
+          existingReports.set(
+            reportKey(report.club_enrollment_id, report.month, report.year),
+            report,
+          );
+        }
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Failed to preload monthly report states for batch ${index / AUTO_GENERATION_STATUS_BATCH_SIZE + 1}: ${errorMessage}. Falling back to per-period reconciliation.`,
+        );
+      }
+    }
+
+    // 5. Reconcile each overdue period independently so one failure does not
+    // prevent later periods (or enrollments) from being processed.
+    let successCount = 0;
+    let skipCount = 0;
+    let errorCount = 0;
+    const errors: {
+      enrollmentId: string;
+      clubName: string;
+      period: string;
+      error: string;
+    }[] = [];
+
+    for (const period of overduePeriods) {
+      try {
+        let draft = existingReports.get(
+          reportKey(period.enrollmentId, period.month, period.year),
+        );
+
+        if (!draft) {
+          draft = await this.getOrCreateDraft(
+            period.enrollmentId,
+            period.month,
+            period.year,
+          );
+        }
 
         if (draft.status !== 'draft') {
           this.logger.debug(
-            `Report for ${label} already has status "${draft.status}". Skipping.`,
+            `Report ${period.periodLabel} for ${period.clubName} already has status "${draft.status}". Skipping.`,
           );
           skipCount++;
           continue;
         }
 
-        await this.generate(
-          draft.monthly_report_id,
-          'system', // userId = 'system' for auto-generated reports
-        );
+        await this.generate(draft.monthly_report_id, 'system');
 
         successCount++;
-        this.logger.log(`Generated report for ${label}`);
+        this.logger.log(
+          `Generated report ${period.periodLabel} for ${period.clubName}`,
+        );
       } catch (error) {
         errorCount++;
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         errors.push({
-          enrollmentId: enrollment.club_enrollment_id,
-          clubName: label,
+          enrollmentId: period.enrollmentId,
+          clubName: period.clubName,
+          period: period.periodLabel,
           error: errorMessage,
         });
         this.logger.error(
-          `Failed to generate report for ${label}: ${errorMessage}`,
+          `Failed to generate report ${period.periodLabel} for ${period.clubName}: ${errorMessage}`,
         );
       }
     }
 
-    // 7. Log summary
     this.logger.log(
-      `Auto-generation complete for ${prevYear}-${String(prevMonth).padStart(2, '0')}: ` +
+      'Auto-generation reconciliation complete: ' +
         `${successCount} generated, ${skipCount} skipped (already processed), ${errorCount} errors`,
     );
 
     if (errors.length > 0) {
       this.logger.warn(
         `Errors during auto-generation:\n${errors
-          .map((e) => `  - ${e.clubName} (${e.enrollmentId}): ${e.error}`)
+          .map(
+            (e) =>
+              `  - ${e.period} ${e.clubName} (${e.enrollmentId}): ${e.error}`,
+          )
           .join('\n')}`,
       );
     }
@@ -775,7 +963,7 @@ export class MonthlyReportsService {
       };
 
       return {
-        action: actionByDay[day]!,
+        action: actionByDay[day],
         month: previousMonth,
         year: previousYear,
       };
@@ -1096,27 +1284,7 @@ export class MonthlyReportsService {
   private buildManualDataPayload(dto: UpdateManualDataDto) {
     const payload: Record<string, any> = {};
 
-    const fields: (keyof UpdateManualDataDto)[] = [
-      'planning_meetings',
-      'parent_meetings',
-      'youth_council_attendance',
-      'church_board_attendance',
-      'soul_target',
-      'unbaptized_members',
-      'bible_studies_receiving',
-      'has_weekly_bible_instruction',
-      'bible_studies_given',
-      'literature_distributed',
-      'baptized_this_month',
-      'total_baptized',
-      'club_participation_description',
-      'community_service_description',
-      'certificates_delivered',
-      'members_have_booklet',
-      'booklet_requirements_signed',
-    ];
-
-    for (const field of fields) {
+    for (const field of MANUAL_DATA_FIELDS) {
       if (dto[field] !== undefined) {
         payload[field] = dto[field];
       }

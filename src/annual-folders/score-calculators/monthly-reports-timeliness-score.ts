@@ -2,11 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const DEFAULT_DEADLINE_DAY = 5;
-const SYSTEM_CONFIG_KEY = 'ranking.monthly_report_deadline_day';
+const SYSTEM_CONFIG_KEY = 'reports.auto_generate_day';
 
 @Injectable()
 export class MonthlyReportsTimelinessScoreService {
-  private readonly logger = new Logger(MonthlyReportsTimelinessScoreService.name);
+  private readonly logger = new Logger(
+    MonthlyReportsTimelinessScoreService.name,
+  );
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -17,7 +19,7 @@ export class MonthlyReportsTimelinessScoreService {
     const deadlineDay = await this.resolveDeadlineDay();
 
     const rows = await this.prisma.$queryRaw<
-      { submitted_on_time: bigint; expected_months: bigint }[]
+      { captured_on_time: bigint; expected_months: bigint }[]
     >`
       WITH year_scope AS (
         SELECT start_date, end_date
@@ -36,42 +38,48 @@ export class MonthlyReportsTimelinessScoreService {
       ),
       month_deadlines AS (
         SELECT
-          month_start,
-          LEAST(
+          md.month_start,
+          make_timestamptz(
+            EXTRACT(YEAR FROM md.month_start)::int,
+            EXTRACT(MONTH FROM md.month_start)::int,
+            1,
+            0,
+            0,
+            0,
+            'UTC'
+          ) AS period_start_at,
+          make_timestamptz(
+            EXTRACT(YEAR FROM (md.month_start + interval '1 month'))::int,
+            EXTRACT(MONTH FROM (md.month_start + interval '1 month'))::int,
             ${deadlineDay}::int,
-            EXTRACT(
-              DAY FROM (date_trunc('month', month_start) + interval '1 month' - interval '1 day')
-            )::int
-          ) AS deadline_day
-        FROM months
+            23,
+            0,
+            0,
+            'UTC'
+          ) AS deadline_at
+        FROM months md
       )
       SELECT
         COUNT(md.month_start)::bigint AS expected_months,
-        COUNT(mr.monthly_report_id) FILTER (
-          WHERE mr.status = 'submitted'
-            AND mr.submitted_at IS NOT NULL
-            AND mr.submitted_at <= make_timestamptz(
-              EXTRACT(YEAR FROM md.month_start)::int,
-              EXTRACT(MONTH FROM md.month_start)::int,
-              md.deadline_day,
-              23,
-              59,
-              59,
-              'UTC'
-            )
-        )::bigint AS submitted_on_time
+        COUNT(mmd.manual_data_id) FILTER (
+          WHERE mmd.created_at >= md.period_start_at
+            AND mmd.created_at < md.deadline_at
+        )::bigint AS captured_on_time
       FROM month_deadlines md
       LEFT JOIN monthly_reports mr
         ON mr.club_enrollment_id = ${clubEnrollmentId}::uuid
        AND mr.month = EXTRACT(MONTH FROM md.month_start)::int
        AND mr.year = EXTRACT(YEAR FROM md.month_start)::int
+      LEFT JOIN monthly_report_manual_data mmd
+        ON mmd.monthly_report_id = mr.monthly_report_id
+      WHERE md.deadline_at <= CURRENT_TIMESTAMP
     `;
 
-    const submittedOnTime = Number(rows[0]?.submitted_on_time ?? 0n);
+    const capturedOnTime = Number(rows[0]?.captured_on_time ?? 0n);
     const expectedMonths = Number(rows[0]?.expected_months ?? 0n);
     if (expectedMonths <= 0) return 0;
 
-    return this.normalizePercentage((submittedOnTime / expectedMonths) * 100);
+    return this.normalizePercentage((capturedOnTime / expectedMonths) * 100);
   }
 
   private async resolveDeadlineDay(): Promise<number> {
@@ -85,8 +93,8 @@ export class MonthlyReportsTimelinessScoreService {
       return DEFAULT_DEADLINE_DAY;
     }
 
-    const parsed = parseInt(row.config_value, 10);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) {
+    const parsed = Number(row.config_value);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 28) {
       this.logger.warn(
         `system_config[${SYSTEM_CONFIG_KEY}] invalid ("${row.config_value}"), using default ${DEFAULT_DEADLINE_DAY}`,
       );
