@@ -11,6 +11,8 @@ describe('EvidenceReviewService', () => {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
     },
+    class_sections: { findMany: jest.fn() },
+    class_modules: { findMany: jest.fn() },
     users_honors: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -62,6 +64,8 @@ describe('EvidenceReviewService', () => {
     mockPrisma.class_section_progress.findMany.mockResolvedValue([]);
     mockPrisma.class_section_progress.findFirst.mockResolvedValue(null);
     mockPrisma.class_section_progress.findUnique.mockResolvedValue(null);
+    mockPrisma.class_sections.findMany.mockResolvedValue([]);
+    mockPrisma.class_modules.findMany.mockResolvedValue([]);
     mockPrisma.users_honors.count.mockResolvedValue(1);
     mockPrisma.users_honors.findMany.mockResolvedValue([]);
     mockPrisma.users_honors.findFirst.mockResolvedValue(null);
@@ -83,13 +87,26 @@ describe('EvidenceReviewService', () => {
         section_progress_id: 11,
         status: 'SUBMITTED',
         user_id: 'user-1',
+        class_id: 5,
+        module_id: 12,
         section_id: 99,
         submitted_at: new Date('2026-06-01T10:00:00.000Z'),
         validated_at: null,
         rejection_reason: null,
         users: { user_id: 'user-1', name: 'Ana', paternal_last_name: 'Pérez' },
+        classes: { name: 'Compañero', description: 'Clase de Compañero' },
         evidence_files: [{ evidence_file_id: 101 }],
       },
+    ]);
+    mockPrisma.class_sections.findMany.mockResolvedValue([
+      {
+        section_id: 99,
+        name: 'Descubrimiento espiritual',
+        description: 'Fe y estudio',
+      },
+    ]);
+    mockPrisma.class_modules.findMany.mockResolvedValue([
+      { module_id: 12, name: 'Crecimiento espiritual' },
     ]);
 
     const result = await service.getPending('admin-user', 'class', 2, 5);
@@ -110,13 +127,31 @@ describe('EvidenceReviewService', () => {
         }),
         skip: 5,
         take: 5,
+        include: expect.objectContaining({
+          classes: { select: { name: true, description: true } },
+        }),
       }),
     );
+    expect(mockPrisma.class_sections.findMany).toHaveBeenCalledWith({
+      where: { section_id: { in: [99] } },
+      select: { section_id: true, name: true, description: true },
+    });
+    expect(mockPrisma.class_modules.findMany).toHaveBeenCalledWith({
+      where: { module_id: { in: [12] } },
+      select: { module_id: true, name: true },
+    });
     expect(mockPrisma.users_honors.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
     expect(result.total).toBe(17);
     expect(result.data).toHaveLength(1);
-    expect(result.data[0]).toMatchObject({ id: 11, type: 'class' });
+    expect(result.data[0]).toMatchObject({
+      id: 11,
+      type: 'class',
+      entity_name: 'Compañero',
+      section_name: 'Descubrimiento espiritual',
+      entity_description: 'Fe y estudio',
+      module_name: 'Crecimiento espiritual',
+    });
   });
 
   it('paginates honor pending with DB-level count + skip/take', async () => {
@@ -135,11 +170,17 @@ describe('EvidenceReviewService', () => {
         document: null,
         images: null,
         users: { user_id: 'user-2', name: 'Luis', paternal_last_name: 'Ríos' },
-        honors: { honor_id: 7, name: 'Honor de prueba' },
+        honors: {
+          honor_id: 7,
+          name: 'Especialidad de prueba',
+          description: 'Descripción de la especialidad',
+        },
         validator: null,
-        evidence_files: [{
-          evidence_file_id: 301,
-        }],
+        evidence_files: [
+          {
+            evidence_file_id: 301,
+          },
+        ],
       },
     ]);
 
@@ -166,7 +207,14 @@ describe('EvidenceReviewService', () => {
     expect(mockPrisma.class_section_progress.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
     expect(result.total).toBe(22);
-    expect(result.data[0]).toMatchObject({ id: 21, type: 'honor' });
+    expect(result.data[0]).toMatchObject({
+      id: 21,
+      type: 'honor',
+      entity_name: 'Especialidad de prueba',
+      section_name: 'Especialidad de prueba',
+      entity_description: 'Descripción de la especialidad',
+      module_name: null,
+    });
   });
 
   it('hydrates omitted-type pending using raw identifier paging and no full scans', async () => {
@@ -194,7 +242,11 @@ describe('EvidenceReviewService', () => {
         submitted_at: new Date('2026-06-01T08:00:00.000Z'),
         validated_at: null,
         rejection_reason: null,
-        users: { user_id: 'user-8', name: 'Ada', paternal_last_name: 'Lovelace' },
+        users: {
+          user_id: 'user-8',
+          name: 'Ada',
+          paternal_last_name: 'Lovelace',
+        },
         evidence_files: [{ evidence_file_id: 201 }],
       },
     ]);
@@ -212,7 +264,11 @@ describe('EvidenceReviewService', () => {
         certificate: null,
         document: null,
         images: null,
-        users: { user_id: 'user-9', name: 'Alan', paternal_last_name: 'Turing' },
+        users: {
+          user_id: 'user-9',
+          name: 'Alan',
+          paternal_last_name: 'Turing',
+        },
         honors: { honor_id: 77, name: 'Honor mixto' },
         validator: null,
         evidence_files: [{ evidence_file_id: 901 }],
@@ -244,7 +300,12 @@ describe('EvidenceReviewService', () => {
   });
 
   it('returns empty page and avoids raw query when type is invalid', async () => {
-    const result = await service.getPending('admin-user', 'invalid' as any, 2, 5);
+    const result = await service.getPending(
+      'admin-user',
+      'invalid' as any,
+      2,
+      5,
+    );
 
     expect(result).toEqual({ data: [], total: 0, page: 2, limit: 5 });
     expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
@@ -269,7 +330,11 @@ describe('EvidenceReviewService', () => {
         certificate: null,
         document: null,
         images: ['img1', 'img2', 'img3'],
-        users: { user_id: 'user-31', name: 'María', paternal_last_name: 'López' },
+        users: {
+          user_id: 'user-31',
+          name: 'María',
+          paternal_last_name: 'López',
+        },
         honors: { honor_id: 44, name: 'Honor legado' },
         validator: null,
         evidence_files: [],
@@ -287,7 +352,9 @@ describe('EvidenceReviewService', () => {
         grants: { global_roles: [{ role_name: 'coordinator' }] },
       },
     });
-    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue([]);
+    mockCoordinationService.getEffectiveCoordinatorSectionIds.mockResolvedValue(
+      [],
+    );
 
     const result = await service.getPending('coordinator-user');
 
@@ -296,7 +363,6 @@ describe('EvidenceReviewService', () => {
     expect(mockPrisma.users_honors.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
-
 
   it('rejects folder as an evidence-review type', async () => {
     await expect(
@@ -315,11 +381,14 @@ describe('EvidenceReviewService', () => {
       section_progress_id: 42,
       status: 'SUBMITTED',
       user_id: 'user-1',
+      class_id: 3,
+      module_id: 6,
       section_id: 7,
       submitted_at: submittedAt,
       validated_at: null,
       rejection_reason: null,
       users: { user_id: 'user-1', name: 'Ana', paternal_last_name: 'Pérez' },
+      classes: { name: 'Explorador', description: 'Clase de Explorador' },
       validated_by_user: null,
       evidence_files: [
         {
@@ -331,6 +400,16 @@ describe('EvidenceReviewService', () => {
         },
       ],
     });
+    mockPrisma.class_sections.findMany.mockResolvedValue([
+      {
+        section_id: 7,
+        name: 'Servicio a otros',
+        description: 'Servicio práctico',
+      },
+    ]);
+    mockPrisma.class_modules.findMany.mockResolvedValue([
+      { module_id: 6, name: 'Desarrollo personal' },
+    ]);
 
     const detail = await service.getDetail('admin-user', 'class', 42);
 
@@ -340,6 +419,12 @@ describe('EvidenceReviewService', () => {
         file_url: 'signed://class-evidence/img.jpg',
       }),
     ]);
+    expect(detail).toMatchObject({
+      entity_name: 'Explorador',
+      section_name: 'Servicio a otros',
+      entity_description: 'Servicio práctico',
+      module_name: 'Desarrollo personal',
+    });
     expect(mockFileStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
       StorageBucketAlias.CLASS_EVIDENCE,
       fileUrl,
@@ -366,7 +451,11 @@ describe('EvidenceReviewService', () => {
       images: ['https://cdn.example/foto.jpg'],
       created_at: submittedAt,
       users: { user_id: 'user-1', name: 'Ana', paternal_last_name: 'Pérez' },
-      honors: { honor_id: 20, name: 'Arte cristiano' },
+      honors: {
+        honor_id: 20,
+        name: 'Arte cristiano',
+        description: 'Especialidad artística',
+      },
       validator: null,
       evidence_files: [],
     });
@@ -410,6 +499,12 @@ describe('EvidenceReviewService', () => {
     const detail = await service.getDetail('admin-user', 'honor', 10);
 
     expect(detail.file_count).toBe(4);
+    expect(detail).toMatchObject({
+      entity_name: 'Arte cristiano',
+      section_name: 'Arte cristiano',
+      entity_description: 'Especialidad artística',
+      module_name: null,
+    });
     expect(detail.files).toHaveLength(4);
     expect(detail.honor_review_packet).toMatchObject({
       user_honor_id: 10,
@@ -589,6 +684,67 @@ describe('EvidenceReviewService', () => {
     });
     expect(detail.honor_review_packet?.general_files).toHaveLength(1);
     expect(detail.file_count).toBe(1);
+  });
+
+  it('uses stable catalog fallbacks when class catalog rows are unavailable', async () => {
+    mockPrisma.class_section_progress.count.mockResolvedValue(1);
+    mockPrisma.class_section_progress.findMany.mockResolvedValue([
+      {
+        section_progress_id: 51,
+        status: 'SUBMITTED',
+        user_id: 'user-51',
+        class_id: 15,
+        module_id: 25,
+        section_id: 35,
+        submitted_at: new Date('2026-06-01T10:00:00.000Z'),
+        validated_at: null,
+        rejection_reason: null,
+        users: { user_id: 'user-51', name: 'Eva', paternal_last_name: 'Ruiz' },
+        classes: null,
+        evidence_files: [],
+      },
+    ]);
+
+    const result = await service.getPending('admin-user', 'class');
+
+    expect(result.data[0]).toMatchObject({
+      entity_name: 'Clase #15',
+      section_name: 'Sección #35',
+      entity_description: null,
+      module_name: null,
+    });
+  });
+
+  it('uses Especialidad fallback in honor detail and review packet', async () => {
+    const submittedAt = new Date('2026-06-01T10:00:00.000Z');
+    mockPrisma.users_honors.findFirst.mockResolvedValue({
+      user_honor_id: 52,
+      user_id: 'user-52',
+      honor_id: 62,
+      validation_status: 'PENDING_REVIEW',
+      completion_mode: null,
+      submitted_at: submittedAt,
+      validated_at: null,
+      rejection_reason: null,
+      certificate: null,
+      document: null,
+      images: null,
+      created_at: submittedAt,
+      users: { user_id: 'user-52', name: 'Eva', paternal_last_name: 'Ruiz' },
+      honors: null,
+      validator: null,
+      evidence_files: [],
+    });
+
+    const detail = await service.getDetail('admin-user', 'honor', 52);
+
+    expect(detail).toMatchObject({
+      entity_name: 'Especialidad #62',
+      section_name: 'Especialidad #62',
+      entity_description: null,
+      module_name: null,
+    });
+    expect(detail.honor_review_packet?.honor_name).toBe('Especialidad #62');
   });
 
   it('delegates honor approval to HonorValidationWorkflowService', async () => {
