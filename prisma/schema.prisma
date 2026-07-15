@@ -132,6 +132,11 @@ model camporee_clubs {
   score_submissions       camporee_event_score_submissions[]
   score_section_results   camporee_event_section_results[]
   schedule_block_assignments camporee_event_schedule_block_assignments[]
+  members                 camporee_members[]
+
+  // Partial unique indexes `uq_camporee_clubs_active_local_section` and
+  // `uq_camporee_clubs_active_union_section` live in migration SQL/DB because
+  // Prisma cannot model partial unique indexes.
   @@index([club_section_id], map: "idx_camporee_clubs_club_section_id")
   @@index([union_camporee_id], map: "idx_camporee_clubs_union_camporee_id")
 
@@ -139,6 +144,7 @@ model camporee_clubs {
 
 model camporee_members {
   camporee_member_id Int                 @id @default(autoincrement())
+  camporee_club_id   Int?
   camporee_id        Int?
   union_camporee_id  Int?
   camporee_type      String              @db.VarChar(50)
@@ -154,6 +160,7 @@ model camporee_members {
   rejection_reason   String?
   approved_by        String?             @db.Uuid
   rejected_by        String?             @db.Uuid
+  camporee_club      camporee_clubs?     @relation(fields: [camporee_club_id], references: [camporee_club_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_camporee_members_camporee_club")
   local_camporees    local_camporees?    @relation(fields: [camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   union_camporees    union_camporees?    @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
   insurance          member_insurances?  @relation(fields: [insurance_id], references: [insurance_id], onDelete: NoAction, onUpdate: NoAction)
@@ -161,6 +168,7 @@ model camporee_members {
   users              users               @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   camporee_payments  camporee_payments[]
 
+  @@index([camporee_club_id], map: "idx_camporee_members_camporee_club_id")
   @@index([union_camporee_id], map: "idx_camporee_members_union_camporee_id")
   @@index([camporee_id], map: "idx_camporee_members_camporee_id")
   @@index([user_id], map: "idx_camporee_members_user_id")

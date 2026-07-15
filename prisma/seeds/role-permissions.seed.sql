@@ -509,9 +509,8 @@ WHERE r.role_name = 'secretary'
     'club_instances:create',
     'club_instances:read',
     'club_instances:update',
-    -- Camporees (view and register club to camporees)
+    -- Camporees (view only; enrollment belongs to territorial organizers)
     'camporees:read',
-    'camporees:register',
     -- Camporees management (Sprint D)
     'camporees:create',
     'camporees:update',
@@ -648,9 +647,8 @@ WHERE r.role_name = 'treasurer'
     -- Insurance management (register and update for section members/staff)
     'insurance:create',
     'insurance:update',
-    -- Camporees (view and register payments for attendees)
+    -- Camporees (view only; enrollment belongs to territorial organizers)
     'camporees:read',
-    'camporees:register',
     -- Camporees management (Sprint D)
     'camporees:create',
     'camporees:update',
@@ -777,7 +775,6 @@ WHERE r.role_name = 'secretary-treasurer'
     'club_instances:update',
     -- Camporees
     'camporees:read',
-    'camporees:register',
     -- Camporees management (Sprint D)
     'camporees:create',
     'camporees:update',
@@ -955,8 +952,8 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- DIRECTOR role (CLUB)
 -- ============================
 -- Director is the UNION of secretary-treasurer + deputy-director permissions,
--- PLUS additional director-only permissions for activity deletion and role management.
--- Total: 54 (secretary-treasurer) + 1 (deputy-director unique) + 3 (director unique) = 58
+-- PLUS director-only permissions for activity deletion, role management, and
+-- active-section camporee registration.
 
 DELETE FROM role_permissions
 WHERE role_id = (
@@ -1057,7 +1054,7 @@ WHERE r.role_name = 'director'
     'club_instances:update',
     -- Camporees
     'camporees:read',
-    'camporees:register',
+    'camporees:register_active_section',
     -- Camporees management (Sprint D)
     'camporees:create',
     'camporees:update',
@@ -1925,6 +1922,55 @@ WHERE r.role_name = 'director'
   AND p.active = true
   AND p.permission_name = 'ranking_weights:read'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- `camporees:register_active_section` is intentionally narrower than the
+-- platform-admin wildcards above: only a CLUB director may register their
+-- currently active section. Re-seeding also removes any stale or accidental
+-- grant to every other role.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporees:register_active_section'
+  AND NOT (
+    r.role_name = 'director'
+    AND r.role_category = 'CLUB'
+  );
+
+-- `camporees:register` is reserved for territorial Camporee organizers.
+-- This cleanup runs after inheritance and platform-admin wildcard grants so
+-- no CLUB, division, admin, or super-admin role retains the capability.
+DELETE FROM role_permissions rp
+USING permissions p, roles r
+WHERE rp.permission_id = p.permission_id
+  AND rp.role_id = r.role_id
+  AND p.permission_name = 'camporees:register'
+  AND NOT (
+    r.role_name IN ('assistant-lf', 'director-lf', 'assistant-union', 'director-union')
+    AND r.role_category = 'GLOBAL'
+  );
+
+INSERT INTO role_permissions (
+  role_permission_id,
+  role_id,
+  permission_id,
+  active
+)
+SELECT
+  gen_random_uuid(),
+  r.role_id,
+  p.permission_id,
+  true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.role_name IN ('assistant-lf', 'director-lf', 'assistant-union', 'director-union')
+  AND r.role_category = 'GLOBAL'
+  AND r.active = true
+  AND p.active = true
+  AND p.permission_name = 'camporees:register'
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
 
 COMMIT;
 

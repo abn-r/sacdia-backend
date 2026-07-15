@@ -47,6 +47,7 @@ import {
   UnionMembersListQueryDto,
   CamporeeMembersListQueryDto,
 } from './dto';
+import { CamporeeSectionRegistrationDto } from './dto/camporee-section-registration.dto';
 
 @ApiTags('camporees')
 @Controller('camporees')
@@ -701,6 +702,60 @@ export class CamporeesController {
   // LOCAL CAMPOREES (detail)
   // ========================================
 
+  @Get(':camporeeId/section-registration')
+  @RequirePermissions('camporees:read')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Consultar inscripción de la sección activa',
+    description:
+      'Obtiene el estado contextual de inscripción al camporee para la sección activa del actor autenticado.',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Estado contextual de inscripción de la sección activa',
+    type: CamporeeSectionRegistrationDto,
+  })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async getActiveSectionRegistration(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
+  ): Promise<CamporeeSectionRegistrationDto> {
+    return this.camporeesService.getActiveSectionRegistration(
+      camporeeId,
+      req.user.sub,
+      req.authorization,
+    );
+  }
+
+  @Post(':camporeeId/section-registration')
+  @RequirePermissions('camporees:register_active_section')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Inscribir la sección activa',
+    description:
+      'Inscribe al camporee la sección activa del actor autenticado; no acepta un ID de sección enviado por el cliente.',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({
+    status: 201,
+    description: 'Sección activa inscrita en el camporee',
+    type: CamporeeSectionRegistrationDto,
+  })
+  @ApiResponse({ status: 400, description: 'Inscripción no disponible' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
+  async registerActiveSection(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Request() req: any,
+  ): Promise<CamporeeSectionRegistrationDto> {
+    return this.camporeesService.registerActiveSection(
+      camporeeId,
+      req.user.sub,
+      req.authorization,
+    );
+  }
+
   @Get(':camporeeId')
   @ApiOperation({ summary: 'Obtener camporee por ID' })
   @ApiParam({ name: 'camporeeId', type: Number })
@@ -766,12 +821,73 @@ export class CamporeesController {
   @ApiParam({ name: 'camporeeId', type: Number })
   @ApiResponse({ status: 201, description: 'Miembro registrado exitosamente' })
   @ApiResponse({ status: 400, description: 'Error de validación' })
+  @ApiResponse({
+    status: 422,
+    description: 'La sección o el miembro no son elegibles para el registro',
+    schema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          enum: [
+            'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+            'CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION',
+          ],
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Camporee no encontrado' })
   async registerMember(
     @Param('camporeeId', ParseIntPipe) camporeeId: number,
     @Body() dto: RegisterMemberDto,
+    @Request() req: any,
   ) {
-    return this.camporeesService.registerMember(camporeeId, dto);
+    return this.camporeesService.registerMember(
+      camporeeId,
+      dto,
+      req.user.sub,
+      req.authorization,
+    );
+  }
+
+  @Post(':camporeeId/participants')
+  @RequirePermissions('attendance:manage')
+  @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
+  @ApiOperation({
+    summary: 'Registrar participante en camporee',
+    description:
+      'Alias contextual para registrar participantes usando la sección activa del director',
+  })
+  @ApiParam({ name: 'camporeeId', type: Number })
+  @ApiResponse({ status: 201, description: 'Participante registrado' })
+  @ApiResponse({
+    status: 422,
+    description: 'La sección o el miembro no son elegibles para el registro',
+    schema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          enum: [
+            'CAMPOREE_SECTION_REGISTRATION_REQUIRED',
+            'CAMPOREE_MEMBER_OUTSIDE_ACTIVE_SECTION',
+          ],
+        },
+      },
+    },
+  })
+  async registerParticipants(
+    @Param('camporeeId', ParseIntPipe) camporeeId: number,
+    @Body() dto: RegisterMemberDto,
+    @Request() req: any,
+  ) {
+    return this.camporeesService.registerParticipants(
+      camporeeId,
+      dto,
+      req.user.sub,
+      req.authorization,
+    );
   }
 
   @Get(':camporeeId/members')
@@ -833,7 +949,7 @@ export class CamporeesController {
   // ========================================
 
   @Post(':camporeeId/clubs')
-  @RequirePermissions('attendance:manage')
+  @RequirePermissions('camporees:register')
   @AuthorizationResource({ type: 'camporee', idParam: 'camporeeId' })
   @ApiOperation({
     summary: 'Inscribir club en camporee',
@@ -849,7 +965,12 @@ export class CamporeesController {
     @Body() dto: EnrollClubDto,
     @Request() req: any,
   ) {
-    return this.camporeesService.enrollClub(camporeeId, dto, req.user.sub);
+    return this.camporeesService.enrollClub(
+      camporeeId,
+      dto,
+      req.user.sub,
+      req.authorization,
+    );
   }
 
   @Get(':camporeeId/clubs')

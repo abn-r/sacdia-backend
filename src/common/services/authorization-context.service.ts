@@ -9,6 +9,11 @@ import {
   type HierarchyContext,
 } from './institutional-hierarchy.service';
 
+export const CANONICAL_CLUB_ASSIGNMENT_ORDER = [
+  { start_date: 'desc' as const },
+  { assignment_id: 'asc' as const },
+];
+
 export type AuthorizationScopeNode = {
   id: number | string;
   name?: string | null;
@@ -345,7 +350,7 @@ export class AuthorizationContextService {
         },
         club_role_assignments: {
           where: { active: true },
-          orderBy: { start_date: 'desc' },
+          orderBy: CANONICAL_CLUB_ASSIGNMENT_ORDER,
           select: {
             assignment_id: true,
             status: true,
