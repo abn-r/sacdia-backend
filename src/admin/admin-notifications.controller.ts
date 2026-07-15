@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -8,8 +8,14 @@ import {
 } from '@nestjs/swagger';
 import { GlobalRoles } from '../common/decorators';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
-import { NotificationStatsQueryDto, NotificationStatsResponseDto } from './dto';
+import {
+  NotificationCategorySettingDto,
+  NotificationStatsQueryDto,
+  NotificationStatsResponseDto,
+  PatchNotificationCategorySettingDto,
+} from './dto';
 import { AdminNotificationsService } from './admin-notifications.service';
+import { NotificationCategorySettingsService } from '../notifications/notification-category-settings.service';
 
 @ApiTags('admin-notifications')
 @ApiBearerAuth()
@@ -19,6 +25,7 @@ import { AdminNotificationsService } from './admin-notifications.service';
 export class AdminNotificationsController {
   constructor(
     private readonly adminNotificationsService: AdminNotificationsService,
+    private readonly categorySettingsService: NotificationCategorySettingsService,
   ) {}
 
   @Get('stats')
@@ -44,5 +51,36 @@ export class AdminNotificationsController {
     @Query() query: NotificationStatsQueryDto,
   ): Promise<NotificationStatsResponseDto> {
     return this.adminNotificationsService.getStats(query);
+  }
+
+  @Get('categories')
+  @ApiOperation({
+    summary: 'List global notification category delivery settings',
+  })
+  @ApiOkResponse({
+    description: 'Notification category settings',
+    type: NotificationCategorySettingDto,
+    isArray: true,
+  })
+  async listCategorySettings(): Promise<NotificationCategorySettingDto[]> {
+    return this.categorySettingsService.listCategorySettings();
+  }
+
+  @Patch('categories')
+  @ApiOperation({
+    summary: 'Update a notification category delivery setting',
+  })
+  @ApiOkResponse({
+    description: 'Updated notification category settings',
+    type: NotificationCategorySettingDto,
+    isArray: true,
+  })
+  async patchCategorySetting(
+    @Body() dto: PatchNotificationCategorySettingDto,
+  ): Promise<NotificationCategorySettingDto[]> {
+    return this.categorySettingsService.updateCategorySetting(dto.category, {
+      mobileEnabled: dto.mobileEnabled,
+      defaultEnabled: dto.defaultEnabled,
+    });
   }
 }

@@ -5,6 +5,7 @@ import {
   NotificationCategory,
 } from './notification-categories.constants';
 import { getCategoryForSource } from './notification-source-map.constants';
+import { NotificationCategorySettingsService } from './notification-category-settings.service';
 
 export interface PreferenceEntry {
   category: string;
@@ -43,11 +44,15 @@ export function extractCategory(
 export class NotificationPreferencesService {
   private readonly logger = new Logger(NotificationPreferencesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly categorySettingsService: NotificationCategorySettingsService,
+  ) {}
 
   /**
    * Returns a normalised list of all known categories with their enabled status
-   * for the given user. Categories without a DB row default to enabled=true.
+   * for the given user. Categories without a DB row use the global category
+   * default from system_config.
    */
   async getUserPreferences(userId: string): Promise<PreferenceEntry[]> {
     const rows = await this.prisma.notification_preferences.findMany({
@@ -59,9 +64,13 @@ export class NotificationPreferencesService {
       rows.map((r) => [r.category, r.enabled]),
     );
 
+    const settings = await this.categorySettingsService.getSettingsMap();
+
     return NOTIFICATION_CATEGORIES.map((cat) => ({
       category: cat,
-      enabled: map.has(cat) ? (map.get(cat) as boolean) : true,
+      enabled: map.has(cat)
+        ? (map.get(cat) as boolean)
+        : settings[cat].defaultEnabled,
     }));
   }
 
@@ -93,7 +102,7 @@ export class NotificationPreferencesService {
    * - If source is undefined/null, always return true
    * - If source is not in NOTIFICATION_SOURCE_MAP and not a known category prefix,
    *   logs a warning and returns true (permissive fallback — add source to the map)
-   * - If no preference row exists, default is enabled (opt-out model)
+   * - If no preference row exists, use the global category default
    */
   async isAllowedForUser(
     userId: string,
@@ -119,6 +128,12 @@ export class NotificationPreferencesService {
     }
 
     try {
+      const settings = await this.categorySettingsService.getSettingsMap();
+      const notificationCategory = category as NotificationCategory;
+      if (!settings[notificationCategory].mobileEnabled) {
+        return false;
+      }
+
       const pref = await this.prisma.notification_preferences.findUnique({
         where: {
           user_id_category: { user_id: userId, category },
@@ -126,8 +141,9 @@ export class NotificationPreferencesService {
         select: { enabled: true },
       });
 
-      // No row means default enabled
-      return pref === null ? true : pref.enabled;
+      return pref === null
+        ? settings[notificationCategory].defaultEnabled
+        : pref.enabled;
     } catch (err: unknown) {
       this.logger.warn(
         `Failed to check notification preference for user ${userId}, category ${category}: ${err instanceof Error ? err.message : String(err)} — defaulting to allowed`,
@@ -164,18 +180,29 @@ export class NotificationPreferencesService {
     }
 
     try {
-      // Only rows that explicitly disable the category matter
-      const optedOut = await this.prisma.notification_preferences.findMany({
+      const settings = await this.categorySettingsService.getSettingsMap();
+      const notificationCategory = category as NotificationCategory;
+      if (!settings[notificationCategory].mobileEnabled) {
+        return new Set<string>();
+      }
+
+      const prefs = await this.prisma.notification_preferences.findMany({
         where: {
           user_id: { in: userIds },
           category,
-          enabled: false,
         },
-        select: { user_id: true },
+        select: { user_id: true, enabled: true },
       });
 
-      const optedOutSet = new Set(optedOut.map((r) => r.user_id));
-      return new Set(userIds.filter((id) => !optedOutSet.has(id)));
+      const prefMap = new Map(prefs.map((row) => [row.user_id, row.enabled]));
+
+      return new Set(
+        userIds.filter((id) =>
+          prefMap.has(id)
+            ? (prefMap.get(id) as boolean)
+            : settings[notificationCategory].defaultEnabled,
+        ),
+      );
     } catch (err: unknown) {
       this.logger.warn(
         `Failed to filter users by notification preference for category ${category}: ${err instanceof Error ? err.message : String(err)} — defaulting to all allowed`,

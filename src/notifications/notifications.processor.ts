@@ -626,7 +626,7 @@ export class NotificationsProcessor
   // ---------------------------------------------------------------------------
 
   private async handleBroadcastChunk(job: Job<BroadcastChunkJobData>) {
-    const { logId, userIds, title, body, data } = job.data;
+    const { logId, userIds, title, body, data, source } = job.data;
 
     const uniqueUserIds = [...new Set(userIds)];
 
@@ -644,9 +644,22 @@ export class NotificationsProcessor
       return { skipped: true, reason: 'invalid-log' };
     }
 
+    // Revalidate at execution time: user preferences or the global category
+    // kill switch may have changed while this chunk was waiting in the queue.
+    const allowedSet = await this.preferencesService.filterAllowedUsers(
+      uniqueUserIds,
+      source,
+    );
+    const allowedUserIds = uniqueUserIds.filter((userId) =>
+      allowedSet.has(userId),
+    );
+    if (allowedUserIds.length === 0) {
+      return { skipped: true, reason: 'all-opted-out' };
+    }
+
     // Step 1: Create inbox deliveries for this user chunk.
     await this.prisma.notification_deliveries.createMany({
-      data: uniqueUserIds.map((uid) => ({
+      data: allowedUserIds.map((uid) => ({
         log_id: logId,
         user_id: uid,
       })),
@@ -655,7 +668,7 @@ export class NotificationsProcessor
 
     // Step 2: Resolve active tokens only for this chunk.
     const tokenRows = await this.prisma.user_fcm_tokens.findMany({
-      where: { user_id: { in: uniqueUserIds }, active: true },
+      where: { user_id: { in: allowedUserIds }, active: true },
       select: { token: true },
     });
 
@@ -666,7 +679,7 @@ export class NotificationsProcessor
       return {
         successCount: 0,
         failureCount: 0,
-        deliveriesCreated: uniqueUserIds.length,
+        deliveriesCreated: allowedUserIds.length,
         skippedPush: true,
       };
     }
@@ -691,7 +704,7 @@ export class NotificationsProcessor
     return {
       successCount,
       failureCount,
-      deliveriesCreated: uniqueUserIds.length,
+      deliveriesCreated: allowedUserIds.length,
       skippedPush: false,
     };
   }

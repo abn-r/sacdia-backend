@@ -572,6 +572,9 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
     mockPrismaService.user_fcm_tokens.updateMany.mockResolvedValue({
       count: 0,
     });
+    mockPreferencesService.filterAllowedUsers.mockImplementation(
+      async (userIds: string[]) => new Set(userIds),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -621,7 +624,9 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
 
     const result = await processor.process(job as any);
 
-    expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+    expect(
+      mockPrismaService.notification_deliveries.createMany,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.arrayContaining([
           { log_id: 123, user_id: 'u-0' },
@@ -670,7 +675,9 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
 
     await processor.process(job as any);
 
-    expect(mockPrismaService.notification_deliveries.createMany).toHaveBeenCalledWith(
+    expect(
+      mockPrismaService.notification_deliveries.createMany,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.arrayContaining([
           { log_id: 456, user_id: 'u-1' },
@@ -683,5 +690,32 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
         where: { user_id: { in: ['u-1', 'u-2'] }, active: true },
       }),
     );
+  });
+
+  it('revalidates category policy before creating delayed chunk deliveries', async () => {
+    mockPreferencesService.filterAllowedUsers.mockResolvedValue(new Set());
+    mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([]);
+
+    const job = makeBroadcastChunkJob({
+      logId: 789,
+      userIds: ['u-1', 'u-2'],
+      title: 'Broadcast',
+      body: 'Bulk',
+      source: 'activities:created',
+      sentBy: 'system',
+    });
+
+    const result = await processor.process(job as any);
+
+    expect(mockPreferencesService.filterAllowedUsers).toHaveBeenCalledWith(
+      ['u-1', 'u-2'],
+      'activities:created',
+    );
+    expect(result).toEqual({ skipped: true, reason: 'all-opted-out' });
+    expect(
+      mockPrismaService.notification_deliveries.createMany,
+    ).not.toHaveBeenCalled();
+    expect(mockPrismaService.user_fcm_tokens.findMany).not.toHaveBeenCalled();
+    expect(mockSendEachForMulticast).not.toHaveBeenCalled();
   });
 });

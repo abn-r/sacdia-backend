@@ -6,6 +6,7 @@ import {
 import { UserNotificationPreferencesController } from './user-notification-preferences.controller';
 import { NotificationsService } from './notifications.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { NotificationCategorySettingsService } from './notification-category-settings.service';
 import { FcmTokensService } from './fcm-tokens.service';
 import {
   NotificationsProcessor,
@@ -51,12 +52,14 @@ function isRedisConfigured(): boolean {
   providers: [
     NotificationsService,
     NotificationPreferencesService,
+    NotificationCategorySettingsService,
     FcmTokensService,
     ...(isRedisConfigured() ? [NotificationsProcessor] : []),
   ],
   exports: [
     NotificationsService,
     NotificationPreferencesService,
+    NotificationCategorySettingsService,
     FcmTokensService,
   ],
 })
