@@ -26,8 +26,9 @@ export class MonthlyReportsCronService {
 
   /**
    * Runs daily at 11 PM UTC.
-   * Checks system_config for the configured auto-generation day.
-   * If today matches, enqueues a BullMQ job with 5 attempts + exponential backoff.
+   * Enqueues the daily reconciliation of every overdue monthly-report period;
+   * runAutoGeneration applies the feature flag and each period's configured cutoff.
+   * The BullMQ job retries up to 5 times with exponential backoff.
    * Falls back to direct execution when Redis / BullMQ is unavailable.
    */
   @Cron('0 23 * * *', {
