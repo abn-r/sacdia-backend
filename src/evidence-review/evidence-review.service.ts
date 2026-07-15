@@ -65,7 +65,10 @@ export type EvidenceItem = {
   member_name: string;
   member_is_deleted: boolean;
   member_id: string;
+  entity_name: string;
   section_name: string;
+  entity_description: string | null;
+  module_name: string | null;
   file_count: number;
   submitted_at: Date | null;
   validated_at: Date | null;
@@ -285,6 +288,9 @@ export class EvidenceReviewService {
         users: {
           select: USER_NAME_SELECT,
         },
+        classes: {
+          select: { name: true, description: true },
+        },
         evidence_files: {
           where: { active: true },
           select: { evidence_file_id: true },
@@ -296,20 +302,30 @@ export class EvidenceReviewService {
     } satisfies Prisma.class_section_progressFindManyArgs;
 
     const records = await this.prisma.class_section_progress.findMany(query);
+    const { sectionsById, modulesById } =
+      await this.resolveClassCatalogs(records);
 
-    return records.map((r) => ({
-      id: r.section_progress_id,
-      type: 'class',
-      status: r.status,
-      member_name: buildMemberName(r.users),
-      member_is_deleted: isDeletedAccountSnapshot(r.users),
-      member_id: r.user_id,
-      section_name: `Sección de clase #${r.section_id}`,
-      file_count: r.evidence_files.length,
-      submitted_at: r.submitted_at,
-      validated_at: r.validated_at,
-      rejection_reason: r.rejection_reason,
-    }));
+    return records.map((r) => {
+      const section = sectionsById.get(r.section_id);
+      const module = modulesById.get(r.module_id);
+
+      return {
+        id: r.section_progress_id,
+        type: 'class',
+        status: r.status,
+        member_name: buildMemberName(r.users),
+        member_is_deleted: isDeletedAccountSnapshot(r.users),
+        member_id: r.user_id,
+        entity_name: r.classes?.name ?? `Clase #${r.class_id}`,
+        section_name: section?.name ?? `Sección #${r.section_id}`,
+        entity_description: section?.description ?? null,
+        module_name: module?.name ?? null,
+        file_count: r.evidence_files.length,
+        submitted_at: r.submitted_at,
+        validated_at: r.validated_at,
+        rejection_reason: r.rejection_reason,
+      };
+    });
   }
 
   private async getHonorPending(
@@ -339,7 +355,7 @@ export class EvidenceReviewService {
           select: USER_NAME_SELECT,
         },
         honors: {
-          select: { honor_id: true, name: true },
+          select: { honor_id: true, name: true, description: true },
         },
         // Prefer normalized evidence_files; fall back to JSON images count below.
         evidence_files: {
@@ -371,13 +387,50 @@ export class EvidenceReviewService {
         member_name: buildMemberName(r.users),
         member_is_deleted: isDeletedAccountSnapshot(r.users),
         member_id: r.user_id,
-        section_name: r.honors?.name ?? `Honor #${r.honor_id}`,
+        entity_name: r.honors?.name ?? `Especialidad #${r.honor_id}`,
+        section_name: r.honors?.name ?? `Especialidad #${r.honor_id}`,
+        entity_description: r.honors?.description ?? null,
+        module_name: null,
         file_count: fileCount,
         submitted_at: r.submitted_at,
         validated_at: r.validated_at,
         rejection_reason: r.rejection_reason,
       };
     });
+  }
+
+  private async resolveClassCatalogs(
+    records: Array<{ section_id: number; module_id: number }>,
+  ): Promise<{
+    sectionsById: Map<
+      number,
+      { section_id: number; name: string; description: string | null }
+    >;
+    modulesById: Map<number, { module_id: number; name: string }>;
+  }> {
+    if (records.length === 0) {
+      return { sectionsById: new Map(), modulesById: new Map() };
+    }
+
+    const sectionIds = [...new Set(records.map((record) => record.section_id))];
+    const moduleIds = [...new Set(records.map((record) => record.module_id))];
+    const [sections, modules] = await Promise.all([
+      this.prisma.class_sections.findMany({
+        where: { section_id: { in: sectionIds } },
+        select: { section_id: true, name: true, description: true },
+      }),
+      this.prisma.class_modules.findMany({
+        where: { module_id: { in: moduleIds } },
+        select: { module_id: true, name: true },
+      }),
+    ]);
+
+    return {
+      sectionsById: new Map(
+        sections.map((section) => [section.section_id, section]),
+      ),
+      modulesById: new Map(modules.map((module) => [module.module_id, module])),
+    };
   }
 
   private buildClassPendingWhere(
@@ -495,7 +548,6 @@ export class EvidenceReviewService {
     `;
   }
 
-
   // ============================================================
   // GET /evidence-review/:type/:id  (detail with files)
   // ============================================================
@@ -541,6 +593,9 @@ export class EvidenceReviewService {
         users: {
           select: USER_NAME_SELECT,
         },
+        classes: {
+          select: { name: true, description: true },
+        },
         evidence_files: {
           where: { active: true },
           orderBy: { uploaded_at: 'asc' },
@@ -557,6 +612,12 @@ export class EvidenceReviewService {
         { id },
       );
     }
+
+    const { sectionsById, modulesById } = await this.resolveClassCatalogs([
+      record,
+    ]);
+    const section = sectionsById.get(record.section_id);
+    const module = modulesById.get(record.module_id);
 
     const files = await Promise.all(
       record.evidence_files.map(async (f) => ({
@@ -579,7 +640,10 @@ export class EvidenceReviewService {
       member_name: buildMemberName(record.users),
       member_is_deleted: isDeletedAccountSnapshot(record.users),
       member_id: record.user_id,
-      section_name: `Sección de clase #${record.section_id}`,
+      entity_name: record.classes?.name ?? `Clase #${record.class_id}`,
+      section_name: section?.name ?? `Sección #${record.section_id}`,
+      entity_description: section?.description ?? null,
+      module_name: module?.name ?? null,
       file_count: record.evidence_files.length,
       submitted_at: record.submitted_at,
       validated_at: record.validated_at,
@@ -612,7 +676,7 @@ export class EvidenceReviewService {
           select: USER_NAME_SELECT,
         },
         honors: {
-          select: { honor_id: true, name: true },
+          select: { honor_id: true, name: true, description: true },
         },
         validator: {
           select: { name: true, paternal_last_name: true },
@@ -648,7 +712,10 @@ export class EvidenceReviewService {
       member_name: buildMemberName(record.users),
       member_is_deleted: isDeletedAccountSnapshot(record.users),
       member_id: record.user_id,
-      section_name: record.honors?.name ?? `Honor #${record.honor_id}`,
+      entity_name: record.honors?.name ?? `Especialidad #${record.honor_id}`,
+      section_name: record.honors?.name ?? `Especialidad #${record.honor_id}`,
+      entity_description: record.honors?.description ?? null,
+      module_name: null,
       file_count: files.length,
       submitted_at: record.submitted_at,
       validated_at: record.validated_at,
@@ -764,7 +831,7 @@ export class EvidenceReviewService {
     return {
       user_honor_id: record.user_honor_id,
       honor_id: record.honor_id,
-      honor_name: record.honors?.name ?? `Honor #${record.honor_id}`,
+      honor_name: record.honors?.name ?? `Especialidad #${record.honor_id}`,
       validation_status: record.validation_status,
       completion_mode: record.completion_mode ?? 'UNDECIDED',
       progress: {
