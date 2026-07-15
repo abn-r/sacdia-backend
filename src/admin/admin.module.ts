@@ -19,6 +19,7 @@ import { AdminUsersService } from './admin-users.service';
 import { AdminPhaseECatalogsService } from './admin-phase-e-catalogs.service';
 import { AdminCronAlertsService } from './admin-cron-alerts.service';
 import { MasterHonorsQueueModule } from '../honors/master-honors-queue.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { MasterHonorsQueueModule } from '../honors/master-honors-queue.module';
     // Note: TranslationService is provided by the global CommonModule (app.module.ts)
     // — no explicit import needed here.
     MasterHonorsQueueModule,
+    NotificationsModule,
   ],
   controllers: [
     AdminAuthController,
