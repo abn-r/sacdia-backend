@@ -467,6 +467,8 @@
   "ANALYTICS_JOB_NOT_FOUND": "Job no encontrado",
   "ANALYTICS_JOB_ACTIVE": "El job está activo y no se puede reintentar",
   "ANALYTICS_JOB_RETRY_FAILED": "Solo se pueden reintentar jobs fallidos",
+  "ANALYTICS_SCOPE_CHAIN_INVALID": "La jerarquía territorial solicitada es inconsistente",
+  "ANALYTICS_REPORTING_PERIOD_OUTSIDE_ECCLESIASTICAL_YEAR": "El mes de reporte debe estar dentro del año eclesiástico seleccionado",
   "MOM_FORBIDDEN": "Solo directores del club pueden ejecutar la evaluación de Miembro del Mes",
   "MOM_SECTION_NOT_FOUND": "Sección no encontrada o no pertenece al club",
   "MOM_PERIOD_NOT_FOUND": "Período no encontrado",

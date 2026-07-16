@@ -13,6 +13,9 @@ import { ACHIEVEMENTS_QUEUE } from '../achievements/achievements.constants';
 import { EMAIL_QUEUE } from '../common/email/email.queue';
 import { BACKGROUND_JOBS_QUEUE } from '../background-jobs/background-jobs.types';
 import { isPlaceholderUrl } from '../config/bullmq.config';
+import { OperationsDashboardRepository } from './operations-dashboard.repository';
+import { OperationsDashboardScopeService } from './operations-dashboard-scope.service';
+import { OperationsDashboardService } from './operations-dashboard.service';
 
 function isRedisConfigured(): boolean {
   const rawUrl = process.env.REDIS_URL?.trim();
@@ -47,6 +50,9 @@ const redisAvailable = isRedisConfigured();
   providers: [
     AnalyticsService,
     LocalFieldDashboardService,
+    OperationsDashboardRepository,
+    OperationsDashboardScopeService,
+    OperationsDashboardService,
     CronRunsService,
     ...(redisAvailable ? [JobsOverviewService] : []),
   ],
