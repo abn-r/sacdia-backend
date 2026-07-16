@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiExtraModels,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -34,6 +35,11 @@ import {
   CronRunsSummaryDto,
   CronHistoryPage,
 } from './cron-runs.service';
+import {
+  OperationsDashboardDto,
+  OperationsDashboardQueryDto,
+} from './dto/operations-dashboard.dto';
+import { OperationsDashboardService } from './operations-dashboard.service';
 
 @ApiTags('analytics')
 @ApiBearerAuth()
@@ -49,6 +55,7 @@ export class AnalyticsController {
     @Inject(JobsOverviewService)
     private readonly jobsOverviewService: JobsOverviewService,
     private readonly cronRunsService: CronRunsService,
+    private readonly operationsDashboardService: OperationsDashboardService,
   ) {}
 
   @Get('sla-dashboard')
@@ -111,6 +118,44 @@ export class AnalyticsController {
     const data = await this.localFieldDashboardService.getDashboard(
       req.user.sub,
       localFieldId,
+    );
+    return { status: 'ok', data };
+  }
+
+  @Get('operations-dashboard')
+  @GlobalRoles(
+    'admin',
+    'super-admin',
+    'director-dia',
+    'assistant-dia',
+    'director-union',
+    'assistant-union',
+    'director-lf',
+    'assistant-lf',
+  )
+  @ApiOperation({
+    summary: 'Dashboard operativo jerárquico',
+    description:
+      'Indicadores operativos agregados con alcance forzado en servidor. ' +
+      'Solo super-admin ve el sistema; administradores y liderazgos DIA, Unión y Campo solo su territorio y descendientes.',
+  })
+  @ApiExtraModels(OperationsDashboardDto)
+  @ApiOkResponse({
+    description: 'Dashboard operativo con métricas y desglose inmediato',
+    schema: {
+      properties: {
+        status: { type: 'string', example: 'ok' },
+        data: { $ref: '#/components/schemas/OperationsDashboardDto' },
+      },
+    },
+  })
+  async getOperationsDashboard(
+    @Request() req: ExpressRequest & { user: { sub: string } },
+    @Query() query: OperationsDashboardQueryDto,
+  ): Promise<{ status: string; data: OperationsDashboardDto }> {
+    const data = await this.operationsDashboardService.getDashboard(
+      req.user.sub,
+      query,
     );
     return { status: 'ok', data };
   }

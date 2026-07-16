@@ -467,6 +467,8 @@
   "ANALYTICS_JOB_NOT_FOUND": "Job not found",
   "ANALYTICS_JOB_ACTIVE": "Job is currently active and cannot be retried",
   "ANALYTICS_JOB_RETRY_FAILED": "Only failed jobs can be retried",
+  "ANALYTICS_SCOPE_CHAIN_INVALID": "The requested territorial hierarchy is inconsistent",
+  "ANALYTICS_REPORTING_PERIOD_OUTSIDE_ECCLESIASTICAL_YEAR": "The reporting month must fall within the selected ecclesiastical year",
   "MOM_FORBIDDEN": "Only club directors can run the Member of the Month evaluation",
   "MOM_SECTION_NOT_FOUND": "Section not found or does not belong to the club",
   "MOM_PERIOD_NOT_FOUND": "Period not found",
