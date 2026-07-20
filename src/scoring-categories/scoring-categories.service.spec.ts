@@ -431,6 +431,7 @@ describe('ScoringCategoriesService', () => {
       expect(mockPrisma.scoring_categories.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
+            active: true,
             OR: [
               { origin_level: 'DIVISION', origin_id: 1 },
               { origin_level: 'UNION', origin_id: 7 },
