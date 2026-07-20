@@ -372,6 +372,7 @@
   "SCORING_LOCAL_FIELD_NOT_FOUND": "Campo local no encontrado",
   "MONTHLY_REPORT_ENROLLMENT_NOT_FOUND": "Inscripción de club no encontrada",
   "MONTHLY_REPORT_NOT_FOUND": "Informe mensual no encontrado",
+  "MONTHLY_REPORT_INVALID_ID": "El identificador del informe mensual no es válido",
   "MONTHLY_REPORT_NOT_DRAFT": "Solo los informes en estado borrador pueden ser editados o generados",
   "MONTHLY_REPORT_NOT_GENERATED": "Solo los informes generados pueden ser enviados",
   "MONTHLY_REPORT_MANUAL_DATA_REQUIRED": "Debe enviar al menos un dato manual definido para actualizar el informe mensual",

@@ -1,5 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import {
+  AppBadRequestException,
   AppForbiddenException,
   AppInternalServerErrorException,
   AppNotFoundException,
@@ -1300,6 +1302,10 @@ export class PermissionsGuard implements CanActivate {
     const reportId = this.getRequestValue(request, 'param', 'reportId');
 
     if (reportId) {
+      if (!isUUID(String(reportId), 'all')) {
+        throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_ID);
+      }
+
       const report = await this.prisma.monthly_reports.findUnique({
         where: { monthly_report_id: String(reportId) },
         select: {
@@ -1336,6 +1342,10 @@ export class PermissionsGuard implements CanActivate {
 
     if (!enrollmentId) {
       throw new AppForbiddenException(ErrorCode.GUARD_CLUB_SCOPE_REQUIRED);
+    }
+
+    if (!isUUID(enrollmentId, 'all')) {
+      throw new AppBadRequestException(ErrorCode.MONTHLY_REPORT_INVALID_ID);
     }
 
     const enrollment = await this.prisma.club_enrollments.findUnique({
