@@ -35,6 +35,7 @@ import {
   CamporeeScopeType,
   ReplaceCamporeeEventRubricsDto,
   SubmitCamporeeEventScoreDto,
+  UpdateCamporeeJudgeDto,
   UpdateCamporeeEventJudgeAssignmentDto,
 } from './dto';
 
@@ -175,6 +176,21 @@ type JudgeAssignmentRecord = {
     active: boolean;
     status: string;
   } | null;
+};
+
+type CamporeeJudgeRecord = {
+  camporee_judge_id: string;
+  local_camporee_id: number | null;
+  union_camporee_id: number | null;
+  user_id: string;
+  status: string;
+  notes: string | null;
+  active: boolean;
+  user: {
+    email: string | null;
+    name: string | null;
+    user_image: string | null;
+  };
 };
 
 @Injectable()
@@ -365,6 +381,21 @@ export class CamporeeScoringService {
       camporee_club_id: row.camporee_club_id ?? null,
       club_section_id: row.club_section_id,
       judge_role: row.judge_role,
+      active: row.active,
+    };
+  }
+
+  private async mapJudge(
+    row: CamporeeJudgeRecord,
+  ): Promise<CamporeeJudgeResponseDto> {
+    return {
+      camporee_judge_id: row.camporee_judge_id,
+      user_id: row.user_id,
+      name: row.user?.name ?? null,
+      email: row.user?.email ?? null,
+      notes: row.notes ?? null,
+      user_image: await this.resolvePrivateProfileUrl(row.user?.user_image),
+      status: row.status,
       active: row.active,
     };
   }
@@ -762,6 +793,56 @@ export class CamporeeScoringService {
     );
   }
 
+  private async assertCanManageCamporeeJudge(
+    judge: Pick<CamporeeJudgeRecord, 'local_camporee_id' | 'union_camporee_id'>,
+    actorUserId: string,
+  ): Promise<void> {
+    const resolved =
+      await this.authorizationContext.resolveUserAuthorization(actorUserId);
+    if (!this.hasPermission(resolved, 'camporee_events:update')) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_EVENT_ACCESS_DENIED);
+    }
+
+    let canAccess = false;
+    if (judge.local_camporee_id) {
+      const camporee = await this.db().local_camporees.findUnique({
+        where: { local_camporee_id: judge.local_camporee_id },
+        select: { local_field_id: true },
+      });
+      if (!camporee) {
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_EVENT_CAMPOREE_NOT_FOUND,
+          { id: judge.local_camporee_id },
+        );
+      }
+      canAccess = this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        { local_field_id: camporee.local_field_id },
+        'current-write',
+      );
+    } else if (judge.union_camporee_id) {
+      const camporee = await this.db().union_camporees.findUnique({
+        where: { union_camporee_id: judge.union_camporee_id },
+        select: { union_id: true },
+      });
+      if (!camporee) {
+        throw new AppNotFoundException(
+          ErrorCode.CAMPOREE_EVENT_CAMPOREE_NOT_FOUND,
+          { id: judge.union_camporee_id },
+        );
+      }
+      canAccess = this.authorizationContext.canAccessHierarchyScope(
+        resolved,
+        { union_id: camporee.union_id },
+        'current-write',
+      );
+    }
+
+    if (!canAccess) {
+      throw new AppForbiddenException(ErrorCode.CAMPOREE_EVENT_ACCESS_DENIED);
+    }
+  }
+
   private async canReadScoring(
     event: CamporeeEventRecord,
     actorUserId: string,
@@ -900,17 +981,21 @@ export class CamporeeScoringService {
         scope.type === 'local'
           ? { local_camporee_id: scope.camporeeId, active: true }
           : { union_camporee_id: scope.camporeeId, active: true },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            email: true,
+            name: true,
+            user_image: true,
+          },
+        },
+      },
       orderBy: { created_at: 'asc' },
     });
 
-    return rows.map((row: any) => ({
-      camporee_judge_id: row.camporee_judge_id,
-      user_id: row.user_id,
-      name: row.user?.name ?? null,
-      status: row.status,
-      active: row.active,
-    }));
+    return Promise.all(
+      rows.map((row: CamporeeJudgeRecord) => this.mapJudge(row)),
+    );
   }
 
   async listCamporeeJudgeCandidates(
@@ -1013,6 +1098,9 @@ export class CamporeeScoringService {
         camporee_judge_id: existing.camporee_judge_id,
         user_id: existing.user_id,
         name: user.name ?? null,
+        email: user.email ?? null,
+        notes: existing.notes ?? null,
+        user_image: await this.resolvePrivateProfileUrl(user.user_image),
         status: existing.status,
         active: existing.active,
       };
@@ -1040,9 +1128,93 @@ export class CamporeeScoringService {
       camporee_judge_id: created.camporee_judge_id,
       user_id: created.user_id,
       name: user.name ?? null,
+      email: user.email ?? null,
+      notes: created.notes ?? null,
+      user_image: await this.resolvePrivateProfileUrl(user.user_image),
       status: created.status,
       active: created.active,
     };
+  }
+
+  async updateCamporeeJudge(
+    judgeId: string,
+    dto: UpdateCamporeeJudgeDto,
+    actorUserId: string,
+  ): Promise<CamporeeJudgeResponseDto> {
+    const judge = await this.db().camporee_judges.findUnique({
+      where: { camporee_judge_id: judgeId },
+      include: {
+        user: {
+          select: {
+            email: true,
+            name: true,
+            user_image: true,
+          },
+        },
+      },
+    });
+    if (!judge) {
+      throw new AppNotFoundException(
+        ErrorCode.CAMPOREE_SCORING_JUDGE_NOT_FOUND,
+        { id: judgeId },
+      );
+    }
+
+    await this.assertCanManageCamporeeJudge(judge, actorUserId);
+
+    const nextActive = dto.active ?? judge.active;
+    const nextStatus = dto.status ?? judge.status;
+    const shouldDeactivateAssignments =
+      nextActive === false || nextStatus !== 'active';
+    const now = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await this.db(tx).camporee_judges.update({
+        where: { camporee_judge_id: judgeId },
+        data: {
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.status !== undefined ? { status: dto.status } : {}),
+          ...(dto.active !== undefined ? { active: dto.active } : {}),
+          modified_by: actorUserId,
+          modified_at: now,
+        },
+        include: {
+          user: {
+            select: {
+              email: true,
+              name: true,
+              user_image: true,
+            },
+          },
+        },
+      });
+
+      if (shouldDeactivateAssignments) {
+        await this.db(tx).camporee_event_judge_assignments.updateMany({
+          where: { camporee_judge_id: judgeId, active: true },
+          data: {
+            active: false,
+            modified_by: actorUserId,
+            modified_at: now,
+          },
+        });
+      }
+
+      return row;
+    });
+
+    return this.mapJudge(updated);
+  }
+
+  async deactivateCamporeeJudge(
+    judgeId: string,
+    actorUserId: string,
+  ): Promise<CamporeeJudgeResponseDto> {
+    return this.updateCamporeeJudge(
+      judgeId,
+      { status: 'inactive', active: false },
+      actorUserId,
+    );
   }
 
   async listEventJudgeAssignments(

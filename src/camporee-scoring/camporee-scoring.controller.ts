@@ -31,6 +31,7 @@ import {
   AssignCamporeeEventJudgeDto,
   ReplaceCamporeeEventRubricsDto,
   SubmitCamporeeEventScoreDto,
+  UpdateCamporeeJudgeDto,
   UpdateCamporeeEventJudgeAssignmentDto,
 } from './dto';
 
@@ -147,6 +148,40 @@ export class CamporeeScoringController {
     const data = await this.service.addJudgeToCamporee(
       { type: 'union', camporeeId },
       dto,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Patch('camporee-judges/:judgeId')
+  @RequirePermissions('camporee_events:update')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({ summary: 'Update a camporee judge roster member' })
+  @ApiParam({ name: 'judgeId', type: String, format: 'uuid' })
+  async updateCamporeeJudge(
+    @Param('judgeId', ParseUUIDPipe) judgeId: string,
+    @Body() dto: UpdateCamporeeJudgeDto,
+    @Request() req: any,
+  ) {
+    const data = await this.service.updateCamporeeJudge(
+      judgeId,
+      dto,
+      req.user.sub,
+    );
+    return { status: 'success', data };
+  }
+
+  @Delete('camporee-judges/:judgeId')
+  @RequirePermissions('camporee_events:update')
+  @AuthorizationResource({ type: 'active_assignment' })
+  @ApiOperation({ summary: 'Deactivate a camporee judge roster member' })
+  @ApiParam({ name: 'judgeId', type: String, format: 'uuid' })
+  async deactivateCamporeeJudge(
+    @Param('judgeId', ParseUUIDPipe) judgeId: string,
+    @Request() req: any,
+  ) {
+    const data = await this.service.deactivateCamporeeJudge(
+      judgeId,
       req.user.sub,
     );
     return { status: 'success', data };

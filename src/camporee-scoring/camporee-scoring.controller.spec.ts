@@ -1,3 +1,5 @@
+import { AUTHORIZATION_RESOURCE_KEY } from '../common/decorators/authorization-resource.decorator';
+import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
 import { CamporeeScoringController } from './camporee-scoring.controller';
 
 describe('CamporeeScoringController', () => {
@@ -20,6 +22,14 @@ describe('CamporeeScoringController', () => {
       addJudgeToCamporee: jest
         .fn()
         .mockResolvedValue({ camporee_judge_id: 'j1' }),
+      updateCamporeeJudge: jest
+        .fn()
+        .mockResolvedValue({ camporee_judge_id: 'j1', notes: 'Actualizadas' }),
+      deactivateCamporeeJudge: jest.fn().mockResolvedValue({
+        camporee_judge_id: 'j1',
+        status: 'inactive',
+        active: false,
+      }),
       listEventJudgeAssignments: jest.fn().mockResolvedValue([]),
       assignJudgeToSection: jest
         .fn()
@@ -110,5 +120,60 @@ describe('CamporeeScoringController', () => {
   it('lists current judge assignments', async () => {
     await controller.getMyJudgeAssignments(req);
     expect(service.getMyJudgeAssignments).toHaveBeenCalledWith(req.user.sub);
+  });
+
+  it('protects camporee judge mutations with update permission and service-resolved scope', () => {
+    for (const handler of [
+      CamporeeScoringController.prototype.updateCamporeeJudge,
+      CamporeeScoringController.prototype.deactivateCamporeeJudge,
+    ]) {
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual({
+        permissions: ['camporee_events:update'],
+        mode: 'all',
+      });
+      expect(Reflect.getMetadata(AUTHORIZATION_RESOURCE_KEY, handler)).toEqual({
+        type: 'active_assignment',
+      });
+    }
+  });
+
+  it('updates a camporee judge', async () => {
+    const dto = { notes: 'Actualizadas' };
+
+    await expect(
+      controller.updateCamporeeJudge(
+        '77777777-7777-4777-8777-777777777777',
+        dto,
+        req,
+      ),
+    ).resolves.toEqual({
+      status: 'success',
+      data: { camporee_judge_id: 'j1', notes: 'Actualizadas' },
+    });
+    expect(service.updateCamporeeJudge).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      dto,
+      req.user.sub,
+    );
+  });
+
+  it('soft-deactivates a camporee judge', async () => {
+    await expect(
+      controller.deactivateCamporeeJudge(
+        '77777777-7777-4777-8777-777777777777',
+        req,
+      ),
+    ).resolves.toEqual({
+      status: 'success',
+      data: {
+        camporee_judge_id: 'j1',
+        status: 'inactive',
+        active: false,
+      },
+    });
+    expect(service.deactivateCamporeeJudge).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      req.user.sub,
+    );
   });
 });

@@ -23,6 +23,7 @@ export type CamporeeScoreSource =
   | 'manual_lf'
   | 'admin_override';
 export type CamporeeScoreStatus = 'scored' | 'no_show';
+export type CamporeeJudgeStatus = 'active' | 'inactive';
 export type CamporeeJudgeEligibilityReason =
   | 'adult'
   | 'pastor_role'
@@ -74,6 +75,23 @@ export class AddCamporeeJudgeDto {
   @IsOptional()
   @IsString()
   declare notes?: string;
+}
+
+export class UpdateCamporeeJudgeDto {
+  @ApiPropertyOptional({ example: 'Disponible para eventos técnicos.' })
+  @IsOptional()
+  @IsString()
+  declare notes?: string | null;
+
+  @ApiPropertyOptional({ enum: ['active', 'inactive'] })
+  @IsOptional()
+  @IsIn(['active', 'inactive'])
+  declare status?: CamporeeJudgeStatus;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  declare active?: boolean;
 }
 
 export class AssignCamporeeEventJudgeDto {
@@ -190,6 +208,9 @@ export type CamporeeJudgeResponseDto = {
   camporee_judge_id: string;
   user_id: string;
   name: string | null;
+  email: string | null;
+  notes: string | null;
+  user_image: string | null;
   status: string;
   active: boolean;
 };

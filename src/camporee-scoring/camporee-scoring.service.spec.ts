@@ -158,7 +158,9 @@ describe('CamporeeScoringService', () => {
       camporee_judges: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn(),
         create: jest.fn(),
+        update: jest.fn(),
       },
       users: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -822,6 +824,192 @@ describe('CamporeeScoringService', () => {
       code: ErrorCode.CAMPOREE_JUDGE_NOT_ELIGIBLE,
     });
     expect(prisma.camporee_judges.create).not.toHaveBeenCalled();
+  });
+
+  it('lists camporee judges with email, notes, and user image', async () => {
+    prisma.camporee_judges.findMany.mockResolvedValue([
+      {
+        camporee_judge_id: '77777777-7777-4777-8777-777777777777',
+        user_id: '88888888-8888-4888-8888-888888888888',
+        status: 'active',
+        notes: 'Disponible por la tarde.',
+        active: true,
+        user: {
+          name: 'Adulto',
+          email: 'adult@example.com',
+          user_image: 'https://cdn.example.com/judge.webp',
+        },
+      },
+    ]);
+
+    await expect(
+      service.listCamporeeJudges({ type: 'local', camporeeId: 10 }),
+    ).resolves.toEqual([
+      {
+        camporee_judge_id: '77777777-7777-4777-8777-777777777777',
+        user_id: '88888888-8888-4888-8888-888888888888',
+        name: 'Adulto',
+        email: 'adult@example.com',
+        notes: 'Disponible por la tarde.',
+        user_image: 'https://cdn.example.com/judge.webp',
+        status: 'active',
+        active: true,
+      },
+    ]);
+  });
+
+  it('updates camporee judge notes inside the actor scope', async () => {
+    const judge = {
+      camporee_judge_id: '77777777-7777-4777-8777-777777777777',
+      local_camporee_id: 10,
+      union_camporee_id: null,
+      user_id: '88888888-8888-4888-8888-888888888888',
+      status: 'active',
+      notes: null,
+      active: true,
+      user: {
+        name: 'Adulto',
+        email: 'adult@example.com',
+        user_image: null,
+      },
+    };
+    prisma.camporee_judges.findUnique.mockResolvedValue(judge);
+    prisma.camporee_judges.update.mockResolvedValue({
+      ...judge,
+      notes: 'Disponible por la tarde.',
+    });
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+
+    await expect(
+      service.updateCamporeeJudge(
+        judge.camporee_judge_id,
+        { notes: 'Disponible por la tarde.' },
+        actorUserId,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        camporee_judge_id: judge.camporee_judge_id,
+        email: 'adult@example.com',
+        notes: 'Disponible por la tarde.',
+      }),
+    );
+    expect(prisma.camporee_judges.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { camporee_judge_id: judge.camporee_judge_id },
+        data: expect.objectContaining({
+          notes: 'Disponible por la tarde.',
+          modified_by: actorUserId,
+          modified_at: expect.any(Date),
+        }),
+      }),
+    );
+    expect(
+      prisma.camporee_event_judge_assignments.updateMany,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('soft-deactivates a judge and all active event assignments', async () => {
+    const judge = {
+      camporee_judge_id: '77777777-7777-4777-8777-777777777777',
+      local_camporee_id: 10,
+      union_camporee_id: null,
+      user_id: '88888888-8888-4888-8888-888888888888',
+      status: 'active',
+      notes: null,
+      active: true,
+      user: {
+        name: 'Adulto',
+        email: 'adult@example.com',
+        user_image: null,
+      },
+    };
+    prisma.camporee_judges.findUnique.mockResolvedValue(judge);
+    prisma.camporee_judges.update.mockResolvedValue({
+      ...judge,
+      status: 'inactive',
+      active: false,
+    });
+    prisma.camporee_event_judge_assignments.updateMany.mockResolvedValue({
+      count: 2,
+    });
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(true);
+
+    await expect(
+      service.deactivateCamporeeJudge(judge.camporee_judge_id, actorUserId),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        camporee_judge_id: judge.camporee_judge_id,
+        status: 'inactive',
+        active: false,
+      }),
+    );
+    expect(prisma.camporee_judges.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'inactive', active: false }),
+      }),
+    );
+    expect(
+      prisma.camporee_event_judge_assignments.updateMany,
+    ).toHaveBeenCalledWith({
+      where: {
+        camporee_judge_id: judge.camporee_judge_id,
+        active: true,
+      },
+      data: {
+        active: false,
+        modified_by: actorUserId,
+        modified_at: expect.any(Date),
+      },
+    });
+  });
+
+  it('rejects camporee judge updates outside the actor scope', async () => {
+    const judge = {
+      camporee_judge_id: '77777777-7777-4777-8777-777777777777',
+      local_camporee_id: 10,
+      union_camporee_id: null,
+      user_id: '88888888-8888-4888-8888-888888888888',
+      status: 'active',
+      notes: null,
+      active: true,
+      user: {
+        name: 'Adulto',
+        email: 'adult@example.com',
+        user_image: null,
+      },
+    };
+    prisma.camporee_judges.findUnique.mockResolvedValue(judge);
+    auth.resolveUserAuthorization.mockResolvedValue(manualLfProfile);
+    auth.canAccessHierarchyScope.mockReturnValue(false);
+
+    await expect(
+      service.updateCamporeeJudge(
+        judge.camporee_judge_id,
+        { notes: 'No autorizado' },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CAMPOREE_EVENT_ACCESS_DENIED,
+      status: 403,
+    });
+    expect(prisma.camporee_judges.update).not.toHaveBeenCalled();
+  });
+
+  it('returns not found for a missing camporee judge', async () => {
+    prisma.camporee_judges.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.updateCamporeeJudge(
+        '77777777-7777-4777-8777-777777777777',
+        { notes: 'No existe' },
+        actorUserId,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CAMPOREE_SCORING_JUDGE_NOT_FOUND,
+      status: 404,
+    });
   });
 
   it('allows eligible adult users to be added as camporee judges', async () => {
