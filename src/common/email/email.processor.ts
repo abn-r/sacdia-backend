@@ -76,7 +76,7 @@ export class EmailProcessor
     super();
     this.fromEmail =
       this.configService.get<string>('RESEND_FROM_EMAIL') ??
-      'SACDIA <noreply@sacdia.app>';
+      'SACDIA <contacto@sacdia.com>';
   }
 
   onApplicationBootstrap() {
