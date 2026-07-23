@@ -134,7 +134,8 @@
     "moduleFileExtensions": [
       "js",
       "json",
-      "ts"
+      "ts",
+      "tsx"
     ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
@@ -143,10 +144,10 @@
       "\\.integration\\.spec\\.ts$"
     ],
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)sx?$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/*.{js,jsx,ts,tsx}"
     ],
     "coverageDirectory": "../coverage",
     "coverageThreshold": {
