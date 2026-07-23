@@ -94,10 +94,51 @@ describe('institutional history foundation schema', () => {
     );
   });
 
+  it('keeps name-version translations immutable and restricts parent deletion', () => {
+    const translationsTable = sql.match(
+      /CREATE TABLE\s+institutional_name_version_translations\s*\([\s\S]*?\n\);/i,
+    )?.[0];
+
+    expect(translationsTable).toBeDefined();
+    expect(translationsTable).toMatch(
+      /REFERENCES\s+institutional_name_versions\s*\(\s*name_version_id\s*\)\s*ON\s+DELETE\s+RESTRICT/i,
+    );
+    expect(sql).toMatch(
+      /CREATE TRIGGER\s+trg_institutional_name_version_translations_append_only[\s\S]*?BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+institutional_name_version_translations/i,
+    );
+  });
+
+  it('records new system backfill name versions at migration time', () => {
+    const nameBackfills =
+      sql.match(
+        /INSERT INTO institutional_name_versions\s*\([\s\S]*?;\s*(?=INSERT|COMMIT)/gi,
+      ) ?? [];
+
+    expect(nameBackfills).toHaveLength(6);
+    for (const statement of nameBackfills) {
+      expect(statement).toMatch(/'system_backfill',\s*NOW\(\)/i);
+      expect(statement).not.toMatch(
+        /'system_backfill',\s*COALESCE\([^)]*created_at/i,
+      );
+    }
+  });
+
   it('does not invent evidence or document reference columns', () => {
     expect(sql).not.toMatch(/\bevidence\b/i);
     expect(sql).not.toMatch(/\battachment\b/i);
     expect(sql).not.toMatch(/\bresolution_number\b/i);
     expect(sql).not.toMatch(/\bdocument_reference\b/i);
+  });
+
+  it('requires lineage edge participants to belong to the same reorganization', () => {
+    expect(sql).toMatch(
+      /institutional_lineage_edges[\s\S]*?FOREIGN KEY\s*\(\s*reorganization_id\s*,\s*from_participant_id\s*\)[\s\S]*?institutional_reorganization_participants\s*\(\s*reorganization_id\s*,\s*participant_id\s*\)/i,
+    );
+    expect(sql).toMatch(
+      /institutional_lineage_edges[\s\S]*?FOREIGN KEY\s*\(\s*reorganization_id\s*,\s*to_participant_id\s*\)[\s\S]*?institutional_reorganization_participants\s*\(\s*reorganization_id\s*,\s*participant_id\s*\)/i,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX[\s\S]*?institutional_reorganization_participants\s*\(\s*reorganization_id\s*,\s*participant_id\s*\)/i,
+    );
   });
 });

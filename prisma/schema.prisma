@@ -2017,6 +2017,7 @@ model institutional_reorganization_participants {
   lineage_from                  institutional_lineage_edges[] @relation("institutional_lineage_from")
   lineage_to                    institutional_lineage_edges[] @relation("institutional_lineage_to")
 
+  @@unique([reorganization_id, participant_id], map: "uq_institutional_reorg_participants_reorg_participant")
   @@index([reorganization_id], map: "idx_institutional_reorg_participants_reorganization")
   @@map("institutional_reorganization_participants")
 }
@@ -2080,7 +2081,7 @@ model institutional_name_version_translations {
   abbreviation    String?
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 
-  institutional_name_versions institutional_name_versions @relation(fields: [name_version_id], references: [name_version_id], onDelete: Cascade, onUpdate: NoAction)
+  institutional_name_versions institutional_name_versions @relation(fields: [name_version_id], references: [name_version_id], onDelete: Restrict, onUpdate: NoAction)
 
   @@unique([name_version_id, locale], map: "institutional_name_version_translations_unique_locale")
   @@index([locale], map: "idx_institutional_name_version_translations_locale")

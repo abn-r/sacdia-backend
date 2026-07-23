@@ -49,6 +49,17 @@ describe('verify-institutional-hierarchy-migration', () => {
     }
   });
 
+  it('recursively inspects nested objects and arrays for sensitive keys', () => {
+    const sensitiveCheck = INSTITUTIONAL_HIERARCHY_CHECKS.find((check) =>
+      /prohibited sensitive keys/i.test(check.name),
+    );
+
+    expect(sensitiveCheck).toBeDefined();
+    expect(sensitiveCheck?.sql).toMatch(/WITH\s+RECURSIVE/i);
+    expect(sensitiveCheck?.sql).toMatch(/jsonb_each/i);
+    expect(sensitiveCheck?.sql).toMatch(/jsonb_array_elements/i);
+  });
+
   it('refuses Neon hosts without explicit opt-in helper', () => {
     expect(isNeonUrl('postgres://ep-x.us-east-1.aws.neon.tech/neondb')).toBe(
       true,
@@ -58,7 +69,10 @@ describe('verify-institutional-hierarchy-migration', () => {
 
   it('keeps the verify script read-only and explicit-URL only', () => {
     const source = readFileSync(
-      join(process.cwd(), 'scripts/verify-institutional-hierarchy-migration.ts'),
+      join(
+        process.cwd(),
+        'scripts/verify-institutional-hierarchy-migration.ts',
+      ),
       'utf8',
     );
 
@@ -66,6 +80,8 @@ describe('verify-institutional-hierarchy-migration', () => {
     expect(source).toMatch(/BEGIN READ ONLY/);
     expect(source).toMatch(/--dry-run/);
     expect(source).toMatch(/ALLOW_NEON_INSTITUTIONAL_VERIFY/);
-    expect(source).not.toMatch(/connectionString:\s*process\.env\.DATABASE_URL/);
+    expect(source).not.toMatch(
+      /connectionString:\s*process\.env\.DATABASE_URL/,
+    );
   });
 });

@@ -103,6 +103,9 @@ CREATE INDEX idx_institutional_reorg_participants_club
   ON institutional_reorganization_participants(club_id)
   WHERE club_id IS NOT NULL;
 
+CREATE UNIQUE INDEX uq_institutional_reorg_participants_reorg_participant
+  ON institutional_reorganization_participants(reorganization_id, participant_id);
+
 CREATE TABLE institutional_lineage_edges (
   lineage_edge_id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   reorganization_id UUID NOT NULL
@@ -127,7 +130,17 @@ CREATE TABLE institutional_lineage_edges (
       'CORRECTS'
     )),
   CONSTRAINT institutional_lineage_edges_distinct_participants_chk
-    CHECK (from_participant_id <> to_participant_id)
+    CHECK (from_participant_id <> to_participant_id),
+  CONSTRAINT institutional_lineage_edges_from_same_reorg_fkey
+    FOREIGN KEY (reorganization_id, from_participant_id)
+    REFERENCES institutional_reorganization_participants(reorganization_id, participant_id)
+    ON DELETE RESTRICT
+    ON UPDATE NO ACTION,
+  CONSTRAINT institutional_lineage_edges_to_same_reorg_fkey
+    FOREIGN KEY (reorganization_id, to_participant_id)
+    REFERENCES institutional_reorganization_participants(reorganization_id, participant_id)
+    ON DELETE RESTRICT
+    ON UPDATE NO ACTION
 );
 
 CREATE INDEX idx_institutional_lineage_edges_reorganization
@@ -468,7 +481,7 @@ CREATE TABLE institutional_name_version_translations (
   id BIGSERIAL PRIMARY KEY,
   name_version_id UUID NOT NULL
     REFERENCES institutional_name_versions(name_version_id)
-    ON DELETE CASCADE
+    ON DELETE RESTRICT
     ON UPDATE NO ACTION,
   locale VARCHAR(10) NOT NULL,
   name TEXT,
@@ -513,6 +526,11 @@ CREATE TRIGGER trg_institutional_lineage_edges_append_only
   FOR EACH ROW
   EXECUTE FUNCTION prevent_institutional_ledger_mutation();
 
+CREATE TRIGGER trg_institutional_name_version_translations_append_only
+  BEFORE UPDATE OR DELETE ON institutional_name_version_translations
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_institutional_ledger_mutation();
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 5. Conservative name-version backfill from current projections only
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -523,10 +541,10 @@ INSERT INTO institutional_name_versions (
 SELECT d.division_id,
        d.name,
        d.abbreviation,
-       COALESCE(d.created_at::date, CURRENT_DATE),
+       COALESCE(d.created_at::date, DATE '2026-01-01'),
        NULL,
        'system_backfill',
-       COALESCE(d.created_at, NOW())
+       NOW()
 FROM divisions d
 WHERE NOT EXISTS (
   SELECT 1
@@ -542,10 +560,10 @@ INSERT INTO institutional_name_versions (
 SELECT u.union_id,
        u.name,
        u.abbreviation,
-       COALESCE(u.created_at::date, CURRENT_DATE),
+       COALESCE(u.created_at::date, DATE '2026-01-01'),
        NULL,
        'system_backfill',
-       COALESCE(u.created_at, NOW())
+       NOW()
 FROM unions u
 WHERE NOT EXISTS (
   SELECT 1
@@ -561,10 +579,10 @@ INSERT INTO institutional_name_versions (
 SELECT lf.local_field_id,
        lf.name,
        lf.abbreviation,
-       COALESCE(lf.created_at::date, CURRENT_DATE),
+       COALESCE(lf.created_at::date, DATE '2026-01-01'),
        NULL,
        'system_backfill',
-       COALESCE(lf.created_at, NOW())
+       NOW()
 FROM local_fields lf
 WHERE NOT EXISTS (
   SELECT 1
@@ -580,10 +598,10 @@ INSERT INTO institutional_name_versions (
 SELECT d.districlub_type_id,
        d.name,
        NULL,
-       COALESCE(d.created_at::date, CURRENT_DATE),
+       COALESCE(d.created_at::date, DATE '2026-01-01'),
        NULL,
        'system_backfill',
-       COALESCE(d.created_at, NOW())
+       NOW()
 FROM districts d
 WHERE NOT EXISTS (
   SELECT 1
@@ -599,10 +617,10 @@ INSERT INTO institutional_name_versions (
 SELECT c.church_id,
        c.name,
        NULL,
-       COALESCE(c.created_at::date, CURRENT_DATE),
+       COALESCE(c.created_at::date, DATE '2026-01-01'),
        NULL,
        'system_backfill',
-       COALESCE(c.created_at, NOW())
+       NOW()
 FROM churches c
 WHERE NOT EXISTS (
   SELECT 1
@@ -618,10 +636,10 @@ INSERT INTO institutional_name_versions (
 SELECT c.club_id,
        c.name,
        NULL,
-       COALESCE(c.created_at::date, CURRENT_DATE),
+       COALESCE(c.created_at::date, DATE '2026-01-01'),
        NULL,
        'system_backfill',
-       COALESCE(c.created_at, NOW())
+       NOW()
 FROM clubs c
 WHERE NOT EXISTS (
   SELECT 1

@@ -1,32 +1,10 @@
 import { Client } from 'pg';
+import { buildRecursiveProhibitedContextKeysSql } from '../src/institutional-history/sensitive-context.policy';
 
 export interface VerificationCheck {
   name: string;
   sql: string;
 }
-
-const PROHIBITED_CONTEXT_KEYS = [
-  'blood',
-  'blood_type',
-  'allergy',
-  'allergies',
-  'disease',
-  'diseases',
-  'medicine',
-  'medicines',
-  'health',
-  'medical',
-  'phone',
-  'emergency_contact',
-  'emergency_contacts',
-  'legal_representative',
-  'legal_representatives',
-  'document',
-  'documents',
-  'password',
-  'token',
-  'secret',
-] as const;
 
 function openRelationshipFailuresSql(): string {
   return `
@@ -479,13 +457,7 @@ export const INSTITUTIONAL_HIERARCHY_CHECKS: VerificationCheck[] = [
   },
   {
     name: 'hierarchy_contexts.context never stores prohibited sensitive keys',
-    sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM hierarchy_contexts hc
-      CROSS JOIN LATERAL jsonb_object_keys(hc.context::jsonb) AS key(name)
-      WHERE hc.context IS NOT NULL
-        AND lower(key.name) = ANY (ARRAY[${PROHIBITED_CONTEXT_KEYS.map((key) => `'${key}'`).join(', ')}]::text[])
-    `,
+    sql: buildRecursiveProhibitedContextKeysSql(),
   },
 ];
 
