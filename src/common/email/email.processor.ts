@@ -14,6 +14,7 @@ import {
   EMAIL_JOB_PASSWORD_RESET,
   EMAIL_JOB_ACCOUNT_DELETION_CONFIRMED,
   EMAIL_JOB_CRON_ALERT,
+  EMAIL_WORKER_OPTIONS,
   DataExportReadyJobPayload,
   EmailVerificationJobPayload,
   PasswordResetJobPayload,
@@ -55,11 +56,11 @@ function resolveLang(raw: string | undefined): SupportedEmailLocale {
  *  3. Call IEmailProvider.send (Resend in production)
  *  4. On failure, throw so BullMQ applies exponential backoff (attempts=5)
  *
- * The rate limit of 90 emails/day is enforced at the BullMQ queue limiter level
- * (declared in email.module.ts). If the limiter is hit, BullMQ delays the job
- * automatically without triggering a retry attempt count.
+ * The rate limit of 90 emails/day is enforced by BullMQ worker options. If the
+ * limiter is hit, BullMQ delays the job automatically without triggering a
+ * retry attempt count.
  */
-@Processor(EMAIL_QUEUE)
+@Processor(EMAIL_QUEUE, EMAIL_WORKER_OPTIONS)
 export class EmailProcessor
   extends WorkerHost
   implements OnApplicationBootstrap
@@ -75,7 +76,7 @@ export class EmailProcessor
     super();
     this.fromEmail =
       this.configService.get<string>('RESEND_FROM_EMAIL') ??
-      'SACDIA <noreply@sacdia.app>';
+      'SACDIA <contacto@sacdia.com>';
   }
 
   onApplicationBootstrap() {

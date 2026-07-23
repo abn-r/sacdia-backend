@@ -29,7 +29,7 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
       'Tus tokens de dispositivo fueron desactivados',
     ],
     footer:
-      'Registros históricos anónimos (honores, progreso de clases, actividades) pueden conservarse por un periodo de retención conforme a nuestra política de datos. Para más información, escribinos a hola@sacdia.app.',
+      'Registros históricos anónimos (honores, progreso de clases, actividades) pueden conservarse por un periodo de retención conforme a nuestra política de datos. Para más información, escribinos a contacto@sacdia.com.',
   },
   en: {
     preview: 'Your SACDIA account has been successfully deleted.',
@@ -43,12 +43,12 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
       'Your device tokens were deactivated',
     ],
     footer:
-      'Anonymous historical records (honors, class progress, activities) may be retained for a retention period in accordance with our data policy. For more information, contact us at hola@sacdia.app.',
+      'Anonymous historical records (honors, class progress, activities) may be retained for a retention period in accordance with our data policy. For more information, contact us at contacto@sacdia.com.',
   },
   fr: {
     preview: 'Votre compte SACDIA a été supprimé avec succès.',
     title: 'Votre compte a été supprimé',
-    body: "Votre demande de suppression de compte SACDIA a été traitée avec succès. Vos données personnelles ont été anonymisées conformément au Règlement Général sur la Protection des Données (RGPD).",
+    body: 'Votre demande de suppression de compte SACDIA a été traitée avec succès. Vos données personnelles ont été anonymisées conformément au Règlement Général sur la Protection des Données (RGPD).',
     data_summary_title: "Qu'est-il arrivé à vos données ?",
     data_summary: [
       'Votre profil a été anonymisé (nom, e-mail, photo supprimés)',
@@ -57,7 +57,7 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
       "Vos jetons d'appareil ont été désactivés",
     ],
     footer:
-      "Les enregistrements historiques anonymes (honneurs, progression des cours, activités) peuvent être conservés pendant une période de rétention conformément à notre politique de données. Pour plus d'informations, contactez-nous à hola@sacdia.app.",
+      "Les enregistrements historiques anonymes (honneurs, progression des cours, activités) peuvent être conservés pendant une période de rétention conformément à notre politique de données. Pour plus d'informations, contactez-nous à contacto@sacdia.com.",
   },
   'pt-BR': {
     preview: 'Sua conta SACDIA foi excluída com sucesso.',
@@ -71,7 +71,7 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
       'Seus tokens de dispositivo foram desativados',
     ],
     footer:
-      'Registros históricos anônimos (honras, progresso de aulas, atividades) podem ser mantidos por um período de retenção de acordo com nossa política de dados. Para mais informações, entre em contato em hola@sacdia.app.',
+      'Registros históricos anônimos (honras, progresso de aulas, atividades) podem ser mantidos por um período de retenção de acordo com nossa política de dados. Para mais informações, entre em contato em contacto@sacdia.com.',
   },
 };
 
@@ -83,7 +83,9 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
  * NOTE: This email is sent to the ORIGINAL email address BEFORE anonymization.
  * The caller (account-deletion.service.ts) must capture the email pre-transaction.
  */
-export function AccountDeletionConfirmedEmail({ lang = 'es' }: AccountDeletionConfirmedEmailProps) {
+export function AccountDeletionConfirmedEmail({
+  lang = 'es',
+}: AccountDeletionConfirmedEmailProps) {
   const L = LABELS[lang] ?? LABELS['es'];
 
   return (

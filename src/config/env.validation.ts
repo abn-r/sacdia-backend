@@ -1,4 +1,47 @@
 import * as Joi from 'joi';
+import { isPlaceholderUrl } from './bullmq.config';
+
+const RESEND_API_KEY_PLACEHOLDER = 're_<api-key>';
+const FROM_ADDRESS_PATTERN =
+  /^(?:[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+|[^<>\r\n]+<[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>)$/;
+
+const resendApiKeySchema = Joi.string()
+  .trim()
+  .min(1)
+  .invalid(RESEND_API_KEY_PLACEHOLDER)
+  .when('EMAIL_ENABLED', {
+    is: 'true',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(''),
+  });
+
+const resendFromEmailSchema = Joi.string()
+  .trim()
+  .pattern(FROM_ADDRESS_PATTERN)
+  .when('EMAIL_ENABLED', {
+    is: 'true',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(''),
+  })
+  .messages({
+    'string.pattern.base':
+      '{{#label}} must be an email or a display name followed by <email>',
+  });
+
+const redisUrlSchema = Joi.when('EMAIL_ENABLED', {
+  is: 'true',
+  then: Joi.string()
+    .trim()
+    .uri({ scheme: ['redis', 'rediss'] })
+    .custom((value: string, helpers) => {
+      if (isPlaceholderUrl(value)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    }, 'Redis URL placeholder validation')
+    .required(),
+  otherwise: Joi.string().optional(),
+});
 
 export const envValidationSchema = Joi.object({
   // Database (required)
@@ -27,11 +70,11 @@ export const envValidationSchema = Joi.object({
   EMAIL_ENABLED: Joi.string().valid('true', 'false').default('false'),
 
   // Resend (transactional email transport)
-  // RESEND_API_KEY: required when EMAIL_ENABLED=true; harmless as empty when disabled.
-  RESEND_API_KEY: Joi.string().allow('').optional(),
-  // Display name + sender address. Example: "SACDIA <noreply@sacdia.app>"
-  RESEND_FROM_EMAIL: Joi.string().allow('').optional(),
-  // Reply-To address shown to recipients (e.g. hola@sacdia.app)
+  // API key and sender are required only while email delivery is enabled.
+  RESEND_API_KEY: resendApiKeySchema,
+  // Display name + sender address. Example: "SACDIA <contacto@sacdia.com>"
+  RESEND_FROM_EMAIL: resendFromEmailSchema,
+  // Reply-To address shown to recipients (e.g. contacto@sacdia.com)
   RESEND_REPLY_TO: Joi.string().email().allow('').optional(),
   REQUEST_TIMEOUT_MS: Joi.number().integer().positive().optional(),
 
@@ -41,7 +84,7 @@ export const envValidationSchema = Joi.object({
   LOG_PRETTY_IGNORE: Joi.string().optional(),
 
   // Redis
-  REDIS_URL: Joi.string().optional(),
+  REDIS_URL: redisUrlSchema,
 
   // Cloudflare R2
   R2_ACCOUNT_ID: Joi.string().optional(),

@@ -23,7 +23,7 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
     body: 'Recibimos una solicitud para restablecer la contraseña de tu cuenta SACDIA. Hacé clic en el botón de abajo para elegir una nueva contraseña. Este enlace es válido por 1 hora.',
     button: 'Restablecer contraseña',
     footer:
-      'Si no solicitaste restablecer tu contraseña, ignorá este correo. Tu contraseña actual no cambiará. Si sospechás de actividad no autorizada, contactá soporte en hola@sacdia.app.',
+      'Si no solicitaste restablecer tu contraseña, ignorá este correo. Tu contraseña actual no cambiará. Si sospechás de actividad no autorizada, contactá soporte en contacto@sacdia.com.',
   },
   en: {
     preview: 'You received a request to reset your SACDIA password.',
@@ -31,15 +31,16 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
     body: 'We received a request to reset the password for your SACDIA account. Click the button below to choose a new password. This link is valid for 1 hour.',
     button: 'Reset password',
     footer:
-      'If you did not request a password reset, you can safely ignore this email. Your current password will not change. If you suspect unauthorized activity, contact support at hola@sacdia.app.',
+      'If you did not request a password reset, you can safely ignore this email. Your current password will not change. If you suspect unauthorized activity, contact support at contacto@sacdia.com.',
   },
   fr: {
-    preview: 'Vous avez reçu une demande de réinitialisation de votre mot de passe SACDIA.',
+    preview:
+      'Vous avez reçu une demande de réinitialisation de votre mot de passe SACDIA.',
     title: 'Réinitialiser votre mot de passe',
     body: 'Nous avons reçu une demande de réinitialisation du mot de passe de votre compte SACDIA. Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe. Ce lien est valable pendant 1 heure.',
     button: 'Réinitialiser le mot de passe',
     footer:
-      "Si vous n'avez pas demandé de réinitialisation de mot de passe, vous pouvez ignorer cet e-mail. Votre mot de passe actuel ne changera pas. Si vous suspectez une activité non autorisée, contactez le support à hola@sacdia.app.",
+      "Si vous n'avez pas demandé de réinitialisation de mot de passe, vous pouvez ignorer cet e-mail. Votre mot de passe actuel ne changera pas. Si vous suspectez une activité non autorisée, contactez le support à contacto@sacdia.com.",
   },
   'pt-BR': {
     preview: 'Você recebeu uma solicitação para redefinir sua senha SACDIA.',
@@ -47,7 +48,7 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
     body: 'Recebemos uma solicitação para redefinir a senha da sua conta SACDIA. Clique no botão abaixo para escolher uma nova senha. Este link é válido por 1 hora.',
     button: 'Redefinir senha',
     footer:
-      'Se você não solicitou a redefinição de senha, pode ignorar este e-mail com segurança. Sua senha atual não será alterada. Se suspeitar de atividade não autorizada, entre em contato com o suporte em hola@sacdia.app.',
+      'Se você não solicitou a redefinição de senha, pode ignorar este e-mail com segurança. Sua senha atual não será alterada. Se suspeitar de atividade não autorizada, entre em contato com o suporte em contacto@sacdia.com.',
   },
 };
 
@@ -56,7 +57,10 @@ const LABELS: Record<SupportedEmailLocale, Labels> = {
  * Token is embedded in resetUrl — NEVER pass raw token in email templates.
  * Link expires in 1 hour (set at token creation in better-auth.service.ts).
  */
-export function PasswordResetEmail({ resetUrl, lang = 'es' }: PasswordResetEmailProps) {
+export function PasswordResetEmail({
+  resetUrl,
+  lang = 'es',
+}: PasswordResetEmailProps) {
   const L = LABELS[lang] ?? LABELS['es'];
 
   return (

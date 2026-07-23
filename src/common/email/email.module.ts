@@ -33,7 +33,7 @@ function isRedisConfigured(): boolean {
  *
  * BullMQ registration:
  *   - Queue name: 'emails'
- *   - Rate limiter: 90 emails/day is enforced at the @Processor decorator level
+ *   - Rate limiter: 90 jobs/day is enforced at the @Processor decorator level
  *     (protects Resend free tier of 100/day, leaving 10 headroom for manual sends)
  *
  * When Redis is unavailable, the queue and processor are skipped. EmailService

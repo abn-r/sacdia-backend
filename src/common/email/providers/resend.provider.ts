@@ -28,7 +28,7 @@ export class ResendEmailProvider implements IEmailProvider {
     const apiKey = this.configService.get<string>('RESEND_API_KEY') ?? '';
     this.from =
       this.configService.get<string>('RESEND_FROM_EMAIL') ??
-      'SACDIA <noreply@sacdia.app>';
+      'SACDIA <contacto@sacdia.com>';
     this.replyTo = this.configService.get<string>('RESEND_REPLY_TO');
     this.client = new Resend(apiKey);
   }
@@ -41,22 +41,25 @@ export class ResendEmailProvider implements IEmailProvider {
       `Sending email via Resend: subject="${payload.subject}" to=<redacted>`,
     );
 
-    const { data, error } = await this.client.emails.send({
-      from,
-      to: payload.to,
-      ...(replyTo ? { reply_to: replyTo } : {}),
-      subject: payload.subject,
-      html: payload.html,
-      text: payload.text,
-    });
+    try {
+      const { data, error } = await this.client.emails.send({
+        from,
+        to: payload.to,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        subject: payload.subject,
+        html: payload.html,
+        text: payload.text,
+      });
 
-    if (error || !data) {
-      const message = error?.message ?? 'Resend returned no data';
-      this.logger.error(`Resend API error: ${message}`);
-      throw new Error(`Resend send failed: ${message}`);
+      if (error || !data) {
+        throw new Error('Resend API returned an unsuccessful response');
+      }
+
+      this.logger.debug(`Email sent via Resend: messageId=${data.id}`);
+      return { messageId: data.id };
+    } catch {
+      this.logger.error('Resend API request failed');
+      throw new Error('Resend send failed');
     }
-
-    this.logger.debug(`Email sent via Resend: messageId=${data.id}`);
-    return { messageId: data.id };
   }
 }
