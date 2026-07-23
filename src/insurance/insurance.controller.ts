@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -41,6 +42,17 @@ import {
 import { CreateInsuranceDto } from './dto/create-insurance.dto';
 import { UpdateInsuranceDto } from './dto/update-insurance.dto';
 import { InsuranceService } from './insurance.service';
+import {
+  CreateInsuranceCycleDto,
+  CreateInsuranceProductDto,
+  UpdateInsuranceCycleDto,
+  UpdateInsuranceProductDto,
+} from './dto/insurance-config.dto';
+import { InsuranceConfigService } from './insurance-config.service';
+import { InsuranceConfigScopeResolver } from './insurance-config-scope';
+import type { ResolvedAuthorizationProfile } from '../common/services/authorization-context.service';
+import { AppForbiddenException } from '../common/errors/app.exception';
+import { ErrorCode } from '../common/errors/error-codes';
 
 type CurrentUserPayload = {
   sub?: string;
@@ -53,7 +65,156 @@ type CurrentUserPayload = {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class InsuranceController {
-  constructor(private readonly service: InsuranceService) {}
+  constructor(
+    private readonly service: InsuranceService,
+    private readonly configService: InsuranceConfigService,
+    private readonly configScope: InsuranceConfigScopeResolver,
+  ) {}
+
+  @Get('insurance/products')
+  @RequirePermissions('insurance:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Listar productos de seguro del Campo Local activo',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Productos configurables del Campo Local',
+  })
+  async listInsuranceProducts(
+    @Req()
+    request: {
+      authorizationProfile?: ResolvedAuthorizationProfile;
+      user?: CurrentUserPayload;
+    },
+  ) {
+    return {
+      status: 'success',
+      data: await this.configService.listProducts(
+        this.resolveConfigActor(request),
+      ),
+    };
+  }
+
+  @Post('insurance/products')
+  @RequirePermissions('insurance:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Crear producto de seguro para el Campo Local activo',
+  })
+  @ApiResponse({ status: 201, description: 'Producto de seguro creado' })
+  async createInsuranceProduct(
+    @Body() dto: CreateInsuranceProductDto,
+    @Req()
+    request: {
+      authorizationProfile?: ResolvedAuthorizationProfile;
+      user?: CurrentUserPayload;
+    },
+  ) {
+    return {
+      status: 'success',
+      data: await this.configService.createProduct(
+        dto,
+        this.resolveConfigActor(request),
+      ),
+    };
+  }
+
+  @Patch('insurance/products/:productId')
+  @RequirePermissions('insurance:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Actualizar producto de seguro del Campo Local activo',
+  })
+  @ApiParam({ name: 'productId', type: Number })
+  @ApiResponse({ status: 200, description: 'Producto de seguro actualizado' })
+  async updateInsuranceProduct(
+    @Param('productId', ParseIntPipe) productId: number,
+    @Body() dto: UpdateInsuranceProductDto,
+    @Req()
+    request: {
+      authorizationProfile?: ResolvedAuthorizationProfile;
+      user?: CurrentUserPayload;
+    },
+  ) {
+    return {
+      status: 'success',
+      data: await this.configService.updateProduct(
+        productId,
+        dto,
+        this.resolveConfigActor(request),
+      ),
+    };
+  }
+
+  @Get('insurance/cycles')
+  @RequirePermissions('insurance:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({ summary: 'Listar ciclos de seguro del Campo Local activo' })
+  @ApiResponse({ status: 200, description: 'Ciclos de seguro del Campo Local' })
+  async listInsuranceCycles(
+    @Req()
+    request: {
+      authorizationProfile?: ResolvedAuthorizationProfile;
+      user?: CurrentUserPayload;
+    },
+  ) {
+    return {
+      status: 'success',
+      data: await this.configService.listCycles(
+        this.resolveConfigActor(request),
+      ),
+    };
+  }
+
+  @Post('insurance/cycles')
+  @RequirePermissions('insurance:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({ summary: 'Crear ciclo de seguro para el Campo Local activo' })
+  @ApiResponse({ status: 201, description: 'Ciclo de seguro creado' })
+  async createInsuranceCycle(
+    @Body() dto: CreateInsuranceCycleDto,
+    @Req()
+    request: {
+      authorizationProfile?: ResolvedAuthorizationProfile;
+      user?: CurrentUserPayload;
+    },
+  ) {
+    return {
+      status: 'success',
+      data: await this.configService.createCycle(
+        dto,
+        this.resolveConfigActor(request),
+      ),
+    };
+  }
+
+  @Patch('insurance/cycles/:cycleConfigId')
+  @RequirePermissions('insurance:configure')
+  @AuthorizationResource({ type: 'global' })
+  @ApiOperation({
+    summary: 'Actualizar ciclo de seguro del Campo Local activo',
+  })
+  @ApiParam({ name: 'cycleConfigId', type: Number })
+  @ApiResponse({ status: 200, description: 'Ciclo de seguro actualizado' })
+  async updateInsuranceCycle(
+    @Param('cycleConfigId', ParseIntPipe) cycleConfigId: number,
+    @Body() dto: UpdateInsuranceCycleDto,
+    @Req()
+    request: {
+      authorizationProfile?: ResolvedAuthorizationProfile;
+      user?: CurrentUserPayload;
+    },
+  ) {
+    return {
+      status: 'success',
+      data: await this.configService.updateCycle(
+        cycleConfigId,
+        dto,
+        this.resolveConfigActor(request),
+      ),
+    };
+  }
 
   @Get('clubs/:clubId/sections/:sectionId/members/insurance')
   @RequirePermissions('insurance:read')
@@ -250,5 +411,18 @@ export class InsuranceController {
     userId?: string;
   }): string | undefined {
     return user?.sub ?? user?.user_id ?? user?.userId;
+  }
+
+  private resolveConfigActor(request: {
+    authorizationProfile?: ResolvedAuthorizationProfile;
+    user?: CurrentUserPayload;
+  }) {
+    const profile = request.authorizationProfile;
+    const userId = this.extractCurrentUserId(request.user);
+    if (!profile || !userId) {
+      throw new AppForbiddenException(ErrorCode.GUARD_USER_NOT_AUTHENTICATED);
+    }
+
+    return { userId, ...this.configScope.resolve(profile) };
   }
 }
