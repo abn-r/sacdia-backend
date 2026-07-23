@@ -3,6 +3,14 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 
 export const EMAIL_QUEUE = 'emails';
+export const EMAIL_DAILY_LIMIT = 90;
+export const EMAIL_DAILY_LIMIT_DURATION_MS = 24 * 60 * 60 * 1000;
+export const EMAIL_WORKER_OPTIONS = {
+  limiter: {
+    max: EMAIL_DAILY_LIMIT,
+    duration: EMAIL_DAILY_LIMIT_DURATION_MS,
+  },
+} as const;
 
 // ---------------------------------------------------------------------------
 // Job type constants
@@ -83,8 +91,8 @@ export type EmailJobPayload =
  *   - removeOnComplete: true  (keep queue clean)
  *   - removeOnFail: false  (DLQ: keep failed jobs for audit)
  *
- * Rate limiting (90/day) is enforced at the queue-level limiter option
- * declared in email.module.ts BullMQ registration.
+ * Rate limiting (90/day) is enforced by the worker options used by
+ * EmailProcessor. Jobs beyond the limit remain waiting in BullMQ.
  */
 @Injectable()
 export class EmailQueueProducer {
