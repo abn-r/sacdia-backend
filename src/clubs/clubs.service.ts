@@ -342,40 +342,45 @@ export class ClubsService {
       }),
     ]);
 
-    const currentEnrollmentSelect =
-      activeYear?.year_id && section?.club_type_id
-        ? {
-            enrollments: {
-              where: {
-                ecclesiastical_year_id: activeYear.year_id,
-                active: true,
-                classes: {
-                  club_type_id: section.club_type_id,
-                },
+    if (!activeYear) {
+      return [];
+    }
+
+    const currentEnrollmentSelect = section?.club_type_id
+      ? {
+          enrollments: {
+            where: {
+              ecclesiastical_year_id: activeYear.year_id,
+              active: true,
+              classes: {
+                club_type_id: section.club_type_id,
               },
-              orderBy: { enrollment_date: 'desc' as const },
-              take: 1,
-              select: {
-                enrollment_id: true,
-                class_id: true,
-                ecclesiastical_year_id: true,
-                investiture_status: true,
-                classes: {
-                  select: {
-                    class_id: true,
-                    name: true,
-                    club_type_id: true,
-                  },
+            },
+            orderBy: { enrollment_date: 'desc' as const },
+            take: 1,
+            select: {
+              enrollment_id: true,
+              class_id: true,
+              ecclesiastical_year_id: true,
+              investiture_status: true,
+              classes: {
+                select: {
+                  class_id: true,
+                  name: true,
+                  club_type_id: true,
                 },
               },
             },
-          }
-        : {};
+          },
+        }
+      : {};
 
     const members = await this.prisma.club_role_assignments.findMany({
       where: {
         club_section_id: sectionId,
         active: true,
+        status: 'active',
+        ecclesiastical_year_id: activeYear.year_id,
       },
       include: {
         users: {

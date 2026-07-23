@@ -8,8 +8,16 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { buildPrismaPoolConfig } from './prisma-pool.config';
 
-const DEFAULT_POOL_CONNECTION_TIMEOUT_MS = 15000;
+export interface PrismaPoolMetrics {
+  max: number;
+  total: number;
+  idle: number;
+  active: number;
+  waiting: number;
+  utilization: number;
+}
 
 @Injectable()
 export class PrismaService
@@ -17,14 +25,12 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   private pool: Pool;
-  private readonly logger = new Logger(PrismaService.name);
+  private readonly poolMax: number;
+  private readonly logger: Logger;
 
   constructor(private configService: ConfigService) {
-    const connectionString = configService.get<string>('DATABASE_URL');
-    const connectionTimeoutMillis = configService.get<number>(
-      'PRISMA_POOL_CONNECTION_TIMEOUT_MS',
-      DEFAULT_POOL_CONNECTION_TIMEOUT_MS,
-    );
+    const poolConfig = buildPrismaPoolConfig(configService);
+    const logger = new Logger(PrismaService.name);
 
     // Neon cold-start mitigation: default idleTimeoutMillis is 10s which causes
     // a new TCP handshake + TLS negotiation on every request after brief idle.
@@ -32,15 +38,12 @@ export class PrismaService
     // and idleTimeoutMillis: 30000 gives Neon enough time to reuse the slot.
     // connectionTimeoutMillis defaults to 15s so dev/serverless Neon cold starts
     // have time to resume before Prisma gives up on the pooled connection.
-    const pool = new Pool({
-      connectionString,
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis,
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 10000,
+    const pool = new Pool(poolConfig);
+    const adapter = new PrismaPg(pool, {
+      onPoolError: (error) => {
+        logger.error(`PostgreSQL pool error: ${error.message}`, error.stack);
+      },
     });
-    const adapter = new PrismaPg(pool);
 
     const isProduction = process.env.NODE_ENV === 'production';
 
@@ -50,10 +53,13 @@ export class PrismaService
     });
 
     this.pool = pool;
+    this.poolMax = poolConfig.max ?? 10;
+    this.logger = logger;
   }
 
   async onModuleInit() {
     await this.$connect();
+    this.logger.log(`PostgreSQL pool initialized (max=${this.poolMax})`);
 
     if (process.env.NODE_ENV !== 'production') {
       // Prisma 7 changed $on signature; cast to bypass strict check (dev-only)
@@ -68,7 +74,26 @@ export class PrismaService
   }
 
   async onModuleDestroy() {
-    await this.$disconnect();
-    await this.pool.end();
+    try {
+      await this.$disconnect();
+    } finally {
+      await this.pool.end();
+    }
+  }
+
+  getPoolMetrics(): PrismaPoolMetrics {
+    const total = this.pool.totalCount;
+    const idle = this.pool.idleCount;
+    const active = Math.max(0, total - idle);
+
+    return {
+      max: this.poolMax,
+      total,
+      idle,
+      active,
+      waiting: this.pool.waitingCount,
+      utilization:
+        this.poolMax === 0 ? 0 : Number((active / this.poolMax).toFixed(3)),
+    };
   }
 }

@@ -12,6 +12,7 @@ import { validate } from 'class-validator';
 import {
   CreateCamporeeDto,
   CreateUnionCamporeeDto,
+  RegisterMemberDto,
   UpdateCamporeeDto,
   UpdateUnionCamporeeDto,
 } from './dto';
@@ -300,6 +301,18 @@ describe('CamporeesService', () => {
       const errors = await validate(plainToInstance(Dto, { timezone: null }));
       expect(errors.some((error) => error.property === 'timezone')).toBe(true);
     });
+  });
+
+  it('requires an insurance id in the member registration DTO', async () => {
+    const errors = await validate(
+      plainToInstance(RegisterMemberDto, {
+        user_id: '550e8400-e29b-41d4-a716-446655440000',
+      }),
+    );
+
+    expect(errors.some((error) => error.property === 'insurance_id')).toBe(
+      true,
+    );
   });
 
   it('should be defined', () => {
@@ -2286,6 +2299,13 @@ describe('CamporeesService', () => {
       mockPrismaService.camporee_members.create.mockResolvedValue({
         camporee_member_id: 1,
       });
+      mockPrismaService.member_insurances.findUnique.mockResolvedValue({
+        insurance_id: 1,
+        user_id: 'user-1',
+        insurance_type: 'CAMPOREE',
+        end_date: new Date('2026-12-31'),
+        active: true,
+      });
       mockPrismaService.camporee_payments.create.mockResolvedValue({
         camporee_payment_id: 'payment-1',
       });
@@ -2302,7 +2322,7 @@ describe('CamporeesService', () => {
 
       await service.registerMember(
         1,
-        { user_id: 'user-1', club_name: 'Club' },
+        { user_id: 'user-1', club_name: 'Club', insurance_id: 1 },
         'director-id',
         legacyParticipantAuthorization,
       );
@@ -2345,6 +2365,7 @@ describe('CamporeesService', () => {
       await service.registerMemberToUnion(1, {
         user_id: 'user-1',
         club_name: 'Club',
+        insurance_id: 1,
       });
 
       expect(mockLifecyclePolicy.isAfterDeadline).toHaveBeenCalledWith(
@@ -2487,7 +2508,13 @@ describe('CamporeesService', () => {
         users: { user_image: null },
         insurance: null,
       });
-      const insuranceFindUnique = jest.fn();
+      const insuranceFindUnique = jest.fn().mockResolvedValue({
+        insurance_id: 3,
+        user_id: targetUserId,
+        insurance_type: 'CAMPOREE',
+        end_date: new Date('2026-12-31T00:00:00.000Z'),
+        active: true,
+      });
       const queryRaw = jest
         .fn()
         .mockResolvedValueOnce([{ local_camporee_id: camporeeId }])
@@ -2601,7 +2628,7 @@ describe('CamporeesService', () => {
 
       await service.registerMember(
         camporeeId,
-        { user_id: targetUserId },
+        { user_id: targetUserId, insurance_id: 3 },
         actorId,
         authorization(),
       );
@@ -2658,7 +2685,7 @@ describe('CamporeesService', () => {
 
       await service.registerMember(
         camporeeId,
-        { user_id: targetUserId },
+        { user_id: targetUserId, insurance_id: 3 },
         actorId,
         authorization(),
       );
@@ -2704,7 +2731,7 @@ describe('CamporeesService', () => {
 
       await service.registerMember(
         camporeeId,
-        { user_id: targetUserId },
+        { user_id: targetUserId, insurance_id: 3 },
         actorId,
         authorization(),
       );
@@ -2757,7 +2784,7 @@ describe('CamporeesService', () => {
 
       await service.registerMember(
         camporeeId,
-        { user_id: targetUserId },
+        { user_id: targetUserId, insurance_id: 3 },
         actorId,
         authorization(),
       );
@@ -2874,6 +2901,7 @@ describe('CamporeesService', () => {
           {
             user_id: targetUserId,
             club_name: 'Forged payload club',
+            insurance_id: 3,
           },
           actorId,
           authorization(),
@@ -3831,21 +3859,10 @@ describe('CamporeesService', () => {
       });
     });
 
-    it('should register member without insurance when insurance_id is not provided', async () => {
+    it('rejects a member registration without insurance', async () => {
       const registerDto = {
         user_id: 'user-uuid',
         club_name: 'Test Club',
-      };
-
-      const mockMember = {
-        camporee_member_id: 5,
-        camporee_id: 1,
-        user_id: 'user-uuid',
-        insurance_verified: false,
-        insurance_id: null,
-        active: true,
-        users: { user_id: 'user-uuid', name: 'Test User', user_image: null },
-        insurance: null,
       };
 
       mockPrismaService.$transaction.mockImplementation(async (callback) => {
@@ -3862,21 +3879,22 @@ describe('CamporeesService', () => {
           },
           camporee_members: {
             findFirst: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockResolvedValue(mockMember),
+            create: jest.fn(),
           },
         };
         return callback(withParticipantGate(tx));
       });
 
-      const result = await service.registerMember(
-        1,
-        registerDto,
-        'director-id',
-        legacyParticipantAuthorization,
-      );
-
-      expect(result.insurance_verified).toBe(false);
-      expect(result.insurance_id).toBeNull();
+      await expect(
+        service.registerMember(
+          1,
+          registerDto,
+          'director-id',
+          legacyParticipantAuthorization,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.CAMPOREE_INSURANCE_REQUIRED,
+      });
     });
   });
 

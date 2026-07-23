@@ -6,12 +6,13 @@ import {
   IsNotEmpty,
   IsUUID,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * DTO for registering a member in a camporee
- * Supports both local and union-level registrations with optional insurance
+ * Supports both local and union-level registrations with mandatory insurance.
  */
 export class RegisterMemberDto {
   @ApiProperty({
@@ -43,11 +44,11 @@ export class RegisterMemberDto {
   @MaxLength(255)
   club_name?: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     description: 'ID del seguro del miembro (referencia a member_insurances)',
     example: 123,
   })
-  @IsOptional()
   @IsInt()
-  insurance_id?: number;
+  @Min(1)
+  declare insurance_id: number;
 }

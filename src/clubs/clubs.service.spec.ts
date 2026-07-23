@@ -293,6 +293,18 @@ describe('ClubsService', () => {
   });
 
   describe('getMembers', () => {
+    it('returns no current members when there is no current ecclesiastical year', async () => {
+      mockPrismaService.club_sections.findUnique.mockResolvedValue({
+        club_type_id: 2,
+      });
+      mockPrismaService.ecclesiastical_years.findFirst.mockResolvedValue(null);
+
+      await expect(service.getMembers(7)).resolves.toEqual([]);
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
+    });
+
     it('includes the active yearly class for the requested section type', async () => {
       mockPrismaService.club_sections.findUnique.mockResolvedValue({
         club_type_id: 2,
@@ -354,6 +366,12 @@ describe('ClubsService', () => {
         mockPrismaService.club_role_assignments.findMany,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
+          where: {
+            club_section_id: 7,
+            active: true,
+            status: 'active',
+            ecclesiastical_year_id: 2026,
+          },
           include: expect.objectContaining({
             users: expect.objectContaining({
               select: expect.objectContaining({
@@ -705,11 +723,15 @@ describe('ClubsService', () => {
       });
       const tx = mockInitialAssignmentTransaction(0);
 
-      const result = await service.assignInitialSectionDirector(7, actorUserId, {
-        user_id: directorUserId,
-        ecclesiastical_year_id: 2026,
-        start_date: new Date('2026-01-15T00:00:00.000Z'),
-      });
+      const result = await service.assignInitialSectionDirector(
+        7,
+        actorUserId,
+        {
+          user_id: directorUserId,
+          ecclesiastical_year_id: 2026,
+          start_date: new Date('2026-01-15T00:00:00.000Z'),
+        },
+      );
 
       expect(result).toEqual({ assignment_id: assignmentId });
       expect(tx.club_role_assignments.count).toHaveBeenCalledWith({

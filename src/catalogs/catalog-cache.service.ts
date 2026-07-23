@@ -80,6 +80,14 @@ const CATALOG_PREFIX = 'cache:catalogs:';
  */
 const DEFAULT_CATALOG_TTL_MS = 3_600_000; // 1 hour
 
+export interface CatalogCacheMetrics {
+  hits: number;
+  misses: number;
+  coalescedLoads: number;
+  errors: number;
+  invalidations: number;
+}
+
 /**
  * CatalogCacheService
  *
@@ -95,6 +103,14 @@ const DEFAULT_CATALOG_TTL_MS = 3_600_000; // 1 hour
 @Injectable()
 export class CatalogCacheService {
   private readonly logger = new Logger(CatalogCacheService.name);
+  private readonly inFlightLoads = new Map<string, Promise<unknown>>();
+  private readonly metrics: CatalogCacheMetrics = {
+    hits: 0,
+    misses: 0,
+    coalescedLoads: 0,
+    errors: 0,
+    invalidations: 0,
+  };
 
   constructor(@Inject(CACHE_MANAGER) private readonly cacheManager: Cache) {}
 
@@ -113,29 +129,36 @@ export class CatalogCacheService {
     try {
       const cached = await this.cacheManager.get<T>(key);
       if (cached !== null && cached !== undefined) {
+        this.metrics.hits += 1;
         this.logger.debug(`Cache HIT  — ${key}`);
         return cached;
       }
     } catch (err) {
       // Redis down or serialization error — degrade gracefully
+      this.metrics.errors += 1;
       this.logger.warn(
         `Cache GET fallido para "${key}": ${this.extractMessage(err)}`,
       );
     }
 
+    this.metrics.misses += 1;
     this.logger.debug(`Cache MISS — ${key}`);
-    const data = await loader();
-
-    try {
-      await this.cacheManager.set(key, data, ttlMs);
-      this.logger.debug(`Cache SET  — ${key} (TTL ${ttlMs}ms)`);
-    } catch (err) {
-      this.logger.warn(
-        `Cache SET fallido para "${key}": ${this.extractMessage(err)}`,
-      );
+    const inFlight = this.inFlightLoads.get(key) as Promise<T> | undefined;
+    if (inFlight) {
+      this.metrics.coalescedLoads += 1;
+      return inFlight;
     }
 
-    return data;
+    const load = this.loadAndCache(key, loader, ttlMs);
+    this.inFlightLoads.set(key, load);
+
+    try {
+      return await load;
+    } finally {
+      if (this.inFlightLoads.get(key) === load) {
+        this.inFlightLoads.delete(key);
+      }
+    }
   }
 
   /**
@@ -146,8 +169,10 @@ export class CatalogCacheService {
   async invalidate(key: string): Promise<void> {
     try {
       await this.cacheManager.del(key);
+      this.metrics.invalidations += 1;
       this.logger.log(`Cache INVALIDATED — ${key}`);
     } catch (err) {
+      this.metrics.errors += 1;
       this.logger.warn(
         `Cache DEL fallido para "${key}": ${this.extractMessage(err)}`,
       );
@@ -168,50 +193,36 @@ export class CatalogCacheService {
   /**
    * Invalidate ALL catalog cache entries.
    *
-   * Strategy: attempt pattern-based deletion via the underlying Redis client
-   * (available when using @keyv/redis). If the client is not accessible —
-   * e.g., in-memory cache fallback or future store changes — falls back to
-   * explicit enumeration of all known static and common parameterised keys.
+   * Strategy: enumerate keys through CacheManager's public Keyv store iterator
+   * (Redis uses SCAN under the hood). If the configured store cannot iterate,
+   * fall back to explicit enumeration of known keys.
    *
    * This is intentionally conservative: only `cache:catalogs:*` keys are
    * touched, so token-blacklist and session entries are never affected.
    *
-   * Limitation: parameterised keys with arbitrary IDs (e.g.,
-   * `cache:catalogs:unions:country:999`) that were cached but are not in the
-   * static list will only be removed by the pattern-based path.
+   * Limitation: parameterised keys with arbitrary IDs are only guaranteed to
+   * be removed when the configured store supports iteration.
    */
   async invalidateAll(): Promise<void> {
     this.logger.log('Cache INVALIDATE ALL — purgando todos los catálogos');
 
-    // ── Pattern-based path (Redis SCAN) ──────────────────────────────────────
-    // cache-manager wraps a Keyv store; the raw Redis client is accessible via
-    // the store's internal `_redis` property when @keyv/redis is in use.
-    try {
-      const store = (this.cacheManager as any).store;
-      // Keyv exposes the adapter via `store` on the inner stores array, or
-      // directly on the top-level store object depending on the version.
-      const redisClient =
-        store?.stores?.[0]?.opts?.store?._redis ??
-        store?.opts?.store?._redis ??
-        store?.client;
-
-      if (redisClient && typeof redisClient.keys === 'function') {
-        // Use KEYS only in this controlled context (catalog namespace is small).
-        // For very large catalogs a SCAN cursor loop would be preferable.
-        const keys: string[] = await redisClient.keys(`${CATALOG_PREFIX}*`);
-        if (keys.length > 0) {
-          await redisClient.del(keys);
+    const iteratedKeys = await this.findCatalogKeys();
+    if (iteratedKeys !== null) {
+      try {
+        if (iteratedKeys.length > 0) {
+          await this.cacheManager.mdel(iteratedKeys);
+          this.metrics.invalidations += iteratedKeys.length;
         }
         this.logger.log(
-          `Cache INVALIDATE ALL (pattern) — ${keys.length} entradas eliminadas`,
+          `Cache INVALIDATE ALL (iterator) — ${iteratedKeys.length} entradas eliminadas`,
         );
         return;
+      } catch (err) {
+        this.metrics.errors += 1;
+        this.logger.warn(
+          `Iterator-based invalidation failed: ${this.extractMessage(err)}. Usando fallback estático.`,
+        );
       }
-    } catch (err) {
-      // Pattern path unavailable — proceed to static fallback below
-      this.logger.warn(
-        `Pattern-based invalidation unavailable: ${this.extractMessage(err)}. Usando fallback estático.`,
-      );
     }
 
     // ── Static fallback ───────────────────────────────────────────────────────
@@ -252,6 +263,57 @@ export class CatalogCacheService {
    */
   get catalogPrefix(): string {
     return CATALOG_PREFIX;
+  }
+
+  getMetrics(): CatalogCacheMetrics {
+    return { ...this.metrics };
+  }
+
+  private async loadAndCache<T>(
+    key: string,
+    loader: () => Promise<T>,
+    ttlMs: number,
+  ): Promise<T> {
+    const data = await loader();
+
+    try {
+      await this.cacheManager.set(key, data, ttlMs);
+      this.logger.debug(`Cache SET  — ${key} (TTL ${ttlMs}ms)`);
+    } catch (err) {
+      this.metrics.errors += 1;
+      this.logger.warn(
+        `Cache SET fallido para "${key}": ${this.extractMessage(err)}`,
+      );
+    }
+
+    return data;
+  }
+
+  private async findCatalogKeys(): Promise<string[] | null> {
+    const keys = new Set<string>();
+    let supportsIteration = false;
+
+    try {
+      for (const store of this.cacheManager.stores ?? []) {
+        if (typeof store.iterator !== 'function') continue;
+        supportsIteration = true;
+
+        for await (const entry of store.iterator(store.namespace)) {
+          const key = entry[0];
+          if (typeof key === 'string' && key.startsWith(CATALOG_PREFIX)) {
+            keys.add(key);
+          }
+        }
+      }
+    } catch (err) {
+      this.metrics.errors += 1;
+      this.logger.warn(
+        `Cache iteration failed: ${this.extractMessage(err)}. Usando fallback estático.`,
+      );
+      return null;
+    }
+
+    return supportsIteration ? [...keys] : null;
   }
 
   private extractMessage(err: unknown): string {

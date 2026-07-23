@@ -1167,49 +1167,49 @@ export class CamporeesService {
         );
       }
 
-      if (dto.insurance_id) {
-        const insurance = await tx.member_insurances.findUnique({
-          where: { insurance_id: dto.insurance_id },
-        });
+      if (!dto.insurance_id) {
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_INSURANCE_REQUIRED);
+      }
 
-        // Validate insurance exists
-        if (!insurance) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND,
-          );
-        }
+      const insurance = await tx.member_insurances.findUnique({
+        where: { insurance_id: dto.insurance_id },
+      });
 
-        // Validate insurance belongs to the user
-        if (insurance.user_id !== dto.user_id) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER,
-          );
-        }
+      // Validate insurance exists
+      if (!insurance) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND,
+        );
+      }
 
-        // Validate insurance type is eligible for camporees
-        if (
-          !CamporeesService.isEligibleCamporeeInsuranceType(
-            insurance.insurance_type,
-          )
-        ) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
-          );
-        }
+      // Validate insurance belongs to the user
+      if (insurance.user_id !== dto.user_id) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER,
+        );
+      }
 
-        // Validate insurance is not expired before camporee ends
-        if (insurance.end_date < camporee.end_date) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_EXPIRED,
-          );
-        }
+      // Validate insurance type is eligible for camporees
+      if (
+        !CamporeesService.isEligibleCamporeeInsuranceType(
+          insurance.insurance_type,
+        )
+      ) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
+        );
+      }
 
-        // Validate insurance is active
-        if (!insurance.active) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE,
-          );
-        }
+      // Validate insurance is not expired before camporee ends
+      if (insurance.end_date < camporee.end_date) {
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_INSURANCE_EXPIRED);
+      }
+
+      // Validate insurance is active
+      if (!insurance.active) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE,
+        );
       }
 
       const member = await tx.camporee_members.create({
@@ -1219,7 +1219,7 @@ export class CamporeesService {
           camporee_type: 'local',
           user_id: dto.user_id,
           club_name: section.clubs.name,
-          insurance_verified: !!dto.insurance_id,
+          insurance_verified: true,
           insurance_id: dto.insurance_id,
           status: isLate ? 'pending_approval' : 'registered',
           active: true,
@@ -2573,50 +2573,50 @@ export class CamporeesService {
         );
       }
 
-      // 4. If insurance_id is provided, validate insurance
-      if (dto.insurance_id) {
-        const insurance = await tx.member_insurances.findUnique({
-          where: { insurance_id: dto.insurance_id },
-        });
+      // 4. Insurance is mandatory for every camporee participant.
+      if (!dto.insurance_id) {
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_INSURANCE_REQUIRED);
+      }
 
-        // Validate insurance exists
-        if (!insurance) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND,
-          );
-        }
+      const insurance = await tx.member_insurances.findUnique({
+        where: { insurance_id: dto.insurance_id },
+      });
 
-        // Validate insurance belongs to the user
-        if (insurance.user_id !== dto.user_id) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER,
-          );
-        }
+      // Validate insurance exists
+      if (!insurance) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_NOT_FOUND,
+        );
+      }
 
-        // Validate insurance type is eligible for camporees
-        if (
-          !CamporeesService.isEligibleCamporeeInsuranceType(
-            insurance.insurance_type,
-          )
-        ) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
-          );
-        }
+      // Validate insurance belongs to the user
+      if (insurance.user_id !== dto.user_id) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_NOT_OWNER,
+        );
+      }
 
-        // Validate insurance is not expired before camporee ends
-        if (insurance.end_date < camporee.end_date) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_EXPIRED,
-          );
-        }
+      // Validate insurance type is eligible for camporees
+      if (
+        !CamporeesService.isEligibleCamporeeInsuranceType(
+          insurance.insurance_type,
+        )
+      ) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_TYPE_INVALID,
+        );
+      }
 
-        // Validate insurance is active
-        if (!insurance.active) {
-          throw new AppBadRequestException(
-            ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE,
-          );
-        }
+      // Validate insurance is not expired before camporee ends
+      if (insurance.end_date < camporee.end_date) {
+        throw new AppBadRequestException(ErrorCode.CAMPOREE_INSURANCE_EXPIRED);
+      }
+
+      // Validate insurance is active
+      if (!insurance.active) {
+        throw new AppBadRequestException(
+          ErrorCode.CAMPOREE_INSURANCE_NOT_ACTIVE,
+        );
       }
 
       // 5. Create registration in camporee_members
@@ -2626,7 +2626,7 @@ export class CamporeesService {
           camporee_type: 'union',
           user_id: dto.user_id,
           club_name: dto.club_name,
-          insurance_verified: !!dto.insurance_id,
+          insurance_verified: true,
           insurance_id: dto.insurance_id,
           status: isLate ? 'pending_approval' : 'registered',
           active: true,
