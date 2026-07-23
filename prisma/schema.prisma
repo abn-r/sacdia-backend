@@ -185,10 +185,12 @@ model churches {
   districlub_type_id         Int
   districts                  districts                    @relation(fields: [districlub_type_id], references: [districlub_type_id], onDelete: NoAction, onUpdate: NoAction)
   clubs                      clubs[]
-  church_district_history    church_district_history[]    @relation("church_district_history_church")
-  club_institutional_history club_institutional_history[] @relation("club_institutional_history_church")
-  hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_church")
-  translations               churches_translations[]
+  church_district_history                 church_district_history[]                 @relation("church_district_history_church")
+  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_church")
+  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_church")
+  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_church")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_church")
+  translations                            churches_translations[]
 }
 
 model churches_translations {
@@ -618,8 +620,10 @@ model clubs {
   quarterly_reports          quarterly_reports[]
   annual_reports             annual_reports[]
   audit_logs                 audit_logs[]
-  club_institutional_history club_institutional_history[] @relation("club_institutional_history_club")
-  hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_club")
+  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_club")
+  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_club")
+  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_club")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_club")
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
 }
@@ -806,9 +810,11 @@ model divisions {
   master_honor_divisions      master_honor_divisions[]
   awarded_users_master_honors users_master_honors[]        @relation("users_master_honors_awarded_division")
   translations                divisions_translations[]
-  union_division_history      union_division_history[]     @relation("union_division_history_division")
-  club_institutional_history  club_institutional_history[] @relation("club_institutional_history_division")
-  hierarchy_contexts          hierarchy_contexts[]         @relation("hierarchy_contexts_division")
+  union_division_history                  union_division_history[]                  @relation("union_division_history_division")
+  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_division")
+  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_division")
+  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_division")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_division")
 
   @@index([active], map: "idx_divisions_active")
   @@map("divisions")
@@ -839,12 +845,14 @@ model districts {
   churches                     churches[]
   clubs                        clubs[]
   local_fields                 local_fields                   @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
-  district_local_field_history district_local_field_history[] @relation("district_local_field_history_district")
-  church_district_history      church_district_history[]      @relation("church_district_history_district")
-  club_institutional_history   club_institutional_history[]   @relation("club_institutional_history_district")
-  hierarchy_contexts           hierarchy_contexts[]           @relation("hierarchy_contexts_district")
-  coordination_zone_districts  coordination_zone_districts[]
-  translations                 districts_translations[]
+  district_local_field_history            district_local_field_history[]            @relation("district_local_field_history_district")
+  church_district_history                 church_district_history[]                 @relation("church_district_history_district")
+  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_district")
+  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_district")
+  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_district")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_district")
+  coordination_zone_districts             coordination_zone_districts[]
+  translations                            districts_translations[]
 }
 
 model districts_translations {
@@ -1468,22 +1476,24 @@ model local_fields {
   local_camporees                 local_camporees[]
   certificate_bulk_import_batches certificate_bulk_import_batches[]
   unions                          unions                            @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
-  local_field_union_history       local_field_union_history[]       @relation("local_field_union_history_local_field")
-  district_local_field_history    district_local_field_history[]    @relation("district_local_field_history_local_field")
-  club_institutional_history      club_institutional_history[]      @relation("club_institutional_history_local_field")
-  hierarchy_contexts              hierarchy_contexts[]              @relation("hierarchy_contexts_local_field")
-  annual_ranking_configs          annual_ranking_configs[]
-  union_camporee_local_fields     union_camporee_local_fields[]
-  users                           users[]
-  translations                    local_fields_translations[]
-  material_products               MaterialProduct[]
-  material_orders                 MaterialOrder[]
-  material_folio_counters         MaterialFolioCounter[]
-  material_config                 MaterialConfig?
-  camporee_event_templates        camporee_event_templates[]
-  camporee_venues                 camporee_venues[]
-  coordination_zones              coordination_zones[]
-  coordinator_assignments         coordinator_assignments[]
+  local_field_union_history               local_field_union_history[]               @relation("local_field_union_history_local_field")
+  district_local_field_history            district_local_field_history[]            @relation("district_local_field_history_local_field")
+  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_local_field")
+  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_local_field")
+  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_local_field")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_local_field")
+  annual_ranking_configs                  annual_ranking_configs[]
+  union_camporee_local_fields             union_camporee_local_fields[]
+  users                                   users[]
+  translations                            local_fields_translations[]
+  material_products                       MaterialProduct[]
+  material_orders                         MaterialOrder[]
+  material_folio_counters                 MaterialFolioCounter[]
+  material_config                         MaterialConfig?
+  camporee_event_templates                camporee_event_templates[]
+  camporee_venues                         camporee_venues[]
+  coordination_zones                      coordination_zones[]
+  coordinator_assignments                 coordinator_assignments[]
 }
 
 model local_fields_translations {
@@ -1760,13 +1770,15 @@ model unions {
   camporee_venues            camporee_venues[]
   countries                  countries                    @relation(fields: [country_id], references: [country_id], onDelete: NoAction, onUpdate: NoAction)
   divisions                  divisions                    @relation(fields: [division_id], references: [division_id], onDelete: NoAction, onUpdate: NoAction)
-  union_division_history     union_division_history[]     @relation("union_division_history_union")
-  local_field_union_history  local_field_union_history[]  @relation("local_field_union_history_union")
-  club_institutional_history club_institutional_history[] @relation("club_institutional_history_union")
-  hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_union")
-  annual_ranking_configs     annual_ranking_configs[]
-  users                      users[]
-  translations               unions_translations[]
+  union_division_history                  union_division_history[]                  @relation("union_division_history_union")
+  local_field_union_history               local_field_union_history[]               @relation("local_field_union_history_union")
+  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_union")
+  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_union")
+  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_union")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_union")
+  annual_ranking_configs                  annual_ranking_configs[]
+  users                                   users[]
+  translations                            unions_translations[]
 
   @@index([division_id], map: "idx_unions_division_id")
 }
@@ -1794,9 +1806,16 @@ model union_division_history {
   precision                 String    @default("system_backfill") @db.VarChar(30)
   created_at                DateTime  @default(now()) @db.Timestamptz(6)
   created_by                String?   @db.Uuid
+  recorded_from             DateTime  @default(now()) @db.Timestamptz(6)
+  recorded_to               DateTime? @db.Timestamptz(6)
+  supersedes_history_id     BigInt?
+  reorganization_id         String?   @db.Uuid
 
-  unions    unions    @relation("union_division_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
-  divisions divisions @relation("union_division_history_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+  unions                           unions                          @relation("union_division_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  divisions                        divisions                       @relation("union_division_history_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+  supersedes                       union_division_history?         @relation("union_division_history_supersedes", fields: [supersedes_history_id], references: [union_division_history_id], onDelete: Restrict, onUpdate: NoAction)
+  superseded_by                    union_division_history[]        @relation("union_division_history_supersedes")
+  institutional_reorganizations    institutional_reorganizations?  @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([division_id], map: "idx_union_division_history_division_id")
   @@index([union_id, valid_from, valid_to], map: "idx_union_division_history_union_period")
@@ -1812,9 +1831,16 @@ model local_field_union_history {
   precision                    String    @default("system_backfill") @db.VarChar(30)
   created_at                   DateTime  @default(now()) @db.Timestamptz(6)
   created_by                   String?   @db.Uuid
+  recorded_from                DateTime  @default(now()) @db.Timestamptz(6)
+  recorded_to                  DateTime? @db.Timestamptz(6)
+  supersedes_history_id        BigInt?
+  reorganization_id            String?   @db.Uuid
 
-  local_fields local_fields @relation("local_field_union_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
-  unions       unions       @relation("local_field_union_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields                     local_fields                    @relation("local_field_union_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  unions                           unions                          @relation("local_field_union_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  supersedes                       local_field_union_history?      @relation("local_field_union_history_supersedes", fields: [supersedes_history_id], references: [local_field_union_history_id], onDelete: Restrict, onUpdate: NoAction)
+  superseded_by                    local_field_union_history[]     @relation("local_field_union_history_supersedes")
+  institutional_reorganizations    institutional_reorganizations?  @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([union_id], map: "idx_local_field_union_history_union_id")
   @@index([local_field_id, valid_from, valid_to], map: "idx_local_field_union_history_field_period")
@@ -1830,9 +1856,16 @@ model district_local_field_history {
   precision                       String    @default("system_backfill") @db.VarChar(30)
   created_at                      DateTime  @default(now()) @db.Timestamptz(6)
   created_by                      String?   @db.Uuid
+  recorded_from                   DateTime  @default(now()) @db.Timestamptz(6)
+  recorded_to                     DateTime? @db.Timestamptz(6)
+  supersedes_history_id           BigInt?
+  reorganization_id               String?   @db.Uuid
 
-  districts    districts    @relation("district_local_field_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
-  local_fields local_fields @relation("district_local_field_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  districts                        districts                       @relation("district_local_field_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields                     local_fields                    @relation("district_local_field_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  supersedes                       district_local_field_history?   @relation("district_local_field_history_supersedes", fields: [supersedes_history_id], references: [district_local_field_history_id], onDelete: Restrict, onUpdate: NoAction)
+  superseded_by                    district_local_field_history[]  @relation("district_local_field_history_supersedes")
+  institutional_reorganizations    institutional_reorganizations?  @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([local_field_id], map: "idx_district_local_field_history_field_id")
   @@index([districlub_type_id, valid_from, valid_to], map: "idx_district_local_field_history_district_period")
@@ -1848,9 +1881,16 @@ model church_district_history {
   precision                  String    @default("system_backfill") @db.VarChar(30)
   created_at                 DateTime  @default(now()) @db.Timestamptz(6)
   created_by                 String?   @db.Uuid
+  recorded_from              DateTime  @default(now()) @db.Timestamptz(6)
+  recorded_to                DateTime? @db.Timestamptz(6)
+  supersedes_history_id      BigInt?
+  reorganization_id          String?   @db.Uuid
 
-  churches  churches  @relation("church_district_history_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
-  districts districts @relation("church_district_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  churches                         churches                        @relation("church_district_history_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+  districts                        districts                       @relation("church_district_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  supersedes                       church_district_history?        @relation("church_district_history_supersedes", fields: [supersedes_history_id], references: [church_district_history_id], onDelete: Restrict, onUpdate: NoAction)
+  superseded_by                    church_district_history[]       @relation("church_district_history_supersedes")
+  institutional_reorganizations    institutional_reorganizations?  @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([districlub_type_id], map: "idx_church_district_history_district_id")
   @@index([church_id, valid_from, valid_to], map: "idx_church_district_history_church_period")
@@ -1870,13 +1910,20 @@ model club_institutional_history {
   precision                     String    @default("system_backfill") @db.VarChar(30)
   created_at                    DateTime  @default(now()) @db.Timestamptz(6)
   created_by                    String?   @db.Uuid
+  recorded_from                 DateTime  @default(now()) @db.Timestamptz(6)
+  recorded_to                   DateTime? @db.Timestamptz(6)
+  supersedes_history_id         BigInt?
+  reorganization_id             String?   @db.Uuid
 
-  clubs        clubs        @relation("club_institutional_history_club", fields: [club_id], references: [club_id], onDelete: Restrict, onUpdate: NoAction)
-  divisions    divisions    @relation("club_institutional_history_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
-  unions       unions       @relation("club_institutional_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
-  local_fields local_fields @relation("club_institutional_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
-  districts    districts    @relation("club_institutional_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
-  churches     churches     @relation("club_institutional_history_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+  clubs                            clubs                           @relation("club_institutional_history_club", fields: [club_id], references: [club_id], onDelete: Restrict, onUpdate: NoAction)
+  divisions                        divisions                       @relation("club_institutional_history_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+  unions                           unions                          @relation("club_institutional_history_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields                     local_fields                    @relation("club_institutional_history_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  districts                        districts                       @relation("club_institutional_history_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  churches                         churches                        @relation("club_institutional_history_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+  supersedes                       club_institutional_history?     @relation("club_institutional_history_supersedes", fields: [supersedes_history_id], references: [club_institutional_history_id], onDelete: Restrict, onUpdate: NoAction)
+  superseded_by                    club_institutional_history[]    @relation("club_institutional_history_supersedes")
+  institutional_reorganizations    institutional_reorganizations?  @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([division_id], map: "idx_club_institutional_history_division_id")
   @@index([union_id], map: "idx_club_institutional_history_union_id")
@@ -1920,6 +1967,124 @@ model hierarchy_contexts {
   @@index([church_id, as_of], map: "idx_hierarchy_contexts_church_as_of")
   @@index([club_id, as_of], map: "idx_hierarchy_contexts_club_as_of")
   @@map("hierarchy_contexts")
+}
+
+model institutional_reorganizations {
+  reorganization_id          String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  type                       String    @db.VarChar(32)
+  effective_on               DateTime  @db.Date
+  description                String
+  authority_source           String    @default("WORLD_CHURCH_EXECUTIVE") @db.VarChar(64)
+  idempotency_key            String    @unique @db.Uuid
+  approved_by                String    @db.Uuid
+  recorded_at                DateTime  @default(now()) @db.Timestamptz(6)
+  corrects_reorganization_id String?   @db.Uuid
+
+  approved_by_user                       users                                       @relation("institutional_reorganizations_approved_by", fields: [approved_by], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  corrects                               institutional_reorganizations?              @relation("institutional_reorganizations_corrects", fields: [corrects_reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
+  corrected_by                           institutional_reorganizations[]             @relation("institutional_reorganizations_corrects")
+  participants                           institutional_reorganization_participants[]
+  lineage_edges                          institutional_lineage_edges[]
+  name_versions                          institutional_name_versions[]
+  union_division_history                 union_division_history[]
+  local_field_union_history              local_field_union_history[]
+  district_local_field_history           district_local_field_history[]
+  church_district_history                church_district_history[]
+  club_institutional_history             club_institutional_history[]
+
+  @@index([effective_on], map: "idx_institutional_reorganizations_effective_on")
+  @@index([corrects_reorganization_id], map: "idx_institutional_reorganizations_corrects")
+  @@map("institutional_reorganizations")
+}
+
+model institutional_reorganization_participants {
+  participant_id     String  @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  reorganization_id  String  @db.Uuid
+  division_id        Int?
+  union_id           Int?
+  local_field_id     Int?
+  districlub_type_id Int?
+  church_id          Int?
+  club_id            Int?
+
+  institutional_reorganizations institutional_reorganizations @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
+  divisions                     divisions?                    @relation("institutional_reorg_participants_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+  unions                        unions?                       @relation("institutional_reorg_participants_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields                  local_fields?                 @relation("institutional_reorg_participants_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  districts                     districts?                    @relation("institutional_reorg_participants_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  churches                      churches?                     @relation("institutional_reorg_participants_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+  clubs                         clubs?                        @relation("institutional_reorg_participants_club", fields: [club_id], references: [club_id], onDelete: Restrict, onUpdate: NoAction)
+  lineage_from                  institutional_lineage_edges[] @relation("institutional_lineage_from")
+  lineage_to                    institutional_lineage_edges[] @relation("institutional_lineage_to")
+
+  @@index([reorganization_id], map: "idx_institutional_reorg_participants_reorganization")
+  @@map("institutional_reorganization_participants")
+}
+
+model institutional_lineage_edges {
+  lineage_edge_id     String @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  reorganization_id   String @db.Uuid
+  from_participant_id String @db.Uuid
+  to_participant_id   String @db.Uuid
+  relation_type       String @db.VarChar(32)
+
+  institutional_reorganizations institutional_reorganizations            @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
+  from_participant              institutional_reorganization_participants @relation("institutional_lineage_from", fields: [from_participant_id], references: [participant_id], onDelete: Restrict, onUpdate: NoAction)
+  to_participant                institutional_reorganization_participants @relation("institutional_lineage_to", fields: [to_participant_id], references: [participant_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([reorganization_id], map: "idx_institutional_lineage_edges_reorganization")
+  @@index([from_participant_id], map: "idx_institutional_lineage_edges_from")
+  @@index([to_participant_id], map: "idx_institutional_lineage_edges_to")
+  @@map("institutional_lineage_edges")
+}
+
+model institutional_name_versions {
+  name_version_id            String    @id @default(dbgenerated("extensions.uuid_generate_v4()")) @db.Uuid
+  division_id                Int?
+  union_id                   Int?
+  local_field_id             Int?
+  districlub_type_id         Int?
+  church_id                  Int?
+  club_id                    Int?
+  name                       String    @db.VarChar(200)
+  abbreviation               String?   @db.VarChar(32)
+  valid_from                 DateTime  @db.Date
+  valid_to                   DateTime? @db.Date
+  precision                  String    @default("system_backfill") @db.VarChar(30)
+  recorded_from              DateTime  @default(now()) @db.Timestamptz(6)
+  recorded_to                DateTime? @db.Timestamptz(6)
+  supersedes_name_version_id String?   @db.Uuid
+  reorganization_id          String?   @db.Uuid
+  recorded_by                String?   @db.Uuid
+
+  divisions                     divisions?                                @relation("institutional_name_versions_division", fields: [division_id], references: [division_id], onDelete: Restrict, onUpdate: NoAction)
+  unions                        unions?                                   @relation("institutional_name_versions_union", fields: [union_id], references: [union_id], onDelete: Restrict, onUpdate: NoAction)
+  local_fields                  local_fields?                             @relation("institutional_name_versions_local_field", fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  districts                     districts?                                @relation("institutional_name_versions_district", fields: [districlub_type_id], references: [districlub_type_id], onDelete: Restrict, onUpdate: NoAction)
+  churches                      churches?                                 @relation("institutional_name_versions_church", fields: [church_id], references: [church_id], onDelete: Restrict, onUpdate: NoAction)
+  clubs                         clubs?                                    @relation("institutional_name_versions_club", fields: [club_id], references: [club_id], onDelete: Restrict, onUpdate: NoAction)
+  supersedes                    institutional_name_versions?              @relation("institutional_name_versions_supersedes", fields: [supersedes_name_version_id], references: [name_version_id], onDelete: Restrict, onUpdate: NoAction)
+  superseded_by                 institutional_name_versions[]             @relation("institutional_name_versions_supersedes")
+  institutional_reorganizations institutional_reorganizations?            @relation(fields: [reorganization_id], references: [reorganization_id], onDelete: Restrict, onUpdate: NoAction)
+  recorded_by_user              users?                                    @relation("institutional_name_versions_recorded_by", fields: [recorded_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  translations                  institutional_name_version_translations[]
+
+  @@map("institutional_name_versions")
+}
+
+model institutional_name_version_translations {
+  id              BigInt   @id @default(autoincrement())
+  name_version_id String   @db.Uuid
+  locale          String   @db.VarChar(10)
+  name            String?
+  abbreviation    String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  institutional_name_versions institutional_name_versions @relation(fields: [name_version_id], references: [name_version_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([name_version_id, locale], map: "institutional_name_version_translations_unique_locale")
+  @@index([locale], map: "idx_institutional_name_version_translations_locale")
+  @@map("institutional_name_version_translations")
 }
 
 model unit_members {
@@ -2108,6 +2273,8 @@ model users {
   camporee_event_section_results_finalized camporee_event_section_results[]        @relation("camporee_event_section_result_finalizer")
   local_camporees_timezone_verified        local_camporees[]                       @relation("local_camporee_timezone_verifier")
   union_camporees_timezone_verified        union_camporees[]                       @relation("union_camporee_timezone_verifier")
+  institutional_reorganizations_approved   institutional_reorganizations[]         @relation("institutional_reorganizations_approved_by")
+  institutional_name_versions_recorded     institutional_name_versions[]           @relation("institutional_name_versions_recorded_by")
 }
 
 model notification_preferences {
