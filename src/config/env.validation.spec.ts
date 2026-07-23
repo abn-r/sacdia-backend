@@ -8,8 +8,7 @@ const validBaseEnv = {
   R2_BUCKET_EVIDENCE_FILES: 'evidence-files',
   R2_PUBLIC_URL_EVIDENCE_FILES: 'https://storage.example.com/evidence',
   R2_BUCKET_INSURANCE_EVIDENCE: 'insurance-evidence',
-  R2_PUBLIC_URL_INSURANCE_EVIDENCE:
-    'https://storage.example.com/insurance',
+  R2_PUBLIC_URL_INSURANCE_EVIDENCE: 'https://storage.example.com/insurance',
   R2_BUCKET_DATA_EXPORTS: 'data-exports',
   R2_PUBLIC_URL_DATA_EXPORTS: 'https://storage.example.com/exports',
   R2_BUCKET_RESOURCES_FILES: 'resources',
@@ -39,6 +38,7 @@ describe('envValidationSchema email configuration', () => {
       RESEND_API_KEY: 're_test_backend_key',
       RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
       RESEND_REPLY_TO: 'contacto@sacdia.com',
+      REDIS_URL: 'rediss://default:test-password@redis.example.com:6379',
     });
 
     expect(error).toBeUndefined();
@@ -88,8 +88,31 @@ describe('envValidationSchema email configuration', () => {
       RESEND_API_KEY: 're_test_backend_key',
       RESEND_FROM_EMAIL: 'contacto@sacdia.com',
       RESEND_REPLY_TO: 'not-an-email',
+      REDIS_URL: 'rediss://default:test-password@redis.example.com:6379',
     });
 
     expect(error?.message).toContain('RESEND_REPLY_TO');
+  });
+
+  it('requires Redis when email is enabled', () => {
+    const { error } = validate({
+      EMAIL_ENABLED: 'true',
+      RESEND_API_KEY: 're_test_backend_key',
+      RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
+    });
+
+    expect(error?.message).toContain('REDIS_URL');
+  });
+
+  it('rejects a placeholder Redis URL when email is enabled', () => {
+    const { error } = validate({
+      EMAIL_ENABLED: 'true',
+      RESEND_API_KEY: 're_test_backend_key',
+      RESEND_FROM_EMAIL: 'SACDIA <contacto@sacdia.com>',
+      REDIS_URL:
+        'rediss://default:YOUR_PASSWORD@YOUR_REGION.redis.example.com:6379',
+    });
+
+    expect(error?.message).toContain('REDIS_URL');
   });
 });

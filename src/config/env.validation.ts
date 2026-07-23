@@ -1,4 +1,5 @@
 import * as Joi from 'joi';
+import { isPlaceholderUrl } from './bullmq.config';
 
 const RESEND_API_KEY_PLACEHOLDER = 're_<api-key>';
 const FROM_ADDRESS_PATTERN =
@@ -26,6 +27,21 @@ const resendFromEmailSchema = Joi.string()
     'string.pattern.base':
       '{{#label}} must be an email or a display name followed by <email>',
   });
+
+const redisUrlSchema = Joi.when('EMAIL_ENABLED', {
+  is: 'true',
+  then: Joi.string()
+    .trim()
+    .uri({ scheme: ['redis', 'rediss'] })
+    .custom((value: string, helpers) => {
+      if (isPlaceholderUrl(value)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    }, 'Redis URL placeholder validation')
+    .required(),
+  otherwise: Joi.string().optional(),
+});
 
 export const envValidationSchema = Joi.object({
   // Database (required)
@@ -68,7 +84,7 @@ export const envValidationSchema = Joi.object({
   LOG_PRETTY_IGNORE: Joi.string().optional(),
 
   // Redis
-  REDIS_URL: Joi.string().optional(),
+  REDIS_URL: redisUrlSchema,
 
   // Cloudflare R2
   R2_ACCOUNT_ID: Joi.string().optional(),
