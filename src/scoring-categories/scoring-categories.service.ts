@@ -561,6 +561,7 @@ export class ScoringCategoriesService {
 
     const categories = await this.prisma.scoring_categories.findMany({
       where: {
+        active: true,
         OR: [
           { origin_level: 'DIVISION', origin_id: divisionId },
           { origin_level: 'UNION', origin_id: unionId },

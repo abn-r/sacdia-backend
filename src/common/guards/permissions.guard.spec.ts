@@ -1004,6 +1004,64 @@ describe('PermissionsGuard', () => {
     ).rejects.toMatchObject({ code: ErrorCode.GUARD_CLUB_SCOPE_REQUIRED });
   });
 
+  it('rejects an invalid monthly report UUID before querying Prisma', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['reports:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'monthly_report', idParam: 'reportId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({ globalPermissions: ['reports:read'] }),
+    );
+    mockPrisma.monthly_reports.findUnique.mockImplementation(() => {
+      throw new Error('Prisma must not receive an invalid UUID');
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-user-1' },
+          params: { reportId: 'undefined' },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(mockPrisma.monthly_reports.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid monthly report enrollment UUID before querying Prisma', async () => {
+    mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === PERMISSIONS_KEY) {
+        return { permissions: ['reports:read'], mode: 'all' };
+      }
+      if (key === AUTHORIZATION_RESOURCE_KEY) {
+        return { type: 'monthly_report', idParam: 'enrollmentId' };
+      }
+      return undefined;
+    });
+    mockAuthorizationContext.resolveUserAuthorization.mockResolvedValue(
+      createResolved({ globalPermissions: ['reports:read'] }),
+    );
+    mockPrisma.club_enrollments.findUnique.mockImplementation(() => {
+      throw new Error('Prisma must not receive an invalid UUID');
+    });
+
+    await expect(
+      guard.canActivate(
+        createContext({
+          user: { sub: 'club-user-1' },
+          params: { enrollmentId: 'undefined' },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(mockPrisma.club_enrollments.findUnique).not.toHaveBeenCalled();
+  });
+
   it('rejects insurance member access when actor has insurance permission only in another section', async () => {
     mockReflector.getAllAndOverride.mockImplementation((key: string) => {
       if (key === PERMISSIONS_KEY) {

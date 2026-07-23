@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { createCache } from 'cache-manager';
 import {
   CatalogCacheService,
   CATALOG_CACHE_KEYS,
@@ -11,6 +12,10 @@ describe('CatalogCacheService', () => {
     get: jest.Mock;
     set: jest.Mock;
     del: jest.Mock;
+    mdel: jest.Mock;
+    stores: Array<{
+      iterator?: () => AsyncGenerator<[string, unknown], void, unknown>;
+    }>;
   };
 
   beforeEach(async () => {
@@ -18,6 +23,8 @@ describe('CatalogCacheService', () => {
       get: jest.fn(),
       set: jest.fn(),
       del: jest.fn(),
+      mdel: jest.fn(),
+      stores: [],
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -52,6 +59,13 @@ describe('CatalogCacheService', () => {
       expect(result).toBe(cached);
       expect(loader).not.toHaveBeenCalled();
       expect(cacheManager.set).not.toHaveBeenCalled();
+      expect(service.getMetrics()).toEqual({
+        hits: 1,
+        misses: 0,
+        coalescedLoads: 0,
+        errors: 0,
+        invalidations: 0,
+      });
     });
   });
 
@@ -88,6 +102,29 @@ describe('CatalogCacheService', () => {
 
       expect(cacheManager.set).toHaveBeenCalledWith('some-key', [], 1_800_000);
     });
+
+    it('coalesces concurrent misses for the same key into one database load', async () => {
+      cacheManager.get.mockResolvedValue(undefined);
+      cacheManager.set.mockResolvedValue(undefined);
+
+      let resolveLoader: (value: Array<{ country_id: number }>) => void;
+      const deferred = new Promise<Array<{ country_id: number }>>((resolve) => {
+        resolveLoader = resolve;
+      });
+      const loader = jest.fn(() => deferred);
+
+      const first = service.getOrSet(CATALOG_CACHE_KEYS.COUNTRIES, loader);
+      const second = service.getOrSet(CATALOG_CACHE_KEYS.COUNTRIES, loader);
+
+      resolveLoader!([{ country_id: 1 }]);
+
+      await expect(Promise.all([first, second])).resolves.toEqual([
+        [{ country_id: 1 }],
+        [{ country_id: 1 }],
+      ]);
+      expect(loader).toHaveBeenCalledTimes(1);
+      expect(service.getMetrics().coalescedLoads).toBe(1);
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -107,6 +144,10 @@ describe('CatalogCacheService', () => {
 
       expect(result).toBe(dbData);
       expect(loader).toHaveBeenCalledTimes(1);
+      expect(service.getMetrics()).toMatchObject({
+        misses: 1,
+        errors: 2,
+      });
     });
   });
 
@@ -169,6 +210,44 @@ describe('CatalogCacheService', () => {
   // invalidateAll
   // -----------------------------------------------------------------------
   describe('invalidateAll', () => {
+    it('preserves non-catalog entries with the real in-memory Keyv store', async () => {
+      const realCache = createCache();
+      const realService = new CatalogCacheService(realCache);
+      const catalogKey = 'cache:catalogs:unions:country:999';
+      const sessionKey = 'auth:session:do-not-delete';
+      await realCache.set(catalogKey, []);
+      await realCache.set(sessionKey, 'token');
+
+      await realService.invalidateAll();
+
+      await expect(realCache.get(catalogKey)).resolves.toBeUndefined();
+      await expect(realCache.get(sessionKey)).resolves.toBe('token');
+    });
+
+    it('uses public store iterators to delete every catalog key only', async () => {
+      async function* entries(): AsyncGenerator<
+        [string, unknown],
+        void,
+        unknown
+      > {
+        yield ['cache:catalogs:unions:country:999', { value: [] }];
+        yield ['cache:catalogs:districts:lf:456', { value: [] }];
+        yield ['auth:session:do-not-delete', { value: 'token' }];
+      }
+
+      cacheManager.stores = [{ iterator: entries }];
+      cacheManager.mdel.mockResolvedValue(true);
+
+      await service.invalidateAll();
+
+      expect(cacheManager.mdel).toHaveBeenCalledWith([
+        'cache:catalogs:unions:country:999',
+        'cache:catalogs:districts:lf:456',
+      ]);
+      expect(cacheManager.del).not.toHaveBeenCalled();
+      expect(service.getMetrics().invalidations).toBe(2);
+    });
+
     it('deletes all known static catalog keys', async () => {
       cacheManager.del.mockResolvedValue(true);
 

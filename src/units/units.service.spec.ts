@@ -39,11 +39,13 @@ describe('UnitsService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      upsert: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
     weekly_record_scores: {
       createMany: jest.fn(),
+      deleteMany: jest.fn(),
       upsert: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
     },
@@ -821,12 +823,16 @@ describe('UnitsService', () => {
           },
         ],
       );
-      mockPrismaService.weekly_records.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(existingRecord2);
       mockPrismaService.weekly_records.findUnique
         .mockResolvedValueOnce(hydratedRecord1)
         .mockResolvedValueOnce(hydratedRecord2);
+      mockPrismaService.weekly_records.upsert
+        .mockResolvedValueOnce({ record_id: 1 })
+        .mockResolvedValueOnce({ record_id: 2 });
+      mockPrismaService.weekly_records.findMany.mockResolvedValue([
+        hydratedRecord1,
+        hydratedRecord2,
+      ]);
       mockPrismaService.weekly_records.create.mockResolvedValue({
         record_id: 1,
         unit_id: 1,
@@ -838,9 +844,10 @@ describe('UnitsService', () => {
         .mockResolvedValueOnce({ ...hydratedRecord1 })
         .mockResolvedValueOnce({ ...existingRecord2, attendance: 1 })
         .mockResolvedValueOnce({ ...hydratedRecord2 });
-      mockPrismaService.weekly_record_scores.findMany
-        .mockResolvedValueOnce([{ points: 10 }])
-        .mockResolvedValueOnce([{ points: 5 }]);
+      mockPrismaService.weekly_record_scores.findMany.mockResolvedValue([
+        { record_id: 1, points: 10 },
+        { record_id: 2, points: 5 },
+      ]);
 
       const result = await service.bulkUpsertWeeklyRecords(
         1,
@@ -865,15 +872,31 @@ describe('UnitsService', () => {
         'uuid-creator',
       );
 
-      expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
-      expect(mockPrismaService.weekly_records.findFirst).toHaveBeenCalledWith(
+      expect(mockPrismaService.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        { timeout: 15_000 },
+      );
+      expect(mockPrismaService.weekly_records.upsert).toHaveBeenCalledTimes(2);
+      expect(
+        mockPrismaService.weekly_record_scores.deleteMany,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ unit_id: 1 }),
+          where: {
+            OR: [
+              { record_id: 1, category_id: { in: [7] } },
+              { record_id: 2, category_id: { in: [7] } },
+            ],
+          },
         }),
       );
       expect(
-        mockPrismaService.weekly_record_scores.upsert,
-      ).toHaveBeenCalledTimes(2);
+        mockPrismaService.weekly_record_scores.createMany,
+      ).toHaveBeenCalledWith({
+        data: [
+          { record_id: 1, category_id: 7, points: 10 },
+          { record_id: 2, category_id: 7, points: 5 },
+        ],
+      });
       expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({ record_id: 1, points: 10 });
       expect(result[1]).toMatchObject({ record_id: 2, points: 5 });

@@ -1,6 +1,7 @@
 import { Module, Global } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthorizationContextService } from './services/authorization-context.service';
 import { TokenBlacklistService } from './services/token-blacklist.service';
 import { SessionManagementService } from './services/session-management.service';
@@ -19,12 +20,7 @@ import { ClassAssignmentResolverService } from './services/class-assignment-reso
 import { NotificationsModule } from '../notifications/notifications.module';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
-
-function isPlaceholderRedisUrl(value: string): boolean {
-  return ['YOUR_PASSWORD', 'YOUR_REGION', 'YOUR_PORT'].some((token) =>
-    value.includes(token),
-  );
-}
+import { buildCacheOptions } from '../config/cache.config';
 
 @Global()
 @Module({
@@ -34,48 +30,9 @@ function isPlaceholderRedisUrl(value: string): boolean {
     // ==========================================
     CacheModule.registerAsync({
       isGlobal: true,
-      useFactory: async () => {
-        const rawRedisUrl = process.env.REDIS_URL?.trim();
-
-        // Si REDIS_URL está configurado, intentar usar Upstash Redis
-        if (rawRedisUrl) {
-          if (isPlaceholderRedisUrl(rawRedisUrl)) {
-            console.warn(
-              '⚠️  REDIS_URL contains placeholder values. Skipping Redis connection.',
-            );
-          } else {
-            try {
-              new URL(rawRedisUrl);
-
-              const KeyvRedis = require('@keyv/redis').default as new (
-                url: string,
-              ) => unknown;
-              console.log('🔄 Attempting to connect to Redis...');
-
-              const keyvRedis = new KeyvRedis(rawRedisUrl);
-
-              console.log('✅ Redis cache connected successfully');
-              return {
-                stores: [keyvRedis],
-                ttl: 86400000, // 24 horas en ms
-              };
-            } catch (error) {
-              const message =
-                error instanceof Error ? error.message : 'Unknown error';
-              console.warn('⚠️  Redis connection failed:', message);
-              console.warn(
-                '📦 Falling back to in-memory cache (development mode)',
-              );
-            }
-          }
-        }
-
-        // Fallback a in-memory cache para desarrollo local
-        console.log('💾 Using in-memory cache');
-        return {
-          ttl: 86400000,
-        };
-      },
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: buildCacheOptions,
     }),
     // BetterAuthModule provides BetterAuthService (used by MfaService for TOTP operations).
     BetterAuthModule,

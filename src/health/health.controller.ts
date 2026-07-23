@@ -11,6 +11,7 @@ import { firebaseAdmin } from '../config/firebase-admin.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard, GlobalRolesGuard } from '../common/guards';
 import { GlobalRoles } from '../common/decorators';
+import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 
 @ApiTags('health')
 @Controller('health')
@@ -18,6 +19,7 @@ export class HealthController {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly catalogCache: CatalogCacheService,
   ) {}
 
   @Get()
@@ -44,8 +46,8 @@ export class HealthController {
   @ApiOperation({
     summary: 'Detailed health status (admin only)',
     description:
-      'Returns database, cache, FCM and Sentry status. ' +
-      'The overall status is "ok" when the database is reachable, "degraded" otherwise. ' +
+      'Returns database pool, cache, FCM and Sentry status. ' +
+      'The overall status is "ok" when both database and cache are reachable, "degraded" otherwise. ' +
       'Requires admin or super-admin global role.',
   })
   @ApiResponse({
@@ -57,8 +59,27 @@ export class HealthController {
         timestamp: '2026-05-11T00:00:00.000Z',
         uptime: 12345.6,
         dependencies: {
-          database: { ok: true },
-          cache: { ok: true },
+          database: {
+            ok: true,
+            pool: {
+              max: 20,
+              total: 6,
+              idle: 2,
+              active: 4,
+              waiting: 0,
+              utilization: 0.2,
+            },
+          },
+          cache: {
+            ok: true,
+            catalogs: {
+              hits: 120,
+              misses: 8,
+              coalescedLoads: 2,
+              errors: 0,
+              invalidations: 14,
+            },
+          },
           fcm: { configured: true, initialized: true },
           sentry: { configured: true },
         },
@@ -91,7 +112,7 @@ export class HealthController {
       },
     };
 
-    const overallStatus = dbStatus.ok ? 'ok' : 'degraded';
+    const overallStatus = dbStatus.ok && cacheStatus.ok ? 'ok' : 'degraded';
 
     return {
       status: overallStatus,
@@ -102,28 +123,34 @@ export class HealthController {
   }
 
   private async checkDatabase() {
+    const pool = this.prisma.getPoolMetrics();
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-      return { ok: true };
+      return { ok: true, pool };
     } catch (error) {
       return {
         ok: false,
         error: error instanceof Error ? error.message : 'Unknown DB error',
+        pool,
       };
     }
   }
 
   private async checkCache() {
     const key = `health:cache:${Date.now()}`;
+    const catalogs = this.catalogCache.getMetrics();
     try {
       await this.cacheManager.set(key, 'ok', 5_000);
       const value = await this.cacheManager.get<string>(key);
-      return { ok: value === 'ok' };
+      return { ok: value === 'ok', catalogs };
     } catch (error) {
       return {
         ok: false,
         error: error instanceof Error ? error.message : 'Unknown cache error',
+        catalogs,
       };
+    } finally {
+      await this.cacheManager.del(key).catch(() => undefined);
     }
   }
 

@@ -4,10 +4,20 @@ export const envValidationSchema = Joi.object({
   // Database (required)
   DATABASE_URL: Joi.string().uri().required(),
   DATABASE_DIRECT_URL: Joi.string().uri().optional(),
+  DATABASE_APPLICATION_NAME: Joi.string()
+    .trim()
+    .max(63)
+    .default('sacdia-backend'),
+  PRISMA_POOL_MAX: Joi.number().integer().min(1).max(100).default(20),
+  PRISMA_POOL_IDLE_TIMEOUT_MS: Joi.number().integer().positive().default(30000),
   PRISMA_POOL_CONNECTION_TIMEOUT_MS: Joi.number()
     .integer()
     .positive()
     .default(15000),
+  PRISMA_POOL_KEEP_ALIVE_INITIAL_DELAY_MS: Joi.number()
+    .integer()
+    .positive()
+    .default(10000),
 
   // Better Auth (required)
   BETTER_AUTH_SECRET: Joi.string().min(32).required(),
@@ -41,7 +51,14 @@ export const envValidationSchema = Joi.object({
   LOG_PRETTY_IGNORE: Joi.string().optional(),
 
   // Redis
-  REDIS_URL: Joi.string().optional(),
+  REDIS_URL: Joi.string()
+    .uri({ scheme: ['redis', 'rediss'] })
+    .optional(),
+  CACHE_DEFAULT_TTL_MS: Joi.number().integer().positive().default(86400000),
+  CACHE_REDIS_CONNECTION_TIMEOUT_MS: Joi.number()
+    .integer()
+    .positive()
+    .default(5000),
 
   // Cloudflare R2
   R2_ACCOUNT_ID: Joi.string().optional(),

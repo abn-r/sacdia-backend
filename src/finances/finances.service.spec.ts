@@ -23,6 +23,7 @@ describe('FinancesService', () => {
     },
     finances_categories: {
       findMany: jest.fn(),
+      findUnique: jest.fn(),
     },
     clubs: {
       findUnique: jest.fn(),
@@ -348,11 +349,84 @@ describe('FinancesService', () => {
 
       const mockFinance = { finance_id: 1, ...createDto };
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
+      mockPrismaService.finances_categories.findUnique.mockResolvedValue({
+        finance_category_id: 1,
+        active: true,
+        type: 0,
+      });
       mockPrismaService.finances.create.mockResolvedValue(mockFinance);
 
       const result = await service.create(createDto, 'user-123', 1);
 
       expect(result).toEqual({ ...mockFinance, evidences: [] });
+    });
+
+    it('rejects a finance category that does not exist', async () => {
+      const createDto = {
+        year: 2026,
+        month: 1,
+        amount: 1000,
+        club_type_id: 2,
+        finance_category_id: 999,
+        finance_date: '2026-01-15',
+        club_section_id: 1,
+      };
+      mockPrismaService.finances_categories.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create(createDto, 'user-123', 1),
+      ).rejects.toMatchObject({
+        code: 'FINANCE_CATEGORY_NOT_FOUND',
+      });
+      expect(mockPrismaService.finances.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects an inactive finance category', async () => {
+      const createDto = {
+        year: 2026,
+        month: 1,
+        amount: 1000,
+        club_type_id: 2,
+        finance_category_id: 2,
+        finance_date: '2026-01-15',
+        club_section_id: 1,
+      };
+      mockPrismaService.finances_categories.findUnique.mockResolvedValue({
+        finance_category_id: 2,
+        active: false,
+        type: 1,
+      });
+
+      await expect(
+        service.create(createDto, 'user-123', 1),
+      ).rejects.toMatchObject({
+        code: 'FINANCE_CATEGORY_INACTIVE',
+      });
+      expect(mockPrismaService.finances.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a finance category with an unsupported type', async () => {
+      const createDto = {
+        year: 2026,
+        month: 1,
+        amount: 1000,
+        club_type_id: 2,
+        finance_category_id: 3,
+        finance_date: '2026-01-15',
+        club_section_id: 1,
+      };
+      mockPrismaService.finances_categories.findUnique.mockResolvedValue({
+        finance_category_id: 3,
+        active: true,
+        type: 2,
+      });
+
+      await expect(
+        service.create(createDto, 'user-123', 1),
+      ).rejects.toMatchObject({
+        code: 'FINANCE_CATEGORY_TYPE_INVALID',
+      });
+      expect(mockPrismaService.finances.create).not.toHaveBeenCalled();
     });
   });
 
@@ -388,6 +462,11 @@ describe('FinancesService', () => {
 
     it('should call validatePeriodOpen before creating a movement', async () => {
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
+      mockPrismaService.finances_categories.findUnique.mockResolvedValue({
+        finance_category_id: 1,
+        active: true,
+        type: 0,
+      });
       mockPrismaService.finances.create.mockResolvedValue({
         finance_id: 1,
         ...createDto,
@@ -420,6 +499,11 @@ describe('FinancesService', () => {
         post_closing_note: 'Ajuste autorizado',
       };
       mockFinancePeriodService.validatePeriodOpen.mockResolvedValue(undefined);
+      mockPrismaService.finances_categories.findUnique.mockResolvedValue({
+        finance_category_id: 1,
+        active: true,
+        type: 0,
+      });
       mockPrismaService.finances.create.mockResolvedValue({
         finance_id: 1,
         ...dtoWithNote,
@@ -494,6 +578,31 @@ describe('FinancesService', () => {
       expect(
         mockFinancePeriodService.validatePeriodOpen,
       ).not.toHaveBeenCalled();
+    });
+
+    it('rejects replacing a movement category with an inactive category', async () => {
+      const existingMovement = {
+        finance_id: 1,
+        year: 2026,
+        month: 2,
+        amount: 1000,
+        club_section_id: null,
+        finances_categories: { name: 'Cuotas', type: 0 },
+        club_types: { name: 'Conquistadores' },
+        users: null,
+      };
+
+      mockPrismaService.finances.findUnique.mockResolvedValue(existingMovement);
+      mockPrismaService.finances_categories.findUnique.mockResolvedValue({
+        finance_category_id: 2,
+        active: false,
+        type: 1,
+      });
+
+      await expect(
+        service.update(1, { finance_category_id: 2 }, 'user-123'),
+      ).rejects.toMatchObject({ code: 'FINANCE_CATEGORY_INACTIVE' });
+      expect(mockPrismaService.finances.update).not.toHaveBeenCalled();
     });
   });
 

@@ -710,22 +710,21 @@ export class UnitsService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const saved: WeeklyRecordResponse[] = [];
+    return this.prisma.$transaction(
+      async (tx) => {
+        const recordByUserId = new Map<string, { record_id: number }>();
 
-      for (const entry of preparedRecords) {
-        let record = await tx.weekly_records.findFirst({
-          where: {
-            unit_id: unitId,
-            user_id: entry.user_id,
-            week: dto.week,
-            year: dto.year,
-          },
-        });
-
-        if (!record) {
-          record = await tx.weekly_records.create({
-            data: {
+        for (const entry of preparedRecords) {
+          const record = await tx.weekly_records.upsert({
+            where: {
+              unit_id_user_id_week_year: {
+                unit_id: unitId,
+                user_id: entry.user_id,
+                week: dto.week,
+                year: dto.year,
+              },
+            },
+            create: {
               unit_id: unitId,
               user_id: entry.user_id,
               week: dto.week,
@@ -738,64 +737,95 @@ export class UnitsService {
               created_at: new Date(),
               modified_at: new Date(),
             },
-          });
-        } else {
-          record = await tx.weekly_records.update({
-            where: { record_id: record.record_id },
-            data: {
+            update: {
               attendance: entry.attendance,
               punctuality: entry.punctuality,
               active: true,
               modified_at: new Date(),
             },
           });
+          recordByUserId.set(entry.user_id, record);
         }
 
-        for (const scoreEntry of entry.validatedScores) {
-          await tx.weekly_record_scores.upsert({
-            where: {
-              record_id_category_id: {
-                record_id: record.record_id,
-                category_id: scoreEntry.category_id,
-              },
-            },
-            update: { points: scoreEntry.points },
-            create: {
-              record_id: record.record_id,
-              category_id: scoreEntry.category_id,
-              points: scoreEntry.points,
-            },
-          });
-        }
-
-        if (entry.validatedScores.length > 0) {
-          const allScores = await tx.weekly_record_scores.findMany({
-            where: { record_id: record.record_id },
-            select: { points: true },
-          });
-          const points = allScores.reduce((sum, s) => sum + s.points, 0);
-          record = await tx.weekly_records.update({
-            where: { record_id: record.record_id },
-            data: { points, modified_at: new Date() },
-          });
-        }
-
-        const hydrated = await tx.weekly_records.findUnique({
-          where: { record_id: record.record_id },
-          include: this.weeklyRecordInclude,
+        const scoreWrites = preparedRecords.flatMap((entry) => {
+          const record = recordByUserId.get(entry.user_id)!;
+          return entry.validatedScores.map((score) => ({
+            record_id: record.record_id,
+            category_id: score.category_id,
+            points: score.points,
+          }));
         });
 
-        if (!hydrated) {
-          throw new AppInternalServerErrorException(
-            ErrorCode.INTERNAL_SERVER_ERROR,
-          );
+        if (scoreWrites.length > 0) {
+          await tx.weekly_record_scores.deleteMany({
+            where: {
+              OR: preparedRecords
+                .filter((entry) => entry.validatedScores.length > 0)
+                .map((entry) => ({
+                  record_id: recordByUserId.get(entry.user_id)!.record_id,
+                  category_id: {
+                    in: entry.validatedScores.map((score) => score.category_id),
+                  },
+                })),
+            },
+          });
+          await tx.weekly_record_scores.createMany({ data: scoreWrites });
+
+          const allScores = await tx.weekly_record_scores.findMany({
+            where: {
+              record_id: {
+                in: Array.from(recordByUserId.values()).map(
+                  (record) => record.record_id,
+                ),
+              },
+            },
+            select: { record_id: true, points: true },
+          });
+          const pointsByRecordId = new Map<number, number>();
+          for (const score of allScores) {
+            pointsByRecordId.set(
+              score.record_id,
+              (pointsByRecordId.get(score.record_id) ?? 0) + score.points,
+            );
+          }
+
+          for (const record of recordByUserId.values()) {
+            await tx.weekly_records.update({
+              where: { record_id: record.record_id },
+              data: {
+                points: pointsByRecordId.get(record.record_id) ?? 0,
+                modified_at: new Date(),
+              },
+            });
+          }
         }
 
-        saved.push(this.transformWeeklyRecord(hydrated));
-      }
+        const hydratedRecords = await tx.weekly_records.findMany({
+          where: {
+            record_id: {
+              in: Array.from(recordByUserId.values()).map(
+                (record) => record.record_id,
+              ),
+            },
+          },
+          include: this.weeklyRecordInclude,
+        });
+        const hydratedByUserId = new Map(
+          hydratedRecords.map((record) => [record.user_id, record]),
+        );
 
-      return saved;
-    });
+        return preparedRecords.map((entry) => {
+          const hydrated = hydratedByUserId.get(entry.user_id);
+          if (!hydrated) {
+            throw new AppInternalServerErrorException(
+              ErrorCode.INTERNAL_SERVER_ERROR,
+            );
+          }
+          return this.transformWeeklyRecord(hydrated);
+        });
+      },
+      { timeout: 15_000 },
+    );
   }
 
   async updateWeeklyRecord(
