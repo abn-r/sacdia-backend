@@ -513,4 +513,177 @@ CREATE TRIGGER trg_institutional_lineage_edges_append_only
   FOR EACH ROW
   EXECUTE FUNCTION prevent_institutional_ledger_mutation();
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 5. Conservative name-version backfill from current projections only
+-- ─────────────────────────────────────────────────────────────────────────────
+
+INSERT INTO institutional_name_versions (
+  division_id, name, abbreviation, valid_from, valid_to, precision, recorded_from
+)
+SELECT d.division_id,
+       d.name,
+       d.abbreviation,
+       COALESCE(d.created_at::date, CURRENT_DATE),
+       NULL,
+       'system_backfill',
+       COALESCE(d.created_at, NOW())
+FROM divisions d
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM institutional_name_versions n
+  WHERE n.division_id = d.division_id
+    AND n.recorded_to IS NULL
+    AND n.valid_to IS NULL
+);
+
+INSERT INTO institutional_name_versions (
+  union_id, name, abbreviation, valid_from, valid_to, precision, recorded_from
+)
+SELECT u.union_id,
+       u.name,
+       u.abbreviation,
+       COALESCE(u.created_at::date, CURRENT_DATE),
+       NULL,
+       'system_backfill',
+       COALESCE(u.created_at, NOW())
+FROM unions u
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM institutional_name_versions n
+  WHERE n.union_id = u.union_id
+    AND n.recorded_to IS NULL
+    AND n.valid_to IS NULL
+);
+
+INSERT INTO institutional_name_versions (
+  local_field_id, name, abbreviation, valid_from, valid_to, precision, recorded_from
+)
+SELECT lf.local_field_id,
+       lf.name,
+       lf.abbreviation,
+       COALESCE(lf.created_at::date, CURRENT_DATE),
+       NULL,
+       'system_backfill',
+       COALESCE(lf.created_at, NOW())
+FROM local_fields lf
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM institutional_name_versions n
+  WHERE n.local_field_id = lf.local_field_id
+    AND n.recorded_to IS NULL
+    AND n.valid_to IS NULL
+);
+
+INSERT INTO institutional_name_versions (
+  districlub_type_id, name, abbreviation, valid_from, valid_to, precision, recorded_from
+)
+SELECT d.districlub_type_id,
+       d.name,
+       NULL,
+       COALESCE(d.created_at::date, CURRENT_DATE),
+       NULL,
+       'system_backfill',
+       COALESCE(d.created_at, NOW())
+FROM districts d
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM institutional_name_versions n
+  WHERE n.districlub_type_id = d.districlub_type_id
+    AND n.recorded_to IS NULL
+    AND n.valid_to IS NULL
+);
+
+INSERT INTO institutional_name_versions (
+  church_id, name, abbreviation, valid_from, valid_to, precision, recorded_from
+)
+SELECT c.church_id,
+       c.name,
+       NULL,
+       COALESCE(c.created_at::date, CURRENT_DATE),
+       NULL,
+       'system_backfill',
+       COALESCE(c.created_at, NOW())
+FROM churches c
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM institutional_name_versions n
+  WHERE n.church_id = c.church_id
+    AND n.recorded_to IS NULL
+    AND n.valid_to IS NULL
+);
+
+INSERT INTO institutional_name_versions (
+  club_id, name, abbreviation, valid_from, valid_to, precision, recorded_from
+)
+SELECT c.club_id,
+       c.name,
+       NULL,
+       COALESCE(c.created_at::date, CURRENT_DATE),
+       NULL,
+       'system_backfill',
+       COALESCE(c.created_at, NOW())
+FROM clubs c
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM institutional_name_versions n
+  WHERE n.club_id = c.club_id
+    AND n.recorded_to IS NULL
+    AND n.valid_to IS NULL
+);
+
+INSERT INTO institutional_name_version_translations (
+  name_version_id, locale, name, abbreviation
+)
+SELECT n.name_version_id, t.locale, t.name, NULL
+FROM institutional_name_versions n
+JOIN divisions_translations t ON t.division_id = n.division_id
+WHERE n.division_id IS NOT NULL
+  AND n.recorded_to IS NULL
+  AND n.valid_to IS NULL
+ON CONFLICT (name_version_id, locale) DO NOTHING;
+
+INSERT INTO institutional_name_version_translations (
+  name_version_id, locale, name, abbreviation
+)
+SELECT n.name_version_id, t.locale, t.name, NULL
+FROM institutional_name_versions n
+JOIN unions_translations t ON t.union_id = n.union_id
+WHERE n.union_id IS NOT NULL
+  AND n.recorded_to IS NULL
+  AND n.valid_to IS NULL
+ON CONFLICT (name_version_id, locale) DO NOTHING;
+
+INSERT INTO institutional_name_version_translations (
+  name_version_id, locale, name, abbreviation
+)
+SELECT n.name_version_id, t.locale, t.name, NULL
+FROM institutional_name_versions n
+JOIN local_fields_translations t ON t.local_field_id = n.local_field_id
+WHERE n.local_field_id IS NOT NULL
+  AND n.recorded_to IS NULL
+  AND n.valid_to IS NULL
+ON CONFLICT (name_version_id, locale) DO NOTHING;
+
+INSERT INTO institutional_name_version_translations (
+  name_version_id, locale, name, abbreviation
+)
+SELECT n.name_version_id, t.locale, t.name, NULL
+FROM institutional_name_versions n
+JOIN districts_translations t ON t.districlub_type_id = n.districlub_type_id
+WHERE n.districlub_type_id IS NOT NULL
+  AND n.recorded_to IS NULL
+  AND n.valid_to IS NULL
+ON CONFLICT (name_version_id, locale) DO NOTHING;
+
+INSERT INTO institutional_name_version_translations (
+  name_version_id, locale, name, abbreviation
+)
+SELECT n.name_version_id, t.locale, t.name, NULL
+FROM institutional_name_versions n
+JOIN churches_translations t ON t.church_id = n.church_id
+WHERE n.church_id IS NOT NULL
+  AND n.recorded_to IS NULL
+  AND n.valid_to IS NULL
+ON CONFLICT (name_version_id, locale) DO NOTHING;
+
 COMMIT;

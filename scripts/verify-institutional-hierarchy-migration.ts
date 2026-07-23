@@ -1,11 +1,168 @@
 import { Client } from 'pg';
 
-interface VerificationCheck {
+export interface VerificationCheck {
   name: string;
   sql: string;
 }
 
-const checks: VerificationCheck[] = [
+const PROHIBITED_CONTEXT_KEYS = [
+  'blood',
+  'blood_type',
+  'allergy',
+  'allergies',
+  'disease',
+  'diseases',
+  'medicine',
+  'medicines',
+  'health',
+  'medical',
+  'phone',
+  'emergency_contact',
+  'emergency_contacts',
+  'legal_representative',
+  'legal_representatives',
+  'document',
+  'documents',
+  'password',
+  'token',
+  'secret',
+] as const;
+
+function openRelationshipFailuresSql(): string {
+  return `
+    SELECT (
+      (SELECT COUNT(*)::int
+       FROM unions u
+       LEFT JOIN (
+         SELECT union_id, COUNT(*) AS open_count
+         FROM union_division_history
+         WHERE recorded_to IS NULL AND valid_to IS NULL
+         GROUP BY union_id
+       ) h ON h.union_id = u.union_id
+       WHERE COALESCE(h.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM local_fields lf
+       LEFT JOIN (
+         SELECT local_field_id, COUNT(*) AS open_count
+         FROM local_field_union_history
+         WHERE recorded_to IS NULL AND valid_to IS NULL
+         GROUP BY local_field_id
+       ) h ON h.local_field_id = lf.local_field_id
+       WHERE COALESCE(h.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM districts d
+       LEFT JOIN (
+         SELECT districlub_type_id, COUNT(*) AS open_count
+         FROM district_local_field_history
+         WHERE recorded_to IS NULL AND valid_to IS NULL
+         GROUP BY districlub_type_id
+       ) h ON h.districlub_type_id = d.districlub_type_id
+       WHERE COALESCE(h.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM churches c
+       LEFT JOIN (
+         SELECT church_id, COUNT(*) AS open_count
+         FROM church_district_history
+         WHERE recorded_to IS NULL AND valid_to IS NULL
+         GROUP BY church_id
+       ) h ON h.church_id = c.church_id
+       WHERE COALESCE(h.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM clubs c
+       LEFT JOIN (
+         SELECT club_id, COUNT(*) AS open_count
+         FROM club_institutional_history
+         WHERE recorded_to IS NULL AND valid_to IS NULL
+         GROUP BY club_id
+       ) h ON h.club_id = c.club_id
+       WHERE COALESCE(h.open_count, 0) <> 1)
+    )::int AS failures
+  `;
+}
+
+function openNameVersionFailuresSql(): string {
+  return `
+    SELECT (
+      (SELECT COUNT(*)::int
+       FROM divisions d
+       LEFT JOIN (
+         SELECT division_id, COUNT(*) AS open_count
+         FROM institutional_name_versions
+         WHERE division_id IS NOT NULL
+           AND recorded_to IS NULL
+           AND valid_to IS NULL
+         GROUP BY division_id
+       ) n ON n.division_id = d.division_id
+       WHERE COALESCE(n.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM unions u
+       LEFT JOIN (
+         SELECT union_id, COUNT(*) AS open_count
+         FROM institutional_name_versions
+         WHERE union_id IS NOT NULL
+           AND recorded_to IS NULL
+           AND valid_to IS NULL
+         GROUP BY union_id
+       ) n ON n.union_id = u.union_id
+       WHERE COALESCE(n.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM local_fields lf
+       LEFT JOIN (
+         SELECT local_field_id, COUNT(*) AS open_count
+         FROM institutional_name_versions
+         WHERE local_field_id IS NOT NULL
+           AND recorded_to IS NULL
+           AND valid_to IS NULL
+         GROUP BY local_field_id
+       ) n ON n.local_field_id = lf.local_field_id
+       WHERE COALESCE(n.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM districts d
+       LEFT JOIN (
+         SELECT districlub_type_id, COUNT(*) AS open_count
+         FROM institutional_name_versions
+         WHERE districlub_type_id IS NOT NULL
+           AND recorded_to IS NULL
+           AND valid_to IS NULL
+         GROUP BY districlub_type_id
+       ) n ON n.districlub_type_id = d.districlub_type_id
+       WHERE COALESCE(n.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM churches c
+       LEFT JOIN (
+         SELECT church_id, COUNT(*) AS open_count
+         FROM institutional_name_versions
+         WHERE church_id IS NOT NULL
+           AND recorded_to IS NULL
+           AND valid_to IS NULL
+         GROUP BY church_id
+       ) n ON n.church_id = c.church_id
+       WHERE COALESCE(n.open_count, 0) <> 1)
+      +
+      (SELECT COUNT(*)::int
+       FROM clubs c
+       LEFT JOIN (
+         SELECT club_id, COUNT(*) AS open_count
+         FROM institutional_name_versions
+         WHERE club_id IS NOT NULL
+           AND recorded_to IS NULL
+           AND valid_to IS NULL
+         GROUP BY club_id
+       ) n ON n.club_id = c.club_id
+       WHERE COALESCE(n.open_count, 0) <> 1)
+    )::int AS failures
+  `;
+}
+
+export const INSTITUTIONAL_HIERARCHY_CHECKS: VerificationCheck[] = [
   {
     name: 'DIA division exists exactly once',
     sql: `
@@ -33,197 +190,312 @@ const checks: VerificationCheck[] = [
     `,
   },
   {
-    name: 'Each union has exactly one open division interval',
+    name: 'Each entity has exactly one open effective relationship revision',
+    sql: openRelationshipFailuresSql(),
+  },
+  {
+    name: 'Each entity has exactly one open name version',
+    sql: openNameVersionFailuresSql(),
+  },
+  {
+    name: 'Current projection matches the revision covering CURRENT_DATE',
     sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM unions u
-      LEFT JOIN (
-        SELECT union_id, COUNT(*) AS open_count
-        FROM union_division_history
-        WHERE valid_to IS NULL
-        GROUP BY union_id
-      ) h ON h.union_id = u.union_id
-      WHERE COALESCE(h.open_count, 0) <> 1
+      SELECT (
+        (SELECT COUNT(*)::int
+         FROM unions u
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM union_division_history h
+           WHERE h.union_id = u.union_id
+             AND h.recorded_to IS NULL
+             AND h.valid_from <= CURRENT_DATE
+             AND (h.valid_to IS NULL OR h.valid_to > CURRENT_DATE)
+             AND h.division_id = u.division_id
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM local_fields lf
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM local_field_union_history h
+           WHERE h.local_field_id = lf.local_field_id
+             AND h.recorded_to IS NULL
+             AND h.valid_from <= CURRENT_DATE
+             AND (h.valid_to IS NULL OR h.valid_to > CURRENT_DATE)
+             AND h.union_id = lf.union_id
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM districts d
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM district_local_field_history h
+           WHERE h.districlub_type_id = d.districlub_type_id
+             AND h.recorded_to IS NULL
+             AND h.valid_from <= CURRENT_DATE
+             AND (h.valid_to IS NULL OR h.valid_to > CURRENT_DATE)
+             AND h.local_field_id = d.local_field_id
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM churches c
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM church_district_history h
+           WHERE h.church_id = c.church_id
+             AND h.recorded_to IS NULL
+             AND h.valid_from <= CURRENT_DATE
+             AND (h.valid_to IS NULL OR h.valid_to > CURRENT_DATE)
+             AND h.districlub_type_id = c.districlub_type_id
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM clubs c
+         JOIN local_fields lf ON lf.local_field_id = c.local_field_id
+         JOIN unions u ON u.union_id = lf.union_id
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM club_institutional_history h
+           WHERE h.club_id = c.club_id
+             AND h.recorded_to IS NULL
+             AND h.valid_from <= CURRENT_DATE
+             AND (h.valid_to IS NULL OR h.valid_to > CURRENT_DATE)
+             AND h.division_id = u.division_id
+             AND h.union_id = lf.union_id
+             AND h.local_field_id = c.local_field_id
+             AND h.districlub_type_id = c.districlub_type_id
+             AND h.church_id = c.church_id
+         ))
+      )::int AS failures
     `,
   },
   {
-    name: 'Each local field has exactly one open union interval',
+    name: 'Current name projection matches the name version covering CURRENT_DATE',
     sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM local_fields lf
-      LEFT JOIN (
-        SELECT local_field_id, COUNT(*) AS open_count
-        FROM local_field_union_history
-        WHERE valid_to IS NULL
-        GROUP BY local_field_id
-      ) h ON h.local_field_id = lf.local_field_id
-      WHERE COALESCE(h.open_count, 0) <> 1
+      SELECT (
+        (SELECT COUNT(*)::int
+         FROM divisions d
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM institutional_name_versions n
+           WHERE n.division_id = d.division_id
+             AND n.recorded_to IS NULL
+             AND n.valid_from <= CURRENT_DATE
+             AND (n.valid_to IS NULL OR n.valid_to > CURRENT_DATE)
+             AND n.name = d.name
+             AND n.abbreviation IS NOT DISTINCT FROM d.abbreviation
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM unions u
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM institutional_name_versions n
+           WHERE n.union_id = u.union_id
+             AND n.recorded_to IS NULL
+             AND n.valid_from <= CURRENT_DATE
+             AND (n.valid_to IS NULL OR n.valid_to > CURRENT_DATE)
+             AND n.name = u.name
+             AND n.abbreviation IS NOT DISTINCT FROM u.abbreviation
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM local_fields lf
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM institutional_name_versions n
+           WHERE n.local_field_id = lf.local_field_id
+             AND n.recorded_to IS NULL
+             AND n.valid_from <= CURRENT_DATE
+             AND (n.valid_to IS NULL OR n.valid_to > CURRENT_DATE)
+             AND n.name = lf.name
+             AND n.abbreviation IS NOT DISTINCT FROM lf.abbreviation
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM districts d
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM institutional_name_versions n
+           WHERE n.districlub_type_id = d.districlub_type_id
+             AND n.recorded_to IS NULL
+             AND n.valid_from <= CURRENT_DATE
+             AND (n.valid_to IS NULL OR n.valid_to > CURRENT_DATE)
+             AND n.name = d.name
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM churches c
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM institutional_name_versions n
+           WHERE n.church_id = c.church_id
+             AND n.recorded_to IS NULL
+             AND n.valid_from <= CURRENT_DATE
+             AND (n.valid_to IS NULL OR n.valid_to > CURRENT_DATE)
+             AND n.name = c.name
+         ))
+        +
+        (SELECT COUNT(*)::int
+         FROM clubs c
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM institutional_name_versions n
+           WHERE n.club_id = c.club_id
+             AND n.recorded_to IS NULL
+             AND n.valid_from <= CURRENT_DATE
+             AND (n.valid_to IS NULL OR n.valid_to > CURRENT_DATE)
+             AND n.name = c.name
+         ))
+      )::int AS failures
     `,
   },
   {
-    name: 'Each district has exactly one open local-field interval',
+    name: 'Recorded relationship revisions have zero overlaps',
     sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM districts d
-      LEFT JOIN (
-        SELECT districlub_type_id, COUNT(*) AS open_count
-        FROM district_local_field_history
-        WHERE valid_to IS NULL
-        GROUP BY districlub_type_id
-      ) h ON h.districlub_type_id = d.districlub_type_id
-      WHERE COALESCE(h.open_count, 0) <> 1
+      SELECT (
+        (SELECT COUNT(*)::int
+         FROM union_division_history a
+         JOIN union_division_history b
+           ON a.union_id = b.union_id
+          AND a.union_division_history_id < b.union_division_history_id
+          AND a.recorded_to IS NULL
+          AND b.recorded_to IS NULL
+          AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
+           && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)'))
+        +
+        (SELECT COUNT(*)::int
+         FROM local_field_union_history a
+         JOIN local_field_union_history b
+           ON a.local_field_id = b.local_field_id
+          AND a.local_field_union_history_id < b.local_field_union_history_id
+          AND a.recorded_to IS NULL
+          AND b.recorded_to IS NULL
+          AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
+           && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)'))
+        +
+        (SELECT COUNT(*)::int
+         FROM district_local_field_history a
+         JOIN district_local_field_history b
+           ON a.districlub_type_id = b.districlub_type_id
+          AND a.district_local_field_history_id < b.district_local_field_history_id
+          AND a.recorded_to IS NULL
+          AND b.recorded_to IS NULL
+          AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
+           && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)'))
+        +
+        (SELECT COUNT(*)::int
+         FROM church_district_history a
+         JOIN church_district_history b
+           ON a.church_id = b.church_id
+          AND a.church_district_history_id < b.church_district_history_id
+          AND a.recorded_to IS NULL
+          AND b.recorded_to IS NULL
+          AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
+           && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)'))
+        +
+        (SELECT COUNT(*)::int
+         FROM club_institutional_history a
+         JOIN club_institutional_history b
+           ON a.club_id = b.club_id
+          AND a.club_institutional_history_id < b.club_institutional_history_id
+          AND a.recorded_to IS NULL
+          AND b.recorded_to IS NULL
+          AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
+           && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)'))
+      )::int AS failures
     `,
   },
   {
-    name: 'Each church has exactly one open district interval',
+    name: 'Recorded name versions have zero overlaps',
     sql: `
       SELECT COUNT(*)::int AS failures
-      FROM churches c
-      LEFT JOIN (
-        SELECT church_id, COUNT(*) AS open_count
-        FROM church_district_history
-        WHERE valid_to IS NULL
-        GROUP BY church_id
-      ) h ON h.church_id = c.church_id
-      WHERE COALESCE(h.open_count, 0) <> 1
-    `,
-  },
-  {
-    name: 'Each club has exactly one open institutional interval',
-    sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM clubs c
-      LEFT JOIN (
-        SELECT club_id, COUNT(*) AS open_count
-        FROM club_institutional_history
-        WHERE valid_to IS NULL
-        GROUP BY club_id
-      ) h ON h.club_id = c.club_id
-      WHERE COALESCE(h.open_count, 0) <> 1
-    `,
-  },
-  {
-    name: 'Union division history has no overlaps',
-    sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM union_division_history a
-      JOIN union_division_history b
-        ON a.union_id = b.union_id
-       AND a.union_division_history_id < b.union_division_history_id
+      FROM institutional_name_versions a
+      JOIN institutional_name_versions b
+        ON a.name_version_id < b.name_version_id
+       AND a.recorded_to IS NULL
+       AND b.recorded_to IS NULL
+       AND (
+         (a.division_id IS NOT NULL AND a.division_id = b.division_id)
+         OR (a.union_id IS NOT NULL AND a.union_id = b.union_id)
+         OR (a.local_field_id IS NOT NULL AND a.local_field_id = b.local_field_id)
+         OR (a.districlub_type_id IS NOT NULL AND a.districlub_type_id = b.districlub_type_id)
+         OR (a.church_id IS NOT NULL AND a.church_id = b.church_id)
+         OR (a.club_id IS NOT NULL AND a.club_id = b.club_id)
+       )
        AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
         && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)')
     `,
   },
   {
-    name: 'Local-field union history has no overlaps',
+    name: 'Reorganization participants never have ambiguous typed FKs',
     sql: `
       SELECT COUNT(*)::int AS failures
-      FROM local_field_union_history a
-      JOIN local_field_union_history b
-        ON a.local_field_id = b.local_field_id
-       AND a.local_field_union_history_id < b.local_field_union_history_id
-       AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
-        && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)')
+      FROM institutional_reorganization_participants
+      WHERE (
+        (CASE WHEN division_id IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN union_id IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN local_field_id IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN districlub_type_id IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN church_id IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN club_id IS NOT NULL THEN 1 ELSE 0 END)
+      ) <> 1
     `,
   },
   {
-    name: 'District local-field history has no overlaps',
+    name: 'hierarchy_contexts rows always have JSON context and precision',
     sql: `
       SELECT COUNT(*)::int AS failures
-      FROM district_local_field_history a
-      JOIN district_local_field_history b
-        ON a.districlub_type_id = b.districlub_type_id
-       AND a.district_local_field_history_id < b.district_local_field_history_id
-       AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
-        && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)')
+      FROM hierarchy_contexts
+      WHERE context IS NULL
+         OR precision IS NULL
+         OR btrim(precision) = ''
     `,
   },
   {
-    name: 'Church district history has no overlaps',
+    name: 'Applied reorganizations always have participants',
     sql: `
       SELECT COUNT(*)::int AS failures
-      FROM church_district_history a
-      JOIN church_district_history b
-        ON a.church_id = b.church_id
-       AND a.church_district_history_id < b.church_district_history_id
-       AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
-        && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)')
+      FROM institutional_reorganizations r
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM institutional_reorganization_participants p
+        WHERE p.reorganization_id = r.reorganization_id
+      )
     `,
   },
   {
-    name: 'Club institutional history has no overlaps',
+    name: 'Applied reorganizations always have audit linkage',
     sql: `
       SELECT COUNT(*)::int AS failures
-      FROM club_institutional_history a
-      JOIN club_institutional_history b
-        ON a.club_id = b.club_id
-       AND a.club_institutional_history_id < b.club_institutional_history_id
-       AND daterange(a.valid_from, COALESCE(a.valid_to, 'infinity'::date), '[)')
-        && daterange(b.valid_from, COALESCE(b.valid_to, 'infinity'::date), '[)')
+      FROM institutional_reorganizations r
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM audit_logs a
+        WHERE a.entity_type = 'institutional_reorganization'
+          AND a.entity_id = r.reorganization_id::text
+      )
     `,
   },
   {
-    name: 'Open union history matches current union FK',
+    name: 'hierarchy_contexts.context never stores prohibited sensitive keys',
     sql: `
       SELECT COUNT(*)::int AS failures
-      FROM unions u
-      JOIN union_division_history h
-        ON h.union_id = u.union_id
-       AND h.valid_to IS NULL
-      WHERE h.division_id <> u.division_id
-    `,
-  },
-  {
-    name: 'Open local-field history matches current local-field FK',
-    sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM local_fields lf
-      JOIN local_field_union_history h
-        ON h.local_field_id = lf.local_field_id
-       AND h.valid_to IS NULL
-      WHERE h.union_id <> lf.union_id
-    `,
-  },
-  {
-    name: 'Open district history matches current district FK',
-    sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM districts d
-      JOIN district_local_field_history h
-        ON h.districlub_type_id = d.districlub_type_id
-       AND h.valid_to IS NULL
-      WHERE h.local_field_id <> d.local_field_id
-    `,
-  },
-  {
-    name: 'Open church history matches current church FK',
-    sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM churches c
-      JOIN church_district_history h
-        ON h.church_id = c.church_id
-       AND h.valid_to IS NULL
-      WHERE h.districlub_type_id <> c.districlub_type_id
-    `,
-  },
-  {
-    name: 'Open club history matches current club hierarchy',
-    sql: `
-      SELECT COUNT(*)::int AS failures
-      FROM clubs c
-      JOIN local_fields lf ON lf.local_field_id = c.local_field_id
-      JOIN unions u ON u.union_id = lf.union_id
-      JOIN club_institutional_history h
-        ON h.club_id = c.club_id
-       AND h.valid_to IS NULL
-      WHERE h.division_id <> u.division_id
-         OR h.union_id <> lf.union_id
-         OR h.local_field_id <> c.local_field_id
-         OR h.districlub_type_id <> c.districlub_type_id
-         OR h.church_id <> c.church_id
+      FROM hierarchy_contexts hc
+      CROSS JOIN LATERAL jsonb_object_keys(hc.context::jsonb) AS key(name)
+      WHERE hc.context IS NOT NULL
+        AND lower(key.name) = ANY (ARRAY[${PROHIBITED_CONTEXT_KEYS.map((key) => `'${key}'`).join(', ')}]::text[])
     `,
   },
 ];
+
+export function listVerificationCheckNames(): string[] {
+  return INSTITUTIONAL_HIERARCHY_CHECKS.map((check) => check.name);
+}
+
+export function isNeonUrl(databaseUrl: string): boolean {
+  return /(?:neon\.tech|neon\.database)/i.test(databaseUrl);
+}
 
 function printUsage(): void {
   console.log(`
@@ -240,10 +512,6 @@ Safety:
 `);
 }
 
-function isNeonUrl(databaseUrl: string): boolean {
-  return /(?:neon\.tech|neon\.database)/i.test(databaseUrl);
-}
-
 async function main(): Promise<void> {
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
     printUsage();
@@ -252,7 +520,7 @@ async function main(): Promise<void> {
 
   if (process.argv.includes('--dry-run')) {
     console.log('Institutional hierarchy verification checks:');
-    for (const check of checks) {
+    for (const check of INSTITUTIONAL_HIERARCHY_CHECKS) {
       console.log(`- ${check.name}`);
     }
     return;
@@ -283,10 +551,12 @@ async function main(): Promise<void> {
     await client.query('BEGIN READ ONLY');
 
     const failures: string[] = [];
+    const counts: Array<{ name: string; failures: number }> = [];
 
-    for (const check of checks) {
+    for (const check of INSTITUTIONAL_HIERARCHY_CHECKS) {
       const result = await client.query<{ failures: number }>(check.sql);
       const failureCount = Number(result.rows[0]?.failures ?? 0);
+      counts.push({ name: check.name, failures: failureCount });
 
       if (failureCount > 0) {
         failures.push(`${check.name}: ${failureCount}`);
@@ -294,6 +564,11 @@ async function main(): Promise<void> {
     }
 
     await client.query('ROLLBACK');
+
+    console.log('Institutional hierarchy verification counts:');
+    for (const count of counts) {
+      console.log(`- ${count.name}: ${count.failures}`);
+    }
 
     if (failures.length > 0) {
       console.error('Institutional hierarchy verification failed:');
@@ -313,7 +588,9 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  void main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
