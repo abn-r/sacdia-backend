@@ -301,6 +301,7 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('insurance:read', 'Read insurance records', true),
   ('insurance:create', 'Create insurance records', true),
   ('insurance:update', 'Update insurance records', true),
+  ('insurance:review', 'Confirm, reject, or reverse insurance purchases in the effective Local Field', true),
   ('insurance:configure', 'Configure insurance products and cycles for a Local Field', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
