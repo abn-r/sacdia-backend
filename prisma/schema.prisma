@@ -596,6 +596,7 @@ model club_types {
   translations               club_types_translations[]
   material_products          MaterialProduct[]
   coordinator_assignments    coordinator_assignments[]
+  insurance_cycle_configs    insurance_cycle_configs[]
 }
 
 model clubs {
@@ -620,10 +621,10 @@ model clubs {
   quarterly_reports          quarterly_reports[]
   annual_reports             annual_reports[]
   audit_logs                 audit_logs[]
-  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_club")
-  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_club")
-  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_club")
-  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_club")
+  club_institutional_history club_institutional_history[] @relation("club_institutional_history_club")
+  hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_club")
+  insurance_purchases_owned  insurance_purchases[]        @relation("insurance_purchase_owner_club")
+  insurance_coverage_slots_owned insurance_coverage_slots[] @relation("insurance_slot_owner_club")
 
   @@index([local_field_id], map: "idx_clubs_local_field_id")
 }
@@ -673,6 +674,11 @@ model club_sections {
   camporee_score_submissions       camporee_event_score_submissions[]
   camporee_score_section_results   camporee_event_section_results[]
   camporee_schedule_block_assignments camporee_event_schedule_block_assignments[]
+  insurance_purchases                 insurance_purchases[]       @relation("insurance_purchase_purchasing_section")
+  insurance_coverage_slots_purchased  insurance_coverage_slots[]  @relation("insurance_slot_purchasing_section")
+  insurance_coverage_slots_current    insurance_coverage_slots[]  @relation("insurance_slot_current_section")
+  insurance_slot_movements_from        insurance_slot_movements[]  @relation("insurance_slot_movement_from_section")
+  insurance_slot_movements_to          insurance_slot_movements[]  @relation("insurance_slot_movement_to_section")
   @@unique([main_club_id, club_type_id])
 
 }
@@ -896,6 +902,7 @@ model ecclesiastical_years {
   enrollment_rankings         EnrollmentRanking[]
   section_rankings            SectionRanking[]
   enrollment_ranking_weights  EnrollmentRankingWeight[]
+  insurance_cycle_configs     insurance_cycle_configs[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -1454,6 +1461,7 @@ model local_camporees {
   local_fields                 local_fields         @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
   timezone_verifier            users?               @relation("local_camporee_timezone_verifier", fields: [timezone_verified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_local_camporees_timezone_verified_by")
   camporee_judges              camporee_judges[]
+  insurance_external_participants camporee_external_participants[]
 
   @@index([timezone_verified_by], map: "idx_local_camporees_timezone_verified_by")
 }
@@ -1476,24 +1484,24 @@ model local_fields {
   local_camporees                 local_camporees[]
   certificate_bulk_import_batches certificate_bulk_import_batches[]
   unions                          unions                            @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
-  local_field_union_history               local_field_union_history[]               @relation("local_field_union_history_local_field")
-  district_local_field_history            district_local_field_history[]            @relation("district_local_field_history_local_field")
-  club_institutional_history              club_institutional_history[]              @relation("club_institutional_history_local_field")
-  hierarchy_contexts                      hierarchy_contexts[]                      @relation("hierarchy_contexts_local_field")
-  institutional_name_versions             institutional_name_versions[]             @relation("institutional_name_versions_local_field")
-  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_local_field")
-  annual_ranking_configs                  annual_ranking_configs[]
-  union_camporee_local_fields             union_camporee_local_fields[]
-  users                                   users[]
-  translations                            local_fields_translations[]
-  material_products                       MaterialProduct[]
-  material_orders                         MaterialOrder[]
-  material_folio_counters                 MaterialFolioCounter[]
-  material_config                         MaterialConfig?
-  camporee_event_templates                camporee_event_templates[]
-  camporee_venues                         camporee_venues[]
-  coordination_zones                      coordination_zones[]
-  coordinator_assignments                 coordinator_assignments[]
+  local_field_union_history       local_field_union_history[]       @relation("local_field_union_history_local_field")
+  district_local_field_history    district_local_field_history[]    @relation("district_local_field_history_local_field")
+  club_institutional_history      club_institutional_history[]      @relation("club_institutional_history_local_field")
+  hierarchy_contexts              hierarchy_contexts[]              @relation("hierarchy_contexts_local_field")
+  annual_ranking_configs          annual_ranking_configs[]
+  union_camporee_local_fields     union_camporee_local_fields[]
+  users                           users[]
+  translations                    local_fields_translations[]
+  material_products               MaterialProduct[]
+  material_orders                 MaterialOrder[]
+  material_folio_counters         MaterialFolioCounter[]
+  material_config                 MaterialConfig?
+  camporee_event_templates        camporee_event_templates[]
+  camporee_venues                 camporee_venues[]
+  coordination_zones              coordination_zones[]
+  coordinator_assignments         coordinator_assignments[]
+  insurance_products               insurance_products[]
+  insurance_cycle_configs          insurance_cycle_configs[]
 }
 
 model local_fields_translations {
@@ -1749,6 +1757,7 @@ model union_camporees {
   unions                       unions                        @relation(fields: [union_id], references: [union_id], onDelete: NoAction, onUpdate: NoAction)
   timezone_verifier            users?                        @relation("union_camporee_timezone_verifier", fields: [timezone_verified_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_union_camporees_timezone_verified_by")
   camporee_judges              camporee_judges[]
+  insurance_external_participants camporee_external_participants[]
 
   @@index([timezone_verified_by], map: "idx_union_camporees_timezone_verified_by")
 }
@@ -2274,8 +2283,27 @@ model users {
   camporee_event_section_results_finalized camporee_event_section_results[]        @relation("camporee_event_section_result_finalizer")
   local_camporees_timezone_verified        local_camporees[]                       @relation("local_camporee_timezone_verifier")
   union_camporees_timezone_verified        union_camporees[]                       @relation("union_camporee_timezone_verifier")
-  institutional_reorganizations_approved   institutional_reorganizations[]         @relation("institutional_reorganizations_approved_by")
-  institutional_name_versions_recorded     institutional_name_versions[]           @relation("institutional_name_versions_recorded_by")
+  insurance_products_created                insurance_products[]                    @relation("insurance_product_creator")
+  insurance_products_modified               insurance_products[]                    @relation("insurance_product_modifier")
+  insurance_cycle_configs_created           insurance_cycle_configs[]               @relation("insurance_cycle_config_creator")
+  insurance_cycle_configs_modified          insurance_cycle_configs[]               @relation("insurance_cycle_config_modifier")
+  insurance_purchases_submitted             insurance_purchases[]                   @relation("insurance_purchase_submitter")
+  insurance_purchases_reviewed              insurance_purchases[]                   @relation("insurance_purchase_reviewer")
+  insurance_purchases_created               insurance_purchases[]                   @relation("insurance_purchase_creator")
+  insurance_purchases_modified              insurance_purchases[]                   @relation("insurance_purchase_modifier")
+  insurance_coverage_slots_created          insurance_coverage_slots[]              @relation("insurance_slot_creator")
+  insurance_coverage_slots_modified         insurance_coverage_slots[]              @relation("insurance_slot_modifier")
+  insurance_slot_movements_performed        insurance_slot_movements[]              @relation("insurance_slot_movement_performer")
+  insurance_assignments_assigned            insurance_assignments[]                 @relation("insurance_assignment_assigner")
+  insurance_assignments_confirmed           insurance_assignments[]                 @relation("insurance_assignment_confirmer")
+  insurance_assignments_created             insurance_assignments[]                 @relation("insurance_assignment_creator")
+  insurance_assignments_modified            insurance_assignments[]                 @relation("insurance_assignment_modifier")
+  insurance_assignment_subjects             insurance_assignments[]                 @relation("insurance_assignment_user_subject")
+  insurance_evidence_files_uploaded         insurance_evidence_files[]              @relation("insurance_evidence_uploader")
+  insurance_evidence_files_created          insurance_evidence_files[]              @relation("insurance_evidence_creator")
+  insurance_evidence_files_modified         insurance_evidence_files[]              @relation("insurance_evidence_modifier")
+  camporee_external_participants_created    camporee_external_participants[]         @relation("camporee_external_participant_creator")
+  camporee_external_participants_modified   camporee_external_participants[]         @relation("camporee_external_participant_modifier")
 }
 
 model notification_preferences {
@@ -2976,6 +3004,63 @@ enum insurance_type_enum {
   GENERAL_ACTIVITIES
   CAMPOREE
   HIGH_RISK
+}
+
+enum insurance_coverage_scope_enum {
+  GENERAL
+  EVENT
+}
+
+enum insurance_validity_mode_enum {
+  FIXED_MONTHS
+  EVENT_DATES
+}
+
+enum insurance_purchase_status_enum {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+  REVERSED
+}
+
+enum insurance_purchase_classification_enum {
+  ORDINARY
+  EXTRAORDINARY
+  LEGACY_UNCLASSIFIED
+}
+
+enum insurance_slot_status_enum {
+  AVAILABLE
+  ASSIGNED
+  VOID
+}
+
+enum insurance_slot_movement_type_enum {
+  PURCHASE_CONFIRMED
+  TRANSFERRED
+  ASSIGNED
+  RELEASED
+  REASSIGNED
+  VOIDED
+  CORRECTED
+}
+
+enum insurance_assignment_subject_enum {
+  MEMBER
+  EVENT_EXTERNAL
+}
+
+enum insurance_assignment_status_enum {
+  PENDING_CONFIRMATION
+  ACTIVE
+  REJECTED
+  RELEASED
+  EXPIRED
+}
+
+enum insurance_evidence_type_enum {
+  PURCHASE_PROOF
+  INDIVIDUAL_RECEIPT
 }
 
 enum certificate_bulk_import_batch_status_enum {
@@ -4757,4 +4842,211 @@ model camporee_event_section_results {
 
   @@index([camporee_event_id, club_section_id], map: "idx_camporee_event_section_results_event_section")
   @@index([camporee_event_id, club_section_id, active, score_status], map: "idx_camporee_event_section_results_active_status")
+}
+
+model insurance_products {
+  insurance_product_id      Int                          @id @default(autoincrement())
+  local_field_id            Int
+  name                      String                       @db.VarChar(255)
+  coverage_scope            insurance_coverage_scope_enum
+  validity_mode             insurance_validity_mode_enum
+  default_duration_months   Int?
+  active                    Boolean                      @default(true)
+  created_at                DateTime                     @default(now()) @db.Timestamptz(6)
+  modified_at               DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id             String?                      @db.Uuid
+  modified_by_id            String?                      @db.Uuid
+
+  local_field   local_fields              @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  creator       users?                    @relation("insurance_product_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier      users?                    @relation("insurance_product_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  cycle_configs insurance_cycle_configs[]
+
+  @@index([local_field_id, active], map: "idx_insurance_products_local_field_active")
+}
+
+model insurance_cycle_configs {
+  insurance_cycle_config_id Int                         @id @default(autoincrement())
+  insurance_product_id      Int
+  local_field_id            Int
+  ecclesiastical_year_id    Int
+  club_type_id              Int
+  unit_cost                 Decimal                     @db.Decimal(10, 2)
+  purchase_deadline         DateTime                    @db.Date
+  timezone                  String                      @db.VarChar(64)
+  active                    Boolean                     @default(true)
+  created_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  modified_at               DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id             String?                     @db.Uuid
+  modified_by_id            String?                     @db.Uuid
+
+  product              insurance_products      @relation(fields: [insurance_product_id], references: [insurance_product_id], onDelete: NoAction, onUpdate: NoAction)
+  local_field          local_fields            @relation(fields: [local_field_id], references: [local_field_id], onDelete: NoAction, onUpdate: NoAction)
+  ecclesiastical_year  ecclesiastical_years    @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction)
+  club_type            club_types              @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
+  creator              users?                  @relation("insurance_cycle_config_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier             users?                  @relation("insurance_cycle_config_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  purchases            insurance_purchases[]
+
+  @@unique([insurance_product_id, local_field_id, ecclesiastical_year_id, club_type_id], map: "uq_insurance_cycle_config_effective_scope")
+}
+
+model insurance_purchases {
+  insurance_purchase_id       Int                                  @id @default(autoincrement())
+  insurance_cycle_config_id   Int
+  owner_club_id               Int
+  purchasing_section_id       Int
+  quantity                    Int
+  unit_cost_snapshot          Decimal?                             @db.Decimal(10, 2)
+  total_amount                Decimal?                             @db.Decimal(12, 2)
+  external_reference          String?                              @db.VarChar(255)
+  receipt_date                DateTime?                            @db.Date
+  applied_deadline            DateTime?                            @db.Date
+  classification              insurance_purchase_classification_enum?
+  status                      insurance_purchase_status_enum      @default(PENDING_CONFIRMATION)
+  submitted_by_id             String                               @db.Uuid
+  reviewed_by_id              String?                              @db.Uuid
+  reviewed_at                 DateTime?                            @db.Timestamptz(6)
+  rejection_reason            String?
+  created_at                  DateTime                             @default(now()) @db.Timestamptz(6)
+  modified_at                 DateTime                             @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id               String?                              @db.Uuid
+  modified_by_id              String?                              @db.Uuid
+
+  cycle_config       insurance_cycle_configs   @relation(fields: [insurance_cycle_config_id], references: [insurance_cycle_config_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_club         clubs                     @relation("insurance_purchase_owner_club", fields: [owner_club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  purchasing_section club_sections             @relation("insurance_purchase_purchasing_section", fields: [purchasing_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  submitter          users                     @relation("insurance_purchase_submitter", fields: [submitted_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  reviewer           users?                    @relation("insurance_purchase_reviewer", fields: [reviewed_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  creator            users?                    @relation("insurance_purchase_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier           users?                    @relation("insurance_purchase_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  coverage_slots     insurance_coverage_slots[]
+  evidence_files     insurance_evidence_files[]
+
+  @@index([purchasing_section_id, receipt_date, status], map: "idx_insurance_purchases_section_receipt_status")
+}
+
+model insurance_coverage_slots {
+  insurance_coverage_slot_id Int                        @id @default(autoincrement())
+  insurance_purchase_id      Int
+  sequence_number            Int
+  owner_club_id              Int
+  purchasing_section_id      Int
+  current_section_id         Int
+  status                     insurance_slot_status_enum @default(AVAILABLE)
+  created_at                 DateTime                   @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id              String?                    @db.Uuid
+  modified_by_id             String?                    @db.Uuid
+
+  purchase            insurance_purchases        @relation(fields: [insurance_purchase_id], references: [insurance_purchase_id], onDelete: NoAction, onUpdate: NoAction)
+  owner_club          clubs                      @relation("insurance_slot_owner_club", fields: [owner_club_id], references: [club_id], onDelete: NoAction, onUpdate: NoAction)
+  purchasing_section  club_sections              @relation("insurance_slot_purchasing_section", fields: [purchasing_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  current_section     club_sections              @relation("insurance_slot_current_section", fields: [current_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  creator             users?                     @relation("insurance_slot_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier            users?                     @relation("insurance_slot_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  movements           insurance_slot_movements[]
+  assignments         insurance_assignments[]
+
+  @@unique([insurance_purchase_id, sequence_number], map: "uq_insurance_slot_purchase_sequence")
+  @@index([current_section_id, status], map: "idx_insurance_slots_current_section_status")
+}
+
+model insurance_slot_movements {
+  insurance_slot_movement_id Int                               @id @default(autoincrement())
+  insurance_coverage_slot_id Int
+  movement_type              insurance_slot_movement_type_enum
+  from_section_id            Int?
+  to_section_id              Int?
+  insurance_assignment_id    Int?
+  reason                     String?
+  performed_by_id            String                            @db.Uuid
+  correlation_id             String?                           @db.Uuid
+  created_at                 DateTime                          @default(now()) @db.Timestamptz(6)
+
+  coverage_slot  insurance_coverage_slots @relation(fields: [insurance_coverage_slot_id], references: [insurance_coverage_slot_id], onDelete: NoAction, onUpdate: NoAction)
+  from_section   club_sections?           @relation("insurance_slot_movement_from_section", fields: [from_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  to_section     club_sections?           @relation("insurance_slot_movement_to_section", fields: [to_section_id], references: [club_section_id], onDelete: NoAction, onUpdate: NoAction)
+  assignment     insurance_assignments?   @relation(fields: [insurance_assignment_id], references: [insurance_assignment_id], onDelete: NoAction, onUpdate: NoAction)
+  performer      users                     @relation("insurance_slot_movement_performer", fields: [performed_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([insurance_coverage_slot_id, created_at], map: "idx_insurance_slot_movements_slot_created")
+}
+
+model insurance_assignments {
+  insurance_assignment_id          Int                              @id @default(autoincrement())
+  insurance_coverage_slot_id       Int
+  subject_type                     insurance_assignment_subject_enum
+  user_id                          String?                          @db.Uuid
+  event_external_participant_id    Int?
+  valid_from                       DateTime                         @db.Date
+  valid_until                      DateTime                         @db.Date
+  status                           insurance_assignment_status_enum @default(PENDING_CONFIRMATION)
+  release_reason                   String?
+  assigned_by_id                   String                           @db.Uuid
+  confirmed_by_id                  String?                          @db.Uuid
+  confirmed_at                     DateTime?                        @db.Timestamptz(6)
+  created_at                       DateTime                         @default(now()) @db.Timestamptz(6)
+  modified_at                      DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id                    String?                          @db.Uuid
+  modified_by_id                   String?                          @db.Uuid
+
+  coverage_slot              insurance_coverage_slots       @relation(fields: [insurance_coverage_slot_id], references: [insurance_coverage_slot_id], onDelete: NoAction, onUpdate: NoAction)
+  user_subject               users?                         @relation("insurance_assignment_user_subject", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  event_external_participant camporee_external_participants? @relation(fields: [event_external_participant_id], references: [camporee_external_participant_id], onDelete: NoAction, onUpdate: NoAction)
+  assigner                   users                          @relation("insurance_assignment_assigner", fields: [assigned_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  confirmer                  users?                         @relation("insurance_assignment_confirmer", fields: [confirmed_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  creator                    users?                         @relation("insurance_assignment_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier                   users?                         @relation("insurance_assignment_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  movements                  insurance_slot_movements[]
+  evidence_files             insurance_evidence_files[]
+
+  @@index([user_id, status, valid_until], map: "idx_insurance_assignments_user_status_until")
+}
+
+model insurance_evidence_files {
+  insurance_evidence_file_id Int                          @id @default(autoincrement())
+  insurance_purchase_id      Int?
+  insurance_assignment_id    Int?
+  evidence_type              insurance_evidence_type_enum
+  file_key                   String                       @db.VarChar(500)
+  file_name                  String                       @db.VarChar(255)
+  mime_type                  String                       @db.VarChar(100)
+  file_size                  Int
+  external_reference         String?                      @db.VarChar(255)
+  receipt_date               DateTime?                    @db.Date
+  uploaded_by_id             String                       @db.Uuid
+  created_at                 DateTime                     @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id              String?                      @db.Uuid
+  modified_by_id             String?                      @db.Uuid
+
+  purchase    insurance_purchases?   @relation(fields: [insurance_purchase_id], references: [insurance_purchase_id], onDelete: NoAction, onUpdate: NoAction)
+  assignment  insurance_assignments? @relation(fields: [insurance_assignment_id], references: [insurance_assignment_id], onDelete: NoAction, onUpdate: NoAction)
+  uploader    users                  @relation("insurance_evidence_uploader", fields: [uploaded_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  creator     users?                 @relation("insurance_evidence_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier    users?                 @relation("insurance_evidence_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+}
+
+model camporee_external_participants {
+  camporee_external_participant_id Int       @id @default(autoincrement())
+  local_camporee_id                Int?
+  union_camporee_id                Int?
+  full_name                        String    @db.VarChar(255)
+  role_type                        String    @db.VarChar(50)
+  role_description                 String?   @db.VarChar(500)
+  active                           Boolean   @default(true)
+  created_at                       DateTime  @default(now()) @db.Timestamptz(6)
+  modified_at                      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by_id                    String?   @db.Uuid
+  modified_by_id                   String?   @db.Uuid
+
+  local_camporee  local_camporees?       @relation(fields: [local_camporee_id], references: [local_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  union_camporee  union_camporees?       @relation(fields: [union_camporee_id], references: [union_camporee_id], onDelete: Cascade, onUpdate: NoAction)
+  creator         users?                 @relation("camporee_external_participant_creator", fields: [created_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  modifier        users?                 @relation("camporee_external_participant_modifier", fields: [modified_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
+  assignments     insurance_assignments[]
+
+  @@index([local_camporee_id, active], map: "idx_camporee_external_participants_local_active")
+  @@index([union_camporee_id, active], map: "idx_camporee_external_participants_union_active")
 }

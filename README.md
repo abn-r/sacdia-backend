@@ -37,7 +37,7 @@ API REST de SACDIA construida con NestJS, Prisma y PostgreSQL (Neon).
 - Prisma 7.8 (`@prisma/adapter-pg`)
 - PostgreSQL (Neon)
 - Auth JWT con Better Auth (self-hosted)
-- Cache con Redis (fallback a in-memory)
+- Cache con Redis (fail-fast en producción; fallback a memoria solo en desarrollo/test)
 - Firebase Admin (FCM)
 - Sentry
 
@@ -137,9 +137,23 @@ Ver `docs/BENCHMARKING.md` para perfiles, escenarios y lectura de capacidad esta
 
 ### Runtime / desarrollo
 
-- `PRISMA_POOL_CONNECTION_TIMEOUT_MS` (default: `15000`) — timeout del pool
-  `pg` usado por PrismaService; ayuda a tolerar cold starts de Neon en
-  dev/serverless.
+- `DATABASE_APPLICATION_NAME` (default: `sacdia-backend`) — etiqueta visible en
+  `pg_stat_activity` y dashboards del proveedor.
+- `PRISMA_POOL_MAX` (default: `20`) — conexiones máximas **por réplica**.
+- `PRISMA_POOL_IDLE_TIMEOUT_MS` (default: `30000`) — cierre de clientes inactivos.
+- `PRISMA_POOL_CONNECTION_TIMEOUT_MS` (default: `15000`) — espera por conexión
+  o cold start de Neon.
+- `PRISMA_POOL_KEEP_ALIVE_INITIAL_DELAY_MS` (default: `10000`) — demora del
+  primer probe TCP keep-alive.
+- `CACHE_DEFAULT_TTL_MS` (default: `86400000`) — TTL global; los catálogos
+  continúan usando su TTL explícito de 1 hora.
+- `CACHE_REDIS_CONNECTION_TIMEOUT_MS` (default: `5000`) — timeout de la
+  verificación Redis durante startup.
+
+El presupuesto máximo de conexiones es `PRISMA_POOL_MAX × réplicas máximas`.
+Ese total debe mantenerse por debajo del límite del plan/pooler de Neon; aumentar
+el pool sin revisar ese presupuesto puede agotar la base aunque una sola réplica
+funcione correctamente.
 
 ## Migración de URLs a R2
 
@@ -158,9 +172,10 @@ pnpm run migrate:storage-urls:r2 -- --apply
 
 Notas:
 
-- En `NODE_ENV=production`, `REDIS_URL` es obligatorio para rate limiting distribuido.
-  Si falta, es inválido o Redis no responde, el backend falla al iniciar. En desarrollo/test
-  se permite fallback a memoria para no bloquear trabajo local.
+- En `NODE_ENV=production`, `REDIS_URL` es obligatorio para rate limiting,
+  colas y caché distribuida. La caché ejecuta una lectura real al arrancar para
+  verificar DNS, TLS, autenticación y disponibilidad; cualquier fallo detiene
+  el startup. En desarrollo/test se permite fallback a memoria.
 - Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
 - Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
 - Ventana de compatibilidad temporal: **2026-03-04 a 2026-03-18** con `AUTH_REJECT_SNAKE_CASE=false`.
@@ -183,11 +198,13 @@ Notas:
 3. Verificación
    - Levanta backend y revisa:
      - `Using Redis-backed distributed throttler storage`
-     - `✅ Redis cache connected successfully`
+     - `Redis cache connection verified`
      - `✅ Firebase Admin initialized successfully`
    - Healthcheck:
      - `GET /api/v1/health`
-     - Esperado: `dependencies.cache.ok=true`, `dependencies.fcm.initialized=true`.
+     - Esperado: `dependencies.cache.ok=true`, métricas en
+       `dependencies.database.pool` y `dependencies.cache.catalogs`, y
+       `dependencies.fcm.initialized=true`.
 
 ### Monitoreo Auth post-cutover (14 días)
 

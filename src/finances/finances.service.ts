@@ -112,6 +112,36 @@ export class FinancesService {
     );
   }
 
+  private async assertUsableFinanceCategory(categoryId: number) {
+    const category = await this.prisma.finances_categories.findUnique({
+      where: { finance_category_id: categoryId },
+      select: {
+        finance_category_id: true,
+        active: true,
+        type: true,
+      },
+    });
+
+    if (!category) {
+      throw new AppNotFoundException(ErrorCode.FINANCE_CATEGORY_NOT_FOUND, {
+        categoryId,
+      });
+    }
+
+    if (!category.active) {
+      throw new AppBadRequestException(ErrorCode.FINANCE_CATEGORY_INACTIVE, {
+        categoryId,
+      });
+    }
+
+    if (category.type !== 0 && category.type !== 1) {
+      throw new AppBadRequestException(
+        ErrorCode.FINANCE_CATEGORY_TYPE_INVALID,
+        { categoryId },
+      );
+    }
+  }
+
   // ========================================
   // FINANZAS POR CLUB
   // ========================================
@@ -890,6 +920,8 @@ export class FinancesService {
       );
     }
 
+    await this.assertUsableFinanceCategory(dto.finance_category_id);
+
     const created = await this.prisma.finances.create({
       data: {
         year: dto.year,
@@ -934,6 +966,10 @@ export class FinancesService {
           modifiedBy,
         );
       }
+    }
+
+    if (dto.finance_category_id !== undefined) {
+      await this.assertUsableFinanceCategory(dto.finance_category_id);
     }
 
     const updateData: any = {
