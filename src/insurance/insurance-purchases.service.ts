@@ -179,6 +179,22 @@ export class InsurancePurchasesService {
           modified_by_id: actor.userId,
         })),
       });
+      const createdSlots = await tx.insurance_coverage_slots.findMany({
+        where: { insurance_purchase_id: purchaseId },
+        select: { insurance_coverage_slot_id: true },
+      });
+      await tx.insurance_slot_movements.createMany({
+        data: createdSlots.map(
+          (slot: { insurance_coverage_slot_id: number }) => ({
+            insurance_coverage_slot_id: slot.insurance_coverage_slot_id,
+            movement_type: 'PURCHASE_CONFIRMED',
+            from_section_id: null,
+            to_section_id: purchase.purchasing_section_id,
+            reason: 'Purchase confirmed',
+            performed_by_id: actor.userId,
+          }),
+        ),
+      });
       return confirmed;
     });
   }
@@ -228,9 +244,28 @@ export class InsurancePurchasesService {
         throw new AppConflictException(
           ErrorCode.INSURANCE_PURCHASE_ASSIGNED_SLOTS,
         );
+      const availableSlots = await tx.insurance_coverage_slots.findMany({
+        where: { insurance_purchase_id: purchaseId, status: 'AVAILABLE' },
+        select: { insurance_coverage_slot_id: true, current_section_id: true },
+      });
       await tx.insurance_coverage_slots.updateMany({
         where: { insurance_purchase_id: purchaseId, status: 'AVAILABLE' },
         data: { status: 'VOID', modified_by_id: actor.userId },
+      });
+      await tx.insurance_slot_movements.createMany({
+        data: availableSlots.map(
+          (slot: {
+            insurance_coverage_slot_id: number;
+            current_section_id: number;
+          }) => ({
+            insurance_coverage_slot_id: slot.insurance_coverage_slot_id,
+            movement_type: 'VOIDED',
+            from_section_id: slot.current_section_id,
+            to_section_id: null,
+            reason: 'Purchase reversed',
+            performed_by_id: actor.userId,
+          }),
+        ),
       });
       return tx.insurance_purchases.update({
         where: { insurance_purchase_id: purchaseId },
