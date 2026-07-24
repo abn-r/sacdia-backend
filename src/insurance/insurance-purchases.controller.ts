@@ -123,6 +123,7 @@ export class InsurancePurchasesController {
 
   @Get('insurance/purchases/:purchaseId')
   @RequirePermissions('insurance:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   async get(
     @Param('purchaseId', ParseIntPipe) purchaseId: number,
     @Req() request: RequestWithProfile,
@@ -138,6 +139,7 @@ export class InsurancePurchasesController {
 
   @Get('insurance/purchases/:purchaseId/proof')
   @RequirePermissions('insurance:read')
+  @AuthorizationResource({ type: 'active_assignment' })
   @ApiOperation({
     summary:
       'Mint a short-lived URL for authorized private purchase proof access',
@@ -228,13 +230,17 @@ export class InsurancePurchasesController {
         grant.role_name.toLowerCase(),
       ),
     );
-    const sectionIds = profile.authorization.grants.club_assignments.map(
+    const activeSectionGrants =
+      profile.authorization.grants.club_assignments.filter(
+        (grant) => grant.status === 'active',
+      );
+    const sectionIds = activeSectionGrants.map(
       (grant) => grant.section.club_section_id,
     );
     const sectionGrant =
       sectionId === undefined
         ? undefined
-        : profile.authorization.grants.club_assignments.find(
+        : activeSectionGrants.find(
             (grant) => grant.section.club_section_id === sectionId,
           );
     const localFieldId =

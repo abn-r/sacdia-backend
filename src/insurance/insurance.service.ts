@@ -472,7 +472,7 @@ export class InsuranceService {
       paternal_last_name: member.paternal_last_name ?? null,
       maternal_last_name: member.maternal_last_name ?? null,
       user_image: userImage,
-      insurance: insurance ? this.mapInsurance(insurance) : null,
+      insurance: insurance ? await this.mapInsurance(insurance) : null,
     };
 
     if (currentClass) {
@@ -503,7 +503,7 @@ export class InsuranceService {
 
     let mappedInsurance: Record<string, any> | null = null;
     if (insurance) {
-      mappedInsurance = this.mapInsurance(insurance);
+      mappedInsurance = await this.mapInsurance(insurance);
       if (includeExpiryInfo && insurance.end_date) {
         const now = new Date();
         const endDate = new Date(insurance.end_date);
@@ -530,7 +530,7 @@ export class InsuranceService {
     return response;
   }
 
-  private mapInsurance(insurance: InsuranceSnapshot) {
+  private async mapInsurance(insurance: InsuranceSnapshot) {
     return {
       insurance_id: insurance.insurance_id,
       insurance_type: insurance.insurance_type ?? null,
@@ -540,7 +540,9 @@ export class InsuranceService {
       end_date: insurance.end_date ?? null,
       coverage_amount: this.normalizeCoverageAmount(insurance.coverage_amount),
       active: insurance.active ?? null,
-      evidence_file_url: insurance.evidence_file_url ?? null,
+      evidence_file_url: await this.resolveLegacyEvidenceUrl(
+        insurance.evidence_file_url,
+      ),
       evidence_file_name: insurance.evidence_file_name ?? null,
       created_at: insurance.created_at ?? null,
       modified_at: insurance.modified_at ?? null,
@@ -549,6 +551,24 @@ export class InsuranceService {
       modified_by_name:
         insurance.modified_by?.name ?? insurance.modified_by_name ?? null,
     };
+  }
+
+  private async resolveLegacyEvidenceUrl(
+    value: string | null | undefined,
+  ): Promise<string | null> {
+    if (!value?.trim()) return null;
+    const normalized = value.trim();
+    const key = /^https?:\/\//i.test(normalized)
+      ? this.fileStorage.extractKeyFromPublicUrl(
+          StorageBucketAlias.INSURANCE_EVIDENCE,
+          normalized,
+        )
+      : normalized;
+    if (!key) return null;
+    return this.resolvePrivateAssetUrl(
+      StorageBucketAlias.INSURANCE_EVIDENCE,
+      key,
+    );
   }
 
   private extractCurrentClass(enrollments?: EnrollmentSnapshot[] | null) {
@@ -672,7 +692,7 @@ export class InsuranceService {
 
   private parseDateOrThrow(
     value: string | Date | undefined | null,
-    field: string,
+    _field: string,
   ) {
     if (value === undefined || value === null || value === '') {
       throw new AppBadRequestException(ErrorCode.INSURANCE_DATE_REQUIRED);
@@ -722,10 +742,10 @@ export class InsuranceService {
       });
     } catch (error) {
       this.logger.warn(
-        `Failed to generate signed URL for ${bucketAlias}. Returning original value.`,
+        `Failed to generate signed URL for ${bucketAlias}. Returning null.`,
         error,
       );
-      return value;
+      return null;
     }
   }
 }

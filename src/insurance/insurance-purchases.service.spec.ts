@@ -7,7 +7,13 @@ describe('InsurancePurchasesService', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
-    insurance_coverage_slots: { createMany: jest.fn(), count: jest.fn() },
+    insurance_coverage_slots: {
+      createMany: jest.fn(),
+      count: jest.fn(),
+      updateMany: jest.fn(),
+      findMany: jest.fn(),
+    },
+    insurance_slot_movements: { createMany: jest.fn() },
   };
   const prisma = {
     club_sections: { findUnique: jest.fn() },
@@ -107,6 +113,10 @@ describe('InsurancePurchasesService', () => {
       owner_club_id: 9,
       purchasing_section_id: 7,
     });
+    tx.insurance_coverage_slots.findMany.mockResolvedValue([
+      { insurance_coverage_slot_id: 40 },
+      { insurance_coverage_slot_id: 41 },
+    ]);
 
     await service.confirm(8, {
       userId: 'reviewer',
@@ -128,6 +138,16 @@ describe('InsurancePurchasesService', () => {
         data: expect.arrayContaining([
           expect.objectContaining({ sequence_number: 1 }),
           expect.objectContaining({ sequence_number: 2 }),
+        ]),
+      }),
+    );
+    expect(tx.insurance_slot_movements.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            movement_type: 'PURCHASE_CONFIRMED',
+            performed_by_id: 'reviewer',
+          }),
         ]),
       }),
     );
@@ -154,5 +174,40 @@ describe('InsurancePurchasesService', () => {
         canReview: true,
       }),
     ).rejects.toMatchObject({ code: 'INSURANCE_PURCHASE_ASSIGNED_SLOTS' });
+  });
+
+  it('records immutable VOIDED movements when reversing available slots', async () => {
+    tx.insurance_purchases.findUnique.mockResolvedValue({
+      insurance_purchase_id: 8,
+      status: 'CONFIRMED',
+      cycle_config: { local_field_id: 3 },
+    });
+    tx.insurance_coverage_slots.count.mockResolvedValue(0);
+    tx.insurance_coverage_slots.updateMany.mockResolvedValue({ count: 2 });
+    tx.insurance_coverage_slots.findMany = jest
+      .fn()
+      .mockResolvedValue([
+        { insurance_coverage_slot_id: 40 },
+        { insurance_coverage_slot_id: 41 },
+      ]);
+
+    await service.reverse(8, {
+      userId: 'reviewer',
+      localFieldId: 3,
+      canReview: true,
+    });
+
+    expect(tx.insurance_slot_movements.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            insurance_coverage_slot_id: 40,
+            movement_type: 'VOIDED',
+            performed_by_id: 'reviewer',
+            reason: 'Purchase reversed',
+          }),
+        ]),
+      }),
+    );
   });
 });

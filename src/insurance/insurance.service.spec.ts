@@ -28,6 +28,7 @@ describe('InsuranceService', () => {
   const mockFileStorageService = {
     upload: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
+    extractKeyFromPublicUrl: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -139,7 +140,7 @@ describe('InsuranceService', () => {
           end_date: new Date('2025-12-31'),
           coverage_amount: 500,
           active: true,
-          evidence_file_url: 'evidence/member-1.pdf',
+          evidence_file_url: 'evidence/member-1.pdf?signed=true',
           evidence_file_name: 'comprobante.pdf',
           created_at: new Date('2025-01-10T12:00:00.000Z'),
           modified_at: new Date('2025-01-12T12:00:00.000Z'),
@@ -148,6 +149,36 @@ describe('InsuranceService', () => {
         },
       },
     ]);
+  });
+
+  it('normalizes legacy evidence URLs to R2 keys and never returns a raw URL fallback', async () => {
+    mockPrismaService.users.findUnique.mockResolvedValue({
+      user_id: 'member-legacy',
+      name: 'Ana',
+      paternal_last_name: 'Pérez',
+      maternal_last_name: null,
+      user_image: null,
+      enrollments: [],
+    });
+    mockPrismaService.member_insurances.findFirst.mockResolvedValue({
+      insurance_id: 13,
+      user_id: 'member-legacy',
+      active: true,
+      evidence_file_url: 'https://legacy.example/private/proof.pdf',
+      evidence_file_name: 'proof.pdf',
+    });
+    mockFileStorageService.extractKeyFromPublicUrl.mockReturnValue(null);
+
+    const result = await service.getMemberInsurance('member-legacy');
+
+    expect(result.insurance.evidence_file_url).toBeNull();
+    expect(
+      mockFileStorageService.getSignedDownloadUrl,
+    ).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'https://legacy.example/private/proof.pdf',
+      expect.anything(),
+    );
   });
 
   it('rejects list requests when the section does not belong to the club', async () => {
