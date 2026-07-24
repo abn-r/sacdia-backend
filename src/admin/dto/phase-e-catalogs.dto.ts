@@ -17,6 +17,7 @@ import {
   IsArray,
   ArrayMinSize,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -266,9 +267,9 @@ export class CreateFinanceCategoryDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ example: 1, description: 'Type: 1=income, 2=expense' })
+  @ApiProperty({ example: 0, description: 'Type: 0=income, 1=expense' })
   @IsInt()
-  @Min(1)
+  @IsIn([0, 1])
   type!: number;
 
   @ApiPropertyOptional({ example: 0, description: 'Icon identifier' })
