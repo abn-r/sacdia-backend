@@ -7,7 +7,7 @@ on:
     branches: [main, preproduction, development]
 
 env:
-  NODE_VERSION: '24.x'
+  NODE_VERSION: '24.13.1'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -16,7 +16,10 @@ jobs:
   # ==========================================
   lint:
     name: Lint & Type Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    environment: iana-timezone-trust
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -40,8 +43,19 @@ jobs:
       - name: Run ESLint
         run: pnpm run lint
 
+      - name: Attest external timezone trust policy
+        run: pnpm exec tsx scripts/verify-github-iana-timezone-trust-policy.ts
+        env:
+          IANA_TZDB_TRUST_POLICY_READ_TOKEN: ${{ secrets.IANA_TZDB_TRUST_POLICY_READ_TOKEN }}
+          IANA_TZDB_TRUST_PROTECTED_BRANCH: development
+          IANA_TZDB_TRUST_REQUIRED_STATUS: Lint & Type Check
+
       - name: Verify authenticated IANA timezone sources
         run: pnpm verify:iana-timezones
+        env:
+          IANA_TZDB_RELEASE_SHA512: ${{ vars.IANA_TZDB_RELEASE_SHA512 }}
+          IANA_TZDB_SIGNER_FINGERPRINT: ${{ vars.IANA_TZDB_SIGNER_FINGERPRINT }}
+          IANA_TZDB_SIGNER_PUBLIC_KEY_B64: ${{ vars.IANA_TZDB_SIGNER_PUBLIC_KEY_B64 }}
 
       - name: Type check
         run: pnpm run build

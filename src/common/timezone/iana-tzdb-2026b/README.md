@@ -43,3 +43,28 @@ verifies SHA-512, signer fingerprint and GPG signature, reproduces rearguard,
 then byte-compares both committed gzip artifacts. Upgrades require reviewing
 the release identity, source and catalog hashes, membership changes, tests and
 downstream preflight results in the same stack.
+
+## External trust root
+
+CI deliberately has no in-repository fallback for release identity. The
+protected GitHub Environment `iana-timezone-trust` must define:
+
+- `IANA_TZDB_RELEASE_SHA512`
+- `IANA_TZDB_SIGNER_FINGERPRINT`
+- `IANA_TZDB_SIGNER_PUBLIC_KEY_B64`
+
+The job also requires the environment secret
+`IANA_TZDB_TRUST_POLICY_READ_TOKEN`: a read-only fine-grained token able to read
+environment, branch-protection and repository-ruleset configuration. Before
+using any release anchor, CI verifies required environment reviewers,
+self-review prevention, enforced administrator protection, CODEOWNERS review,
+empty bypass allowances and an active non-bypassable ruleset for `development`.
+Missing access or any unverifiable control fails the job closed.
+
+These external controls are operational configuration, not a property the
+repository can prove by itself. They must be configured and independently
+audited in GitHub. A missing or malformed release value fails before download.
+The supplied public key is imported into an isolated keyring; the verifier
+requires exactly one `VALIDSIG` linked to the protected fingerprint and rejects
+bad, revoked or expired key/signature status. Downloads use HTTPS-only bounded
+timeouts and retries.
