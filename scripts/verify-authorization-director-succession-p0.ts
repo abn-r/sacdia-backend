@@ -1,4 +1,5 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { Client } from 'pg';
 import {
   executeAuthorizationP0Preflight,
@@ -23,10 +24,107 @@ type Lifecycle = {
   cleanup?: Promise<void>;
   signal?: NodeJS.Signals;
 };
-const consumers = [
+export const CONSUMER_INVENTORY = Object.freeze([
   'sacdia-admin/src/lib/api/clubs.ts',
   'sacdia-admin/src/lib/clubs/actions.ts',
-];
+  'sacdia-admin/src/lib/clubs/actions.test.ts',
+  'sacdia-admin/src/lib/auth/director-succession.ts',
+  'sacdia-admin/src/lib/auth/director-succession.test.ts',
+  'docs/api/ENDPOINTS-LIVE-REFERENCE.md',
+  'docs/features/gestion-clubs.md',
+  'docs/features/gestion-clubs/ux-reset-phase0.md',
+]);
+const CONSUMER_PATTERN =
+  /director[-_ ]succession|succeedClubSectionDirector|can_schedule_director_succession/i;
+type ConsumerInventory = {
+  known_internal_consumers: readonly string[];
+  active_jsx_consumers: string[];
+  flutter_consumers: string[];
+};
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? sourceFiles(path) : [path];
+  });
+}
+
+function discoverConsumers(directory: string, sourceRoot: string): string[] {
+  return sourceFiles(directory)
+    .filter((path) =>
+      CONSUMER_PATTERN.test(`${basename(path)}\n${readFileSync(path, 'utf8')}`),
+    )
+    .map((path) => relative(sourceRoot, path))
+    .sort();
+}
+
+function locateWorkspace(start: string): string {
+  if (process.env.SACDIA_WORKSPACE_ROOT)
+    return resolve(process.env.SACDIA_WORKSPACE_ROOT);
+  for (
+    let current = start;
+    dirname(current) !== current;
+    current = dirname(current)
+  )
+    if (
+      existsSync(join(current, 'sacdia-admin/src')) &&
+      existsSync(join(current, 'sacdia-app/lib'))
+    )
+      return current;
+  throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
+}
+
+export function inspectConsumerInventory(
+  roots: { workspaceRoot?: string; docsRoot?: string } = {},
+): ConsumerInventory {
+  const workspaceRoot = roots.workspaceRoot
+    ? resolve(roots.workspaceRoot)
+    : locateWorkspace(resolve(__dirname, '..'));
+  const docsRoot = roots.docsRoot
+    ? resolve(roots.docsRoot)
+    : process.env.SACDIA_CANONICAL_DOCS_ROOT
+      ? resolve(process.env.SACDIA_CANONICAL_DOCS_ROOT)
+      : workspaceRoot;
+  const required = [
+    join(workspaceRoot, 'sacdia-admin/src'),
+    join(workspaceRoot, 'sacdia-app/lib'),
+    join(docsRoot, 'docs/api'),
+    join(docsRoot, 'docs/features'),
+  ];
+  if (!required.every((directory) => existsSync(directory)))
+    throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
+  let adminConsumers: string[];
+  let documentationConsumers: string[];
+  let flutterConsumers: string[];
+  try {
+    adminConsumers = discoverConsumers(required[0], workspaceRoot);
+    flutterConsumers = discoverConsumers(required[1], workspaceRoot);
+    documentationConsumers = [
+      ...discoverConsumers(required[2], docsRoot),
+      ...discoverConsumers(required[3], docsRoot),
+    ].sort();
+  } catch {
+    throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
+  }
+  const discovered = [
+    ...adminConsumers,
+    ...flutterConsumers,
+    ...documentationConsumers,
+  ].sort();
+  if (
+    JSON.stringify(discovered) !==
+    JSON.stringify([...CONSUMER_INVENTORY].sort())
+  )
+    throw new Error('CONSUMER_INVENTORY_DRIFT');
+  return {
+    known_internal_consumers: CONSUMER_INVENTORY,
+    active_jsx_consumers: adminConsumers.filter((path) =>
+      /\.[jt]sx$/i.test(path),
+    ),
+    flutter_consumers: flutterConsumers,
+  };
+}
+
 function setting(name: string, fallback: number, maximum: number): number {
   const value = Number(process.env[name]);
   return Number.isInteger(value) && value > 0
@@ -213,6 +311,7 @@ export function classifyOperationalFailure(
 async function run(lifecycle: Lifecycle): Promise<Row> {
   const databaseUrl = process.env.AUTHORIZATION_P0_VERIFY_DATABASE_URL;
   if (!databaseUrl) throw new Error('MISSING_DATABASE_URL');
+  const consumerInventory = inspectConsumerInventory();
   let catalog: Catalog;
   try {
     catalog = loadCanonicalGeographicIanaTimezoneCatalog();
@@ -277,7 +376,8 @@ async function run(lifecycle: Lifecycle): Promise<Row> {
       timezone_catalog: catalog.metadata,
       checks,
       consumer_inventory: {
-        known_internal_consumers: consumers,
+        source: 'sdd/authorization-and-director-succession-p0/design#11.2',
+        ...consumerInventory,
         external_consumers_status: 'unknown',
       },
     };
