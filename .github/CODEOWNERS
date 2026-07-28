@@ -1,0 +1,25 @@
+# IANA timezone trust boundary. The bootstrap commit that introduces this file
+# requires manual maintainer review and merge before enabling the trust gate.
+/.github/CODEOWNERS @abn-r
+/.github/actions/** @abn-r
+/.github/workflows/** @abn-r
+/.githooks/** @abn-r
+/.husky/** @abn-r
+/.npmrc @abn-r
+/.pnpmfile.cjs @abn-r
+/.prettierrc* @abn-r
+/docs/runbooks/iana-timezone-trust-bootstrap.md @abn-r
+/eslint.config.* @abn-r
+/eslint.config.mjs @abn-r
+/nest-cli.json @abn-r
+/package.json @abn-r
+/patches/** @abn-r
+/pnpm-lock.yaml @abn-r
+/pnpm-workspace.yaml @abn-r
+/prettier-plugins/** @abn-r
+/prettier.config.* @abn-r
+/scripts/** @abn-r
+/src/common/timezone/** @abn-r
+/tsconfig*.json @abn-r
+/tsconfig.build.json @abn-r
+/tsconfig.json @abn-r
