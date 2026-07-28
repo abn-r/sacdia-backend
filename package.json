@@ -29,7 +29,7 @@
     "verify:fcm-migration": "npx tsx scripts/verify-fcm-migration.ts",
     "verify:iana-timezones": "bash scripts/verify-iana-timezone-release.sh",
     "verify:institutional-hierarchy-migration": "tsx scripts/verify-institutional-hierarchy-migration.ts",
-    "verify:authorization-p0": "exec node --import tsx scripts/verify-authorization-director-succession-p0.ts",
+    "verify:authorization-p0": "exec scripts/verify-authorization-p0.ts",
     "audit:master-honor-assignments": "tsx scripts/audit-master-honor-assignments.ts",
     "import:master-honor-rules": "tsx scripts/import-master-honor-rules.ts",
     "prisma:seed:core": "tsx prisma/seeds/core.ts",
