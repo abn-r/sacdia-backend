@@ -448,12 +448,17 @@ Rutas bajo `/api/v1/admin/*` con JWT + roles `admin|super_admin`.
 ## Verificación recomendada antes de release
 
 ```bash
+AUTHORIZATION_P0_VERIFY_DATABASE_URL="$TEST_DATABASE_URL" pnpm --silent verify:authorization-p0
 pnpm run build
 pnpm run test -- src/notifications/fcm-tokens.service.spec.ts
 pnpm run test:e2e -- test/notifications-security.e2e-spec.ts test/admin-catalogs.e2e-spec.ts
 pnpm prisma migrate deploy
 pnpm run verify:fcm-migration
 ```
+
+El preflight P0 es read-only: emite un único JSON por stdout y el resumen por stderr.
+Sus límites se ajustan con `AUTHORIZATION_P0_{CONNECTION,STATEMENT,QUERY,LOCK}_TIMEOUT_MS`
+y `AUTHORIZATION_P0_SAMPLE_LIMIT`; no consume `DATABASE_URL`.
 
 ## Documentación del proyecto
 
