@@ -7,7 +7,7 @@ on:
     branches: [main, preproduction, development]
 
 env:
-  NODE_VERSION: '24.x'
+  NODE_VERSION: '24.13.1'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -16,7 +16,9 @@ jobs:
   # ==========================================
   lint:
     name: Lint & Type Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -39,6 +41,18 @@ jobs:
 
       - name: Run ESLint
         run: pnpm run lint
+
+      - name: Install deterministic IANA build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends gawk
+
+      - name: Verify authenticated IANA timezone sources
+        run: pnpm verify:iana-timezones
+        env:
+          IANA_TZDB_RELEASE_SHA512: ${{ vars.IANA_TZDB_RELEASE_SHA512 }}
+          IANA_TZDB_SIGNER_FINGERPRINT: ${{ vars.IANA_TZDB_SIGNER_FINGERPRINT }}
+          IANA_TZDB_SIGNER_PUBLIC_KEY_B64: ${{ vars.IANA_TZDB_SIGNER_PUBLIC_KEY_B64 }}
 
       - name: Type check
         run: pnpm run build
