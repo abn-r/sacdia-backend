@@ -40,6 +40,9 @@ jobs:
       - name: Run ESLint
         run: pnpm run lint
 
+      - name: Verify authenticated IANA timezone sources
+        run: pnpm verify:iana-timezones
+
       - name: Type check
         run: pnpm run build
 

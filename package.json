@@ -27,6 +27,7 @@
     "generate:spec": "npx ts-node scripts/generate-openapi.ts",
     "load-test": "node scripts/load-test.js",
     "verify:fcm-migration": "npx tsx scripts/verify-fcm-migration.ts",
+    "verify:iana-timezones": "bash scripts/verify-iana-timezone-release.sh",
     "verify:institutional-hierarchy-migration": "tsx scripts/verify-institutional-hierarchy-migration.ts",
     "audit:master-honor-assignments": "tsx scripts/audit-master-honor-assignments.ts",
     "import:master-honor-rules": "tsx scripts/import-master-honor-rules.ts",
