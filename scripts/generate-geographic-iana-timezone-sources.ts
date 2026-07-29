@@ -1,14 +1,18 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync as rawReadFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { gunzipSync, gzipSync, inflateRawSync } from 'node:zlib';
 
 const VERSION = '2026b';
@@ -18,6 +22,28 @@ const SOURCE_SHA256 = {
   'tzdata.zi':
     'd4b8a2bbebff0c9a396a29ea9552441854b49d68fc6375918671b7dfa0e17466',
 } as const;
+const JOURNAL = '.iana-timezone-generation.transaction.json';
+const LOCK = '.iana-timezone-generation.lock';
+const ACQUISITION_GATE = '.iana-timezone-generation.acquire.lock';
+const HASH = /^[0-9a-f]{64}$/;
+const LOCK_OPTIONS = { flag: 'wx', flush: true, mode: 0o600 } as const;
+
+type Artifact = {
+  backup?: string;
+  newHash: string;
+  oldHash: string | null;
+  staged: string;
+  target: string;
+};
+type ReplacementTransaction = {
+  artifacts: Artifact[];
+  ownerToken: string;
+  phase: 'prepared' | 'replacing' | 'committed';
+  version: 2;
+};
+type LockOwner = { pid: number; token: string; version: 1 };
+type AcquiredLock = { owner: LockOwner; staleOwner?: LockOwner };
+
 const MAX_COMPRESSED_BYTES = 1024 * 1024;
 const MAX_DECOMPRESSED_BYTES = 2 * 1024 * 1024;
 
@@ -178,65 +204,328 @@ function readVerifiedSources(sourceDirectory: string) {
   );
 }
 
-function assertRegularTargets(outputDirectory: string, names: string[]): void {
-  for (const name of names) {
-    const target = join(outputDirectory, `${name}.gz`);
-    if (existsSync(target) && !lstatSync(target).isFile())
-      throw new Error(`${name}.gz must be a regular file`);
+function fileHash(path: string): string | undefined {
+  try {
+    if (!lstatSync(path).isFile())
+      throw new Error(`${basename(path)} must be a regular file`);
+    return sha256(readFileSync(path));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
   }
+}
+
+function flushDirectory(directory: string): void {
+  const descriptor = openSync(directory, 'r');
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function validateLock(value: unknown): LockOwner {
+  const owner = value as LockOwner;
+  if (
+    owner?.version !== 1 ||
+    !Number.isSafeInteger(owner.pid) ||
+    owner.pid <= 0 ||
+    !/^[0-9a-f]{24}$/.test(owner.token)
+  )
+    throw new Error('Invalid IANA timezone generation lock');
+  return owner;
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    return true;
+  }
+}
+
+function readLock(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+function writeLock(directory: string, name: string, owner: LockOwner): void {
+  writeFileSync(join(directory, name), JSON.stringify(owner), LOCK_OPTIONS);
+  flushDirectory(directory);
+}
+
+function releaseOwnedLock(directory: string, name: string, owner: LockOwner) {
+  const path = join(directory, name);
+  const value = validateLock(JSON.parse(readFileSync(path, 'utf8')) as unknown);
+  if (value.token !== owner.token)
+    throw new Error(`IANA timezone ${name} ownership changed`);
+  rmSync(path);
+  flushDirectory(directory);
+}
+
+function acquireLock(directory: string): AcquiredLock {
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, LOCK);
+  const owner: LockOwner = {
+    version: 1,
+    pid: process.pid,
+    token: randomBytes(12).toString('hex'),
+  };
+  try {
+    writeLock(directory, ACQUISITION_GATE, owner);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+      throw new Error(
+        `IANA timezone acquisition gate exists; verify no generator is running, then remove ${ACQUISITION_GATE} for manual recovery`,
+        { cause: error },
+      );
+    throw error;
+  }
+  try {
+    let staleOwner: LockOwner | undefined;
+    for (;;) {
+      try {
+        writeLock(directory, LOCK, owner);
+        return { owner, staleOwner };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        const first = readLock(path);
+        if (first === undefined) continue;
+        const stale = validateLock(JSON.parse(first) as unknown);
+        if (isAlive(stale.pid))
+          throw new Error('IANA timezone generation is already locked', {
+            cause: error,
+          });
+        if (readLock(path) !== first) continue;
+        rmSync(path, { force: true });
+        flushDirectory(directory);
+        staleOwner = stale;
+      }
+    }
+  } finally {
+    releaseOwnedLock(directory, ACQUISITION_GATE, owner);
+  }
+}
+
+function validateTransaction(value: unknown): ReplacementTransaction {
+  const transaction = value as ReplacementTransaction;
+  const targets = transaction?.artifacts
+    ?.map(({ target }) => target)
+    .sort()
+    .join();
+  if (
+    transaction?.version !== 2 ||
+    !/^[0-9a-f]{24}$/.test(transaction.ownerToken) ||
+    !['prepared', 'replacing', 'committed'].includes(transaction.phase) ||
+    !Array.isArray(transaction.artifacts) ||
+    transaction.artifacts.length !== 2 ||
+    targets !== 'tzdata.zi.gz,zone.tab.gz' ||
+    transaction.artifacts.some(
+      ({ target, staged, backup, oldHash, newHash }) =>
+        basename(target) !== target ||
+        basename(staged) !== staged ||
+        !staged.startsWith(`${target}.`) ||
+        !staged.endsWith('.tmp') ||
+        (backup !== undefined &&
+          (basename(backup) !== backup ||
+            !backup.startsWith(`${target}.`) ||
+            !backup.endsWith('.bak'))) ||
+        (oldHash !== null && !HASH.test(oldHash)) ||
+        !HASH.test(newHash) ||
+        (oldHash === null) !== (backup === undefined),
+    )
+  )
+    throw new Error('Invalid IANA timezone replacement transaction');
+  return transaction;
+}
+
+function persistTransaction(
+  directory: string,
+  value: ReplacementTransaction,
+  initial = false,
+): void {
+  const target = join(directory, JOURNAL);
+  const staged = `${target}.next`;
+  writeFileSync(initial ? target : staged, JSON.stringify(value), {
+    flag: 'wx',
+    mode: 0o600,
+    flush: true,
+  });
+  if (!initial) renameSync(staged, target);
+  flushDirectory(directory);
+}
+
+function replacementExtras(directory: string): string[] {
+  return readdirSync(directory).filter(
+    (name) =>
+      name === `${JOURNAL}.next` ||
+      /^(zone\.tab|tzdata\.zi)\.gz\..+\.(tmp|bak)$/.test(name),
+  );
+}
+
+function requireHash(
+  path: string,
+  allowed: Array<string | undefined>,
+): string | undefined {
+  const actual = fileHash(path);
+  if (!allowed.includes(actual))
+    throw new Error(`Persisted hash invariant failed for ${basename(path)}`);
+  return actual;
+}
+
+function recoverOwned(
+  directory: string,
+  expectedOwnerToken: string | undefined,
+): void {
+  const journalPath = join(directory, JOURNAL);
+  if (!existsSync(journalPath)) {
+    if (replacementExtras(directory).length > 0)
+      throw new Error('Unowned IANA timezone replacement state exists');
+    return;
+  }
+  const transaction = validateTransaction(
+    JSON.parse(readFileSync(journalPath, 'utf8')) as unknown,
+  );
+  if (transaction.ownerToken !== expectedOwnerToken)
+    throw new Error('IANA timezone transaction ownership is unverifiable');
+  const nextPath = `${journalPath}.next`;
+  if (existsSync(nextPath)) {
+    const next = validateTransaction(
+      JSON.parse(readFileSync(nextPath, 'utf8')) as unknown,
+    );
+    if (
+      next.ownerToken !== transaction.ownerToken ||
+      JSON.stringify(next.artifacts) !== JSON.stringify(transaction.artifacts)
+    )
+      throw new Error('IANA timezone phase transition is inconsistent');
+  }
+  const states = transaction.artifacts.map((artifact) => {
+    const old = artifact.oldHash ?? undefined;
+    const target = join(directory, artifact.target);
+    const staged = join(directory, artifact.staged);
+    const backup = artifact.backup
+      ? join(directory, artifact.backup)
+      : undefined;
+    return {
+      artifact,
+      backup,
+      backupHash: backup ? requireHash(backup, [undefined, old]) : undefined,
+      staged,
+      stagedHash: requireHash(staged, [undefined, artifact.newHash]),
+      target,
+      targetHash: requireHash(target, [undefined, old, artifact.newHash]),
+    };
+  });
+  for (const state of states) {
+    const { artifact, backupHash, targetHash } = state;
+    if (transaction.phase === 'prepared') {
+      if (
+        backupHash !== undefined ||
+        targetHash !== (artifact.oldHash ?? undefined)
+      )
+        throw new Error('Prepared IANA timezone transaction is inconsistent');
+    } else if (transaction.phase === 'replacing') {
+      if (
+        artifact.oldHash !== null &&
+        backupHash === undefined &&
+        targetHash !== artifact.oldHash
+      )
+        throw new Error(
+          'Replacing IANA timezone transaction lost its original',
+        );
+    } else if (targetHash !== artifact.newHash) {
+      throw new Error('Committed IANA timezone transaction is incomplete');
+    }
+  }
+  for (const { artifact, backup, staged, target } of states) {
+    if (transaction.phase !== 'committed') {
+      if (backup && existsSync(backup)) {
+        rmSync(target, { force: true });
+        renameSync(backup, target);
+      } else if (artifact.oldHash === null) rmSync(target, { force: true });
+    }
+    rmSync(staged, { force: true });
+    if (backup) rmSync(backup, { force: true });
+  }
+  rmSync(nextPath, { force: true });
+  rmSync(journalPath);
+  flushDirectory(directory);
 }
 
 function replaceAtomically(
   outputDirectory: string,
   artifacts: Array<{ name: string; bytes: Buffer }>,
+  ownerToken: string,
 ): void {
-  mkdirSync(outputDirectory, { recursive: true });
-  assertRegularTargets(
-    outputDirectory,
-    artifacts.map(({ name }) => name),
-  );
+  const path = (name: string) => join(outputDirectory, name);
+  for (const { name } of artifacts) {
+    const target = path(`${name}.gz`);
+    if (existsSync(target) && !lstatSync(target).isFile())
+      throw new Error(`${name}.gz must be a regular file`);
+  }
   const nonce = `${process.pid}-${randomBytes(6).toString('hex')}`;
-  const paths = artifacts.map(({ name }) => {
-    const target = join(outputDirectory, `${name}.gz`);
-    return {
-      target,
-      staged: `${target}.${nonce}.tmp`,
-      backup: existsSync(target) ? `${target}.${nonce}.bak` : undefined,
-    };
-  });
-  const movedBackups: Array<{ target: string; backup: string }> = [];
-  const installedTargets: string[] = [];
+  const transaction: ReplacementTransaction = {
+    version: 2,
+    ownerToken,
+    phase: 'prepared',
+    artifacts: artifacts.map(({ name, bytes }) => {
+      const target = `${name}.gz`;
+      const oldHash = fileHash(path(target)) ?? null;
+      return {
+        target,
+        staged: `${target}.${nonce}.tmp`,
+        backup: oldHash === null ? undefined : `${target}.${nonce}.bak`,
+        oldHash,
+        newHash: sha256(bytes),
+      };
+    }),
+  };
   try {
-    artifacts.forEach(({ bytes }, index) =>
-      writeFileSync(paths[index].staged, bytes, {
+    persistTransaction(outputDirectory, transaction, true);
+    artifacts.forEach(({ bytes }, index) => {
+      writeFileSync(path(transaction.artifacts[index].staged), bytes, {
         flag: 'wx',
         mode: 0o644,
         flush: true,
-      }),
-    );
-    paths.forEach(({ target, backup }) => {
-      if (backup) {
-        renameSync(target, backup);
-        movedBackups.push({ target, backup });
-      }
+      });
     });
-    paths.forEach(({ target, staged }) => {
-      renameSync(staged, target);
-      installedTargets.push(target);
+    transaction.phase = 'replacing';
+    persistTransaction(outputDirectory, transaction);
+    transaction.artifacts.forEach((artifact) => {
+      if (artifact.backup)
+        renameSync(path(artifact.target), path(artifact.backup));
     });
+    transaction.artifacts.forEach((artifact) => {
+      renameSync(path(artifact.staged), path(artifact.target));
+    });
+    flushDirectory(outputDirectory);
+    transaction.phase = 'committed';
+    persistTransaction(outputDirectory, transaction);
+    for (const artifact of transaction.artifacts) {
+      if (artifact.backup) rmSync(path(artifact.backup), { force: true });
+    }
+    rmSync(path(JOURNAL));
+    flushDirectory(outputDirectory);
   } catch (error) {
-    installedTargets.forEach((target) => rmSync(target, { force: true }));
-    movedBackups.reverse().forEach(({ target, backup }) => {
-      if (backup && existsSync(backup)) renameSync(backup, target);
-    });
+    recoverOwned(outputDirectory, ownerToken);
     throw error;
-  } finally {
-    paths.forEach(({ staged, backup }) => {
-      rmSync(staged, { force: true });
-      if (backup && installedTargets.length === paths.length)
-        rmSync(backup, { force: true });
-    });
   }
+}
+
+function assertNoReplacementState(outputDirectory: string): void {
+  if (
+    [JOURNAL, LOCK, ACQUISITION_GATE].some((name) =>
+      existsSync(join(outputDirectory, name)),
+    ) ||
+    replacementExtras(outputDirectory).length > 0
+  )
+    throw new Error('IANA timezone replacement state exists');
 }
 
 export function generatePinnedIanaTimezoneSources(
@@ -246,14 +535,23 @@ export function generatePinnedIanaTimezoneSources(
 ): void {
   const artifacts = readVerifiedSources(resolve(sourceDirectory));
   if (checkOnly) {
-    assertRegularTargets(
-      outputDirectory,
-      artifacts.map(({ name }) => name),
-    );
-    for (const { name, bytes } of artifacts)
-      if (!readFileSync(join(outputDirectory, `${name}.gz`)).equals(bytes))
+    assertNoReplacementState(outputDirectory);
+    for (const { name, bytes } of artifacts) {
+      const path = join(outputDirectory, `${name}.gz`);
+      if (!lstatSync(path).isFile())
+        throw new Error(`${name}.gz must be a regular file`);
+      if (!readFileSync(path).equals(bytes))
         throw new Error(`${name}.gz differs byte-for-byte`);
-  } else replaceAtomically(outputDirectory, artifacts);
+    }
+  } else {
+    const { owner, staleOwner } = acquireLock(outputDirectory);
+    try {
+      recoverOwned(outputDirectory, staleOwner?.token);
+      replaceAtomically(outputDirectory, artifacts, owner.token);
+    } finally {
+      releaseOwnedLock(outputDirectory, LOCK, owner);
+    }
+  }
   process.stdout.write(
     `${JSON.stringify({ version: VERSION, sources: SOURCE_SHA256 })}\n`,
   );
