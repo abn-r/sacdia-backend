@@ -1,0 +1,38 @@
+# Authenticated IANA tzdb 2026b sources
+
+SACDIA vendors deterministic gzip projections from IANA's signed
+`tzdata2026b.tar.gz`, never from `/usr/share/zoneinfo`:
+
+## Exact projection
+
+After authenticating and extracting the archive, derive `tzdata.zi` with GNU
+make and GNU Awk; upstream `zishrink.awk` only sorts arrays under Gawk:
+
+```bash
+make -o version DATAFORM=rearguard AWK=gawk tzdata.zi
+pnpm exec tsx scripts/generate-geographic-iana-timezone-sources.ts \
+  /path/to/extracted/tzdata2026b
+```
+
+`-o version` preserves the signed data archive's version without requiring the code archive.
+The output header is `# version 2026b` plus `# dataform rearguard`, retaining 151 Link aliases.
+Payload SHA-256 is `4d8e389e5f4b0ec0466d5b14f42e5dfb0308c4376165fcf478339afd9ddcb00c` for `zone.tab`
+and `d4b8a2bbebff0c9a396a29ea9552441854b49d68fc6375918671b7dfa0e17466` for rearguard `tzdata.zi`.
+
+`pnpm verify:iana-timezones` downloads the pinned archive and signature,
+verifies SHA-512, signer fingerprint and GPG signature, reproduces rearguard,
+then compares the exact decompressed payload of both committed gzip artifacts
+with the authenticated source. The gzip container must satisfy all of these
+invariants:
+
+- regular file, at most 1 MiB compressed and 2 MiB decompressed;
+- exactly one member with gzip magic, deflate compression and no trailing bytes;
+- `FLG=0`, `MTIME=0`, and valid CRC/ISIZE; the OS field is not authenticated;
+- exact authenticated payload bytes and SHA-256.
+
+Generation remains gzip level 9 with zero mtime. The gzip OS byte is metadata,
+and RFC 1952 permits a decompressor to ignore it, so any byte value is accepted.
+SACDIA validates the rest of the fixed header but does not claim byte-identical
+gzip containers across operating systems. Upgrades require reviewing the release
+identity, source and catalog hashes, membership changes, tests and downstream
+preflight results in the same stack.
