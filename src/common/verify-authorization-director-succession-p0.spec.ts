@@ -1,12 +1,18 @@
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 import { Client } from 'pg';
 import {
   classifyOperationalFailure,
   finalizeChecks,
 } from '../../scripts/verify-authorization-director-succession-p0';
+import {
+  PINNED_IANA_METADATA,
+  type CanonicalGeographicIanaTimezoneCatalog,
+} from './timezone/canonical-geographic-iana-timezone';
 
 type Json = Record<string, unknown>;
+const root = join(__dirname, '../..');
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
 const dbIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
@@ -14,7 +20,7 @@ const dbIt =
     : it.skip;
 function runCli(url?: string, extraEnv: NodeJS.ProcessEnv = {}) {
   const result = spawnSync('pnpm', ['--silent', 'verify:authorization-p0'], {
-    cwd: process.cwd(),
+    cwd: root,
     encoding: 'utf8',
     timeout: 10_000,
     env: {
@@ -31,6 +37,15 @@ function check(report: Json, id: string): Json {
 
 describe('authorization/director succession P0 preflight', () => {
   it('blocks required schema readiness independently of data rows', () => {
+    const catalog: CanonicalGeographicIanaTimezoneCatalog = {
+      metadata: PINNED_IANA_METADATA,
+      canonical: new Set(),
+      legacyAliases: new Set(),
+      classify: (value) =>
+        typeof value === 'string' && value
+          ? { ok: true, value }
+          : { ok: false, reason: 'MISSING', diagnostic: 'EMPTY' },
+    };
     const checks = finalizeChecks(
       {
         schema: {
@@ -43,7 +58,8 @@ describe('authorization/director succession P0 preflight', () => {
         },
         checks: [],
       },
-      {} as never,
+      catalog,
+      1,
     );
     expect(checks.find(({ id }) => id === 'required_schema_readiness')).toEqual(
       {
