@@ -60,8 +60,8 @@ jobs:
   # ==========================================
   # UNIT TESTS
   # ==========================================
-  test:
-    name: Unit Tests
+  backend_unit_tests:
+    name: Backend Unit Tests
     runs-on: ubuntu-latest
     needs: lint
     services:
@@ -112,13 +112,96 @@ jobs:
           files: ./coverage/lcov.info
           fail_ci_if_error: false
 
+  cross_repo_contract:
+    name: Cross-repo Contract
+    runs-on: ubuntu-latest
+    needs: lint
+    permissions:
+      contents: read
+    env:
+      SACDIA_ROOT_CONTRACT_REF: ${{ vars.SACDIA_ROOT_CONTRACT_REF }}
+      SACDIA_ADMIN_CONTRACT_REF: ${{ vars.SACDIA_ADMIN_CONTRACT_REF }}
+      SACDIA_APP_CONTRACT_REF: ${{ vars.SACDIA_APP_CONTRACT_REF }}
+
+    steps:
+      - name: Validate immutable contract refs
+        run: |
+          for ref in \
+            "$SACDIA_ROOT_CONTRACT_REF" \
+            "$SACDIA_ADMIN_CONTRACT_REF" \
+            "$SACDIA_APP_CONTRACT_REF"
+          do
+            [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          done
+
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout canonical docs
+        run: |
+          git init .contract-sources/sacdia
+          git -C .contract-sources/sacdia fetch --depth=1 https://github.com/abn-r/sacdia.git "$SACDIA_ROOT_CONTRACT_REF"
+          git -C .contract-sources/sacdia checkout --detach FETCH_HEAD
+
+      - name: Checkout admin consumer
+        uses: actions/checkout@v4
+        with:
+          repository: abn-r/sacdia-admin
+          ref: ${{ env.SACDIA_ADMIN_CONTRACT_REF }}
+          path: .contract-sources/sacdia-admin
+          persist-credentials: false
+
+      - name: Checkout Flutter consumer
+        uses: actions/checkout@v4
+        with:
+          repository: abn-r/sacdia-app
+          ref: ${{ env.SACDIA_APP_CONTRACT_REF }}
+          path: .contract-sources/sacdia-app
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify exact cross-repository contract
+        env:
+          ALLOW_AUTHORIZATION_P0_CROSS_REPO: '1'
+          SACDIA_ADMIN_ROOT: ${{ github.workspace }}/.contract-sources/sacdia-admin
+          SACDIA_APP_ROOT: ${{ github.workspace }}/.contract-sources/sacdia-app
+          SACDIA_CANONICAL_DOCS_ROOT: ${{ github.workspace }}/.contract-sources/sacdia
+        run: pnpm exec jest --runTestsByPath src/common/verify-authorization-director-succession-p0-crossrepo.spec.ts
+
+  required_unit_tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: [backend_unit_tests, cross_repo_contract]
+    if: ${{ always() }}
+    steps:
+      - name: Require both test gates
+        env:
+          BACKEND_RESULT: ${{ needs.backend_unit_tests.result }}
+          CROSS_REPO_RESULT: ${{ needs.cross_repo_contract.result }}
+        run: |
+          test "$BACKEND_RESULT" = success
+          test "$CROSS_REPO_RESULT" = success
+
   # ==========================================
   # BUILD CHECK
   # ==========================================
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: test
+    needs: required_unit_tests
 
     steps:
       - name: Checkout code

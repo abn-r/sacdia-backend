@@ -12,11 +12,12 @@ export type TestConsumerRoots = {
 
 export function createTestConsumerRoots(
   inventory: readonly string[],
+  names: { admin?: string; app?: string } = {},
 ): TestConsumerRoots {
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'be01-consumers-'));
   const workspaceRoot = join(temporaryRoot, 'workspace');
-  const adminRoot = join(workspaceRoot, 'sacdia-admin');
-  const appRoot = join(workspaceRoot, 'sacdia-app');
+  const adminRoot = join(workspaceRoot, names.admin ?? 'sacdia-admin');
+  const appRoot = join(workspaceRoot, names.app ?? 'sacdia-app');
   const docsRoot = join(temporaryRoot, 'canonical');
   for (const directory of [
     join(adminRoot, 'src'),
@@ -26,9 +27,11 @@ export function createTestConsumerRoots(
   ])
     mkdirSync(directory, { recursive: true });
   for (const consumer of inventory) {
-    const path = consumer.startsWith('sacdia-')
-      ? join(workspaceRoot, consumer)
-      : join(docsRoot, consumer);
+    const path = consumer.startsWith('sacdia-admin/')
+      ? join(adminRoot, consumer.slice('sacdia-admin/'.length))
+      : consumer.startsWith('sacdia-app/')
+        ? join(appRoot, consumer.slice('sacdia-app/'.length))
+        : join(docsRoot, consumer);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, 'director-succession\n');
   }
