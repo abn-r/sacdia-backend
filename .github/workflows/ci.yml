@@ -25,14 +25,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+
+      - name: Attest external timezone trust policy
+        run: node scripts/verify-github-iana-timezone-trust-policy.ts
+        env:
+          IANA_TZDB_TRUST_POLICY_READ_TOKEN: ${{ secrets.IANA_TZDB_TRUST_POLICY_READ_TOKEN }}
+          IANA_TZDB_TRUST_PROTECTED_BRANCH: development
+          IANA_TZDB_TRUST_REQUIRED_STATUS: Lint & Type Check
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -42,13 +48,6 @@ jobs:
 
       - name: Run ESLint
         run: pnpm run lint
-
-      - name: Attest external timezone trust policy
-        run: pnpm exec tsx scripts/verify-github-iana-timezone-trust-policy.ts
-        env:
-          IANA_TZDB_TRUST_POLICY_READ_TOKEN: ${{ secrets.IANA_TZDB_TRUST_POLICY_READ_TOKEN }}
-          IANA_TZDB_TRUST_PROTECTED_BRANCH: development
-          IANA_TZDB_TRUST_REQUIRED_STATUS: Lint & Type Check
 
       - name: Verify authenticated IANA timezone sources
         run: pnpm verify:iana-timezones

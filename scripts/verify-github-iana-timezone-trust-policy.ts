@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+const { existsSync, readFileSync, readdirSync } = require('node:fs');
+const { join } = require('node:path');
 const {
   GITHUB_API_URL = 'https://api.github.com',
   GITHUB_BASE_REF,
@@ -11,9 +13,73 @@ const {
 } = process.env;
 const environmentName = 'iana-timezone-trust';
 const protectedPaths =
-  `.github/CODEOWNERS .github/workflows/ci.yml docs/runbooks/iana-timezone-trust-bootstrap.md nest-cli.json package.json scripts/generate-geographic-iana-timezone-sources.ts scripts/verify-github-iana-timezone-trust-policy.ts scripts/verify-iana-timezone-release.sh src/common/timezone/canonical-geographic-iana-timezone-hardening.spec.ts src/common/timezone/canonical-geographic-iana-timezone-packaging.spec.ts src/common/timezone/canonical-geographic-iana-timezone.spec.ts src/common/timezone/canonical-geographic-iana-timezone.ts src/common/timezone/generate-geographic-iana-timezone-sources-process.spec.ts src/common/timezone/generate-geographic-iana-timezone-sources.spec.ts src/common/timezone/iana-tzdb-2026b/README.md src/common/timezone/iana-tzdb-2026b/tzdata.zi.gz src/common/timezone/iana-tzdb-2026b/zone.tab.gz src/common/timezone/verify-github-iana-timezone-trust-policy.spec.ts src/common/timezone/verify-iana-timezone-real-gpg.spec.ts src/common/timezone/verify-iana-timezone-release.spec.ts`
+  `.github/CODEOWNERS .github/actions/** .github/workflows/ci.yml .github/workflows/** .githooks/** .husky/** .npmrc .pnpmfile.cjs .prettierrc* docs/runbooks/iana-timezone-trust-bootstrap.md eslint.config.* eslint.config.mjs nest-cli.json package.json patches/** pnpm-lock.yaml pnpm-workspace.yaml prettier-plugins/** prettier.config.* scripts/** src/common/timezone/** tsconfig*.json tsconfig.build.json tsconfig.json`
     .trim()
     .split(/\s+/);
+const prettierConfigPattern =
+  /^(?:\.prettierrc(?:\.(?:json|json5|ya?ml|toml|[cm]?[jt]s))?|prettier\.config\.[cm]?[jt]s)$/;
+const jsonPrettierConfigs = new Set(['.prettierrc', '.prettierrc.json']);
+
+function assertPrettierPlugins(config: unknown): void {
+  if (!config || typeof config !== 'object') return;
+  if (Array.isArray(config)) {
+    config.forEach(assertPrettierPlugins);
+    return;
+  }
+  for (const [key, value] of Object.entries(config)) {
+    if (key !== 'plugins') {
+      assertPrettierPlugins(value);
+      continue;
+    }
+    if (!Array.isArray(value))
+      throw new Error('Prettier plugins must be a static array');
+    for (const plugin of value) {
+      if (typeof plugin !== 'string')
+        throw new Error('Prettier plugins must use package names');
+      const normalized = plugin.replaceAll('\\', '/');
+      const local =
+        normalized === '.' ||
+        normalized === '..' ||
+        normalized.startsWith('./') ||
+        normalized.startsWith('../') ||
+        normalized.startsWith('/') ||
+        normalized.startsWith('~/') ||
+        normalized.startsWith('file:') ||
+        /^[A-Za-z]:\//.test(normalized);
+      if (
+        local &&
+        (!normalized.startsWith('./prettier-plugins/') ||
+          normalized.includes('/../') ||
+          normalized.endsWith('/..'))
+      )
+        throw new Error('local Prettier plugin is outside prettier-plugins');
+    }
+  }
+}
+
+function assertPrettierConfigTrust(): void {
+  const root = process.cwd();
+  const packagePath = join(root, 'package.json');
+  if (existsSync(packagePath)) {
+    const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
+    assertPrettierPlugins(packageJson.prettier);
+  }
+  for (const name of readdirSync(root).filter((value) =>
+    prettierConfigPattern.test(value),
+  )) {
+    if (!jsonPrettierConfigs.has(name))
+      throw new Error('executable Prettier configuration is forbidden');
+    let config: unknown;
+    try {
+      config = JSON.parse(readFileSync(join(root, name), 'utf8'));
+    } catch {
+      throw new Error('Prettier configuration must be strict JSON');
+    }
+    assertPrettierPlugins(config);
+  }
+}
+
+assertPrettierConfigTrust();
 
 if (
   !GITHUB_REPOSITORY ||
@@ -62,16 +128,105 @@ const ruleRequiresStatus = (rule) =>
     (check) => check.context === requiredStatus,
   );
 
-function rulesetPatternMatches(pattern, ref): boolean {
+type PatternMatch = boolean | undefined;
+type ClassToken = { escaped: boolean; value: string };
+
+function escapeRegex(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
+function characterClass(
+  pattern: string,
+  start: number,
+): { next: number; source: string } | undefined {
+  let index = start + 1;
+  let negated = false;
+  if (pattern[index] === '!' || pattern[index] === '^') {
+    negated = true;
+    index += 1;
+  }
+  const tokens: ClassToken[] = [];
+  while (index < pattern.length && pattern[index] !== ']') {
+    if (pattern[index] === '\\') {
+      index += 1;
+      if (index === pattern.length) return undefined;
+      tokens.push({ escaped: true, value: pattern[index] });
+    } else {
+      tokens.push({ escaped: false, value: pattern[index] });
+    }
+    index += 1;
+  }
+  if (
+    pattern[index] !== ']' ||
+    tokens.length === 0 ||
+    tokens.some(
+      ({ escaped, value }) => value === '/' || (!escaped && value === '['),
+    )
+  )
+    return undefined;
+
+  const source = tokens
+    .map(({ escaped, value }, tokenIndex) => {
+      if (value === '-' && !escaped) {
+        if (tokenIndex === 0 || tokenIndex === tokens.length - 1) return '\\-';
+        const left = tokens[tokenIndex - 1].value.codePointAt(0);
+        const right = tokens[tokenIndex + 1].value.codePointAt(0);
+        if (
+          tokens[tokenIndex - 1].value === '-' ||
+          tokens[tokenIndex + 1].value === '-' ||
+          left === undefined ||
+          right === undefined ||
+          left > right
+        )
+          throw new Error('invalid range');
+        return '-';
+      }
+      return value.replace(/[\\\]^]/g, '\\$&');
+    })
+    .join('');
+  return {
+    next: index + 1,
+    source: negated ? `(?!/)[^${source}]` : `[${source}]`,
+  };
+}
+
+function rulesetPatternMatches(pattern: unknown, ref: string): PatternMatch {
   if (pattern === '~ALL') return true;
-  if (typeof pattern !== 'string' || !pattern) return false;
-  const glob = pattern
-    .replace(/[\\^$.[\]{}()+|]/g, '\\$&')
-    .replace(/\*\*/g, '\0')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\0/g, '.*')
-    .replace(/\?/g, '[^/]');
-  return new RegExp(`^${glob}$`).test(ref);
+  if (typeof pattern !== 'string' || !pattern || pattern.startsWith('~'))
+    return undefined;
+  let glob = '';
+  try {
+    for (let index = 0; index < pattern.length; ) {
+      const value = pattern[index];
+      if (value === '\\') {
+        index += 1;
+        if (index === pattern.length) return undefined;
+        glob += escapeRegex(pattern[index]);
+        index += 1;
+      } else if (value === '*') {
+        let count = 1;
+        while (pattern[index + count] === '*') count += 1;
+        if (count > 2) return undefined;
+        glob += count === 2 ? '.*' : '[^/]*';
+        index += count;
+      } else if (value === '?') {
+        glob += '[^/]';
+        index += 1;
+      } else if (value === '[') {
+        const parsed = characterClass(pattern, index);
+        if (!parsed) return undefined;
+        glob += parsed.source;
+        index = parsed.next;
+      } else {
+        if (value === '\0') return undefined;
+        glob += escapeRegex(value);
+        index += 1;
+      }
+    }
+    return new RegExp(`^${glob}$`).test(ref);
+  } catch {
+    return undefined;
+  }
 }
 
 function codeownersCovers(payload): boolean {
@@ -154,6 +309,12 @@ async function main(): Promise<void> {
   const attestedRuleset = activeRulesets.some((ruleset) => {
     const includes = ruleset.conditions?.ref_name?.include ?? [];
     const excludes = ruleset.conditions?.ref_name?.exclude;
+    const includeMatches = Array.isArray(includes)
+      ? includes.map((pattern) => rulesetPatternMatches(pattern, protectedRef))
+      : [];
+    const excludeMatches = Array.isArray(excludes)
+      ? excludes.map((pattern) => rulesetPatternMatches(pattern, protectedRef))
+      : [];
     const pullRequest = ruleset.rules?.find(
       (rule) => rule.type === 'pull_request',
     );
@@ -161,12 +322,10 @@ async function main(): Promise<void> {
       emptyArray(ruleset.bypass_actors) &&
       Array.isArray(includes) &&
       Array.isArray(excludes) &&
-      includes.some((pattern) =>
-        rulesetPatternMatches(pattern, protectedRef),
-      ) &&
-      !excludes.some((pattern) =>
-        rulesetPatternMatches(pattern, protectedRef),
-      ) &&
+      !includeMatches.includes(undefined) &&
+      !excludeMatches.includes(undefined) &&
+      includeMatches.includes(true) &&
+      !excludeMatches.includes(true) &&
       pullRequest?.parameters?.required_approving_review_count >= 1 &&
       pullRequest?.parameters?.require_code_owner_review === true &&
       pullRequest?.parameters?.dismiss_stale_reviews_on_push === true &&
