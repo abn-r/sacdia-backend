@@ -623,6 +623,8 @@ model clubs {
   audit_logs                 audit_logs[]
   club_institutional_history club_institutional_history[] @relation("club_institutional_history_club")
   hierarchy_contexts         hierarchy_contexts[]         @relation("hierarchy_contexts_club")
+  institutional_name_versions institutional_name_versions[] @relation("institutional_name_versions_club")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_club")
   insurance_purchases_owned  insurance_purchases[]        @relation("insurance_purchase_owner_club")
   insurance_coverage_slots_owned insurance_coverage_slots[] @relation("insurance_slot_owner_club")
 
@@ -1488,6 +1490,8 @@ model local_fields {
   district_local_field_history    district_local_field_history[]    @relation("district_local_field_history_local_field")
   club_institutional_history      club_institutional_history[]      @relation("club_institutional_history_local_field")
   hierarchy_contexts              hierarchy_contexts[]              @relation("hierarchy_contexts_local_field")
+  institutional_name_versions     institutional_name_versions[]     @relation("institutional_name_versions_local_field")
+  institutional_reorganization_participants institutional_reorganization_participants[] @relation("institutional_reorg_participants_local_field")
   annual_ranking_configs          annual_ranking_configs[]
   union_camporee_local_fields     union_camporee_local_fields[]
   users                           users[]
@@ -2283,6 +2287,8 @@ model users {
   camporee_event_section_results_finalized camporee_event_section_results[]        @relation("camporee_event_section_result_finalizer")
   local_camporees_timezone_verified        local_camporees[]                       @relation("local_camporee_timezone_verifier")
   union_camporees_timezone_verified        union_camporees[]                       @relation("union_camporee_timezone_verifier")
+  institutional_reorganizations_approved   institutional_reorganizations[]         @relation("institutional_reorganizations_approved_by")
+  institutional_name_versions_recorded     institutional_name_versions[]           @relation("institutional_name_versions_recorded_by")
   insurance_products_created                insurance_products[]                    @relation("insurance_product_creator")
   insurance_products_modified               insurance_products[]                    @relation("insurance_product_modifier")
   insurance_cycle_configs_created           insurance_cycle_configs[]               @relation("insurance_cycle_config_creator")
