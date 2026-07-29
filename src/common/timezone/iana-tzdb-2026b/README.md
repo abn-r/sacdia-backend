@@ -41,6 +41,10 @@ gzip containers across operating systems. Upgrades require reviewing the release
 identity, source and catalog hashes, membership changes, tests and downstream
 preflight results in the same stack.
 
+## Manual acquisition-gate recovery
+
+Generation never removes `.iana-timezone-generation.acquire.lock` automatically. After preserving it for audit and verifying no generator runs, recover only from this directory with `rm -- .iana-timezone-generation.acquire.lock`; otherwise fail closed.
+
 ## Provisional CI trust inputs
 
 Owner-only CI reads repository Actions variables `IANA_TZDB_RELEASE_SHA512`,
