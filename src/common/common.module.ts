@@ -26,6 +26,7 @@ import { SystemClockService } from './clock/system-clock.service';
 import { ZonedBusinessTimeService } from './clock/zoned-business-time.service';
 import { TemporalContextFactory } from './clock/temporal-context.factory';
 import { LocalFieldTimezoneResolver } from './authorization/local-field-timezone.resolver';
+import { ClubAssignmentEffectivityPolicy } from './authorization/club-assignment-effectivity.policy';
 
 @Global()
 @Module({
@@ -85,6 +86,7 @@ import { LocalFieldTimezoneResolver } from './authorization/local-field-timezone
     ZonedBusinessTimeService,
     TemporalContextFactory,
     LocalFieldTimezoneResolver,
+    ClubAssignmentEffectivityPolicy,
     // ==========================================
     // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
     // Order: AllExceptionsFilter registered FIRST (lower priority),
@@ -118,6 +120,7 @@ import { LocalFieldTimezoneResolver } from './authorization/local-field-timezone
     ZonedBusinessTimeService,
     TemporalContextFactory,
     LocalFieldTimezoneResolver,
+    ClubAssignmentEffectivityPolicy,
   ],
 })
 export class CommonModule {}
