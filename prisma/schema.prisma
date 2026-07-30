@@ -674,6 +674,7 @@ model club_sections {
   club_types                  club_types                    @relation(fields: [club_type_id], references: [club_type_id], onDelete: NoAction, onUpdate: NoAction)
   clubs                       clubs?                        @relation(fields: [main_club_id], references: [club_id], onDelete: Cascade, onUpdate: NoAction)
   finances                    finances[]
+  finance_ledger_entries      finance_ledger_entries[]
   folder_assignments          folder_assignments[]
   folders_modules_records     folders_modules_records[]
   folders_section_records     folders_section_records[]
@@ -1048,6 +1049,7 @@ model finances {
   modified_by         users?                   @relation("finances_modified_by", fields: [modified_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   finances_categories finances_categories      @relation(fields: [finance_category_id], references: [finance_category_id], onDelete: NoAction, onUpdate: NoAction)
   evidence_files      finance_evidence_files[]
+  ledger_entry        finance_ledger_entries?
 
   @@index([club_section_id], map: "idx_finances_club_section_id")
   @@index([club_section_id, year, month, active])
@@ -1083,9 +1085,129 @@ model finances_categories {
   created_at          DateTime?                          @default(now()) @db.Timestamptz(6)
   modified_at         DateTime?                          @default(now()) @db.Timestamptz(6)
   finances            finances[]
+  ledger_entries      finance_ledger_entries[]
   translations        finances_categories_translations[]
 
   @@unique([name, type], map: "unique_name_type")
+}
+
+enum finance_ledger_entry_kind {
+  income
+  expense
+  payable
+}
+
+enum finance_ledger_entry_status {
+  pending_approval
+  approved
+  rejected
+}
+
+model finance_currencies {
+  currency_code  String                   @id @db.Char(3)
+  numeric_code   String                   @unique @db.Char(3)
+  name           String                   @db.VarChar(80)
+  minor_units    Int
+  active         Boolean                  @default(true)
+  ledger_entries finance_ledger_entries[] @relation("finance_entry_currency")
+  vouchers       finance_vouchers[]       @relation("finance_voucher_currency")
+}
+
+model finance_ledger_entries {
+  finance_ledger_entry_id String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legacy_finance_id        Int?                        @unique
+  club_section_id          Int
+  finance_category_id      Int
+  kind                     finance_ledger_entry_kind
+  amount_centavos          Int
+  currency                 String                      @db.Char(3)
+  finance_date             DateTime                    @db.Date
+  status                   finance_ledger_entry_status @default(pending_approval)
+  registered_by_id         String                      @db.Uuid
+  decided_by_id            String?                     @db.Uuid
+  decided_at               DateTime?                   @db.Timestamptz(6)
+  rejection_reason         String?                     @db.VarChar(500)
+  created_at               DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime                    @updatedAt @db.Timestamptz(6)
+  legacy_finance           finances?                   @relation(fields: [legacy_finance_id], references: [finance_id], onDelete: Restrict, onUpdate: NoAction)
+  club_section             club_sections               @relation(fields: [club_section_id], references: [club_section_id], onDelete: Restrict, onUpdate: NoAction)
+  category                 finances_categories         @relation(fields: [finance_category_id], references: [finance_category_id], onDelete: Restrict, onUpdate: NoAction)
+  registered_by            users                       @relation("finance_ledger_registered_by", fields: [registered_by_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  decided_by               users?                      @relation("finance_ledger_decided_by", fields: [decided_by_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  currency_ref             finance_currencies          @relation("finance_entry_currency", fields: [currency], references: [currency_code], onDelete: Restrict, onUpdate: NoAction)
+  vouchers                 finance_vouchers[]
+  obligations              finance_receipt_allocations[] @relation("finance_allocation_obligation")
+  events                   finance_ledger_events[]
+
+  @@index([club_section_id, status, finance_date])
+  @@index([club_section_id, kind, status])
+}
+
+model finance_vouchers {
+  finance_voucher_id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ledger_entry_id          String   @db.Uuid
+  amount_centavos          Int
+  currency                 String   @db.Char(3)
+  source_uri               String   @db.VarChar(500)
+  file_name                String   @db.VarChar(255)
+  mime_type                String   @db.VarChar(100)
+  file_size                Int?
+  issuer                   String?  @db.VarChar(255)
+  source_metadata          Json?
+  recorded_by_id           String   @db.Uuid
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  ledger_entry             finance_ledger_entries @relation(fields: [ledger_entry_id], references: [finance_ledger_entry_id], onDelete: Restrict, onUpdate: NoAction)
+  recorded_by              users @relation("finance_voucher_recorded_by", fields: [recorded_by_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  currency_ref             finance_currencies @relation("finance_voucher_currency", fields: [currency], references: [currency_code], onDelete: Restrict, onUpdate: NoAction)
+  allocations              finance_receipt_allocations[]
+  events                   finance_ledger_events[]
+
+  @@index([ledger_entry_id])
+}
+
+model finance_receipt_allocations {
+  finance_receipt_allocation_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  finance_voucher_id            String   @db.Uuid
+  obligation_entry_id           String   @db.Uuid
+  amount_centavos               Int
+  created_at                    DateTime @default(now()) @db.Timestamptz(6)
+  voucher                       finance_vouchers @relation(fields: [finance_voucher_id], references: [finance_voucher_id], onDelete: Restrict, onUpdate: NoAction)
+  obligation                    finance_ledger_entries @relation("finance_allocation_obligation", fields: [obligation_entry_id], references: [finance_ledger_entry_id], onDelete: Restrict, onUpdate: NoAction)
+  events                        finance_ledger_events[]
+
+  @@unique([finance_voucher_id, obligation_entry_id])
+  @@index([obligation_entry_id])
+}
+
+model finance_ledger_events {
+  finance_ledger_event_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  finance_ledger_entry_id        String?  @db.Uuid
+  finance_voucher_id             String?  @db.Uuid
+  finance_receipt_allocation_id  String?  @db.Uuid
+  event_type                     String   @db.VarChar(64)
+  actor_user_id                  String?  @db.Uuid
+  payload                        Json
+  created_at                     DateTime @default(now()) @db.Timestamptz(6)
+  ledger_entry                   finance_ledger_entries? @relation(fields: [finance_ledger_entry_id], references: [finance_ledger_entry_id], onDelete: Restrict, onUpdate: NoAction)
+  voucher                        finance_vouchers? @relation(fields: [finance_voucher_id], references: [finance_voucher_id], onDelete: Restrict, onUpdate: NoAction)
+  allocation                     finance_receipt_allocations? @relation(fields: [finance_receipt_allocation_id], references: [finance_receipt_allocation_id], onDelete: Restrict, onUpdate: NoAction)
+  actor                          users? @relation("finance_ledger_event_actor", fields: [actor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([finance_ledger_entry_id, created_at])
+  @@index([finance_voucher_id, created_at])
+}
+
+model finance_idempotency_receipts {
+  finance_idempotency_receipt_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actor_user_id                  String   @db.Uuid
+  idempotency_key                String   @db.Uuid
+  command                        String   @db.VarChar(64)
+  request_hash                   String   @db.Char(64)
+  response                       Json
+  created_at                     DateTime @default(now()) @db.Timestamptz(6)
+  actor                          users @relation("finance_idempotency_actor", fields: [actor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([actor_user_id, idempotency_key])
 }
 
 model finances_categories_translations {
@@ -2254,6 +2376,11 @@ model users {
   finances                             finances[]
   finances_modified                    finances[]                            @relation("finances_modified_by")
   finance_evidence_uploaded            finance_evidence_files[]              @relation("finance_evidence_uploaded_by")
+  finance_ledger_entries_registered    finance_ledger_entries[]              @relation("finance_ledger_registered_by")
+  finance_ledger_entries_decided       finance_ledger_entries[]              @relation("finance_ledger_decided_by")
+  finance_vouchers_recorded            finance_vouchers[]                    @relation("finance_voucher_recorded_by")
+  finance_ledger_events                finance_ledger_events[]               @relation("finance_ledger_event_actor")
+  finance_idempotency_receipts         finance_idempotency_receipts[]        @relation("finance_idempotency_actor")
   assignments_folders                  folder_assignments[]
   evidence_files_submitted             folders_section_records[]             @relation("evidence_files_submitted_by")
   evidence_files_validated             folders_section_records[]             @relation("evidence_files_validated_by")
