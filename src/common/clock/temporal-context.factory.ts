@@ -3,16 +3,17 @@ import type { Clock } from './clock';
 import { CLOCK } from './clock';
 import type { BusinessDate } from './zoned-business-time.service';
 import { ZonedBusinessTimeService } from './zoned-business-time.service';
+import type { CanonicalGeographicIanaTimezone } from '../timezone/canonical-geographic-iana-timezone';
 
 export type TemporalLocalField = {
   local_field_id: number;
-  timezone: string;
+  timezone: CanonicalGeographicIanaTimezone;
 };
 
 export type TemporalContext = {
   now: Date;
   businessDate: BusinessDate;
-  businessTimeZone: string;
+  businessTimeZone: CanonicalGeographicIanaTimezone;
   localFieldId: number;
 };
 

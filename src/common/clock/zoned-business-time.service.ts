@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { CanonicalGeographicIanaTimezone } from '../timezone/canonical-geographic-iana-timezone';
 
 export type BusinessDate = `${string}-${string}-${string}`;
 
@@ -25,7 +26,10 @@ function parseBusinessDate(value: BusinessDate): DateParts {
   return { year, month, day };
 }
 
-function formatParts(now: Date, timezone: string): DateParts {
+function formatParts(
+  now: Date,
+  timezone: CanonicalGeographicIanaTimezone,
+): DateParts {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
@@ -50,11 +54,17 @@ function toBusinessDate({ year, month, day }: DateParts): BusinessDate {
  */
 @Injectable()
 export class ZonedBusinessTimeService {
-  businessDate(now: Date, timezone: string): BusinessDate {
+  businessDate(
+    now: Date,
+    timezone: CanonicalGeographicIanaTimezone,
+  ): BusinessDate {
     return toBusinessDate(formatParts(now, timezone));
   }
 
-  startOfBusinessDate(date: BusinessDate, timezone: string): Date {
+  startOfBusinessDate(
+    date: BusinessDate,
+    timezone: CanonicalGeographicIanaTimezone,
+  ): Date {
     const { year, month, day } = parseBusinessDate(date);
     const center = Date.UTC(year, month - 1, day);
     let low = center - 3 * 86_400_000;
@@ -94,7 +104,10 @@ export class ZonedBusinessTimeService {
     return start;
   }
 
-  startOfNextBusinessDate(date: BusinessDate, timezone: string): Date {
+  startOfNextBusinessDate(
+    date: BusinessDate,
+    timezone: CanonicalGeographicIanaTimezone,
+  ): Date {
     const { year, month, day } = parseBusinessDate(date);
     const next = new Date(Date.UTC(year, month - 1, day + 1));
     return this.startOfBusinessDate(
