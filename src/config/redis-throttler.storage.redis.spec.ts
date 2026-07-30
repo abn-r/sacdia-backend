@@ -24,7 +24,7 @@ async function clientIdsForUser(
   client: RedisThrottlerClient,
   username: string,
 ): Promise<string[]> {
-  const response = await client.sendCommand(['CLIENT', 'LIST']);
+  const response = await client.sendCommand<string>(['CLIENT', 'LIST']);
   if (typeof response !== 'string') {
     throw new Error('Redis CLIENT LIST returned a non-string response');
   }
@@ -235,10 +235,10 @@ describe('RedisThrottlerStorage real Redis contract', () => {
         storage.increment(key, 10_000, 3, 10_000, 'integration'),
       ).rejects.toThrow(/NOPERM|permission/i);
       await expect(
-        admin.exists(
+        admin.exists([
           `throttler:integration:${key}:hits`,
           `throttler:integration:${key}:blocked`,
-        ),
+        ]),
       ).resolves.toBe(0);
     },
   );
