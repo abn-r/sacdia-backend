@@ -1,3 +1,10 @@
+jest.mock('../config/firebase-admin.module', () => ({
+  firebaseAdmin: {
+    getApps: jest.fn(() => ['mock-app']),
+    getMessaging: jest.fn(),
+  },
+}));
+
 import type { Cache } from 'cache-manager';
 import { CatalogCacheService } from '../catalogs/catalog-cache.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -50,6 +57,7 @@ describe('HealthController', () => {
       dependencies: {
         database: { ok: true, pool: poolMetrics },
         cache: { ok: true, catalogs: catalogMetrics },
+        fcm: { initialized: true },
       },
     });
     expect(cacheManager.del).toHaveBeenCalledWith(expect.any(String));

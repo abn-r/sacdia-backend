@@ -58,9 +58,7 @@ export interface BroadcastNotificationDto {
 }
 
 export type NotificationClubInstanceType =
-  | 'adventurers'
-  | 'pathfinders'
-  | 'master_guilds';
+  'adventurers' | 'pathfinders' | 'master_guilds';
 
 export interface NotificationClubTarget {
   clubId: number;
@@ -130,7 +128,7 @@ export class NotificationsService {
   }
 
   private isFcmConfigured(): boolean {
-    return firebaseAdmin.apps.length > 0;
+    return firebaseAdmin.getApps().length > 0;
   }
 
   private isQueueReady(): boolean {
@@ -252,7 +250,10 @@ export class NotificationsService {
         logId = log.log_id;
       }
 
-      for (const userIdChunk of chunkArray(allowedUserIds, BROADCAST_CHUNK_SIZE)) {
+      for (const userIdChunk of chunkArray(
+        allowedUserIds,
+        BROADCAST_CHUNK_SIZE,
+      )) {
         const jobData: BroadcastChunkJobData = {
           logId,
           userIds: userIdChunk,
@@ -263,7 +264,11 @@ export class NotificationsService {
           source,
         };
 
-        await this.queue!.add(BROADCAST_CHUNK_JOB, jobData, DEFAULT_JOB_OPTIONS);
+        await this.queue!.add(
+          BROADCAST_CHUNK_JOB,
+          jobData,
+          DEFAULT_JOB_OPTIONS,
+        );
         queuedUsers += userIdChunk.length;
       }
     }
@@ -282,7 +287,6 @@ export class NotificationsService {
       logId,
       deliveriesCreated: queuedUsers,
     };
-
   }
 
   // ---------------------------------------------------------------------------
@@ -1468,7 +1472,7 @@ export class NotificationsService {
     body: string,
     data?: Record<string, string>,
   ): Promise<{ successCount: number; failureCount: number }> {
-    const response = await firebaseAdmin.messaging().sendEachForMulticast({
+    const response = await firebaseAdmin.getMessaging().sendEachForMulticast({
       tokens,
       notification: { title, body },
       data,

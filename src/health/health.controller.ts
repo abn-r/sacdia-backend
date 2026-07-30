@@ -105,7 +105,7 @@ export class HealthController {
       cache: cacheStatus,
       fcm: {
         configured: fcmConfigured,
-        initialized: firebaseAdmin.apps.length > 0,
+        initialized: firebaseAdmin.getApps().length > 0,
       },
       sentry: {
         configured: sentryConfigured,

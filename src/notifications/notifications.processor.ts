@@ -135,7 +135,7 @@ export class NotificationsProcessor
   }
 
   private isFcmConfigured(): boolean {
-    return firebaseAdmin.apps.length > 0;
+    return firebaseAdmin.getApps().length > 0;
   }
 
   /**
@@ -918,7 +918,7 @@ export class NotificationsProcessor
       timestamp: payload.timestamp,
     };
 
-    const response = await firebaseAdmin.messaging().sendEachForMulticast({
+    const response = await firebaseAdmin.getMessaging().sendEachForMulticast({
       tokens,
       data,
       apns: {
@@ -1054,7 +1054,7 @@ export class NotificationsProcessor
     body: string,
     data?: Record<string, string>,
   ): Promise<{ successCount: number; failureCount: number }> {
-    const response = await firebaseAdmin.messaging().sendEachForMulticast({
+    const response = await firebaseAdmin.getMessaging().sendEachForMulticast({
       tokens,
       notification: { title, body },
       data,
