@@ -107,7 +107,7 @@ asset_issues AS NOT MATERIALIZED (
 ),
 audit_issues AS NOT MATERIALIZED (
   SELECT audit_log_id::text audit_log_id, action, length(action)::int action_length
-  FROM audit_logs WHERE length(action) > 20
+  FROM audit_logs WHERE length(action) > 64
 ),
 field_impact AS NOT MATERIALIZED (
   SELECT local_field_id, count(*)::int assignments_count,
