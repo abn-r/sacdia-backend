@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { Client } from 'pg';
@@ -34,12 +35,33 @@ export const CONSUMER_INVENTORY = Object.freeze([
   'docs/features/gestion-clubs.md',
   'docs/features/gestion-clubs/ux-reset-phase0.md',
 ]);
+export const CANONICAL_CONTRACT_PHRASES = Object.freeze([
+  'El baseline actual sigue ejecutando la sucesión inmediata',
+  'El contrato P0 de scheduling todavía no está implementado ni habilitado',
+  'no crea assignment ni grant',
+]);
 const CONSUMER_PATTERN =
   /director[-_ ]succession|succeedClubSectionDirector|can_schedule_director_succession/i;
 type ConsumerInventory = {
   known_internal_consumers: readonly string[];
   active_jsx_consumers: string[];
   flutter_consumers: string[];
+};
+export type ConsumerRoots = {
+  workspaceRoot?: string;
+  adminRoot?: string;
+  appRoot?: string;
+  docsRoot?: string;
+};
+export type ResolvedConsumerRoots = {
+  adminRoot: string;
+  appRoot: string;
+  docsRoot: string;
+};
+export type ContractRefs = {
+  adminRef: string;
+  appRef: string;
+  docsRef: string;
 };
 
 function sourceFiles(directory: string): string[] {
@@ -49,12 +71,16 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-function discoverConsumers(directory: string, sourceRoot: string): string[] {
+function discoverConsumers(
+  directory: string,
+  sourceRoot: string,
+  prefix = '',
+): string[] {
   return sourceFiles(directory)
     .filter((path) =>
       CONSUMER_PATTERN.test(`${basename(path)}\n${readFileSync(path, 'utf8')}`),
     )
-    .map((path) => relative(sourceRoot, path))
+    .map((path) => join(prefix, relative(sourceRoot, path)))
     .sort();
 }
 
@@ -74,22 +100,82 @@ function locateWorkspace(start: string): string {
   throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
 }
 
-export function inspectConsumerInventory(
-  roots: { workspaceRoot?: string; docsRoot?: string } = {},
+export function resolveConsumerRoots(
+  roots: ConsumerRoots = {},
+): ResolvedConsumerRoots {
+  const adminRoot = roots.adminRoot ?? process.env.SACDIA_ADMIN_ROOT;
+  const appRoot = roots.appRoot ?? process.env.SACDIA_APP_ROOT;
+  const workspaceRoot =
+    roots.workspaceRoot ?? process.env.SACDIA_WORKSPACE_ROOT;
+  const workspace =
+    workspaceRoot || !adminRoot || !appRoot
+      ? resolve(workspaceRoot ?? locateWorkspace(resolve(__dirname, '..')))
+      : undefined;
+  return {
+    adminRoot: resolve(adminRoot ?? join(workspace!, 'sacdia-admin')),
+    appRoot: resolve(appRoot ?? join(workspace!, 'sacdia-app')),
+    docsRoot: resolve(
+      roots.docsRoot ??
+        process.env.SACDIA_CANONICAL_DOCS_ROOT ??
+        workspace ??
+        locateWorkspace(resolve(__dirname, '..')),
+    ),
+  };
+}
+
+function environmentContractRefs(): ContractRefs | undefined {
+  const refs = {
+    adminRef: process.env.SACDIA_ADMIN_CONTRACT_REF,
+    appRef: process.env.SACDIA_APP_CONTRACT_REF,
+    docsRef: process.env.SACDIA_ROOT_CONTRACT_REF,
+  };
+  const noRefs = Object.values(refs).every((ref) => ref === undefined);
+  if (noRefs && process.env.ALLOW_AUTHORIZATION_P0_CROSS_REPO !== '1')
+    return undefined;
+  if (Object.values(refs).some((ref) => !ref))
+    throw new Error('CONSUMER_INVENTORY_REF_MISMATCH');
+  return refs as ContractRefs;
+}
+
+export function verifyConsumerRootRevisions(
+  roots: ResolvedConsumerRoots,
+  refs: ContractRefs | undefined = environmentContractRefs(),
+): void {
+  if (!refs) return;
+  try {
+    for (const [directory, expected] of [
+      [roots.adminRoot, refs.adminRef],
+      [roots.appRoot, refs.appRef],
+      [roots.docsRoot, refs.docsRef],
+    ] as const) {
+      if (!/^[0-9a-f]{40}$/.test(expected)) throw new Error();
+      const actual = execFileSync(
+        'git',
+        ['-C', directory, 'rev-parse', 'HEAD'],
+        {
+          encoding: 'utf8',
+        },
+      ).trim();
+      if (actual !== expected) throw new Error();
+    }
+  } catch {
+    throw new Error('CONSUMER_INVENTORY_REF_MISMATCH');
+  }
+}
+
+export function verifyCanonicalDocsContract(content: string): void {
+  if (CANONICAL_CONTRACT_PHRASES.some((phrase) => !content.includes(phrase)))
+    throw new Error('CONSUMER_CONTRACT_DRIFT');
+}
+
+export function discoverConsumerInventory(
+  roots: ResolvedConsumerRoots,
 ): ConsumerInventory {
-  const workspaceRoot = roots.workspaceRoot
-    ? resolve(roots.workspaceRoot)
-    : locateWorkspace(resolve(__dirname, '..'));
-  const docsRoot = roots.docsRoot
-    ? resolve(roots.docsRoot)
-    : process.env.SACDIA_CANONICAL_DOCS_ROOT
-      ? resolve(process.env.SACDIA_CANONICAL_DOCS_ROOT)
-      : workspaceRoot;
   const required = [
-    join(workspaceRoot, 'sacdia-admin/src'),
-    join(workspaceRoot, 'sacdia-app/lib'),
-    join(docsRoot, 'docs/api'),
-    join(docsRoot, 'docs/features'),
+    join(roots.adminRoot, 'src'),
+    join(roots.appRoot, 'lib'),
+    join(roots.docsRoot, 'docs/api'),
+    join(roots.docsRoot, 'docs/features'),
   ];
   if (!required.every((directory) => existsSync(directory)))
     throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
@@ -97,11 +183,19 @@ export function inspectConsumerInventory(
   let documentationConsumers: string[];
   let flutterConsumers: string[];
   try {
-    adminConsumers = discoverConsumers(required[0], workspaceRoot);
-    flutterConsumers = discoverConsumers(required[1], workspaceRoot);
+    adminConsumers = discoverConsumers(
+      required[0],
+      roots.adminRoot,
+      'sacdia-admin',
+    );
+    flutterConsumers = discoverConsumers(
+      required[1],
+      roots.appRoot,
+      'sacdia-app',
+    );
     documentationConsumers = [
-      ...discoverConsumers(required[2], docsRoot),
-      ...discoverConsumers(required[3], docsRoot),
+      ...discoverConsumers(required[2], roots.docsRoot),
+      ...discoverConsumers(required[3], roots.docsRoot),
     ].sort();
   } catch {
     throw new Error('CONSUMER_INVENTORY_UNAVAILABLE');
@@ -123,6 +217,14 @@ export function inspectConsumerInventory(
     ),
     flutter_consumers: flutterConsumers,
   };
+}
+
+export function inspectConsumerInventory(
+  unresolvedRoots: ConsumerRoots = {},
+): ConsumerInventory {
+  const roots = resolveConsumerRoots(unresolvedRoots);
+  verifyConsumerRootRevisions(roots);
+  return discoverConsumerInventory(roots);
 }
 
 function setting(name: string, fallback: number, maximum: number): number {
