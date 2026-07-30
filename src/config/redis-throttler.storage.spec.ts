@@ -31,6 +31,21 @@ describe('RedisThrottlerStorage', () => {
     mockCreateClient.mockReturnValue(client);
   });
 
+  it('pins RESP2 and migration-compatible command and keepalive defaults', () => {
+    new RedisThrottlerStorage('redis://localhost:6379');
+
+    expect(mockCreateClient).toHaveBeenCalledWith({
+      url: 'redis://localhost:6379',
+      RESP: 2,
+      socket: {
+        keepAliveInitialDelay: 5000,
+      },
+      commandOptions: {
+        timeout: undefined,
+      },
+    });
+  });
+
   it('pings during explicit startup readiness checks', async () => {
     const storage = new RedisThrottlerStorage('redis://localhost:6379');
 

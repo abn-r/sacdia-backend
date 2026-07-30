@@ -42,6 +42,7 @@ describe('authorization P0 cross-repository contract', () => {
     const ci = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8');
     for (const text of [
       'name: Backend Unit Tests',
+      'name: Redis Contract',
       'name: Cross-repo Contract',
       'https://github.com/abn-r/sacdia.git',
       'git init .contract-sources/sacdia',
@@ -52,7 +53,8 @@ describe('authorization P0 cross-repository contract', () => {
       'SACDIA_ADMIN_CONTRACT_REF',
       'SACDIA_APP_CONTRACT_REF',
       'name: Unit Tests',
-      'needs: [backend_unit_tests, cross_repo_contract]',
+      'needs: [backend_unit_tests, cross_repo_contract, redis_contract]',
+      'REDIS_RESULT: ${{ needs.redis_contract.result }}',
       'if: ${{ always() }}',
       'needs: required_unit_tests',
     ])

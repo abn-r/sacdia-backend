@@ -176,6 +176,19 @@ Notas:
   colas y caché distribuida. La caché ejecuta una lectura real al arrancar para
   verificar DNS, TLS, autenticación y disponibilidad; cualquier fallo detiene
   el startup. En desarrollo/test se permite fallback a memoria.
+- El cliente `redis` usado por el throttler fija explícitamente `RESP: 2`,
+  `socket.keepAliveInitialDelay: 5000` y
+  `commandOptions.timeout: undefined`. Estos valores preservan la semántica de
+  node-redis v5 durante la futura actualización a v6; adoptar RESP3, el
+  keepalive de 30 segundos o un timeout de comandos requiere una decisión
+  operativa independiente. Los errores Redis continúan propagándose: el
+  throttler no permite requests mediante fallback silencioso.
+- El contrato real del throttler se valida contra Redis local con:
+  `ALLOW_REDIS_INTEGRATION=1 REDIS_INTEGRATION_URL=redis://127.0.0.1:6379 pnpm exec jest --runInBand --runTestsByPath src/config/redis-throttler.storage.integration.spec.ts --testPathIgnorePatterns='^$'`.
+  La suite rechaza URLs que no sean loopback; en CI falla de inmediato si falta
+  cualquiera de las dos variables. La prueba de reconexión aísla la falla con
+  un usuario ACL único, espera con polling acotado y elimina sus claves y ACL.
+  CI lo ejecuta en un job aislado con Redis 7.
 - Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
 - Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
 - Ventana de compatibilidad temporal: **2026-03-04 a 2026-03-18** con `AUTH_REJECT_SNAKE_CASE=false`.
