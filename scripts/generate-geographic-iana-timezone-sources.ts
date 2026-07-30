@@ -292,6 +292,7 @@ function acquireLock(directory: string): AcquiredLock {
     for (;;) {
       try {
         writeLock(directory, LOCK, owner);
+        checkpoint('lock-created');
         return { owner, staleOwner };
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -302,6 +303,7 @@ function acquireLock(directory: string): AcquiredLock {
           throw new Error('IANA timezone generation is already locked', {
             cause: error,
           });
+        checkpoint('stale-lock-validated');
         if (readLock(path) !== first) continue;
         rmSync(path, { force: true });
         flushDirectory(directory);
@@ -357,6 +359,7 @@ function persistTransaction(
     mode: 0o600,
     flush: true,
   });
+  if (initial) checkpoint('initial-journal-fsync');
   if (!initial) renameSync(staged, target);
   flushDirectory(directory);
 }
@@ -458,6 +461,25 @@ function recoverOwned(
   flushDirectory(directory);
 }
 
+function checkpoint(name: string): void {
+  if (process.env.NODE_ENV !== 'test') return;
+  if (process.env.IANA_TZDB_TEST_FAIL_AT === name) {
+    const error: NodeJS.ErrnoException = new Error(`Injected EIO at ${name}`);
+    error.code = 'EIO';
+    throw error;
+  }
+  if (process.env.IANA_TZDB_TEST_CRASH_AT === name)
+    process.kill(process.pid, 'SIGKILL');
+  if (process.env.IANA_TZDB_TEST_PAUSE_AT === name) {
+    const marker = process.env.IANA_TZDB_TEST_MARKER;
+    const release = process.env.IANA_TZDB_TEST_RELEASE;
+    if (!marker || !release) throw new Error('Invalid generator pause hook');
+    writeFileSync(marker, '');
+    while (!existsSync(release))
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  }
+}
+
 function replaceAtomically(
   outputDirectory: string,
   artifacts: Array<{ name: string; bytes: Buffer }>,
@@ -488,25 +510,31 @@ function replaceAtomically(
   };
   try {
     persistTransaction(outputDirectory, transaction, true);
+    checkpoint('prepared');
     artifacts.forEach(({ bytes }, index) => {
       writeFileSync(path(transaction.artifacts[index].staged), bytes, {
         flag: 'wx',
         mode: 0o644,
         flush: true,
       });
+      checkpoint(`staged-${index + 1}`);
     });
     transaction.phase = 'replacing';
     persistTransaction(outputDirectory, transaction);
-    transaction.artifacts.forEach((artifact) => {
+    checkpoint('replacing');
+    transaction.artifacts.forEach((artifact, index) => {
       if (artifact.backup)
         renameSync(path(artifact.target), path(artifact.backup));
+      checkpoint(`backup-${index + 1}`);
     });
-    transaction.artifacts.forEach((artifact) => {
+    transaction.artifacts.forEach((artifact, index) => {
       renameSync(path(artifact.staged), path(artifact.target));
+      checkpoint(`install-${index + 1}`);
     });
     flushDirectory(outputDirectory);
     transaction.phase = 'committed';
     persistTransaction(outputDirectory, transaction);
+    checkpoint('committed');
     for (const artifact of transaction.artifacts) {
       if (artifact.backup) rmSync(path(artifact.backup), { force: true });
     }
