@@ -456,9 +456,83 @@ pnpm prisma migrate deploy
 pnpm run verify:fcm-migration
 ```
 
-El preflight P0 es read-only: emite un único JSON por stdout y el resumen por stderr.
-Sus límites se ajustan con `AUTHORIZATION_P0_{CONNECTION,STATEMENT,QUERY,LOCK}_TIMEOUT_MS`
-y `AUTHORIZATION_P0_SAMPLE_LIMIT`; no consume `DATABASE_URL`.
+### Contrato operativo del preflight P0
+
+El comando emite exactamente un JSON por stdout; stderr queda reservado al
+resumen operativo. No consume `DATABASE_URL`: exige
+`AUTHORIZATION_P0_VERIFY_DATABASE_URL`.
+
+Precondiciones:
+
+- ejecutar con el mismo Node 24/ICU del runtime productivo;
+- usar un rol PostgreSQL con `CONNECT`, `USAGE` y `SELECT` sobre el schema
+  inspeccionado y catálogos requeridos; no necesita permisos de escritura;
+- apuntar en CI/desarrollo solo a una copia local o efímera autorizada; para
+  datos productivos, usar un endpoint read-only aprobado y conectividad
+  controlada, nunca credenciales compartidas;
+- conservar `prisma/scripts/authorization-p0-preflight.sql` junto al checkout;
+  su resolución es relativa al módulo y no depende del CWD;
+- ejecutar el inventario desde un workspace que contenga `sacdia-admin/src` y
+  `sacdia-app/lib`. Si no son ancestros del backend, declarar
+  `SACDIA_WORKSPACE_ROOT`; una documentación canónica en otro worktree se
+  declara con `SACDIA_CANONICAL_DOCS_ROOT`.
+
+El inventario inspecciona admin, Flutter y documentación. Un root ausente o
+ilegible produce `CONSUMER_INVENTORY_UNAVAILABLE`; consumidores que divergen del
+inventario revisado producen `CONSUMER_INVENTORY_DRIFT`. Ningún checkout
+backend aislado omite esa validación silenciosamente.
+
+El executor abre y valida una única snapshot `REPEATABLE READ READ ONLY`.
+Confirma `COMMIT` al completar el reporte; ante error o señal después de
+`BEGIN`, intenta `ROLLBACK` antes de cerrar. Si la conexión nunca abrió o el
+transporte ya se perdió, PostgreSQL aborta la transacción al cerrar: no se
+promete un `ROLLBACK` explícito imposible de observar. Cada camino emite un solo
+JSON. La verificación de zonas usa el Node 24/ICU productivo, no sustituye esa
+capacidad con `pg_timezone_names`.
+
+Para señales dirigidas al PID, usar el entrypoint Node real:
+`./scripts/verify-authorization-p0.ts`. El comando pnpm es el alias normal, pero
+shims externos de pnpm pueden no reenviar señales PID-only.
+
+Contrato timezone obligatorio:
+
+- México no implica una zona única y `America/Mexico_City` nunca es default
+  nacional;
+- se aceptan solo IDs geográficos canónicos exactos de `zone.tab`, con casing
+  exacto; subregiones territoriales como
+  `America/Argentina/Buenos_Aires` son válidas;
+- aliases legacy, abreviaturas, offsets, `Etc/*` y `SystemV/*` se rechazan;
+- un Campo Local activo sin zona canónica soportada bloquea el enablement, sin
+  normalización ni fallback.
+
+Límites (default / máximo):
+
+- conexión: `3 000 ms` / `30 000 ms`;
+- statement: `5 000 ms` / `60 000 ms`;
+- query: `6 000 ms` / `65 000 ms`;
+- lock: `1 000 ms` / `10 000 ms`;
+- idle-in-transaction: fijo en `10 000 ms`;
+- muestra por check: `50` / `100`.
+
+Se configuran con
+`AUTHORIZATION_P0_{CONNECTION,STATEMENT,QUERY,LOCK}_TIMEOUT_MS` y
+`AUTHORIZATION_P0_SAMPLE_LIMIT`. Valores ausentes, no enteros o no positivos
+usan el default; valores mayores se acotan al máximo.
+
+Exit codes:
+
+- `0` — `clean`;
+- `1` — `blocked` o `error`;
+- `130` — `SIGINT`, diagnóstico `INTERRUPTED`;
+- `143` — `SIGTERM`, diagnóstico `TERMINATED`.
+
+URL dedicada ausente produce `MISSING_DATABASE_URL`; fallos de conexión,
+`DATABASE_UNAVAILABLE`; timeouts,
+`QUERY_TIMEOUT`; un SQL ausente o fallo posterior a conectar,
+`PREFLIGHT_FAILED`; un catálogo ausente/corrupto,
+`CATALOG_INTEGRITY_ERROR`; y un inventario no verificable,
+`CONSUMER_INVENTORY_UNAVAILABLE` o `CONSUMER_INVENTORY_DRIFT`. Todos conservan
+JSON puro por stdout y cleanup idempotente.
 
 ## Documentación del proyecto
 

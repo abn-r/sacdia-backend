@@ -4,15 +4,19 @@ import { join } from 'node:path';
 import { Client } from 'pg';
 import {
   classifyOperationalFailure,
+  CONSUMER_INVENTORY,
   finalizeChecks,
 } from '../../scripts/verify-authorization-director-succession-p0';
 import {
   PINNED_IANA_METADATA,
   type CanonicalGeographicIanaTimezoneCatalog,
 } from './timezone/canonical-geographic-iana-timezone';
+import { createTestConsumerRoots } from './testing/authorization-p0-consumer-roots.fixture';
 
 type Json = Record<string, unknown>;
 const root = join(__dirname, '../..');
+const consumerRoots = createTestConsumerRoots(CONSUMER_INVENTORY);
+afterAll(() => consumerRoots.dispose());
 const databaseUrl = process.env.AUTHORIZATION_P0_INTEGRATION_DATABASE_URL;
 const dbIt =
   process.env.ALLOW_AUTHORIZATION_P0_INTEGRATION_DB === '1' && databaseUrl
@@ -25,6 +29,8 @@ function runCli(url?: string, extraEnv: NodeJS.ProcessEnv = {}) {
     timeout: 10_000,
     env: {
       ...process.env,
+      SACDIA_WORKSPACE_ROOT: consumerRoots.workspaceRoot,
+      SACDIA_CANONICAL_DOCS_ROOT: consumerRoots.docsRoot,
       AUTHORIZATION_P0_VERIFY_DATABASE_URL: url,
       ...extraEnv,
     },
@@ -95,6 +101,18 @@ describe('authorization/director succession P0 preflight', () => {
       missing.result.status,
       (missing.report.error as Json).diagnostic,
     ]).toEqual([1, 'MISSING_DATABASE_URL']);
+    for (const extraEnv of [
+      { SACDIA_WORKSPACE_ROOT: join(process.cwd(), 'missing-workspace') },
+      {
+        SACDIA_CANONICAL_DOCS_ROOT: join(process.cwd(), 'missing-docs'),
+      },
+    ]) {
+      const inventory = runCli('postgresql://127.0.0.1:1/postgres', extraEnv);
+      expect([
+        inventory.result.status,
+        (inventory.report.error as Json).diagnostic,
+      ]).toEqual([1, 'CONSUMER_INVENTORY_UNAVAILABLE']);
+    }
     const unavailable = runCli('postgresql://127.0.0.1:1/postgres', {
       AUTHORIZATION_P0_CONNECTION_TIMEOUT_MS: '100',
     });
@@ -142,6 +160,10 @@ describe('authorization/director succession P0 preflight', () => {
           partial.result.status,
           (partial.report.schema as Json).local_fields_timezone,
         ]).toEqual([1, 'schema_not_ready']);
+        expect(partial.report.consumer_inventory).toMatchObject({
+          active_jsx_consumers: [],
+          flutter_consumers: [],
+        });
         expect(
           (check(partial.report, 'local_field_timezones').rows as Json[])[0],
         ).toMatchObject({ reason: 'MISSING', diagnostic: 'SCHEMA_NOT_READY' });
