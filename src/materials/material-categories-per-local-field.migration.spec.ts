@@ -21,7 +21,7 @@ const dbIt =
     ? it
     : it.skip;
 
-const fixtures = (schema: string) => `
+const fixtures = (schema: string, withLocalFields = true) => `
   CREATE SCHEMA ${schema}; SET search_path=${schema},public;
   CREATE TABLE local_fields (local_field_id INT PRIMARY KEY);
   CREATE TABLE users (user_id UUID PRIMARY KEY);
@@ -37,14 +37,18 @@ const fixtures = (schema: string) => `
     CONSTRAINT material_products_category_fk FOREIGN KEY (material_category_id)
       REFERENCES material_categories (id)
   );
-  INSERT INTO local_fields VALUES (1), (2);
   INSERT INTO users VALUES ('00000000-0000-0000-0000-000000000001');
   INSERT INTO material_categories (id, slug, label) VALUES
     ('00000000-0000-0000-0000-000000000101', 'uniformes', 'Uniformes'),
     ('00000000-0000-0000-0000-000000000102', 'libros', 'Libros');
-  INSERT INTO material_products VALUES
-    ('00000000-0000-0000-0000-000000000201', 1, '00000000-0000-0000-0000-000000000101'),
-    ('00000000-0000-0000-0000-000000000202', 2, '00000000-0000-0000-0000-000000000102');`;
+  ${
+    withLocalFields
+      ? `INSERT INTO local_fields VALUES (1), (2);
+         INSERT INTO material_products VALUES
+           ('00000000-0000-0000-0000-000000000201', 1, '00000000-0000-0000-0000-000000000101'),
+           ('00000000-0000-0000-0000-000000000202', 2, '00000000-0000-0000-0000-000000000102');`
+      : ''
+  }`;
 
 describe('material categories local-field migration', () => {
   dbIt(
@@ -135,6 +139,68 @@ describe('material categories local-field migration', () => {
         await expect(
           client.query(`SELECT to_regclass('material_audit_logs') AS relation`),
         ).resolves.toMatchObject({ rows: [{ relation: null }] });
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        await client.end();
+      }
+    },
+  );
+
+  dbIt(
+    'rejects and preserves legacy categories when no local fields exist',
+    async () => {
+      if (!databaseUrl) throw new Error('integration URL required');
+      const schema = `materials_w1_empty_lf_${randomBytes(6).toString('hex')}`;
+      const client = new Client({ connectionString: databaseUrl });
+      await client.connect();
+      try {
+        await client.query(fixtures(schema, false));
+        await expect(
+          client.query(`SET search_path=${schema},public; ${migration}`),
+        ).rejects.toMatchObject({ code: 'P0001' });
+        await client.query('ROLLBACK');
+        await expect(
+          client.query(
+            `SELECT COUNT(*)::int AS count FROM material_categories`,
+          ),
+        ).resolves.toMatchObject({ rows: [{ count: 2 }] });
+        await expect(
+          client.query(`SELECT COUNT(*)::int AS count FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'material_categories'
+              AND column_name = 'local_field_id'`),
+        ).resolves.toMatchObject({ rows: [{ count: 0 }] });
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        await client.end();
+      }
+    },
+  );
+
+  dbIt(
+    'can be applied twice without duplicating scoped data or schema objects',
+    async () => {
+      if (!databaseUrl) throw new Error('integration URL required');
+      const schema = `materials_w1_idempotent_${randomBytes(6).toString('hex')}`;
+      const client = new Client({ connectionString: databaseUrl });
+      await client.connect();
+      try {
+        await client.query(fixtures(schema));
+        await client.query(`SET search_path=${schema},public; ${migration}`);
+        await expect(
+          client.query(`SET search_path=${schema},public; ${migration}`),
+        ).resolves.toBeDefined();
+        await expect(
+          client.query(
+            `SELECT COUNT(*)::int AS count FROM material_categories`,
+          ),
+        ).resolves.toMatchObject({ rows: [{ count: 4 }] });
+        await expect(
+          client.query(
+            `SELECT COUNT(*)::int AS count FROM material_audit_logs`,
+          ),
+        ).resolves.toMatchObject({ rows: [{ count: 0 }] });
       } finally {
         await client.query('ROLLBACK').catch(() => undefined);
         await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
