@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TYPE director_succession_status_enum AS ENUM ('scheduled', 'activated', 'blocked', 'cancelled');
 
 CREATE TABLE director_succession_plans (
@@ -36,3 +38,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_set_director_succession_effective_date BEFORE INSERT OR UPDATE OF target_ecclesiastical_year_id, effective_date ON director_succession_plans FOR EACH ROW EXECUTE FUNCTION set_director_succession_effective_date();
+
+COMMIT;
