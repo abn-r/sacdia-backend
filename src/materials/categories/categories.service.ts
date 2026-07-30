@@ -20,8 +20,11 @@ export class CategoriesService {
   // LIST — admin view; includes inactive + product_count
   // ---------------------------------------------------------------------------
 
-  async list(): Promise<CategoryAdminDto[]> {
+  async list(localFieldId: number): Promise<CategoryAdminDto[]> {
     const rows = await this.prisma.materialCategory.findMany({
+      where: {
+        OR: [{ local_field_id: localFieldId }, { local_field_id: null }],
+      },
       orderBy: [{ sort_order: 'asc' }, { label: 'asc' }],
       include: {
         _count: { select: { products: true } },
@@ -35,10 +38,14 @@ export class CategoriesService {
   // CREATE
   // ---------------------------------------------------------------------------
 
-  async create(dto: CreateCategoryDto): Promise<CategoryAdminDto> {
+  async create(
+    dto: CreateCategoryDto,
+    localFieldId: number,
+  ): Promise<CategoryAdminDto> {
     try {
       const row = await this.prisma.materialCategory.create({
         data: {
+          local_field_id: localFieldId,
           slug: dto.slug,
           label: dto.label,
           icon: dto.icon ?? null,
@@ -63,10 +70,7 @@ export class CategoriesService {
   // UPDATE
   // ---------------------------------------------------------------------------
 
-  async update(
-    id: string,
-    dto: UpdateCategoryDto,
-  ): Promise<CategoryAdminDto> {
+  async update(id: string, dto: UpdateCategoryDto): Promise<CategoryAdminDto> {
     const existing = await this.prisma.materialCategory.findUnique({
       where: { id },
     });

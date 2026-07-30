@@ -3,6 +3,13 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class ListCatalogQueryDto {
+  @ApiPropertyOptional({ description: 'Target Local Field' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  local_field_id?: number;
+
   @ApiPropertyOptional({ description: 'Filter by category UUID' })
   @IsOptional()
   @IsUUID()

@@ -10,10 +10,8 @@ import type { AuthorizationSnapshot } from '../../common/services/authorization-
  *                  must auto-filter by that local_field_id; ignore any
  *                  ?local_field_id=… override (or 403 if the override doesn't
  *                  match).
- *  - 'all'       → unscoped caller (super-admin / admin GLOBAL with no
- *                  territorial scope). The service must require the caller
- *                  to pass an explicit local_field_id when targeting a single
- *                  field, or fan out across fields for listing endpoints.
+ *  - 'all'       → super-admin only. Every other role must resolve to exactly
+ *                  one local_field or fail closed.
  */
 export type ActorLocalFieldScope =
   | { scope: 'single'; localFieldId: number }
@@ -24,10 +22,10 @@ export type ActorLocalFieldScope =
  * authorization snapshot attached by PermissionsGuard.
  *
  * Resolution order (first match wins):
- *  1. effective.scope.club.local_field_id          → director (CLUB role)
- *  2. effective.scope.global.local_field.id        → director-lf / assistant-lf
- *     (LF-territorial GLOBAL role)
- *  3. effective.scope.global.union/country/none    → admin / super-admin
+ *  1. super-admin global grant                     → all
+ *  2. effective.scope.global.local_field.id        → single LF
+ *  3. effective.scope.club                         → club's LF
+ *  4. union/division/unscoped non-super roles      → 403
  *
  * For (1) we still need a Prisma lookup because the snapshot only carries
  * { club_id, club_name }, not the FK to local_fields. We expose the helper as
@@ -44,12 +42,19 @@ export async function resolveActorLocalField(
     });
   }
 
+  if (
+    authorization.grants.global_roles.some(
+      (grant) => grant.role_name === 'super-admin',
+    )
+  ) {
+    return { scope: 'all' };
+  }
+
   const territorial = authorization.effective.scope.global;
   const lfNodeId = territorial?.local_field?.id;
   if (lfNodeId !== undefined && lfNodeId !== null) {
-    const lfId =
-      typeof lfNodeId === 'string' ? parseInt(lfNodeId, 10) : lfNodeId;
-    if (Number.isFinite(lfId)) {
+    const lfId = Number(lfNodeId);
+    if (Number.isInteger(lfId) && lfId > 0) {
       return { scope: 'single', localFieldId: lfId };
     }
   }
@@ -69,8 +74,10 @@ export async function resolveActorLocalField(
     return { scope: 'single', localFieldId: found.local_field_id };
   }
 
-  // Admin / super-admin with no territorial scope → 'all'
-  return { scope: 'all' };
+  throw new ForbiddenException({
+    code: 'local_field_scope_required',
+    message: 'This role requires an exact local_field scope.',
+  });
 }
 
 /**
@@ -79,8 +86,7 @@ export async function resolveActorLocalField(
  *
  *  - 'single' actor MUST hit only their own LF. If they pass an override
  *    that doesn't match, 403.
- *  - 'all' actor MUST pass an explicit override (otherwise 400) because
- *    the service can't guess which LF to write to.
+ *  - super-admin MUST pass an explicit override (otherwise 400).
  */
 export function requireLocalFieldFor(
   scope: ActorLocalFieldScope,
@@ -102,8 +108,8 @@ export function requireLocalFieldFor(
       code: 'local_field_id_required',
       message:
         reason === 'write'
-          ? 'local_field_id is required for this action when called by an unscoped admin.'
-          : 'local_field_id query param is required for this listing when called by an unscoped admin.',
+          ? 'local_field_id is required for this super-admin action.'
+          : 'local_field_id is required for this super-admin listing.',
     });
   }
 

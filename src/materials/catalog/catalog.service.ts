@@ -126,6 +126,11 @@ export class CatalogService {
     localFieldId: number | undefined,
   ): Promise<{ data: MaterialCategoryWithCountDto[] }> {
     const categories = await this.prisma.materialCategory.findMany({
+      ...(localFieldId !== undefined && {
+        where: {
+          OR: [{ local_field_id: localFieldId }, { local_field_id: null }],
+        },
+      }),
       orderBy: { sort_order: 'asc' },
       include: {
         _count: {

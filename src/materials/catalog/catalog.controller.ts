@@ -22,7 +22,11 @@ import {
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MATERIALS_READ } from '../shared/permissions';
-import { resolveActorLocalField } from '../shared/actor-local-field';
+import {
+  requireLocalFieldFor,
+  resolveActorLocalField,
+} from '../shared/actor-local-field';
+import { ListCategoriesQueryDto } from '../categories/dto/list-categories-query.dto';
 import { CatalogService } from './catalog.service';
 import { ListCatalogQueryDto } from './dto/list-catalog.query.dto';
 import {
@@ -41,22 +45,6 @@ export class CatalogController {
     private readonly prisma: PrismaService,
   ) {}
 
-  // Resolves the local_field for catalog reads:
-  //   - LF-scoped callers (director / director-lf / assistant-lf): forced
-  //     to their own LF. Any ?local_field_id= override is ignored.
-  //   - Unscoped admin/super-admin: ?local_field_id= filters; without it
-  //     they see the merged catalog across every LF.
-  private async resolveLfForRead(
-    req: any,
-    localFieldIdParam: string | undefined,
-  ): Promise<number | undefined> {
-    const scope = await resolveActorLocalField(this.prisma, req.authorization);
-    if (scope.scope === 'single') return scope.localFieldId;
-    const parsed =
-      localFieldIdParam !== undefined ? parseInt(localFieldIdParam, 10) : NaN;
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-
   // ---------------------------------------------------------------------------
   // GET /api/v1/materials/catalog/categories
   // MUST be declared BEFORE /:id to avoid NestJS route-order capture (R-1)
@@ -68,10 +56,15 @@ export class CatalogController {
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
   @ApiResponse({ status: 200 })
   async listCategories(
+    @Query() query: ListCategoriesQueryDto,
     @Request() req: any,
-    @Query('local_field_id') localFieldIdParam?: string,
   ) {
-    const localFieldId = await this.resolveLfForRead(req, localFieldIdParam);
+    const scope = await resolveActorLocalField(this.prisma, req.authorization);
+    const localFieldId = requireLocalFieldFor(
+      scope,
+      query.local_field_id,
+      'read',
+    );
     return this.catalogService.listCategories(localFieldId);
   }
 
@@ -101,12 +94,13 @@ export class CatalogController {
   })
   @ApiQuery({ name: 'local_field_id', required: false, type: Number })
   @ApiResponse({ status: 200, type: PaginatedMaterialProductDto })
-  async list(
-    @Query() query: ListCatalogQueryDto,
-    @Request() req: any,
-    @Query('local_field_id') localFieldIdParam?: string,
-  ) {
-    const localFieldId = await this.resolveLfForRead(req, localFieldIdParam);
+  async list(@Query() query: ListCatalogQueryDto, @Request() req: any) {
+    const scope = await resolveActorLocalField(this.prisma, req.authorization);
+    const localFieldId = requireLocalFieldFor(
+      scope,
+      query.local_field_id,
+      'read',
+    );
     // Catalog endpoint always excludes inactive products (REQ-CAT-005).
     // Inventory managers see inactive products via /inventory (PR5).
     return this.catalogService.list(query, false, localFieldId);
