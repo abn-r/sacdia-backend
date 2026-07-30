@@ -8,6 +8,9 @@ type ThrottlerStorageRecord = {
   timeToBlockExpire: number;
 };
 
+const REDIS_PROTOCOL_VERSION = 2 as const;
+const REDIS_KEEP_ALIVE_INITIAL_DELAY_MS = 5_000;
+
 /**
  * Redis-backed storage for @nestjs/throttler v6.
  *
@@ -20,7 +23,21 @@ export class RedisThrottlerStorage implements OnApplicationShutdown {
   private readonly client: RedisClientType;
 
   constructor(redisUrl: string) {
-    this.client = createClient({ url: redisUrl });
+    this.client = createClient({
+      url: redisUrl,
+      // node-redis v6 defaults to RESP3. Keep RESP2 until response-shape
+      // migration is reviewed independently.
+      RESP: REDIS_PROTOCOL_VERSION,
+      socket: {
+        // Preserve the node-redis v5 default instead of v6's 30-second delay.
+        keepAliveInitialDelay: REDIS_KEEP_ALIVE_INITIAL_DELAY_MS,
+      },
+      commandOptions: {
+        // Preserve the node-redis v5 no-timeout behavior. A bounded command
+        // timeout requires a separate production SLO decision.
+        timeout: undefined,
+      },
+    });
     this.client.on('error', (error: Error) => {
       this.logger.error(`Redis throttler error: ${error.message}`);
     });
