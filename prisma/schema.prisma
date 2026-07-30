@@ -1185,13 +1185,13 @@ model finance_ledger_events {
   finance_voucher_id             String?  @db.Uuid
   finance_receipt_allocation_id  String?  @db.Uuid
   event_type                     String   @db.VarChar(64)
-  actor_user_id                  String?  @db.Uuid
+  actor_user_id                  String   @db.Uuid
   payload                        Json
   created_at                     DateTime @default(now()) @db.Timestamptz(6)
   ledger_entry                   finance_ledger_entries? @relation(fields: [finance_ledger_entry_id], references: [finance_ledger_entry_id], onDelete: Restrict, onUpdate: NoAction)
   voucher                        finance_vouchers? @relation(fields: [finance_voucher_id], references: [finance_voucher_id], onDelete: Restrict, onUpdate: NoAction)
   allocation                     finance_receipt_allocations? @relation(fields: [finance_receipt_allocation_id], references: [finance_receipt_allocation_id], onDelete: Restrict, onUpdate: NoAction)
-  actor                          users? @relation("finance_ledger_event_actor", fields: [actor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  actor                          users @relation("finance_ledger_event_actor", fields: [actor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([finance_ledger_entry_id, created_at])
   @@index([finance_voucher_id, created_at])

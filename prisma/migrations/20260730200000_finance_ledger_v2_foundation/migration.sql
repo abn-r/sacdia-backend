@@ -74,7 +74,7 @@ CREATE TABLE "finance_ledger_events" (
   "finance_voucher_id" UUID,
   "finance_receipt_allocation_id" UUID,
   "event_type" VARCHAR(64) NOT NULL,
-  "actor_user_id" UUID,
+  "actor_user_id" UUID NOT NULL,
   "payload" JSONB NOT NULL,
   "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "finance_ledger_events_pkey" PRIMARY KEY ("finance_ledger_event_id"),
