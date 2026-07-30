@@ -184,11 +184,11 @@ Notas:
   operativa independiente. Los errores Redis continúan propagándose: el
   throttler no permite requests mediante fallback silencioso.
 - El contrato real del throttler se valida contra Redis local con:
-  `ALLOW_REDIS_INTEGRATION=1 REDIS_INTEGRATION_URL=redis://127.0.0.1:6379 pnpm exec jest --runInBand src/config/redis-throttler.storage.redis.spec.ts`.
+  `ALLOW_REDIS_INTEGRATION=1 REDIS_INTEGRATION_URL=redis://127.0.0.1:6379 pnpm exec jest --runInBand --runTestsByPath src/config/redis-throttler.storage.integration.spec.ts --testPathIgnorePatterns='^$'`.
   La suite rechaza URLs que no sean loopback; en CI falla de inmediato si falta
   cualquiera de las dos variables. La prueba de reconexión aísla la falla con
   un usuario ACL único, espera con polling acotado y elimina sus claves y ACL.
-  CI provee Redis 7 como servicio.
+  CI lo ejecuta en un job aislado con Redis 7.
 - Si FCM no inicializa correctamente, notificaciones push quedan deshabilitadas.
 - Desde `2026-03-01`, `POST /api/v1/auth/refresh` usa `refreshToken` (camelCase).
 - Ventana de compatibilidad temporal: **2026-03-04 a 2026-03-18** con `AUTH_REJECT_SNAKE_CASE=false`.
