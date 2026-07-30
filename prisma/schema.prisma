@@ -1025,6 +1025,7 @@ model enrollments {
   locked_for_validation    Boolean                          @default(false)
   cross_type_enrollment    Boolean                          @default(false)
   active                   Boolean                          @default(true)
+  renewed_from_enrollment_id  Int?
   last_progress_change     DateTime                         @default(now()) @db.Timestamptz(6)
   created_at               DateTime                         @default(now()) @db.Timestamptz(6)
   modified_at              DateTime                         @default(now()) @db.Timestamptz(6)
@@ -1036,8 +1037,11 @@ model enrollments {
   users                    users                            @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   validator                users?                           @relation("enrollment_validator", fields: [validated_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   investiture_history      investiture_validation_history[]
+  renewed_from_enrollment  enrollments?                     @relation("enrollment_renewal_lineage", fields: [renewed_from_enrollment_id], references: [enrollment_id], onDelete: Restrict, onUpdate: NoAction)
+  renewed_enrollments      enrollments[]                    @relation("enrollment_renewal_lineage")
 
   @@unique([user_id, class_id, ecclesiastical_year_id])
+  @@unique([renewed_from_enrollment_id], map: "enrollments_renewed_from_enrollment_id_key")
   @@index([user_id, ecclesiastical_year_id], map: "idx_enrollments_user_year")
   @@index([investiture_status], map: "idx_enrollments_status")
   @@index([locked_for_validation], map: "idx_enrollments_locked")
@@ -1045,6 +1049,7 @@ model enrollments {
   @@index([class_id], map: "idx_enrollments_class_id")
   @@index([user_id, investiture_status, active], map: "idx_enrollments_user_investiture_active")
   @@index([user_id, ecclesiastical_year_id, active], map: "idx_enrollments_user_year_active")
+  @@index([user_id, class_id, active], map: "idx_enrollments_user_class_active")
   @@index([last_progress_change], map: "idx_enrollments_last_progress")
 }
 
