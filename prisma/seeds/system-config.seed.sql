@@ -20,6 +20,15 @@ ON CONFLICT (config_key) DO UPDATE SET
   description = EXCLUDED.description,
   config_type = EXCLUDED.config_type;
 
+INSERT INTO system_config (config_key, config_value, description, config_type)
+VALUES (
+  'finance.ledger_v2_writes_enabled',
+  'false',
+  'Habilita escrituras del ledger financiero v2',
+  'boolean'
+)
+ON CONFLICT (config_key) DO NOTHING;
+
 COMMIT;
 
 -- ============================================================================

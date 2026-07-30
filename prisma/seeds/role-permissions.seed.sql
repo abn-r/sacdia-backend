@@ -2042,6 +2042,28 @@ ON CONFLICT (role_id, permission_id) DO UPDATE SET
   active = true,
   modified_at = now();
 
+-- Finance v2 duties are intentionally narrower than legacy finance CRUD.
+-- Run after all role resets and wildcard grants so no inherited grant survives.
+DELETE FROM role_permissions rp
+USING permissions p
+WHERE rp.permission_id = p.permission_id
+  AND p.permission_name IN ('finances:register', 'finances:approve');
+
+INSERT INTO role_permissions (role_permission_id, role_id, permission_id, active)
+SELECT gen_random_uuid(), r.role_id, p.permission_id, true
+FROM roles r
+CROSS JOIN permissions p
+WHERE r.active
+  AND r.role_category = 'CLUB'
+  AND (
+    (p.permission_name = 'finances:register'
+      AND r.role_name IN ('treasurer', 'secretary-treasurer'))
+    OR (p.permission_name = 'finances:approve' AND r.role_name = 'director')
+  )
+ON CONFLICT (role_id, permission_id) DO UPDATE SET
+  active = true,
+  modified_at = now();
+
 COMMIT;
 
 -- ============================================================================

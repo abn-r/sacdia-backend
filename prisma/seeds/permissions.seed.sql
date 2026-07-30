@@ -133,7 +133,9 @@ INSERT INTO permissions (permission_name, description, active) VALUES
   ('finances:read', 'Read financial records', true),
   ('finances:create', 'Create financial records', true),
   ('finances:update', 'Update financial records', true),
-  ('finances:delete', 'Delete financial records', true)
+  ('finances:delete', 'Delete financial records', true),
+  ('finances:register', 'Register pending finance ledger entries', true),
+  ('finances:approve', 'Approve or reject finance ledger entries', true)
 ON CONFLICT (permission_name) DO UPDATE SET
   description = EXCLUDED.description,
   active = EXCLUDED.active,
