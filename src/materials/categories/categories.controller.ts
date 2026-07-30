@@ -9,12 +9,15 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -23,7 +26,12 @@ import {
   RequirePermissions,
 } from '../../common/decorators';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards';
+import { PrismaService } from '../../prisma/prisma.service';
 import { MATERIALS_MANAGE_INVENTORY } from '../shared/permissions';
+import {
+  requireLocalFieldFor,
+  resolveActorLocalField,
+} from '../shared/actor-local-field';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -35,7 +43,10 @@ import { CategoryAdminDto } from './dto/category.dto';
 @AuthorizationResource({ type: 'active_assignment' })
 @Controller('materials/categories')
 export class CategoriesController {
-  constructor(private readonly categoriesService: CategoriesService) {}
+  constructor(
+    private readonly categoriesService: CategoriesService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // GET /materials/categories — admin list (includes inactive + product_count)
   @Get()
@@ -43,9 +54,24 @@ export class CategoriesController {
   @ApiOperation({
     summary: 'List all material categories (admin view; includes inactive)',
   })
+  @ApiQuery({ name: 'local_field_id', required: false, type: Number })
   @ApiResponse({ status: 200, type: CategoryAdminDto, isArray: true })
-  list(): Promise<CategoryAdminDto[]> {
-    return this.categoriesService.list();
+  async list(
+    @Request() req: any,
+    @Query('local_field_id') localFieldIdParam?: string,
+  ): Promise<CategoryAdminDto[]> {
+    const scope = await resolveActorLocalField(this.prisma, req.authorization);
+    const override =
+      localFieldIdParam === undefined
+        ? undefined
+        : parseInt(localFieldIdParam, 10);
+    const localFieldId =
+      scope.scope === 'single'
+        ? requireLocalFieldFor(scope, override, 'read')
+        : Number.isFinite(override)
+          ? (override as number)
+          : undefined;
+    return this.categoriesService.list(localFieldId);
   }
 
   // POST /materials/categories
@@ -53,10 +79,28 @@ export class CategoriesController {
   @RequirePermissions(MATERIALS_MANAGE_INVENTORY)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new material category' })
+  @ApiQuery({
+    name: 'local_field_id',
+    required: false,
+    type: Number,
+    description: 'Required for an unscoped admin or super-admin.',
+  })
   @ApiResponse({ status: 201, type: CategoryAdminDto })
   @ApiResponse({ status: 409, description: 'slug already exists' })
-  create(@Body() dto: CreateCategoryDto): Promise<CategoryAdminDto> {
-    return this.categoriesService.create(dto);
+  async create(
+    @Body() dto: CreateCategoryDto,
+    @Request() req: any,
+    @Query('local_field_id') localFieldIdParam?: string,
+  ): Promise<CategoryAdminDto> {
+    const scope = await resolveActorLocalField(this.prisma, req.authorization);
+    const override =
+      localFieldIdParam === undefined
+        ? undefined
+        : parseInt(localFieldIdParam, 10);
+    return this.categoriesService.create(
+      dto,
+      requireLocalFieldFor(scope, override, 'write'),
+    );
   }
 
   // PATCH /materials/categories/:id

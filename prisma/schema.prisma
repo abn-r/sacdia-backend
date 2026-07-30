@@ -1565,9 +1565,11 @@ model local_fields {
   director_succession_plans       director_succession_plans[]
   translations                    local_fields_translations[]
   material_products               MaterialProduct[]
+  material_categories             MaterialCategory[]
   material_orders                 MaterialOrder[]
   material_folio_counters         MaterialFolioCounter[]
   material_config                 MaterialConfig?
+  material_audit_logs             MaterialAuditLog[]
   camporee_event_templates        camporee_event_templates[]
   camporee_venues                 camporee_venues[]
   coordination_zones              coordination_zones[]
@@ -2332,6 +2334,7 @@ model users {
   material_comprobantes_uploaded       MaterialComprobante[]                 @relation("material_comprobante_uploader")
   material_comprobantes_validated      MaterialComprobante[]                 @relation("material_comprobante_validator")
   material_config_updated              MaterialConfig[]                      @relation("material_config_updater")
+  material_audit_logs                  MaterialAuditLog[]                    @relation("material_audit_actor")
   coordinator_assignments              coordinator_assignments[]             @relation("coordinator_assignment_user")
   coordinator_assignments_created      coordinator_assignments[]             @relation("coordinator_assignment_creator")
   // camporee events relations
@@ -4542,17 +4545,22 @@ enum MaterialEntrega {
 }
 
 model MaterialCategory {
-  id         String   @id @default(uuid()) @db.Uuid
-  slug       String   @unique @db.VarChar(100)
-  label      String   @db.VarChar(200)
-  icon       String?  @db.VarChar(100)
-  sort_order Int      @default(0)
-  active     Boolean  @default(true)
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  local_field_id Int
+  slug           String   @db.VarChar(100)
+  label          String   @db.VarChar(200)
+  icon           String?  @db.VarChar(100)
+  sort_order     Int      @default(0)
+  active         Boolean  @default(true)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  products MaterialProduct[]
+  local_field local_fields      @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  products    MaterialProduct[]
 
+  @@unique([local_field_id, slug], map: "uq_material_categories_local_field_slug")
+  @@unique([id, local_field_id], map: "uq_material_categories_id_local_field")
+  @@index([local_field_id, active], map: "idx_material_categories_lf_active")
   @@map("material_categories")
 }
 
@@ -4571,7 +4579,7 @@ model MaterialProduct {
   updated_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   local_field local_fields        @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
-  category    MaterialCategory    @relation(fields: [material_category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  category    MaterialCategory    @relation(fields: [material_category_id, local_field_id], references: [id, local_field_id], onDelete: Restrict, onUpdate: NoAction)
   club_type   club_types          @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
   variants    MaterialVariant[]
   order_lines MaterialOrderLine[]
@@ -4728,6 +4736,25 @@ model MaterialConfig {
   updater     users?       @relation("material_config_updater", fields: [updated_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@map("material_config")
+}
+
+model MaterialAuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  local_field_id Int
+  actor_user_id  String   @db.Uuid
+  entity_type    String   @db.VarChar(64)
+  entity_id      String   @db.VarChar(64)
+  action         String   @db.VarChar(96)
+  before_json    Json?
+  after_json     Json?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  local_field local_fields @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  actor       users        @relation("material_audit_actor", fields: [actor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([local_field_id, created_at(sort: Desc)], map: "idx_material_audit_lf_created")
+  @@index([entity_type, entity_id, created_at(sort: Desc)], map: "idx_material_audit_entity_created")
+  @@map("material_audit_logs")
 }
 
 

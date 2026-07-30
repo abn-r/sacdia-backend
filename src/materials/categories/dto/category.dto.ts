@@ -7,6 +7,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
  */
 export class CategoryAdminDto {
   @ApiProperty() declare id: string;
+  @ApiProperty() declare local_field_id: number;
   @ApiProperty() declare slug: string;
   @ApiProperty() declare label: string;
   @ApiPropertyOptional({ nullable: true })
