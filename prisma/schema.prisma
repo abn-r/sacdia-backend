@@ -357,6 +357,7 @@ model classes {
   advanced_enabled              Boolean                         @default(false)
   display_order                 Int                             @default(0)
   asset_code                    String?                         @unique(map: "classes_asset_code_key") @db.VarChar(10)
+  formative_program_type        formative_program_type_enum    @default(STANDARD)
   available_from_year_id        Int?
   available_until_year_id       Int?
   min_duration_years            Int                             @default(1)
@@ -376,6 +377,7 @@ model classes {
   enrollments                   enrollments[]
   translations                  classes_translations[]
 
+  @@index([formative_program_type], map: "idx_classes_formative_program_type")
   @@index([available_from_year_id], map: "idx_classes_available_from_year")
   @@index([available_until_year_id], map: "idx_classes_available_until_year")
 }
@@ -611,6 +613,34 @@ model club_types {
   material_products          MaterialProduct[]
   coordinator_assignments    coordinator_assignments[]
   insurance_cycle_configs    insurance_cycle_configs[]
+  class_progression_tracks   class_progression_tracks[]
+}
+
+model class_progression_tracks {
+  class_progression_track_id Int                                 @id @default(autoincrement())
+  club_type_id               Int                                 @unique
+  active                     Boolean                             @default(true)
+  created_at                 DateTime                            @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
+  club_type                  club_types                          @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
+  outgoing_transitions       class_progression_track_transitions[] @relation("class_progression_transition_from")
+  incoming_transitions       class_progression_track_transitions[] @relation("class_progression_transition_to")
+
+  @@index([active], map: "idx_class_progression_tracks_active")
+}
+
+model class_progression_track_transitions {
+  class_progression_track_transition_id Int                      @id @default(autoincrement())
+  from_track_id                         Int
+  to_track_id                           Int
+  active                                Boolean                  @default(true)
+  created_at                            DateTime                 @default(now()) @db.Timestamptz(6)
+  modified_at                           DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  from_track                            class_progression_tracks @relation("class_progression_transition_from", fields: [from_track_id], references: [class_progression_track_id], onDelete: Restrict, onUpdate: NoAction)
+  to_track                              class_progression_tracks @relation("class_progression_transition_to", fields: [to_track_id], references: [class_progression_track_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([from_track_id, to_track_id], map: "class_progression_track_transition_unique")
+  @@index([from_track_id, active], map: "idx_class_progression_transitions_from_active")
 }
 
 model clubs {
@@ -3021,6 +3051,11 @@ enum class_requirement_track_enum {
   BASIC
   ADVANCED
   EXTRA
+}
+
+enum formative_program_type_enum {
+  STANDARD
+  GUIDE_MAJOR
 }
 
 enum master_honor_requirement_group_type_enum {
