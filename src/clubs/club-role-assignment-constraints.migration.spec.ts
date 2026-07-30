@@ -36,11 +36,13 @@ const fixtures = (schema: string) => `
   INSERT INTO roles VALUES
     ('10000000-0000-0000-0000-000000000001', 'director', 'CLUB', true),
     ('10000000-0000-0000-0000-000000000002', 'secretary', 'CLUB', true),
-    ('10000000-0000-0000-0000-000000000003', 'secretary-treasurer', 'CLUB', true);
+    ('10000000-0000-0000-0000-000000000003', 'secretary-treasurer', 'CLUB', true),
+    ('10000000-0000-0000-0000-000000000004', 'treasurer', 'CLUB', true);
   INSERT INTO role_slot_limits VALUES
     ('10000000-0000-0000-0000-000000000001', 1),
     ('10000000-0000-0000-0000-000000000002', 1),
-    ('10000000-0000-0000-0000-000000000003', 1);
+    ('10000000-0000-0000-0000-000000000003', 1),
+    ('10000000-0000-0000-0000-000000000004', 1);
   INSERT INTO club_role_assignments VALUES
     ('20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 1, '2027-02-01', '2027-01-01', true, 'active', 1);
 `;
@@ -188,7 +190,7 @@ describe('club role assignment constraints migration', () => {
   );
 
   dbIt(
-    'serializes conflicting secretary slots across concurrent transactions',
+    'serializes conflicting secretary and treasurer slots across concurrent transactions',
     async () => {
       if (!databaseUrl) throw new Error('integration URL required');
       const schema = `be03_slots_${randomBytes(6).toString('hex')}`;
@@ -198,33 +200,48 @@ describe('club role assignment constraints migration', () => {
       try {
         await first.query(fixtures(schema));
         await first.query(`SET search_path=${schema},public; ${migration}`);
-        await Promise.all([
-          first.query(`SET search_path=${schema},public; BEGIN`),
-          second.query(`SET search_path=${schema},public; BEGIN`),
-        ]);
-        await first.query(
-          assignment(
-            '20000000-0000-0000-0000-000000000010',
-            '30000000-0000-0000-0000-000000000010',
+        for (const [roleId, startDate, winnerId, loserId] of [
+          [
             '10000000-0000-0000-0000-000000000002',
             '2027-08-01',
-            '2027-08-31',
-          ),
-        );
-        const conflictingInsert = second.query(
-          assignment(
+            '20000000-0000-0000-0000-000000000010',
             '20000000-0000-0000-0000-000000000011',
-            '30000000-0000-0000-0000-000000000011',
-            '10000000-0000-0000-0000-000000000003',
-            '2027-08-01',
-            '2027-08-31',
-          ),
-        );
-        await first.query('COMMIT');
-        await expect(conflictingInsert).rejects.toMatchObject({
-          code: '23514',
-        });
-        await second.query('ROLLBACK');
+          ],
+          [
+            '10000000-0000-0000-0000-000000000004',
+            '2027-09-01',
+            '20000000-0000-0000-0000-000000000012',
+            '20000000-0000-0000-0000-000000000013',
+          ],
+        ] as const) {
+          await Promise.all([
+            first.query(`SET search_path=${schema},public; BEGIN`),
+            second.query(`SET search_path=${schema},public; BEGIN`),
+          ]);
+          await first.query(
+            assignment(
+              winnerId,
+              '30000000-0000-0000-0000-000000000010',
+              roleId,
+              startDate,
+              `${startDate.slice(0, 7)}-28`,
+            ),
+          );
+          const conflictingInsert = second.query(
+            assignment(
+              loserId,
+              '30000000-0000-0000-0000-000000000011',
+              '10000000-0000-0000-0000-000000000003',
+              startDate,
+              `${startDate.slice(0, 7)}-28`,
+            ),
+          );
+          await first.query('COMMIT');
+          await expect(conflictingInsert).rejects.toMatchObject({
+            code: '23514',
+          });
+          await second.query('ROLLBACK');
+        }
       } finally {
         await Promise.all([
           first.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`),
