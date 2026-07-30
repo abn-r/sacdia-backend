@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Client } from 'pg';
@@ -16,7 +17,7 @@ type ActiveLocalField = {
   name: string;
   timezone: string | null;
 };
-type BackfillOptions = { mappingPath: string };
+type BackfillOptions = { mappingPath: string; apply: boolean };
 type PlannedField = ActiveLocalField & {
   target_timezone: string;
   operation: 'update' | 'unchanged';
@@ -33,8 +34,7 @@ export class TimezoneBackfillError extends Error {
       | 'BACKFILL_MAPPING_UNKNOWN_LOCAL_FIELD'
       | 'BACKFILL_GM_01_CARDINALITY_INVALID'
       | 'BACKFILL_POST_PREFLIGHT_BLOCKED'
-      | 'BACKFILL_LOCK_TIMEOUT'
-      | 'BACKFILL_APPLY_REQUIRES_BE04A2',
+      | 'BACKFILL_LOCK_TIMEOUT',
     readonly details: Record<string, unknown> = {},
   ) {
     super(code);
@@ -43,9 +43,12 @@ export class TimezoneBackfillError extends Error {
 
 export function parseBackfillOptions(args: string[]): BackfillOptions {
   let mappingPath: string | undefined;
+  let apply = false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--apply') {
-      throw new TimezoneBackfillError('BACKFILL_APPLY_REQUIRES_BE04A2');
+      if (apply) throw new TimezoneBackfillError('BACKFILL_USAGE');
+      apply = true;
+      continue;
     }
     if (args[index] !== '--mapping' || mappingPath || !args[index + 1]) {
       throw new TimezoneBackfillError('BACKFILL_USAGE');
@@ -53,7 +56,7 @@ export function parseBackfillOptions(args: string[]): BackfillOptions {
     mappingPath = args[(index += 1)];
   }
   if (!mappingPath) throw new TimezoneBackfillError('BACKFILL_USAGE');
-  return { mappingPath: resolve(mappingPath) };
+  return { mappingPath: resolve(mappingPath), apply };
 }
 
 export function parseTimezoneMapping(
@@ -318,6 +321,24 @@ async function run(options: BackfillOptions) {
   const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();
+    if (options.apply) {
+      const backfill = await applyLocalFieldTimezoneBackfill(
+        client,
+        mapping,
+        catalog,
+        randomUUID(),
+      );
+      return {
+        report_version: 'authorization-director-succession-p0/backfill-v1',
+        dry_run: false,
+        status: 'applied',
+        changed_field_count: backfill.fields.filter(
+          ({ operation }) => operation === 'update',
+        ).length,
+        constraint_validation: 'pending_be-04b_human_mapping_gate',
+        backfill,
+      };
+    }
     const backfill = await planLocalFieldTimezoneBackfill(client, mapping);
     const preflight = await verifyBackfillPreflight(client, catalog);
     return {
@@ -333,20 +354,39 @@ async function run(options: BackfillOptions) {
   }
 }
 
+export function backfillDiagnostic(error: unknown): {
+  diagnostic: string;
+  details: Record<string, unknown>;
+} {
+  if (error instanceof TimezoneBackfillError) {
+    return { diagnostic: error.code, details: error.details };
+  }
+  const databaseCode = (error as { code?: string } | null)?.code;
+  if (databaseCode === '40001') {
+    return { diagnostic: 'BACKFILL_SERIALIZATION_CONFLICT', details: {} };
+  }
+  if (databaseCode === '40P01') {
+    return { diagnostic: 'BACKFILL_DEADLOCK_CONFLICT', details: {} };
+  }
+  if (databaseCode === '23505') {
+    return { diagnostic: 'BACKFILL_AUDIT_CONFLICT', details: {} };
+  }
+  if (error instanceof Error && error.message === 'MISSING_DATABASE_URL') {
+    return { diagnostic: error.message, details: {} };
+  }
+  return { diagnostic: 'BACKFILL_UNEXPECTED_ERROR', details: {} };
+}
+
 async function main(): Promise<void> {
   try {
     const report = await run(parseBackfillOptions(process.argv.slice(2)));
     process.stdout.write(`${JSON.stringify(report)}\n`);
     process.exitCode = 0;
   } catch (error) {
-    const known = error instanceof TimezoneBackfillError ? error : undefined;
     process.stdout.write(
       `${JSON.stringify({
         status: 'error',
-        error: {
-          diagnostic: known?.code ?? (error as Error).message,
-          details: known?.details ?? {},
-        },
+        error: backfillDiagnostic(error),
       })}\n`,
     );
     process.exitCode = 1;
