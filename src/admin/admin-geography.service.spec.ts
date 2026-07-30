@@ -108,6 +108,7 @@ const baseLocalField = {
   abbreviation: 'CM',
   active: true,
   union_id: 1,
+  timezone: 'America/Mexico_City',
   created_at: new Date(),
   modified_at: new Date(),
 };
@@ -454,6 +455,7 @@ describe('AdminGeographyService', () => {
         name: 'Campo Metropolitano',
         abbreviation: 'CM',
         union_id: 1,
+        timezone: 'America/Mexico_City',
         translations: [enTranslation],
       };
 
@@ -467,6 +469,54 @@ describe('AdminGeographyService', () => {
         baseLocalField.local_field_id,
         dto.translations,
         ['name'],
+      );
+    });
+
+    it('rejects an active local field without a timezone', async () => {
+      prismaMock.unions.findUnique.mockResolvedValue(baseUnion);
+
+      const error = await service
+        .createLocalField(
+          {
+            name: 'Campo sin zona',
+            abbreviation: 'CSZ',
+            union_id: 1,
+          },
+          ACTOR_ID,
+        )
+        .catch((cause: unknown) => cause as AppBadRequestException);
+
+      expect(error).toMatchObject({
+        code: ErrorCode.LOCAL_FIELD_TIMEZONE_UNAVAILABLE,
+      });
+      expect(error.getResponse()).toMatchObject({
+        namedArgs: { reason: 'MISSING' },
+      });
+    });
+
+    it('allows an inactive local field without a timezone', async () => {
+      prismaMock.unions.findUnique.mockResolvedValue(baseUnion);
+      prismaMock.local_fields.findFirst.mockResolvedValue(null);
+      prismaMock.local_fields.create.mockResolvedValue({
+        ...baseLocalField,
+        active: false,
+        timezone: null,
+      });
+
+      await service.createLocalField(
+        {
+          name: 'Campo inactivo',
+          abbreviation: 'CI',
+          union_id: 1,
+          active: false,
+        },
+        ACTOR_ID,
+      );
+
+      expect(prismaMock.local_fields.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ active: false, timezone: null }),
+        }),
       );
     });
 
@@ -486,6 +536,22 @@ describe('AdminGeographyService', () => {
         undefined,
         ['name'],
       );
+    });
+
+    it('versions affected assignment holders when timezone changes', async () => {
+      prismaMock.local_fields.findUnique.mockResolvedValue(baseLocalField);
+      prismaMock.local_fields.update.mockResolvedValue({
+        ...baseLocalField,
+        timezone: 'America/Tijuana',
+      });
+
+      await service.updateLocalField(
+        1,
+        { timezone: 'America/Tijuana' },
+        ACTOR_ID,
+      );
+
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
     });
   });
 

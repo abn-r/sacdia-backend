@@ -1474,6 +1474,7 @@ model local_fields {
   abbreviation                    String                            @unique @db.VarChar(8)
   active                          Boolean                           @default(false)
   union_id                        Int
+  timezone                        String?                           @db.VarChar(64)
   created_at                      DateTime?                         @default(now()) @db.Timestamptz(6)
   modified_at                     DateTime?                         @default(now()) @db.Timestamptz(6)
   attending_clubs_camporees       camporee_clubs[]
@@ -2175,6 +2176,7 @@ model users {
   certificate_bulk_import_events       certificate_bulk_import_item_events[] @relation("certificate_import_event_performer")
   certificate_bulk_import_reviews      certificate_bulk_import_items[]       @relation("certificate_import_item_reviewer")
   club_role_assignments                club_role_assignments[]
+  authorization_context_versions       authorization_context_versions?
   emergency_contacts                   emergency_contacts[]                  @relation("internal_user_emergency_contact")
   emergency_contact                    emergency_contacts[]                  @relation("user_emergency_contact")
   enrollments                          enrollments[]
@@ -2310,6 +2312,15 @@ model users {
   insurance_evidence_files_modified         insurance_evidence_files[]              @relation("insurance_evidence_modifier")
   camporee_external_participants_created    camporee_external_participants[]         @relation("camporee_external_participant_creator")
   camporee_external_participants_modified   camporee_external_participants[]         @relation("camporee_external_participant_modifier")
+}
+
+model authorization_context_versions {
+  user_id     String   @id @db.Uuid
+  version     BigInt   @default(0)
+  modified_at DateTime @default(now()) @db.Timestamptz(6)
+  users       users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("authorization_context_versions")
 }
 
 model notification_preferences {
