@@ -128,6 +128,19 @@ describe('material category scope contract', () => {
     );
   });
 
+  it('does not let a global LF role borrow scope from a club', async () => {
+    prisma.clubs.findUnique.mockResolvedValue({ local_field_id: 2 });
+    await expect(
+      categories.list(
+        {},
+        { authorization: authorization('admin', undefined, 99) },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'local_field_scope_required' },
+    });
+    expect(prisma.clubs.findUnique).not.toHaveBeenCalled();
+  });
+
   it('lets super-admin cross LF but requires an explicit target', async () => {
     catalogService.listCategories.mockResolvedValue({ data: [] });
     const req = { authorization: authorization('super-admin', 1) };

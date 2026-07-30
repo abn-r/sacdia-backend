@@ -59,15 +59,21 @@ export async function resolveActorLocalField(
   const globalRoleNames = new Set(
     authorization.grants.global_roles.map((grant) => grant.role_name),
   );
+  const hasLocalFieldAuthority = [...LOCAL_FIELD_GLOBAL_ROLES].some((role) =>
+    globalRoleNames.has(role),
+  );
   const lfNodeId = authorization.effective.scope.global.local_field?.id ?? null;
-  if (
-    [...LOCAL_FIELD_GLOBAL_ROLES].some((role) => globalRoleNames.has(role)) &&
-    lfNodeId !== null
-  ) {
+  if (hasLocalFieldAuthority && lfNodeId !== null) {
     const lfId = Number(lfNodeId);
     if (Number.isInteger(lfId) && lfId > 0) {
       return { scope: 'single', localFieldId: lfId };
     }
+  }
+  if (hasLocalFieldAuthority) {
+    throw new ForbiddenException({
+      code: 'local_field_scope_required',
+      message: 'This role requires an exact local_field scope.',
+    });
   }
 
   const activeAssignmentId = authorization.active_assignment.assignment_id;
