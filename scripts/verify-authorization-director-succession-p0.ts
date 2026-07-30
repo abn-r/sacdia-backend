@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { Client } from 'pg';
 import {
   executeAuthorizationP0Preflight,
@@ -13,6 +14,15 @@ type Schema = {
   director_succession_plans_missing_columns: string[];
 };
 type RawReport = AuthorizationP0PreflightReport;
+type Lifecycle = {
+  client?: Client;
+  connected: boolean;
+  backendPid?: number;
+  cancellation?: Promise<void>;
+  connectionString?: string;
+  cleanup?: Promise<void>;
+  signal?: NodeJS.Signals;
+};
 const consumers = [
   'sacdia-admin/src/lib/api/clubs.ts',
   'sacdia-admin/src/lib/clubs/actions.ts',
@@ -32,6 +42,74 @@ function errorReport(diagnostic: string): Row {
     error: { diagnostic },
   };
 }
+let outputWritten = false;
+function emit(report: Row, exitCode: number): void {
+  if (outputWritten) return;
+  outputWritten = true;
+  writeFileSync(process.stdout.fd, `${JSON.stringify(report)}\n`);
+  console.error(`authorization P0 preflight: ${String(report.status)}`);
+  process.exitCode = exitCode;
+}
+
+async function cleanup(lifecycle: Lifecycle): Promise<void> {
+  if (lifecycle.cleanup) return lifecycle.cleanup;
+  lifecycle.cleanup = (async () => {
+    await lifecycle.cancellation?.catch(() => undefined);
+    const client = lifecycle.client;
+    if (!client) return;
+    await client.end().catch(() => undefined);
+    lifecycle.connected = false;
+  })();
+  return lifecycle.cleanup;
+}
+
+async function cancelActiveQuery(lifecycle: Lifecycle): Promise<void> {
+  if (!lifecycle.client) return;
+  if (!lifecycle.backendPid || !lifecycle.connectionString) {
+    await lifecycle.client.end().catch(() => undefined);
+    return;
+  }
+  const cancellation = new Client({
+    connectionString: lifecycle.connectionString,
+    connectionTimeoutMillis: 1_000,
+    query_timeout: 1_000,
+  });
+  cancellation.on('error', () => undefined);
+  try {
+    await cancellation.connect();
+    await cancellation.query('SELECT pg_cancel_backend($1)', [
+      lifecycle.backendPid,
+    ]);
+  } finally {
+    await cancellation.end().catch(() => undefined);
+  }
+}
+
+function exitForSignal(signal: NodeJS.Signals): never {
+  const interrupted = signal === 'SIGINT';
+  const exitCode = interrupted ? 130 : 143;
+  emit(errorReport(interrupted ? 'INTERRUPTED' : 'TERMINATED'), exitCode);
+  process.exit(exitCode);
+}
+
+function installSignalHandlers(lifecycle: Lifecycle): () => void {
+  const handler = (signal: NodeJS.Signals) => {
+    if (lifecycle.signal) return;
+    lifecycle.signal = signal;
+    lifecycle.cancellation = cancelActiveQuery(lifecycle);
+    if (!lifecycle.backendPid)
+      void lifecycle.cancellation.finally(() => exitForSignal(signal));
+  };
+  const onInterrupt = () => handler('SIGINT');
+  const onTerminate = () => handler('SIGTERM');
+  process.once('SIGINT', onInterrupt);
+  process.once('SIGTERM', onTerminate);
+  return () => {
+    process.off('SIGINT', onInterrupt);
+    process.off('SIGTERM', onTerminate);
+  };
+}
+
 function classifyRow(
   id: string,
   row: Row,
@@ -55,7 +133,11 @@ function classifyRow(
     : { ...row, reason: result.reason, diagnostic: result.diagnostic };
 }
 
-export function finalizeChecks(raw: RawReport, catalog: Catalog) {
+export function finalizeChecks(
+  raw: RawReport,
+  catalog: Catalog,
+  sampleLimit: number,
+) {
   const bootstrap =
     process.env.NODE_ENV === 'production' &&
     Boolean(process.env.DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP);
@@ -94,6 +176,22 @@ export function finalizeChecks(raw: RawReport, catalog: Catalog) {
     sample_count: missingSchema.length,
     truncated: false,
   });
+  const unsupported = [...catalog.canonical]
+    .map((timezone) => ({ timezone, result: catalog.classify(timezone) }))
+    .filter(({ result }) => !result.ok);
+  checks.push({
+    id: 'production_node_icu_timezones',
+    total_count: unsupported.length,
+    rows: unsupported.slice(0, sampleLimit).map(({ timezone, result }) => ({
+      timezone,
+      ...(!result.ok && {
+        reason: result.reason,
+        diagnostic: result.diagnostic,
+      }),
+    })),
+    sample_count: Math.min(unsupported.length, sampleLimit),
+    truncated: unsupported.length > sampleLimit,
+  });
   return checks.map((check) => ({
     ...check,
     sample_count: check.rows.length,
@@ -112,7 +210,7 @@ export function classifyOperationalFailure(
   return timeout ? 'QUERY_TIMEOUT' : 'PREFLIGHT_FAILED';
 }
 
-async function run(): Promise<Row> {
+async function run(lifecycle: Lifecycle): Promise<Row> {
   const databaseUrl = process.env.AUTHORIZATION_P0_VERIFY_DATABASE_URL;
   if (!databaseUrl) throw new Error('MISSING_DATABASE_URL');
   let catalog: Catalog;
@@ -131,6 +229,7 @@ async function run(): Promise<Row> {
     1_000,
     10_000,
   );
+  const sampleLimit = setting('AUTHORIZATION_P0_SAMPLE_LIMIT', 50, 100);
   const client = new Client({
     connectionString: databaseUrl,
     connectionTimeoutMillis: setting(
@@ -143,18 +242,25 @@ async function run(): Promise<Row> {
     lock_timeout: lockTimeout,
     idle_in_transaction_session_timeout: 10_000,
   });
-  let connected = false;
+  lifecycle.client = client;
+  lifecycle.connectionString = databaseUrl;
+  client.on('error', () => undefined);
   try {
     await client.connect();
-    connected = true;
+    lifecycle.connected = true;
+    const backend = await client.query<{ pid: number }>(
+      'SELECT pg_backend_pid()::int pid',
+    );
+    lifecycle.backendPid = backend.rows[0].pid;
+    if (lifecycle.signal) throw new Error('PREFLIGHT_INTERRUPTED');
     const raw = await executeAuthorizationP0Preflight(client, {
       canonicalTimezones: [...catalog.canonical],
-      sampleLimit: setting('AUTHORIZATION_P0_SAMPLE_LIMIT', 50, 100),
+      sampleLimit,
       now: new Date(),
       statementTimeoutMs: statementTimeout,
       lockTimeoutMs: lockTimeout,
     });
-    const checks = finalizeChecks(raw, catalog);
+    const checks = finalizeChecks(raw, catalog, sampleLimit);
     const blockers = checks.filter((check) => check.total_count > 0);
     return {
       report_version: 'authorization-director-succession-p0/v1',
@@ -176,23 +282,27 @@ async function run(): Promise<Row> {
       },
     };
   } catch (error) {
-    throw new Error(classifyOperationalFailure(error, connected), {
+    throw new Error(classifyOperationalFailure(error, lifecycle.connected), {
       cause: error,
     });
   } finally {
-    await client.end().catch(() => undefined);
+    await cleanup(lifecycle);
   }
 }
 
-if (require.main === module)
-  void run()
-    .then((report) => {
-      process.stdout.write(`${JSON.stringify(report)}\n`);
-      console.error(`authorization P0 preflight: ${String(report.status)}`);
-      process.exitCode = report.status === 'clean' ? 0 : 1;
-    })
-    .catch((error: Error) => {
-      process.stdout.write(`${JSON.stringify(errorReport(error.message))}\n`);
-      console.error('authorization P0 preflight: error');
-      process.exitCode = 1;
-    });
+export async function main(): Promise<void> {
+  const lifecycle: Lifecycle = { connected: false };
+  const removeSignalHandlers = installSignalHandlers(lifecycle);
+  try {
+    const report = await run(lifecycle);
+    if (!lifecycle.signal) emit(report, report.status === 'clean' ? 0 : 1);
+  } catch (error) {
+    if (!lifecycle.signal) emit(errorReport((error as Error).message), 1);
+  } finally {
+    await cleanup(lifecycle);
+    removeSignalHandlers();
+    if (lifecycle.signal) exitForSignal(lifecycle.signal);
+  }
+}
+
+if (require.main === module) void main();
