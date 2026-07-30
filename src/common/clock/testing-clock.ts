@@ -1,6 +1,5 @@
 import type { Clock } from './clock';
 
-/** Deterministic clock for temporal-policy tests. */
 export class TestingClock implements Clock {
   private current: Date;
 
