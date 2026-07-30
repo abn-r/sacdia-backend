@@ -2,7 +2,10 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from 'pg';
-import type { AuthorizationP0PreflightReport } from './authorization-p0-preflight';
+import {
+  executeAuthorizationP0Preflight,
+  type AuthorizationP0PreflightReport,
+} from './authorization-p0-preflight';
 import { loadCanonicalGeographicIanaTimezoneCatalog } from './timezone/canonical-geographic-iana-timezone';
 
 const sqlPath = join(
@@ -46,8 +49,17 @@ describe('authorization P0 preflight SQL', () => {
       const schema = `be01b_sql_${process.pid}_${randomBytes(4).toString('hex')}`;
       const client = new Client({ connectionString: databaseUrl });
       await client.connect();
+      const locker = new Client({ connectionString: databaseUrl });
+      await locker.connect();
       const query = (sql: string) => client.query(sql);
       const catalog = loadCanonicalGeographicIanaTimezoneCatalog();
+      const options = {
+        canonicalTimezones: [...catalog.canonical],
+        sampleLimit: null,
+        now: new Date('2026-07-28T12:00:00Z'),
+        statementTimeoutMs: 1_000,
+        lockTimeoutMs: 1_000,
+      };
       try {
         await query(`CREATE SCHEMA ${schema}; SET search_path=${schema},public;
         CREATE TABLE roles(role_id uuid,role_name text,role_category text);
@@ -86,9 +98,9 @@ describe('authorization P0 preflight SQL', () => {
         const result = await client.query<{
           report: AuthorizationP0PreflightReport;
         }>(readFileSync(sqlPath, 'utf8'), [
-          [...catalog.canonical],
-          null,
-          new Date('2026-07-28T12:00:00Z'),
+          options.canonicalTimezones,
+          options.sampleLimit,
+          options.now,
         ]);
         await query('COMMIT');
         const report = result.rows[0].report;
@@ -114,12 +126,39 @@ describe('authorization P0 preflight SQL', () => {
             timezone_supported: false,
           }),
         ]);
+
+        await locker.query(`SET search_path=${schema},public; BEGIN;
+          LOCK TABLE club_role_assignments IN ACCESS EXCLUSIVE MODE`);
+        await expect(
+          executeAuthorizationP0Preflight(client, {
+            ...options,
+            statementTimeoutMs: 75,
+            lockTimeoutMs: 10_000,
+          }),
+        ).rejects.toMatchObject({ code: '57014' });
+        await expect(
+          executeAuthorizationP0Preflight(client, {
+            ...options,
+            statementTimeoutMs: 1_000,
+            lockTimeoutMs: 75,
+          }),
+        ).rejects.toMatchObject({ code: '55P03' });
+        await expect(
+          query(
+            `SELECT current_setting('transaction_read_only') read_only,
+              current_setting('transaction_isolation') isolation`,
+          ),
+        ).resolves.toMatchObject({
+          rows: [{ isolation: 'read committed', read_only: 'off' }],
+        });
+        await locker.query('ROLLBACK');
       } finally {
         await query('ROLLBACK').catch(() => undefined);
+        await locker.query('ROLLBACK').catch(() => undefined);
         await query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(
           () => undefined,
         );
-        await client.end();
+        await Promise.all([client.end(), locker.end()]);
       }
     },
   );
