@@ -1025,6 +1025,7 @@ model enrollments {
   locked_for_validation    Boolean                          @default(false)
   cross_type_enrollment    Boolean                          @default(false)
   active                   Boolean                          @default(true)
+  /// DB trigger enforces same user/class, acyclic lineage and immutable source.
   renewed_from_enrollment_id  Int?
   last_progress_change     DateTime                         @default(now()) @db.Timestamptz(6)
   created_at               DateTime                         @default(now()) @db.Timestamptz(6)
