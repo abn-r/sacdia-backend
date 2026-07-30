@@ -313,6 +313,7 @@
   "CLASS_EVIDENCE_FILE_NOT_FOUND": "Fichier de preuve introuvable",
   "CLASS_NOT_AVAILABLE_FOR_YEAR": "Cette classe n'est pas disponible pour l'année ecclésiastique demandée",
   "CLASS_LEVEL_TOO_HIGH": "Vous ne pouvez pas vous inscrire dans une classe supérieure à votre niveau actuel",
+  "CLASS_PROGRESSION_CONFIG_INVALID": "La progression des classes n’est pas configurée correctement",
   "CLASS_COUNSELOR_ASSIGNMENT_NOT_FOUND": "Affectation de classe introuvable",
   "CLASS_COUNSELOR_SECTION_NOT_FOUND": "Section de club introuvable pour l'affectation de classe",
   "CLASS_COUNSELOR_CLASS_NOT_FOUND": "Classe introuvable pour l'affectation",

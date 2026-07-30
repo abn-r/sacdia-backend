@@ -316,6 +316,7 @@
   "CLASS_EVIDENCE_FILE_NOT_FOUND": "Archivo de evidencia no encontrado",
   "CLASS_NOT_AVAILABLE_FOR_YEAR": "Esta clase no está disponible para el año eclesiástico solicitado",
   "CLASS_LEVEL_TOO_HIGH": "No podés inscribirte en una clase superior a tu nivel actual",
+  "CLASS_PROGRESSION_CONFIG_INVALID": "La progresión de clases no está configurada correctamente",
   "CLASS_COUNSELOR_ASSIGNMENT_NOT_FOUND": "Asignación de clase no encontrada",
   "CLASS_COUNSELOR_SECTION_NOT_FOUND": "Sección del club no encontrada para la asignación de clase",
   "CLASS_COUNSELOR_CLASS_NOT_FOUND": "Clase no encontrada para la asignación",
