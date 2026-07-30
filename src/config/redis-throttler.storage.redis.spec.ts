@@ -1,51 +1,131 @@
 import { randomBytes } from 'node:crypto';
-import { createClient, type RedisClientType } from 'redis';
-import { RedisThrottlerStorage } from './redis-throttler.storage';
+import { resolveRedisIntegrationUrl } from './redis-integration-test.config';
+import {
+  createRedisThrottlerClient,
+  RedisThrottlerStorage,
+} from './redis-throttler.storage';
 
-const redisUrl = process.env.REDIS_INTEGRATION_URL;
-const redisIt =
-  process.env.ALLOW_REDIS_INTEGRATION === '1' && redisUrl ? it : it.skip;
+const redisUrl = resolveRedisIntegrationUrl(process.env);
+const redisIt = redisUrl ? it : it.skip;
+type RedisThrottlerClient = ReturnType<typeof createRedisThrottlerClient>;
 
-function requireLocalRedisUrl(value: string): string {
+function redisUrlWithCredentials(
+  value: string,
+  username: string,
+  password: string,
+): string {
   const parsed = new URL(value);
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) {
-    throw new Error('Redis integration tests require a loopback URL');
+  parsed.username = username;
+  parsed.password = password;
+  return parsed.toString();
+}
+
+async function clientIdsForUser(
+  client: RedisThrottlerClient,
+  username: string,
+): Promise<string[]> {
+  const response = await client.sendCommand(['CLIENT', 'LIST']);
+  if (typeof response !== 'string') {
+    throw new Error('Redis CLIENT LIST returned a non-string response');
   }
-  return value;
+
+  return response
+    .split('\n')
+    .filter((line) => line.includes(`user=${username}`))
+    .map((line) => line.match(/(?:^| )id=(\d+)(?: |$)/)?.[1])
+    .filter((id): id is string => id !== undefined);
+}
+
+async function waitForReplacementConnection(
+  client: RedisThrottlerClient,
+  username: string,
+  previousId: string,
+  timeoutMs = 3_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const replacement = (await clientIdsForUser(client, username)).find(
+      (id) => id !== previousId,
+    );
+    if (replacement) return replacement;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `Redis user ${username} did not reconnect within ${timeoutMs}ms`,
+  );
 }
 
 describe('RedisThrottlerStorage real Redis contract', () => {
-  let admin: RedisClientType | undefined;
+  let admin: RedisThrottlerClient | undefined;
   let storage: RedisThrottlerStorage | undefined;
   let key: string;
-  let restrictedUser: string | undefined;
+  let usersToDelete: Set<string>;
 
   beforeEach(() => {
     key = `redis-v6-compat:${process.pid}:${randomBytes(4).toString('hex')}`;
+    usersToDelete = new Set();
   });
 
   afterEach(async () => {
-    await storage?.onApplicationShutdown().catch(() => undefined);
-    if (admin?.isOpen) {
-      await admin.del(
-        `throttler:integration:${key}:hits`,
-        `throttler:integration:${key}:blocked`,
-      );
-      if (restrictedUser) {
-        await admin.sendCommand(['ACL', 'DELUSER', restrictedUser]);
+    if (!redisUrl) return;
+    const cleanupErrors: unknown[] = [];
+    const shutdown = await Promise.allSettled([
+      storage?.onApplicationShutdown(),
+    ]);
+    cleanupErrors.push(
+      ...shutdown
+        .filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === 'rejected',
+        )
+        .map((result) => result.reason),
+    );
+
+    const cleanupClient = admin ?? createRedisThrottlerClient(redisUrl);
+    try {
+      if (!cleanupClient.isOpen) {
+        await cleanupClient.connect();
       }
-      await admin.quit();
+      const cleanup = await Promise.allSettled([
+        cleanupClient.del([
+          `throttler:integration:${key}:hits`,
+          `throttler:integration:${key}:blocked`,
+        ]),
+        ...[...usersToDelete].map((username) =>
+          cleanupClient.sendCommand(['ACL', 'DELUSER', username]),
+        ),
+      ]);
+      cleanupErrors.push(
+        ...cleanup
+          .filter(
+            (result): result is PromiseRejectedResult =>
+              result.status === 'rejected',
+          )
+          .map((result) => result.reason),
+      );
+    } catch (error) {
+      cleanupErrors.push(error);
+    } finally {
+      if (cleanupClient.isOpen) {
+        await cleanupClient.quit().catch((error) => cleanupErrors.push(error));
+      }
+      storage = undefined;
+      admin = undefined;
     }
-    storage = undefined;
-    admin = undefined;
-    restrictedUser = undefined;
+
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        cleanupErrors,
+        'Redis integration cleanup failed',
+      );
+    }
   });
 
   redisIt(
     'connects, pings and executes the throttling Lua script atomically',
     async () => {
       if (!redisUrl) throw new Error('Redis integration URL required');
-      storage = new RedisThrottlerStorage(requireLocalRedisUrl(redisUrl));
+      storage = new RedisThrottlerStorage(redisUrl);
 
       await storage.assertReady();
       const first = await storage.increment(
@@ -73,21 +153,43 @@ describe('RedisThrottlerStorage real Redis contract', () => {
     'reconnects after Redis kills the active throttler connection',
     async () => {
       if (!redisUrl) throw new Error('Redis integration URL required');
-      const localRedisUrl = requireLocalRedisUrl(redisUrl);
-      storage = new RedisThrottlerStorage(localRedisUrl);
-      admin = createClient({ url: localRedisUrl, RESP: 2 });
+      admin = createRedisThrottlerClient(redisUrl);
       await admin.connect();
+      const username = `reconnect-${process.pid}-${randomBytes(4).toString('hex')}`;
+      const password = randomBytes(16).toString('hex');
+      usersToDelete.add(username);
+      await admin.sendCommand([
+        'ACL',
+        'SETUSER',
+        username,
+        'reset',
+        'on',
+        `>${password}`,
+        '~*',
+        '+@all',
+      ]);
+      storage = new RedisThrottlerStorage(
+        redisUrlWithCredentials(redisUrl, username, password),
+      );
       await storage.assertReady();
+      const [previousId] = await clientIdsForUser(admin, username);
+      if (!previousId) {
+        throw new Error(`Redis user ${username} has no active connection`);
+      }
 
       const killed = await admin.sendCommand([
         'CLIENT',
         'KILL',
-        'TYPE',
-        'normal',
+        'USER',
+        username,
         'SKIPME',
         'yes',
       ]);
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const replacementId = await waitForReplacementConnection(
+        admin,
+        username,
+        previousId,
+      );
       const result = await storage.increment(
         key,
         10_000,
@@ -97,6 +199,7 @@ describe('RedisThrottlerStorage real Redis contract', () => {
       );
 
       expect(Number(killed)).toBeGreaterThan(0);
+      expect(replacementId).not.toBe(previousId);
       expect(result).toMatchObject({ totalHits: 1, isBlocked: false });
     },
   );
@@ -105,11 +208,11 @@ describe('RedisThrottlerStorage real Redis contract', () => {
     'rejects instead of bypassing throttling when Redis denies EVAL',
     async () => {
       if (!redisUrl) throw new Error('Redis integration URL required');
-      const localRedisUrl = requireLocalRedisUrl(redisUrl);
-      admin = createClient({ url: localRedisUrl, RESP: 2 });
+      admin = createRedisThrottlerClient(redisUrl);
       await admin.connect();
-      restrictedUser = `throttler-${process.pid}-${randomBytes(4).toString('hex')}`;
+      const restrictedUser = `throttler-${process.pid}-${randomBytes(4).toString('hex')}`;
       const password = randomBytes(16).toString('hex');
+      usersToDelete.add(restrictedUser);
       await admin.sendCommand([
         'ACL',
         'SETUSER',
@@ -123,10 +226,9 @@ describe('RedisThrottlerStorage real Redis contract', () => {
         '+client',
         '+quit',
       ]);
-      const restrictedUrl = new URL(localRedisUrl);
-      restrictedUrl.username = restrictedUser;
-      restrictedUrl.password = password;
-      storage = new RedisThrottlerStorage(restrictedUrl.toString());
+      storage = new RedisThrottlerStorage(
+        redisUrlWithCredentials(redisUrl, restrictedUser, password),
+      );
       await storage.assertReady();
 
       await expect(
