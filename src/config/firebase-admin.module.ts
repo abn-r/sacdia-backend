@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import * as admin from 'firebase-admin';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 
 type FirebaseCredentials = {
   projectId: string;
@@ -13,7 +13,7 @@ type FirebaseCredentials = {
 export class FirebaseAdminModule {
   constructor() {
     // Inicializar Firebase Admin SDK
-    if (!admin.apps.length) {
+    if (!getApps().length) {
       try {
         const credentials = this.resolveCredentials();
         if (!credentials) {
@@ -23,8 +23,8 @@ export class FirebaseAdminModule {
           return;
         }
 
-        admin.initializeApp({
-          credential: admin.credential.cert({
+        initializeApp({
+          credential: cert({
             projectId: credentials.projectId,
             privateKey: credentials.privateKey,
             clientEmail: credentials.clientEmail,
@@ -108,7 +108,7 @@ export class FirebaseAdminModule {
         privateKey: this.normalizePrivateKey(parsed.private_key!),
         clientEmail: parsed.client_email!.trim(),
       };
-    } catch (error) {
+    } catch (_error) {
       console.warn(
         '⚠️  Firebase service account JSON could not be parsed. Falling back to legacy env vars.',
       );
@@ -136,5 +136,8 @@ export class FirebaseAdminModule {
   }
 }
 
-// Exportar instancia para usar en servicios
-export const firebaseAdmin = admin;
+// Adaptador modular para mantener un único seam mockeable en los consumidores.
+export const firebaseAdmin = {
+  getApps,
+  getMessaging,
+};

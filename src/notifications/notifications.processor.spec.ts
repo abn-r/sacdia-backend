@@ -9,8 +9,8 @@
 // ---------------------------------------------------------------------------
 jest.mock('../config/firebase-admin.module', () => ({
   firebaseAdmin: {
-    apps: ['mock-app'],
-    messaging: jest.fn(() => ({
+    getApps: jest.fn(() => ['mock-app']),
+    getMessaging: jest.fn(() => ({
       sendEachForMulticast: jest.fn(),
     })),
   },
@@ -103,7 +103,7 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
       '../config/firebase-admin.module',
     ).firebaseAdmin;
     mockSendEachForMulticast = jest.fn();
-    (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
+    (firebaseAdminMock.getMessaging as jest.Mock).mockReturnValue({
       sendEachForMulticast: mockSendEachForMulticast,
     });
 
@@ -124,7 +124,7 @@ describe('NotificationsProcessor — realtime.invalidate', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    firebaseAdminMock.apps = ['mock-app'];
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
   });
 
   // ---------------------------------------------------------------------------
@@ -349,13 +349,13 @@ describe('NotificationsProcessor — send-to-club-members', () => {
       '../config/firebase-admin.module',
     ).firebaseAdmin;
     mockSendEachForMulticast = jest.fn();
-    (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
+    (firebaseAdminMock.getMessaging as jest.Mock).mockReturnValue({
       sendEachForMulticast: mockSendEachForMulticast,
     });
 
     // Reset all mocks
     jest.clearAllMocks();
-    firebaseAdminMock.apps = ['mock-app'];
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
 
     // Setup $transaction to invoke the callback immediately
     mockPrismaService.$transaction.mockImplementation(
@@ -386,7 +386,7 @@ describe('NotificationsProcessor — send-to-club-members', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    firebaseAdminMock.apps = ['mock-app'];
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
   });
 
   it('skips when section has no active members', async () => {
@@ -558,12 +558,12 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
       '../config/firebase-admin.module',
     ).firebaseAdmin;
     mockSendEachForMulticast = jest.fn();
-    (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
+    (firebaseAdminMock.getMessaging as jest.Mock).mockReturnValue({
       sendEachForMulticast: mockSendEachForMulticast,
     });
 
     jest.clearAllMocks();
-    firebaseAdminMock.apps = ['mock-app'];
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
 
     mockPrismaService.notification_logs.update.mockResolvedValue({});
     mockPrismaService.notification_deliveries.createMany.mockResolvedValue({
@@ -593,7 +593,7 @@ describe('NotificationsProcessor — broadcast-chunk', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    firebaseAdminMock.apps = ['mock-app'];
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
   });
 
   it('creates inbox deliveries for the chunk and sends tokens in FCM batches of 500', async () => {

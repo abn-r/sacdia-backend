@@ -7,7 +7,10 @@ import { FcmTokensService } from './fcm-tokens.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
 import { buildAuthorizationSnapshot } from '../../test/helpers/rbac-test-helpers';
-import { BROADCAST_CHUNK_JOB, NOTIFICATIONS_QUEUE } from './notifications.processor';
+import {
+  BROADCAST_CHUNK_JOB,
+  NOTIFICATIONS_QUEUE,
+} from './notifications.processor';
 
 // ---------------------------------------------------------------------------
 // Mock firebase-admin module BEFORE importing the service under test.
@@ -17,8 +20,8 @@ import { BROADCAST_CHUNK_JOB, NOTIFICATIONS_QUEUE } from './notifications.proces
 // ---------------------------------------------------------------------------
 jest.mock('../config/firebase-admin.module', () => ({
   firebaseAdmin: {
-    apps: ['mock-app'], // non-empty array → isFcmConfigured() returns true
-    messaging: jest.fn(() => ({
+    getApps: jest.fn(() => ['mock-app']),
+    getMessaging: jest.fn(() => ({
       sendEachForMulticast: jest.fn(),
     })),
   },
@@ -123,7 +126,7 @@ describe('NotificationsService', () => {
       '../config/firebase-admin.module',
     ).firebaseAdmin;
     mockSendEachForMulticast = jest.fn();
-    (firebaseAdminMock.messaging as jest.Mock).mockReturnValue({
+    (firebaseAdminMock.getMessaging as jest.Mock).mockReturnValue({
       sendEachForMulticast: mockSendEachForMulticast,
     });
     mockPrismaService.users.findMany.mockResolvedValue([]);
@@ -167,8 +170,7 @@ describe('NotificationsService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    // Restore apps to non-empty after any test that empties it
-    firebaseAdminMock.apps = ['mock-app'];
+    (firebaseAdminMock.getApps as jest.Mock).mockReturnValue(['mock-app']);
   });
 
   it('should be defined', () => {
@@ -322,7 +324,6 @@ describe('NotificationsService', () => {
         }),
       ]);
     });
-
   });
 
   // ---------------------------------------------------------------------------
@@ -445,8 +446,8 @@ describe('NotificationsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('should still create inbox delivery when FCM apps array is empty', async () => {
-      firebaseAdminMock.apps = []; // simulate Firebase not initialized
+    it('should still create inbox delivery when Firebase has no initialized apps', async () => {
+      (firebaseAdminMock.getApps as jest.Mock).mockReturnValue([]);
       mockPrismaService.user_fcm_tokens.findMany.mockResolvedValue([
         { token: 'token-a' },
       ]);
@@ -578,8 +579,8 @@ describe('NotificationsService', () => {
       });
     });
 
-    it('should create broadcast deliveries when FCM apps array is empty', async () => {
-      firebaseAdminMock.apps = [];
+    it('should create broadcast deliveries when Firebase has no initialized apps', async () => {
+      (firebaseAdminMock.getApps as jest.Mock).mockReturnValue([]);
       mockPrismaService.users.findMany.mockResolvedValue([
         { user_id: 'user-1' },
         { user_id: 'user-2' },
@@ -621,7 +622,9 @@ describe('NotificationsService', () => {
 
       const result = await service.broadcast(dto, SENT_BY, 'admin:broadcast');
 
-      expect(mockPrismaService.notification_logs.create).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.notification_logs.create).toHaveBeenCalledTimes(
+        1,
+      );
       expect(mockPrismaService.notification_logs.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -688,11 +691,11 @@ describe('NotificationsService', () => {
         { user_id: 'user-2' },
       ]);
 
-      await expect(service.broadcast(dto, SENT_BY, 'admin:broadcast')).rejects.toMatchObject(
-        {
-          code: ErrorCode.NOTIF_BROADCAST_QUEUE_UNAVAILABLE,
-        },
-      );
+      await expect(
+        service.broadcast(dto, SENT_BY, 'admin:broadcast'),
+      ).rejects.toMatchObject({
+        code: ErrorCode.NOTIF_BROADCAST_QUEUE_UNAVAILABLE,
+      });
 
       process.env.NODE_ENV = previousNodeEnv;
     });
@@ -790,7 +793,9 @@ describe('NotificationsService', () => {
           },
         },
       });
-      expect(mockPrismaService.club_role_assignments.findMany).toHaveBeenCalled();
+      expect(
+        mockPrismaService.club_role_assignments.findMany,
+      ).toHaveBeenCalled();
     });
 
     it('should not resolve system callers through user authorization and should still send to club members', async () => {
@@ -978,8 +983,8 @@ describe('NotificationsService', () => {
       });
     });
 
-    it('should create club deliveries when FCM apps array is empty', async () => {
-      firebaseAdminMock.apps = [];
+    it('should create club deliveries when Firebase has no initialized apps', async () => {
+      (firebaseAdminMock.getApps as jest.Mock).mockReturnValue([]);
       mockPrismaService.club_role_assignments.findMany.mockResolvedValue([
         { user_id: 'user-1' },
       ]);
