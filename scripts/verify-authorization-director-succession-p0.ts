@@ -340,7 +340,7 @@ export function finalizeChecks(
 ) {
   const bootstrap =
     process.env.NODE_ENV === 'production' &&
-    Boolean(process.env.DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP);
+    process.env.DEV_LOCAL_FIELD_TIMEZONE_BOOTSTRAP === 'true';
   const checks = raw.checks.map((check) => ({
     ...check,
     rows: check.rows.map((row) =>
