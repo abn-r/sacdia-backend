@@ -125,4 +125,46 @@ describe('finance ledger v2 legacy backfill', () => {
       }
     },
   );
+
+  dbIt(
+    'rejects missing/null event lineage and rolls back new rows',
+    async () => {
+      for (const payload of ['{}', '{"legacy_finance_id":null}']) {
+        const { client, schema } = await openFixture();
+        try {
+          await client.query(`INSERT INTO finances VALUES
+          (101,true,7,11,100,CURRENT_DATE,'00000000-0000-0000-0000-000000000001',now(),now()),
+          (102,true,7,11,200,CURRENT_DATE,'00000000-0000-0000-0000-000000000001',now(),now());
+          INSERT INTO finance_evidence_files VALUES (501,102,true);
+          INSERT INTO finance_ledger_entries
+            (legacy_finance_id,club_section_id,finance_category_id,kind,amount_centavos,currency,finance_date,status,registered_by_id,decided_at)
+          VALUES
+            (101,7,11,'income',100,'MXN',CURRENT_DATE,'approved','00000000-0000-0000-0000-000000000001',now())`);
+          await client.query(
+            `INSERT INTO finance_ledger_events
+              (finance_ledger_entry_id,event_type,actor_user_id,payload)
+             SELECT finance_ledger_entry_id,'MIGRATED_LEGACY',
+               '00000000-0000-0000-0000-000000000001',$1::jsonb
+             FROM finance_ledger_entries`,
+            [payload],
+          );
+          await expect(client.query(backfill)).rejects.toThrow(
+            'event parity failed',
+          );
+          await client.query('ROLLBACK');
+          await expect(
+            client.query(`SELECT count(*)::int AS entries,
+          (SELECT count(*)::int FROM finance_ledger_events) AS events,
+          (SELECT count(*)::int FROM finance_vouchers) AS vouchers,
+          (SELECT count(*)::int FROM finance_evidence_files) AS evidence
+          FROM finance_ledger_entries`),
+          ).resolves.toMatchObject({
+            rows: [{ entries: 1, events: 1, vouchers: 0, evidence: 1 }],
+          });
+        } finally {
+          await closeFixture(client, schema);
+        }
+      }
+    },
+  );
 });

@@ -106,8 +106,8 @@ BEGIN
     WHERE f.active
     GROUP BY f.finance_id, f.created_by
     HAVING count(e.finance_ledger_event_id) <> 1
-      OR bool_or(e.actor_user_id <> f.created_by)
-      OR bool_or(e.payload ->> 'legacy_finance_id' <> f.finance_id::text)
+      OR bool_or(e.actor_user_id IS DISTINCT FROM f.created_by)
+      OR bool_or(e.payload ->> 'legacy_finance_id' IS DISTINCT FROM f.finance_id::text)
   ) THEN
     RAISE EXCEPTION 'active legacy finance event parity failed';
   END IF;
