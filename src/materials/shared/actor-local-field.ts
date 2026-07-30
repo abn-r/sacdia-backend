@@ -17,6 +17,12 @@ export type ActorLocalFieldScope =
   | { scope: 'single'; localFieldId: number }
   | { scope: 'all' };
 
+const LOCAL_FIELD_GLOBAL_ROLES = new Set([
+  'admin',
+  'director-lf',
+  'assistant-lf',
+]);
+
 /**
  * Resolves the local_field constraint for the current request based on the
  * authorization snapshot attached by PermissionsGuard.
@@ -50,25 +56,33 @@ export async function resolveActorLocalField(
     return { scope: 'all' };
   }
 
-  const territorial = authorization.effective.scope.global;
-  const lfNodeId = territorial?.local_field?.id;
-  if (lfNodeId !== undefined && lfNodeId !== null) {
+  const globalRoleNames = new Set(
+    authorization.grants.global_roles.map((grant) => grant.role_name),
+  );
+  const lfNodeId = authorization.effective.scope.global.local_field?.id ?? null;
+  if (
+    [...LOCAL_FIELD_GLOBAL_ROLES].some((role) => globalRoleNames.has(role)) &&
+    lfNodeId !== null
+  ) {
     const lfId = Number(lfNodeId);
     if (Number.isInteger(lfId) && lfId > 0) {
       return { scope: 'single', localFieldId: lfId };
     }
   }
 
-  const club = authorization.effective.scope.club;
-  if (club?.club.club_id) {
+  const activeAssignmentId = authorization.active_assignment.assignment_id;
+  const activeGrant = authorization.grants.club_assignments.find(
+    (grant) => grant.assignment_id === activeAssignmentId,
+  );
+  if (activeGrant?.club.club_id) {
     const found = await prisma.clubs.findUnique({
-      where: { club_id: club.club.club_id },
+      where: { club_id: activeGrant.club.club_id },
       select: { local_field_id: true },
     });
     if (!found) {
       throw new ForbiddenException({
         code: 'club_not_found',
-        message: `Club ${club.club.club_id} no longer exists.`,
+        message: `Club ${activeGrant.club.club_id} no longer exists.`,
       });
     }
     return { scope: 'single', localFieldId: found.local_field_id };

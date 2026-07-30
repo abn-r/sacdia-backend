@@ -27,7 +27,11 @@ export class CategoriesService {
       },
       orderBy: [{ sort_order: 'asc' }, { label: 'asc' }],
       include: {
-        _count: { select: { products: true } },
+        _count: {
+          select: {
+            products: { where: { local_field_id: localFieldId } },
+          },
+        },
       },
     });
 

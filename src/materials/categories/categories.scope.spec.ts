@@ -7,18 +7,26 @@ import { CategoriesController } from './categories.controller';
 import { CategoriesService } from './categories.service';
 import { ListCategoriesQueryDto } from './dto/list-categories-query.dto';
 
-const authorization = (role: string, localFieldId?: number) => ({
+const authorization = (
+  role: string | undefined,
+  localFieldId?: number,
+  clubId?: number,
+) => ({
   grants: {
-    global_roles: [{ role_name: role, permissions: [], scope: {} }],
-    club_assignments: [],
+    global_roles: role ? [{ role_name: role, permissions: [], scope: {} }] : [],
+    club_assignments: clubId
+      ? [{ assignment_id: 'assignment-1', club: { club_id: clubId } }]
+      : [],
   },
-  active_assignment: { assignment_id: null },
+  active_assignment: {
+    assignment_id: clubId ? 'assignment-1' : null,
+  },
   effective: {
     permissions: [],
     scope: {
       global:
         localFieldId === undefined ? {} : { local_field: { id: localFieldId } },
-      club: null,
+      club: clubId ? { club: { club_id: clubId } } : null,
     },
   },
 });
@@ -35,6 +43,7 @@ describe('material category scope contract', () => {
   });
   const prisma = {
     materialCategory: { findMany: jest.fn(), create: jest.fn() },
+    clubs: { findUnique: jest.fn() },
   };
   const categoriesService = new CategoriesService(
     prisma as unknown as PrismaService,
@@ -82,19 +91,42 @@ describe('material category scope contract', () => {
     expect(catalogService.list).not.toHaveBeenCalled();
   });
 
-  it.each(['admin', 'director-union', 'director-division'])(
-    'fails closed for %s without an exact LF',
+  it.each(['director-union', 'director-division'])(
+    'fails closed for %s even when profile has an LF',
     async (role) => {
       await expect(
         categories.list(
           { local_field_id: 2 },
-          { authorization: authorization(role) },
+          { authorization: authorization(role, 2) },
         ),
       ).rejects.toMatchObject({
         response: { code: 'local_field_scope_required' },
       });
     },
   );
+
+  it('uses admin exact LF and club authority instead of profile LF', async () => {
+    prisma.materialCategory.findMany.mockResolvedValue([]);
+    await categories.list({}, { authorization: authorization('admin', 3) });
+    expect(prisma.materialCategory.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { OR: [{ local_field_id: 3 }, { local_field_id: null }] },
+      }),
+    );
+    prisma.clubs.findUnique.mockResolvedValue({ local_field_id: 2 });
+    await categories.list(
+      {},
+      { authorization: authorization(undefined, 1, 99) },
+    );
+    expect(prisma.clubs.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { club_id: 99 } }),
+    );
+    expect(prisma.materialCategory.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { OR: [{ local_field_id: 2 }, { local_field_id: null }] },
+      }),
+    );
+  });
 
   it('lets super-admin cross LF but requires an explicit target', async () => {
     catalogService.listCategories.mockResolvedValue({ data: [] });
@@ -130,6 +162,11 @@ describe('material category scope contract', () => {
       expect.objectContaining({
         where: {
           OR: [{ local_field_id: 1 }, { local_field_id: null }],
+        },
+        include: {
+          _count: {
+            select: { products: { where: { local_field_id: 1 } } },
+          },
         },
       }),
     );
