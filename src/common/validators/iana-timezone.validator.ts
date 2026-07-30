@@ -18,10 +18,6 @@ export function classifyLocalFieldTimezone(
   return localFieldTimezoneCatalog.classify(value);
 }
 
-export function isCanonicalLocalFieldTimezone(value: unknown): value is string {
-  return classifyLocalFieldTimezone(value).ok;
-}
-
 export function isIanaTimezone(value: unknown): value is string {
   if (typeof value !== 'string' || value.trim() === '') {
     return false;
@@ -43,18 +39,5 @@ export class IsIanaTimezoneConstraint implements ValidatorConstraintInterface {
 
   defaultMessage(): string {
     return 'timezone must be a supported IANA timezone';
-  }
-}
-
-@ValidatorConstraint({ name: 'isCanonicalLocalFieldTimezone', async: false })
-export class IsCanonicalLocalFieldTimezoneConstraint
-  implements ValidatorConstraintInterface
-{
-  validate(value: unknown): boolean {
-    return value === null || value === undefined || isCanonicalLocalFieldTimezone(value);
-  }
-
-  defaultMessage(): string {
-    return 'timezone must be a canonical geographic IANA timezone';
   }
 }

@@ -12,7 +12,6 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CatalogTranslationDto } from '../../common/dto/catalog-translation.dto';
-import { IsCanonicalLocalFieldTimezoneConstraint } from '../../common/validators/iana-timezone.validator';
 
 export class CreateCountryDto {
   @ApiProperty({ example: 'México' })
@@ -256,7 +255,6 @@ export class CreateLocalFieldDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  @Validate(IsCanonicalLocalFieldTimezoneConstraint)
   timezone?: string | null;
 
   @ApiPropertyOptional({
@@ -300,7 +298,6 @@ export class UpdateLocalFieldDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  @Validate(IsCanonicalLocalFieldTimezoneConstraint)
   timezone?: string | null;
 
   @ApiPropertyOptional({

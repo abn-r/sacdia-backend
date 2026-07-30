@@ -51,6 +51,13 @@ type UnionRow = {
   translations?: unknown[];
 };
 
+type LockedLocalFieldRow = {
+  local_field_id: number;
+  union_id: number;
+  active: boolean;
+  timezone: string | null;
+};
+
 type ListUnionFilters = {
   countryId?: number;
   divisionId?: number;
@@ -625,8 +632,6 @@ export class AdminGeographyService {
     dto: UpdateLocalFieldDto,
     actorId: string,
   ) {
-    const existing = await this.ensureLocalFieldExists(localFieldId);
-
     if (dto.union_id) {
       await this.ensureUnionExists(dto.union_id);
     }
@@ -636,11 +641,6 @@ export class AdminGeographyService {
       ? this.normalizeAbbreviation(dto.abbreviation)
       : undefined;
     const timezoneWasProvided = Object.hasOwn(dto, 'timezone');
-    const timezone = timezoneWasProvided
-      ? dto.timezone ?? null
-      : existing.timezone;
-    const active = dto.active ?? existing.active;
-    const validTimezone = this.requireLocalFieldTimezone(timezone, active);
 
     if (name || abbreviation) {
       await this.ensureLocalFieldUnique(name, abbreviation, localFieldId);
@@ -649,6 +649,12 @@ export class AdminGeographyService {
     this.translationService.validateTranslations(dto.translations);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockLocalFieldForUpdate(tx, localFieldId);
+      const timezone = timezoneWasProvided
+        ? dto.timezone ?? null
+        : existing.timezone;
+      const active = dto.active ?? existing.active;
+      const validTimezone = this.requireLocalFieldTimezone(timezone, active);
       const updated = await tx.local_fields.update({
         where: { local_field_id: localFieldId },
         data: {
@@ -675,19 +681,26 @@ export class AdminGeographyService {
         ['name'],
       );
 
-      return updated;
+      return { updated, previousUnionId: existing.union_id };
     });
 
-    this.logMutation('update', 'local_fields', localFieldId, actorId);
+    this.logMutation(
+      'update',
+      'local_fields',
+      result.updated.local_field_id,
+      actorId,
+    );
 
     const keysToInvalidate = [CATALOG_CACHE_KEYS.LOCAL_FIELDS()];
-    keysToInvalidate.push(CATALOG_CACHE_KEYS.LOCAL_FIELDS(existing.union_id));
-    if (dto.union_id && dto.union_id !== existing.union_id) {
+    keysToInvalidate.push(
+      CATALOG_CACHE_KEYS.LOCAL_FIELDS(result.previousUnionId),
+    );
+    if (dto.union_id && dto.union_id !== result.previousUnionId) {
       keysToInvalidate.push(CATALOG_CACHE_KEYS.LOCAL_FIELDS(dto.union_id));
     }
     await this.catalogCache.invalidateMany(keysToInvalidate);
 
-    return result;
+    return result.updated;
   }
 
   async deleteLocalField(localFieldId: number, actorId: string) {
@@ -1472,6 +1485,27 @@ export class AdminGeographyService {
     const localField = await this.prisma.local_fields.findUnique({
       where: { local_field_id: localFieldId },
     });
+
+    if (!localField) {
+      throw new AppNotFoundException(ErrorCode.ADMIN_LOCAL_FIELD_NOT_FOUND, {
+        id: localFieldId,
+      });
+    }
+
+    return localField;
+  }
+
+  private async lockLocalFieldForUpdate(
+    tx: Prisma.TransactionClient,
+    localFieldId: number,
+  ): Promise<LockedLocalFieldRow> {
+    const rows = await tx.$queryRaw<LockedLocalFieldRow[]>(Prisma.sql`
+      SELECT local_field_id, union_id, active, timezone
+      FROM local_fields
+      WHERE local_field_id = ${localFieldId}
+      FOR UPDATE
+    `);
+    const localField = rows[0];
 
     if (!localField) {
       throw new AppNotFoundException(ErrorCode.ADMIN_LOCAL_FIELD_NOT_FOUND, {
