@@ -193,7 +193,7 @@ describe('authorization/director succession P0 preflight', () => {
           CASE WHEN i<3 THEN 'active' ELSE 'mystery-'||i END,null,1
           FROM generate_series(1,5)i;
         INSERT INTO users_pr VALUES(md5('preferred')::uuid,md5('missing')::uuid);
-        INSERT INTO classes VALUES(2,'GM-01'); INSERT INTO audit_logs VALUES(1,'ACTION_NAME_LONGER_THAN_TWENTY');
+        INSERT INTO classes VALUES(2,'GM-01'); INSERT INTO audit_logs VALUES(1,'ACTION_NAME_LONGER_THAN_SIXTY_FOUR_CHARACTERS_FOR_AUDIT_PREFLIGHT');
         UPDATE local_fields SET timezone='EST';
         INSERT INTO director_succession_plans VALUES(1,1,'scheduled')`);
         const blocked = runCli(integrationDatabaseUrl, childEnv);
