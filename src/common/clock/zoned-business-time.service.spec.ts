@@ -15,17 +15,13 @@ describe('ZonedBusinessTimeService', () => {
 
   it('uses the target local-field zone at one shared instant', () => {
     const now = new Date('2026-01-01T07:30:00.000Z');
+    const dateAt = (timezone: string) =>
+      service.businessDate(now, zone(timezone));
 
     expect(rawTimezoneIsRejected).toBe(true);
-    expect(service.businessDate(now, zone('America/Tijuana'))).toBe(
-      '2025-12-31',
-    );
-    expect(service.businessDate(now, zone('America/Cancun'))).toBe(
-      '2026-01-01',
-    );
-    expect(
-      service.businessDate(now, zone('America/Argentina/Buenos_Aires')),
-    ).toBe('2026-01-01');
+    expect(dateAt('America/Tijuana')).toBe('2025-12-31');
+    expect(dateAt('America/Cancun')).toBe('2026-01-01');
+    expect(dateAt('America/Argentina/Buenos_Aires')).toBe('2026-01-01');
   });
 
   it.each([

@@ -8,6 +8,7 @@ import {
   finalizeChecks,
 } from '../../scripts/verify-authorization-director-succession-p0';
 import {
+  loadCanonicalGeographicIanaTimezoneCatalog,
   PINNED_IANA_METADATA,
   type CanonicalGeographicIanaTimezoneCatalog,
 } from './timezone/canonical-geographic-iana-timezone';
@@ -47,10 +48,7 @@ describe('authorization/director succession P0 preflight', () => {
       metadata: PINNED_IANA_METADATA,
       canonical: new Set(),
       legacyAliases: new Set(),
-      classify: (value) =>
-        typeof value === 'string' && value
-          ? { ok: true, value }
-          : { ok: false, reason: 'MISSING', diagnostic: 'EMPTY' },
+      classify: loadCanonicalGeographicIanaTimezoneCatalog().classify,
     };
     const checks = finalizeChecks(
       {
