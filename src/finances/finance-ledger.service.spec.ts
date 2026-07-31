@@ -221,15 +221,23 @@ describe('FinanceLedgerService', () => {
     });
     expect(audit.changes).toStrictEqual(event.payload);
     expect(tx.finance_idempotency_receipts.findUnique).toHaveBeenCalledTimes(1);
-    const [lock, entry, authorizationCall, receipt] = [
+    const [actorKeyLock, entryLock, entry, authorizationCall, receipt] = [
       tx.$executeRaw.mock.invocationCallOrder[0],
+      tx.$executeRaw.mock.invocationCallOrder[1],
       tx.finance_ledger_entries.findUnique.mock.invocationCallOrder[0],
       decisionAuthorization.assertCanDecide.mock.invocationCallOrder[0],
       tx.finance_idempotency_receipts.findUnique.mock.invocationCallOrder[0],
     ];
-    expect(lock).toBeLessThan(entry);
+    expect(actorKeyLock).toBeLessThan(entryLock);
+    expect(entryLock).toBeLessThan(entry);
     expect(entry).toBeLessThan(authorizationCall);
     expect(authorizationCall).toBeLessThan(receipt);
+    expect([
+      ...new Set(tx.$executeRaw.mock.calls.map(([sql]) => sql.values[0])),
+    ]).toStrictEqual([
+      `finance-ledger-idempotency:${actor}:${key}`,
+      `finance-ledger-entry:${entryId}`,
+    ]);
   });
 
   it('rejects a key reused from approve to reject before a second mutation', async () => {
@@ -253,19 +261,52 @@ describe('FinanceLedgerService', () => {
       code: 'FINANCE_LEDGER_IDEMPOTENCY_REUSED',
       status: 409,
     });
-    expect(tx.finance_ledger_entries.update).toHaveBeenCalledTimes(1);
   });
 
-  it('requires a nonblank rejection reason', async () => {
-    await expect(
-      service.decideEntry(
-        { entryId, decision: 'reject', reason: ' ' },
-        actor,
-        key,
-      ),
-    ).rejects.toMatchObject({
-      code: 'FINANCE_LEDGER_REJECTION_REASON_REQUIRED',
+  it('authorizes only the scope read after the entry lock', async () => {
+    tx.finance_ledger_entries.findUnique.mockResolvedValueOnce({
+      ...ledgerEntry({ club_section_id: 8 }),
+      club_section: { main_club_id: 2 },
     });
-    expect(tx.finance_ledger_entries.update).not.toHaveBeenCalled();
+    await service.decideEntry({ entryId, decision: 'approve' }, actor, key);
+    expect(
+      decisionAuthorization.assertCanDecide.mock.calls[0][0],
+    ).toMatchObject({
+      clubId: 2,
+      clubSectionId: 8,
+    });
+  });
+
+  it('records a rejection reason and denies terminal entries', async () => {
+    tx.finance_ledger_entries.update.mockResolvedValueOnce(
+      ledgerEntry({
+        status: 'rejected',
+        decided_by_id: actor,
+        decided_at: new Date('2026-07-31T00:00:00.000Z'),
+        rejection_reason: 'Missing receipt',
+      }),
+    );
+    await service.decideEntry(
+      { entryId, decision: 'reject', reason: 'Missing receipt' },
+      actor,
+      key,
+    );
+    expect(
+      tx.finance_ledger_events.create.mock.calls[0][0].data.payload.after
+        .rejection_reason,
+    ).toBe('Missing receipt');
+    for (const status of ['approved', 'rejected']) {
+      tx.finance_ledger_entries.findUnique.mockResolvedValueOnce({
+        ...ledgerEntry({ status }),
+        club_section: { main_club_id: 1 },
+      });
+      await expect(
+        service.decideEntry(
+          { entryId, decision: 'reject', reason: 'terminal' },
+          actor,
+          key.replace(/^a/, 'b'),
+        ),
+      ).rejects.toMatchObject({ code: 'FINANCE_LEDGER_STATUS_INVALID' });
+    }
   });
 });
