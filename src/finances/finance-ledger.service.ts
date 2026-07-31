@@ -134,7 +134,6 @@ export class FinanceLedgerService {
         await this.recordCreated(
           db,
           entry,
-          input,
           actorUserId,
           idempotencyKey,
           input.clubId,
@@ -172,9 +171,6 @@ export class FinanceLedgerService {
       },
       async (tx) => {
         const db = tx as PrismaLike;
-        await db.$executeRaw(
-          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`finance-ledger-entry:${input.entryId}`}, 0))`,
-        );
         const entry = await db.finance_ledger_entries.findUnique({
           where: { finance_ledger_entry_id: input.entryId },
           include: { club_section: { select: { main_club_id: true } } },
@@ -194,7 +190,18 @@ export class FinanceLedgerService {
           clubId,
           clubSectionId: entry.club_section_id,
         });
-        return { entry, clubId };
+        await db.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`finance-ledger-entry:${input.entryId}`}, 0))`,
+        );
+        const lockedEntry = await db.finance_ledger_entries.findUnique({
+          where: { finance_ledger_entry_id: input.entryId },
+        });
+        if (!lockedEntry) {
+          throw new AppNotFoundException(
+            ErrorCode.FINANCE_LEDGER_ENTRY_NOT_FOUND,
+          );
+        }
+        return { entry: lockedEntry, clubId };
       },
       async (db, context) => {
         const { entry, clubId } = context;
@@ -300,22 +307,11 @@ export class FinanceLedgerService {
   private async recordCreated(
     db: PrismaLike,
     entry: Record<string, any>,
-    input: RegisterLedgerEntryInput,
     actorUserId: string,
     idempotencyKey: string,
     clubId: number,
   ) {
-    const payload = {
-      club_id: input.clubId,
-      club_section_id: input.clubSectionId,
-      finance_category_id: input.financeCategoryId,
-      kind: input.kind,
-      amount_centavos: input.amountCentavos,
-      currency: input.currency,
-      finance_date: input.financeDate.toISOString().slice(0, 10),
-      status: entry.status,
-      registered_by_id: actorUserId,
-    };
+    const payload = this.snapshot(entry, clubId);
     await db.finance_ledger_events.create({
       data: {
         finance_ledger_entry_id: entry.finance_ledger_entry_id,
@@ -352,8 +348,8 @@ export class FinanceLedgerService {
       club_id: clubId,
       club_section_id: before.club_section_id,
       decision,
-      before: this.snapshot(before),
-      after: this.snapshot(after),
+      before: this.snapshot(before, clubId),
+      after: this.snapshot(after, clubId),
     };
     const eventType = decision === 'approve' ? 'APPROVED' : 'REJECTED';
     await db.finance_ledger_events.create({
@@ -379,8 +375,16 @@ export class FinanceLedgerService {
     });
   }
 
-  private snapshot(entry: Record<string, any>) {
+  private snapshot(entry: Record<string, any>, clubId = entry.club_id) {
     return {
+      club_id: clubId,
+      club_section_id: entry.club_section_id,
+      finance_category_id: entry.finance_category_id,
+      kind: entry.kind,
+      amount_centavos: entry.amount_centavos,
+      currency: entry.currency,
+      finance_date:
+        entry.finance_date?.toISOString?.().slice(0, 10) ?? entry.finance_date,
       status: entry.status,
       registered_by_id: entry.registered_by_id,
       decided_by_id: entry.decided_by_id,
@@ -392,10 +396,17 @@ export class FinanceLedgerService {
   private receiptSelect() {
     return {
       finance_ledger_entry_id: true,
+      club_section_id: true,
+      finance_category_id: true,
       status: true,
       kind: true,
       amount_centavos: true,
       currency: true,
+      finance_date: true,
+      registered_by_id: true,
+      decided_by_id: true,
+      decided_at: true,
+      rejection_reason: true,
     };
   }
 
@@ -403,6 +414,11 @@ export class FinanceLedgerService {
     return {
       finance_ledger_entry_id: true,
       club_section_id: true,
+      finance_category_id: true,
+      kind: true,
+      amount_centavos: true,
+      currency: true,
+      finance_date: true,
       status: true,
       registered_by_id: true,
       decided_by_id: true,
