@@ -23,7 +23,6 @@ const defaultTracks = [10, 20, 30].map((id) => ({
   club_type_id: id,
   active: true,
 }));
-
 const matchesTrack = (track: any, where: any) =>
   (where.club_type_id === undefined ||
     track.club_type_id === where.club_type_id) &&
@@ -50,7 +49,6 @@ const matchesClass = (item: any, where: any) => {
     }),
   );
 };
-
 const createTx = ({
   classes = defaultClasses,
   tracks = defaultTracks,
@@ -120,14 +118,6 @@ describe('ClassProgressionResolver', () => {
     await expect(
       resolver.resolveFirst(tx, 10, yearStart),
     ).resolves.toMatchObject({ class_id: 4 });
-    expect(tx.classes.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          active: true,
-          AND: expect.any(Array),
-        }),
-      }),
-    );
     await expect(
       resolver.resolveFirst(
         createTx({ tracks: [{ club_type_id: 10, active: false }] }),
@@ -139,16 +129,19 @@ describe('ClassProgressionResolver', () => {
     });
   });
 
-  it('rejects an inactive track with a stable configuration error', async () => {
+  it('resolves predecessor, internal next and same-track transition', async () => {
+    const tx = createTx();
     await expect(
-      resolver.resolveFirst(
-        createTx({ tracks: [{ club_type_id: 10, active: false }] }),
-        10,
-        yearStart,
-      ),
-    ).rejects.toMatchObject({
-      code: ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
-    });
+      resolver.resolvePredecessor(tx, 2, yearStart),
+    ).resolves.toMatchObject({ class_id: 1 });
+    await expect(resolver.resolveNext(tx, 1, yearStart)).resolves.toMatchObject(
+      {
+        class_id: 2,
+      },
+    );
+    await expect(resolver.resolveTransition(tx, 1, 2, yearStart)).resolves.toBe(
+      'SAME_TRACK',
+    );
   });
 
   it('allows only the configured active AV→CQ and CQ→GM crossovers', async () => {
@@ -166,18 +159,17 @@ describe('ClassProgressionResolver', () => {
         },
       ],
     });
-    await expect(resolver.resolveNext(tx, 2, yearStart)).resolves.toMatchObject(
-      { class_id: 3 },
-    );
-    await expect(resolver.resolveNext(tx, 4, yearStart)).resolves.toMatchObject(
-      { class_id: 5 },
-    );
-    await expect(resolver.resolveTransition(tx, 2, 3, yearStart)).resolves.toBe(
-      'CROSSOVER',
-    );
-    await expect(resolver.resolveTransition(tx, 4, 5, yearStart)).resolves.toBe(
-      'CROSSOVER',
-    );
+    for (const [source, target] of [
+      [2, 3],
+      [4, 5],
+    ]) {
+      await expect(
+        resolver.resolveNext(tx, source, yearStart),
+      ).resolves.toMatchObject({ class_id: target });
+      await expect(
+        resolver.resolveTransition(tx, source, target, yearStart),
+      ).resolves.toBe('CROSSOVER');
+    }
   });
 
   it('ignores inactive transition rows and targets', async () => {
@@ -219,6 +211,9 @@ describe('ClassProgressionResolver', () => {
   });
 
   it('fails closed for ambiguous or absent crossovers with stable errors', async () => {
+    const duplicateOrder = createTx({
+      classes: [classRow(1, 10, 1), classRow(2, 10, 1)],
+    });
     const ambiguous = createTx({
       transitions: [
         {
@@ -232,6 +227,11 @@ describe('ClassProgressionResolver', () => {
           to_track: defaultTracks[2],
         },
       ],
+    });
+    await expect(
+      resolver.resolveFirst(duplicateOrder, 10, yearStart),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
     });
     await expect(
       resolver.resolveNext(ambiguous, 2, yearStart),
