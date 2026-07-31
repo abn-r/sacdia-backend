@@ -47,11 +47,14 @@ export class ClassEnrollmentPlanService {
     });
 
     if (candidates.length === 0) {
-      await this.progressionResolver.resolvePredecessor(
+      const predecessor = await this.progressionResolver.resolvePredecessor(
         tx,
         params.targetClassId,
         params.targetYearStart,
       );
+      if (predecessor) {
+        throw new AppBadRequestException(ErrorCode.CLASS_LEVEL_TOO_HIGH);
+      }
       return this.emptyPlan(params.targetClassId);
     }
 

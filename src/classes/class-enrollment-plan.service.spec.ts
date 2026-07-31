@@ -129,4 +129,16 @@ describe('ClassEnrollmentPlanService', () => {
       yearStart,
     );
   });
+
+  it('rejects a source-less plan when the target has a configured predecessor', async () => {
+    progression.resolvePredecessor.mockResolvedValue({ class_id: 9 });
+
+    await expect(
+      service.resolveSource(tx([]), {
+        userId: 'user-1',
+        targetClassId: 10,
+        targetYearStart: yearStart,
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.CLASS_LEVEL_TOO_HIGH });
+  });
 });
