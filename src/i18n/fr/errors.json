@@ -539,7 +539,6 @@
   "R2_VALIDATION_FAILED": "Erreur lors de la validation de l'objet R2",
   "LOCAL_FIELD_TIMEZONE_UNAVAILABLE": "Le fuseau horaire du champ local est indisponible ou non canonique",
   "AUTH_CONTEXT_USER_NOT_FOUND": "Utilisateur introuvable",
-  "AUTH_CONTEXT_UNAVAILABLE": "Le contexte d’autorisation est temporairement indisponible",
   "RBAC_BOOTSTRAP_FORBIDDEN": "Bootstrap RBAC non disponible en production",
   "RBAC_BOOTSTRAP_SECRET_INVALID": "Secret de bootstrap invalide",
   "NOTIF_BROADCAST_USER_ID_FORBIDDEN": "userId ne peut pas être inclus dans les notifications de diffusion",

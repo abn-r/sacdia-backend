@@ -7,12 +7,6 @@ import {
 } from './authorization-context.service';
 import { ErrorCode } from '../errors/error-codes';
 import { InstitutionalHierarchyService } from './institutional-hierarchy.service';
-import { CLOCK } from '../clock/clock';
-import { TemporalContextFactory } from '../clock/temporal-context.factory';
-import { ZonedBusinessTimeService } from '../clock/zoned-business-time.service';
-import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
-import { LocalFieldTimezoneResolver } from '../authorization/local-field-timezone.resolver';
-import { AuthorizationContextVersionService } from '../authorization/authorization-context-version.service';
 
 describe('AuthorizationContextService', () => {
   let service: AuthorizationContextService;
@@ -23,12 +17,6 @@ describe('AuthorizationContextService', () => {
       findUnique: jest.fn(),
     },
   };
-
-  const mockClock = { now: jest.fn(() => new Date('2026-02-10T07:59:00Z')) };
-  const mockTimezoneResolver = {
-    assertTimezone: jest.fn((timezone: string) => timezone),
-  };
-  const mockVersionService = { current: jest.fn().mockResolvedValue(17n) };
 
   const mockHierarchyService = {
     resolveCurrent: jest.fn(),
@@ -55,15 +43,6 @@ describe('AuthorizationContextService', () => {
           provide: InstitutionalHierarchyService,
           useValue: mockHierarchyService,
         },
-        { provide: CLOCK, useValue: mockClock },
-        ZonedBusinessTimeService,
-        TemporalContextFactory,
-        ClubAssignmentEffectivityPolicy,
-        { provide: LocalFieldTimezoneResolver, useValue: mockTimezoneResolver },
-        {
-          provide: AuthorizationContextVersionService,
-          useValue: mockVersionService,
-        },
         {
           provide: CACHE_MANAGER,
           useValue: cacheManager,
@@ -78,25 +57,16 @@ describe('AuthorizationContextService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    mockClock.now.mockReturnValue(new Date('2026-02-10T07:59:00Z'));
-    mockVersionService.current.mockResolvedValue(17n);
-    mockTimezoneResolver.assertTimezone.mockImplementation(
-      (timezone: string) => timezone,
-    );
   });
 
   it('uses versioned cache keys so stale legacy snapshots are bypassed', () => {
-    expect((AUTH_CONTEXT_CACHE_KEY as any)('user-123', 17n)).toBe(
-      'auth:context:v4:user-123:17',
-    );
+    expect(AUTH_CONTEXT_CACHE_KEY('user-123')).toBe('auth:context:v3:user-123');
   });
 
   it('invalidates both current and legacy authorization cache keys', async () => {
     await service.invalidateUserAuthorizationCache('user-123');
 
-    expect(cacheManager.del).toHaveBeenCalledWith(
-      'auth:context:v4:user-123:17',
-    );
+    expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v3:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:v2:user-123');
     expect(cacheManager.del).toHaveBeenCalledWith('auth:context:user-123');
   });
@@ -110,7 +80,6 @@ describe('AuthorizationContextService', () => {
   });
 
   it('should resolve canonical authorization payload with active assignment and structured scope', async () => {
-    cacheManager.get.mockRejectedValueOnce(new Error('Redis unavailable'));
     mockPrismaService.users.findUnique.mockResolvedValue({
       user_id: 'user-123',
       email: 'juan.garcia@example.com',
@@ -131,7 +100,7 @@ describe('AuthorizationContextService', () => {
       local_fields: { local_field_id: 3, name: 'Campo Centro' },
       users_pr: {
         complete: true,
-        active_club_assignment_id: 'assignment-1',
+        active_club_assignment_id: 'assignment-2',
       },
       users_roles: [
         {
@@ -147,10 +116,9 @@ describe('AuthorizationContextService', () => {
       club_role_assignments: [
         {
           assignment_id: 'assignment-1',
-          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
-          end_date: new Date('2026-02-10'),
+          end_date: null,
           expires_at: null,
           roles: {
             role_name: 'director',
@@ -168,13 +136,13 @@ describe('AuthorizationContextService', () => {
               local_fields: {
                 local_field_id: 30,
                 name: 'Campo Centro',
-                active: true,
-                timezone: 'America/Mexico_City',
-                modified_at: new Date('2026-01-01T00:00:00Z'),
                 unions: {
                   union_id: 20,
                   name: 'Unión Norte',
-                  countries: { country_id: 10, name: 'México' },
+                  countries: {
+                    country_id: 10,
+                    name: 'México',
+                  },
                 },
               },
             },
@@ -182,9 +150,8 @@ describe('AuthorizationContextService', () => {
         },
         {
           assignment_id: 'assignment-2',
-          active: true,
           status: 'active',
-          start_date: new Date('2026-02-10'),
+          start_date: new Date('2026-02-01'),
           end_date: null,
           expires_at: null,
           roles: {
@@ -201,15 +168,15 @@ describe('AuthorizationContextService', () => {
               club_id: 10,
               name: 'Club Amanecer',
               local_fields: {
-                local_field_id: 31,
-                name: 'Campo Pacífico',
-                active: true,
-                timezone: 'America/Tijuana',
-                modified_at: new Date('2026-01-02T00:00:00Z'),
+                local_field_id: 30,
+                name: 'Campo Centro',
                 unions: {
                   union_id: 20,
                   name: 'Unión Norte',
-                  countries: { country_id: 10, name: 'México' },
+                  countries: {
+                    country_id: 10,
+                    name: 'México',
+                  },
                 },
               },
             },
@@ -234,91 +201,34 @@ describe('AuthorizationContextService', () => {
       },
     ]);
     expect(result.authorization.active_assignment).toEqual({
-      assignment_id: 'assignment-1',
+      assignment_id: 'assignment-2',
     });
     expect(result.authorization.effective.permissions).toEqual([
       'clubs:read',
-      'clubs:update',
+      'finances:update',
       'reports:read',
     ]);
     expect(result.authorization.effective.scope.club).toEqual({
-      assignment_id: 'assignment-1',
-      role_name: 'director',
+      assignment_id: 'assignment-2',
+      role_name: 'treasurer',
       club: {
         club_id: 10,
         club_name: 'Club Amanecer',
       },
       section: {
-        club_section_id: 11,
-        club_type_id: 1,
-        club_type_name: 'Aventureros',
+        club_section_id: 22,
+        club_type_id: 2,
+        club_type_name: 'Conquistadores',
       },
     });
     expect(result.legacy.club_context.active).toEqual({
-      assignment_id: 'assignment-1',
-      role_name: 'director',
-      club_section_id: 11,
-      club_type_id: 1,
+      assignment_id: 'assignment-2',
+      role_name: 'treasurer',
+      club_section_id: 22,
+      club_type_id: 2,
       club_id: 10,
       club_name: 'Club Amanecer',
-      club_type: 'Aventureros',
-    });
-    expect(result.authorization.grants.club_assignments).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          assignment_id: 'assignment-1',
-          effective: true,
-        }),
-        expect.objectContaining({
-          assignment_id: 'assignment-2',
-          effective: false,
-        }),
-      ]),
-    );
-    expect(cacheManager.set).toHaveBeenCalledWith(
-      'auth:context:v4:user-123:17',
-      expect.objectContaining({
-        valid_until: '2026-02-10T08:00:00.000Z',
-        territory_time_vector: [
-          expect.objectContaining({
-            local_field_id: 30,
-            timezone: 'America/Mexico_City',
-          }),
-          expect.objectContaining({
-            local_field_id: 31,
-            timezone: 'America/Tijuana',
-          }),
-        ],
-      }),
-      60_000,
-    );
-  });
-
-  it('fails closed when the authorization source cannot be read', async () => {
-    mockPrismaService.users.findUnique.mockRejectedValueOnce(
-      new Error('database unavailable'),
-    );
-
-    await expect(
-      service.resolveUserAuthorization('user-123'),
-    ).rejects.toMatchObject({
-      code: ErrorCode.AUTH_CONTEXT_UNAVAILABLE,
-      status: 503,
-    });
-  });
-
-  it('does not reuse an expired cache envelope', async () => {
-    cacheManager.get.mockResolvedValueOnce({
-      valid_until: '2026-02-10T07:58:59.999Z',
-      territory_time_vector: [],
-      value: { stale: true },
-    });
-    mockPrismaService.users.findUnique.mockResolvedValueOnce(null);
-
-    await expect(
-      service.resolveUserAuthorization('user-123'),
-    ).rejects.toMatchObject({
-      code: ErrorCode.AUTH_CONTEXT_USER_NOT_FOUND,
+      club_type: 'Conquistadores',
     });
   });
 
@@ -449,7 +359,6 @@ describe('AuthorizationContextService', () => {
       club_role_assignments: [
         {
           assignment_id: 'assignment-1',
-          active: true,
           status: 'active',
           start_date: new Date('2026-01-01'),
           end_date: null,
@@ -465,14 +374,7 @@ describe('AuthorizationContextService', () => {
             clubs: {
               club_id: 44,
               name: 'Club Horizonte',
-              local_fields: {
-                local_field_id: 30,
-                name: 'Campo Centro',
-                active: true,
-                timezone: 'America/Mexico_City',
-                modified_at: new Date('2026-01-01T00:00:00Z'),
-                unions: null,
-              },
+              local_fields: null,
             },
           },
         },
@@ -506,7 +408,6 @@ describe('AuthorizationContextService', () => {
       clubTypeId: number,
     ) => ({
       assignment_id: assignmentId,
-      active: true,
       status: 'active',
       start_date: new Date('2026-01-01'),
       end_date: null,
@@ -519,14 +420,7 @@ describe('AuthorizationContextService', () => {
         clubs: {
           club_id: 12,
           name: 'Orión',
-          local_fields: {
-            local_field_id: 30,
-            name: 'Campo Centro',
-            active: true,
-            timezone: 'America/Mexico_City',
-            modified_at: new Date('2026-01-01T00:00:00Z'),
-            unions: null,
-          },
+          local_fields: null,
         },
       },
     });

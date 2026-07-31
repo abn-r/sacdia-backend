@@ -27,7 +27,6 @@ import { ZonedBusinessTimeService } from './clock/zoned-business-time.service';
 import { TemporalContextFactory } from './clock/temporal-context.factory';
 import { LocalFieldTimezoneResolver } from './authorization/local-field-timezone.resolver';
 import { ClubAssignmentEffectivityPolicy } from './authorization/club-assignment-effectivity.policy';
-import { AuthorizationContextVersionService } from './authorization/authorization-context-version.service';
 
 @Global()
 @Module({
@@ -88,7 +87,6 @@ import { AuthorizationContextVersionService } from './authorization/authorizatio
     TemporalContextFactory,
     LocalFieldTimezoneResolver,
     ClubAssignmentEffectivityPolicy,
-    AuthorizationContextVersionService,
     // ==========================================
     // EXCEPTION FILTERS — registered via DI so I18nService can be injected.
     // Order: AllExceptionsFilter registered FIRST (lower priority),
@@ -123,7 +121,6 @@ import { AuthorizationContextVersionService } from './authorization/authorizatio
     TemporalContextFactory,
     LocalFieldTimezoneResolver,
     ClubAssignmentEffectivityPolicy,
-    AuthorizationContextVersionService,
   ],
 })
 export class CommonModule {}

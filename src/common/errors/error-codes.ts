@@ -707,7 +707,6 @@ export enum ErrorCode {
 
   // ── Authorization Context ─────────────────────────────────────────────────
   AUTH_CONTEXT_USER_NOT_FOUND = 'AUTH_CONTEXT_USER_NOT_FOUND',
-  AUTH_CONTEXT_UNAVAILABLE = 'AUTH_CONTEXT_UNAVAILABLE',
   LOCAL_FIELD_TIMEZONE_UNAVAILABLE = 'LOCAL_FIELD_TIMEZONE_UNAVAILABLE',
 
   // ── RBAC Controller ───────────────────────────────────────────────────────
