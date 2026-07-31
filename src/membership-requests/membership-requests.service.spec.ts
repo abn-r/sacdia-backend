@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MembershipRequestsService } from './membership-requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationContextService } from '../common/services/authorization-context.service';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ErrorCode } from '../common/errors/error-codes';
 
@@ -23,6 +24,8 @@ describe('MembershipRequestsService', () => {
   const createTransactionMock = () => ({
     club_role_assignments: {
       findFirst: jest.fn().mockResolvedValue(pendingAssignment),
+      findMany: jest.fn(),
+      findUnique: jest.fn().mockResolvedValue(pendingAssignment),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     users_pr: {
@@ -46,6 +49,10 @@ describe('MembershipRequestsService', () => {
 
   const mockAuthorizationContext = {
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockAuthorizationContextVersion = {
+    bump: jest.fn().mockResolvedValue(1n),
   };
 
   const mockNotificationsService = {
@@ -72,6 +79,10 @@ describe('MembershipRequestsService', () => {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContext,
         },
+        {
+          provide: AuthorizationContextVersionService,
+          useValue: mockAuthorizationContextVersion,
+        },
         { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
@@ -94,7 +105,7 @@ describe('MembershipRequestsService', () => {
       await service.approve(10, pendingAssignment.assignment_id, actorId);
 
       expect(
-        mockPrismaService.club_role_assignments.updateMany,
+        transactionMock.club_role_assignments.updateMany,
       ).toHaveBeenCalledWith({
         where: {
           assignment_id: pendingAssignment.assignment_id,
@@ -108,13 +119,17 @@ describe('MembershipRequestsService', () => {
           modified_at: expect.any(Date),
         },
       });
+      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
+        transactionMock,
+        userId,
+      );
     });
 
     it('rejects path/assignment section mismatches as not found', async () => {
-      mockPrismaService.club_role_assignments.updateMany.mockResolvedValue({
+      transactionMock.club_role_assignments.updateMany.mockResolvedValue({
         count: 0,
       });
-      mockPrismaService.club_role_assignments.findUnique.mockResolvedValue({
+      transactionMock.club_role_assignments.findUnique.mockResolvedValue({
         ...pendingAssignment,
         club_section_id: 99,
       });
@@ -126,7 +141,9 @@ describe('MembershipRequestsService', () => {
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).not.toHaveBeenCalled();
-      expect(mockNotificationsService.sendSilentToSection).not.toHaveBeenCalled();
+      expect(
+        mockNotificationsService.sendSilentToSection,
+      ).not.toHaveBeenCalled();
     });
 
     it('rejects only when assignment belongs to the path club section', async () => {
@@ -137,7 +154,7 @@ describe('MembershipRequestsService', () => {
       await service.reject(10, pendingAssignment.assignment_id, actorId, 'No');
 
       expect(
-        mockPrismaService.club_role_assignments.updateMany,
+        transactionMock.club_role_assignments.updateMany,
       ).toHaveBeenCalledWith({
         where: {
           assignment_id: pendingAssignment.assignment_id,
@@ -152,6 +169,10 @@ describe('MembershipRequestsService', () => {
           modified_at: expect.any(Date),
         },
       });
+      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
+        transactionMock,
+        userId,
+      );
     });
   });
 
@@ -195,6 +216,10 @@ describe('MembershipRequestsService', () => {
           active_club_assignment_id: null,
         },
       });
+      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
+        transactionMock,
+        userId,
+      );
       expect(
         mockAuthorizationContext.invalidateUserAuthorizationCache,
       ).toHaveBeenCalledWith(userId);
@@ -225,6 +250,41 @@ describe('MembershipRequestsService', () => {
         transactionMock.club_role_assignments.updateMany,
       ).not.toHaveBeenCalled();
       expect(transactionMock.users_pr.update).not.toHaveBeenCalled();
+    });
+
+    it('does not run Redis cleanup when the durable version write rejects', async () => {
+      mockAuthorizationContextVersion.bump.mockRejectedValueOnce(
+        new Error('version write failed'),
+      );
+
+      await expect(
+        service.cancelPendingForUser(userId, actorId),
+      ).rejects.toThrow('version write failed');
+
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('expireStaleRequests', () => {
+    it('versions every affected user in the bulk expiration transaction', async () => {
+      transactionMock.club_role_assignments.findMany.mockResolvedValue([
+        { user_id: userId },
+        { user_id: '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99' },
+        { user_id: userId },
+      ]);
+
+      await expect(service.expireStaleRequests()).resolves.toBe(1);
+
+      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
+        transactionMock,
+        userId,
+      );
+      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
+        transactionMock,
+        '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99',
+      );
     });
   });
 
