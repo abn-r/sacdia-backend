@@ -16,6 +16,7 @@ class FakeP0Port implements EcclesiasticalCycleP0Port {
       ? {
           allowed: true as const,
           businessDate: '2026-11-01' as const,
+          timezone: 'America/Mexico_City',
           effectiveSuccessionObserved: true as const,
         }
       : { allowed: false as const },

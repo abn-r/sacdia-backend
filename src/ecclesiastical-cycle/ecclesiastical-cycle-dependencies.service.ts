@@ -52,7 +52,11 @@ export class EcclesiasticalCycleDependenciesService {
           ECCLESIASTICAL_CYCLE_CAPABILITY_VERSIONS[dependency],
         ),
     );
-    return { businessDate: access.businessDate, capabilities };
+    return {
+      businessDate: access.businessDate,
+      timezone: access.timezone,
+      capabilities,
+    };
   }
   private assertCompatible(
     dependency: EcclesiasticalCycleDependency,

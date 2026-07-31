@@ -35,6 +35,7 @@ export type EcclesiasticalCycleCapabilitiesDto = {
 };
 export type EcclesiasticalCyclePlanningContextDto = {
   businessDate: BusinessDate;
+  timezone: string | null;
   capabilities: EcclesiasticalCycleCapabilitiesDto;
 };
 export type EcclesiasticalCycleAccessDto = {
@@ -46,6 +47,7 @@ export type EcclesiasticalCycleP0Access =
   | {
       allowed: true;
       businessDate: BusinessDate;
+      timezone: string | null;
       effectiveSuccessionObserved: true;
     }
   | { allowed: false; reason?: string };
