@@ -1,6 +1,5 @@
 import { ErrorCode } from '../common/errors/error-codes';
 import { ClassEnrollmentWriteService } from './class-enrollment-write.service';
-
 describe('ClassEnrollmentWriteService', () => {
   const targetYear = {
     year_id: 2027,
@@ -19,6 +18,12 @@ describe('ClassEnrollmentWriteService', () => {
     source_class_id: 9,
     target_class_id: 10,
     transition_kind: 'SAME_TRACK' as const,
+  };
+  const params = {
+    userId: '00000000-0000-4000-8000-000000000001',
+    targetClassId: 10,
+    ecclesiasticalYearId: 2027,
+    poolClubTypeIds: [2],
   };
 
   const setup = () => {
@@ -42,6 +47,7 @@ describe('ClassEnrollmentWriteService', () => {
       },
     };
     const prisma = {
+      enrollments: { findUnique: jest.fn() },
       $transaction: jest.fn(
         async (callback: (client: typeof tx) => Promise<unknown>) =>
           callback(tx),
@@ -59,26 +65,22 @@ describe('ClassEnrollmentWriteService', () => {
     );
     return { order, planner, prisma, service, tx };
   };
-
-  it('locks a deterministic pool before revalidating target and planning', async () => {
+  it('canonicalizes UUID casing before locking and planning', async () => {
     const { order, planner, prisma, service, tx } = setup();
     const write = jest.fn().mockImplementation(async () => {
       order.push('write');
       return { enrollment_id: 44 };
     });
-
     await expect(
       service.execute(
         {
-          userId: '00000000-0000-4000-8000-000000000001',
-          targetClassId: 10,
-          ecclesiasticalYearId: 2027,
+          ...params,
+          userId: 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA',
           poolClubTypeIds: [2, 1, 2],
         },
         write,
       ),
     ).resolves.toEqual({ enrollment_id: 44 });
-
     expect(order).toEqual(['lock', 'year', 'target', 'plan', 'write']);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: 'Serializable',
@@ -88,10 +90,10 @@ describe('ClassEnrollmentWriteService', () => {
       'pg_advisory_xact_lock(hashtextextended(',
     );
     expect(lock.values).toEqual([
-      'class-enrollment:00000000-0000-4000-8000-000000000001:2027:pool:1,2',
+      'class-enrollment:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:2027:pool:1,2',
     ]);
     expect(planner.resolveSource).toHaveBeenCalledWith(tx, {
-      userId: '00000000-0000-4000-8000-000000000001',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       targetClassId: 10,
       targetYearStart: targetYear.start_date,
     });
@@ -102,26 +104,24 @@ describe('ClassEnrollmentWriteService', () => {
       targetYear,
     });
   });
-
+  it('rejects an invalid UUID before opening a transaction', async () => {
+    const { prisma, service } = setup();
+    await expect(
+      service.execute({ ...params, userId: 'not-a-uuid' }, jest.fn()),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
   it('fails closed when the target is outside the declared pool', async () => {
     const { planner, service } = setup();
-
     await expect(
-      service.execute(
-        {
-          userId: '00000000-0000-4000-8000-000000000001',
-          targetClassId: 10,
-          ecclesiasticalYearId: 2027,
-          poolClubTypeIds: [1, 3],
-        },
-        jest.fn(),
-      ),
+      service.execute({ ...params, poolClubTypeIds: [1, 3] }, jest.fn()),
     ).rejects.toMatchObject({
       code: ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
     });
     expect(planner.resolveSource).not.toHaveBeenCalled();
   });
-
   it.each([
     [{ ...targetClass, active: false }, ErrorCode.CLASS_NOT_FOUND],
     [
@@ -136,38 +136,70 @@ describe('ClassEnrollmentWriteService', () => {
   ])('rejects an invalid destination before planning', async (row, code) => {
     const { planner, service, tx } = setup();
     tx.classes.findUnique.mockResolvedValueOnce(row);
-
-    await expect(
-      service.execute(
-        {
-          userId: '00000000-0000-4000-8000-000000000001',
-          targetClassId: 10,
-          ecclesiasticalYearId: 2027,
-          poolClubTypeIds: [2],
-        },
-        jest.fn(),
-      ),
-    ).rejects.toMatchObject({ code });
+    await expect(service.execute(params, jest.fn())).rejects.toMatchObject({
+      code,
+    });
     expect(planner.resolveSource).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['P2002', ErrorCode.CLASS_ALREADY_ENROLLED],
-    ['P2034', ErrorCode.INVESTITURE_CONCURRENT_UPDATE],
-  ])('maps %s to %s', async (prismaCode, domainCode) => {
-    const { prisma, service } = setup();
-    prisma.$transaction.mockRejectedValueOnce({ code: prismaCode });
-
-    await expect(
-      service.execute(
-        {
-          userId: '00000000-0000-4000-8000-000000000001',
-          targetClassId: 10,
-          ecclesiasticalYearId: 2027,
-          poolClubTypeIds: [2],
+    [
+      {
+        code: 'P2002',
+        meta: { target: ['user_id', 'class_id', 'ecclesiastical_year_id'] },
+      },
+      ErrorCode.CLASS_ALREADY_ENROLLED,
+    ],
+    [
+      {
+        code: 'P2002',
+        meta: {
+          driverAdapterError: {
+            cause: {
+              constraint: {
+                fields: ['user_id', 'class_id', 'ecclesiastical_year_id'],
+              },
+            },
+          },
         },
-        jest.fn(),
-      ),
-    ).rejects.toMatchObject({ code: domainCode });
+      },
+      ErrorCode.CLASS_ALREADY_ENROLLED,
+    ],
+    [{ code: 'P2034' }, ErrorCode.INVESTITURE_CONCURRENT_UPDATE],
+  ])(
+    'maps the exact persistence conflict to %s',
+    async (failure, domainCode) => {
+      const { prisma, service } = setup();
+      prisma.$transaction.mockRejectedValueOnce(failure);
+      await expect(service.execute(params, jest.fn())).rejects.toMatchObject({
+        code: domainCode,
+      });
+    },
+  );
+
+  it('propagates P2002 from another constraint without a winner lookup', async () => {
+    const { prisma, service } = setup();
+    const failure = { code: 'P2002', meta: { target: ['validated_by'] } };
+    prisma.$transaction.mockRejectedValueOnce(failure);
+    await expect(service.execute(params, jest.fn())).rejects.toBe(failure);
+    expect(prisma.enrollments.findUnique).not.toHaveBeenCalled();
   });
+
+  it.each([[{ enrollment_id: 44 }], [null]])(
+    'maps metadata-free P2002 only when the exact winner is %p',
+    async (winner) => {
+      const { prisma, service } = setup();
+      const failure = { code: 'P2002' };
+      prisma.$transaction.mockRejectedValueOnce(failure);
+      prisma.enrollments.findUnique.mockResolvedValueOnce(winner);
+      const result = service.execute(params, jest.fn());
+      if (winner) {
+        await expect(result).rejects.toMatchObject({
+          code: ErrorCode.CLASS_ALREADY_ENROLLED,
+        });
+      } else {
+        await expect(result).rejects.toBe(failure);
+      }
+    },
+  );
 });

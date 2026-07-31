@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isUUID } from 'class-validator';
 import {
   AppBadRequestException,
   AppConflictException,
@@ -41,18 +42,17 @@ export class ClassEnrollmentWriteService {
     },
     write: (context: EnrollmentWriteContext) => Promise<T>,
   ): Promise<T> {
+    const userId = this.normalizeUserId(params.userId);
     const poolIds = this.normalizePool(params.poolClubTypeIds);
-
     try {
       return await this.prisma.$transaction(
         async (tx) => {
           const lockIdentity =
-            `class-enrollment:${params.userId}:` +
+            `class-enrollment:${userId}:` +
             `${params.ecclesiasticalYearId}:pool:${poolIds.join(',')}`;
           await tx.$executeRaw(
             Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockIdentity}, 0))`,
           );
-
           const targetYear = await tx.ecclesiastical_years.findUnique({
             where: { year_id: params.ecclesiasticalYearId },
             select: {
@@ -66,7 +66,6 @@ export class ClassEnrollmentWriteService {
               ErrorCode.CLASS_ACTIVE_YEAR_NOT_FOUND,
             );
           }
-
           const targetClass = await tx.classes.findUnique({
             where: { class_id: params.targetClassId },
             select: {
@@ -95,9 +94,8 @@ export class ClassEnrollmentWriteService {
               ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
             );
           }
-
           const plan = await this.planner.resolveSource(tx, {
-            userId: params.userId,
+            userId,
             targetClassId: params.targetClassId,
             targetYearStart: targetYear.start_date,
           });
@@ -108,7 +106,24 @@ export class ClassEnrollmentWriteService {
     } catch (error: unknown) {
       const code = (error as { code?: string }).code;
       if (code === 'P2002') {
-        throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
+        const targetMatch = this.matchesEnrollmentUnique(error);
+        const winner =
+          targetMatch === null
+            ? await this.prisma.enrollments.findUnique({
+                where: {
+                  user_id_class_id_ecclesiastical_year_id: {
+                    user_id: userId,
+                    class_id: params.targetClassId,
+                    ecclesiastical_year_id: params.ecclesiasticalYearId,
+                  },
+                },
+                select: { enrollment_id: true },
+              })
+            : null;
+        if (targetMatch || winner) {
+          throw new AppConflictException(ErrorCode.CLASS_ALREADY_ENROLLED);
+        }
+        throw error;
       }
       if (code === 'P2034') {
         throw new AppConflictException(ErrorCode.INVESTITURE_CONCURRENT_UPDATE);
@@ -116,19 +131,62 @@ export class ClassEnrollmentWriteService {
       throw error;
     }
   }
-
-  private normalizePool(poolIds: number[]): number[] {
-    const normalized = [...new Set(poolIds)].sort(
-      (left, right) => left - right,
-    );
-    if (
-      normalized.length === 0 ||
-      normalized.some((id) => !Number.isInteger(id) || id <= 0)
-    ) {
+  private normalizeUserId(userId: string): string {
+    const normalized = userId.toLowerCase();
+    if (!isUUID(normalized)) {
       throw new AppBadRequestException(
         ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
       );
     }
     return normalized;
+  }
+  private normalizePool(poolIds: number[]): number[] {
+    if (
+      poolIds.length === 0 ||
+      poolIds.some((id) => !Number.isInteger(id) || id <= 0)
+    ) {
+      throw new AppBadRequestException(
+        ErrorCode.CLASS_PROGRESSION_CONFIG_INVALID,
+      );
+    }
+    return [...new Set(poolIds)].sort((left, right) => left - right);
+  }
+  private matchesEnrollmentUnique(error: unknown): boolean | null {
+    const record = this.asRecord(error);
+    const meta = this.asRecord(record?.meta);
+    const adapter = this.asRecord(meta?.driverAdapterError);
+    const cause = this.asRecord(adapter?.cause);
+    const target = meta?.target ?? meta?.constraint ?? cause?.constraint;
+    if (target === undefined || target === null) return null;
+    const constraint = this.asRecord(target);
+    const index =
+      typeof target === 'string'
+        ? target
+        : typeof constraint?.index === 'string'
+          ? constraint.index
+          : null;
+    if (index) {
+      return (
+        index === 'enrollments_user_id_class_id_ecclesiastical_year_id_key'
+      );
+    }
+    const fields = Array.isArray(target)
+      ? target
+      : Array.isArray(constraint?.fields)
+        ? constraint.fields
+        : null;
+    if (!fields?.every((field) => typeof field === 'string')) return false;
+    const normalized = fields.map((field) => field.replaceAll('"', ''));
+    return (
+      normalized.length === 3 &&
+      ['user_id', 'class_id', 'ecclesiastical_year_id'].every((field) =>
+        normalized.includes(field),
+      )
+    );
+  }
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : null;
   }
 }
