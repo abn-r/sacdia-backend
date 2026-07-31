@@ -1,11 +1,16 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  assertActorCanAccessLocalField,
+  type ActorLocalFieldScope,
+} from '../shared/actor-local-field';
 import type { CreateCategoryDto } from './dto/create-category.dto';
 import type { UpdateCategoryDto } from './dto/update-category.dto';
 import type { CategoryAdminDto } from './dto/category.dto';
@@ -74,7 +79,11 @@ export class CategoriesService {
   // UPDATE
   // ---------------------------------------------------------------------------
 
-  async update(id: string, dto: UpdateCategoryDto): Promise<CategoryAdminDto> {
+  async update(
+    id: string,
+    dto: UpdateCategoryDto,
+    scope: ActorLocalFieldScope,
+  ): Promise<CategoryAdminDto> {
     const existing = await this.prisma.materialCategory.findUnique({
       where: { id },
     });
@@ -82,6 +91,15 @@ export class CategoriesService {
       throw new NotFoundException({
         code: 'category_not_found',
         message: `Category ${id} not found`,
+      });
+    }
+
+    assertActorCanAccessLocalField(scope, existing.local_field_id);
+
+    if (dto.active === true && !existing.active && scope.scope !== 'all') {
+      throw new ForbiddenException({
+        code: 'material_reactivation_requires_super_admin',
+        message: 'Only super-admin may reactivate a material category.',
       });
     }
 
@@ -121,7 +139,10 @@ export class CategoriesService {
   // references the category (Restrict FK).
   // ---------------------------------------------------------------------------
 
-  async softDelete(id: string): Promise<{ id: string; active: false }> {
+  async softDelete(
+    id: string,
+    scope: ActorLocalFieldScope,
+  ): Promise<{ id: string; active: false }> {
     const existing = await this.prisma.materialCategory.findUnique({
       where: { id },
       include: { _count: { select: { products: true } } },
@@ -132,6 +153,8 @@ export class CategoriesService {
         message: `Category ${id} not found`,
       });
     }
+
+    assertActorCanAccessLocalField(scope, existing.local_field_id);
 
     if (existing._count.products > 0) {
       throw new ConflictException({

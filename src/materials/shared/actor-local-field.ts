@@ -135,3 +135,20 @@ export function requireLocalFieldFor(
 
   return override;
 }
+
+/**
+ * Rejects a UUID-targeted mutation when the resource belongs to another LF.
+ * The target is deliberately resolved by the caller with its minimum scope
+ * fields before this check, so a caller never needs to supply a mutable LF id.
+ */
+export function assertActorCanAccessLocalField(
+  scope: ActorLocalFieldScope,
+  targetLocalFieldId: number,
+): void {
+  if (scope.scope === 'single' && scope.localFieldId !== targetLocalFieldId) {
+    throw new ForbiddenException({
+      code: 'local_field_scope_violation',
+      message: 'You may only operate within your own local_field.',
+    });
+  }
+}

@@ -94,16 +94,22 @@ export class CategoriesController {
   @ApiOperation({ summary: 'Update an existing category' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, type: CategoryAdminDto })
+  @ApiResponse({
+    status: 403,
+    description: 'Category belongs to another local field',
+  })
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({
     status: 409,
     description: 'Cannot deactivate a category with active products',
   })
-  update(
+  async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCategoryDto,
+    @Request() req: any,
   ): Promise<CategoryAdminDto> {
-    return this.categoriesService.update(id, dto);
+    const scope = await resolveActorLocalField(this.prisma, req.authorization);
+    return this.categoriesService.update(id, dto, scope);
   }
 
   // DELETE /materials/categories/:id — soft (active=false), blocked if products exist
@@ -123,11 +129,17 @@ export class CategoriesController {
       },
     },
   })
+  @ApiResponse({
+    status: 403,
+    description: 'Category belongs to another local field',
+  })
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({ status: 409, description: 'Category in use by products' })
-  softDelete(
+  async softDelete(
     @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
   ): Promise<{ id: string; active: false }> {
-    return this.categoriesService.softDelete(id);
+    const scope = await resolveActorLocalField(this.prisma, req.authorization);
+    return this.categoriesService.softDelete(id, scope);
   }
 }

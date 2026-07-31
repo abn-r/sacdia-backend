@@ -42,7 +42,12 @@ describe('material category scope contract', () => {
     metatype,
   });
   const prisma = {
-    materialCategory: { findMany: jest.fn(), create: jest.fn() },
+    materialCategory: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     clubs: { findUnique: jest.fn() },
   };
   const categoriesService = new CategoriesService(
@@ -62,6 +67,19 @@ describe('material category scope contract', () => {
   );
 
   beforeEach(() => jest.clearAllMocks());
+
+  const category = (local_field_id: number, active = true) => ({
+    id: '00000000-0000-0000-0000-000000000101',
+    local_field_id,
+    slug: 'libros',
+    label: 'Libros',
+    icon: null,
+    sort_order: 0,
+    active,
+    created_at: new Date(0),
+    updated_at: new Date(0),
+    _count: { products: 0 },
+  });
 
   it.each(['1junk', 'abc', '0', '-1'])(
     'rejects local_field_id=%s in category and catalog queries',
@@ -190,6 +208,82 @@ describe('material category scope contract', () => {
       expect.objectContaining({
         data: expect.objectContaining({ local_field_id: 1 }),
       }),
+    );
+  });
+
+  it.each([
+    [
+      'updates',
+      (id: string, req: { authorization: unknown }) =>
+        categories.update(id, { label: 'Otro' }, req),
+    ],
+    [
+      'deactivates',
+      (id: string, req: { authorization: unknown }) =>
+        categories.softDelete(id, req),
+    ],
+  ])(
+    'rejects cross-LF category UUID when a scoped actor %s',
+    async (_operation, mutate) => {
+      prisma.materialCategory.findUnique.mockResolvedValue(category(2));
+
+      await expect(
+        mutate('00000000-0000-0000-0000-000000000101', {
+          authorization: authorization('assistant-lf', 1),
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'local_field_scope_violation' },
+      });
+
+      expect(prisma.materialCategory.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows a same-LF actor to update a category UUID', async () => {
+    prisma.materialCategory.findUnique.mockResolvedValue(category(1));
+    prisma.materialCategory.update.mockResolvedValue(category(1));
+
+    await expect(
+      categories.update(
+        '00000000-0000-0000-0000-000000000101',
+        { label: 'Otro' },
+        { authorization: authorization('director-lf', 1) },
+      ),
+    ).resolves.toMatchObject({ id: expect.any(String), label: 'Libros' });
+
+    expect(prisma.materialCategory.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: expect.any(String) },
+        data: expect.objectContaining({ label: 'Otro' }),
+      }),
+    );
+  });
+
+  it('allows only super-admin to reactivate an inactive category', async () => {
+    prisma.materialCategory.findUnique.mockResolvedValue(category(1, false));
+
+    await expect(
+      categories.update(
+        '00000000-0000-0000-0000-000000000101',
+        { active: true },
+        { authorization: authorization('admin', 1) },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'material_reactivation_requires_super_admin' },
+    });
+    expect(prisma.materialCategory.update).not.toHaveBeenCalled();
+
+    prisma.materialCategory.findUnique.mockResolvedValue(category(2, false));
+    prisma.materialCategory.update.mockResolvedValue(category(2, true));
+    await expect(
+      categories.update(
+        '00000000-0000-0000-0000-000000000101',
+        { active: true },
+        { authorization: authorization('super-admin', 1) },
+      ),
+    ).resolves.toMatchObject({ active: true });
+    expect(prisma.materialCategory.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: { id: expect.any(String) } }),
     );
   });
 });
