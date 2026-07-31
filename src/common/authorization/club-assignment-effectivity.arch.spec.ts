@@ -1,19 +1,70 @@
 import { scanAssignmentQuerySource } from './club-assignment-effectivity.arch';
-describe('club assignment effectivity architecture core', () => {
-  it('fails closed on call fragments and boolean target predicates only', () => {
+describe('club assignment Prisma query scanner', () => {
+  it('finds a lexical delegate alias with an aliased root where input', () => {
     const findings = scanAssignmentQuerySource(
-      'mutation.ts',
-      `Prisma.sql\`SELECT * FROM club_role_assignments cra WHERE \${assignmentEffectivityPolicy.toSql(context)} AND \${Prisma.raw('cra.active = true')}\`;
-       Prisma.sql\`SELECT * FROM club_role_assignments AS "cra-role" WHERE \${assignmentEffectivityPolicy.toSql(context)} AND NOT "cra-role".active\`;
-       prisma.club_role_assignments.findMany({ where: { roles: { active: true } } });`,
+      'assignments.ts',
+      `const assignments = this.prisma['club_role_assignments'];
+       const predicate = { active: true };
+       const args = { where: predicate };
+       assignments.findMany(args);`,
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'prisma', line: 4 }),
+    ]);
+  });
+  it('fails closed unless the delegate comes from a Prisma client root', () => {
+    const findings = scanAssignmentQuerySource(
+      'lookalike.ts',
+      'repository.club_role_assignments.findMany({ where: { active: true } });',
     );
 
-    expect(findings.map(({ kind }) => kind)).toEqual(['raw-sql', 'raw-sql']);
+    expect(findings).toEqual([]);
   });
 
-  it('allows a recursively proven central join and related predicate', () => {
-    const source =
-      'const central = Prisma.sql`${this.assignmentEffectivityPolicy.toSql(context)}`; Prisma.sql`SELECT * FROM club_role_assignments cra JOIN users u ON true WHERE ${Prisma.join([central])} AND u.active = true`';
-    expect(scanAssignmentQuerySource('central.ts', source)).toEqual([]);
+  it('does not treat predicates on a related model as assignment predicates', () => {
+    const findings = scanAssignmentQuerySource(
+      'related.ts',
+      `prisma.club_role_assignments.findMany({
+         where: { roles: { active: true } },
+       });`,
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it('finds computed relation aliases below a Prisma root where input', () => {
+    const findings = scanAssignmentQuerySource(
+      'users.ts',
+      `const assignmentPredicate = { status: 'ACTIVE' };
+       const relation = { some: assignmentPredicate };
+       const where = { ['club_role_assignments']: relation };
+       prisma.users.findMany({ where });`,
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'relation', line: 3 }),
+    ]);
+  });
+
+  it('resolves nearest lexical where binding and typed assignment where inputs', () => {
+    const findings = scanAssignmentQuerySource(
+      'bindings.ts',
+      `const where = { roles: { active: true } };
+       const ignored = prisma.club_role_assignments.findMany({ where });
+       if (enabled) {
+         const where = { AND: [{ end_date: { gte: now } }] };
+         const filter: Prisma.club_role_assignmentsWhereInput = where;
+         prisma.club_role_assignments.findMany({ where: filter });
+       }
+       const outside = { active: true };
+       function parameterShadow(outside: unknown) {
+         prisma.club_role_assignments.findMany({ where: outside });
+       }`,
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({ kind: 'where-input', line: 5 }),
+      expect.objectContaining({ kind: 'prisma', line: 6 }),
+    ]);
   });
 });

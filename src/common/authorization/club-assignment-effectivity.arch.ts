@@ -1,25 +1,41 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
-
-export type AssignmentQueryKind =
-  | 'prisma'
-  | 'relation'
-  | 'where-input'
-  | 'raw-sql';
+export type AssignmentQueryKind = 'prisma' | 'relation' | 'where-input';
 export type AssignmentQueryFinding = {
   path: string;
   line: number;
   kind: AssignmentQueryKind;
   fingerprint: string;
 };
-
+const ASSIGNMENT_FIELDS = new Set(['active', 'status']);
+const TEMPORAL_FIELDS = new Set(['start_date', 'end_date', 'expires_at']);
+const TEMPORAL_OPERATORS = new Set(['lt', 'lte', 'gt', 'gte']);
+const LOGICAL_OPERATORS = new Set(['AND', 'OR', 'NOT']);
+const PRISMA_OPERATIONS = new Set([
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'findUnique',
+  'findUniqueOrThrow',
+  'count',
+  'aggregate',
+  'groupBy',
+  'create',
+  'createMany',
+  'createManyAndReturn',
+  'update',
+  'updateMany',
+  'updateManyAndReturn',
+  'upsert',
+  'delete',
+  'deleteMany',
+]);
 function fingerprint(kind: AssignmentQueryKind, text: string): string {
   return createHash('sha256')
     .update(`${kind}\0${text.replace(/\s+/g, ' ').trim()}`)
     .digest('hex')
     .slice(0, 12);
 }
-
 export function scanAssignmentQuerySource(
   path: string,
   source: string,
@@ -31,7 +47,8 @@ export function scanAssignmentQuerySource(
     true,
   );
   const declarations: ts.VariableDeclaration[] = [];
-  const collect = (node: ts.Node) => {
+  const parameters: ts.ParameterDeclaration[] = [];
+  const collectDeclarations = (node: ts.Node): void => {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
@@ -39,9 +56,11 @@ export function scanAssignmentQuerySource(
     ) {
       declarations.push(node);
     }
-    ts.forEachChild(node, collect);
+    if (ts.isParameter(node) && ts.isIdentifier(node.name))
+      parameters.push(node);
+    ts.forEachChild(node, collectDeclarations);
   };
-  collect(sourceFile);
+  collectDeclarations(sourceFile);
   const scopeOf = (node: ts.Node): ts.Node => {
     let scope = node.parent;
     while (
@@ -54,15 +73,29 @@ export function scanAssignmentQuerySource(
     }
     return scope;
   };
+  const isInScope = (declaration: ts.VariableDeclaration, use: ts.Node) => {
+    const scope = scopeOf(declaration);
+    const start = scope.getStart(sourceFile);
+    return (
+      declaration.getStart(sourceFile) < use.getStart(sourceFile) &&
+      start <= use.getStart(sourceFile) &&
+      scope.end >= use.end
+    );
+  };
   const binding = (identifier: ts.Identifier): ts.Expression | null =>
     declarations
       .filter(
         (declaration) =>
-          declaration.name.getText(sourceFile) === identifier.text &&
-          declaration.getStart(sourceFile) < identifier.getStart(sourceFile) &&
-          scopeOf(declaration).getStart(sourceFile) <=
-            identifier.getStart(sourceFile) &&
-          scopeOf(declaration).end >= identifier.end,
+          ts.isIdentifier(declaration.name) &&
+          declaration.name.text === identifier.text &&
+          isInScope(declaration, identifier) &&
+          !parameters.some(
+            (parameter) =>
+              parameter.name.getText(sourceFile) === identifier.text &&
+              parameter.parent.getStart(sourceFile) <=
+                identifier.getStart(sourceFile) &&
+              parameter.parent.end >= identifier.end,
+          ),
       )
       .sort((left, right) => {
         const width = (node: ts.Node) => node.end - node.getStart(sourceFile);
@@ -71,7 +104,6 @@ export function scanAssignmentQuerySource(
           right.getStart(sourceFile) - left.getStart(sourceFile)
         );
       })[0]?.initializer ?? null;
-
   const resolve = (
     value: ts.Expression,
     seen = new Set<ts.Expression>(),
@@ -107,6 +139,13 @@ export function scanAssignmentQuerySource(
       ? stringValue(name.expression)
       : null;
   };
+  const initializer = (
+    property: ts.ObjectLiteralElementLike,
+  ): ts.Expression | null => {
+    if (ts.isPropertyAssignment(property)) return property.initializer;
+    if (ts.isShorthandPropertyAssignment(property)) return property.name;
+    return null;
+  };
   const properties = (
     value: ts.Expression,
     seen = new Set<ts.Expression>(),
@@ -120,19 +159,12 @@ export function scanAssignmentQuerySource(
         : [property],
     );
   };
-  const initializer = (
-    property: ts.ObjectLiteralElementLike,
-  ): ts.Expression | null => {
-    if (ts.isPropertyAssignment(property)) return property.initializer;
-    if (ts.isShorthandPropertyAssignment(property)) return property.name;
-    return null;
-  };
   const values = (value: ts.Expression, name: string): ts.Expression[] =>
     properties(value)
       .filter((property) => propertyName(property) === name)
       .map(initializer)
       .filter((entry): entry is ts.Expression => entry !== null);
-  const hasDirectPredicate = (
+  const hasAssignmentPredicate = (
     value: ts.Expression,
     seen = new Set<ts.Expression>(),
   ): boolean => {
@@ -141,153 +173,82 @@ export function scanAssignmentQuerySource(
     seen.add(node);
     if (ts.isArrayLiteralExpression(node)) {
       return node.elements.some(
-        (entry) => ts.isExpression(entry) && hasDirectPredicate(entry, seen),
+        (entry) =>
+          ts.isExpression(entry) && hasAssignmentPredicate(entry, seen),
       );
     }
     return properties(node).some((property) => {
       const name = propertyName(property);
       const next = initializer(property);
+      if (ASSIGNMENT_FIELDS.has(name ?? '')) return true;
+      if (
+        TEMPORAL_FIELDS.has(name ?? '') &&
+        next &&
+        properties(next).some((operator) =>
+          TEMPORAL_OPERATORS.has(propertyName(operator) ?? ''),
+        )
+      ) {
+        return true;
+      }
       return (
-        ['active', 'status'].includes(name ?? '') ||
-        (['start_date', 'end_date', 'expires_at'].includes(name ?? '') &&
-          !!next &&
-          ['lt', 'lte', 'gt', 'gte'].some(
-            (operator) => values(next, operator).length > 0,
-          )) ||
-        (['AND', 'OR', 'NOT'].includes(name ?? '') &&
-          !!next &&
-          hasDirectPredicate(next, seen))
+        LOGICAL_OPERATORS.has(name ?? '') &&
+        !!next &&
+        hasAssignmentPredicate(next, seen)
       );
     });
   };
-  const isAssignmentDelegate = (value: ts.Expression): boolean => {
-    const node = resolve(value);
-    return (
-      (ts.isPropertyAccessExpression(node) &&
-        node.name.text === 'club_role_assignments') ||
-      (ts.isElementAccessExpression(node) &&
-        !!node.argumentExpression &&
-        stringValue(node.argumentExpression) === 'club_role_assignments')
-    );
-  };
-  const typeTargetsAssignments = (node: ts.TypeNode) =>
-    node.getText(sourceFile).includes('club_role_assignmentsWhereInput');
-  const isCentralFragment = (value: ts.Expression): boolean => {
-    const node = resolve(value);
-    if (
-      !ts.isCallExpression(node) ||
-      !ts.isPropertyAccessExpression(node.expression) ||
-      node.expression.name.text !== 'toSql'
-    ) {
-      return false;
-    }
-    const receiver = resolve(node.expression.expression);
-    return (
-      (ts.isIdentifier(receiver) &&
-        receiver.text === 'assignmentEffectivityPolicy') ||
-      (ts.isPropertyAccessExpression(receiver) &&
-        receiver.name.text === 'assignmentEffectivityPolicy' &&
-        receiver.expression.kind === ts.SyntaxKind.ThisKeyword)
-    );
-  };
-  const sqlInfo = (
+  const isPrismaClientRoot = (
     value: ts.Expression,
     seen = new Set<ts.Expression>(),
-  ): { text: string; central: boolean } => {
+  ): boolean => {
     const node = resolve(value);
-    if (seen.has(node)) return { text: '', central: false };
+    if (seen.has(node)) return false;
     seen.add(node);
-    if (isCentralFragment(node)) return { text: '', central: true };
-    if (ts.isTaggedTemplateExpression(node))
-      return sqlInfo(node.template, seen);
-    if (ts.isStringLiteralLike(node))
-      return { text: node.text, central: false };
-    const combine = (expressions: readonly ts.Expression[]) =>
-      expressions.reduce<{ text: string; central: boolean }>(
-        (result, expression) => {
-          const fragment = sqlInfo(expression, seen);
-          return {
-            text: `${result.text} ${fragment.text}`,
-            central: result.central || fragment.central,
-          };
-        },
-        { text: '', central: false },
-      );
-    if (ts.isArrayLiteralExpression(node)) {
-      return combine(node.elements.filter(ts.isExpression));
-    }
-    if (ts.isCallExpression(node)) {
-      if (
-        ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.expression.getText(sourceFile) === 'Prisma' &&
-        node.expression.name.text === 'join'
-      ) {
-        const joined = node.arguments[0]
-          ? sqlInfo(node.arguments[0], seen)
-          : { text: '', central: false };
-        return joined.central && !joined.text.trim()
-          ? joined
-          : { ...joined, text: `${joined.text}\0` };
-      }
-      return { text: '\0', central: false };
-    }
-    if (ts.isTemplateExpression(node)) {
-      return node.templateSpans.reduce<{ text: string; central: boolean }>(
-        (result, span) => {
-          const fragment = sqlInfo(span.expression, seen);
-          return {
-            text: `${result.text} ${fragment.text} ${span.literal.text}`,
-            central: result.central || fragment.central,
-          };
-        },
-        { text: node.head.text, central: false },
+    if (ts.isIdentifier(node)) {
+      return /^(?:prisma|db|tx|client|transaction)(?:[A-Z_].*)?$/i.test(
+        node.text,
       );
     }
-    return { text: '', central: false };
-  };
-  const tableAliases = (sql: string): string[] => {
-    const aliases: string[] = [];
-    const pattern =
-      /\b(?:FROM|JOIN)\s+(?:"?\w+"?\.)?"?club_role_assignments"?(?:\s+(?:AS\s+)?(?:"([^"]+)"|(\w+)))?/gi;
-    for (const match of sql.matchAll(pattern)) {
-      const alias = match[1] ?? match[2];
-      if (
-        alias &&
-        !/^(?:WHERE|JOIN|ON|ORDER|GROUP|LIMIT|LEFT|RIGHT|INNER|FULL|CROSS)$/i.test(
-          alias,
-        )
-      ) {
-        aliases.push(alias);
-      }
+    if (!ts.isPropertyAccessExpression(node)) return false;
+    if (node.expression.kind === ts.SyntaxKind.ThisKeyword) {
+      return /^(?:prisma|db|tx|client|transaction)(?:[A-Z_].*)?$/i.test(
+        node.name.text,
+      );
     }
-    return ['club_role_assignments', ...aliases];
+    return isPrismaClientRoot(node.expression, seen);
   };
-  const sqlHasTable = (sql: string) =>
-    /\b(?:FROM|JOIN)\s+(?:"?\w+"?\.)?"?club_role_assignments"?\b/i.test(sql);
-  const sqlHasPredicate = (sql: string) => {
-    const operator = String.raw`\s*(?:=|<>|!=|<=|>=|<|>|IN\b|IS\b)`;
-    const column = String.raw`"?(?:active|status|start_date|end_date|expires_at)"?`;
-    const unqualified = new RegExp(`(?:^|[^\\w.])${column}${operator}`, 'i');
-    const boolean = (subject: string) =>
-      new RegExp(
-        `\\b(?:WHERE|AND|OR)\\s+(?:NOT\\s+)?${subject}(?![\\w.])`,
-        'i',
-      ).test(sql);
+  const isAssignmentDelegate = (value: ts.Expression): boolean => {
+    const node = resolve(value);
+    if (ts.isPropertyAccessExpression(node)) {
+      return (
+        node.name.text === 'club_role_assignments' &&
+        isPrismaClientRoot(node.expression)
+      );
+    }
     return (
-      unqualified.test(sql) ||
-      boolean(String.raw`"?active"?`) ||
-      tableAliases(sql).some((alias) => {
-        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const target = `(?:"${escaped}"|${escaped})\\s*\\.\\s*${column}`;
-        return (
-          new RegExp(`${target}${operator}`, 'i').test(sql) ||
-          boolean(`(?:"${escaped}"|${escaped})\\s*\\.\\s*"?active"?`)
-        );
-      })
+      ts.isElementAccessExpression(node) &&
+      !!node.argumentExpression &&
+      stringValue(node.argumentExpression) === 'club_role_assignments' &&
+      isPrismaClientRoot(node.expression)
     );
   };
+  const isPrismaDelegate = (value: ts.Expression): boolean => {
+    const node = resolve(value);
+    if (ts.isPropertyAccessExpression(node)) {
+      return isPrismaClientRoot(node.expression);
+    }
+    return (
+      ts.isElementAccessExpression(node) && isPrismaClientRoot(node.expression)
+    );
+  };
+  const isPrismaOperation = (call: ts.CallExpression): boolean =>
+    ts.isPropertyAccessExpression(call.expression) &&
+    PRISMA_OPERATIONS.has(call.expression.name.text) &&
+    isPrismaDelegate(call.expression.expression);
+  const typeTargetsAssignments = (node: ts.TypeNode): boolean =>
+    node.getText(sourceFile).includes('club_role_assignmentsWhereInput');
   const findings: AssignmentQueryFinding[] = [];
-  const add = (node: ts.Node, kind: AssignmentQueryKind) => {
+  const add = (node: ts.Node, kind: AssignmentQueryKind): void => {
     const position = sourceFile.getLineAndCharacterOfPosition(
       node.getStart(sourceFile),
     );
@@ -298,36 +259,48 @@ export function scanAssignmentQuerySource(
       fingerprint: fingerprint(kind, node.getText(sourceFile)),
     });
   };
-  const visit = (node: ts.Node) => {
+  const scanRelationWhere = (
+    value: ts.Expression,
+    seen = new Set<ts.Expression>(),
+  ): void => {
+    const node = resolve(value);
+    if (seen.has(node)) return;
+    seen.add(node);
+    for (const property of properties(node)) {
+      const name = propertyName(property);
+      const next = initializer(property);
+      if (!next) continue;
+      if (name === 'club_role_assignments') {
+        if (
+          values(next, 'some')
+            .concat(values(next, 'every'), values(next, 'none'))
+            .concat(values(next, 'is'), values(next, 'isNot'))
+            .some((filter) => hasAssignmentPredicate(filter))
+        ) {
+          add(property, 'relation');
+        }
+        continue;
+      }
+      if (LOGICAL_OPERATORS.has(name ?? '')) scanRelationWhere(next, seen);
+    }
+  };
+  const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression)
+      ts.isPropertyAccessExpression(node.expression) &&
+      isPrismaOperation(node)
     ) {
+      const operation = node.expression;
       const argument = node.arguments[0];
-      if (
-        argument &&
-        isAssignmentDelegate(node.expression.expression) &&
-        values(argument, 'where').some((where) => hasDirectPredicate(where))
-      ) {
-        add(node, 'prisma');
-      }
-      if (node.expression.name.text === '$queryRawUnsafe' && argument) {
-        const sql = sqlInfo(argument).text;
-        if (sqlHasTable(sql) && sqlHasPredicate(sql)) add(node, 'raw-sql');
-      }
-    }
-    if (
-      ts.isPropertyAssignment(node) &&
-      propertyName(node) === 'club_role_assignments'
-    ) {
-      if (
-        ['some', 'every', 'none', 'where', 'is', 'isNot'].some((operator) =>
-          values(node.initializer, operator).some((filter) =>
-            hasDirectPredicate(filter),
-          ),
-        )
-      ) {
-        add(node, 'relation');
+      if (argument && ts.isExpression(argument)) {
+        const where = values(argument, 'where');
+        if (isAssignmentDelegate(operation.expression)) {
+          if (where.some((filter) => hasAssignmentPredicate(filter))) {
+            add(node, 'prisma');
+          }
+        } else {
+          where.forEach((filter) => scanRelationWhere(filter));
+        }
       }
     }
     if (
@@ -335,44 +308,18 @@ export function scanAssignmentQuerySource(
         ts.isAsExpression(node) ||
         ts.isTypeAssertionExpression(node)) &&
       typeTargetsAssignments(node.type) &&
-      hasDirectPredicate(node.expression)
+      hasAssignmentPredicate(node.expression)
     ) {
       add(node, 'where-input');
     }
     if (
       ts.isVariableDeclaration(node) &&
-      !!node.type &&
-      typeTargetsAssignments(node.type) &&
+      node.type &&
       node.initializer &&
-      hasDirectPredicate(node.initializer)
+      typeTargetsAssignments(node.type) &&
+      hasAssignmentPredicate(node.initializer)
     ) {
       add(node, 'where-input');
-    }
-    if (ts.isTaggedTemplateExpression(node)) {
-      const sql = sqlInfo(node);
-      if (
-        sqlHasTable(sql.text) &&
-        (sqlHasPredicate(sql.text) || !sql.central || sql.text.includes('\0'))
-      ) {
-        // A table-level raw query must delegate effectivity structurally.
-        add(node, 'raw-sql');
-      }
-    }
-    if (
-      (ts.isTemplateExpression(node) ||
-        ts.isNoSubstitutionTemplateLiteral(node) ||
-        ts.isStringLiteral(node)) &&
-      !ts.isTaggedTemplateExpression(node.parent) &&
-      !(
-        ts.isCallExpression(node.parent) &&
-        ts.isPropertyAccessExpression(node.parent.expression) &&
-        node.parent.expression.name.text === '$queryRawUnsafe'
-      )
-    ) {
-      const sql = sqlInfo(node).text;
-      if (sqlHasTable(sql) && sqlHasPredicate(sql)) {
-        add(node, 'raw-sql');
-      }
     }
     ts.forEachChild(node, visit);
   };
