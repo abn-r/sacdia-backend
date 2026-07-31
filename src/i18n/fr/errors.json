@@ -607,5 +607,6 @@
   "CAMPOREE_CLUB_REGISTRATION_CLOSED": "L’inscription des clubs est déjà fermée pour ce camporee",
   "CAMPOREE_CLUB_REGISTRATION_NOT_CLOSED": "Fermez l’inscription des clubs avant de configurer ou soumettre la notation du camporee",
   "CAMPOREE_CLUB_REGISTRATION_NO_ENROLLED_CLUBS": "Impossible de fermer l’inscription des clubs sans sections de club inscrites et actives",
-  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Impossible de rouvrir l’inscription des clubs après des résultats ou assignations de juges actifs"
+  "CAMPOREE_CLUB_REGISTRATION_REOPEN_BLOCKED": "Impossible de rouvrir l’inscription des clubs après des résultats ou assignations de juges actifs",
+  "AUDIT_WRITE_FAILED": "L’audit de sécurité n’a pas pu être confirmé"
 }

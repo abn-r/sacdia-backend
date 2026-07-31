@@ -708,6 +708,7 @@ export enum ErrorCode {
   // ── Authorization Context ─────────────────────────────────────────────────
   AUTH_CONTEXT_USER_NOT_FOUND = 'AUTH_CONTEXT_USER_NOT_FOUND',
   LOCAL_FIELD_TIMEZONE_UNAVAILABLE = 'LOCAL_FIELD_TIMEZONE_UNAVAILABLE',
+  AUDIT_WRITE_FAILED = 'AUDIT_WRITE_FAILED',
 
   // ── RBAC Controller ───────────────────────────────────────────────────────
   RBAC_BOOTSTRAP_FORBIDDEN = 'RBAC_BOOTSTRAP_FORBIDDEN',
