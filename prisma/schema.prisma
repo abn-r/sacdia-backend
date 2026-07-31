@@ -375,6 +375,7 @@ model classes {
   class_honors                  class_honors[]
   enrollments                   enrollments[]
   translations                  classes_translations[]
+  ecclesiastical_cycle_decisions ecclesiastical_cycle_decisions[]
 
   @@index([available_from_year_id], map: "idx_classes_available_from_year")
   @@index([available_until_year_id], map: "idx_classes_available_until_year")
@@ -696,6 +697,7 @@ model club_sections {
   insurance_coverage_slots_current    insurance_coverage_slots[]  @relation("insurance_slot_current_section")
   insurance_slot_movements_from        insurance_slot_movements[]  @relation("insurance_slot_movement_from_section")
   insurance_slot_movements_to          insurance_slot_movements[]  @relation("insurance_slot_movement_to_section")
+  ecclesiastical_cycle_decisions       ecclesiastical_cycle_decisions[]
   @@unique([main_club_id, club_type_id])
 
 }
@@ -783,6 +785,7 @@ model club_role_assignments {
   ecclesiastical_year         ecclesiastical_years          @relation(fields: [ecclesiastical_year_id], references: [year_id], onDelete: Cascade, onUpdate: NoAction)
   roles                       roles                         @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
   users                       users                         @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  ecclesiastical_cycle_decisions ecclesiastical_cycle_decisions[]
 
   @@unique([user_id, role_id, club_section_id, ecclesiastical_year_id, start_date], map: "club_role_assignment_unique")
   @@index([role_id], map: "idx_club_role_assignments_role")
@@ -971,6 +974,8 @@ model ecclesiastical_years {
   section_rankings            SectionRanking[]
   enrollment_ranking_weights  EnrollmentRankingWeight[]
   insurance_cycle_configs     insurance_cycle_configs[]
+  ecclesiastical_cycle_runs      ecclesiastical_cycle_runs[]
+  ecclesiastical_cycle_decisions ecclesiastical_cycle_decisions[]
 
   // Date-range queries: "find the active year for today" uses WHERE start_date <= ? AND end_date >= ?
   @@index([start_date, end_date], map: "idx_ecclesiastical_years_date_range")
@@ -1006,6 +1011,7 @@ model enrollments {
   users                    users                            @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   validator                users?                           @relation("enrollment_validator", fields: [validated_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   investiture_history      investiture_validation_history[]
+  ecclesiastical_cycle_decisions ecclesiastical_cycle_decisions[]
 
   @@unique([user_id, class_id, ecclesiastical_year_id])
   @@index([user_id, ecclesiastical_year_id], map: "idx_enrollments_user_year")
@@ -1574,6 +1580,7 @@ model local_fields {
   coordinator_assignments         coordinator_assignments[]
   insurance_products               insurance_products[]
   insurance_cycle_configs          insurance_cycle_configs[]
+  ecclesiastical_cycle_runs         ecclesiastical_cycle_runs[]
 }
 
 model local_fields_translations {
@@ -2245,6 +2252,10 @@ model users {
   club_role_assignments                club_role_assignments[]
   director_succession_plans_as_successor director_succession_plans[] @relation("director_succession_successor")
   director_succession_plans_as_scheduler director_succession_plans[] @relation("director_succession_scheduler")
+  ecclesiastical_cycle_runs_owned        ecclesiastical_cycle_runs[]      @relation("ecclesiastical_cycle_run_owner")
+  ecclesiastical_cycle_decisions         ecclesiastical_cycle_decisions[] @relation("ecclesiastical_cycle_decision_user")
+  ecclesiastical_cycle_decisions_acted   ecclesiastical_cycle_decisions[] @relation("ecclesiastical_cycle_decision_actor")
+  ecclesiastical_cycle_events_acted      ecclesiastical_cycle_events[]    @relation("ecclesiastical_cycle_event_actor")
   authorization_context_versions       authorization_context_versions?
   emergency_contacts                   emergency_contacts[]                  @relation("internal_user_emergency_contact")
   emergency_contact                    emergency_contacts[]                  @relation("user_emergency_contact")
@@ -5135,4 +5146,80 @@ model camporee_external_participants {
 
   @@index([local_camporee_id, active], map: "idx_camporee_external_participants_local_active")
   @@index([union_camporee_id, active], map: "idx_camporee_external_participants_union_active")
+}
+
+model ecclesiastical_cycle_runs {
+  run_id                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  local_field_id        Int
+  target_year_id        Int
+  status                String                     @default("planned") @db.VarChar(24)
+  owner_user_id         String                     @db.Uuid
+  lease_token           String?                    @db.Uuid
+  lease_expires_at      DateTime?                  @db.Timestamptz(6)
+  capabilities_snapshot Json                       @default("{}") @db.JsonB
+  summary               Json?                      @db.JsonB
+  started_at            DateTime?                  @db.Timestamptz(6)
+  completed_at          DateTime?                  @db.Timestamptz(6)
+  created_at            DateTime                   @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+  local_field           local_fields               @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  target_year           ecclesiastical_years       @relation(fields: [target_year_id], references: [year_id], onDelete: Restrict, onUpdate: NoAction)
+  owner_user            users                      @relation("ecclesiastical_cycle_run_owner", fields: [owner_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  decisions             ecclesiastical_cycle_decisions[]
+  events                ecclesiastical_cycle_events[]
+
+  @@unique([local_field_id, target_year_id], map: "ecclesiastical_cycle_runs_local_field_year_key")
+  @@unique([run_id, target_year_id], map: "ecclesiastical_cycle_runs_id_year_key")
+  @@index([status, lease_expires_at], map: "ecclesiastical_cycle_runs_status_lease_idx")
+}
+
+model ecclesiastical_cycle_decisions {
+  decision_id             String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  run_id                  String                         @db.Uuid
+  user_id                 String                         @db.Uuid
+  source_assignment_id    String                         @db.Uuid
+  source_enrollment_id    Int
+  target_year_id          Int
+  canonical_transition_id Int?
+  target_class_id         Int?
+  target_club_section_id  Int?
+  status                  String                         @default("planned") @db.VarChar(24)
+  reason_code             String?                        @db.VarChar(96)
+  actor_user_id           String?                        @db.Uuid
+  effect_refs             Json                           @default("[]") @db.JsonB
+  created_at              DateTime                       @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
+  run                      ecclesiastical_cycle_runs      @relation(fields: [run_id, target_year_id], references: [run_id, target_year_id], onDelete: Restrict, onUpdate: NoAction)
+  user                     users                         @relation("ecclesiastical_cycle_decision_user", fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  source_assignment        club_role_assignments         @relation(fields: [source_assignment_id], references: [assignment_id], onDelete: Restrict, onUpdate: NoAction)
+  source_enrollment        enrollments                   @relation(fields: [source_enrollment_id], references: [enrollment_id], onDelete: Restrict, onUpdate: NoAction)
+  target_year              ecclesiastical_years           @relation(fields: [target_year_id], references: [year_id], onDelete: Restrict, onUpdate: NoAction)
+  target_class             classes?                      @relation(fields: [target_class_id], references: [class_id], onDelete: Restrict, onUpdate: NoAction)
+  target_club_section      club_sections?                 @relation(fields: [target_club_section_id], references: [club_section_id], onDelete: Restrict, onUpdate: NoAction)
+  actor_user               users?                        @relation("ecclesiastical_cycle_decision_actor", fields: [actor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+  events                   ecclesiastical_cycle_events[]
+
+  @@unique([user_id, source_assignment_id, target_year_id], map: "ecclesiastical_cycle_decisions_member_source_year_key")
+  @@unique([decision_id, run_id], map: "ecclesiastical_cycle_decisions_id_run_key")
+  @@index([run_id, status], map: "ecclesiastical_cycle_decisions_run_status_idx")
+  @@index([source_enrollment_id], map: "ecclesiastical_cycle_decisions_source_enrollment_idx")
+  @@index([target_club_section_id, status], map: "ecclesiastical_cycle_decisions_target_section_status_idx")
+}
+
+model ecclesiastical_cycle_events {
+  event_id      BigInt                           @id @default(autoincrement())
+  run_id        String                           @db.Uuid
+  decision_id   String?                          @db.Uuid
+  event_key     String                           @unique(map: "ecclesiastical_cycle_events_event_key_key") @db.VarChar(160)
+  event_type    String                           @db.VarChar(48)
+  actor_user_id String?                          @db.Uuid
+  payload       Json                             @default("{}") @db.JsonB
+  created_at    DateTime                         @default(now()) @db.Timestamptz(6)
+  run           ecclesiastical_cycle_runs        @relation(fields: [run_id], references: [run_id], onDelete: Restrict, onUpdate: NoAction)
+  decision      ecclesiastical_cycle_decisions?  @relation(fields: [decision_id, run_id], references: [decision_id, run_id], onDelete: Restrict, onUpdate: NoAction)
+  actor_user    users?                           @relation("ecclesiastical_cycle_event_actor", fields: [actor_user_id], references: [user_id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([decision_id, created_at], map: "ecclesiastical_cycle_events_decision_created_idx")
+  @@index([run_id, created_at], map: "ecclesiastical_cycle_events_run_created_idx")
+  @@index([event_type, created_at], map: "ecclesiastical_cycle_events_type_created_idx")
 }
