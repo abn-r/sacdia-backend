@@ -496,6 +496,7 @@
   "FINANCE_LEDGER_ENTRY_NOT_FOUND": "Écriture du registre financier introuvable",
   "FINANCE_LEDGER_REJECTION_REASON_REQUIRED": "Un motif de rejet est requis",
   "FINANCE_LEDGER_STATUS_INVALID": "Cette écriture financière ne peut plus être traitée",
+  "FINANCE_LEDGER_NO_CHANGES": "La modification ne change pas l’écriture financière",
   "ANALYTICS_QUEUE_NOT_FOUND": "File d'attente introuvable",
   "ANALYTICS_JOB_NOT_FOUND": "Job introuvable",
   "ANALYTICS_JOB_ACTIVE": "Le job est actuellement actif et ne peut pas être relancé",

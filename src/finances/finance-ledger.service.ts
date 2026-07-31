@@ -13,6 +13,13 @@ import { PrismaService } from '../prisma/prisma.service';
 type PrismaLike = Record<string, any>;
 type EntryKind = 'income' | 'expense' | 'payable';
 type LedgerDecision = 'approve' | 'reject';
+type LockedSection = { club_section_id: number; main_club_id: number | null };
+
+export const financeSectionLockQuery = (sectionIds: number[]) =>
+  Prisma.sql`SELECT "club_section_id", "main_club_id" FROM "club_sections"
+    WHERE "club_section_id" IN (${Prisma.join(
+      [...new Set(sectionIds)].sort((left, right) => left - right),
+    )}) ORDER BY "club_section_id" FOR UPDATE`;
 
 export const FINANCE_LEDGER_REGISTRATION_AUTHORIZATION = Symbol(
   'FINANCE_LEDGER_REGISTRATION_AUTHORIZATION',
@@ -54,6 +61,13 @@ export interface DecideLedgerEntryInput {
   entryId: string;
   decision: LedgerDecision;
   reason?: string;
+}
+
+export interface AmendLedgerEntryInput extends Omit<
+  RegisterLedgerEntryInput,
+  'clubId'
+> {
+  entryId: string;
 }
 
 @Injectable()
@@ -226,6 +240,99 @@ export class FinanceLedgerService {
     );
   }
 
+  async amendEntry(
+    input: AmendLedgerEntryInput,
+    actorUserId: string,
+    idempotencyKey: string,
+  ): Promise<Record<string, any>> {
+    this.validateEntry(input);
+    const data = this.amendmentData(input);
+    return this.idempotent(
+      'amend-entry',
+      actorUserId,
+      idempotencyKey,
+      {
+        entryId: input.entryId,
+        ...data,
+        finance_date: input.financeDate.toISOString(),
+      },
+      async (tx) => {
+        const db = tx as PrismaLike;
+        await db.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`finance-ledger-entry:${input.entryId}`}, 0))`,
+        );
+        const entry = await db.finance_ledger_entries.findUnique({
+          where: { finance_ledger_entry_id: input.entryId },
+        });
+        if (!entry) {
+          throw new AppNotFoundException(
+            ErrorCode.FINANCE_LEDGER_ENTRY_NOT_FOUND,
+          );
+        }
+        if (entry.registered_by_id !== actorUserId) {
+          throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+        }
+        if (entry.status !== 'pending_approval') {
+          throw new AppConflictException(
+            ErrorCode.FINANCE_LEDGER_STATUS_INVALID,
+          );
+        }
+        const sectionIds = [
+          ...new Set([entry.club_section_id, input.clubSectionId]),
+        ].sort((left, right) => left - right);
+        const lockedSections = (await db.$queryRaw(
+          financeSectionLockQuery(sectionIds),
+        )) as LockedSection[];
+        const clubId = lockedSections.find(
+          (section) => section.club_section_id === entry.club_section_id,
+        )?.main_club_id;
+        if (
+          clubId == null ||
+          lockedSections.length !== sectionIds.length ||
+          lockedSections.some((section) => section.main_club_id !== clubId)
+        ) {
+          throw new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
+        }
+        for (const clubSectionId of sectionIds) {
+          await this.authorization.assertCanRegister({
+            transaction: tx,
+            actorUserId,
+            clubId,
+            clubSectionId,
+          });
+        }
+        return { entry, clubId };
+      },
+      async (db, context) => {
+        const target = this.snapshot(
+          { ...context.entry, ...data },
+          context.clubId,
+        );
+        if (
+          JSON.stringify(this.snapshot(context.entry, context.clubId)) ===
+          JSON.stringify(target)
+        ) {
+          throw new AppConflictException(ErrorCode.FINANCE_LEDGER_NO_CHANGES);
+        }
+        await this.assertMaterialReferences(db, input);
+        const updated = await db.finance_ledger_entries.update({
+          where: { finance_ledger_entry_id: input.entryId },
+          data,
+          select: this.receiptSelect(),
+        });
+        await this.recordAmended(
+          db,
+          context.entry,
+          updated,
+          actorUserId,
+          idempotencyKey,
+          context.clubId,
+        );
+        return updated;
+      },
+    );
+  }
+
   private async idempotent<T, TAuthorization = undefined>(
     command: string,
     actorUserId: string,
@@ -285,13 +392,69 @@ export class FinanceLedgerService {
     });
   }
 
-  private validateEntry(input: RegisterLedgerEntryInput) {
+  private validateEntry(
+    input: Pick<
+      RegisterLedgerEntryInput,
+      | 'clubSectionId'
+      | 'financeCategoryId'
+      | 'kind'
+      | 'amountCentavos'
+      | 'currency'
+      | 'financeDate'
+    >,
+  ) {
     if (
-      !Number.isInteger(input.amountCentavos) ||
+      !Number.isSafeInteger(input.clubSectionId) ||
+      input.clubSectionId <= 0 ||
+      !Number.isSafeInteger(input.financeCategoryId) ||
+      input.financeCategoryId <= 0 ||
+      !Number.isSafeInteger(input.amountCentavos) ||
       input.amountCentavos <= 0 ||
+      input.amountCentavos > 2147483647 ||
+      !['income', 'expense', 'payable'].includes(input.kind) ||
+      typeof input.currency !== 'string' ||
       !/^[A-Z]{3}$/.test(input.currency) ||
+      !(input.financeDate instanceof Date) ||
       Number.isNaN(input.financeDate.getTime())
     ) {
+      throw new AppBadRequestException(ErrorCode.FINANCE_LEDGER_INPUT_INVALID);
+    }
+  }
+
+  private amendmentData(input: AmendLedgerEntryInput) {
+    return {
+      club_section_id: input.clubSectionId,
+      finance_category_id: input.financeCategoryId,
+      kind: input.kind,
+      amount_centavos: input.amountCentavos,
+      currency: input.currency,
+      finance_date: input.financeDate,
+    };
+  }
+
+  private async assertMaterialReferences(
+    db: PrismaLike,
+    input: Pick<
+      RegisterLedgerEntryInput,
+      'financeCategoryId' | 'kind' | 'currency'
+    >,
+  ) {
+    const category = await db.finances_categories.findUnique({
+      where: { finance_category_id: input.financeCategoryId },
+    });
+    if (!category) {
+      throw new AppNotFoundException(ErrorCode.FINANCE_CATEGORY_NOT_FOUND);
+    }
+    if (!category.active) {
+      throw new AppBadRequestException(ErrorCode.FINANCE_CATEGORY_INACTIVE);
+    }
+    if (category.type !== (input.kind === 'income' ? 0 : 1)) {
+      throw new AppBadRequestException(ErrorCode.FINANCE_CATEGORY_TYPE_INVALID);
+    }
+    const currency = await db.finance_currencies.findUnique({
+      where: { currency_code: input.currency },
+    });
+    if (!currency?.active) {
       throw new AppBadRequestException(ErrorCode.FINANCE_LEDGER_INPUT_INVALID);
     }
   }
@@ -361,6 +524,42 @@ export class FinanceLedgerService {
         actor_user_id: actorUserId,
         changes: payload,
         event_key: `finance-ledger:${eventType}:${actorUserId}:${idempotencyKey.toLowerCase()}`,
+        correlation_id: idempotencyKey.toLowerCase(),
+        idempotency_key: idempotencyKey.toLowerCase(),
+      },
+    });
+  }
+
+  private async recordAmended(
+    db: PrismaLike,
+    before: Record<string, any>,
+    after: Record<string, any>,
+    actorUserId: string,
+    idempotencyKey: string,
+    clubId: number,
+  ) {
+    const payload = {
+      club_id: clubId,
+      before: this.snapshot(before, clubId),
+      after: this.snapshot(after, clubId),
+    };
+    await db.finance_ledger_events.create({
+      data: {
+        finance_ledger_entry_id: before.finance_ledger_entry_id,
+        event_type: 'AMENDED',
+        actor_user_id: actorUserId,
+        payload,
+      },
+    });
+    await db.audit_logs.create({
+      data: {
+        entity_type: 'finance_ledger_entry',
+        entity_id: before.finance_ledger_entry_id,
+        action: 'FINANCE_LEDGER_ENTRY_AMENDED',
+        club_id: clubId,
+        actor_user_id: actorUserId,
+        changes: payload,
+        event_key: `finance-ledger:AMENDED:${actorUserId}:${idempotencyKey.toLowerCase()}`,
         correlation_id: idempotencyKey.toLowerCase(),
         idempotency_key: idempotencyKey.toLowerCase(),
       },

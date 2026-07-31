@@ -14,6 +14,16 @@ const input = {
   currency: 'MXN',
   financeDate: new Date('2026-07-30T00:00:00.000Z'),
 };
+const amendment = (overrides: Record<string, any> = {}) => ({
+  entryId,
+  clubSectionId: 7,
+  financeCategoryId: 11,
+  kind: 'expense' as const,
+  amountCentavos: 126000,
+  currency: 'MXN',
+  financeDate: new Date('2026-08-01T00:00:00.000Z'),
+  ...overrides,
+});
 const forbidden = () =>
   new AppForbiddenException(ErrorCode.GUARD_PERMISSION_DENIED);
 const ledgerEntry = (overrides: Record<string, any> = {}) => ({
@@ -35,6 +45,7 @@ const ledgerEntry = (overrides: Record<string, any> = {}) => ({
 describe('FinanceLedgerService', () => {
   const tx: any = {
     $executeRaw: jest.fn(),
+    $queryRaw: jest.fn(),
     system_config: { findUnique: jest.fn() },
     finance_idempotency_receipts: {
       findUnique: jest.fn(),
@@ -47,6 +58,7 @@ describe('FinanceLedgerService', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    club_sections: { findUnique: jest.fn() },
     finance_ledger_events: { create: jest.fn() },
     audit_logs: { create: jest.fn() },
   };
@@ -85,6 +97,12 @@ describe('FinanceLedgerService', () => {
         decided_at: new Date('2026-07-31T00:00:00.000Z'),
       }),
     );
+    tx.club_sections.findUnique.mockResolvedValue({ main_club_id: 1 });
+    tx.$queryRaw.mockResolvedValue([{ club_section_id: 7, main_club_id: 1 }]);
+  });
+
+  afterEach(() => {
+    tx.finance_idempotency_receipts.findUnique.mockReset();
   });
 
   it('registers a pending payable once and replays the durable receipt', async () => {
@@ -238,6 +256,125 @@ describe('FinanceLedgerService', () => {
       `finance-ledger-idempotency:${actor}:${key}`,
       `finance-ledger-entry:${entryId}`,
     ]);
+  });
+
+  it('locks authoritative sections before amendment auth and replays', async () => {
+    let receipt: any;
+    const amended = ledgerEntry({
+      kind: 'expense',
+      amount_centavos: 126000,
+      finance_date: amendment().financeDate,
+    });
+    tx.finance_ledger_entries.update.mockResolvedValue(amended);
+    tx.finance_idempotency_receipts.create.mockImplementation(({ data }) => {
+      receipt = data;
+      return data;
+    });
+    tx.finance_idempotency_receipts.findUnique
+      .mockResolvedValueOnce(null)
+      .mockImplementation(() => receipt);
+
+    const first = await service.amendEntry(amendment(), actor, key);
+    tx.finance_ledger_entries.findUnique.mockResolvedValue({
+      ...amended,
+      club_section: { main_club_id: 1 },
+    });
+    const replay = await service.amendEntry(amendment(), actor, key);
+
+    expect(replay).toEqual(first);
+    expect(tx.finance_ledger_entries.update).toHaveBeenCalledTimes(1);
+    const event = tx.finance_ledger_events.create.mock.calls[0][0].data;
+    expect(event.payload).toMatchObject({
+      before: { kind: 'payable', amount_centavos: 125050 },
+      after: { kind: 'expense', amount_centavos: 126000 },
+    });
+    expect(tx.audit_logs.create.mock.calls[0][0].data.changes).toStrictEqual(
+      event.payload,
+    );
+    const order = [
+      tx.$executeRaw.mock.invocationCallOrder[0],
+      tx.$executeRaw.mock.invocationCallOrder[1],
+      tx.finance_ledger_entries.findUnique.mock.invocationCallOrder[0],
+      tx.$queryRaw.mock.invocationCallOrder[0],
+      authorization.assertCanRegister.mock.invocationCallOrder[0],
+      tx.finance_idempotency_receipts.findUnique.mock.invocationCallOrder[0],
+    ];
+    expect(order).toStrictEqual([...order].sort((a, b) => a - b));
+  });
+
+  it('rejects post-lock membership drift without auth or writes', async () => {
+    tx.$queryRaw.mockResolvedValueOnce([
+      { club_section_id: 7, main_club_id: 1 },
+      { club_section_id: 8, main_club_id: 2 },
+    ]);
+    await expect(
+      service.amendEntry(amendment({ clubSectionId: 8 }), actor, key),
+    ).rejects.toMatchObject({ code: 'GUARD_PERMISSION_DENIED', status: 403 });
+    expect(authorization.assertCanRegister).not.toHaveBeenCalled();
+    expect(tx.finance_ledger_entries.update).not.toHaveBeenCalled();
+  });
+
+  it('authorizes both locked scopes in deterministic order', async () => {
+    tx.$queryRaw.mockResolvedValueOnce([
+      { club_section_id: 7, main_club_id: 1 },
+      { club_section_id: 8, main_club_id: 1 },
+    ]);
+    authorization.assertCanRegister
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(forbidden());
+    await expect(
+      service.amendEntry(amendment({ clubSectionId: 8 }), actor, key),
+    ).rejects.toMatchObject({ code: 'GUARD_PERMISSION_DENIED', status: 403 });
+    expect(tx.$queryRaw.mock.calls[0][0].values).toStrictEqual([7, 8]);
+    expect(
+      authorization.assertCanRegister.mock.calls.map(
+        ([scope]) => scope.clubSectionId,
+      ),
+    ).toStrictEqual([7, 8]);
+  });
+
+  it('rejects a first material no-op without durable side effects', async () => {
+    await expect(
+      service.amendEntry(amendment(input), actor, key),
+    ).rejects.toMatchObject({ code: 'FINANCE_LEDGER_NO_CHANGES', status: 409 });
+    for (const mutation of [
+      tx.finance_ledger_entries.update,
+      tx.finance_ledger_events.create,
+      tx.audit_logs.create,
+      tx.finance_idempotency_receipts.create,
+    ])
+      expect(mutation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      { registered_by_id: '20000000-0000-0000-0000-000000000002' },
+      'GUARD_PERMISSION_DENIED',
+    ],
+    [{ status: 'approved' }, 'FINANCE_LEDGER_STATUS_INVALID'],
+  ])('preserves amendment owner and pending guards', async (override, code) => {
+    tx.finance_ledger_entries.findUnique.mockResolvedValueOnce(
+      ledgerEntry(override),
+    );
+    await expect(
+      service.amendEntry(amendment(), actor, key),
+    ).rejects.toMatchObject({ code });
+    expect(tx.finance_ledger_entries.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { currency: 'mxn' },
+    { financeCategoryId: 0 },
+    { financeDate: new Date('invalid') },
+    { clubSectionId: 0 },
+  ])('rejects malformed amendment material', async (material) => {
+    await expect(
+      service.amendEntry(amendment(material), actor, key),
+    ).rejects.toMatchObject({
+      code: 'FINANCE_LEDGER_INPUT_INVALID',
+      status: 400,
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('rejects a key reused from approve to reject before a second mutation', async () => {
