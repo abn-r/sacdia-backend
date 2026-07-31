@@ -171,6 +171,9 @@ export class FinanceLedgerService {
       },
       async (tx) => {
         const db = tx as PrismaLike;
+        await db.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`finance-ledger-entry:${input.entryId}`}, 0))`,
+        );
         const entry = await db.finance_ledger_entries.findUnique({
           where: { finance_ledger_entry_id: input.entryId },
           include: { club_section: { select: { main_club_id: true } } },
@@ -190,18 +193,7 @@ export class FinanceLedgerService {
           clubId,
           clubSectionId: entry.club_section_id,
         });
-        await db.$executeRaw(
-          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`finance-ledger-entry:${input.entryId}`}, 0))`,
-        );
-        const lockedEntry = await db.finance_ledger_entries.findUnique({
-          where: { finance_ledger_entry_id: input.entryId },
-        });
-        if (!lockedEntry) {
-          throw new AppNotFoundException(
-            ErrorCode.FINANCE_LEDGER_ENTRY_NOT_FOUND,
-          );
-        }
-        return { entry: lockedEntry, clubId };
+        return { entry, clubId };
       },
       async (db, context) => {
         const { entry, clubId } = context;
@@ -218,7 +210,7 @@ export class FinanceLedgerService {
             decided_at: new Date(),
             rejection_reason: input.decision === 'reject' ? reason : null,
           },
-          select: this.decisionSelect(),
+          select: this.receiptSelect(),
         });
         await this.recordDecision(
           db,
@@ -403,23 +395,6 @@ export class FinanceLedgerService {
       amount_centavos: true,
       currency: true,
       finance_date: true,
-      registered_by_id: true,
-      decided_by_id: true,
-      decided_at: true,
-      rejection_reason: true,
-    };
-  }
-
-  private decisionSelect() {
-    return {
-      finance_ledger_entry_id: true,
-      club_section_id: true,
-      finance_category_id: true,
-      kind: true,
-      amount_centavos: true,
-      currency: true,
-      finance_date: true,
-      status: true,
       registered_by_id: true,
       decided_by_id: true,
       decided_at: true,
