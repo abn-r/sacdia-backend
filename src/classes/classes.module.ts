@@ -9,6 +9,7 @@ import { ClassProgressScopeService } from './class-progress-scope.service';
 import { ClassRequirementEligibilityService } from './class-requirement-eligibility.service';
 import { ClassProgressionResolver } from './class-progression-resolver.service';
 import { ClassEnrollmentPlanService } from './class-enrollment-plan.service';
+import { ClassEnrollmentWriteService } from './class-enrollment-write.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 
@@ -28,6 +29,7 @@ import { AchievementsModule } from '../achievements/achievements.module';
     ClassRequirementEligibilityService,
     ClassProgressionResolver,
     ClassEnrollmentPlanService,
+    ClassEnrollmentWriteService,
   ],
   exports: [
     ClassesService,
