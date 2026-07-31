@@ -84,50 +84,54 @@ export class CategoriesService {
     dto: UpdateCategoryDto,
     scope: ActorLocalFieldScope,
   ): Promise<CategoryAdminDto> {
-    const existing = await this.prisma.materialCategory.findUnique({
-      where: { id },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'category_not_found',
-        message: `Category ${id} not found`,
-      });
-    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.materialCategory.findUnique({ where: { id } });
+      this.requireExistingCategory(existing, id);
+      assertActorCanAccessLocalField(scope, existing.local_field_id);
+      this.assertLifecycleWrite(scope, existing.active, dto.active);
 
-    assertActorCanAccessLocalField(scope, existing.local_field_id);
-
-    if (dto.active === true && !existing.active && scope.scope !== 'all') {
-      throw new ForbiddenException({
-        code: 'material_reactivation_requires_super_admin',
-        message: 'Only super-admin may reactivate a material category.',
-      });
-    }
-
-    // Deactivation guard: block if there are active products referencing it.
-    if (dto.active === false) {
-      const inUse = await this.prisma.materialProduct.findFirst({
-        where: { material_category_id: id, active: true },
-        select: { id: true },
-      });
-      if (inUse) {
-        throw new ConflictException({
-          code: 'category_in_use',
-          message:
-            'Cannot deactivate a category that still has active products. Reassign or deactivate those products first.',
+      if (dto.active === false) {
+        const inUse = await tx.materialProduct.findFirst({
+          where: { material_category_id: id, active: true },
+          select: { id: true },
         });
+        if (inUse) {
+          throw new ConflictException({
+            code: 'category_in_use',
+            message:
+              'Cannot deactivate a category that still has active products. Reassign or deactivate those products first.',
+          });
+        }
       }
-    }
 
-    const data: Prisma.MaterialCategoryUncheckedUpdateInput = {};
-    if (dto.label !== undefined) data.label = dto.label;
-    if (dto.icon !== undefined) data.icon = dto.icon;
-    if (dto.sort_order !== undefined) data.sort_order = dto.sort_order;
-    if (dto.active !== undefined) data.active = dto.active;
+      const data: Prisma.MaterialCategoryUncheckedUpdateInput = {};
+      if (dto.label !== undefined) data.label = dto.label;
+      if (dto.icon !== undefined) data.icon = dto.icon;
+      if (dto.sort_order !== undefined) data.sort_order = dto.sort_order;
+      if (dto.active !== undefined) data.active = dto.active;
 
-    const updated = await this.prisma.materialCategory.update({
-      where: { id },
-      data,
-      include: { _count: { select: { products: true } } },
+      const result = await tx.materialCategory.updateMany({
+        where: {
+          id,
+          local_field_id: existing.local_field_id,
+          ...(scope.scope === 'single' && { active: true }),
+        },
+        data,
+      });
+      if (result.count !== 1) {
+        const current = await tx.materialCategory.findUnique({ where: { id } });
+        this.requireExistingCategory(current, id);
+        assertActorCanAccessLocalField(scope, current.local_field_id);
+        this.assertLifecycleWrite(scope, current.active, dto.active);
+        throw this.concurrentCategoryChange();
+      }
+
+      const current = await tx.materialCategory.findUnique({
+        where: { id },
+        include: { _count: { select: { products: true } } },
+      });
+      this.requireExistingCategory(current, id);
+      return current;
     });
 
     this.logger.log({ event: 'category.updated', id });
@@ -143,35 +147,86 @@ export class CategoriesService {
     id: string,
     scope: ActorLocalFieldScope,
   ): Promise<{ id: string; active: false }> {
-    const existing = await this.prisma.materialCategory.findUnique({
-      where: { id },
-      include: { _count: { select: { products: true } } },
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.materialCategory.findUnique({
+        where: { id },
+        include: { _count: { select: { products: true } } },
+      });
+      this.requireExistingCategory(existing, id);
+      assertActorCanAccessLocalField(scope, existing.local_field_id);
+
+      if (!existing.active) return { id, active: false as const };
+      if (existing._count.products > 0) {
+        throw new ConflictException({
+          code: 'category_in_use',
+          product_count: existing._count.products,
+          message:
+            'Cannot delete a category that has products. Reassign products first.',
+        });
+      }
+
+      const result = await tx.materialCategory.updateMany({
+        where: {
+          id,
+          local_field_id: existing.local_field_id,
+          active: true,
+        },
+        data: { active: false },
+      });
+      if (result.count !== 1) {
+        const current = await tx.materialCategory.findUnique({ where: { id } });
+        this.requireExistingCategory(current, id);
+        assertActorCanAccessLocalField(scope, current.local_field_id);
+        if (!current.active) return { id, active: false as const };
+        throw this.concurrentCategoryChange();
+      }
+
+      const current = await tx.materialCategory.findUnique({ where: { id } });
+      this.requireExistingCategory(current, id);
+      assertActorCanAccessLocalField(scope, current.local_field_id);
+      if (current.active) throw this.concurrentCategoryChange();
+      return { id: current.id, active: current.active };
     });
-    if (!existing) {
+
+    this.logger.log({ event: 'category.deleted', id });
+    return deleted;
+  }
+
+  private requireExistingCategory<T>(
+    category: T | null,
+    id: string,
+  ): asserts category is T {
+    if (!category) {
       throw new NotFoundException({
         code: 'category_not_found',
         message: `Category ${id} not found`,
       });
     }
+  }
 
-    assertActorCanAccessLocalField(scope, existing.local_field_id);
-
-    if (existing._count.products > 0) {
-      throw new ConflictException({
-        code: 'category_in_use',
-        product_count: existing._count.products,
-        message:
-          'Cannot delete a category that has products. Reassign products first.',
+  private assertLifecycleWrite(
+    scope: ActorLocalFieldScope,
+    active: boolean,
+    requestedActive: boolean | undefined,
+  ): void {
+    if (active || scope.scope === 'all') return;
+    if (requestedActive === true) {
+      throw new ForbiddenException({
+        code: 'material_reactivation_requires_super_admin',
+        message: 'Only super-admin may reactivate a material category.',
       });
     }
-
-    await this.prisma.materialCategory.update({
-      where: { id },
-      data: { active: false },
+    throw new ConflictException({
+      code: 'category_inactive',
+      message: 'Inactive categories cannot be modified.',
     });
+  }
 
-    this.logger.log({ event: 'category.deleted', id });
-    return { id, active: false };
+  private concurrentCategoryChange(): ConflictException {
+    return new ConflictException({
+      code: 'category_concurrent_change',
+      message: 'The category changed concurrently. Retry the operation.',
+    });
   }
 
   // ---------------------------------------------------------------------------

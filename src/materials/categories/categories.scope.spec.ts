@@ -46,9 +46,10 @@ describe('material category scope contract', () => {
       findMany: jest.fn(),
       create: jest.fn(),
       findUnique: jest.fn(),
-      update: jest.fn(),
+      updateMany: jest.fn(),
     },
     clubs: { findUnique: jest.fn() },
+    $transaction: jest.fn(),
   };
   const categoriesService = new CategoriesService(
     prisma as unknown as PrismaService,
@@ -66,7 +67,12 @@ describe('material category scope contract', () => {
     prisma as unknown as PrismaService,
   );
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    prisma.$transaction.mockImplementation(
+      async (operation: (tx: typeof prisma) => unknown) => operation(prisma),
+    );
+  });
 
   const category = (local_field_id: number, active = true) => ({
     id: '00000000-0000-0000-0000-000000000101',
@@ -234,14 +240,14 @@ describe('material category scope contract', () => {
       ).rejects.toMatchObject({
         response: { code: 'local_field_scope_violation' },
       });
-
-      expect(prisma.materialCategory.update).not.toHaveBeenCalled();
     },
   );
 
   it('allows a same-LF actor to update a category UUID', async () => {
-    prisma.materialCategory.findUnique.mockResolvedValue(category(1));
-    prisma.materialCategory.update.mockResolvedValue(category(1));
+    prisma.materialCategory.findUnique
+      .mockResolvedValueOnce(category(1))
+      .mockResolvedValueOnce(category(1));
+    prisma.materialCategory.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(
       categories.update(
@@ -251,12 +257,14 @@ describe('material category scope contract', () => {
       ),
     ).resolves.toMatchObject({ id: expect.any(String), label: 'Libros' });
 
-    expect(prisma.materialCategory.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: expect.any(String) },
-        data: expect.objectContaining({ label: 'Otro' }),
-      }),
-    );
+    expect(prisma.materialCategory.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: '00000000-0000-0000-0000-000000000101',
+        local_field_id: 1,
+        active: true,
+      },
+      data: expect.objectContaining({ label: 'Otro' }),
+    });
   });
 
   it('allows only super-admin to reactivate an inactive category', async () => {
@@ -271,10 +279,11 @@ describe('material category scope contract', () => {
     ).rejects.toMatchObject({
       response: { code: 'material_reactivation_requires_super_admin' },
     });
-    expect(prisma.materialCategory.update).not.toHaveBeenCalled();
-
-    prisma.materialCategory.findUnique.mockResolvedValue(category(2, false));
-    prisma.materialCategory.update.mockResolvedValue(category(2, true));
+    prisma.materialCategory.findUnique
+      .mockReset()
+      .mockResolvedValueOnce(category(2, false))
+      .mockResolvedValueOnce(category(2, true));
+    prisma.materialCategory.updateMany.mockResolvedValue({ count: 1 });
     await expect(
       categories.update(
         '00000000-0000-0000-0000-000000000101',
@@ -282,8 +291,83 @@ describe('material category scope contract', () => {
         { authorization: authorization('super-admin', 1) },
       ),
     ).resolves.toMatchObject({ active: true });
-    expect(prisma.materialCategory.update).toHaveBeenLastCalledWith(
-      expect.objectContaining({ where: { id: expect.any(String) } }),
-    );
+    expect(prisma.materialCategory.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: '00000000-0000-0000-0000-000000000101',
+        local_field_id: 2,
+      },
+      data: expect.objectContaining({ active: true }),
+    });
+  });
+
+  it('does not mutate when a scoped category becomes inactive before PATCH', async () => {
+    prisma.materialCategory.findUnique
+      .mockResolvedValueOnce(category(1, true))
+      .mockResolvedValueOnce(category(1, false));
+    prisma.materialCategory.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      categories.update(
+        '00000000-0000-0000-0000-000000000101',
+        { label: 'Otro' },
+        { authorization: authorization('assistant-lf', 1) },
+      ),
+    ).rejects.toMatchObject({ response: { code: 'category_inactive' } });
+  });
+
+  it('rechecks scope when a category moves to another LF before PATCH', async () => {
+    prisma.materialCategory.findUnique
+      .mockResolvedValueOnce(category(1, true))
+      .mockResolvedValueOnce(category(2, true));
+    prisma.materialCategory.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      categories.update(
+        '00000000-0000-0000-0000-000000000101',
+        { label: 'Otro' },
+        { authorization: authorization('admin', 1) },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'local_field_scope_violation' },
+    });
+  });
+
+  it('treats a concurrent same-LF soft delete as idempotent', async () => {
+    prisma.materialCategory.findUnique
+      .mockResolvedValueOnce(category(1, true))
+      .mockResolvedValueOnce(category(1, false));
+    prisma.materialCategory.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      categories.softDelete('00000000-0000-0000-0000-000000000101', {
+        authorization: authorization('director-lf', 1),
+      }),
+    ).resolves.toEqual({
+      id: '00000000-0000-0000-0000-000000000101',
+      active: false,
+    });
+    expect(prisma.materialCategory.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: '00000000-0000-0000-0000-000000000101',
+        local_field_id: 1,
+        active: true,
+      },
+      data: { active: false },
+    });
+  });
+
+  it('rechecks scope when a category moves to another LF before DELETE', async () => {
+    prisma.materialCategory.findUnique
+      .mockResolvedValueOnce(category(1, true))
+      .mockResolvedValueOnce(category(2, true));
+    prisma.materialCategory.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      categories.softDelete('00000000-0000-0000-0000-000000000101', {
+        authorization: authorization('assistant-lf', 1),
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'local_field_scope_violation' },
+    });
   });
 });
