@@ -128,7 +128,7 @@ export class CatalogService {
     const categories = await this.prisma.materialCategory.findMany({
       ...(localFieldId !== undefined && {
         where: {
-          OR: [{ local_field_id: localFieldId }, { local_field_id: null }],
+          local_field_id: localFieldId,
         },
       }),
       orderBy: { sort_order: 'asc' },

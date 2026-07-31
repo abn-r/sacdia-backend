@@ -4546,8 +4546,8 @@ enum MaterialEntrega {
 
 model MaterialCategory {
   id             String   @id @default(uuid()) @db.Uuid
-  local_field_id Int?
-  slug           String   @unique @db.VarChar(100)
+  local_field_id Int
+  slug           String   @db.VarChar(100)
   label          String   @db.VarChar(200)
   icon           String?  @db.VarChar(100)
   sort_order     Int      @default(0)
@@ -4555,9 +4555,11 @@ model MaterialCategory {
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  local_field local_fields?     @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
+  local_field local_fields      @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
   products    MaterialProduct[]
 
+  @@unique([local_field_id, slug], map: "uq_material_categories_lf_slug")
+  @@unique([id, local_field_id], map: "uq_material_categories_id_lf")
   @@index([local_field_id, active], map: "idx_material_categories_lf_active")
   @@map("material_categories")
 }
@@ -4577,7 +4579,7 @@ model MaterialProduct {
   updated_at           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   local_field local_fields        @relation(fields: [local_field_id], references: [local_field_id], onDelete: Restrict, onUpdate: NoAction)
-  category    MaterialCategory    @relation(fields: [material_category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  category    MaterialCategory    @relation(fields: [material_category_id, local_field_id], references: [id, local_field_id], onDelete: Restrict, onUpdate: NoAction)
   club_type   club_types          @relation(fields: [club_type_id], references: [club_type_id], onDelete: Restrict, onUpdate: NoAction)
   variants    MaterialVariant[]
   order_lines MaterialOrderLine[]

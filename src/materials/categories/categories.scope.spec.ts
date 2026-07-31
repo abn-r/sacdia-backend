@@ -110,7 +110,7 @@ describe('material category scope contract', () => {
     await categories.list({}, { authorization: authorization('admin', 3) });
     expect(prisma.materialCategory.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        where: { OR: [{ local_field_id: 3 }, { local_field_id: null }] },
+        where: { local_field_id: 3 },
       }),
     );
     prisma.clubs.findUnique.mockResolvedValue({ local_field_id: 2 });
@@ -123,7 +123,7 @@ describe('material category scope contract', () => {
     );
     expect(prisma.materialCategory.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        where: { OR: [{ local_field_id: 2 }, { local_field_id: null }] },
+        where: { local_field_id: 2 },
       }),
     );
   });
@@ -151,7 +151,7 @@ describe('material category scope contract', () => {
     });
   });
 
-  it('uses the actor LF and preserves nullable legacy categories', async () => {
+  it('uses the actor LF without a nullable legacy fallback', async () => {
     prisma.materialCategory.findMany.mockResolvedValue([]);
     prisma.materialCategory.create.mockResolvedValue({
       id: '00000000-0000-0000-0000-000000000101',
@@ -173,9 +173,7 @@ describe('material category scope contract', () => {
     );
     expect(prisma.materialCategory.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          OR: [{ local_field_id: 1 }, { local_field_id: null }],
-        },
+        where: { local_field_id: 1 },
         include: {
           _count: {
             select: { products: { where: { local_field_id: 1 } } },
@@ -185,7 +183,7 @@ describe('material category scope contract', () => {
     );
     expect(prisma.materialCategory.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        where: { OR: [{ local_field_id: 1 }, { local_field_id: null }] },
+        where: { local_field_id: 1 },
       }),
     );
     expect(prisma.materialCategory.create).toHaveBeenCalledWith(

@@ -23,7 +23,7 @@ export class CategoriesService {
   async list(localFieldId: number): Promise<CategoryAdminDto[]> {
     const rows = await this.prisma.materialCategory.findMany({
       where: {
-        OR: [{ local_field_id: localFieldId }, { local_field_id: null }],
+        local_field_id: localFieldId,
       },
       orderBy: [{ sort_order: 'asc' }, { label: 'asc' }],
       include: {
