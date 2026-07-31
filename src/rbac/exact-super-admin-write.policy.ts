@@ -9,8 +9,11 @@ type GlobalRoleAssignmentReader = Pick<PrismaService, 'users_roles'>;
 export class ExactSuperAdminWritePolicy {
   constructor(private readonly prisma: GlobalRoleAssignmentReader) {}
 
-  async assert(actorUserId: string): Promise<void> {
-    const assignment = await this.prisma.users_roles.findFirst({
+  async assert(
+    actorUserId: string,
+    reader: GlobalRoleAssignmentReader = this.prisma,
+  ): Promise<void> {
+    const assignment = await reader.users_roles.findFirst({
       where: {
         user_id: actorUserId,
         active: true,
