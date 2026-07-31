@@ -25,11 +25,18 @@ const event = (eventKey = 'critical-audit:request-1'): CriticalAuditEvent => ({
     kind: 'user',
     userId: '00000000-0000-0000-0000-000000000001',
     roleName: 'director',
-    scope: { local_field_id: 10, club_section_id: 20 },
+    scope: {
+      local_field_id: 10,
+      actor_assignment_id: 'assignment-director-1',
+    },
   },
   target: {
     userId: '00000000-0000-0000-0000-000000000002',
-    scope: { local_field_id: 10, club_section_id: 20 },
+    scope: {
+      local_field_id: 10,
+      club_section_id: 20,
+      target_role_name: 'secretary',
+    },
   },
   before: { role: null },
   after: { role: 'secretary' },
@@ -128,7 +135,43 @@ const connect = async (schema: string) => {
   return client;
 };
 
+const expectedSnapshot = (source = event()) => ({
+  actor_user_id: source.actor.userId,
+  target_user_id: source.target.userId,
+  actor_scope: source.actor.scope,
+  target_scope: source.target.scope,
+  effective_at: source.effectiveAt,
+  changes: {
+    before: { role: null },
+    after: { role: 'secretary' },
+    temporal: {
+      business_date: '2026-10-01',
+      business_timezone: 'America/Mexico_City',
+    },
+  },
+});
+
+const expectExactSnapshot = (actual: unknown) =>
+  expect(actual).toEqual(expectedSnapshot());
+
 describe('CriticalAuditWriterService PostgreSQL fixture', () => {
+  it('mutation probe rejects swapped actor and target scopes', () => {
+    const snapshot = expectedSnapshot();
+    expect(() =>
+      expectExactSnapshot({
+        ...snapshot,
+        actor_scope: snapshot.target_scope,
+        target_scope: snapshot.actor_scope,
+      }),
+    ).toThrow();
+  });
+
+  it('mutation probe rejects a missing effective_at', () => {
+    expect(() =>
+      expectExactSnapshot({ ...expectedSnapshot(), effective_at: null }),
+    ).toThrow();
+  });
+
   pgIt(
     'uses the supplied transaction and persists distinct actor/target scopes with a temporal snapshot',
     async () => {
@@ -149,27 +192,11 @@ describe('CriticalAuditWriterService PostgreSQL fixture', () => {
             },
           );
           await client.query('COMMIT');
-          await expect(
-            client.query(`SELECT actor_user_id, target_user_id, actor_scope,
-              target_scope, effective_at, changes FROM audit_logs`),
-          ).resolves.toMatchObject({
-            rows: [
-              {
-                actor_user_id: event().actor.userId,
-                target_user_id: event().target.userId,
-                actor_scope: event().actor.scope,
-                target_scope: event().target.scope,
-                changes: {
-                  before: { role: null },
-                  after: { role: 'secretary' },
-                  temporal: {
-                    business_date: '2026-10-01',
-                    business_timezone: 'America/Mexico_City',
-                  },
-                },
-              },
-            ],
-          });
+          const persisted = await client.query(`SELECT actor_user_id,
+            target_user_id, actor_scope, target_scope, effective_at, changes
+            FROM audit_logs`);
+          expect(persisted.rows).toHaveLength(1);
+          expectExactSnapshot(persisted.rows[0]);
         } finally {
           await client.end();
         }
