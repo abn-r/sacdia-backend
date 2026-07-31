@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { I18nService } from 'nestjs-i18n';
 import { HttpExceptionFilter } from './http-exception.filter';
+import { AppConflictException, AppException } from '../errors/app.exception';
+import { ErrorCode } from '../errors/error-codes';
 
 /**
  * HttpExceptionFilter unit tests.
@@ -16,6 +18,7 @@ describe('HttpExceptionFilter — request body sanitization', () => {
 
   // Spy on Logger.error so we can inspect what would be logged
   const loggedPayloads: unknown[] = [];
+  const originalNodeEnv = process.env.NODE_ENV;
 
   const mockI18n = {
     translate: jest.fn().mockReturnValue('An error occurred'),
@@ -47,6 +50,7 @@ describe('HttpExceptionFilter — request body sanitization', () => {
   });
 
   afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
     jest.clearAllMocks();
   });
 
@@ -55,7 +59,7 @@ describe('HttpExceptionFilter — request body sanitization', () => {
     const json = jest.fn();
     const status = jest.fn().mockReturnValue({ json });
 
-    return {
+    const host = {
       switchToHttp: () => ({
         getResponse: () => ({ status }),
         getRequest: () => ({
@@ -67,6 +71,8 @@ describe('HttpExceptionFilter — request body sanitization', () => {
       }),
       getType: () => 'http',
     } as any;
+    host.json = json;
+    return host;
   }
 
   it('should redact "password" in any request body', () => {
@@ -224,5 +230,42 @@ describe('HttpExceptionFilter — request body sanitization', () => {
     expect(logged.requestBody?.name).toBe('Pathfinder Club');
     expect(logged.requestBody?.description).toBe('A great club');
     expect(logged.requestBody?.club_type_id).toBe(1);
+  });
+
+  it('serializes only allowlisted lifecycle details in production', () => {
+    const host = buildHost('/api/v1/ecclesiastical-cycles/2027/preflight', {});
+    const details = {
+      dependency: 'masterGuide',
+      expectedVersion: 1,
+      receivedVersion: 2,
+      reason: 'CAPABILITY_VERSION_INCOMPATIBLE',
+    };
+    const exception = new AppConflictException(
+      ErrorCode.ECCLESIASTICAL_CYCLE_CAPABILITY_VERSION_INCOMPATIBLE,
+      { interpolationSecret: 'do-not-expose' },
+      { ...details, cause: 'internal-cause' },
+    );
+
+    process.env.NODE_ENV = 'production';
+    filter.catch(exception, host);
+    const payload = host.json.mock.calls[0][0];
+    expect(payload).toMatchObject({ details });
+    expect(payload).not.toHaveProperty('namedArgs');
+    expect(JSON.stringify(payload)).not.toMatch(/do-not-expose|internal-cause/);
+
+    const otherHost = buildHost('/api/v1/finances', {});
+    const otherException = new AppException(
+      ErrorCode.FINANCE_PERIOD_CLOSED,
+      HttpStatus.CONFLICT,
+      { interpolationSecret: 'named-secret' },
+      { stack: 'internal-stack' },
+      { dependency: 'should-not-leak' },
+    );
+
+    filter.catch(otherException, otherHost);
+    const serialized = JSON.stringify(otherHost.json.mock.calls[0][0]);
+    expect(serialized).not.toMatch(
+      /named-secret|internal-stack|should-not-leak/,
+    );
   });
 });

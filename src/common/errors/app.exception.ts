@@ -10,7 +10,11 @@ export interface AppExceptionPayload {
   statusCode: HttpStatus;
   namedArgs?: Record<string, unknown>;
   details?: unknown;
+  publicDetails?: PublicExceptionDetails;
 }
+
+type PublicDetailValue = string | number | boolean | null;
+export type PublicExceptionDetails = Record<string, PublicDetailValue>;
 
 /**
  * Base exception for all SACDIA domain errors.
@@ -32,12 +36,14 @@ export class AppException extends HttpException {
     statusCode: HttpStatus = HttpStatus.BAD_REQUEST,
     namedArgs?: Record<string, unknown>,
     details?: unknown,
+    publicDetails?: PublicExceptionDetails,
   ) {
     const payload: AppExceptionPayload = {
       code,
       statusCode,
       ...(namedArgs !== undefined ? { namedArgs } : {}),
       ...(details !== undefined ? { details } : {}),
+      ...(publicDetails !== undefined ? { publicDetails } : {}),
     };
     // Pass code as the message string so Logger shows a meaningful entry
     // without revealing user-facing text (translation happens in the filter).
@@ -81,8 +87,12 @@ export class AppForbiddenException extends AppException {
 }
 
 export class AppConflictException extends AppException {
-  constructor(code: ErrorCode, namedArgs?: Record<string, unknown>) {
-    super(code, HttpStatus.CONFLICT, namedArgs);
+  constructor(
+    code: ErrorCode,
+    namedArgs?: Record<string, unknown>,
+    publicDetails?: PublicExceptionDetails,
+  ) {
+    super(code, HttpStatus.CONFLICT, namedArgs, undefined, publicDetails);
   }
 }
 

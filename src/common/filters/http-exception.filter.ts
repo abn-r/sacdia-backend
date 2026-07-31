@@ -13,6 +13,17 @@ import { maskEmail } from '../utils/mask-email.util';
 import { AppException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 
+const PUBLIC_DETAIL_CODES = new Set<ErrorCode>([
+  ErrorCode.ECCLESIASTICAL_CYCLE_CAPABILITY_UNAVAILABLE,
+  ErrorCode.ECCLESIASTICAL_CYCLE_CAPABILITY_VERSION_INCOMPATIBLE,
+]);
+const PUBLIC_DETAIL_FIELDS = [
+  'dependency',
+  'expectedVersion',
+  'receivedVersion',
+  'reason',
+] as const;
+
 /**
  * Filtro global de excepciones HTTP.
  *
@@ -64,8 +75,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     // ── AppException: domain error with ErrorCode ──────────────────────────
     if (exception instanceof AppException) {
-      const { code, namedArgs, details } = exception.getResponse();
+      const { code, namedArgs, details, publicDetails } =
+        exception.getResponse();
       const lang = this.resolveLang(host);
+      const safePublicDetails = this.pickPublicDetails(code, publicDetails);
+      const responseDetails =
+        safePublicDetails ??
+        (process.env.NODE_ENV !== 'production' ? details : undefined);
 
       let translatedMessage: string;
       try {
@@ -92,9 +108,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         statusCode: status,
         code,
         message: maskedMessage,
-        ...(process.env.NODE_ENV !== 'production' && details !== undefined
-          ? { details }
-          : {}),
+        ...(responseDetails !== undefined ? { details: responseDetails } : {}),
         timestamp: new Date().toISOString(),
         path: request.url,
       });
@@ -126,6 +140,30 @@ export class HttpExceptionFilter implements ExceptionFilter {
         path: request.url,
       });
     }
+  }
+
+  private pickPublicDetails(
+    code: ErrorCode,
+    source: Record<string, unknown> | undefined,
+  ): Record<string, string | number | boolean | null> | undefined {
+    if (!PUBLIC_DETAIL_CODES.has(code) || !source) return undefined;
+    const result = Object.fromEntries(
+      PUBLIC_DETAIL_FIELDS.filter((field) =>
+        this.isPublicDetailValue(source[field]),
+      ).map((field) => [
+        field,
+        source[field] as string | number | boolean | null,
+      ]),
+    );
+    return Object.keys(result).length ? result : undefined;
+  }
+
+  private isPublicDetailValue(
+    value: unknown,
+  ): value is string | number | boolean | null {
+    return (
+      value === null || ['string', 'number', 'boolean'].includes(typeof value)
+    );
   }
 
   /**
