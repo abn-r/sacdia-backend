@@ -27,6 +27,7 @@ describe('MembershipRequestsService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn().mockResolvedValue(pendingAssignment),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      updateManyAndReturn: jest.fn().mockResolvedValue([]),
     },
     users_pr: {
       update: jest.fn().mockResolvedValue({}),
@@ -268,14 +269,16 @@ describe('MembershipRequestsService', () => {
   });
 
   describe('expireStaleRequests', () => {
-    it('versions every affected user in the bulk expiration transaction', async () => {
-      transactionMock.club_role_assignments.findMany.mockResolvedValue([
-        { user_id: userId },
-        { user_id: '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99' },
-        { user_id: userId },
-      ]);
+    it('versions exactly the unique user IDs returned by the bulk write', async () => {
+      transactionMock.club_role_assignments.updateManyAndReturn.mockResolvedValue(
+        [
+          { user_id: userId },
+          { user_id: '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99' },
+          { user_id: userId },
+        ],
+      );
 
-      await expect(service.expireStaleRequests()).resolves.toBe(1);
+      await expect(service.expireStaleRequests()).resolves.toBe(3);
 
       expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
         transactionMock,
@@ -285,6 +288,40 @@ describe('MembershipRequestsService', () => {
         transactionMock,
         '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99',
       );
+      expect(
+        transactionMock.club_role_assignments.updateManyAndReturn,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ select: { user_id: true } }),
+      );
+      expect(
+        transactionMock.club_role_assignments.findMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not bump or clean up when the bulk write returns no rows', async () => {
+      await expect(service.expireStaleRequests()).resolves.toBe(0);
+
+      expect(mockAuthorizationContextVersion.bump).not.toHaveBeenCalled();
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the bulk write before cleanup when a returned user bump fails', async () => {
+      transactionMock.club_role_assignments.updateManyAndReturn.mockResolvedValue(
+        [{ user_id: userId }],
+      );
+      mockAuthorizationContextVersion.bump.mockRejectedValueOnce(
+        new Error('version write failed'),
+      );
+
+      await expect(service.expireStaleRequests()).rejects.toThrow(
+        'version write failed',
+      );
+
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).not.toHaveBeenCalled();
     });
   });
 

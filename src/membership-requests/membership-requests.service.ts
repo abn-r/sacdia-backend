@@ -310,28 +310,25 @@ export class MembershipRequestsService {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - timeoutDays);
 
-    const { result, userIds } = await this.prisma.$transaction(async (tx) => {
+    const { count, userIds } = await this.prisma.$transaction(async (tx) => {
       const where = {
         status: 'pending',
         active: true,
         created_at: { lt: cutoff },
       };
-      const affected = await tx.club_role_assignments.findMany({
-        where,
-        select: { user_id: true },
-      });
-      const result = await tx.club_role_assignments.updateMany({
+      const affected = await tx.club_role_assignments.updateManyAndReturn({
         where,
         data: {
           status: 'expired',
           modified_at: new Date(),
         },
+        select: { user_id: true },
       });
       const userIds = [...new Set(affected.map(({ user_id }) => user_id))];
       for (const userId of userIds) {
         await this.authorizationContextVersion.bump(tx, userId);
       }
-      return { result, userIds };
+      return { count: affected.length, userIds };
     });
 
     await Promise.all(
@@ -339,7 +336,7 @@ export class MembershipRequestsService {
         this.authorizationContext.invalidateUserAuthorizationCache(userId),
       ),
     );
-    return result.count;
+    return count;
   }
 
   private emitRealtimeInvalidation(
