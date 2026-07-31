@@ -280,13 +280,35 @@ describe('MembershipRequestsService', () => {
 
       await expect(service.expireStaleRequests()).resolves.toBe(3);
 
-      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
-        transactionMock,
-        userId,
+      const expectedUserIds = [userId, '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99'];
+      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledTimes(2);
+      expect(
+        mockAuthorizationContextVersion.bump.mock.calls.map(
+          ([tx, affectedUserId]) => [tx, affectedUserId],
+        ),
+      ).toEqual(
+        expectedUserIds.map((affectedUserId) => [
+          transactionMock,
+          affectedUserId,
+        ]),
       );
-      expect(mockAuthorizationContextVersion.bump).toHaveBeenCalledWith(
-        transactionMock,
-        '0d5f0be9-2b45-47b2-9cdf-4d2407a3fa99',
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        mockAuthorizationContext.invalidateUserAuthorizationCache.mock.calls.map(
+          ([affectedUserId]) => affectedUserId,
+        ),
+      ).toEqual(expectedUserIds);
+      expect(
+        Math.max(
+          ...mockAuthorizationContextVersion.bump.mock.invocationCallOrder,
+        ),
+      ).toBeLessThan(
+        Math.min(
+          ...mockAuthorizationContext.invalidateUserAuthorizationCache.mock
+            .invocationCallOrder,
+        ),
       );
       expect(
         transactionMock.club_role_assignments.updateManyAndReturn,
