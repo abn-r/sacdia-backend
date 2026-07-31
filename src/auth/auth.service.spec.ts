@@ -17,6 +17,7 @@ import { AuthorizationContextService } from '../common/services/authorization-co
 import { TokenBlacklistService } from '../common/services/token-blacklist.service';
 import { EmailService } from '../common/email/email.service';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -33,6 +34,7 @@ describe('AuthService', () => {
     },
     users_pr: {
       create: jest.fn(),
+      upsert: jest.fn(),
     },
     roles: {
       findFirst: jest.fn(),
@@ -89,6 +91,7 @@ describe('AuthService', () => {
     resolveUserAuthorization: jest.fn(),
     invalidateUserAuthorizationCache: jest.fn().mockResolvedValue(undefined),
   };
+  const mockAuthorizationVersions = { bump: jest.fn().mockResolvedValue(1n) };
 
   const mockTokenBlacklistService = {
     blacklist: jest.fn(),
@@ -117,6 +120,10 @@ describe('AuthService', () => {
         {
           provide: AuthorizationContextService,
           useValue: mockAuthorizationContextService,
+        },
+        {
+          provide: AuthorizationContextVersionService,
+          useValue: mockAuthorizationVersions,
         },
         {
           provide: TokenBlacklistService,
@@ -1016,7 +1023,7 @@ describe('AuthService', () => {
         assignment_id: 'assignment-1',
       });
 
-      expect(mockPrismaService.users_pr.upsert).toHaveBeenCalledWith({
+      expect(mockTx.users_pr.upsert).toHaveBeenCalledWith({
         where: { user_id: 'user-123' },
         update: { active_club_assignment_id: 'assignment-1' },
         create: {
@@ -1024,6 +1031,10 @@ describe('AuthService', () => {
           active_club_assignment_id: 'assignment-1',
         },
       });
+      expect(mockAuthorizationVersions.bump).toHaveBeenCalledWith(
+        mockTx,
+        'user-123',
+      );
       expect(result).toEqual({
         status: 'success',
         data: {

@@ -29,6 +29,7 @@ import {
   AppUnauthorizedException,
 } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
+import { AuthorizationContextVersionService } from '../common/authorization/authorization-context-version.service';
 
 const LEGACY_SNAKE_CASE_REMOVED_AT = '2026-03-01';
 const LEGACY_SNAKE_CASE_REMOVED_CODE = 'LEGACY_SNAKE_CASE_REMOVED';
@@ -58,6 +59,7 @@ export class AuthService {
     private prisma: PrismaService,
     private betterAuthService: BetterAuthService,
     private readonly authorizationContext: AuthorizationContextService,
+    private readonly authorizationVersions: AuthorizationContextVersionService,
     private readonly tokenBlacklist: TokenBlacklistService,
     @Inject(FILE_STORAGE_SERVICE)
     private readonly fileStorage: FileStorageService,
@@ -587,13 +589,16 @@ export class AuthService {
       });
     }
 
-    await this.prisma.users_pr.upsert({
-      where: { user_id: userId },
-      update: { active_club_assignment_id: dto.assignment_id },
-      create: {
-        user_id: userId,
-        active_club_assignment_id: dto.assignment_id,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.users_pr.upsert({
+        where: { user_id: userId },
+        update: { active_club_assignment_id: dto.assignment_id },
+        create: {
+          user_id: userId,
+          active_club_assignment_id: dto.assignment_id,
+        },
+      });
+      await this.authorizationVersions.bump(tx, userId);
     });
 
     // Invalidate the cached authorization context so the next call to

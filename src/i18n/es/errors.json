@@ -544,6 +544,7 @@
   "R2_VALIDATION_FAILED": "Error al validar el objeto en R2",
   "LOCAL_FIELD_TIMEZONE_UNAVAILABLE": "La zona horaria del campo local no está disponible o no es canónica",
   "AUTH_CONTEXT_USER_NOT_FOUND": "Usuario no encontrado",
+  "AUTH_CONTEXT_UNAVAILABLE": "El contexto de autorización no está disponible temporalmente",
   "RBAC_BOOTSTRAP_FORBIDDEN": "Bootstrap RBAC no disponible en producción",
   "RBAC_BOOTSTRAP_SECRET_INVALID": "Secreto de bootstrap inválido",
   "NOTIF_BROADCAST_USER_ID_FORBIDDEN": "userId no puede incluirse en notificaciones broadcast",

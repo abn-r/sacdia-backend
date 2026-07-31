@@ -1,5 +1,8 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
-import { AppUnauthorizedException } from '../errors/app.exception';
+import { Injectable, Inject, Logger, HttpStatus } from '@nestjs/common';
+import {
+  AppException,
+  AppUnauthorizedException,
+} from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -8,6 +11,11 @@ import {
   InstitutionalHierarchyService,
   type HierarchyContext,
 } from './institutional-hierarchy.service';
+import { CLOCK, type Clock } from '../clock/clock';
+import { TemporalContextFactory } from '../clock/temporal-context.factory';
+import { ClubAssignmentEffectivityPolicy } from '../authorization/club-assignment-effectivity.policy';
+import { LocalFieldTimezoneResolver } from '../authorization/local-field-timezone.resolver';
+import { AuthorizationContextVersionService } from '../authorization/authorization-context-version.service';
 
 export const CANONICAL_CLUB_ASSIGNMENT_ORDER = [
   { start_date: 'desc' as const },
@@ -50,6 +58,7 @@ export type ClubAuthorizationGrant = {
   start_date?: Date | null;
   end_date?: Date | null;
   expires_at?: Date | null;
+  effective: boolean;
 };
 
 export type EffectiveClubAuthorization = {
@@ -141,6 +150,9 @@ type ClubHierarchyRecord = {
   local_fields?: {
     local_field_id: number;
     name: string | null;
+    active: boolean;
+    timezone: string | null;
+    modified_at: Date | null;
     unions?: {
       union_id: number;
       name: string | null;
@@ -154,6 +166,7 @@ type ClubHierarchyRecord = {
 
 type ClubAssignmentRecord = {
   assignment_id: string;
+  active: boolean;
   status: string | null;
   start_date: Date | null;
   end_date: Date | null;
@@ -175,8 +188,10 @@ type ClubAssignmentRecord = {
  * Versioned so deployments can bypass stale snapshots produced by older
  * authorization-resolution semantics.
  */
-export const AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
-  `auth:context:v3:${userId}`;
+export const AUTH_CONTEXT_CACHE_KEY = (
+  userId: string,
+  authorizationVersion: bigint | number | string,
+): string => `auth:context:v4:${userId}:${authorizationVersion}`;
 
 const LEGACY_AUTH_CONTEXT_CACHE_KEY = (userId: string): string =>
   `auth:context:${userId}`;
@@ -193,6 +208,18 @@ const PREVIOUS_AUTH_CONTEXT_CACHE_KEYS = (userId: string): string[] => [
  */
 const AUTH_CONTEXT_TTL_MS = 300_000; // 5 minutes
 
+type TerritoryTimeVectorEntry = {
+  local_field_id: number;
+  timezone: string;
+  timezone_revision: string | null;
+};
+
+type AuthorizationContextCacheEntry = {
+  value: ResolvedAuthorizationProfile;
+  valid_until: string;
+  territory_time_vector: TerritoryTimeVectorEntry[];
+};
+
 const CLUB_SCOPE_SELECT = {
   club_id: true,
   name: true,
@@ -200,6 +227,9 @@ const CLUB_SCOPE_SELECT = {
     select: {
       local_field_id: true,
       name: true,
+      active: true,
+      timezone: true,
+      modified_at: true,
       unions: {
         select: {
           union_id: true,
@@ -224,6 +254,11 @@ export class AuthorizationContextService {
     private readonly prisma: PrismaService,
     private readonly hierarchy: InstitutionalHierarchyService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    @Inject(CLOCK) private readonly clock: Clock,
+    private readonly temporalContext: TemporalContextFactory,
+    private readonly effectivity: ClubAssignmentEffectivityPolicy,
+    private readonly localFieldTimezone: LocalFieldTimezoneResolver,
+    private readonly versions: AuthorizationContextVersionService,
   ) {}
 
   /**
@@ -240,12 +275,22 @@ export class AuthorizationContextService {
    *   - RequestsService / PostRegistrationService when creating or mutating assignments
    */
   async invalidateUserAuthorizationCache(userId: string): Promise<void> {
-    const keys = [
-      AUTH_CONTEXT_CACHE_KEY(userId),
-      ...PREVIOUS_AUTH_CONTEXT_CACHE_KEYS(userId),
-    ];
+    let currentKey: string | null = null;
+    try {
+      currentKey = AUTH_CONTEXT_CACHE_KEY(
+        userId,
+        await this.versions.current(userId),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo leer la versión de autorización para limpieza: ${this.extractMessage(err)}`,
+      );
+    }
 
-    for (const key of keys) {
+    for (const key of [
+      ...(currentKey ? [currentKey] : []),
+      ...PREVIOUS_AUTH_CONTEXT_CACHE_KEYS(userId),
+    ]) {
       try {
         await this.cacheManager.del(key);
         this.logger.debug(`Auth context cache INVALIDATED — ${key}`);
@@ -260,15 +305,27 @@ export class AuthorizationContextService {
   async resolveUserAuthorization(
     userId: string,
   ): Promise<ResolvedAuthorizationProfile> {
-    const cacheKey = AUTH_CONTEXT_CACHE_KEY(userId);
+    let authorizationVersion: bigint;
+    try {
+      authorizationVersion = await this.versions.current(userId);
+    } catch (err) {
+      throw this.contextUnavailable(err);
+    }
+    const cacheKey = AUTH_CONTEXT_CACHE_KEY(userId, authorizationVersion);
+    const now = new Date(this.clock.now());
 
     // ── Cache HIT path ──────────────────────────────────────────────────────
     try {
       const cached =
-        await this.cacheManager.get<ResolvedAuthorizationProfile>(cacheKey);
-      if (cached !== null && cached !== undefined) {
+        await this.cacheManager.get<AuthorizationContextCacheEntry>(cacheKey);
+      if (
+        cached !== null &&
+        cached !== undefined &&
+        Number.isFinite(Date.parse(cached.valid_until)) &&
+        now.getTime() < Date.parse(cached.valid_until)
+      ) {
         this.logger.debug(`Auth context cache HIT  — ${cacheKey}`);
-        return cached;
+        return cached.value;
       }
     } catch (err) {
       // Redis down or deserialization error — degrade gracefully to DB
@@ -279,8 +336,8 @@ export class AuthorizationContextService {
 
     this.logger.debug(`Auth context cache MISS — ${cacheKey}`);
 
-    // ── DB query (unchanged) ────────────────────────────────────────────────
-    const user = await this.prisma.users.findUnique({
+    // ── DB query ────────────────────────────────────────────────────────────
+    const userQuery = this.prisma.users.findUnique({
       where: { user_id: userId },
       select: {
         user_id: true,
@@ -349,10 +406,10 @@ export class AuthorizationContextService {
           },
         },
         club_role_assignments: {
-          where: { active: true },
           orderBy: CANONICAL_CLUB_ASSIGNMENT_ORDER,
           select: {
             assignment_id: true,
+            active: true,
             status: true,
             start_date: true,
             end_date: true,
@@ -384,6 +441,9 @@ export class AuthorizationContextService {
         },
       },
     });
+    const user = await userQuery.catch((err) => {
+      throw this.contextUnavailable(err);
+    });
 
     if (!user) {
       throw new AppUnauthorizedException(ErrorCode.AUTH_CONTEXT_USER_NOT_FOUND);
@@ -396,17 +456,35 @@ export class AuthorizationContextService {
       scope: globalScope,
     }));
 
-    // All grants (active + pending) — exposed in authorization.grants.club_assignments
-    const clubGrants = (user.club_role_assignments ?? [])
-      .map((assignment) => this.buildClubGrant(assignment))
-      .filter((assignment): assignment is ClubAuthorizationGrant =>
-        Boolean(assignment),
+    const clubGrants: ClubAuthorizationGrant[] = [];
+    const boundaries: Date[] = [];
+    const territoryTimeVector: TerritoryTimeVectorEntry[] = [];
+    for (const assignment of user.club_role_assignments ?? []) {
+      const grant = this.buildClubGrant(assignment);
+      const localField = assignment.club_sections?.clubs?.local_fields;
+      if (!grant || !localField) {
+        throw this.contextUnavailable(new Error('Missing club local field'));
+      }
+      const timezone = this.localFieldTimezone.assertTimezone(
+        localField.timezone,
       );
-
-    // Only status:'active' grants are used for permission resolution and active context
-    const activeClubGrants = clubGrants.filter(
-      (grant) => grant.status === 'active',
-    );
+      const context = this.temporalContext.forLocalField(
+        { local_field_id: localField.local_field_id, timezone },
+        now,
+      );
+      clubGrants.push({
+        ...grant,
+        effective: this.effectivity.isEffective(assignment, context),
+      });
+      const boundary = this.effectivity.nextBoundary(assignment, context);
+      if (boundary) boundaries.push(boundary);
+      territoryTimeVector.push({
+        local_field_id: localField.local_field_id,
+        timezone,
+        timezone_revision: localField.modified_at?.toISOString() ?? null,
+      });
+    }
+    const activeClubGrants = clubGrants.filter((grant) => grant.effective);
 
     const persistedActiveAssignmentId =
       user.users_pr?.active_club_assignment_id ?? null;
@@ -492,12 +570,24 @@ export class AuthorizationContextService {
       },
     };
 
+    const validUntil = new Date(
+      Math.min(
+        now.getTime() + AUTH_CONTEXT_TTL_MS,
+        ...boundaries.map((boundary) => boundary.getTime()),
+      ),
+    );
+    const ttl = Math.max(1, validUntil.getTime() - now.getTime());
+    const cacheEntry: AuthorizationContextCacheEntry = {
+      value: result,
+      valid_until: validUntil.toISOString(),
+      territory_time_vector:
+        this.uniqueTerritoryTimeVector(territoryTimeVector),
+    };
+
     // ── Cache SET path ──────────────────────────────────────────────────────
     try {
-      await this.cacheManager.set(cacheKey, result, AUTH_CONTEXT_TTL_MS);
-      this.logger.debug(
-        `Auth context cache SET  — ${cacheKey} (TTL ${AUTH_CONTEXT_TTL_MS}ms)`,
-      );
+      await this.cacheManager.set(cacheKey, cacheEntry, ttl);
+      this.logger.debug(`Auth context cache SET  — ${cacheKey} (TTL ${ttl}ms)`);
     } catch (err) {
       // Redis down — return DB result without caching, degrade gracefully
       this.logger.warn(
@@ -731,6 +821,7 @@ export class AuthorizationContextService {
         start_date: assignment.start_date,
         end_date: assignment.end_date,
         expires_at: assignment.expires_at,
+        effective: false,
       };
     }
 
@@ -774,6 +865,16 @@ export class AuthorizationContextService {
       (records ?? [])
         .map((record) => record.permissions?.permission_name?.trim())
         .filter((permission): permission is string => Boolean(permission)),
+    );
+  }
+
+  private uniqueTerritoryTimeVector(
+    values: TerritoryTimeVectorEntry[],
+  ): TerritoryTimeVectorEntry[] {
+    const unique = new Map<number, TerritoryTimeVectorEntry>();
+    for (const value of values) unique.set(value.local_field_id, value);
+    return [...unique.values()].sort(
+      (left, right) => left.local_field_id - right.local_field_id,
     );
   }
 
@@ -822,5 +923,15 @@ export class AuthorizationContextService {
 
   private extractMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
+  }
+
+  private contextUnavailable(err: unknown): AppException {
+    this.logger.warn(
+      `No se pudo verificar el contexto de autorización: ${this.extractMessage(err)}`,
+    );
+    return new AppException(
+      ErrorCode.AUTH_CONTEXT_UNAVAILABLE,
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
   }
 }
