@@ -112,6 +112,26 @@ export class CategoriesController {
     return this.categoriesService.update(id, dto, scope);
   }
 
+  // POST /materials/categories/:id/reactivate
+  @Post(':id/reactivate')
+  @RequirePermissions(MATERIALS_MANAGE_INVENTORY)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reactivate an inactive material category' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, type: CategoryAdminDto })
+  @ApiResponse({
+    status: 403,
+    description: 'Only super-admin may reactivate material categories',
+  })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  async reactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
+  ): Promise<CategoryAdminDto> {
+    const scope = await resolveActorLocalField(this.prisma, req.authorization);
+    return this.categoriesService.reactivate(id, scope);
+  }
+
   // DELETE /materials/categories/:id — soft (active=false), blocked if products exist
   @Delete(':id')
   @RequirePermissions(MATERIALS_MANAGE_INVENTORY)

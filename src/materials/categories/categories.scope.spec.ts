@@ -175,6 +175,20 @@ describe('material category scope contract', () => {
     });
   });
 
+  it('omits inactive categories from the orderable catalog', async () => {
+    prisma.materialCategory.findMany.mockResolvedValue([]);
+
+    await new CatalogService(prisma as unknown as PrismaService).listCategories(
+      1,
+    );
+
+    expect(prisma.materialCategory.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { local_field_id: 1, active: true },
+      }),
+    );
+  });
+
   it('uses the actor LF without a nullable legacy fallback', async () => {
     prisma.materialCategory.findMany.mockResolvedValue([]);
     prisma.materialCategory.create.mockResolvedValue({
@@ -207,7 +221,7 @@ describe('material category scope contract', () => {
     );
     expect(prisma.materialCategory.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        where: { local_field_id: 1 },
+        where: { local_field_id: 1, active: true },
       }),
     );
     expect(prisma.materialCategory.create).toHaveBeenCalledWith(
@@ -297,6 +311,38 @@ describe('material category scope contract', () => {
         local_field_id: 2,
       },
       data: expect.objectContaining({ active: true }),
+    });
+  });
+
+  it('reactivates a category UUID only for super-admin', async () => {
+    prisma.materialCategory.findUnique.mockResolvedValue(category(1, false));
+
+    await expect(
+      categories.reactivate('00000000-0000-0000-0000-000000000101', {
+        authorization: authorization('admin', 1),
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'material_reactivation_requires_super_admin' },
+    });
+    expect(prisma.materialCategory.findUnique).not.toHaveBeenCalled();
+
+    prisma.materialCategory.findUnique
+      .mockReset()
+      .mockResolvedValueOnce(category(2, false))
+      .mockResolvedValueOnce(category(2, true));
+    prisma.materialCategory.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(
+      categories.reactivate('00000000-0000-0000-0000-000000000101', {
+        authorization: authorization('super-admin', 1),
+      }),
+    ).resolves.toMatchObject({ active: true });
+    expect(prisma.materialCategory.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: '00000000-0000-0000-0000-000000000101',
+        local_field_id: 2,
+      },
+      data: { active: true },
     });
   });
 

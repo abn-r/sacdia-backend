@@ -139,6 +139,25 @@ export class CategoriesService {
   }
 
   // ---------------------------------------------------------------------------
+  // REACTIVATE — privileged lifecycle transition. Check authority before the
+  // resource lookup so non-super-admin callers cannot probe category UUIDs.
+  // ---------------------------------------------------------------------------
+
+  async reactivate(
+    id: string,
+    scope: ActorLocalFieldScope,
+  ): Promise<CategoryAdminDto> {
+    if (scope.scope !== 'all') {
+      throw new ForbiddenException({
+        code: 'material_reactivation_requires_super_admin',
+        message: 'Only super-admin may reactivate a material category.',
+      });
+    }
+
+    return this.update(id, { active: true }, scope);
+  }
+
+  // ---------------------------------------------------------------------------
   // SOFT DELETE — sets active=false. Hard delete blocked if any product
   // references the category (Restrict FK).
   // ---------------------------------------------------------------------------
