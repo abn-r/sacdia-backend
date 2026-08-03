@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
-
 import { AssignmentQueryFinding } from './club-assignment-effectivity.arch';
-
 type SqlFragment = { text: string; central: boolean; unknown: boolean };
 function fingerprint(text: string): string {
   return createHash('sha256')
@@ -10,7 +8,6 @@ function fingerprint(text: string): string {
     .digest('hex')
     .slice(0, 12);
 }
-
 function unwrapped(node: ts.Expression): ts.Expression {
   while (
     ts.isParenthesizedExpression(node) ||
@@ -23,7 +20,6 @@ function unwrapped(node: ts.Expression): ts.Expression {
   }
   return node;
 }
-
 function neutralizeSql(text: string): string {
   let output = '';
   for (let index = 0; index < text.length; index += 1) {
@@ -57,7 +53,6 @@ function neutralizeSql(text: string): string {
   }
   return output;
 }
-
 function tableAliases(sql: string): string[] {
   const aliases = ['club_role_assignments'];
   const table = '(?:"club_role_assignments"|club_role_assignments)';
@@ -73,13 +68,11 @@ function tableAliases(sql: string): string[] {
   }
   return aliases;
 }
-
 function targetSql(sql: string): boolean {
-  return /\b(?:FROM|JOIN)\s+(?:(?:"[^"]+"|[A-Za-z_]\w*)\s*\.\s*)?(?:"club_role_assignments"|club_role_assignments)\b/i.test(
+  return /\b(?:FROM|JOIN)\s+(?:(?:"[^"]+"|[A-Za-z_]\w*)\s*\.\s*)?(?:"club_role_assignments"|club_role_assignments)(?![A-Za-z0-9_])/i.test(
     neutralizeSql(sql),
   );
 }
-
 function hasTargetPredicate(sql: string): boolean {
   const cleaned = neutralizeSql(sql);
   const column = '(?:active|status|start_date|end_date|expires_at)';
@@ -99,7 +92,6 @@ function hasTargetPredicate(sql: string): boolean {
   );
   return qualified.test(cleaned) || bare.test(cleaned) || boolean.test(cleaned);
 }
-
 export function scanAssignmentRawSqlSource(
   path: string,
   source: string,
@@ -208,6 +200,8 @@ export function scanAssignmentRawSqlSource(
     ts.isIdentifier(node.expression) &&
     node.expression.text === 'Prisma' &&
     node.name.text === name;
+  const rawQueryTag = (node: ts.Expression): boolean =>
+    ts.isPropertyAccessExpression(node) && node.name.text === '$queryRaw';
   const canonicalPolicy = (
     value: ts.Expression,
     seen = new Set<ts.Expression>(),
@@ -239,8 +233,13 @@ export function scanAssignmentRawSqlSource(
     if (centralCall(node)) return { text: '', central: true, unknown: false };
     if (ts.isStringLiteralLike(node))
       return { text: node.text, central: false, unknown: false };
+    if (ts.isTemplateExpression(node)) return template(node, seen);
     if (ts.isTaggedTemplateExpression(node)) {
-      if (!prismaMember(node.tag, 'sql') && !prismaMember(node.tag, 'raw'))
+      if (
+        !prismaMember(node.tag, 'sql') &&
+        !prismaMember(node.tag, 'raw') &&
+        !rawQueryTag(node.tag)
+      )
         return { text: '', central: false, unknown: true };
       return template(node.template, seen);
     }
@@ -301,7 +300,9 @@ export function scanAssignmentRawSqlSource(
   const visit = (node: ts.Node) => {
     if (
       ts.isTaggedTemplateExpression(node) &&
-      (prismaMember(node.tag, 'sql') || prismaMember(node.tag, 'raw'))
+      (prismaMember(node.tag, 'sql') ||
+        prismaMember(node.tag, 'raw') ||
+        rawQueryTag(node.tag))
     )
       inspect(node, node);
     if (
@@ -311,6 +312,8 @@ export function scanAssignmentRawSqlSource(
       node.arguments[0]
     )
       inspect(node, node.arguments[0]);
+    if (ts.isTemplateExpression(node) && ts.isReturnStatement(node.parent))
+      inspect(node, node);
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
