@@ -39,4 +39,25 @@ END;
 $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_set_director_succession_effective_date BEFORE INSERT OR UPDATE OF target_ecclesiastical_year_id, effective_date ON director_succession_plans FOR EACH ROW EXECUTE FUNCTION set_director_succession_effective_date();
 
+CREATE FUNCTION prevent_scheduled_succession_year_start_date_change() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM director_succession_plans
+    WHERE target_ecclesiastical_year_id = OLD.year_id
+      AND status = 'scheduled'
+  ) THEN
+    RAISE EXCEPTION 'Cannot change an ecclesiastical year start date with a scheduled director succession plan'
+      USING ERRCODE = '23514',
+        CONSTRAINT = 'director_succession_plans_scheduled_year_start_date_lock';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER trg_prevent_scheduled_succession_year_start_date_change
+  BEFORE UPDATE OF start_date ON ecclesiastical_years
+  FOR EACH ROW
+  WHEN (OLD.start_date IS DISTINCT FROM NEW.start_date)
+  EXECUTE FUNCTION prevent_scheduled_succession_year_start_date_change();
+
 COMMIT;

@@ -51,10 +51,18 @@ describe('director succession plan migration', () => {
         await client.query('ROLLBACK');
         await expect(
           client.query(
-            "SELECT to_regtype('director_succession_status_enum') AS enum_type, to_regclass('director_succession_plans') AS plan_table, to_regprocedure('set_director_succession_effective_date()') AS plan_function",
+            "SELECT to_regtype('director_succession_status_enum') AS enum_type, to_regclass('director_succession_plans') AS plan_table, to_regprocedure('set_director_succession_effective_date()') AS plan_function, to_regprocedure('prevent_scheduled_succession_year_start_date_change()') AS year_start_date_lock_function, EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_prevent_scheduled_succession_year_start_date_change') AS year_start_date_lock_trigger",
           ),
         ).resolves.toMatchObject({
-          rows: [{ enum_type: null, plan_table: null, plan_function: null }],
+          rows: [
+            {
+              enum_type: null,
+              plan_table: null,
+              plan_function: null,
+              year_start_date_lock_function: null,
+              year_start_date_lock_trigger: false,
+            },
+          ],
         });
       } finally {
         await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
@@ -80,6 +88,25 @@ describe('director succession plan migration', () => {
             'SELECT effective_date::text AS effective_date FROM director_succession_plans',
           ),
         ).resolves.toMatchObject({ rows: [{ effective_date: '2027-01-01' }] });
+        await expect(
+          client.query(
+            "UPDATE ecclesiastical_years SET start_date = '2027-02-01' WHERE year_id = 1",
+          ),
+        ).rejects.toMatchObject({
+          code: '23514',
+          constraint:
+            'director_succession_plans_scheduled_year_start_date_lock',
+        });
+        await expect(
+          client.query(
+            "UPDATE ecclesiastical_years SET start_date = '2028-02-01' WHERE year_id = 2",
+          ),
+        ).resolves.toBeDefined();
+        await expect(
+          client.query(
+            'SELECT start_date::text AS start_date FROM ecclesiastical_years WHERE year_id = 2',
+          ),
+        ).resolves.toMatchObject({ rows: [{ start_date: '2028-02-01' }] });
         await expect(
           client.query(
             "UPDATE director_succession_plans SET effective_date = '2000-01-01'",
